@@ -1,0 +1,5 @@
+{
+  "detail": "Authentication required",
+  "request_id": "fixture-request-id",
+  "status_code": 401
+}

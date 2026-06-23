@@ -1,0 +1,50 @@
+# OS / editor noise
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.mypy_cache/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+test-results/
+playwright-report/
+
+# Implementation plans
+implementation_plan*.md
+overview.md
+
+# Virtual environments
+.venv
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local runtime data (SQLite, imports, receipts, generated secrets)
+data/
+logs/
+
+# Xcode-generated files
+ios/DerivedData/
+ios/DerivedDataDevice/
+ios/DerivedDataMCP/
+xcuserdata/
+*.xcuserstate
+
+# Local agent state
+.claude/
+.factory/
+.superset/

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EXPENSES_DATA_DIR: ${{ github.workspace }}/.ci-data
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Python dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Install UI dependencies
+        run: npm ci --prefix ui
+
+      - name: Audit Python dependencies
+        run: uv run pip-audit
+
+      - name: Audit UI dependencies
+        run: npm audit --prefix ui --audit-level=high
+
+      - name: Install Playwright browser and system deps
+        run: npx --prefix ui playwright install --with-deps chromium webkit
+
+      - name: Apply database migrations
+        run: |
+          mkdir -p "$EXPENSES_DATA_DIR"
+          uv run python -m alembic upgrade head
+
+      - name: Run full test suite
+        run: uv run test

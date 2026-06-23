@@ -1,0 +1,103 @@
+{
+  "budget_pace": {
+    "budget_cents": 220000,
+    "projected_cents": 178000,
+    "sparkline": "0.61,0.66,0.7,0.75,0.78,0.8,0.82",
+    "velocity_ratio": 0.82
+  },
+  "categories": [
+    {
+      "icon": "shopping-cart",
+      "id": 10,
+      "name": "Groceries",
+      "type": "expense"
+    }
+  ],
+  "category_budget_pulse": [
+    {
+      "amount_cents": 45000,
+      "remaining_cents": 10800,
+      "scope_category_id": 10,
+      "scope_label": "Groceries",
+      "spent_cents": 34200,
+      "velocity_ratio": 0.91
+    }
+  ],
+  "deltas": {
+    "balance": 12400,
+    "expenses": -12400,
+    "income": 0
+  },
+  "donut": {
+    "expense_breakdown": [
+      {
+        "amount_cents": 34200,
+        "name": "Groceries",
+        "percent": 40.45
+      }
+    ],
+    "has_any_transactions": true,
+    "income_breakdown": [
+      {
+        "amount_cents": 320000,
+        "name": "Salary",
+        "percent": 100.0
+      }
+    ],
+    "mode": "both"
+  },
+  "durable_purchases": null,
+  "filters": {
+    "type": null
+  },
+  "kpis": {
+    "balance": 235450,
+    "expenses": 84550,
+    "income": 320000
+  },
+  "period": {
+    "end": "2026-05-31",
+    "slug": "this_month",
+    "start": "2026-05-01"
+  },
+  "recent": [
+    {
+      "amount_cents": 1299,
+      "category": {
+        "icon": "shopping-cart",
+        "id": 10,
+        "name": "Groceries",
+        "type": "expense"
+      },
+      "date": "2026-05-17",
+      "description": "Market receipt attached.",
+      "has_attachments": true,
+      "id": 101,
+      "is_reimbursement": false,
+      "latitude": null,
+      "longitude": null,
+      "net_amount_cents": 1299,
+      "occurred_at": "2026-05-17T12:30:00",
+      "reimbursed_total_cents": 0,
+      "tags": [
+        {
+          "id": 7,
+          "name": "Home"
+        }
+      ],
+      "title": "Weekly groceries",
+      "type": "expense"
+    }
+  ],
+  "sparklines": {
+    "balance": "0,235450",
+    "expenses": "1200,84550",
+    "income": "0,320000"
+  },
+  "tags": [
+    {
+      "id": 7,
+      "name": "Home"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Every change in this repository requires review from the owner.
+# Combined with a branch protection rule / ruleset that requires
+# CODEOWNERS review on the default branch, this ensures only the
+# owner can approve and merge pull requests.
+* @janishahn

@@ -1,0 +1,7 @@
+{
+  "app": "expenses-web",
+  "receipt_max_bytes": 10485760,
+  "setup_required": false,
+  "timezone": "Europe/Berlin",
+  "version": "0.1.0"
+}

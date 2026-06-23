@@ -1,0 +1,64 @@
+{
+  "categories": [
+    {
+      "icon": "shopping-cart",
+      "id": 10,
+      "name": "Groceries",
+      "type": "expense"
+    }
+  ],
+  "filters": {
+    "category_id": null,
+    "query": null,
+    "tag_id": null,
+    "type": null
+  },
+  "has_more": false,
+  "items": [
+    {
+      "amount_cents": 1299,
+      "category": {
+        "icon": "shopping-cart",
+        "id": 10,
+        "name": "Groceries",
+        "type": "expense"
+      },
+      "date": "2026-05-17",
+      "description": "Market receipt attached.",
+      "has_attachments": true,
+      "id": 101,
+      "is_reimbursement": false,
+      "latitude": null,
+      "longitude": null,
+      "net_amount_cents": 1299,
+      "occurred_at": "2026-05-17T12:30:00",
+      "reimbursed_total_cents": 0,
+      "tags": [
+        {
+          "id": 7,
+          "name": "Home"
+        }
+      ],
+      "title": "Weekly groceries",
+      "type": "expense"
+    }
+  ],
+  "limit": 50,
+  "page": 1,
+  "period": {
+    "end": "2026-05-17",
+    "slug": "all",
+    "start": "1970-01-01"
+  },
+  "search": {
+    "applied_tokens": [],
+    "free_terms": [],
+    "raw_q": ""
+  },
+  "tags": [
+    {
+      "id": 7,
+      "name": "Home"
+    }
+  ]
+}

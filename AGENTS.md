@@ -1,0 +1,80 @@
+# expenses-web: Agent Instructions
+
+## Purpose
+This file defines durable engineering conventions for AI/code agents working in this repository.
+Keep guidance stable over time and avoid coupling instructions to transient UI details, folder layouts, or implementation-specific naming.
+This project is intended for private self-hosting on hardware down to Raspberry Pi 4B-class devices, so implementation choices should account for constrained CPU, memory, and I/O even when the app also runs on larger hosts such as a Mac mini or small VPS.
+
+## Design Language
+- Read `DESIGN.md` before making any UI changes. It is the canonical source of truth for the design language.
+- Follow the patterns, colors, typography, spacing, and component conventions documented there.
+- When adding new UI patterns or modifying existing ones, update `DESIGN.md` to keep it current.
+
+## Core Principles
+- Prefer straightforward, local code over many micro-helpers.
+- Keep comments minimal; write code that is clear without narration.
+- Avoid defensive programming noise (repetitive validation, redundant checks, broad fallback logic).
+- Be explicit about types at boundaries (API/schema/IO parsing), then code against known types.
+- Avoid runtime type probing by default (`getattr` fallbacks, frequent `isinstance` branching).
+- Catch exceptions narrowly and intentionally; do not use broad exception handling unless there is a strong, documented reason.
+- For UI work, keep an eye on recognizable patterns across the app when it is sensible to do so. Similar pages do not need to be identical, but shared affordances, action placement, and page structure should usually feel familiar rather than arbitrary.
+- For frontend work, avoid gradients as a generic visual-polish tool. Prefer calm depth from spacing, layered surfaces, contrast, borders, and shadows; use gradients only when they are genuinely central to the concept and clearly stronger than a flat treatment.
+- Treat repeated page chrome within a viewport as a product convention, not a page-by-page styling choice. If a shared element such as a kicker label, title row, filter bar, summary-card pattern, or action placement is changed because it is not pulling its weight, audit sibling pages in that same viewport and usually make the change there too. Prefer stable cross-page structure on both mobile and desktop over layouts that jump around without a clear product reason.
+
+## Documentation Duties (Required)
+- Keep `README.md` current whenever behavior, setup, workflows, or operator-facing commands change.
+- Keep developer commands discoverable and accurate:
+  - Canonical command definitions belong in `pyproject.toml` (for example, under `[project.scripts]`).
+  - Prefer `uv run <command>` entrypoints over ad-hoc script paths for repeatable workflows.
+  - When adding/removing/renaming commands, update `README.md` in the same change.
+- If code and docs diverge, treat it as a bug and fix both in one PR.
+
+## Python Environment and Tooling
+- Use `uv` for dependency management and command execution.
+- Add runtime dependencies with `uv add ...`.
+- Add development-only dependencies with `uv add --dev ...`.
+- Run Python tooling through `uv run ...` rather than calling global binaries directly.
+
+## Code Quality Expectations
+- For Python edits, run Ruff fix + format:
+  1. `uv run ruff check --fix .`
+  2. `uv run ruff format .`
+- Run relevant tests after changes; run the broader test command for significant or cross-cutting changes.
+- If tests are skipped or cannot run, state that explicitly in the final handoff.
+
+## Testing Expectations
+- New behavior should include tests.
+- Bug fixes should include a regression test when practical.
+- Prefer targeted, deterministic tests over broad, brittle integration coverage when validating local logic.
+- For native iOS simulator UI checks, use the local-dev launch path documented in `README.md`: keep the local backend running, preserve the simulator Keychain session, and pass `--skip-local-unlock` as an app launch argument in Debug simulator builds. This flag is only a local-unlock bypass; it does not bypass backend login. If the app stays on login, verify the backend port with `/api/mobile/status`, update the simulator app default `expenses.baseURL` when `uv run dev` bound to a port other than `8000`, then complete one real mobile login such as `test` / `test` for the mock DB. Plain launches are only appropriate when explicitly testing the local unlock gate itself.
+- Keep test names and file names stable over time:
+  - Name tests by behavior/domain (`templates`, `durable_purchases`, `admin_system_health`), not by delivery phase or milestone labels.
+  - Do not introduce ambiguous time-bound labels like `phase1`, `v2`, `next`, or `new` in long-lived test files.
+  - If an existing test name is milestone-scoped, rename/rework it to behavior-scoped in the same change.
+- For Playwright UI layout regressions, attach a screenshot artifact on failure so CI and local reruns preserve visual context.
+- When debugging a failing Playwright test that provides a screenshot artifact, review that artifact first and use it to guide the fix before changing code.
+- Playwright layout matrix is explicit and must stay that way:
+  - `desktop-chromium` runs non-mobile specs (default `*.spec.ts` and `*.desktop.spec.ts`).
+  - `mobile-webkit` runs only mobile specs (`*.mobile.spec.ts`) using iPhone emulation.
+- Keep layout intent in the test file, not ad-hoc viewport switching in shared specs:
+  - Put desktop-only assertions/flows in desktop or shared specs.
+  - Put mobile-only assertions/flows in `*.mobile.spec.ts`.
+- For navigation and controls, use layout-correct selectors (desktop sidebar vs mobile bottom-nav/sheet/sidebar) instead of generic selectors that can match hidden elements.
+
+## Configuration Guidance
+- Prefer explicit config surfaces (typed settings, CLI args, checked-in config files) over environment-variable sprawl.
+- Use environment variables primarily for secrets or deployment-specific values.
+- Document any new required configuration in `README.md` at the time it is introduced.
+
+## Change Hygiene
+- Keep changes focused and cohesive; avoid opportunistic refactors unrelated to the task.
+- Do not introduce one-off patterns that future agents must reverse-engineer.
+- When repository structure or workflows evolve, update this file to preserve accurate, future-proof guidance.
+- Keep Sankey flow grouping heuristics in sync with category behavior: when categories, naming conventions, or flow-grouping logic change, update the hard-coded heuristic mapping in the same change.
+
+## Performance Expectations (Constrained Self-Hosted Hardware)
+- Optimize for low resource usage and predictable latency on modest hardware down to Raspberry Pi 4B-class devices.
+- Prefer simple, efficient algorithms and avoid unnecessary background work.
+- Keep memory growth bounded; avoid long-lived caches without explicit limits or eviction strategy.
+- Be cautious with heavy rendering, large dependency additions, and expensive startup-time initialization.
+- Treat avoidable CPU/memory regressions as correctness issues, not polish.

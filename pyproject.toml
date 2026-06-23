@@ -1,0 +1,53 @@
+[project]
+name = "expenses-web"
+version = "0.1.0"
+description = "A lightweight, mobile-first expense tracker"
+readme = "README.md"
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13.1",
+    "apscheduler>=3.10.4",
+    "pydantic>=2.7.1",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.2.0",
+    "tzdata>=2024.1",
+    "weasyprint>=66.0",
+    "rapidfuzz>=3.14.3",
+    "psutil>=6.1.0",
+    "pydantic-ai-slim[openai]>=1.0.0",
+    "python-dotenv>=1.2.2",
+    "httpx>=0.28.1",
+    "tenacity>=9.1.4",
+    "pillow>=12.1.1",
+]
+
+[project.scripts]
+dev = "expenses_web.cli.dev:main"
+export-ios-fixtures = "expenses_web.cli.export_ios_fixtures:main"
+export-openapi = "expenses_web.cli.export_openapi:main"
+migrations = "expenses_web.cli.migrations:main"
+test = "expenses_web.cli.test:main"
+mock-db = "expenses_web.cli.mock_db:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pip-audit>=2.10.1",
+    "pytest>=9.0.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,587 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		001000000000000000000001 /* ExpensesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000001 /* ExpensesApp.swift */; };
+		001000000000000000000002 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000002 /* AppModel.swift */; };
+		001000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000003 /* RootView.swift */; };
+		001000000000000000000004 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000004 /* APIModels.swift */; };
+		001000000000000000000005 /* ExpensesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000005 /* ExpensesAPIClient.swift */; };
+		001000000000000000000006 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000006 /* KeychainStore.swift */; };
+		001000000000000000000007 /* GlassSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000007 /* GlassSurface.swift */; };
+		001000000000000000000008 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000008 /* AuthView.swift */; };
+		001000000000000000000009 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000009 /* DiagnosticsView.swift */; };
+		001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000010 /* PrivacyOverlayModifier.swift */; };
+		001000000000000000000011 /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000013 /* DomainModels.swift */; };
+		001000000000000000000012 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000014 /* Formatters.swift */; };
+		001000000000000000000013 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000015 /* DashboardView.swift */; };
+		001000000000000000000014 /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000016 /* TransactionsView.swift */; };
+		001000000000000000000015 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* TransactionDetailView.swift */; };
+		001000000000000000000016 /* TransactionFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* TransactionFormView.swift */; };
+		001000000000000000000017 /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* LocationProvider.swift */; };
+		001000000000000000000018 /* OrganizeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000020 /* OrganizeView.swift */; };
+		001000000000000000000019 /* BudgetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000021 /* BudgetsView.swift */; };
+		001000000000000000000020 /* RecurringView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000022 /* RecurringView.swift */; };
+		001000000000000000000021 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000023 /* CameraCaptureView.swift */; };
+		001000000000000000000022 /* PlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000024 /* PlanningView.swift */; };
+		001000000000000000000023 /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000025 /* InsightsView.swift */; };
+		001000000000000000000024 /* ReportsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000026 /* ReportsView.swift */; };
+		001000000000000000000025 /* DocumentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000027 /* DocumentPreviewView.swift */; };
+		001000000000000000000026 /* ReconciliationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000028 /* ReconciliationView.swift */; };
+		001000000000000000000027 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000029 /* AdminView.swift */; };
+		001000000000000000000028 /* LocalUnlockGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000030 /* LocalUnlockGate.swift */; };
+		001000000000000000000029 /* CategoryIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000031 /* CategoryIcons.swift */; };
+		001000000000000000000030 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000032 /* Assets.xcassets */; };
+		001000000000000000000031 /* WalletTransactionShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000033 /* WalletTransactionShortcut.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		002000000000000000000001 /* ExpensesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesApp.swift; sourceTree = "<group>"; };
+		002000000000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		002000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		002000000000000000000004 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		002000000000000000000005 /* ExpensesAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesAPIClient.swift; sourceTree = "<group>"; };
+		002000000000000000000006 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		002000000000000000000007 /* GlassSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassSurface.swift; sourceTree = "<group>"; };
+		002000000000000000000008 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		002000000000000000000009 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		002000000000000000000010 /* PrivacyOverlayModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyOverlayModifier.swift; sourceTree = "<group>"; };
+		002000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		002000000000000000000012 /* ExpensesApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExpensesApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		002000000000000000000013 /* DomainModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModels.swift; sourceTree = "<group>"; };
+		002000000000000000000014 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
+		002000000000000000000015 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		002000000000000000000016 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
+		002000000000000000000017 /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000018 /* TransactionFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionFormView.swift; sourceTree = "<group>"; };
+		002000000000000000000019 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
+		002000000000000000000020 /* OrganizeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizeView.swift; sourceTree = "<group>"; };
+		002000000000000000000021 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
+		002000000000000000000022 /* RecurringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringView.swift; sourceTree = "<group>"; };
+		002000000000000000000023 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		002000000000000000000024 /* PlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanningView.swift; sourceTree = "<group>"; };
+		002000000000000000000025 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		002000000000000000000026 /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
+		002000000000000000000027 /* DocumentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPreviewView.swift; sourceTree = "<group>"; };
+		002000000000000000000028 /* ReconciliationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconciliationView.swift; sourceTree = "<group>"; };
+		002000000000000000000029 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminView.swift; sourceTree = "<group>"; };
+		002000000000000000000030 /* LocalUnlockGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalUnlockGate.swift; sourceTree = "<group>"; };
+		002000000000000000000031 /* CategoryIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryIcons.swift; sourceTree = "<group>"; };
+		002000000000000000000032 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		002000000000000000000033 /* WalletTransactionShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletTransactionShortcut.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		003000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		004000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				004000000000000000000002 /* ExpensesApp */,
+				004000000000000000000011 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		004000000000000000000002 /* ExpensesApp */ = {
+			isa = PBXGroup;
+			children = (
+				004000000000000000000003 /* App */,
+				004000000000000000000004 /* API */,
+				004000000000000000000005 /* Auth */,
+				004000000000000000000006 /* DesignSystem */,
+				004000000000000000000007 /* Features */,
+				004000000000000000000010 /* Shared */,
+				002000000000000000000032 /* Assets.xcassets */,
+				002000000000000000000011 /* Info.plist */,
+			);
+			path = ExpensesApp;
+			sourceTree = "<group>";
+		};
+		004000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000001 /* ExpensesApp.swift */,
+				002000000000000000000002 /* AppModel.swift */,
+				002000000000000000000003 /* RootView.swift */,
+				002000000000000000000033 /* WalletTransactionShortcut.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		004000000000000000000004 /* API */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000004 /* APIModels.swift */,
+				002000000000000000000013 /* DomainModels.swift */,
+				002000000000000000000005 /* ExpensesAPIClient.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		004000000000000000000005 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000006 /* KeychainStore.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		004000000000000000000006 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000007 /* GlassSurface.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		004000000000000000000007 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				004000000000000000000021 /* Admin */,
+				004000000000000000000008 /* Auth */,
+				004000000000000000000015 /* Budgets */,
+				004000000000000000000012 /* Dashboard */,
+				004000000000000000000009 /* Diagnostics */,
+				004000000000000000000018 /* Insights */,
+				004000000000000000000014 /* Organize */,
+				004000000000000000000017 /* Planning */,
+				004000000000000000000020 /* Reconciliation */,
+				004000000000000000000016 /* Recurring */,
+				004000000000000000000019 /* Reports */,
+				004000000000000000000013 /* Transactions */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		004000000000000000000008 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000008 /* AuthView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		004000000000000000000009 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000009 /* DiagnosticsView.swift */,
+			);
+			path = Diagnostics;
+			sourceTree = "<group>";
+		};
+		004000000000000000000010 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000023 /* CameraCaptureView.swift */,
+				002000000000000000000031 /* CategoryIcons.swift */,
+				002000000000000000000027 /* DocumentPreviewView.swift */,
+				002000000000000000000014 /* Formatters.swift */,
+				002000000000000000000019 /* LocationProvider.swift */,
+				002000000000000000000030 /* LocalUnlockGate.swift */,
+				002000000000000000000010 /* PrivacyOverlayModifier.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		004000000000000000000011 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000012 /* ExpensesApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		004000000000000000000012 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000015 /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		004000000000000000000013 /* Transactions */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000016 /* TransactionsView.swift */,
+				002000000000000000000017 /* TransactionDetailView.swift */,
+				002000000000000000000018 /* TransactionFormView.swift */,
+			);
+			path = Transactions;
+			sourceTree = "<group>";
+		};
+		004000000000000000000014 /* Organize */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000020 /* OrganizeView.swift */,
+			);
+			path = Organize;
+			sourceTree = "<group>";
+		};
+		004000000000000000000015 /* Budgets */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000021 /* BudgetsView.swift */,
+			);
+			path = Budgets;
+			sourceTree = "<group>";
+		};
+		004000000000000000000016 /* Recurring */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000022 /* RecurringView.swift */,
+			);
+			path = Recurring;
+			sourceTree = "<group>";
+		};
+		004000000000000000000017 /* Planning */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000024 /* PlanningView.swift */,
+			);
+			path = Planning;
+			sourceTree = "<group>";
+		};
+		004000000000000000000018 /* Insights */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000025 /* InsightsView.swift */,
+			);
+			path = Insights;
+			sourceTree = "<group>";
+		};
+		004000000000000000000019 /* Reports */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000026 /* ReportsView.swift */,
+			);
+			path = Reports;
+			sourceTree = "<group>";
+		};
+		004000000000000000000020 /* Reconciliation */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000028 /* ReconciliationView.swift */,
+			);
+			path = Reconciliation;
+			sourceTree = "<group>";
+		};
+		004000000000000000000021 /* Admin */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000029 /* AdminView.swift */,
+			);
+			path = Admin;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		005000000000000000000001 /* ExpensesApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 009000000000000000000002 /* Build configuration list for PBXNativeTarget "ExpensesApp" */;
+			buildPhases = (
+				006000000000000000000001 /* Sources */,
+				003000000000000000000001 /* Frameworks */,
+				007000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ExpensesApp;
+			productName = ExpensesApp;
+			productReference = 002000000000000000000012 /* ExpensesApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		008000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					005000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 009000000000000000000001 /* Build configuration list for PBXProject "ExpensesApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 004000000000000000000001;
+			productRefGroup = 004000000000000000000011 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				005000000000000000000001 /* ExpensesApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		007000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001000000000000000000030 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		006000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001000000000000000000001 /* ExpensesApp.swift in Sources */,
+				001000000000000000000002 /* AppModel.swift in Sources */,
+				001000000000000000000003 /* RootView.swift in Sources */,
+				001000000000000000000004 /* APIModels.swift in Sources */,
+				001000000000000000000011 /* DomainModels.swift in Sources */,
+				001000000000000000000005 /* ExpensesAPIClient.swift in Sources */,
+				001000000000000000000006 /* KeychainStore.swift in Sources */,
+				001000000000000000000007 /* GlassSurface.swift in Sources */,
+				001000000000000000000008 /* AuthView.swift in Sources */,
+				001000000000000000000013 /* DashboardView.swift in Sources */,
+				001000000000000000000009 /* DiagnosticsView.swift in Sources */,
+				001000000000000000000014 /* TransactionsView.swift in Sources */,
+				001000000000000000000015 /* TransactionDetailView.swift in Sources */,
+				001000000000000000000016 /* TransactionFormView.swift in Sources */,
+				001000000000000000000012 /* Formatters.swift in Sources */,
+				001000000000000000000017 /* LocationProvider.swift in Sources */,
+				001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */,
+				001000000000000000000018 /* OrganizeView.swift in Sources */,
+				001000000000000000000019 /* BudgetsView.swift in Sources */,
+				001000000000000000000020 /* RecurringView.swift in Sources */,
+				001000000000000000000021 /* CameraCaptureView.swift in Sources */,
+				001000000000000000000022 /* PlanningView.swift in Sources */,
+				001000000000000000000023 /* InsightsView.swift in Sources */,
+				001000000000000000000024 /* ReportsView.swift in Sources */,
+				001000000000000000000025 /* DocumentPreviewView.swift in Sources */,
+				001000000000000000000026 /* ReconciliationView.swift in Sources */,
+				001000000000000000000027 /* AdminView.swift in Sources */,
+				001000000000000000000028 /* LocalUnlockGate.swift in Sources */,
+				001000000000000000000029 /* CategoryIcons.swift in Sources */,
+				001000000000000000000031 /* WalletTransactionShortcut.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		010000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		010000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		010000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = D6C9RY549M;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ExpensesApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Expenses;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.janishahn.expenses;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		010000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = D6C9RY549M;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ExpensesApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Expenses;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.janishahn.expenses;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		009000000000000000000001 /* Build configuration list for PBXProject "ExpensesApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				010000000000000000000001 /* Debug */,
+				010000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		009000000000000000000002 /* Build configuration list for PBXNativeTarget "ExpensesApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				010000000000000000000003 /* Debug */,
+				010000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 008000000000000000000001 /* Project object */;
+}
