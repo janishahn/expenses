@@ -20,7 +20,7 @@
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.20.1",
     "chart.js": "^4.5.1",
-    "chartjs-chart-sankey": "^0.14.0",
+    "chartjs-chart-sankey": "^0.14.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "leaflet": "^1.9.4",
