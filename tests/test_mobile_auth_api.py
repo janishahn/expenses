@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import expenses_web.app as app_main
+from expenses_web.api.routes import APP_VERSION
 from expenses_web.core.config import get_settings
 
 
@@ -38,7 +39,7 @@ def test_mobile_status_reports_public_capabilities(
     assert response.status_code == 200
     assert response.json() == {
         "app": "expenses-web",
-        "version": "0.1.0",
+        "version": APP_VERSION,
         "setup_required": True,
         "setup_token_required": False,
         "signup_allowed": False,
@@ -291,7 +292,7 @@ def test_mobile_admin_elevation_unlocks_existing_admin_endpoint(
 
     unlocked = anonymous_api_client.get("/api/admin/info", headers=_bearer(token))
     assert unlocked.status_code == 200
-    assert unlocked.json()["app_version"] == "0.1.0"
+    assert unlocked.json()["app_version"] == APP_VERSION
 
 
 def test_mobile_sessions_can_be_listed_and_revoked_by_owner(
