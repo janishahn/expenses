@@ -422,6 +422,12 @@ When nesting rounded elements within a parent container:
 - `btn-inline`: `px-3.5 py-1.5 text-xs font-semibold`, compact variant with surface-hi background
 - `btn-danger`: `rounded-full border px-4 py-2 text-sm font-semibold`, red border and background tint
 
+**Auth screen switch affordance**: The sign-in and sign-up screens are separate centered-card
+pages that share structure. Each shows its primary action as a full-width `btn-primary`, then an
+`or` divider (`h-px flex-1 bg-border` on each side), then a full-width `btn-ghost` that navigates
+to the sibling auth screen (e.g. "Create account" on sign-in, "I already have an account" on
+sign-up). The ghost switch button on sign-in is only shown when self-service signup is allowed.
+
 ### Form Fields
 
 ```tsx

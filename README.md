@@ -232,7 +232,7 @@ Start from `.env.example` for common settings. Keep `.env` local and uncommitted
 | `EXPENSES_DATABASE_URL` | SQLAlchemy database URL. SQLite is the intended self-hosted path. | `sqlite:///<EXPENSES_DATA_DIR>/expenses.db` |
 | `EXPENSES_TIMEZONE` | Timezone used by recurrence scheduling. | `Europe/Berlin` |
 | `EXPENSES_AUTH_SETUP_TOKEN` | Optional bootstrap setup token. If set while no users exist, web and mobile setup must send it as `X-Setup-Token`. | unset |
-| `EXPENSES_AUTH_SIGNUP_ENABLED` | Enables additional account signup after bootstrap. Leave disabled for single-user/private installs. | `false` |
+| `EXPENSES_AUTH_SIGNUP_ENABLED` | Enables self-service account signup after bootstrap. Enabled by default; set to `false` to restrict the app to existing accounts (single-user/private installs). | `true` |
 | `EXPENSES_CSRF_SECRET` | Optional explicit CSRF signing secret. Prefer leaving blank and letting the app persist one. | unset |
 | `EXPENSES_CSRF_SECRET_FILE` | Optional file path for a persisted CSRF signing secret. | unset |
 | `EXPENSES_RECEIPTS_DIR` | Directory for receipt attachment files. | `<EXPENSES_DATA_DIR>/receipts` |

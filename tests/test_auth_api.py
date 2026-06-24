@@ -328,6 +328,28 @@ def test_signup_is_disabled_without_operator_opt_in(
     assert signup.status_code == 403
 
 
+def test_signup_is_enabled_by_default(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("EXPENSES_AUTH_SIGNUP_ENABLED", raising=False)
+    get_settings.cache_clear()
+
+    setup = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "pw-12345")
+    )
+    assert setup.status_code == 200
+    api_client.cookies.clear()
+
+    status = api_client.get("/api/auth/bootstrap-status")
+    assert status.status_code == 200
+    assert status.json()["signup_allowed"] is True
+
+    signup = api_client.post(
+        "/api/auth/signup", json=_credentials("member", "member-pw")
+    )
+    assert signup.status_code == 200
+
+
 def test_setup_token_is_required_when_configured(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

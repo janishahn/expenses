@@ -218,7 +218,7 @@ def get_settings() -> Settings:
     auth_admin_elevation_ttl_seconds = int(
         os.getenv("EXPENSES_AUTH_ADMIN_ELEVATION_TTL_SECONDS", "900")
     )
-    auth_signup_enabled = _env_flag("EXPENSES_AUTH_SIGNUP_ENABLED", False)
+    auth_signup_enabled = _env_flag("EXPENSES_AUTH_SIGNUP_ENABLED", True)
     auth_setup_token = _configured_value("EXPENSES_AUTH_SETUP_TOKEN")
     auth_throttle_max_failures = int(
         os.getenv("EXPENSES_AUTH_THROTTLE_MAX_FAILURES", "5")

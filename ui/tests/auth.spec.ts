@@ -110,7 +110,7 @@ test.describe.serial("Auth bootstrap and route guards", () => {
     await page.goto("/")
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
 
-    await page.getByRole("link", { name: /sign up/i }).click()
+    await page.getByTestId("auth-switch-to-signup").click()
     await expect(page).toHaveURL(/\/signup(?:\?|$)/)
 
     await submitAuthForm(page, "signup-form", {
