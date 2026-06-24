@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-24
+
+### Removed
+- Removed the non-functional iOS "Capture Wallet Transaction" App Shortcut; a working version may return in a future release.
+
 ## [0.1.0]
 
 Initial public source-available release.
@@ -23,5 +28,6 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/janishahn/expenses/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/janishahn/expenses/releases/tag/v0.1.0

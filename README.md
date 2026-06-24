@@ -45,7 +45,7 @@ a `1440x900` Playwright viewport.
 - Recurring rules with idempotent auto-posting and subscription-style cost framing.
 - CSV import/export, PDF reports, legacy SQLite import, and Commerzbank CSV reconciliation.
 - Multi-user auth with per-user data isolation, one-time bootstrap setup, persistent web sessions, mobile bearer sessions, and short-lived admin elevation.
-- Native iOS support for setup/login, dashboard, transactions, budgets, insights, planning, reports, reconciliation, admin diagnostics, receipt handling, and a Wallet transaction App Shortcut.
+- Native iOS support for setup/login, dashboard, transactions, budgets, insights, planning, reports, reconciliation, admin diagnostics, and receipt handling.
 - Optional LLM assistance for natural-language search, Uncategorized triage, and rule-mining suggestions through an OpenAI-compatible endpoint. It is disabled by default.
 
 ## Quick Start: Docker
@@ -160,7 +160,7 @@ This publishes the app at `https://<host>.<tailnet>.ts.net` to tailnet members o
 - **iOS app**: set the backend URL to the same `https://<host>.<tailnet>.ts.net`. Because it is a valid HTTPS certificate, no iOS App Transport Security exception is needed.
 - **Automatic ingest**: point the Shortcuts automation at `https://<host>.<tailnet>.ts.net/api/ingest` (see [Automatic Ingest](#automatic-ingest)).
 
-With this setup every device path — the web UI, the iOS app, and the Wallet/Siri ingest automation — uses the same tailnet origin and needs no public DNS, no port forwarding, and no certificate management. The tradeoff is that a device must be on the tailnet to reach the app; Tailscale normally runs in the background, so this is seamless in practice.
+With this setup every device path — the web UI, the iOS app, and the Wallet ingest automation — uses the same tailnet origin and needs no public DNS, no port forwarding, and no certificate management. The tradeoff is that a device must be on the tailnet to reach the app; Tailscale normally runs in the background, so this is seamless in practice.
 
 ### Optional: public web access on your own domain
 
@@ -389,8 +389,6 @@ The same flow works against a public domain if you serve one, but the tailnet or
 The iOS client lives in `ios/ExpensesApp` and targets iOS 26+. It uses device-specific bearer sessions, stores the mobile session in Keychain, supports local device unlock with Face ID/Touch ID/passcode, and points at the configured self-hosted backend.
 
 Open `ios/ExpensesApp/ExpensesApp.xcodeproj` in Xcode to build locally. Simulator/debug builds default to a local backend. For device use, set the backend URL to your tailnet HTTPS origin (the host's MagicDNS name, for example `https://<host>.<tailnet>.ts.net`). That name has a valid certificate, so device builds work over HTTPS without an App Transport Security exception; the only built-in ATS exception is for `localhost` during local development.
-
-The app also exposes a `Capture Wallet Transaction` App Shortcut. This is distinct from the standalone ingest automation described in [Automatic Ingest](#automatic-ingest): the in-app shortcut reuses the app's stored mobile bearer session and its configured backend URL, while the standalone Shortcuts automation posts to `/api/ingest` with an ingest token. Both create normal expense transactions through the backend API over the same tailnet origin.
 
 ## License
 
