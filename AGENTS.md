@@ -23,17 +23,27 @@ This project is intended for private self-hosting on hardware down to Raspberry 
 
 ## Documentation Duties (Required)
 - Keep `README.md` current whenever behavior, setup, workflows, or operator-facing commands change.
+- Add a `CHANGELOG.md` `[Unreleased]` entry in the same change for anything that affects behavior, setup, operator workflows, APIs, or dependencies (see **Changelog Maintenance**).
 - Keep developer commands discoverable and accurate:
   - Canonical command definitions belong in `pyproject.toml` (for example, under `[project.scripts]`).
   - Prefer `uv run <command>` entrypoints over ad-hoc script paths for repeatable workflows.
   - When adding/removing/renaming commands, update `README.md` in the same change.
 - If code and docs diverge, treat it as a bug and fix both in one PR.
 
+## Changelog Maintenance
+`CHANGELOG.md` is the hand-maintained, operator-facing record of what shipped, following Keep a Changelog and Semantic Versioning. It is only trustworthy if it stays complete between releases, so maintain it continuously rather than reconstructing it at release time.
+
+- **Log as you go.** The same change that alters behavior, setup, operator workflows, APIs, or dependencies adds its entry under `## [Unreleased]`. Do not defer entries to release time: an empty `[Unreleased]` when cutting a release almost always means changes were missed, not that nothing shipped.
+- **Group entries.** File each entry under one of `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`, or `Dependencies`, and write it for the operator who reads it rather than restating a commit message.
+- **Note routine changes for parity, do not drop them.** Dependency bumps (Dependabot/Renovate), CI, tooling, and internal refactors still earn at least a brief line — typically a single rolled-up entry such as "Updated frontend and CI dependencies" under `Dependencies` — so a release reflects everything that landed even when per-item detail has no operator value.
+- **Reconcile before tagging.** When cutting a release, diff the changelog against what actually landed since the previous tag using `git log <last-tag>..HEAD` and that range's merged PRs. Anything present in history but absent from `[Unreleased]` is a gap to fill first. A release documents every change since the previous tag, not only the change that prompted it.
+- **Treat released sections as immutable.** Once a version is tagged, do not rewrite or retroactively amend its section or its GitHub release notes. If a past release missed entries or a feature is later removed, record the correction under a new version instead.
+
 ## Releases
 A release is a deliberate, versioned, deployable checkpoint. It is made up of four related actions; treat them as one coherent change rather than separate afterthoughts. They are intentionally manual and are not triggered automatically by merging to the default branch.
 
 - **Bump the version in `pyproject.toml`.** Do this whenever cutting a release. This is the version the running app reports (it is read at startup and surfaced to clients and generated reports), and it is decoupled from the git tag, so a tag alone leaves the app self-reporting the old version. Follow Semantic Versioning: major for breaking changes, minor for backward-compatible features, patch for fixes.
-- **Update `CHANGELOG.md`.** Move the accumulated `[Unreleased]` entries into a new versioned section in the same change. This is the human-readable record of what shipped and is what operators read before updating.
+- **Update `CHANGELOG.md`.** Move the accumulated `[Unreleased]` entries into a new versioned, dated section, and reconcile against history per **Changelog Maintenance** so that section captures every change since the previous tag — not just the change that prompted the release. This is the human-readable record of what shipped and is what operators read before updating.
 - **Create and push the git tag `vX.Y.Z`.** This marks the commit as a published version and triggers the release workflow that builds and publishes the container image. Some deployments are configured to update automatically to the newest tagged release, so a tag is not just a bookmark — it can change what self-hosted instances actually run. Because of this, when the scope of a change or PR warrants a new deployable version, recommend to the user that a new tagged release be cut so auto-updating deployments pick it up; do not assume every merge should become a release.
 - **Create the GitHub Release.** This is the operator-facing announcement attached to the tag (release notes plus the "latest" marker). Create one when you want to communicate to anyone running the project what changed and why.
 
