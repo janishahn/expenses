@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
@@ -95,15 +95,22 @@ function LoginPage() {
         </form>
 
         {signupAllowed ? (
-          <p className="text-sm text-muted">
-            Need an account?{" "}
-            <Link
-              className="font-semibold text-accent hover:text-accent-strong"
-              to={signupHref}
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              <span className="h-px flex-1 bg-border" />
+              or
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <AppButton
+              data-testid="auth-switch-to-signup"
+              type="button"
+              tone="ghost"
+              className="w-full justify-center"
+              onClick={() => navigate(signupHref)}
             >
-              Sign up
-            </Link>
-          </p>
+              Create account
+            </AppButton>
+          </div>
         ) : null}
       </AppCard>
     </main>
