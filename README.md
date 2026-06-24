@@ -36,7 +36,7 @@ The dashboard answers "where do I stand right now". Pick a period (this month, l
 
 ![Transactions ledger](docs/screenshots/transactions-dark.png)
 
-Transactions is the full ledger and the page you will spend the most time in. Filter by type, category, or tag, narrow things down with an advanced search syntax like `tag:Work amount > 20`, and select rows for bulk edits. Every entry supports tags, a category, receipt attachments, and an optional location, and a trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time. When optional LLM assistance is enabled, the "Ask in plain language" box turns a question into a structured search.
+Transactions is the full ledger and the page you will spend the most time in. Filter by type, category, or tag, narrow things down with an advanced search syntax like `tag:Work amount > 20`, and select rows for bulk edits. Every entry supports tags, a category, receipt attachments, and an optional location, and a trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time, or download a self-describing portable archive from Settings when you need a fuller machine-readable export for migrations and agents. When optional LLM assistance is enabled, the "Ask in plain language" box turns a question into a structured search.
 
 ### Budgets
 
@@ -70,7 +70,7 @@ Beyond the pages above, Expenses includes Forecast and What-If scenarios for pro
 
 - **Web app**: React SPA served by FastAPI, optimized for mobile and desktop browsers.
 - **Native iOS app**: SwiftUI client under `ios/ExpensesApp`, pointed at your self-hosted backend.
-- **HTTP API**: same-origin `/api/*` endpoints for the web app, mobile bearer-session endpoints for iOS, CSV import/export, PDF reports, and optional ingest automation.
+- **HTTP API**: same-origin `/api/*` endpoints for the web app, mobile bearer-session endpoints for iOS, CSV import/export, portable ZIP export, PDF reports, and optional ingest automation.
 
 The preferred exposure model is private: localhost, LAN, VPN, Tailnet, or a trusted reverse proxy with HTTPS. This app stores personal financial data, so do not expose it casually to the public internet. The recommended setup runs the host and all devices on one Tailscale tailnet; see [Serving & Access](#serving--access).
 

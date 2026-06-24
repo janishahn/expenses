@@ -38,6 +38,10 @@ test.describe.serial("Settings and ordinary-user import flows", () => {
     await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0)
     await expect(page.getByText("Database Backups")).toHaveCount(0)
     await expect(page.getByText("Pi Health")).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Download portable archive" })).toHaveAttribute(
+      "href",
+      "/api/export/portable.zip"
+    )
 
     const themeControl = page.getByTestId("settings-theme-control")
     await expect(themeControl).toBeVisible()

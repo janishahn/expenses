@@ -75,6 +75,7 @@ from expenses_web.core.config import get_settings
 from expenses_web.core.csrf import generate_csrf_token, validate_csrf_token
 from expenses_web.core.safe_regex import RegexRejected, safe_regex_search
 from expenses_web.db.session import SessionLocal
+from expenses_web.exporters import PortableExportError, PortableExportService
 from expenses_web.importers.legacy_sqlite import LegacySQLiteImportService
 from expenses_web.db.models import (
     Category,
@@ -2762,6 +2763,48 @@ def api_export_user_csv(request: Request, db: Session = Depends(get_db)):
         transactions=transactions,
         actor_user_id=user_id,
         log_event_name="user_csv_export_downloaded",
+    )
+
+
+@router.get("/api/export/portable.zip", response_class=FileResponse)
+def api_export_user_portable_zip(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"expenses_portable_export_{timestamp}.zip"
+    with tempfile.NamedTemporaryFile(
+        prefix="expenses_portable_export_",
+        suffix=".zip",
+        delete=False,
+    ) as export_file:
+        export_path = Path(export_file.name)
+
+    try:
+        manifest = PortableExportService(db, user_id=user_id).write_zip(
+            export_path,
+            app_version=APP_VERSION,
+        )
+    except PortableExportError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    datasets = manifest["datasets"]
+    dataset_counts = {
+        name: metadata["row_count"] for name, metadata in datasets.items()
+    }
+    attachments = manifest["attachments"]
+    log_event(
+        logger,
+        logging.INFO,
+        "user_portable_export_downloaded",
+        filename=filename,
+        size_bytes=export_path.stat().st_size,
+        dataset_counts=dataset_counts,
+        attachment_count=attachments["included_count"],
+    )
+    return FileResponse(
+        export_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(export_path.unlink, missing_ok=True),
     )
 
 
