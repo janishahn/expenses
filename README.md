@@ -1,52 +1,78 @@
 # Expenses
 
+Private, self-hosted expense tracking for you or your household, with a web app, a native iOS client, and an ingest endpoint for logging spend the moment you pay.
+
 [![CI](https://github.com/janishahn/expenses/actions/workflows/ci.yml/badge.svg)](https://github.com/janishahn/expenses/actions/workflows/ci.yml)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
-A private, self-hosted expense tracker with a React web app, FastAPI backend, and native SwiftUI iOS client. It is meant for personal or household finance tracking on hardware you control: a Raspberry Pi-class machine, a Mac mini, a small VPS, or any modest always-on host.
+![Expenses dashboard](docs/screenshots/dashboard-dark.png)
 
-> **Project status**: This is a personal, source-available project shared for others to self-host and learn from. It is maintained on a best-effort basis and is **not actively soliciting outside contributions** — issues and pull requests may not be reviewed or merged. Feel free to fork it for your own noncommercial use under the [license](#license).
+Expenses is a small self-hosted system for recording transactions, setting budgets, attaching receipts, reconciling bank statements, and keeping an eye on cash flow. It runs on hardware you control: a Raspberry Pi-class machine, a Mac mini, a small VPS, or any modest always-on host. Money is stored as integer cents in SQLite by default, and receipt files, logs, and generated secrets live in a local data directory that you own.
 
-## What It Is
+> **Project status**: This is a personal, source-available project shared for others to self-host and learn from. It is maintained on a best-effort basis and is **not actively soliciting outside contributions**. Issues and pull requests may not be reviewed or merged. Feel free to fork it for your own noncommercial use under the [license](#license).
 
-Expenses is a small self-hosted system for recording transactions, reviewing budgets, attaching receipts, reconciling statement rows, and keeping an eye on cash flow. It uses SQLite by default, stores money as integer cents, and keeps receipt files, logs, and generated secrets in a local data directory that you own.
+## Why Expenses
 
-Implemented interfaces:
+- Your financial data stays on hardware you control. SQLite by default, money stored as integer cents, and receipts, logs, and secrets kept in a local data directory you own.
+- Runs on modest, always-on hardware down to a Raspberry Pi 4B, as well as a Mac mini, a small VPS, or anything similar.
+- One process and one origin: FastAPI serves the React web app and the API together, so there is a single port to expose and put behind HTTPS.
+- A web app for desktop and mobile browsers, plus a native SwiftUI iOS client that points at the same backend.
+- Multi-user with per-user data isolation, so a household can share one instance while keeping separate data.
+- Log spend at the moment you pay through a token-authenticated ingest endpoint, for example an Apple Shortcuts automation that fires on an Apple Wallet card tap.
+- Optional LLM assistance for natural-language search, Uncategorized triage, and rule mining through an OpenAI-compatible endpoint, off by default.
+
+## Features
+
+*Screenshots show the web app in dark mode with `uv run mock-db` sample data.*
+
+### Dashboard
+
+![Dashboard](docs/screenshots/dashboard-dark.png)
+
+The dashboard answers "where do I stand right now". Pick a period (this month, last month, all time, or a custom range) and see your running balance, income, and expenses side by side, each with how it compares to the previous period and how you are tracking against budget pace. Below that, a list of recent transactions and a category breakdown donut show where the money actually went.
+
+### Transactions
+
+![Transactions ledger](docs/screenshots/transactions-dark.png)
+
+Transactions is the full ledger and the page you will spend the most time in. Filter by type, category, or tag, narrow things down with an advanced search syntax like `tag:Work amount > 20`, and select rows for bulk edits. Every entry supports tags, a category, receipt attachments, and an optional location, and a trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time. When optional LLM assistance is enabled, the "Ask in plain language" box turns a question into a structured search.
+
+### Budgets
+
+![Budgets](docs/screenshots/budgets-dark.png)
+
+Budgets track spending against limits you set per category, for a single month, on a recurring monthly template, or for the whole year. Each budget shows a live pace readout, so instead of just "spent 397 of 600" you see whether you are on track or projected to go over, along with the daily amount left to stay within the limit. Recurring templates apply automatically each month, and any single month can be overridden without changing the template.
+
+### Insights
+
+![Insights](docs/screenshots/insights-dark.png)
+
+Insights is the analytical view. It charts income against expenses over the last twelve months, the trend for any single category, your top categories by spend, and budget versus actual for a chosen month. A separate Flow tab draws a Sankey diagram of how money moves from income into each category, which makes the overall shape of your spending easy to read at a glance.
+
+### Recurring income and expenses
+
+![Recurring rules](docs/screenshots/recurring-dark.png)
+
+Recurring rules model the fixed parts of your finances: salary, rent, subscriptions, and anything else that repeats on a schedule. Each rule can auto-post its transaction when it comes due, and an audit view records what was posted. The summary cards frame recurring income against committed recurring costs as a coverage ratio, so you can see how much of each month is already accounted for before any discretionary spending.
+
+### Automatic categorization
+
+![Categorization rules](docs/screenshots/rules-dark.png)
+
+Categorization rules keep the ledger tidy without manual sorting. A rule matches transactions by title text or regex, amount range, and type, then assigns a category and optional tags, with priorities deciding which rule wins when several match. New transactions are categorized as they arrive, and existing ones can be reprocessed. With optional LLM assistance enabled, "Mine rules" suggests rules from your existing transaction history.
+
+### And more
+
+Beyond the pages above, Expenses includes Forecast and What-If scenarios for projecting cash flow forward, a Digest summary of recent activity, and exportable PDF reports. Reconcile imports a bank statement CSV and matches it against your recorded transactions to surface anything missing or duplicated; it is built as a general bank import and reconciliation flow, with Commerzbank CSV the only supported format for now. The native iOS app covers the same core flows, including setup and login, dashboard, transactions, budgets, insights, planning, reports, reconciliation, and receipts.
+
+## Interfaces
 
 - **Web app**: React SPA served by FastAPI, optimized for mobile and desktop browsers.
-- **Native iOS app**: SwiftUI client under `ios/ExpensesApp`, intended to point at your self-hosted backend.
-- **HTTP API**: Same-origin `/api/*` endpoints for the web app, mobile bearer-session endpoints for iOS, CSV import/export, PDF reports, and optional ingest automation.
+- **Native iOS app**: SwiftUI client under `ios/ExpensesApp`, pointed at your self-hosted backend.
+- **HTTP API**: same-origin `/api/*` endpoints for the web app, mobile bearer-session endpoints for iOS, CSV import/export, PDF reports, and optional ingest automation.
 
 The preferred exposure model is private: localhost, LAN, VPN, Tailnet, or a trusted reverse proxy with HTTPS. This app stores personal financial data, so do not expose it casually to the public internet. The recommended setup runs the host and all devices on one Tailscale tailnet; see [Serving & Access](#serving--access).
-
-## Screenshots
-
-Screenshots below were rendered in dark mode with `uv run mock-db` sample data at
-a `1440x900` Playwright viewport.
-
-| Dashboard | Transactions |
-|---|---|
-| [![Dark-mode dashboard with balance, income, expense, category charts, recent transactions, and durable purchases](docs/screenshots/dashboard-dark.png)](docs/screenshots/dashboard-dark.png) | [![Dark-mode transactions ledger with filters, search, bulk actions, and mock transaction rows](docs/screenshots/transactions-dark.png)](docs/screenshots/transactions-dark.png) |
-
-| Insights | Budgets |
-|---|---|
-| [![Dark-mode insights page showing monthly income, category trend, top categories, and budget-vs-actual charts](docs/screenshots/insights-dark.png)](docs/screenshots/insights-dark.png) | [![Dark-mode budgets page with monthly budget progress, pace indicators, and category budget cards](docs/screenshots/budgets-dark.png)](docs/screenshots/budgets-dark.png) |
-
-| Recurring | Rules |
-|---|---|
-| [![Dark-mode recurring rules page with recurring income, expense coverage, and rule editor](docs/screenshots/recurring-dark.png)](docs/screenshots/recurring-dark.png) | [![Dark-mode categorization rules page with matching rules and rule editor](docs/screenshots/rules-dark.png)](docs/screenshots/rules-dark.png) |
-
-## Feature Highlights
-
-- Income and expense ledger with categories, tags, advanced search, bulk edit, soft-delete, markdown descriptions, locations, and receipt attachments.
-- Monthly budgets with pace/burn-down indicators, recurring budget templates, and per-month overrides.
-- Dashboard, digest, forecast, scenarios, and insights views, including cash-flow Sankey grouping.
-- Recurring rules with idempotent auto-posting and subscription-style cost framing.
-- CSV import/export, PDF reports, legacy SQLite import, and Commerzbank CSV reconciliation.
-- Multi-user auth with per-user data isolation, one-time bootstrap setup, persistent web sessions, mobile bearer sessions, and short-lived admin elevation.
-- Native iOS support for setup/login, dashboard, transactions, budgets, insights, planning, reports, reconciliation, admin diagnostics, and receipt handling.
-- Optional LLM assistance for natural-language search, Uncategorized triage, and rule-mining suggestions through an OpenAI-compatible endpoint. It is disabled by default.
 
 ## Quick Start: Docker
 
