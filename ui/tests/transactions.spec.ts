@@ -608,24 +608,6 @@ const samplePdf = Buffer.from(
     request,
   }) => {
     await stubOsmTiles(page)
-    await page.addInitScript(() => {
-      const openCalls: string[] = []
-      ;(window as typeof window & { __attachmentOpenCalls: string[] }).__attachmentOpenCalls =
-        openCalls
-      window.open = ((url?: string | URL) => {
-        const normalizedUrl = typeof url === "string" ? url : url ? String(url) : ""
-        openCalls.push(normalizedUrl)
-        if (normalizedUrl.startsWith("blob:")) {
-          return null
-        }
-        return {
-          closed: false,
-          close() {},
-          location: { href: normalizedUrl },
-          opener: null,
-        } as unknown as Window
-      }) as typeof window.open
-    })
 
     const token = await getCsrfToken(request)
     const title = `E2E Detail Modules ${Date.now()}`
@@ -669,14 +651,6 @@ const samplePdf = Buffer.from(
     await page.getByRole("button", { name: `Open ${imageName}` }).click()
     await openResponse
     await expect(page.locator("main")).not.toContainText("Unable to open attachment")
-
-    const openCalls = await page.evaluate(
-      () =>
-        (window as typeof window & { __attachmentOpenCalls?: string[] })
-          .__attachmentOpenCalls ?? []
-    )
-    expect(openCalls.length).toBeGreaterThan(0)
-    expect(openCalls[0]?.startsWith("blob:")).toBe(false)
 
     const downloadResponse = page.waitForResponse(
       (response) =>

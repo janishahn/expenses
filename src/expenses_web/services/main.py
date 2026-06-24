@@ -19,6 +19,11 @@ from rapidfuzz.distance import Levenshtein
 
 from expenses_web.core.app_logging import get_logger, log_event
 from expenses_web.core.config import get_settings
+from expenses_web.core.safe_regex import (
+    RegexRejected,
+    safe_regex_search,
+    validate_regex,
+)
 from expenses_web.db.models import (
     BalanceAnchor,
     BudgetFrequency,
@@ -572,6 +577,8 @@ class RuleService:
             tag = self.session.get(Tag, budget_exclude_tag_id)
             if not tag or tag.user_id != self.user_id:
                 raise ValueError("Tag not found")
+        if data.match_type == RuleMatchType.regex:
+            validate_regex(data.match_value.strip())
 
         rule = Rule(
             user_id=self.user_id,
@@ -617,6 +624,8 @@ class RuleService:
             tag = self.session.get(Tag, budget_exclude_tag_id)
             if not tag or tag.user_id != self.user_id:
                 raise ValueError("Tag not found")
+        if data.match_type == RuleMatchType.regex:
+            validate_regex(data.match_value.strip())
 
         rule.name = data.name.strip()
         rule.enabled = data.enabled
@@ -729,8 +738,8 @@ class RuleService:
                 return title_lower.startswith(needle.lower())
             if rule.match_type == RuleMatchType.regex:
                 try:
-                    return re.search(needle, title, flags=re.IGNORECASE) is not None
-                except re.error:
+                    return safe_regex_search(needle, title)
+                except RegexRejected:
                     return False
             return False
 
@@ -2644,15 +2653,23 @@ class ReceiptAttachmentService:
         if not source_path.exists():
             return None
 
-        from PIL import Image
+        from PIL import Image, UnidentifiedImageError
 
+        settings = get_settings()
         edge = self.THUMBNAIL_MAX_EDGE
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(source_path) as image:
-            image.draft("RGB", (edge, edge))
-            rgb = image.convert("RGB")
-            rgb.thumbnail((edge, edge))
-            rgb.save(thumb_path, format="WEBP", quality=80, method=4)
+        try:
+            with Image.open(source_path) as image:
+                if image.width * image.height > settings.receipt_thumbnail_max_pixels:
+                    raise ValueError("Attachment image is too large")
+                image.draft("RGB", (edge, edge))
+                rgb = image.convert("RGB")
+                rgb.thumbnail((edge, edge))
+                rgb.save(thumb_path, format="WEBP", quality=80, method=4)
+        except Image.DecompressionBombError as exc:
+            raise ValueError("Attachment image is too large") from exc
+        except (UnidentifiedImageError, OSError) as exc:
+            raise ValueError("Attachment image cannot be thumbnailed") from exc
         return thumb_path
 
     def delete(self, attachment_id: int) -> None:
@@ -5177,8 +5194,10 @@ class CSVService:
             lookup[(row.type, row.name.lower())] = row.id
         return lookup
 
-    def preview(self, content: str) -> tuple[list[dict[str, object]], list[str]]:
-        rows, errors = parse_csv(content)
+    def preview(
+        self, content: str, *, max_rows: int | None = None
+    ) -> tuple[list[dict[str, object]], list[str]]:
+        rows, errors = parse_csv(content, max_rows=max_rows)
         lookup = self._category_lookup()
         preview_rows: list[dict[str, object]] = []
         for row in rows:
@@ -5201,8 +5220,8 @@ class CSVService:
             )
         return preview_rows, errors
 
-    def commit(self, content: str) -> int:
-        preview_rows, errors = self.preview(content)
+    def commit(self, content: str, *, max_rows: int | None = None) -> int:
+        preview_rows, errors = self.preview(content, max_rows=max_rows)
         if errors:
             raise ValueError("; ".join(errors))
         dates = set()

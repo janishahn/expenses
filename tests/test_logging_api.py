@@ -70,8 +70,9 @@ def test_ingest_validation_failure_logs_payload_and_request_id(
     entry = entries[0]
     assert entry["path"] == "/api/ingest"
     assert entry["request_id"] == request_id
-    assert "amount_cents" in str(entry["raw_body"])
+    assert "raw_body" not in entry
     assert entry["raw_body_bytes"] > 0
+    assert entry["request_body_sha256"]
     assert entry["validation_errors"]
 
 
@@ -95,10 +96,33 @@ def test_ingest_success_logs_resolution_details(api_client: TestClient) -> None:
     entry = entries[0]
     assert entry["transaction_id"] == response.json()["id"]
     assert entry["category_resolution"] == "uncategorized"
-    assert entry["final_category"] == "Uncategorized"
     assert entry["rules_matched"] == 0
     assert entry["rules_applied"] == 0
-    assert "Netflix March" in str(entry["raw_body"])
+    assert "raw_body" not in entry
+    assert "title" not in entry
+    assert "amount_cents" not in entry
+
+
+def test_validation_failure_logs_redacted_password_input(
+    api_client: TestClient,
+) -> None:
+    _elevate_admin(api_client)
+    response = api_client.post(
+        "/api/auth/login",
+        json={"username": "bootstrap", "password": {"secret": "plaintext-password"}},
+    )
+    assert response.status_code == 422
+    request_id = response.headers.get("X-Request-ID")
+    assert request_id
+
+    entries = _wait_for_log_entries(
+        api_client,
+        event="request_validation_failed",
+        request_id=request_id,
+    )
+    assert entries
+    entry_json = json.dumps(entries[0])
+    assert "plaintext-password" not in entry_json
 
 
 def test_admin_logs_endpoint_paginates(api_client: TestClient) -> None:

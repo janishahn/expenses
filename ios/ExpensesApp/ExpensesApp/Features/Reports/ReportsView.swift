@@ -251,9 +251,23 @@ struct ReportsView: View {
     private func writeTemporaryFile(_ download: AttachmentDownload) throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ExpensesReports", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(download.filename)
+        let filename = Self.safeFilename(download.filename, fallback: "expense_report.pdf")
+        let url = directory.appendingPathComponent(filename)
         try download.data.write(to: url, options: .atomic)
         return url
+    }
+
+    private static func safeFilename(_ raw: String, fallback: String) -> String {
+        let basename = raw.components(separatedBy: CharacterSet(charactersIn: "/\\")).last ?? ""
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " ._-"))
+        let cleaned = basename.unicodeScalars
+            .map { allowed.contains($0) ? String($0) : "_" }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty || cleaned == "." || cleaned == ".." {
+            return fallback
+        }
+        return String(cleaned.prefix(120))
     }
 
     private static func dateString(_ date: Date) -> String {

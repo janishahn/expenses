@@ -47,3 +47,16 @@ def test_export_transactions_preserves_description_whitespace() -> None:
     assert errors == []
     assert len(rows) == 1
     assert rows[0].description == description
+
+
+def test_parse_csv_enforces_row_limit() -> None:
+    csv_content = (
+        "Date,Type,IsReimbursement,Amount,Category,Title,Description\n"
+        "2026-03-08,expense,0,10.00,Groceries,Coffee,\n"
+        "2026-03-09,expense,0,11.00,Groceries,Lunch,\n"
+    )
+
+    rows, errors = parse_csv(csv_content, max_rows=1)
+
+    assert len(rows) == 1
+    assert errors == ["CSV row limit exceeded (max 1)"]

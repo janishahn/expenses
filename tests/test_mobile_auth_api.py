@@ -40,6 +40,8 @@ def test_mobile_status_reports_public_capabilities(
         "app": "expenses-web",
         "version": "0.1.0",
         "setup_required": True,
+        "setup_token_required": False,
+        "signup_allowed": False,
         "timezone": "Europe/Berlin",
         "receipt_max_bytes": 10485760,
     }

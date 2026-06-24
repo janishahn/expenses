@@ -16,6 +16,7 @@ LABEL org.opencontainers.image.title="expenses" \
     org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 
 ENV EXPENSES_DATA_DIR=/data \
+    EXPENSES_FORWARDED_ALLOW_IPS=127.0.0.1 \
     EXPENSES_LOG_DIR=/data/logs \
     EXPENSES_LOG_LEVEL_STDOUT=INFO \
     PATH="/app/.venv/bin:$PATH" \
@@ -51,4 +52,4 @@ USER expenses
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["sh", "-c", "migrations && exec uvicorn expenses_web.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["sh", "-c", "migrations && exec uvicorn expenses_web.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"${EXPENSES_FORWARDED_ALLOW_IPS}\""]

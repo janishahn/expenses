@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
 
-export const ADMIN_USER = { username: "bootstrap-admin", password: "hunter2" }
-export const ORDINARY_USER = { username: "ordinary-user", password: "hunter2" }
+export const ADMIN_USER = { username: "bootstrap-admin", password: "hunter22" }
+export const ORDINARY_USER = { username: "ordinary-user", password: "hunter22" }
 
 export async function logoutIfAuthenticated(request: APIRequestContext): Promise<void> {
   const meResponse = await request.get("/api/auth/me")

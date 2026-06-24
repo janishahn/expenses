@@ -4896,6 +4896,14 @@
             "title": "Setup Required",
             "type": "boolean"
           },
+          "setup_token_required": {
+            "title": "Setup Token Required",
+            "type": "boolean"
+          },
+          "signup_allowed": {
+            "title": "Signup Allowed",
+            "type": "boolean"
+          },
           "timezone": {
             "title": "Timezone",
             "type": "string"
@@ -4909,6 +4917,8 @@
           "app",
           "version",
           "setup_required",
+          "setup_token_required",
+          "signup_allowed",
           "timezone",
           "receipt_max_bytes"
         ],

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import expenses_web.app as app_main
+from expenses_web.core.config import get_settings
 
 
 def _create_category(
@@ -577,6 +578,77 @@ def test_budgets_admin_and_import_api_flows(
     )
     assert response.status_code == 400
     assert "Please upload a .db file" in response.text
+
+
+def test_csv_import_rejects_oversized_upload(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_CSV_IMPORT_MAX_BYTES", "10")
+    get_settings.cache_clear()
+
+    response = api_client.post(
+        "/api/import/csv/preview",
+        headers=csrf_headers,
+        files={
+            "file": (
+                "import.csv",
+                "Date,Type,IsReimbursement,Amount,Category,Title\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+
+
+def test_report_pdf_rejects_oversized_date_range(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_REPORT_MAX_DAYS", "1")
+    get_settings.cache_clear()
+
+    response = api_client.post(
+        "/api/reports/pdf",
+        headers=csrf_headers,
+        json={
+            "start": date.today().isoformat(),
+            "end": date.fromordinal(date.today().toordinal() + 1).isoformat(),
+            "sections": ["summary"],
+        },
+    )
+
+    assert response.status_code == 400
+
+
+def test_report_pdf_rejects_oversized_transaction_count(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_REPORT_MAX_TRANSACTIONS", "1")
+    get_settings.cache_clear()
+    category_id = _create_category(api_client, csrf_headers, "Reports", "expense")
+    for title in ("one", "two"):
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=date.today(),
+            txn_type="expense",
+            amount_cents=100,
+            category_id=category_id,
+            title=title,
+            tags=[],
+        )
+
+    response = api_client.post(
+        "/api/reports/pdf",
+        headers=csrf_headers,
+        json={
+            "start": date.today().isoformat(),
+            "end": date.today().isoformat(),
+            "sections": ["summary"],
+        },
+    )
+
+    assert response.status_code == 400
 
 
 def test_bulk_edit_advanced_search_and_uncategorized_inbox(

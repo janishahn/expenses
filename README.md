@@ -203,11 +203,15 @@ Start from `.env.example` for common settings. Keep `.env` local and uncommitted
 | `EXPENSES_DATA_DIR` | Root directory for SQLite data, imports, generated secrets, and default receipts. | `./data` |
 | `EXPENSES_DATABASE_URL` | SQLAlchemy database URL. SQLite is the intended self-hosted path. | `sqlite:///<EXPENSES_DATA_DIR>/expenses.db` |
 | `EXPENSES_TIMEZONE` | Timezone used by recurrence scheduling. | `Europe/Berlin` |
+| `EXPENSES_AUTH_SETUP_TOKEN` | Optional bootstrap setup token. If set while no users exist, web and mobile setup must send it as `X-Setup-Token`. | unset |
+| `EXPENSES_AUTH_SIGNUP_ENABLED` | Enables additional account signup after bootstrap. Leave disabled for single-user/private installs. | `false` |
 | `EXPENSES_CSRF_SECRET` | Optional explicit CSRF signing secret. Prefer leaving blank and letting the app persist one. | unset |
 | `EXPENSES_CSRF_SECRET_FILE` | Optional file path for a persisted CSRF signing secret. | unset |
 | `EXPENSES_RECEIPTS_DIR` | Directory for receipt attachment files. | `<EXPENSES_DATA_DIR>/receipts` |
 | `EXPENSES_LOG_DIR` | Directory for structured JSON logs. Docker sets this to `/data/logs`. | sibling `logs/` next to data |
 | `EXPENSES_LOG_LEVEL_STDOUT` | Log level for stdout/systemd/Docker logs. | `WARNING` (`INFO` in Docker) |
+| `EXPENSES_FORWARDED_ALLOW_IPS` | Docker image setting passed to uvicorn's `--forwarded-allow-ips` when using proxy headers. Use the direct proxy IPs that connect to the app. | `127.0.0.1` |
+| `EXPENSES_TRUSTED_PROXY_IPS` | Comma-separated direct client IPs whose `X-Forwarded-Proto` value the app may trust when deciding whether auth cookies should be `Secure`. | unset |
 
 CSRF secret precedence:
 
@@ -226,7 +230,22 @@ Startup logs record only the source of the CSRF secret, never the secret value.
 | `EXPENSES_MOBILE_SESSION_MAX_AGE_SECONDS` | Native mobile bearer session max age. | `7776000` |
 | `EXPENSES_AUTH_PASSWORD_HASH_ITERATIONS` | PBKDF2 iterations. Values below `100000` are rejected unless `EXPENSES_ENV=test`. | `600000` |
 | `EXPENSES_AUTH_ADMIN_ELEVATION_TTL_SECONDS` | Admin password re-entry TTL. | `900` |
+| `EXPENSES_AUTH_THROTTLE_MAX_FAILURES` | Failed login/admin-elevation attempts allowed per direct client, purpose, and username before throttling. Set `0` to disable. | `5` |
+| `EXPENSES_AUTH_THROTTLE_WINDOW_SECONDS` | Rolling window for auth throttling. | `300` |
+| `EXPENSES_AUTH_THROTTLE_LOCKOUT_SECONDS` | Lockout duration after the failure limit is reached. | `60` |
+| `EXPENSES_AUTH_THROTTLE_MAX_KEYS` | Maximum in-memory throttle keys retained by one app process. | `4096` |
 | `EXPENSES_RECEIPT_MAX_BYTES` | Max upload size per receipt attachment. | `10485760` |
+| `EXPENSES_RECEIPT_THUMBNAIL_MAX_PIXELS` | Max source image pixels accepted when generating receipt thumbnails. | `20000000` |
+| `EXPENSES_CSV_IMPORT_MAX_BYTES` | Max upload size for transaction CSV imports. | `5242880` |
+| `EXPENSES_CSV_IMPORT_MAX_ROWS` | Max transaction CSV rows parsed per import. | `5000` |
+| `EXPENSES_BANK_CSV_IMPORT_MAX_BYTES` | Max upload size for bank reconciliation CSV imports. | `5242880` |
+| `EXPENSES_BANK_CSV_IMPORT_MAX_ROWS` | Max bank reconciliation CSV rows parsed per import. | `5000` |
+| `EXPENSES_SQLITE_IMPORT_MAX_BYTES` | Max upload size for legacy SQLite imports. | `26214400` |
+| `EXPENSES_SQLITE_IMPORT_DIR` | Directory for temporary legacy SQLite import previews. | `<EXPENSES_DATA_DIR>/imports` |
+| `EXPENSES_RULE_REGEX_TIMEOUT_SECONDS` | Timeout for one rule-regex evaluation. | `0.05` |
+| `EXPENSES_RULE_REGEX_MAX_LENGTH` | Maximum rule-regex pattern length. | `200` |
+| `EXPENSES_REPORT_MAX_DAYS` | Max date range accepted for PDF report generation. | `366` |
+| `EXPENSES_REPORT_MAX_TRANSACTIONS` | Max matching transactions accepted for one PDF report. | `5000` |
 | `EXPENSES_LOG_LEVEL_FILE` | File log level. | `INFO` |
 | `EXPENSES_LOG_MAX_BYTES` | Size of `app.jsonl` before rotation. | `10485760` |
 | `EXPENSES_LOG_BACKUP_COUNT` | Rotated log files to retain. | `10` |
@@ -234,6 +253,15 @@ Startup logs record only the source of the CSRF secret, never the secret value.
 | `EXPENSES_FX_TIMEOUT_SECS` | Timeout for ECB FX lookups. | `5` |
 | `EXPENSES_FX_MARKUP_BPS` | Optional basis-point reduction applied to live/cached ECB rates. | `0` |
 | `EXPENSES_FX_FALLBACK_RATE` | Static USD-to-EUR read-path fallback if no live/recent cached quote exists. | `0.92` |
+
+### Frontend Build Settings
+
+These `VITE_*` values are read when the React app is built. Rebuild the UI or Docker image after changing them.
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `VITE_MAP_TILE_URL` | Leaflet tile URL template for transaction location maps, for example `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. Leave blank to show markers without external tile requests. | unset |
+| `VITE_MAP_TILE_ATTRIBUTION` | Attribution HTML shown by Leaflet when map tiles are configured. | OpenStreetMap attribution |
 
 ### Optional LLM Assistance
 

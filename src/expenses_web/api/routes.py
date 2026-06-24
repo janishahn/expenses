@@ -2,13 +2,17 @@ import logging
 import json
 import hashlib
 import os
+import re
+import secrets
 import sqlite3
 import shutil
 import tempfile
+import time
 import tomllib
 import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -69,6 +73,7 @@ from expenses_web.core.app_logging import (
 )
 from expenses_web.core.config import get_settings
 from expenses_web.core.csrf import generate_csrf_token, validate_csrf_token
+from expenses_web.core.safe_regex import RegexRejected, safe_regex_search
 from expenses_web.db.session import SessionLocal
 from expenses_web.importers.legacy_sqlite import LegacySQLiteImportService
 from expenses_web.db.models import (
@@ -242,6 +247,81 @@ ADMIN_SYSTEM_HEALTH_VALIDATION_PROFILES: dict[str, dict[str, float | int | None]
         "disk_free_bytes": 800_000_000,
     },
 }
+_AUTH_FAILURES: dict[tuple[str, str, str], list[float]] = {}
+_AUTH_FAILURE_LOCK = Lock()
+_SQLITE_IMPORT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]+_[0-9a-f]{32}$")
+
+
+def _direct_client_host(request: Request) -> str:
+    if request.client is None:
+        return "unknown"
+    return request.client.host
+
+
+def _auth_throttle_key(
+    request: Request, purpose: str, username: str
+) -> tuple[str, str, str]:
+    return (_direct_client_host(request), purpose, username.strip().lower())
+
+
+def _check_auth_throttle(
+    request: Request, purpose: str, username: str
+) -> tuple[str, str, str]:
+    settings = get_settings()
+    key = _auth_throttle_key(request, purpose, username)
+    if settings.auth_throttle_max_failures <= 0:
+        return key
+    now = time.monotonic()
+    window_start = now - settings.auth_throttle_window_seconds
+    with _AUTH_FAILURE_LOCK:
+        failures = [at for at in _AUTH_FAILURES.get(key, []) if at >= window_start]
+        if len(failures) >= settings.auth_throttle_max_failures:
+            retry_after_seconds = (
+                failures[-1] + settings.auth_throttle_lockout_seconds - now
+            )
+            if retry_after_seconds > 0:
+                _AUTH_FAILURES[key] = failures
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many failed attempts; retry later",
+                    headers={"Retry-After": str(max(1, int(retry_after_seconds)))},
+                )
+            failures = []
+        _AUTH_FAILURES[key] = failures
+    return key
+
+
+def _record_auth_failure(key: tuple[str, str, str]) -> None:
+    settings = get_settings()
+    if settings.auth_throttle_max_failures <= 0:
+        return
+    now = time.monotonic()
+    window_start = now - settings.auth_throttle_window_seconds
+    with _AUTH_FAILURE_LOCK:
+        failures = [at for at in _AUTH_FAILURES.get(key, []) if at >= window_start]
+        failures.append(now)
+        _AUTH_FAILURES[key] = failures
+        max_keys = max(1, settings.auth_throttle_max_keys)
+        if len(_AUTH_FAILURES) > max_keys:
+            stale_keys = [
+                failure_key
+                for failure_key, failure_times in _AUTH_FAILURES.items()
+                if not any(at >= window_start for at in failure_times)
+            ]
+            for stale_key in stale_keys:
+                _AUTH_FAILURES.pop(stale_key, None)
+            if len(_AUTH_FAILURES) > max_keys:
+                oldest_keys = sorted(
+                    _AUTH_FAILURES,
+                    key=lambda failure_key: max(_AUTH_FAILURES[failure_key]),
+                )
+                for stale_key in oldest_keys[: len(_AUTH_FAILURES) - max_keys]:
+                    _AUTH_FAILURES.pop(stale_key, None)
+
+
+def _clear_auth_failures(key: tuple[str, str, str]) -> None:
+    with _AUTH_FAILURE_LOCK:
+        _AUTH_FAILURES.pop(key, None)
 
 
 def _admin_system_health_override_profile(request: Request) -> str | None:
@@ -389,6 +469,85 @@ def _auth_context_session_key(context) -> str:
     raise HTTPException(status_code=401, detail="Authentication required")
 
 
+def _require_setup_token_if_configured(request: Request) -> None:
+    expected = get_settings().auth_setup_token
+    if expected is None:
+        return
+    supplied = request.headers.get("X-Setup-Token", "")
+    if not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Invalid setup token")
+
+
+def _require_creation_password_strength(password: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="Password must be at least 8 characters long",
+        )
+
+
+async def _read_upload_limited(
+    file: UploadFile, *, max_bytes: int, detail: str
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail=detail)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _legacy_sqlite_import_path(token: str) -> Path:
+    if not _SQLITE_IMPORT_TOKEN_RE.fullmatch(token):
+        raise HTTPException(status_code=400, detail="Invalid import token")
+    base = get_settings().sqlite_import_dir
+    path = (base / f"legacy_{token}.db").resolve()
+    if base != path.parent:
+        raise HTTPException(status_code=400, detail="Invalid import token")
+    return path
+
+
+def _report_transaction_count(options: ReportOptions, db: Session, user_id: int) -> int:
+    stmt = select(func.count(Transaction.id)).where(
+        Transaction.user_id == user_id,
+        Transaction.deleted_at.is_(None),
+        Transaction.date.between(options.start, options.end),
+    )
+    if options.transaction_type is not None:
+        stmt = stmt.where(Transaction.type == options.transaction_type)
+    if options.category_ids:
+        stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
+    return int(db.execute(stmt).scalar_one() or 0)
+
+
+def _validate_report_bounds(options: ReportOptions, db: Session, user_id: int) -> None:
+    settings = get_settings()
+    if options.end < options.start:
+        raise HTTPException(
+            status_code=400, detail="Report end date is before start date"
+        )
+    days = (options.end - options.start).days + 1
+    if days > settings.report_max_days:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Report date range is too large (max {settings.report_max_days} days)",
+        )
+    count = _report_transaction_count(options, db, user_id)
+    if count > settings.report_max_transactions:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Report transaction range is too large "
+                f"(max {settings.report_max_transactions} transactions)"
+            ),
+        )
+
+
 def _parse_ingest_bearer_token(request: Request) -> str | None:
     auth_header = request.headers.get("authorization", "")
     scheme, _, token = auth_header.partition(" ")
@@ -419,10 +578,15 @@ def _require_ingest_token(request: Request, db: Session) -> UserIngestToken:
 
 
 def _request_is_https(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
     forwarded_proto = request.headers.get("x-forwarded-proto")
-    if forwarded_proto:
+    if (
+        forwarded_proto
+        and _direct_client_host(request) in get_settings().trusted_proxy_ips
+    ):
         return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
-    return request.url.scheme == "https"
+    return False
 
 
 def _set_auth_session_cookie(
@@ -466,10 +630,13 @@ def api_auth_bootstrap_status(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     setup_required = _is_bootstrap_required(db)
+    settings = get_settings()
     return {
         "setup_required": setup_required,
         "setup_allowed": setup_required,
-        "signup_allowed": not setup_required,
+        "setup_token_required": setup_required
+        and settings.auth_setup_token is not None,
+        "signup_allowed": not setup_required and settings.auth_signup_enabled,
         **_serialize_auth_identity(request, db),
     }
 
@@ -481,8 +648,10 @@ def api_auth_setup(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    _require_setup_token_if_configured(request)
     if not _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup already completed")
+    _require_creation_password_strength(data.password)
 
     user = User(
         id=1,
@@ -514,8 +683,11 @@ def api_auth_signup(
 ) -> dict[str, object]:
     if _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup required")
+    if not get_settings().auth_signup_enabled:
+        raise HTTPException(status_code=403, detail="Signup is disabled")
     if resolve_auth_context(request, db).user is not None:
         raise HTTPException(status_code=403, detail="Logout required before signup")
+    _require_creation_password_strength(data.password)
 
     user = User(
         username=data.username,
@@ -545,9 +717,12 @@ def api_auth_login(
     if _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup required")
 
+    throttle_key = _check_auth_throttle(request, "web-login", data.username)
     user = db.scalar(select(User).where(User.username == data.username))
     if user is None or not verify_password(data.password, user.password_hash):
+        _record_auth_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    _clear_auth_failures(throttle_key)
 
     issued = issue_auth_session(db, user)
     db.commit()
@@ -585,8 +760,13 @@ def api_auth_admin_elevation(
         raise HTTPException(status_code=401, detail="Authentication required")
     if not context.user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
+    throttle_key = _check_auth_throttle(
+        request, "web-admin-elevation", context.user.username
+    )
     if not verify_password(data.password, context.user.password_hash):
+        _record_auth_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid password")
+    _clear_auth_failures(throttle_key)
 
     elevate_auth_session(context.auth_session, now=context.checked_at)
     db.commit()
@@ -611,10 +791,13 @@ def api_auth_me(
 @router.get("/api/mobile/status", response_model=MobileStatusOut)
 def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
     settings = get_settings()
+    setup_required = _is_bootstrap_required(db)
     return MobileStatusOut(
         app="expenses-web",
         version=APP_VERSION,
-        setup_required=_is_bootstrap_required(db),
+        setup_required=setup_required,
+        setup_token_required=setup_required and settings.auth_setup_token is not None,
+        signup_allowed=not setup_required and settings.auth_signup_enabled,
         timezone=settings.timezone,
         receipt_max_bytes=settings.receipt_max_bytes,
     )
@@ -623,10 +806,13 @@ def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
 @router.post("/api/mobile/auth/setup", response_model=MobileAuthIdentityOut)
 def api_mobile_auth_setup(
     data: MobileAuthCredentialsIn,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> MobileAuthIdentityOut:
+    _require_setup_token_if_configured(request)
     if not _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup already completed")
+    _require_creation_password_strength(data.password)
 
     user = User(
         id=1,
@@ -659,8 +845,11 @@ def api_mobile_auth_signup(
 ) -> MobileAuthIdentityOut:
     if _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup required")
+    if not get_settings().auth_signup_enabled:
+        raise HTTPException(status_code=403, detail="Signup is disabled")
     if resolve_auth_context(request, db).user is not None:
         raise HTTPException(status_code=403, detail="Logout required before signup")
+    _require_creation_password_strength(data.password)
 
     user = User(
         username=data.username,
@@ -687,14 +876,18 @@ def api_mobile_auth_signup(
 @router.post("/api/mobile/auth/login", response_model=MobileAuthIdentityOut)
 def api_mobile_auth_login(
     data: MobileAuthCredentialsIn,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> MobileAuthIdentityOut:
     if _is_bootstrap_required(db):
         raise HTTPException(status_code=409, detail="Setup required")
 
+    throttle_key = _check_auth_throttle(request, "mobile-login", data.username)
     user = db.scalar(select(User).where(User.username == data.username))
     if user is None or not verify_password(data.password, user.password_hash):
+        _record_auth_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    _clear_auth_failures(throttle_key)
 
     issued = issue_mobile_auth_session(
         db,
@@ -743,8 +936,13 @@ def api_mobile_auth_admin_elevation(
     context = _require_mobile_auth_context(request, db)
     if not context.user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
+    throttle_key = _check_auth_throttle(
+        request, "mobile-admin-elevation", context.user.username
+    )
     if not verify_password(data.password, context.user.password_hash):
+        _record_auth_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid password")
+    _clear_auth_failures(throttle_key)
 
     elevate_mobile_auth_session(context.mobile_session, now=context.checked_at)
     db.commit()
@@ -1134,9 +1332,6 @@ async def api_ingest(
             logging.WARNING,
             "ingest_request_rejected",
             reason="category_not_found",
-            title=data.title,
-            amount_cents=data.amount_cents,
-            category_input=data.category,
             **(payload_fields or {}),
         )
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1146,9 +1341,6 @@ async def api_ingest(
             logging.WARNING,
             "ingest_request_rejected",
             reason="category_ambiguous",
-            title=data.title,
-            amount_cents=data.amount_cents,
-            category_input=data.category,
             **(payload_fields or {}),
         )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1158,22 +1350,20 @@ async def api_ingest(
             logging.WARNING,
             "ingest_request_rejected",
             reason="invalid_payload",
-            title=data.title,
-            amount_cents=data.amount_cents,
-            category_input=data.category,
             **(payload_fields or {}),
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     txn = result.transaction
-    ingest_fields = dict(txn._ingest_log_fields)
+    ingest_fields = {
+        key: value
+        for key, value in dict(txn._ingest_log_fields).items()
+        if key != "category_input"
+    }
     log_event(
         logger,
         logging.INFO,
         "ingest_request_succeeded",
         transaction_id=txn.id,
-        title=txn.title,
-        amount_cents=txn.amount_cents,
-        final_category=txn.category.name if txn.category else None,
         **ingest_fields,
         **(payload_fields or {}),
     )
@@ -2122,7 +2312,8 @@ def api_update_rule(
     try:
         rule = RuleService(db, user_id=user_id).update(rule_id, data)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        status_code = 404 if str(exc).endswith("not found") else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"id": rule.id}
 
 
@@ -2198,13 +2389,9 @@ def api_preview_rule(data: RuleIn, request: Request, db: Session = Depends(get_d
         if data.match_type.value == "starts_with":
             return title_lower.startswith(match_value_lower)
         if data.match_type.value == "regex":
-            import re
-
             try:
-                return (
-                    re.search(data.match_value, title, flags=re.IGNORECASE) is not None
-                )
-            except re.error:
+                return safe_regex_search(data.match_value, title)
+            except RegexRejected:
                 return False
         return False
 
@@ -2768,8 +2955,14 @@ async def api_import_csv_preview(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
 
+    settings = get_settings()
     try:
-        content = (await file.read()).decode("utf-8")
+        content_bytes = await _read_upload_limited(
+            file,
+            max_bytes=settings.csv_import_max_bytes,
+            detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
+        )
+        content = content_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
         log_event(
             logger,
@@ -2780,7 +2973,9 @@ async def api_import_csv_preview(
         )
         raise HTTPException(status_code=400, detail="Invalid UTF-8 CSV file") from exc
 
-    rows, errors = CSVService(db, user_id=user_id).preview(content)
+    rows, errors = CSVService(db, user_id=user_id).preview(
+        content, max_rows=settings.csv_import_max_rows
+    )
     log_event(
         logger,
         logging.INFO,
@@ -2788,11 +2983,8 @@ async def api_import_csv_preview(
         filename=file.filename,
         rows_count=len(rows),
         errors_count=len(errors),
-        csv_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        raw_body=content[: get_settings().log_capture_max_bytes],
-        raw_body_bytes=len(content.encode("utf-8")),
-        raw_body_truncated=len(content.encode("utf-8"))
-        > get_settings().log_capture_max_bytes,
+        csv_sha256=hashlib.sha256(content_bytes).hexdigest(),
+        csv_bytes=len(content_bytes),
     )
     return {
         "rows": [
@@ -2819,8 +3011,14 @@ async def api_import_csv_commit(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
 
+    settings = get_settings()
     try:
-        content = (await file.read()).decode("utf-8")
+        content_bytes = await _read_upload_limited(
+            file,
+            max_bytes=settings.csv_import_max_bytes,
+            detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
+        )
+        content = content_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
         log_event(
             logger,
@@ -2832,7 +3030,9 @@ async def api_import_csv_commit(
         raise HTTPException(status_code=400, detail="Invalid UTF-8 CSV file") from exc
 
     try:
-        count = CSVService(db, user_id=user_id).commit(content)
+        count = CSVService(db, user_id=user_id).commit(
+            content, max_rows=settings.csv_import_max_rows
+        )
     except ValueError as exc:
         log_event(
             logger,
@@ -2840,11 +3040,8 @@ async def api_import_csv_commit(
             "csv_import_commit_failed",
             filename=file.filename,
             reason=str(exc),
-            csv_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-            raw_body=content[: get_settings().log_capture_max_bytes],
-            raw_body_bytes=len(content.encode("utf-8")),
-            raw_body_truncated=len(content.encode("utf-8"))
-            > get_settings().log_capture_max_bytes,
+            csv_sha256=hashlib.sha256(content_bytes).hexdigest(),
+            csv_bytes=len(content_bytes),
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     log_event(
@@ -2853,11 +3050,8 @@ async def api_import_csv_commit(
         "csv_import_commit_completed",
         filename=file.filename,
         imported_count=count,
-        csv_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        raw_body=content[: get_settings().log_capture_max_bytes],
-        raw_body_bytes=len(content.encode("utf-8")),
-        raw_body_truncated=len(content.encode("utf-8"))
-        > get_settings().log_capture_max_bytes,
+        csv_sha256=hashlib.sha256(content_bytes).hexdigest(),
+        csv_bytes=len(content_bytes),
     )
     return {"imported_count": count}
 
@@ -2880,9 +3074,16 @@ async def api_preview_commerzbank_csv_reconciliation(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    content = await file.read()
+    settings = get_settings()
+    content = await _read_upload_limited(
+        file,
+        max_bytes=settings.bank_csv_import_max_bytes,
+        detail=f"CSV file too large (max {settings.bank_csv_import_max_bytes} bytes)",
+    )
     service = BankReconciliationService(db, user_id=user_id)
-    preview = service.preview_commerzbank_csv(content, account_label=account_label)
+    preview = service.preview_commerzbank_csv(
+        content, account_label=account_label, max_rows=settings.bank_csv_import_max_rows
+    )
     log_event(
         logger,
         logging.INFO,
@@ -2908,10 +3109,19 @@ async def api_commit_commerzbank_csv_reconciliation(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    content = await file.read()
+    settings = get_settings()
+    content = await _read_upload_limited(
+        file,
+        max_bytes=settings.bank_csv_import_max_bytes,
+        detail=f"CSV file too large (max {settings.bank_csv_import_max_bytes} bytes)",
+    )
     service = BankReconciliationService(db, user_id=user_id)
     try:
-        result = service.import_commerzbank_csv(content, account_label=account_label)
+        result = service.import_commerzbank_csv(
+            content,
+            account_label=account_label,
+            max_rows=settings.bank_csv_import_max_rows,
+        )
     except ValueError as exc:
         log_event(
             logger,
@@ -3011,16 +3221,17 @@ async def api_import_sqlite_preview(
     if not file.filename or not file.filename.endswith(".db"):
         raise HTTPException(status_code=400, detail="Please upload a .db file")
 
-    content = await file.read()
+    settings = get_settings()
+    content = await _read_upload_limited(
+        file,
+        max_bytes=settings.sqlite_import_max_bytes,
+        detail=f"DB file too large (max {settings.sqlite_import_max_bytes} bytes)",
+    )
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
-    if len(content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="DB file too large (max 25MB)")
 
-    import_dir = Path("data/imports")
-    import_dir.mkdir(parents=True, exist_ok=True)
-    import_token = f"{session_key}_{os.urandom(16).hex()}"
-    legacy_path = import_dir / f"legacy_{import_token}.db"
+    import_token = f"{session_key}_{secrets.token_hex(16)}"
+    legacy_path = _legacy_sqlite_import_path(import_token)
     legacy_path.write_bytes(content)
 
     try:
@@ -3114,6 +3325,7 @@ async def api_import_sqlite_commit(
     session_key = _auth_context_session_key(admin_context)
     _require_csrf(request, db)
 
+    legacy_path = _legacy_sqlite_import_path(data.token)
     token_owner_session, _, _ = data.token.partition("_")
     if token_owner_session != session_key:
         raise HTTPException(
@@ -3121,7 +3333,6 @@ async def api_import_sqlite_commit(
             detail="Import preview belongs to a different elevated session.",
         )
 
-    legacy_path = Path("data/imports") / f"legacy_{data.token}.db"
     if not legacy_path.exists():
         raise HTTPException(
             status_code=400, detail="Import file not found; please re-upload."
@@ -3469,7 +3680,10 @@ def api_attachment_thumbnail(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    thumb_path = service.ensure_thumbnail(attachment)
+    try:
+        thumb_path = service.ensure_thumbnail(attachment)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if thumb_path is None:
         raise HTTPException(status_code=404, detail="No thumbnail available")
 
@@ -4507,6 +4721,7 @@ def api_generate_pdf_report(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
+    _validate_report_bounds(options, db, user_id)
 
     try:
         pdf_bytes = _generate_report_pdf_bytes(

@@ -4,6 +4,8 @@ struct MobileStatus: Codable, Equatable {
     let app: String
     let version: String
     let setupRequired: Bool
+    let setupTokenRequired: Bool
+    let signupAllowed: Bool
     let timezone: String
     let receiptMaxBytes: Int
 
@@ -11,6 +13,8 @@ struct MobileStatus: Codable, Equatable {
         case app
         case version
         case setupRequired = "setup_required"
+        case setupTokenRequired = "setup_token_required"
+        case signupAllowed = "signup_allowed"
         case timezone
         case receiptMaxBytes = "receipt_max_bytes"
     }

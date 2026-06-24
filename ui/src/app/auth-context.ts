@@ -11,6 +11,7 @@ export type AdminElevationState = "unknown" | "required" | "elevated"
 export type AuthState = {
   ready: boolean
   setupRequired: boolean
+  setupTokenRequired: boolean
   signupAllowed: boolean
   authenticated: boolean
   user: AuthUser | null
@@ -20,6 +21,7 @@ export type AuthState = {
 type AuthCredentials = {
   username: string
   password: string
+  setupToken?: string
 }
 
 export type AuthContextValue = AuthState & {

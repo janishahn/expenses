@@ -1,7 +1,18 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const authStorageStatePath = "/tmp/expenses-web-playwright-bootstrap-admin.json"
+const authStorageStatePath =
+  process.env.EXPENSES_E2E_AUTH_STATE_PATH ??
+  `test-results/.auth/bootstrap-admin-${Date.now()}-${process.pid}.json`
+process.env.EXPENSES_E2E_AUTH_STATE_PATH = authStorageStatePath
+
 const backendPort = process.env.EXPENSES_E2E_BACKEND_PORT ?? "18180"
+if (
+  !/^\d{1,5}$/.test(backendPort) ||
+  Number(backendPort) < 1 ||
+  Number(backendPort) > 65535
+) {
+  throw new Error("EXPENSES_E2E_BACKEND_PORT must be a TCP port number")
+}
 const backendUrl = `http://127.0.0.1:${backendPort}`
 
 export default defineConfig({
@@ -61,6 +72,10 @@ export default defineConfig({
     {
       command:
         `cd .. && EXPENSES_DATA_DIR="$(mktemp -d)" && export EXPENSES_DATA_DIR && trap 'rm -rf "$EXPENSES_DATA_DIR"' EXIT INT TERM && uv run python -m alembic upgrade head && uv run python -m uvicorn expenses_web.app:app --host 127.0.0.1 --port ${backendPort}`,
+      env: {
+        ...process.env,
+        EXPENSES_AUTH_SIGNUP_ENABLED: "true",
+      },
       url: `${backendUrl}/api/csrf`,
       reuseExistingServer: false,
       timeout: 120 * 1000,
@@ -68,6 +83,10 @@ export default defineConfig({
     {
       command:
         `VITE_API_PROXY_TARGET=${backendUrl} npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`,
+      env: {
+        ...process.env,
+        VITE_MAP_TILE_URL: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      },
       url: "http://127.0.0.1:4173",
       reuseExistingServer: false,
       timeout: 120 * 1000,

@@ -6,7 +6,7 @@ import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 
 function LoginPage() {
-  const { login } = useAuth()
+  const { login, signupAllowed } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [username, setUsername] = useState(() => searchParams.get("username") || "")
@@ -94,12 +94,17 @@ function LoginPage() {
           </AppButton>
         </form>
 
-        <p className="text-sm text-muted">
-          Need an account?{" "}
-          <Link className="font-semibold text-accent hover:text-accent-strong" to={signupHref}>
-            Sign up
-          </Link>
-        </p>
+        {signupAllowed ? (
+          <p className="text-sm text-muted">
+            Need an account?{" "}
+            <Link
+              className="font-semibold text-accent hover:text-accent-strong"
+              to={signupHref}
+            >
+              Sign up
+            </Link>
+          </p>
+        ) : null}
       </AppCard>
     </main>
   )

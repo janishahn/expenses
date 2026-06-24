@@ -6,6 +6,7 @@ struct AuthView: View {
     @Environment(AppModel.self) private var model
     @State private var username = ""
     @State private var password = ""
+    @State private var setupToken = ""
     @State private var deviceName = "iPhone"
     @State private var generatedIngestToken = ""
     @State private var statusText: String?
@@ -138,6 +139,10 @@ struct AuthView: View {
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
                     .textContentType(.password)
+                if model.status?.setupTokenRequired == true {
+                    SecureField("Setup token", text: $setupToken)
+                        .textContentType(.oneTimeCode)
+                }
                 TextField("Device name", text: $deviceName)
             }
 
@@ -162,14 +167,20 @@ struct AuthView: View {
                         await model.setup(
                             username: username,
                             password: password,
-                            deviceName: deviceName
+                            deviceName: deviceName,
+                            setupToken: setupToken.trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                         await model.loadAccountSettings()
                     }
                 } label: {
                     Label("Run first-time setup", systemImage: "wand.and.stars")
                 }
-                .disabled(authFieldsAreEmpty || model.status?.setupRequired != true || model.isLoading)
+                .disabled(
+                    authFieldsAreEmpty ||
+                        setupTokenIsRequiredAndMissing ||
+                        model.status?.setupRequired != true ||
+                        model.isLoading
+                )
 
                 Button {
                     Task {
@@ -183,7 +194,12 @@ struct AuthView: View {
                 } label: {
                     Label("Create account", systemImage: "person.crop.circle.badge.plus")
                 }
-                .disabled(authFieldsAreEmpty || model.status?.setupRequired == true || model.isLoading)
+                .disabled(
+                    authFieldsAreEmpty ||
+                        model.status?.setupRequired == true ||
+                        model.status?.signupAllowed != true ||
+                        model.isLoading
+                )
 
                 if let setupRequired = model.status?.setupRequired {
                     Text(setupRequired ? "This tracker still needs first-time setup." : "First-time setup is complete.")
@@ -202,6 +218,11 @@ struct AuthView: View {
         username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || password.isEmpty
             || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var setupTokenIsRequiredAndMissing: Bool {
+        model.status?.setupTokenRequired == true
+            && setupToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var authIntroText: String {

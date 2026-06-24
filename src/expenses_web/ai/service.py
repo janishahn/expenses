@@ -27,6 +27,7 @@ from expenses_web.ai.schemas import (
     TransactionSuggestionOut,
     TransactionTriageOutput,
 )
+from expenses_web.core.safe_regex import RegexRejected, safe_regex_search
 from expenses_web.core.app_logging import get_logger, log_event
 from expenses_web.core.config import get_settings
 from expenses_web.db.models import (
@@ -840,9 +841,9 @@ class LLMAssistantService:
                 return sum(
                     1
                     for row in rows
-                    if re.search(proposal.match_value, row.title or "", re.IGNORECASE)
+                    if safe_regex_search(proposal.match_value, row.title or "")
                 )
-            except re.error:
+            except RegexRejected:
                 return 0
         return int(self.session.execute(stmt).scalar_one() or 0)
 

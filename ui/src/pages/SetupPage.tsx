@@ -6,11 +6,12 @@ import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 
 function SetupPage() {
-  const { setup } = useAuth()
+  const { setup, setupTokenRequired } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [setupToken, setSetupToken] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
@@ -21,7 +22,7 @@ function SetupPage() {
     setErrorMessage("")
     setSubmitting(true)
     try {
-      await setup({ username, password })
+      await setup({ username, password, setupToken: setupToken.trim() })
       navigate(getSafeRedirectTarget(redirectTarget, "/"), { replace: true })
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "Unable to complete setup."))
@@ -56,6 +57,20 @@ function SetupPage() {
               required
             />
           </AppFieldLabel>
+
+          {setupTokenRequired ? (
+            <AppFieldLabel>
+              <span>Setup token</span>
+              <AppInput
+                data-testid="auth-setup-token"
+                type="password"
+                value={setupToken}
+                onChange={(event) => setSetupToken(event.target.value)}
+                autoComplete="one-time-code"
+                required
+              />
+            </AppFieldLabel>
+          ) : null}
 
           <AppFieldLabel>
             <span>Password</span>

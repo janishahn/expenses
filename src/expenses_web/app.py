@@ -78,6 +78,15 @@ def shutdown_event() -> None:
 
 app.include_router(routes.router)
 get_db = routes.get_db
+_SENSITIVE_VALIDATION_FIELDS = {
+    "authorization",
+    "cookie",
+    "csrf",
+    "password",
+    "secret",
+    "setup_token",
+    "token",
+}
 
 
 def _frontend_index_response() -> Response:
@@ -88,6 +97,24 @@ def _frontend_index_response() -> Response:
             status_code=503,
         )
     return FileResponse(FRONTEND_INDEX_PATH, headers={"Cache-Control": "no-cache"})
+
+
+def _redact_validation_errors(errors: object) -> object:
+    if isinstance(errors, list):
+        return [_redact_validation_errors(item) for item in errors]
+    if not isinstance(errors, dict):
+        return errors
+
+    redacted = dict(errors)
+    loc = [str(part).lower() for part in redacted.get("loc", [])]
+    sensitive = any(
+        marker in part for part in loc for marker in _SENSITIVE_VALIDATION_FIELDS
+    )
+    if "input" in redacted and (sensitive or loc):
+        redacted["input"] = "[REDACTED]"
+    if "ctx" in redacted:
+        redacted["ctx"] = _redact_validation_errors(redacted["ctx"])
+    return redacted
 
 
 @app.middleware("http")
@@ -154,6 +181,7 @@ async def request_validation_exception_handler(
         tokens = None
     payload_fields = await read_captured_request_body(request, get_settings())
     validation_errors = jsonable_encoder(exc.errors())
+    logged_validation_errors = _redact_validation_errors(validation_errors)
     log_event(
         app_logger,
         30,
@@ -162,7 +190,7 @@ async def request_validation_exception_handler(
         path=request.url.path,
         route=request_route_path(request),
         status_code=422,
-        validation_errors=validation_errors,
+        validation_errors=logged_validation_errors,
         **(payload_fields or {}),
     )
     if tokens is not None:

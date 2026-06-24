@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test"
 
 const bootstrapUser = {
   username: "bootstrap-admin",
-  password: "hunter2",
+  password: "hunter22",
 }
 
 const secondUser = {
   username: "second-user",
-  password: "hunter2",
+  password: "hunter22",
 }
 
 async function submitAuthForm(

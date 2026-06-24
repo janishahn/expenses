@@ -14,6 +14,7 @@ import type {
   TransactionDetail,
   TransactionRouteState,
 } from "../app/api-types"
+import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import {
   formatCoordinate,
   formatCurrency,
@@ -58,10 +59,12 @@ function TransactionLocationMap({
       zoomControl: true,
     }).setView([latitude, longitude], 16)
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map)
+    if (mapTileURL) {
+      L.tileLayer(mapTileURL, {
+        maxZoom: 19,
+        attribution: mapTileAttribution,
+      }).addTo(map)
+    }
 
     L.marker([latitude, longitude], {
       title,
@@ -142,21 +145,29 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
 
   const openAttachment = async () => {
     setActionError("")
-    const popup = window.open("", "_blank")
-    if (!popup) {
-      setActionError("Unable to open attachment")
-      return
+    const popup = window.open("about:blank", "_blank")
+    if (popup) {
+      popup.opener = null
     }
-
     try {
       const { blob } = await apiFetchBlob(`/api/attachments/${attachment.id}/download`)
       const objectUrl = URL.createObjectURL(blob)
-      popup.location.href = objectUrl
+      if (popup) {
+        popup.location.href = objectUrl
+      } else {
+        const link = document.createElement("a")
+        link.href = objectUrl
+        link.target = "_blank"
+        link.rel = "noopener noreferrer"
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+      }
       window.setTimeout(() => {
         URL.revokeObjectURL(objectUrl)
       }, 60_000)
     } catch (error) {
-      popup.close()
+      popup?.close()
       setActionError(String(error))
     }
   }
@@ -225,6 +236,8 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
           <iframe
             src={previewUrl}
             title={attachment.original_filename}
+            sandbox=""
+            referrerPolicy="no-referrer"
             className="h-[26rem] w-full rounded-lg border border-border bg-surface"
           />
         ) : null}

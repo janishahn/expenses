@@ -27,6 +27,7 @@ def test_bootstrap_status_reports_setup_required_and_blocks_login_signup(
     assert response.json() == {
         "setup_required": True,
         "setup_allowed": True,
+        "setup_token_required": False,
         "signup_allowed": False,
         "authenticated": False,
         "user": None,
@@ -76,6 +77,7 @@ def test_setup_creates_bootstrap_admin_user_one_and_is_one_time(
     assert status_after_setup.json() == {
         "setup_required": False,
         "setup_allowed": False,
+        "setup_token_required": False,
         "signup_allowed": True,
         "authenticated": True,
         "user": {"id": 1, "username": "bootstrap", "is_admin": True},
@@ -302,3 +304,113 @@ def test_csrf_tokens_are_invalidated_across_login_and_logout_transitions(
         "/api/auth/logout", headers=_csrf_headers(api_client)
     )
     assert fresh_logout.status_code == 200
+
+
+def test_signup_is_disabled_without_operator_opt_in(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_AUTH_SIGNUP_ENABLED", "false")
+    get_settings.cache_clear()
+
+    setup = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "pw-12345")
+    )
+    assert setup.status_code == 200
+    api_client.cookies.clear()
+
+    status = api_client.get("/api/auth/bootstrap-status")
+    assert status.status_code == 200
+    assert status.json()["signup_allowed"] is False
+
+    signup = api_client.post(
+        "/api/auth/signup", json=_credentials("member", "member-pw")
+    )
+    assert signup.status_code == 403
+
+
+def test_setup_token_is_required_when_configured(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_AUTH_SETUP_TOKEN", "setup-secret")
+    get_settings.cache_clear()
+
+    missing = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "pw-12345")
+    )
+    assert missing.status_code == 403
+
+    setup = api_client.post(
+        "/api/auth/setup",
+        headers={"X-Setup-Token": "setup-secret"},
+        json=_credentials("bootstrap", "pw-12345"),
+    )
+    assert setup.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("trusted_proxies", "expect_secure"),
+    [(None, False), ("testclient", True)],
+)
+def test_auth_cookie_only_trusts_forwarded_proto_from_trusted_proxy(
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    trusted_proxies: str | None,
+    expect_secure: bool,
+) -> None:
+    if trusted_proxies is not None:
+        monkeypatch.setenv("EXPENSES_TRUSTED_PROXY_IPS", trusted_proxies)
+    get_settings.cache_clear()
+
+    setup = api_client.post(
+        "/api/auth/setup",
+        headers={"X-Forwarded-Proto": "https"},
+        json=_credentials("bootstrap", "pw-12345"),
+    )
+
+    assert setup.status_code == 200
+    assert ("Secure" in setup.headers.get("set-cookie", "")) is expect_secure
+
+
+def test_setup_and_signup_require_minimum_password_length(
+    api_client: TestClient,
+) -> None:
+    weak_setup = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "short")
+    )
+    assert weak_setup.status_code == 422
+
+    setup = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "pw-12345")
+    )
+    assert setup.status_code == 200
+    api_client.cookies.clear()
+
+    weak_signup = api_client.post(
+        "/api/auth/signup", json=_credentials("member", "short")
+    )
+    assert weak_signup.status_code == 422
+
+
+def test_login_throttles_repeated_failures(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_AUTH_THROTTLE_MAX_FAILURES", "2")
+    monkeypatch.setenv("EXPENSES_AUTH_THROTTLE_WINDOW_SECONDS", "60")
+    get_settings.cache_clear()
+
+    setup = api_client.post(
+        "/api/auth/setup", json=_credentials("bootstrap", "pw-12345")
+    )
+    assert setup.status_code == 200
+    api_client.cookies.clear()
+
+    for _ in range(2):
+        response = api_client.post(
+            "/api/auth/login", json=_credentials("bootstrap", "wrong")
+        )
+        assert response.status_code == 401
+
+    throttled = api_client.post(
+        "/api/auth/login", json=_credentials("bootstrap", "wrong")
+    )
+    assert throttled.status_code == 429

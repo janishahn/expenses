@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from expenses_web.core.config import get_settings
 from expenses_web.services.bank_reconciliation import parse_commerzbank_csv
 
 
@@ -73,6 +74,22 @@ def test_parse_commerzbank_csv_handles_german_dates_amounts_and_cp1252() -> None
     assert "Bargeld" in row.raw_description
 
 
+def test_parse_commerzbank_csv_enforces_row_limit() -> None:
+    rows, errors = parse_commerzbank_csv(
+        _csv_bytes(
+            [
+                "05.05.2026;05.05.2026;Kartenzahlung;REWE;-111,78;EUR;",
+                "06.05.2026;06.05.2026;Online-Zahlung;Amazon;-9,99;EUR;",
+            ]
+        ),
+        account_label="StartKonto",
+        max_rows=1,
+    )
+
+    assert len(rows) == 1
+    assert errors == ["CSV row limit exceeded (max 1)"]
+
+
 def test_reconciliation_suggests_card_payment_with_bank_posting_delay(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -128,6 +145,22 @@ def test_reconciliation_import_deduplicates_same_commerzbank_rows(
     second = _upload_csv(api_client, csrf_headers, content)
     assert second.status_code == 200
     assert second.json() == {"imported_count": 0, "duplicate_count": 1}
+
+
+def test_commerzbank_csv_upload_rejects_oversized_file(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_BANK_CSV_IMPORT_MAX_BYTES", "10")
+    get_settings.cache_clear()
+
+    response = _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(["06.05.2026;06.05.2026;Online-Zahlung;Amazon;-9,99;EUR;"]),
+        endpoint="preview",
+    )
+
+    assert response.status_code == 413
 
 
 def test_reconciliation_import_deduplicates_rows_within_same_upload(

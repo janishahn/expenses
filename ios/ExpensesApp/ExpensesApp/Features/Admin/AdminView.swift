@@ -411,14 +411,28 @@ struct AdminView: View {
         do {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(folder, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let url = directory.appendingPathComponent(download.filename)
+            let filename = Self.safeFilename(download.filename, fallback: "expenses_download")
+            let url = directory.appendingPathComponent(filename)
             try download.data.write(to: url, options: .atomic)
             previewDocument = PreviewDocument(url: url)
             shareURL = url
-            statusText = download.filename
+            statusText = filename
         } catch {
             formError = error.localizedDescription
         }
+    }
+
+    private static func safeFilename(_ raw: String, fallback: String) -> String {
+        let basename = raw.components(separatedBy: CharacterSet(charactersIn: "/\\")).last ?? ""
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " ._-"))
+        let cleaned = basename.unicodeScalars
+            .map { allowed.contains($0) ? String($0) : "_" }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty || cleaned == "." || cleaned == ".." {
+            return fallback
+        }
+        return String(cleaned.prefix(120))
     }
 
     private static func bytes(_ value: Int) -> String {

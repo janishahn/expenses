@@ -132,7 +132,10 @@ function ReportBuilderPage() {
         ? selectedActiveCategoryIds
         : null
 
-    const popup = window.open("", "_blank")
+    const popup = window.open("about:blank", "_blank")
+    if (popup) {
+      popup.opener = null
+    }
     setGenerating(true)
     try {
       const { blob, filename } = await apiFetchBlob("/api/reports/pdf", {
@@ -162,12 +165,16 @@ function ReportBuilderPage() {
       if (popup) {
         popup.location.href = url
       } else {
-        window.open(url, "_blank")
+        const link = document.createElement("a")
+        link.href = url
+        link.target = "_blank"
+        link.rel = "noopener noreferrer"
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
       }
     } catch (error) {
-      if (popup) {
-        popup.close()
-      }
+      popup?.close()
       setGenerateError(String(error))
     } finally {
       setGenerating(false)

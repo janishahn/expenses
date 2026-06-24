@@ -11,6 +11,7 @@ import { Link, useLocation, useNavigate, useOutletContext, useSearchParams } fro
 import type { AppShellOutletContext } from "../app/AppShell"
 import { apiFetch } from "../app/api"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
+import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntroAddButton from "../components/PageIntroAddButton"
 import PageIntro from "../components/PageIntro"
@@ -173,10 +174,12 @@ function TransactionLocationMap({
       zoomControl: true,
     }).setView([latitude, longitude], 16)
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map)
+    if (mapTileURL) {
+      L.tileLayer(mapTileURL, {
+        maxZoom: 19,
+        attribution: mapTileAttribution,
+      }).addTo(map)
+    }
 
     L.marker([latitude, longitude], {
       title,

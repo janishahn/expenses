@@ -173,7 +173,7 @@ def _read_csv_rows(content: bytes) -> tuple[list[list[str]], str]:
 
 
 def parse_commerzbank_csv(
-    content: bytes, *, account_label: str
+    content: bytes, *, account_label: str, max_rows: int | None = None
 ) -> tuple[list[ParsedBankStatementRow], list[str]]:
     csv_rows, _delimiter = _read_csv_rows(content)
     if not csv_rows:
@@ -189,6 +189,9 @@ def parse_commerzbank_csv(
     parsed_rows: list[ParsedBankStatementRow] = []
     errors: list[str] = []
     data_rows = csv_rows[1:]
+    if max_rows is not None and len(data_rows) > max_rows:
+        data_rows = data_rows[:max_rows]
+        errors.append(f"CSV row limit exceeded (max {max_rows})")
     for index, raw_cells in enumerate(data_rows, start=2):
         if not any(_clean_cell(cell) for cell in raw_cells):
             continue
@@ -263,9 +266,11 @@ class BankReconciliationService:
         self.user_id = user_id
 
     def preview_commerzbank_csv(
-        self, content: bytes, *, account_label: str
+        self, content: bytes, *, account_label: str, max_rows: int | None = None
     ) -> dict[str, object]:
-        rows, errors = parse_commerzbank_csv(content, account_label=account_label)
+        rows, errors = parse_commerzbank_csv(
+            content, account_label=account_label, max_rows=max_rows
+        )
         existing_hashes = self._existing_hashes([row.import_hash for row in rows])
         seen_hashes = set(existing_hashes)
         preview_rows = []
@@ -282,9 +287,11 @@ class BankReconciliationService:
         }
 
     def import_commerzbank_csv(
-        self, content: bytes, *, account_label: str
+        self, content: bytes, *, account_label: str, max_rows: int | None = None
     ) -> dict[str, int]:
-        rows, errors = parse_commerzbank_csv(content, account_label=account_label)
+        rows, errors = parse_commerzbank_csv(
+            content, account_label=account_label, max_rows=max_rows
+        )
         if errors:
             raise ValueError("; ".join(errors))
         existing_hashes = self._existing_hashes([row.import_hash for row in rows])

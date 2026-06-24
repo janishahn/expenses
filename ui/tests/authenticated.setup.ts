@@ -6,7 +6,8 @@ import { ensureBootstrap } from "./auth-helpers"
 
 const authFile = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "/tmp/expenses-web-playwright-bootstrap-admin.json"
+  "..",
+  process.env.EXPENSES_E2E_AUTH_STATE_PATH ?? "test-results/.auth/bootstrap-admin.json"
 )
 
 setup("create authenticated storage state", async ({ request }) => {

@@ -274,10 +274,8 @@ async def read_captured_request_body(
     body = await request.body()
     body_sha256 = hashlib.sha256(body).hexdigest()
     truncated = len(body) > settings.log_capture_max_bytes
-    clipped = body[: settings.log_capture_max_bytes]
     return {
         "request_content_type": request.headers.get("content-type", ""),
-        "raw_body": clipped.decode("utf-8", errors="replace"),
         "raw_body_bytes": len(body),
         "raw_body_truncated": truncated,
         "request_body_sha256": body_sha256,

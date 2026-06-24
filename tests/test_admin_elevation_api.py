@@ -792,6 +792,31 @@ def test_sqlite_preview_token_is_not_exposed_through_admin_logs(
     assert all(import_token not in str(entry) for entry in entries)
 
 
+def test_sqlite_import_rejects_malformed_token_before_path_use(
+    anonymous_api_client: TestClient,
+) -> None:
+    bootstrap_token = _setup_bootstrap(anonymous_api_client)
+    elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
+    assert elevated["status_code"] == 200
+
+    commit = anonymous_api_client.post(
+        "/api/import/sqlite/commit",
+        headers=_csrf_headers_for_token(anonymous_api_client, bootstrap_token),
+        json={
+            "token": "../1_deadbeef",
+            "mapping_targets": [],
+            "options": {
+                "import_recurring_rules": True,
+                "recurring_auto_post": False,
+                "link_recurring_transactions": True,
+                "preserve_time_in_title": False,
+            },
+        },
+    )
+
+    assert commit.status_code == 400
+
+
 def test_sqlite_import_commit_rejects_cross_session_preview_token_replay(
     anonymous_api_client: TestClient,
     tmp_path: Path,

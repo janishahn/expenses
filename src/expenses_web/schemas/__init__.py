@@ -97,6 +97,8 @@ class MobileStatusOut(BaseModel):
     app: str
     version: str
     setup_required: bool
+    setup_token_required: bool
+    signup_allowed: bool
     timezone: str
     receipt_max_bytes: int
 

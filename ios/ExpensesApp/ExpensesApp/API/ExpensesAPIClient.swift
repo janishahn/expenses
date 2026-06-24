@@ -30,8 +30,13 @@ struct ExpensesAPIClient {
         try await request(path: "/api/mobile/status")
     }
 
-    func mobileSetup(_ body: MobileAuthRequest) async throws -> MobileAuthIdentity {
-        try await request(path: "/api/mobile/auth/setup", method: "POST", body: body)
+    func mobileSetup(_ body: MobileAuthRequest, setupToken: String?) async throws -> MobileAuthIdentity {
+        try await request(
+            path: "/api/mobile/auth/setup",
+            method: "POST",
+            extraHeaders: setupToken.map { ["X-Setup-Token": $0] },
+            body: body
+        )
     }
 
     func mobileSignup(_ body: MobileAuthRequest) async throws -> MobileAuthIdentity {
@@ -979,12 +984,14 @@ struct ExpensesAPIClient {
         path: String,
         method: String = "GET",
         bearerToken: String? = nil,
+        extraHeaders: [String: String]? = nil,
         body: RequestBody
     ) async throws -> ResponseBody {
         try await request(
             path: path,
             method: method,
             bearerToken: bearerToken,
+            extraHeaders: extraHeaders,
             bodyData: encoder.encode(body)
         )
     }
@@ -1006,12 +1013,14 @@ struct ExpensesAPIClient {
         path: String,
         method: String,
         bearerToken: String?,
+        extraHeaders: [String: String]? = nil,
         bodyData: Data?
     ) async throws -> ResponseBody {
         try await request(
             path: path,
             method: method,
             bearerToken: bearerToken,
+            extraHeaders: extraHeaders,
             contentType: bodyData == nil ? nil : "application/json",
             bodyData: bodyData
         )
@@ -1021,12 +1030,11 @@ struct ExpensesAPIClient {
         path: String,
         method: String,
         bearerToken: String?,
+        extraHeaders: [String: String]? = nil,
         contentType: String?,
         bodyData: Data?
     ) async throws -> ResponseBody {
-        guard let baseURL else {
-            throw APIErrorInfo(message: "Backend URL is invalid.")
-        }
+        let baseURL = try validatedBaseURL()
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
@@ -1036,6 +1044,9 @@ struct ExpensesAPIClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let bearerToken {
             request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+        extraHeaders?.forEach { name, value in
+            request.setValue(value, forHTTPHeaderField: name)
         }
         if let bodyData {
             request.httpBody = bodyData
@@ -1066,9 +1077,7 @@ struct ExpensesAPIClient {
         contentType: String? = nil,
         bodyData: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
-        guard let baseURL else {
-            throw APIErrorInfo(message: "Backend URL is invalid.")
-        }
+        let baseURL = try validatedBaseURL()
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
@@ -1094,22 +1103,56 @@ struct ExpensesAPIClient {
         return (data, http)
     }
 
+    private func validatedBaseURL() throws -> URL {
+        guard let baseURL else {
+            throw APIErrorInfo(message: "Backend URL is invalid.")
+        }
+        let scheme = baseURL.scheme?.lowercased()
+        if scheme == "https" {
+            return baseURL
+        }
+        guard scheme == "http" else {
+            throw APIErrorInfo(message: "Backend URL must use HTTPS or local HTTP.")
+        }
+        let host = baseURL.host?.lowercased() ?? ""
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+            return baseURL
+        }
+        throw APIErrorInfo(message: "HTTPS is required for non-local backend URLs.")
+    }
+
     private func filename(from response: HTTPURLResponse) -> String? {
         guard let disposition = response.value(forHTTPHeaderField: "Content-Disposition") else {
             return nil
         }
+        let rawFilename: String
         if let range = disposition.range(of: "filename*=UTF-8''") {
             let encoded = String(disposition[range.upperBound...])
-            return encoded.removingPercentEncoding
+            rawFilename = encoded.removingPercentEncoding ?? encoded
+        } else {
+            guard let range = disposition.range(of: "filename=\"") else {
+                return nil
+            }
+            let remainder = disposition[range.upperBound...]
+            guard let end = remainder.firstIndex(of: "\"") else {
+                return nil
+            }
+            rawFilename = String(remainder[..<end])
         }
-        guard let range = disposition.range(of: "filename=\"") else {
+        return sanitizedFilename(rawFilename)
+    }
+
+    private func sanitizedFilename(_ raw: String) -> String? {
+        let basename = raw.components(separatedBy: CharacterSet(charactersIn: "/\\")).last ?? ""
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " ._-"))
+        let cleaned = basename.unicodeScalars
+            .map { allowed.contains($0) ? String($0) : "_" }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty || cleaned == "." || cleaned == ".." {
             return nil
         }
-        let remainder = disposition[range.upperBound...]
-        guard let end = remainder.firstIndex(of: "\"") else {
-            return nil
-        }
-        return String(remainder[..<end])
+        return String(cleaned.prefix(120))
     }
 
     private func parseErrorMessage(_ data: Data) -> String? {

@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 import pytest
 
-from expenses_web.db.session import Base
 from expenses_web.db.models import RuleMatchType, Transaction, TransactionType
+from expenses_web.db.session import Base
+from expenses_web.core.config import get_settings
 from expenses_web.schemas import CategoryIn, RuleIn, TransactionIn
 from expenses_web.services import (
     CSVService,
@@ -357,3 +358,27 @@ def test_rule_applies_during_csv_import_when_category_is_uncategorized() -> None
         assert txn is not None
         assert txn.category_id == subs.id
         assert {tag.name for tag in txn.tags} == {"Streaming"}
+
+
+def test_rule_service_rejects_regex_over_configured_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_RULE_REGEX_MAX_LENGTH", "3")
+    get_settings.cache_clear()
+    try:
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            with pytest.raises(ValueError, match="Regex pattern is too long"):
+                RuleService(session).create(
+                    RuleIn(
+                        name="Unsafe regex",
+                        enabled=True,
+                        priority=10,
+                        match_type=RuleMatchType.regex,
+                        match_value="abcd",
+                    )
+                )
+    finally:
+        get_settings.cache_clear()

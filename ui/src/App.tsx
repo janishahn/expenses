@@ -93,7 +93,7 @@ function SetupRoute() {
 }
 
 function PublicAuthRoute({ mode }: { mode: "login" | "signup" }) {
-  const { ready, setupRequired, authenticated } = useAuth()
+  const { ready, setupRequired, signupAllowed, authenticated } = useAuth()
   const [searchParams] = useSearchParams()
 
   if (!ready) {
@@ -111,6 +111,15 @@ function PublicAuthRoute({ mode }: { mode: "login" | "signup" }) {
 
   if (authenticated) {
     return <Navigate to={getSafeRedirectTarget(redirectTarget, "/")} replace />
+  }
+
+  if (mode === "signup" && !signupAllowed) {
+    return (
+      <Navigate
+        to={redirectTarget ? toRedirectRoute("/login", redirectTarget) : "/login"}
+        replace
+      />
+    )
   }
 
   return mode === "login" ? <LoginPage /> : <SignupPage />

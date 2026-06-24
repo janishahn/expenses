@@ -158,7 +158,12 @@ final class AppModel {
         }
     }
 
-    func setup(username: String, password: String, deviceName: String) async {
+    func setup(
+        username: String,
+        password: String,
+        deviceName: String,
+        setupToken: String? = nil
+    ) async {
         await authenticate(
             request: .init(
                 username: username,
@@ -166,7 +171,8 @@ final class AppModel {
                 deviceID: DeviceIdentity.currentID,
                 deviceName: deviceName
             ),
-            mode: .setup
+            mode: .setup,
+            setupToken: setupToken
         )
     }
 
@@ -1658,12 +1664,16 @@ final class AppModel {
         baseURLString = ExpensesAppStorage.defaultLocalBackendURL
     }
 
-    private func authenticate(request: MobileAuthRequest, mode: AuthMode) async {
+    private func authenticate(
+        request: MobileAuthRequest,
+        mode: AuthMode,
+        setupToken: String? = nil
+    ) async {
         await runRequest {
             let response: MobileAuthIdentity
             switch mode {
             case .setup:
-                response = try await apiClient.mobileSetup(request)
+                response = try await apiClient.mobileSetup(request, setupToken: setupToken)
             case .signup:
                 response = try await apiClient.mobileSignup(request)
             case .login:

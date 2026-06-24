@@ -63,11 +63,16 @@ def parse_amount(value: str, *, allow_negative: bool = False) -> int:
     return cents
 
 
-def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
+def parse_csv(
+    content: str, *, max_rows: int | None = None
+) -> tuple[list[CSVRow], list[str]]:
     reader = csv.DictReader(StringIO(content))
     rows: list[CSVRow] = []
     errors: list[str] = []
     for idx, raw in enumerate(reader, start=1):
+        if max_rows is not None and idx > max_rows:
+            errors.append(f"CSV row limit exceeded (max {max_rows})")
+            break
         try:
             date_value = parse_date((raw.get("Date") or "").strip())
             type_raw = (raw.get("Type") or "").strip().lower()

@@ -11,6 +11,7 @@ import {
 
 type AuthBootstrapStatus = {
   setup_required: boolean
+  setup_token_required: boolean
   signup_allowed: boolean
   authenticated: boolean
   user: AuthUser | null
@@ -24,6 +25,7 @@ type AuthIdentity = {
 type AuthCredentials = {
   username: string
   password: string
+  setupToken?: string
 }
 
 function toAuthState(
@@ -33,7 +35,8 @@ function toAuthState(
   return {
     ready: true,
     setupRequired: payload.setup_required,
-    signupAllowed: payload.signup_allowed,
+    setupTokenRequired: payload.setup_token_required ?? false,
+    signupAllowed: payload.signup_allowed ?? false,
     authenticated: payload.authenticated,
     user: payload.user,
     adminElevation,
@@ -60,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     ready: false,
     setupRequired: true,
+    setupTokenRequired: false,
     signupAllowed: false,
     authenticated: false,
     user: null,
@@ -105,19 +109,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (credentials: AuthCredentials) => {
       const payload = await apiFetch<AuthIdentity>("/api/auth/setup", {
         method: "POST",
-        body: JSON.stringify(credentials),
+        headers: credentials.setupToken
+          ? { "X-Setup-Token": credentials.setupToken }
+          : undefined,
+        body: JSON.stringify({
+          username: credentials.username,
+          password: credentials.password,
+        }),
       })
       clearClientState()
-      setState({
-        ready: true,
-        setupRequired: false,
-        signupAllowed: true,
+      await refreshAuthState()
+      setState((previous) => ({
+        ...previous,
         authenticated: payload.authenticated,
         user: payload.user,
         adminElevation: "unknown",
-      })
+      }))
     },
-    [clearClientState]
+    [clearClientState, refreshAuthState]
   )
 
   const login = useCallback(
@@ -127,46 +136,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(credentials),
       })
       clearClientState()
-      setState({
-        ready: true,
-        setupRequired: false,
-        signupAllowed: true,
+      await refreshAuthState()
+      setState((previous) => ({
+        ...previous,
         authenticated: payload.authenticated,
         user: payload.user,
         adminElevation: "unknown",
-      })
+      }))
     },
-    [clearClientState]
+    [clearClientState, refreshAuthState]
   )
 
-  const signup = useCallback(async (credentials: AuthCredentials) => {
-    await apiFetch("/api/auth/signup", {
-      method: "POST",
-      body: JSON.stringify(credentials),
-    })
-    setState((previous) => ({
-      ...previous,
-      ready: true,
-      setupRequired: false,
-      signupAllowed: true,
-      authenticated: false,
-      user: null,
-      adminElevation: "unknown",
-    }))
-  }, [])
+  const signup = useCallback(
+    async (credentials: AuthCredentials) => {
+      await apiFetch("/api/auth/signup", {
+        method: "POST",
+        body: JSON.stringify(credentials),
+      })
+      await refreshAuthState()
+    },
+    [refreshAuthState]
+  )
 
   const logout = useCallback(async () => {
     await apiFetch("/api/auth/logout", { method: "POST" })
     clearClientState()
-    setState({
-      ready: true,
-      setupRequired: false,
-      signupAllowed: true,
-      authenticated: false,
-      user: null,
-      adminElevation: "unknown",
-    })
-  }, [clearClientState])
+    await refreshAuthState()
+  }, [clearClientState, refreshAuthState])
 
   const ensureAdminElevation = useCallback(
     async (force = false): Promise<AdminElevationState> => {
@@ -195,14 +191,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.status === 401) {
         clearClientState()
-        setState({
+        setState((previous) => ({
+          ...previous,
           ready: true,
           setupRequired: false,
-          signupAllowed: true,
           authenticated: false,
           user: null,
           adminElevation: "unknown",
-        })
+        }))
         return "required"
       }
 
