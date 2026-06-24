@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -35,6 +35,7 @@ from expenses_web.services import ReceiptAttachmentService
 
 FORMAT_NAME = "expenses-web-portable-export"
 FORMAT_VERSION = 1
+_STREAM_BATCH = 500
 EXCLUDED_INTERNAL_TABLES = [
     "users",
     "auth_sessions",
@@ -362,7 +363,7 @@ class PortableExportService:
         return json.dumps(schema, indent=2, sort_keys=True) + "\n"
 
     def _write_dataset(
-        self, archive: ZipFile, name: str, rows: Sequence[ExportModel]
+        self, archive: ZipFile, name: str, rows: Iterable[ExportModel]
     ) -> dict[str, object]:
         path = f"data/{name}.ndjson"
         digest = hashlib.sha256()
@@ -435,7 +436,7 @@ class PortableExportService:
         safe_name = _safe_archive_name(attachment.original_filename)
         return f"attachments/transactions_{attachment.transaction_id}/{attachment.id}_{safe_name}"
 
-    def _datasets(self) -> dict[str, Callable[[], Sequence[ExportModel]]]:
+    def _datasets(self) -> dict[str, Callable[[], Iterable[ExportModel]]]:
         return {
             "categories": self._category_rows,
             "tags": self._tag_rows,
@@ -454,14 +455,14 @@ class PortableExportService:
             ),
         }
 
-    def _category_rows(self) -> list[CategoryExport]:
-        categories = self.session.scalars(
+    def _category_rows(self) -> Iterator[CategoryExport]:
+        rows = self.session.scalars(
             select(Category)
             .where(Category.user_id == self.user_id)
             .order_by(Category.id.asc())
-        ).all()
-        return [
-            CategoryExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield CategoryExport(
                 id=row.id,
                 user_id=row.user_id,
                 name=row.name,
@@ -473,15 +474,13 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in categories
-        ]
 
-    def _tag_rows(self) -> list[TagExport]:
-        tags = self.session.scalars(
+    def _tag_rows(self) -> Iterator[TagExport]:
+        rows = self.session.scalars(
             select(Tag).where(Tag.user_id == self.user_id).order_by(Tag.id.asc())
-        ).all()
-        return [
-            TagExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield TagExport(
                 id=row.id,
                 user_id=row.user_id,
                 name=row.name,
@@ -491,18 +490,16 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in tags
-        ]
 
-    def _transaction_rows(self) -> list[TransactionExport]:
-        transactions = self.session.scalars(
+    def _transaction_rows(self) -> Iterator[TransactionExport]:
+        rows = self.session.scalars(
             select(Transaction)
             .options(selectinload(Transaction.tags))
             .where(Transaction.user_id == self.user_id)
             .order_by(Transaction.id.asc())
-        ).all()
-        return [
-            TransactionExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield TransactionExport(
                 id=row.id,
                 user_id=row.user_id,
                 date=row.date,
@@ -528,8 +525,6 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in transactions
-        ]
 
     def _receipt_attachment_rows(self) -> list[ReceiptAttachment]:
         return self.session.scalars(
@@ -538,14 +533,14 @@ class PortableExportService:
             .order_by(ReceiptAttachment.id.asc())
         ).all()
 
-    def _recurring_rule_rows(self) -> list[RecurringRuleExport]:
+    def _recurring_rule_rows(self) -> Iterator[RecurringRuleExport]:
         rows = self.session.scalars(
             select(RecurringRule)
             .where(RecurringRule.user_id == self.user_id)
             .order_by(RecurringRule.id.asc())
-        ).all()
-        return [
-            RecurringRuleExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield RecurringRuleExport(
                 id=row.id,
                 user_id=row.user_id,
                 name=row.name,
@@ -564,17 +559,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _transaction_template_rows(self) -> list[TransactionTemplateExport]:
+    def _transaction_template_rows(self) -> Iterator[TransactionTemplateExport]:
         rows = self.session.scalars(
             select(TransactionTemplate)
             .where(TransactionTemplate.user_id == self.user_id)
             .order_by(TransactionTemplate.id.asc())
-        ).all()
-        return [
-            TransactionTemplateExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield TransactionTemplateExport(
                 id=row.id,
                 user_id=row.user_id,
                 name=row.name,
@@ -587,17 +580,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _durable_purchase_rows(self) -> list[DurablePurchaseExport]:
+    def _durable_purchase_rows(self) -> Iterator[DurablePurchaseExport]:
         rows = self.session.scalars(
             select(DurablePurchase)
             .where(DurablePurchase.user_id == self.user_id)
             .order_by(DurablePurchase.id.asc())
-        ).all()
-        return [
-            DurablePurchaseExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield DurablePurchaseExport(
                 id=row.id,
                 user_id=row.user_id,
                 transaction_id=row.transaction_id,
@@ -606,17 +597,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _reimbursement_allocation_rows(self) -> list[ReimbursementAllocationExport]:
+    def _reimbursement_allocation_rows(self) -> Iterator[ReimbursementAllocationExport]:
         rows = self.session.scalars(
             select(ReimbursementAllocation)
             .where(ReimbursementAllocation.user_id == self.user_id)
             .order_by(ReimbursementAllocation.id.asc())
-        ).all()
-        return [
-            ReimbursementAllocationExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield ReimbursementAllocationExport(
                 id=row.id,
                 user_id=row.user_id,
                 reimbursement_transaction_id=row.reimbursement_transaction_id,
@@ -625,17 +614,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _budget_template_rows(self) -> list[BudgetTemplateExport]:
+    def _budget_template_rows(self) -> Iterator[BudgetTemplateExport]:
         rows = self.session.scalars(
             select(BudgetTemplate)
             .where(BudgetTemplate.user_id == self.user_id)
             .order_by(BudgetTemplate.id.asc())
-        ).all()
-        return [
-            BudgetTemplateExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield BudgetTemplateExport(
                 id=row.id,
                 user_id=row.user_id,
                 frequency=row.frequency.value,
@@ -646,17 +633,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _budget_override_rows(self) -> list[BudgetOverrideExport]:
+    def _budget_override_rows(self) -> Iterator[BudgetOverrideExport]:
         rows = self.session.scalars(
             select(BudgetOverride)
             .where(BudgetOverride.user_id == self.user_id)
             .order_by(BudgetOverride.id.asc())
-        ).all()
-        return [
-            BudgetOverrideExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield BudgetOverrideExport(
                 id=row.id,
                 user_id=row.user_id,
                 year=row.year,
@@ -666,15 +651,13 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _rule_rows(self) -> list[RuleExport]:
+    def _rule_rows(self) -> Iterator[RuleExport]:
         rows = self.session.scalars(
             select(Rule).where(Rule.user_id == self.user_id).order_by(Rule.id.asc())
-        ).all()
-        return [
-            RuleExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield RuleExport(
                 id=row.id,
                 user_id=row.user_id,
                 name=row.name,
@@ -691,17 +674,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _balance_anchor_rows(self) -> list[BalanceAnchorExport]:
+    def _balance_anchor_rows(self) -> Iterator[BalanceAnchorExport]:
         rows = self.session.scalars(
             select(BalanceAnchor)
             .where(BalanceAnchor.user_id == self.user_id)
             .order_by(BalanceAnchor.id.asc())
-        ).all()
-        return [
-            BalanceAnchorExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield BalanceAnchorExport(
                 id=row.id,
                 user_id=row.user_id,
                 as_of_at=row.as_of_at,
@@ -710,17 +691,15 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
-    def _bank_statement_row_rows(self) -> list[BankStatementRowExport]:
+    def _bank_statement_row_rows(self) -> Iterator[BankStatementRowExport]:
         rows = self.session.scalars(
             select(BankStatementRow)
             .where(BankStatementRow.user_id == self.user_id)
             .order_by(BankStatementRow.id.asc())
-        ).all()
-        return [
-            BankStatementRowExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield BankStatementRowExport(
                 id=row.id,
                 user_id=row.user_id,
                 source=row.source,
@@ -739,19 +718,17 @@ class PortableExportService:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row in rows
-        ]
 
     def _transaction_classification_event_rows(
         self,
-    ) -> list[TransactionClassificationEventExport]:
+    ) -> Iterator[TransactionClassificationEventExport]:
         rows = self.session.scalars(
             select(TransactionClassificationEvent)
             .where(TransactionClassificationEvent.user_id == self.user_id)
             .order_by(TransactionClassificationEvent.id.asc())
-        ).all()
-        return [
-            TransactionClassificationEventExport(
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield TransactionClassificationEventExport(
                 id=row.id,
                 user_id=row.user_id,
                 transaction_id=row.transaction_id,
@@ -765,5 +742,3 @@ class PortableExportService:
                 after_tags=_json_list(row.after_tags_json),
                 created_at=row.created_at,
             )
-            for row in rows
-        ]
