@@ -10,6 +10,8 @@ Private, self-hosted expense tracking for you or your household, with a web app,
 
 Expenses is a small self-hosted system for recording transactions, setting budgets, attaching receipts, reconciling bank statements, and keeping an eye on cash flow. It runs on hardware you control: a Raspberry Pi-class machine, a Mac mini, a small VPS, or any modest always-on host. Money is stored as integer cents in SQLite by default, and receipt files, logs, and generated secrets live in a local data directory that you own.
 
+The native iOS app is shown near the end of this README, including [iPhone screenshots](#native-ios-app) from the same mock dataset.
+
 > **Project status**: This is a personal, source-available project shared for others to self-host and learn from. It is maintained on a best-effort basis and is **not actively soliciting outside contributions**. Issues and pull requests may not be reviewed or merged. Feel free to fork it for your own noncommercial use under the [license](#license).
 
 ## Why Expenses
@@ -415,6 +417,22 @@ The same flow works against a public domain if you serve one, but the tailnet or
 The iOS client lives in `ios/ExpensesApp` and targets iOS 26+. It uses device-specific bearer sessions, stores the mobile session in Keychain, supports local device unlock with Face ID/Touch ID/passcode, and points at the configured self-hosted backend.
 
 Open `ios/ExpensesApp/ExpensesApp.xcodeproj` in Xcode to build locally. Simulator/debug builds default to a local backend. For device use, set the backend URL to your tailnet HTTPS origin (the host's MagicDNS name, for example `https://<host>.<tailnet>.ts.net`). That name has a valid certificate, so device builds work over HTTPS without an App Transport Security exception; the only built-in ATS exception is for `localhost` during local development.
+
+Screenshots from the native iOS app are below. They use the same `uv run mock-db` sample data as the web app screenshots above.
+
+![iPhone dashboard](docs/screenshots/ios/dashboard-dark.png)
+
+![iPhone transactions](docs/screenshots/ios/transactions-dark.png)
+
+![iPhone transaction detail with location](docs/screenshots/ios/transaction-location-dark.png)
+
+![iPhone budgets](docs/screenshots/ios/budgets-dark.png)
+
+![iPhone insights](docs/screenshots/ios/insights-dark.png)
+
+![iPhone recurring rules](docs/screenshots/ios/recurring-dark.png)
+
+![iPhone categorization rules](docs/screenshots/ios/rules-dark.png)
 
 ## License
 
