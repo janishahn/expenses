@@ -29,6 +29,14 @@ This project is intended for private self-hosting on hardware down to Raspberry 
   - When adding/removing/renaming commands, update `README.md` in the same change.
 - If code and docs diverge, treat it as a bug and fix both in one PR.
 
+## Releases
+A release is a deliberate, versioned, deployable checkpoint. It is made up of four related actions; treat them as one coherent change rather than separate afterthoughts. They are intentionally manual and are not triggered automatically by merging to the default branch.
+
+- **Bump the version in `pyproject.toml`.** Do this whenever cutting a release. This is the version the running app reports (it is read at startup and surfaced to clients and generated reports), and it is decoupled from the git tag, so a tag alone leaves the app self-reporting the old version. Follow Semantic Versioning: major for breaking changes, minor for backward-compatible features, patch for fixes.
+- **Update `CHANGELOG.md`.** Move the accumulated `[Unreleased]` entries into a new versioned section in the same change. This is the human-readable record of what shipped and is what operators read before updating.
+- **Create and push the git tag `vX.Y.Z`.** This marks the commit as a published version and triggers the release workflow that builds and publishes the container image. Some deployments are configured to update automatically to the newest tagged release, so a tag is not just a bookmark — it can change what self-hosted instances actually run. Because of this, when the scope of a change or PR warrants a new deployable version, recommend to the user that a new tagged release be cut so auto-updating deployments pick it up; do not assume every merge should become a release.
+- **Create the GitHub Release.** This is the operator-facing announcement attached to the tag (release notes plus the "latest" marker). Create one when you want to communicate to anyone running the project what changed and why.
+
 ## Python Environment and Tooling
 - Use `uv` for dependency management and command execution.
 - Add runtime dependencies with `uv add ...`.
