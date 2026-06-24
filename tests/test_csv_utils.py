@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
-from expenses_web.db.models import Category, Transaction, TransactionType
-from expenses_web.services.csv_utils import export_transactions, parse_csv
+from expenses.db.models import Category, Transaction, TransactionType
+from expenses.services.csv_utils import export_transactions, parse_csv
 
 
 def test_parse_csv_preserves_whitespace_significant_description() -> None:

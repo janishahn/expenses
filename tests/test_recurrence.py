@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import (
+from expenses.db.session import Base
+from expenses.db.models import (
     Category,
     CurrencyCode,
     IntervalUnit,
@@ -14,7 +14,7 @@ from expenses_web.db.models import (
     Transaction,
     TransactionType,
 )
-from expenses_web.recurrence.engine import RecurringEngine, calculate_next_date
+from expenses.recurrence.engine import RecurringEngine, calculate_next_date
 
 
 def _rule(policy: MonthDayPolicy, skip_weekends: bool = False) -> RecurringRule:
@@ -108,7 +108,7 @@ def test_recurring_engine_posts_usd_rule_with_historical_rate(monkeypatch):
     from decimal import Decimal
     from datetime import datetime, timezone
 
-    from expenses_web.infra.fx_rates import FxQuote
+    from expenses.infra.fx_rates import FxQuote
 
     def fake_convert(self, usd_cents: int, on_date: date):
         assert usd_cents == 12345
@@ -126,7 +126,7 @@ def test_recurring_engine_posts_usd_rule_with_historical_rate(monkeypatch):
         return 10493, quote
 
     monkeypatch.setattr(
-        "expenses_web.infra.fx_rates.FxRateService.convert_usd_cents_to_eur_cents",
+        "expenses.infra.fx_rates.FxRateService.convert_usd_cents_to_eur_cents",
         fake_convert,
     )
 
@@ -183,7 +183,7 @@ def test_recurring_engine_does_not_advance_on_fx_failure(monkeypatch):
         raise RuntimeError("FX down")
 
     monkeypatch.setattr(
-        "expenses_web.infra.fx_rates.FxRateService.convert_usd_cents_to_eur_cents",
+        "expenses.infra.fx_rates.FxRateService.convert_usd_cents_to_eur_cents",
         fake_convert,
     )
 
@@ -297,8 +297,8 @@ def test_post_due_rules_continues_when_one_rule_hits_db_error(monkeypatch):
 def test_scheduler_style_catch_up_posts_for_multiple_users():
     from sqlalchemy import select
 
-    from expenses_web.db.models import User
-    from expenses_web.services import RecurringRuleService
+    from expenses.db.models import User
+    from expenses.services import RecurringRuleService
 
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

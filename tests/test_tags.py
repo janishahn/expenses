@@ -3,10 +3,10 @@ from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import TransactionType
-from expenses_web.schemas import CategoryIn, TransactionIn
-from expenses_web.services import CategoryService, TagService, TransactionService
+from expenses.db.session import Base
+from expenses.db.models import TransactionType
+from expenses.schemas import CategoryIn, TransactionIn
+from expenses.services import CategoryService, TagService, TransactionService
 
 
 def test_deleting_used_tag_clears_associations() -> None:

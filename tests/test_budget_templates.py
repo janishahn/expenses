@@ -3,15 +3,15 @@ from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import BudgetFrequency, TransactionType
-from expenses_web.schemas import (
+from expenses.db.session import Base
+from expenses.db.models import BudgetFrequency, TransactionType
+from expenses.schemas import (
     BudgetOverrideIn,
     BudgetTemplateIn,
     CategoryIn,
     TransactionIn,
 )
-from expenses_web.services import (
+from expenses.services import (
     BudgetService,
     CategoryService,
     TagService,

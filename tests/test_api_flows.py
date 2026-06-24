@@ -3,8 +3,8 @@ from datetime import date, datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-import expenses_web.app as app_main
-from expenses_web.core.config import get_settings
+import expenses.app as app_main
+from expenses.core.config import get_settings
 
 
 def _create_category(

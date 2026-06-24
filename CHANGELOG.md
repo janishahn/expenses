@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-24
+
+### Changed
+- Renamed remaining legacy hyphenated app, service, API, export, and package identifiers to `expenses`.
+- Renamed the Python import package to `expenses`.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added
@@ -41,6 +47,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/janishahn/expenses/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/janishahn/expenses/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/janishahn/expenses/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/janishahn/expenses/releases/tag/v0.1.0

@@ -358,8 +358,8 @@ wheels = [
 ]
 
 [[package]]
-name = "expenses-web"
-version = "0.2.0"
+name = "expenses"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

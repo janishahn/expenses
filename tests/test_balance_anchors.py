@@ -3,11 +3,11 @@ from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import Category, TransactionType
-from expenses_web.core.periods import Period
-from expenses_web.schemas import BalanceAnchorIn, TransactionIn
-from expenses_web.services import (
+from expenses.db.session import Base
+from expenses.db.models import Category, TransactionType
+from expenses.core.periods import Period
+from expenses.schemas import BalanceAnchorIn, TransactionIn
+from expenses.services import (
     BalanceAnchorService,
     MetricsService,
     TransactionService,

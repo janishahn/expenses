@@ -52,4 +52,4 @@ USER expenses
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["sh", "-c", "migrations && exec uvicorn expenses_web.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"${EXPENSES_FORWARDED_ALLOW_IPS}\""]
+CMD ["sh", "-c", "migrations && exec uvicorn expenses.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"${EXPENSES_FORWARDED_ALLOW_IPS}\""]

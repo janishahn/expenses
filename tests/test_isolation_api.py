@@ -2,8 +2,8 @@ from datetime import date, datetime
 
 from fastapi.testclient import TestClient
 
-import expenses_web.app as app_main
-from expenses_web.db.models import BalanceAnchor, Category, Transaction, TransactionType
+import expenses.app as app_main
+from expenses.db.models import BalanceAnchor, Category, Transaction, TransactionType
 
 
 def _credentials(username: str, password: str) -> dict[str, str]:
@@ -715,7 +715,7 @@ def test_report_and_attachment_downloads_are_user_scoped(
     anonymous_api_client: TestClient,
     monkeypatch,
 ) -> None:
-    import expenses_web.api.routes as routes_module
+    import expenses.api.routes as routes_module
 
     _setup_bootstrap(anonymous_api_client)
 

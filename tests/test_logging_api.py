@@ -5,8 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from expenses_web.core.app_logging import build_log_query, query_logs
-from expenses_web.core.config import get_settings
+from expenses.core.app_logging import build_log_query, query_logs
+from expenses.core.config import get_settings
 
 
 def _elevate_admin(api_client: TestClient) -> None:

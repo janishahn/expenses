@@ -7,11 +7,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import expenses_web.cli.mock_db as mock_db
-from expenses_web.auth.security import verify_password
-from expenses_web.cli.mock_db import _seed
-from expenses_web.core.config import get_settings
-from expenses_web.db.models import (
+import expenses.cli.mock_db as mock_db
+from expenses.auth.security import verify_password
+from expenses.cli.mock_db import _seed
+from expenses.core.config import get_settings
+from expenses.db.models import (
     BalanceAnchor,
     BankStatementRow,
     ReceiptAttachment,
@@ -19,8 +19,8 @@ from expenses_web.db.models import (
     TransactionType,
     User,
 )
-from expenses_web.db.session import Base
-from expenses_web.services.main import BalanceAnchorService, DurablePurchaseService
+from expenses.db.session import Base
+from expenses.services.main import BalanceAnchorService, DurablePurchaseService
 
 
 @contextmanager

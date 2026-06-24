@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
-from expenses_web.infra.fx_rates import FxQuote
+from expenses.infra.fx_rates import FxQuote
 
 
 def _create_category(
@@ -92,7 +92,7 @@ def test_usd_rule_monthly_equivalent_uses_single_quote_lookup(
         )
 
     monkeypatch.setattr(
-        "expenses_web.infra.fx_rates.FxRateService.usd_to_eur_quote_for_date",
+        "expenses.infra.fx_rates.FxRateService.usd_to_eur_quote_for_date",
         fake_quote,
     )
 

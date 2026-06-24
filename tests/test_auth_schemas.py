@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from expenses_web.schemas import AdminElevationIn, AuthCredentialsIn
+from expenses.schemas import AdminElevationIn, AuthCredentialsIn
 
 
 def test_auth_credentials_trim_username_and_reject_blank_values() -> None:

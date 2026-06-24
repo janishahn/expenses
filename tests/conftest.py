@@ -6,9 +6,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import expenses_web.app as app_main
-from expenses_web.core.config import get_settings
-from expenses_web.db.session import Base
+import expenses.app as app_main
+from expenses.core.config import get_settings
+from expenses.db.session import Base
 
 
 @pytest.fixture()

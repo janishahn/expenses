@@ -8,9 +8,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
-import expenses_web.app as app_main
-from expenses_web.core.config import get_settings
-from expenses_web.db.session import Base
+import expenses.app as app_main
+from expenses.core.config import get_settings
+from expenses.db.session import Base
 
 
 def _credentials(username: str, password: str) -> dict[str, str]:
@@ -910,9 +910,7 @@ def test_elevated_rebuild_rollups_runs_for_multiple_users(
     def _record_rebuild(session, user_id):
         rebuilt_user_ids.append(user_id)
 
-    monkeypatch.setattr(
-        "expenses_web.api.routes.rebuild_monthly_rollups", _record_rebuild
-    )
+    monkeypatch.setattr("expenses.api.routes.rebuild_monthly_rollups", _record_rebuild)
 
     rebuild = anonymous_api_client.post(
         "/api/admin/rebuild-rollups",

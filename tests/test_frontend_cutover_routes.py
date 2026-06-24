@@ -1,6 +1,6 @@
 from fastapi.routing import APIRoute
 
-import expenses_web.app as main
+import expenses.app as main
 
 
 def _registered_route_paths() -> set[str]:

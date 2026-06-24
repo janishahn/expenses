@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 
 import pytest
 
-from expenses_web.db.models import RuleMatchType, Transaction, TransactionType
-from expenses_web.db.session import Base
-from expenses_web.core.config import get_settings
-from expenses_web.schemas import CategoryIn, RuleIn, TransactionIn
-from expenses_web.services import (
+from expenses.db.models import RuleMatchType, Transaction, TransactionType
+from expenses.db.session import Base
+from expenses.core.config import get_settings
+from expenses.schemas import CategoryIn, RuleIn, TransactionIn
+from expenses.services import (
     CSVService,
     CategoryService,
     RuleService,

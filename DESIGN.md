@@ -1,6 +1,6 @@
 # Design Language
 
-This document is the canonical source of truth for the design language used across the expenses-web application. All UI changes should adhere to these guidelines. When adding new patterns or modifying existing ones, update this document to keep it current.
+This document is the canonical source of truth for the design language used across the expenses application. All UI changes should adhere to these guidelines. When adding new patterns or modifying existing ones, update this document to keep it current.
 
 ---
 

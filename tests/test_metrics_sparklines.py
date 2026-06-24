@@ -3,11 +3,11 @@ from datetime import date, datetime
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 
-from expenses_web.core.periods import Period
-from expenses_web.db.models import Category, MonthlyRollup, TransactionType
-from expenses_web.db.session import Base
-from expenses_web.schemas import TransactionIn
-from expenses_web.services import MetricsService, TransactionService
+from expenses.core.periods import Period
+from expenses.db.models import Category, MonthlyRollup, TransactionType
+from expenses.db.session import Base
+from expenses.schemas import TransactionIn
+from expenses.services import MetricsService, TransactionService
 
 
 def make_session():

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from expenses_web.cli import migrations
+from expenses.cli import migrations
 
 
 def test_upgrade_head_uses_current_database_url_and_quiet_logging(

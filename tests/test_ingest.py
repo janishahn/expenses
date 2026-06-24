@@ -5,10 +5,10 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import Category, RuleMatchType, TransactionType
-from expenses_web.schemas import CategoryIn, IngestTransactionIn, RuleIn
-from expenses_web.services import (
+from expenses.db.session import Base
+from expenses.db.models import Category, RuleMatchType, TransactionType
+from expenses.schemas import CategoryIn, IngestTransactionIn, RuleIn
+from expenses.services import (
     CategoryService,
     IngestCategoryAmbiguous,
     IngestService,

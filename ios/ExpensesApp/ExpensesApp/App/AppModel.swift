@@ -3,7 +3,7 @@ import Observation
 
 enum ExpensesAppStorage {
     static let baseURLKey = "expenses.baseURL"
-    static let mobileKeychainService = "expenses-web.mobile"
+    static let mobileKeychainService = "expenses.mobile"
     static let tokenKey = "mobileSessionToken"
     static let defaultLocalBackendURL = "http://localhost:8000"
 }

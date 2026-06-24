@@ -5,7 +5,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-from expenses_web.core.config import get_settings
+from expenses.core.config import get_settings
 
 
 def test_transaction_title_migration_backfills_legacy_null_and_blank_notes(

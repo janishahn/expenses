@@ -1,7 +1,7 @@
 import json
 
-from expenses_web.cli.export_ios_fixtures import export_ios_fixtures
-from expenses_web.cli.export_openapi import export_openapi
+from expenses.cli.export_ios_fixtures import export_ios_fixtures
+from expenses.cli.export_openapi import export_openapi
 
 
 def test_export_openapi_writes_mobile_contract_schema(tmp_path) -> None:
@@ -34,7 +34,7 @@ def test_export_ios_fixtures_writes_curated_foundation_snapshots(tmp_path) -> No
     dashboard = json.loads((output_dir / "dashboard.json").read_text())
     transactions = json.loads((output_dir / "transactions.json").read_text())
 
-    assert status["app"] == "expenses-web"
+    assert status["app"] == "expenses"
     assert status["timezone"] == "Europe/Berlin"
     assert identity["authenticated"] is True
     assert identity["session"]["device_name"] == "iPhone Simulator"

@@ -6,28 +6,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from expenses_web.auth.dependencies import (
+from expenses.auth.dependencies import (
     require_admin_capable_user,
     require_current_user,
     require_elevated_admin,
     resolve_auth_context,
 )
-from expenses_web.auth.mobile_sessions import (
+from expenses.auth.mobile_sessions import (
     elevate_mobile_auth_session,
     issue_mobile_auth_session,
     lookup_mobile_auth_session,
     revoke_mobile_auth_session,
 )
-from expenses_web.auth.security import hash_password, verify_password
-from expenses_web.auth.sessions import (
+from expenses.auth.security import hash_password, verify_password
+from expenses.auth.sessions import (
     elevate_auth_session,
     issue_auth_session,
     lookup_auth_session,
     revoke_auth_session,
 )
-from expenses_web.core.config import get_settings
-from expenses_web.db.models import User
-from expenses_web.db.session import Base
+from expenses.core.config import get_settings
+from expenses.db.models import User
+from expenses.db.session import Base
 
 
 @pytest.fixture(autouse=True)

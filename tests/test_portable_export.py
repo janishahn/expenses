@@ -11,9 +11,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-import expenses_web.app as app_main
-from expenses_web.core.config import get_settings
-from expenses_web.db.models import (
+import expenses.app as app_main
+from expenses.core.config import get_settings
+from expenses.db.models import (
     BalanceAnchor,
     BankStatementRow,
     BudgetFrequency,
@@ -35,9 +35,9 @@ from expenses_web.db.models import (
     TransactionTemplate,
     TransactionType,
 )
-from expenses_web.db.session import Base
-from expenses_web.exporters.portable import PortableExportService
-from expenses_web.services import ReceiptAttachmentService
+from expenses.db.session import Base
+from expenses.exporters.portable import PortableExportService
+from expenses.services import ReceiptAttachmentService
 
 
 def _read_ndjson(archive: ZipFile, path: str) -> list[dict[str, object]]:
@@ -261,10 +261,10 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             assert "data/receipt_attachments.ndjson" in names
 
             manifest = json.loads(archive.read("manifest.json"))
-            assert manifest["format"] == "expenses-web-portable-export"
+            assert manifest["format"] == "expenses-portable-export"
             assert manifest["format_version"] == 1
             assert manifest["app"] == {
-                "name": "expenses-web",
+                "name": "expenses",
                 "version": "9.9.9-test",
             }
             assert manifest["scope"] == {"type": "current_user", "user_id": 1}
@@ -372,7 +372,7 @@ def test_portable_export_api_returns_zip(
 
     with ZipFile(BytesIO(response.content)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["format"] == "expenses-web-portable-export"
+        assert manifest["format"] == "expenses-portable-export"
         assert manifest["datasets"]["transactions"]["row_count"] == 1
 
 

@@ -5,9 +5,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from expenses_web.db.models import CurrencyCode, FxQuoteCache
-from expenses_web.db.session import Base
-from expenses_web.infra.fx_rates import (
+from expenses.db.models import CurrencyCode, FxQuoteCache
+from expenses.db.session import Base
+from expenses.infra.fx_rates import (
     FxQuote,
     FxRateService,
     _fetch_ecb_usd_eur_quotes,
@@ -47,7 +47,7 @@ def test_fx_fetch_sets_explicit_user_agent(monkeypatch):
         captured["timeout"] = timeout
         return _DummyResponse("TIME_PERIOD,OBS_VALUE\n2026-02-02,2.0\n")
 
-    monkeypatch.setattr("expenses_web.infra.fx_rates.urlopen", fake_urlopen)
+    monkeypatch.setattr("expenses.infra.fx_rates.urlopen", fake_urlopen)
 
     quotes = _fetch_ecb_usd_eur_quotes(
         date(2026, 2, 2),
@@ -55,7 +55,7 @@ def test_fx_fetch_sets_explicit_user_agent(monkeypatch):
         timeout=5.0,
     )
 
-    assert captured["user_agent"] == "expenses-web/0.1 (+https://local)"
+    assert captured["user_agent"] == "expenses/0.1 (+https://local)"
     assert captured["accept"] == "text/csv"
     assert captured["timeout"] == 5.0
     quote = quotes[date(2026, 2, 2)]
@@ -83,7 +83,7 @@ def test_fx_service_uses_exact_cached_quote_without_fetch(monkeypatch):
             raise AssertionError("live fetch should not run for exact cache hits")
 
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates._fetch_ecb_usd_eur_quotes",
+            "expenses.infra.fx_rates._fetch_ecb_usd_eur_quotes",
             fail_fetch,
         )
 
@@ -116,7 +116,7 @@ def test_fx_service_uses_stale_cached_quote_when_live_fetch_fails(monkeypatch):
             raise RuntimeError("ECB unavailable")
 
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates._fetch_ecb_usd_eur_quotes",
+            "expenses.infra.fx_rates._fetch_ecb_usd_eur_quotes",
             fail_fetch,
         )
 
@@ -158,15 +158,15 @@ def test_fx_service_clamps_future_dates_to_today(monkeypatch):
             }
 
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates.FxRateService._local_today",
+            "expenses.infra.fx_rates.FxRateService._local_today",
             fake_today,
         )
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates.FxRateService._store_quote",
+            "expenses.infra.fx_rates.FxRateService._store_quote",
             fake_quote,
         )
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates._fetch_ecb_usd_eur_quotes",
+            "expenses.infra.fx_rates._fetch_ecb_usd_eur_quotes",
             fake_fetch,
         )
 
@@ -194,7 +194,7 @@ def test_fx_service_persists_live_quotes_for_future_requests(monkeypatch):
             }
 
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates._fetch_ecb_usd_eur_quotes",
+            "expenses.infra.fx_rates._fetch_ecb_usd_eur_quotes",
             fake_fetch,
         )
 
@@ -212,7 +212,7 @@ def test_fx_service_persists_live_quotes_for_future_requests(monkeypatch):
             raise AssertionError("second lookup should hit the persisted cache")
 
         monkeypatch.setattr(
-            "expenses_web.infra.fx_rates._fetch_ecb_usd_eur_quotes",
+            "expenses.infra.fx_rates._fetch_ecb_usd_eur_quotes",
             fail_fetch,
         )
 

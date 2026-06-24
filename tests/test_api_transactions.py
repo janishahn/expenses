@@ -8,12 +8,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
-from expenses_web.api import routes
-from expenses_web.core.config import get_settings
-from expenses_web.db.session import Base
-from expenses_web.db.models import Category, Transaction, TransactionType
-from expenses_web.schemas import TransactionIn
-from expenses_web.services import TransactionService
+from expenses.api import routes
+from expenses.core.config import get_settings
+from expenses.db.session import Base
+from expenses.db.models import Category, Transaction, TransactionType
+from expenses.schemas import TransactionIn
+from expenses.services import TransactionService
 
 
 def make_session():

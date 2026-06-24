@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-import expenses_web.app as app_main
-from expenses_web.api.routes import APP_VERSION
-from expenses_web.core.config import get_settings
+import expenses.app as app_main
+from expenses.api.routes import APP_VERSION
+from expenses.core.config import get_settings
 
 
 def _mobile_credentials(
@@ -38,7 +38,7 @@ def test_mobile_status_reports_public_capabilities(
 
     assert response.status_code == 200
     assert response.json() == {
-        "app": "expenses-web",
+        "app": "expenses",
         "version": APP_VERSION,
         "setup_required": True,
         "setup_token_required": False,

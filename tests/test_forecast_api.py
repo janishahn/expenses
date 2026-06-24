@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
-from expenses_web.infra.fx_rates import FxQuote
+from expenses.infra.fx_rates import FxQuote
 
 
 def _add_months(base: date, months: int) -> date:
@@ -163,7 +163,7 @@ def test_forecast_and_scenario_use_app_timezone_today(
     monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
     fixed_today = date(2025, 1, 31)
-    monkeypatch.setattr("expenses_web.services.main.local_today", lambda: fixed_today)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
 
     forecast_response = api_client.get("/api/forecast?horizon=3&mode=recurring")
     assert forecast_response.status_code == 200
@@ -185,7 +185,7 @@ def test_forecast_usd_uses_resolved_quotes(
     monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
     fixed_today = date(2025, 1, 15)
-    monkeypatch.setattr("expenses_web.services.main.local_today", lambda: fixed_today)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
     next_month = _add_months(fixed_today.replace(day=1), 1)
     rent_id = _create_category(api_client, csrf_headers, "USD Rent", "expense")
     _create_recurring_rule(
@@ -219,7 +219,7 @@ def test_forecast_usd_uses_resolved_quotes(
         }
 
     monkeypatch.setattr(
-        "expenses_web.infra.fx_rates.FxRateService.resolve_usd_to_eur_quotes",
+        "expenses.infra.fx_rates.FxRateService.resolve_usd_to_eur_quotes",
         fake_resolve,
     )
 

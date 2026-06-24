@@ -1,7 +1,7 @@
 services:
-  expenses-web:
+  expenses:
     build: .
-    image: expenses-web:local
+    image: expenses:local
     ports:
       - "${EXPENSES_HTTP_PORT:-8000}:8000"
     environment:

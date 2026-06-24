@@ -7,7 +7,7 @@ cd "$PROJECT_DIR"
 export PATH="$HOME/.local/bin:$PATH"
 export EXPENSES_ENV="${EXPENSES_ENV:-Production}"
 
-exec uv run --no-dev uvicorn expenses_web.app:app \
+exec uv run --no-dev uvicorn expenses.app:app \
   --host 0.0.0.0 \
   --port "${EXPENSES_HTTP_PORT:-8000}" \
   --proxy-headers \

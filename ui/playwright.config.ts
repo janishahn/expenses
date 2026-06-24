@@ -71,7 +71,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        `cd .. && EXPENSES_DATA_DIR="$(mktemp -d)" && export EXPENSES_DATA_DIR && trap 'rm -rf "$EXPENSES_DATA_DIR"' EXIT INT TERM && uv run python -m alembic upgrade head && uv run python -m uvicorn expenses_web.app:app --host 127.0.0.1 --port ${backendPort}`,
+        `cd .. && EXPENSES_DATA_DIR="$(mktemp -d)" && export EXPENSES_DATA_DIR && trap 'rm -rf "$EXPENSES_DATA_DIR"' EXIT INT TERM && uv run python -m alembic upgrade head && uv run python -m uvicorn expenses.app:app --host 127.0.0.1 --port ${backendPort}`,
       env: {
         ...process.env,
         EXPENSES_AUTH_SIGNUP_ENABLED: "true",

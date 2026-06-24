@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from expenses_web.core.config import get_settings
-from expenses_web.services.bank_reconciliation import parse_commerzbank_csv
+from expenses.core.config import get_settings
+from expenses.services.bank_reconciliation import parse_commerzbank_csv
 
 
 def _csv_bytes(rows: list[str]) -> bytes:

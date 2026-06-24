@@ -17,13 +17,13 @@ if str(SRC_DIR) not in sys.path:
 
 # Import project modules after path modification
 def _get_settings():
-    from expenses_web.core.config import get_settings
+    from expenses.core.config import get_settings
 
     return get_settings()
 
 
 def _get_base():
-    from expenses_web.db.session import Base
+    from expenses.db.session import Base
 
     return Base
 

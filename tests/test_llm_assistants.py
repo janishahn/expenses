@@ -4,23 +4,23 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from expenses_web.ai.client import LLMRunResult
-from expenses_web.ai.schemas import (
+from expenses.ai.client import LLMRunResult
+from expenses.ai.schemas import (
     RuleMiningOutput,
     RuleProposalOut,
     SearchTranslationOutput,
     TransactionTriageOutput,
 )
-from expenses_web.ai.service import LLMAssistantService
-from expenses_web.db.models import (
+from expenses.ai.service import LLMAssistantService
+from expenses.db.models import (
     LLMJob,
     RuleLLMSuggestion,
     TransactionClassificationEvent,
     TransactionType,
 )
-from expenses_web.db.session import Base
-from expenses_web.schemas import CategoryIn, IngestTransactionIn, TransactionIn
-from expenses_web.services import CategoryService, IngestService, TransactionService
+from expenses.db.session import Base
+from expenses.schemas import CategoryIn, IngestTransactionIn, TransactionIn
+from expenses.services import CategoryService, IngestService, TransactionService
 
 
 class FakeLLMRunner:

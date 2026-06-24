@@ -1,6 +1,6 @@
 [project]
-name = "expenses-web"
-version = "0.2.0"
+name = "expenses"
+version = "0.2.1"
 description = "A lightweight, mobile-first expense tracker"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -28,12 +28,12 @@ dependencies = [
 ]
 
 [project.scripts]
-dev = "expenses_web.cli.dev:main"
-export-ios-fixtures = "expenses_web.cli.export_ios_fixtures:main"
-export-openapi = "expenses_web.cli.export_openapi:main"
-migrations = "expenses_web.cli.migrations:main"
-test = "expenses_web.cli.test:main"
-mock-db = "expenses_web.cli.mock_db:main"
+dev = "expenses.cli.dev:main"
+export-ios-fixtures = "expenses.cli.export_ios_fixtures:main"
+export-openapi = "expenses.cli.export_openapi:main"
+migrations = "expenses.cli.migrations:main"
+test = "expenses.cli.test:main"
+mock-db = "expenses.cli.mock_db:main"
 
 [dependency-groups]
 dev = [

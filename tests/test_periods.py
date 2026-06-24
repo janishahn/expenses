@@ -1,6 +1,6 @@
 from datetime import date
 
-from expenses_web.core.periods import (
+from expenses.core.periods import (
     Period,
     add_months,
     month_end,

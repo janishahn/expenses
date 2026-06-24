@@ -97,7 +97,7 @@ Open `http://localhost:8000`, or replace `localhost` with the host on your priva
 Useful commands:
 
 ```bash
-docker compose logs -f expenses-web
+docker compose logs -f expenses
 docker compose ps
 docker compose down
 ```
@@ -132,7 +132,7 @@ uv sync --frozen --no-dev
 npm ci --prefix ui
 npm run --prefix ui build
 uv run --no-dev migrations
-uv run --no-dev uvicorn expenses_web.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+uv run --no-dev uvicorn expenses.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
 The app serves the React SPA and the `/api/*` endpoints from one process on one origin, so a single port is all you expose. `--proxy-headers --forwarded-allow-ips 127.0.0.1` tells the app to trust `X-Forwarded-Proto`/`X-Forwarded-For` only from a local reverse proxy or tunnel (see [Serving & Access](#serving--access)). This is what makes secure cookies and CSRF work when TLS is terminated in front of the app.
@@ -150,13 +150,13 @@ After=network.target
 Type=simple
 User=expenses
 Group=expenses
-WorkingDirectory=/srv/expenses-web
+WorkingDirectory=/srv/expenses
 Environment=EXPENSES_ENV=Production
-Environment=EXPENSES_DATA_DIR=/var/lib/expenses-web
-Environment=EXPENSES_LOG_DIR=/var/log/expenses-web
+Environment=EXPENSES_DATA_DIR=/var/lib/expenses
+Environment=EXPENSES_LOG_DIR=/var/log/expenses
 # Optional: override the listen port if 8000 is already taken on this host.
 # Environment=EXPENSES_HTTP_PORT=8001
-ExecStart=/srv/expenses-web/start.sh
+ExecStart=/srv/expenses/start.sh
 Restart=always
 
 [Install]
@@ -219,7 +219,7 @@ See `SECURITY.md` for the deployment threat model.
 
 ## Configuration
 
-`src/expenses_web/core/config.py` is the central runtime configuration boundary. Safe operational defaults live in code; environment variables are for deployment-specific paths, secrets, host behavior, and optional integrations. Local development also loads a repo-root `.env` file through `python-dotenv`; real process environment variables take precedence.
+`src/expenses/core/config.py` is the central runtime configuration boundary. Safe operational defaults live in code; environment variables are for deployment-specific paths, secrets, host behavior, and optional integrations. Local development also loads a repo-root `.env` file through `python-dotenv`; real process environment variables take precedence.
 
 Start from `.env.example` for common settings. Keep `.env` local and uncommitted.
 

@@ -5,11 +5,11 @@ from sqlalchemy.orm import sessionmaker
 
 import pytest
 
-from expenses_web.db.session import Base
-from expenses_web.db.models import Category, TransactionType
-from expenses_web.core.periods import Period
-from expenses_web.schemas import TransactionIn
-from expenses_web.services import (
+from expenses.db.session import Base
+from expenses.db.models import Category, TransactionType
+from expenses.core.periods import Period
+from expenses.schemas import TransactionIn
+from expenses.services import (
     BudgetService,
     InsightsService,
     MetricsService,

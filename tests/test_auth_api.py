@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from expenses_web.core.config import get_settings
+from expenses.core.config import get_settings
 
 
 @pytest.fixture()

@@ -2,7 +2,7 @@ import stat
 
 import pytest
 
-from expenses_web.core.config import get_settings
+from expenses.core.config import get_settings
 
 
 @pytest.fixture(autouse=True)

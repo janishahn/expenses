@@ -6,7 +6,7 @@ from typing import TypedDict, cast
 
 import pytest
 
-from expenses_web.cli import dev
+from expenses.cli import dev
 
 
 class PopenCall(TypedDict):
