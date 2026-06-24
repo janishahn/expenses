@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reworked the README into a product-oriented feature tour and documented changelog-maintenance conventions for contributors.
+
+### Fixed
+- Pinned the mobile status and admin info tests to the running app version instead of a hard-coded value, so CI no longer breaks after a release version bump.
+
 ## [0.1.1] - 2026-06-24
 
 ### Removed
