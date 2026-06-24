@@ -527,9 +527,14 @@ function SettingsPage() {
                 Preview and import transactions from a CSV export into your own account.
               </p>
             </div>
-            <AppButton asChild tone="ghost">
-              <a href="/api/export/csv">Download your CSV</a>
-            </AppButton>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <AppButton asChild tone="ghost">
+                <a href="/api/export/csv">Download your CSV</a>
+              </AppButton>
+              <AppButton asChild tone="ghost">
+                <a href="/api/export/portable.zip">Download portable archive</a>
+              </AppButton>
+            </div>
           </div>
 
           <div className="mt-4 space-y-3">
