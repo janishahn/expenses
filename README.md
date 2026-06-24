@@ -420,19 +420,24 @@ Open `ios/ExpensesApp/ExpensesApp.xcodeproj` in Xcode to build locally. Simulato
 
 Screenshots from the native iOS app are below. They use the same `uv run mock-db` sample data as the web app screenshots above.
 
-![iPhone dashboard](docs/screenshots/ios/dashboard-dark.png)
+<p>
+  <img src="docs/screenshots/ios/dashboard-dark.png" alt="iPhone dashboard" height="530">
+  <img src="docs/screenshots/ios/transactions-dark.png" alt="iPhone transactions" height="530">
+</p>
 
-![iPhone transactions](docs/screenshots/ios/transactions-dark.png)
+<p>
+  <img src="docs/screenshots/ios/transaction-location-dark.png" alt="iPhone transaction detail with location" height="530">
+  <img src="docs/screenshots/ios/budgets-dark.png" alt="iPhone budgets" height="530">
+</p>
 
-![iPhone transaction detail with location](docs/screenshots/ios/transaction-location-dark.png)
+<p>
+  <img src="docs/screenshots/ios/insights-dark.png" alt="iPhone insights" height="530">
+  <img src="docs/screenshots/ios/recurring-dark.png" alt="iPhone recurring rules" height="530">
+</p>
 
-![iPhone budgets](docs/screenshots/ios/budgets-dark.png)
-
-![iPhone insights](docs/screenshots/ios/insights-dark.png)
-
-![iPhone recurring rules](docs/screenshots/ios/recurring-dark.png)
-
-![iPhone categorization rules](docs/screenshots/ios/rules-dark.png)
+<p>
+  <img src="docs/screenshots/ios/rules-dark.png" alt="iPhone categorization rules" height="530">
+</p>
 
 ## License
 
