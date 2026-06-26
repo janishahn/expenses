@@ -297,14 +297,14 @@ LLM features are disabled by default and are review-first when enabled. The conf
 
 ```env
 EXPENSES_LLM_ENABLED=false
-EXPENSES_LLM_PROVIDER=homelab
 EXPENSES_LLM_BASE_URL=http://example-tailnet-host:8080/v1
 EXPENSES_LLM_MODEL=qwen
 EXPENSES_LLM_API_KEY=
-OPENROUTER_API_KEY=
+EXPENSES_LLM_TEMPERATURE=
+EXPENSES_LLM_MAX_OUTPUT_TOKENS=
 ```
 
-`EXPENSES_LLM_PROVIDER=homelab` currently means "local or private OpenAI-compatible endpoint." `openrouter` is also supported; `EXPENSES_LLM_API_KEY` is canonical, with `OPENROUTER_API_KEY` kept as a convenience alias.
+`EXPENSES_LLM_BASE_URL` can point to a private Tailnet/MagicDNS endpoint or any hosted OpenAI-compatible API such as OpenRouter. Leave `EXPENSES_LLM_API_KEY` blank for unauthenticated private endpoints. The app sends feature-specific OpenAI/OpenRouter-compatible `reasoning_effort` values and output caps: search translation uses `none` with 512 output tokens, transaction triage uses `low` with 1024 output tokens, and rule mining uses `medium` with 4096 output tokens. Reasoning tokens count toward the same output-token cap as the visible JSON response, so lowering `EXPENSES_LLM_MAX_OUTPUT_TOKENS` can truncate reasoning-model responses. Leave `EXPENSES_LLM_TEMPERATURE` and `EXPENSES_LLM_MAX_OUTPUT_TOKENS` blank to use the built-in per-feature defaults; when set, those values replace the defaults for every LLM feature.
 
 ## Data, Backups, And Logs
 

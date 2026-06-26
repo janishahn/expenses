@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -12,6 +13,7 @@ from expenses.ai.schemas import (
     TransactionTriageOutput,
 )
 from expenses.ai.service import LLMAssistantService
+from expenses.core.config import get_settings
 from expenses.db.models import (
     LLMJob,
     RuleLLMSuggestion,
@@ -46,9 +48,80 @@ def make_session() -> Session:
     return Session(engine)
 
 
+def _configure_enabled_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    temperature: str | None = None,
+    max_output_tokens: str | None = None,
+) -> None:
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
+    if temperature is not None:
+        monkeypatch.setenv("EXPENSES_LLM_TEMPERATURE", temperature)
+    if max_output_tokens is not None:
+        monkeypatch.setenv("EXPENSES_LLM_MAX_OUTPUT_TOKENS", max_output_tokens)
+    get_settings.cache_clear()
+
+
 @pytest.fixture()
 def anyio_backend() -> str:
     return "asyncio"
+
+
+def test_llm_feature_defaults_include_reasoning_token_headroom(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _configure_enabled_llm(monkeypatch, tmp_path)
+    try:
+        with make_session() as session:
+            service = LLMAssistantService(session, user_id=1)
+
+            search = service._runner_for_feature("search_translate")
+            triage = service._runner_for_feature("transaction_triage")
+            rule_mining = service._runner_for_feature("rule_mining")
+
+            assert search.temperature == 0.0
+            assert search.max_tokens == 512
+            assert search.reasoning_effort == "none"
+
+            assert triage.temperature == 0.7
+            assert triage.max_tokens == 1_024
+            assert triage.reasoning_effort == "low"
+
+            assert rule_mining.temperature == 0.7
+            assert rule_mining.max_tokens == 4_096
+            assert rule_mining.reasoning_effort == "medium"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_llm_generation_overrides_do_not_change_reasoning_effort(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _configure_enabled_llm(
+        monkeypatch,
+        tmp_path,
+        temperature="0.9",
+        max_output_tokens="2048",
+    )
+    try:
+        with make_session() as session:
+            service = LLMAssistantService(session, user_id=1)
+
+            search = service._runner_for_feature("search_translate")
+            rule_mining = service._runner_for_feature("rule_mining")
+
+            assert search.temperature == 0.9
+            assert search.max_tokens == 2_048
+            assert search.reasoning_effort == "none"
+
+            assert rule_mining.temperature == 0.9
+            assert rule_mining.max_tokens == 2_048
+            assert rule_mining.reasoning_effort == "medium"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_transaction_classification_events_track_ingest_create_and_user_update() -> (

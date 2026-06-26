@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from httpx import AsyncClient, HTTPStatusError, Response
 from pydantic import BaseModel
@@ -17,11 +17,7 @@ from expenses.core.config import get_settings
 
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
-
-OPENROUTER_BODY = {
-    "reasoning": {"effort": "none"},
-    "provider": {"sort": "throughput"},
-}
+ReasoningEffort = Literal["none", "low", "medium", "high"]
 
 
 class LLMDisabledError(RuntimeError):
@@ -52,24 +48,20 @@ class PydanticAILLMRunner(LLMRunner):
         self,
         *,
         max_tokens: int,
-        temperature: float,
-        extra_body: object | None = None,
+        temperature: float | None,
+        reasoning_effort: ReasoningEffort,
     ) -> None:
         settings = get_settings()
         if not settings.llm_enabled:
             raise LLMDisabledError("LLM usage is disabled")
         if not settings.llm_base_url:
             raise LLMDisabledError("EXPENSES_LLM_BASE_URL is not configured")
-        if settings.llm_provider == "openrouter" and not settings.llm_api_key:
-            raise LLMDisabledError("OPENROUTER_API_KEY is not configured")
         self.model_name = settings.llm_model
         self.base_url = settings.llm_base_url
         self.api_key = settings.llm_api_key
+        self.reasoning_effort = reasoning_effort
         self.max_tokens = max_tokens
         self.temperature = temperature
-        self.extra_body = (
-            OPENROUTER_BODY if settings.llm_provider == "openrouter" else extra_body
-        )
 
     async def run(
         self,
@@ -88,23 +80,31 @@ class PydanticAILLMRunner(LLMRunner):
                 RetryConfig,
                 wait_retry_after,
             )
+            from openai import omit
         except ImportError as exc:
             raise LLMDisabledError("Install pydantic-ai to enable LLM usage") from exc
 
-        http_client = None
-        if get_settings().llm_provider == "openrouter":
-            http_client = _retrying_http_client(
-                AsyncTenacityTransport=AsyncTenacityTransport,
-                RetryConfig=RetryConfig,
-                wait_retry_after=wait_retry_after,
-            )
+        http_client = _retrying_http_client(
+            AsyncTenacityTransport=AsyncTenacityTransport,
+            RetryConfig=RetryConfig,
+            wait_retry_after=wait_retry_after,
+        )
         model = OpenAIChatModel(
             self.model_name,
             provider=OpenAIProvider(
                 base_url=self.base_url,
-                api_key=self.api_key,
+                api_key=self.api_key or None,
                 http_client=http_client,
             ),
+        )
+        model_settings = ModelSettings(
+            **_request_model_settings(
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                api_key=self.api_key,
+                reasoning_effort=self.reasoning_effort,
+                omit_authorization=omit,
+            )
         )
         agent = Agent(
             model,
@@ -112,11 +112,7 @@ class PydanticAILLMRunner(LLMRunner):
             output_type=output_type,
             instructions=_instructions_for_feature(feature),
             retries=2,
-            model_settings=ModelSettings(
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                extra_body=self.extra_body,
-            ),
+            model_settings=model_settings,
         )
 
         @agent.output_validator
@@ -207,13 +203,31 @@ class PydanticAILLMRunner(LLMRunner):
                 deps=payload,
             )
         finally:
-            if http_client is not None:
-                await http_client.aclose()
+            await http_client.aclose()
         return LLMRunResult(
             output=result.output,
             input_tokens=result.usage.input_tokens or None,
             output_tokens=result.usage.output_tokens or None,
         )
+
+
+def _request_model_settings(
+    *,
+    temperature: float | None,
+    max_tokens: int,
+    api_key: str,
+    reasoning_effort: ReasoningEffort,
+    omit_authorization: object,
+) -> dict[str, Any]:
+    settings: dict[str, Any] = {
+        "max_tokens": max_tokens,
+        "extra_body": {"reasoning_effort": reasoning_effort},
+    }
+    if temperature is not None:
+        settings["temperature"] = temperature
+    if not api_key:
+        settings["extra_headers"] = {"Authorization": omit_authorization}
+    return settings
 
 
 def _retrying_http_client(

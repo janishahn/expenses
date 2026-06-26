@@ -52,10 +52,11 @@ class Settings:
         report_max_days: int,
         report_max_transactions: int,
         llm_enabled: bool,
-        llm_provider: str,
         llm_base_url: str | None,
         llm_model: str,
         llm_api_key: str,
+        llm_temperature: float | None,
+        llm_max_output_tokens: int | None,
     ) -> None:
         self.database_url = database_url
         self.environment = environment
@@ -98,10 +99,11 @@ class Settings:
         self.report_max_days = report_max_days
         self.report_max_transactions = report_max_transactions
         self.llm_enabled = llm_enabled
-        self.llm_provider = llm_provider
         self.llm_base_url = llm_base_url
         self.llm_model = llm_model
         self.llm_api_key = llm_api_key
+        self.llm_temperature = llm_temperature
+        self.llm_max_output_tokens = llm_max_output_tokens
 
 
 def _ensure_data_dir() -> Path:
@@ -253,27 +255,23 @@ def get_settings() -> Settings:
     report_max_days = int(os.getenv("EXPENSES_REPORT_MAX_DAYS", "366"))
     report_max_transactions = int(os.getenv("EXPENSES_REPORT_MAX_TRANSACTIONS", "5000"))
     llm_enabled = _env_flag("EXPENSES_LLM_ENABLED", False)
-    llm_provider = os.getenv("EXPENSES_LLM_PROVIDER", "homelab").strip().lower()
-    if llm_provider not in {"homelab", "openrouter"}:
-        raise ValueError("EXPENSES_LLM_PROVIDER must be 'homelab' or 'openrouter'")
-    if llm_provider == "openrouter":
-        llm_base_url = (
-            os.getenv("EXPENSES_LLM_BASE_URL", "https://openrouter.ai/api/v1").strip()
-            or None
-        )
-        llm_model = (
-            os.getenv("EXPENSES_LLM_MODEL", "deepseek/deepseek-v4-flash").strip()
-            or "deepseek/deepseek-v4-flash"
-        )
-        llm_api_key = (
-            os.getenv("EXPENSES_LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or ""
-        ).strip()
-    else:
-        llm_base_url = os.getenv("EXPENSES_LLM_BASE_URL")
-        if llm_base_url is not None:
-            llm_base_url = llm_base_url.strip() or None
-        llm_model = os.getenv("EXPENSES_LLM_MODEL", "qwen").strip() or "qwen"
-        llm_api_key = os.getenv("EXPENSES_LLM_API_KEY", "not-needed").strip()
+    llm_base_url = _configured_value("EXPENSES_LLM_BASE_URL")
+    llm_model = os.getenv("EXPENSES_LLM_MODEL", "qwen").strip() or "qwen"
+    llm_api_key = os.getenv("EXPENSES_LLM_API_KEY", "").strip()
+    llm_temperature_raw = _configured_value("EXPENSES_LLM_TEMPERATURE")
+    llm_temperature = (
+        float(llm_temperature_raw) if llm_temperature_raw is not None else None
+    )
+    if llm_temperature is not None and not 0 <= llm_temperature <= 2:
+        raise ValueError("EXPENSES_LLM_TEMPERATURE must be between 0 and 2")
+    llm_max_output_tokens_raw = _configured_value("EXPENSES_LLM_MAX_OUTPUT_TOKENS")
+    llm_max_output_tokens = (
+        int(llm_max_output_tokens_raw)
+        if llm_max_output_tokens_raw is not None
+        else None
+    )
+    if llm_max_output_tokens is not None and llm_max_output_tokens <= 0:
+        raise ValueError("EXPENSES_LLM_MAX_OUTPUT_TOKENS must be greater than 0")
 
     return Settings(
         database_url=database_url,
@@ -317,8 +315,9 @@ def get_settings() -> Settings:
         report_max_days=report_max_days,
         report_max_transactions=report_max_transactions,
         llm_enabled=llm_enabled,
-        llm_provider=llm_provider,
         llm_base_url=llm_base_url,
         llm_model=llm_model,
         llm_api_key=llm_api_key,
+        llm_temperature=llm_temperature,
+        llm_max_output_tokens=llm_max_output_tokens,
     )

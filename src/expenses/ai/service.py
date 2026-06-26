@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from time import perf_counter
 from typing import Any
@@ -16,6 +17,7 @@ from expenses.ai.client import (
     LLMRunner,
     LLMRunResult,
     PydanticAILLMRunner,
+    ReasoningEffort,
 )
 from expenses.ai.schemas import (
     RuleMiningOutput,
@@ -59,7 +61,36 @@ RULE_MINING_PROMPT = "rule_mining_v2"
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
 
-NO_THINKING_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+
+@dataclass(frozen=True)
+class LLMFeatureSettings:
+    temperature: float | None
+    max_tokens: int
+    reasoning_effort: ReasoningEffort
+
+
+LLM_DEFAULT_FEATURE_SETTINGS = LLMFeatureSettings(
+    temperature=0.7,
+    max_tokens=1_024,
+    reasoning_effort="low",
+)
+LLM_FEATURE_SETTINGS = {
+    "search_translate": LLMFeatureSettings(
+        temperature=0.0,
+        max_tokens=512,
+        reasoning_effort="none",
+    ),
+    "transaction_triage": LLMFeatureSettings(
+        temperature=0.7,
+        max_tokens=1_024,
+        reasoning_effort="low",
+    ),
+    "rule_mining": LLMFeatureSettings(
+        temperature=0.7,
+        max_tokens=4_096,
+        reasoning_effort="medium",
+    ),
+}
 
 
 class LLMAssistantService:
@@ -477,6 +508,17 @@ class LLMAssistantService:
             job.finished_at = datetime.utcnow()
             job.duration_ms = int((perf_counter() - start) * 1000)
             self.session.commit()
+            log_event(
+                logger,
+                logging.ERROR,
+                "llm_job_failed",
+                job_id=job.id,
+                feature=feature,
+                model=job.model,
+                duration_ms=job.duration_ms,
+                api_key_configured=bool(settings.llm_api_key),
+                error=str(exc),
+            )
             raise
         job.status = "completed"
         job.output_json = output.model_dump_json()
@@ -499,28 +541,18 @@ class LLMAssistantService:
     def _runner_for_feature(self, feature: str) -> LLMRunner:
         if self.runner is not None:
             return self.runner
-        if feature == "search_translate":
-            return PydanticAILLMRunner(
-                temperature=0.0,
-                max_tokens=512,
-                extra_body=NO_THINKING_BODY,
-            )
-        if feature == "transaction_triage":
-            return PydanticAILLMRunner(
-                temperature=0.1,
-                max_tokens=512,
-                extra_body=NO_THINKING_BODY,
-            )
-        if feature == "rule_mining":
-            return PydanticAILLMRunner(
-                temperature=0.1,
-                max_tokens=1_536,
-                extra_body=NO_THINKING_BODY,
-            )
+        settings = get_settings()
+        feature_settings = LLM_FEATURE_SETTINGS.get(
+            feature, LLM_DEFAULT_FEATURE_SETTINGS
+        )
         return PydanticAILLMRunner(
-            temperature=0.1,
-            max_tokens=512,
-            extra_body=NO_THINKING_BODY,
+            temperature=settings.llm_temperature
+            if settings.llm_temperature is not None
+            else feature_settings.temperature,
+            max_tokens=settings.llm_max_output_tokens
+            if settings.llm_max_output_tokens is not None
+            else feature_settings.max_tokens,
+            reasoning_effort=feature_settings.reasoning_effort,
         )
 
     def _transaction_for_triage(self, transaction_id: int) -> Transaction | None:
