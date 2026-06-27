@@ -13,6 +13,10 @@ from expenses.ai.schemas import (
     SearchTranslationOutput,
     TransactionTriageOutput,
 )
+from expenses.ai.search_validation import (
+    SearchTranslationValidationError,
+    validate_search_translation_output,
+)
 from expenses.core.config import get_settings
 
 
@@ -21,6 +25,10 @@ ReasoningEffort = Literal["none", "low", "medium", "high"]
 
 
 class LLMDisabledError(RuntimeError):
+    pass
+
+
+class LLMOutputError(RuntimeError):
     pass
 
 
@@ -72,7 +80,14 @@ class PydanticAILLMRunner(LLMRunner):
         output_type: type[OutputT],
     ) -> LLMRunResult[OutputT]:
         try:
-            from pydantic_ai import Agent, ModelRetry, ModelSettings, RunContext
+            from pydantic_ai import (
+                Agent,
+                ModelRetry,
+                ModelSettings,
+                PromptedOutput,
+                RunContext,
+            )
+            from pydantic_ai.exceptions import UnexpectedModelBehavior
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.openai import OpenAIProvider
             from pydantic_ai.retries import (
@@ -109,7 +124,7 @@ class PydanticAILLMRunner(LLMRunner):
         agent = Agent(
             model,
             deps_type=dict[str, Any],
-            output_type=output_type,
+            output_type=PromptedOutput(output_type),
             instructions=_instructions_for_feature(feature),
             retries=2,
             model_settings=model_settings,
@@ -120,15 +135,10 @@ class PydanticAILLMRunner(LLMRunner):
             ctx: RunContext[dict[str, Any]], output: OutputT
         ) -> OutputT:
             if isinstance(output, SearchTranslationOutput):
-                query = output.query.strip()
-                if not query and not output.clarification_needed:
-                    raise ModelRetry(
-                        "Return clarification_needed=true when query is empty."
-                    )
-                if output.clarification_needed and not output.clarification_question:
-                    raise ModelRetry(
-                        "Return a clarification_question when clarification is needed."
-                    )
+                try:
+                    validate_search_translation_output(output, ctx.deps)
+                except SearchTranslationValidationError as exc:
+                    raise ModelRetry(str(exc)) from exc
             if isinstance(output, TransactionTriageOutput):
                 if output.clean_title is None:
                     raise ModelRetry(
@@ -202,6 +212,8 @@ class PydanticAILLMRunner(LLMRunner):
                 ),
                 deps=payload,
             )
+        except UnexpectedModelBehavior as exc:
+            raise LLMOutputError(str(exc)) from exc
         finally:
             await http_client.aclose()
         return LLMRunResult(
@@ -221,7 +233,7 @@ def _request_model_settings(
 ) -> dict[str, Any]:
     settings: dict[str, Any] = {
         "max_tokens": max_tokens,
-        "extra_body": {"reasoning_effort": reasoning_effort},
+        "extra_body": {"reasoning": {"effort": reasoning_effort}},
     }
     if temperature is not None:
         settings["temperature"] = temperature
@@ -265,9 +277,14 @@ def _instructions_for_feature(feature: str) -> str:
         return (
             common
             + " Translate the natural-language request into the allowed transaction "
-            "search syntax. If a safe search cannot be represented, return an empty "
-            "query with clarification_needed true and a concise clarification_question. "
-            "Never return an empty query with clarification_needed false."
+            "search syntax. Resolve relative dates against the reference_date in the "
+            "payload. Use exact category and tag names from the payload. Quote category "
+            "or tag values containing spaces or punctuation with double quotes, such "
+            'as category:"Food & Groceries". Do not use boolean operators, '
+            "parentheses, or grouped expressions. If a safe search cannot be represented, "
+            "return an empty query with clarification_needed true and a concise "
+            "clarification_question. Never return an empty query with "
+            "clarification_needed false."
         )
     if feature == "transaction_triage":
         return (

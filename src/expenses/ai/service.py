@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from expenses.ai.client import (
     LLMDisabledError,
+    LLMOutputError,
     LLMRunner,
     LLMRunResult,
     PydanticAILLMRunner,
@@ -29,9 +30,14 @@ from expenses.ai.schemas import (
     TransactionSuggestionOut,
     TransactionTriageOutput,
 )
+from expenses.ai.search_validation import (
+    SearchTranslationValidationError,
+    validate_search_translation_output,
+)
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
+from expenses.core.search import parse_advanced_search
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -47,7 +53,6 @@ from expenses.services.main import (
     CategoryService,
     RuleService,
     TransactionService,
-    parse_advanced_search,
 )
 from expenses.schemas import RuleIn, TransactionIn
 
@@ -57,6 +62,7 @@ logger = get_logger("expenses.ai")
 SEARCH_TRANSLATE_PROMPT = "search_translate_v2"
 TRANSACTION_TRIAGE_PROMPT = "transaction_triage_v2"
 RULE_MINING_PROMPT = "rule_mining_v2"
+SEARCH_TRANSLATION_FALLBACK_QUESTION = "I could not translate that into search syntax."
 
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
@@ -82,7 +88,7 @@ LLM_FEATURE_SETTINGS = {
     ),
     "transaction_triage": LLMFeatureSettings(
         temperature=0.7,
-        max_tokens=1_024,
+        max_tokens=2_048,
         reasoning_effort="low",
     ),
     "rule_mining": LLMFeatureSettings(
@@ -125,19 +131,29 @@ class LLMAssistantService:
             "categories": self._category_payload(),
             "tags": self._tag_payload(),
         }
-        output, _job_id = await self._run_llm(
-            feature="search_translate",
-            prompt_version=SEARCH_TRANSLATE_PROMPT,
-            payload=payload,
-            output_type=SearchTranslationOutput,
-        )
         try:
-            parsed = parse_advanced_search(output.query)
-        except ValueError:
-            output.clarification_needed = True
-            output.clarification_question = (
-                "I could not translate that into search syntax."
+            output, _job_id = await self._run_llm(
+                feature="search_translate",
+                prompt_version=SEARCH_TRANSLATE_PROMPT,
+                payload=payload,
+                output_type=SearchTranslationOutput,
             )
+        except LLMOutputError:
+            parsed = parse_advanced_search("")
+            return SearchTranslationResult(
+                query="",
+                confidence=0,
+                clarification_needed=True,
+                clarification_question=SEARCH_TRANSLATION_FALLBACK_QUESTION,
+                applied_tokens=parsed.applied_tokens,
+                free_terms=parsed.free_terms,
+            )
+        try:
+            validate_search_translation_output(output, payload)
+            parsed = parse_advanced_search(output.query)
+        except (SearchTranslationValidationError, ValueError):
+            output.clarification_needed = True
+            output.clarification_question = SEARCH_TRANSLATION_FALLBACK_QUESTION
             output.query = ""
             parsed = parse_advanced_search("")
         if parsed.free_terms and all(
@@ -189,14 +205,17 @@ class LLMAssistantService:
             "tags": [row["name"] for row in self._tag_payload()],
             "similar_confirmed_transactions": self._similar_confirmed_transactions(txn),
         }
-        output, job_id = await self._run_llm(
-            feature="transaction_triage",
-            prompt_version=TRANSACTION_TRIAGE_PROMPT,
-            payload=payload,
-            output_type=TransactionTriageOutput,
-            entity_type="transaction",
-            entity_id=txn.id,
-        )
+        try:
+            output, job_id = await self._run_llm(
+                feature="transaction_triage",
+                prompt_version=TRANSACTION_TRIAGE_PROMPT,
+                payload=payload,
+                output_type=TransactionTriageOutput,
+                entity_type="transaction",
+                entity_id=txn.id,
+            )
+        except LLMOutputError:
+            return None
         fresh_txn = self._transaction_for_triage(transaction_id)
         if fresh_txn is None or self._transaction_fingerprint(fresh_txn) != fingerprint:
             log_event(
@@ -254,12 +273,15 @@ class LLMAssistantService:
         }
         if not payload["correction_clusters"]:
             return []
-        output, job_id = await self._run_llm(
-            feature="rule_mining",
-            prompt_version=RULE_MINING_PROMPT,
-            payload=payload,
-            output_type=RuleMiningOutput,
-        )
+        try:
+            output, job_id = await self._run_llm(
+                feature="rule_mining",
+                prompt_version=RULE_MINING_PROMPT,
+                payload=payload,
+                output_type=RuleMiningOutput,
+            )
+        except LLMOutputError:
+            return []
         suggestions: list[RuleSuggestionResult] = []
         for proposal in output.proposals:
             if proposal.set_category_id is None:

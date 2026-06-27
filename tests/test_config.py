@@ -1,3 +1,4 @@
+from pathlib import Path
 import stat
 
 import pytest
@@ -113,3 +114,15 @@ def test_llm_optional_generation_overrides(monkeypatch: pytest.MonkeyPatch, tmp_
 
     assert settings.llm_temperature == 0.65
     assert settings.llm_max_output_tokens == 4_096
+
+
+def test_docker_compose_passes_current_llm_environment():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "EXPENSES_LLM_BASE_URL" in compose
+    assert "EXPENSES_LLM_MODEL" in compose
+    assert "EXPENSES_LLM_API_KEY" in compose
+    assert "EXPENSES_LLM_TEMPERATURE" in compose
+    assert "EXPENSES_LLM_MAX_OUTPUT_TOKENS" in compose
+    assert "EXPENSES_LLM_PROVIDER" not in compose
+    assert "OPENROUTER_API_KEY" not in compose

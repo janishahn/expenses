@@ -5,7 +5,11 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from expenses.ai.client import LLMRunResult
+from expenses.ai.client import (
+    LLMOutputError,
+    LLMRunResult,
+    _request_model_settings,
+)
 from expenses.ai.schemas import (
     RuleMiningOutput,
     RuleProposalOut,
@@ -40,6 +44,23 @@ class FakeLLMRunner:
             }
         )
         return self.output
+
+
+class FailingLLMRunner:
+    def __init__(self, exc: Exception):
+        self.exc = exc
+        self.calls = []
+
+    async def run(self, *, feature, prompt_version, payload, output_type):
+        self.calls.append(
+            {
+                "feature": feature,
+                "prompt_version": prompt_version,
+                "payload": payload,
+                "output_type": output_type,
+            }
+        )
+        raise self.exc
 
 
 def make_session() -> Session:
@@ -87,7 +108,7 @@ def test_llm_feature_defaults_include_reasoning_token_headroom(
             assert search.reasoning_effort == "none"
 
             assert triage.temperature == 0.7
-            assert triage.max_tokens == 1_024
+            assert triage.max_tokens == 2_048
             assert triage.reasoning_effort == "low"
 
             assert rule_mining.temperature == 0.7
@@ -122,6 +143,19 @@ def test_llm_generation_overrides_do_not_change_reasoning_effort(
             assert rule_mining.reasoning_effort == "medium"
     finally:
         get_settings.cache_clear()
+
+
+def test_llm_request_settings_use_openrouter_reasoning_shape() -> None:
+    settings = _request_model_settings(
+        temperature=0.7,
+        max_tokens=512,
+        api_key="",
+        reasoning_effort="none",
+        omit_authorization=object(),
+    )
+
+    assert settings["extra_body"] == {"reasoning": {"effort": "none"}}
+    assert "reasoning_effort" not in settings["extra_body"]
 
 
 def test_transaction_classification_events_track_ingest_create_and_user_update() -> (
@@ -324,6 +358,33 @@ async def test_uncategorized_triage_skips_when_user_already_categorized_transact
 
 
 @pytest.mark.anyio
+async def test_uncategorized_triage_output_failure_returns_none() -> None:
+    with make_session() as session:
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2026, 5, 1),
+                occurred_at=datetime(2026, 5, 1, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=1299,
+                category_id=None,
+                title="Unclear PayPal",
+                tags=[],
+            )
+        )
+
+        runner = FailingLLMRunner(LLMOutputError("Exceeded maximum output retries (2)"))
+        suggestion = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).suggest_uncategorized_transaction(txn.id)
+
+        job = session.scalar(select(LLMJob))
+        assert suggestion is None
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error == "Exceeded maximum output retries (2)"
+
+
+@pytest.mark.anyio
 async def test_natural_language_search_translation_records_usage() -> None:
     with make_session() as session:
         CategoryService(session).create(
@@ -396,6 +457,194 @@ async def test_natural_language_search_translation_validates_existing_syntax() -
 
 
 @pytest.mark.anyio
+async def test_natural_language_search_translation_rejects_invalid_category_output() -> (
+    None
+):
+    with make_session() as session:
+        CategoryService(session).create(
+            CategoryIn(name="Food & Groceries", type=TransactionType.expense, order=0)
+        )
+        runner = FakeLLMRunner(
+            SearchTranslationOutput(
+                query="type:expense category:Food & Groceries amount>=20",
+                confidence=0.82,
+                clarification_needed=False,
+            )
+        )
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "grocery spending over 20 euros",
+            reference_date=date(2026, 5, 25),
+        )
+
+        assert result.query == ""
+        assert result.clarification_needed is True
+        assert result.clarification_question == (
+            "I could not translate that into search syntax."
+        )
+        assert result.applied_tokens == []
+        assert result.free_terms == []
+
+
+@pytest.mark.anyio
+async def test_natural_language_search_translation_accepts_case_insensitive_names() -> (
+    None
+):
+    with make_session() as session:
+        groceries = CategoryService(session).create(
+            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
+        )
+        TransactionService(session).create(
+            TransactionIn(
+                date=date(2026, 5, 1),
+                occurred_at=datetime(2026, 5, 1, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=1299,
+                category_id=groceries.id,
+                title="Lidl",
+                tags=["Essential"],
+            )
+        )
+        runner = FakeLLMRunner(
+            SearchTranslationOutput(
+                query="category:groceries tag:essential",
+                confidence=0.82,
+                clarification_needed=False,
+            )
+        )
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "essential groceries",
+            reference_date=date(2026, 5, 25),
+        )
+
+        assert result.query == "category:groceries tag:essential"
+        assert result.clarification_needed is False
+        assert result.free_terms == []
+
+
+@pytest.mark.anyio
+async def test_natural_language_search_translation_requires_clarification_question() -> (
+    None
+):
+    with make_session() as session:
+        runner = FakeLLMRunner(
+            SearchTranslationOutput(
+                query="",
+                confidence=0.2,
+                clarification_needed=True,
+            )
+        )
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "not enough context",
+            reference_date=date(2026, 5, 25),
+        )
+
+        assert result.query == ""
+        assert result.clarification_needed is True
+        assert result.clarification_question == (
+            "I could not translate that into search syntax."
+        )
+
+
+@pytest.mark.anyio
+async def test_natural_language_search_translation_allows_parenthesized_free_text() -> (
+    None
+):
+    with make_session() as session:
+        runner = FakeLLMRunner(
+            SearchTranslationOutput(
+                query='"Trader Joe\'s (SF)"',
+                confidence=0.78,
+                clarification_needed=False,
+            )
+        )
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "trader joe's sf",
+            reference_date=date(2026, 5, 25),
+        )
+
+        assert result.query == '"Trader Joe\'s (SF)"'
+        assert result.clarification_needed is False
+        assert result.free_terms == ["Trader Joe's (SF)"]
+
+
+@pytest.mark.anyio
+async def test_natural_language_search_translation_rejects_boolean_connector_output() -> (
+    None
+):
+    with make_session() as session:
+        CategoryService(session).create(
+            CategoryIn(name="Food & Groceries", type=TransactionType.expense, order=0)
+        )
+        CategoryService(session).create(
+            CategoryIn(name="Restaurants", type=TransactionType.expense, order=1)
+        )
+        runner = FakeLLMRunner(
+            SearchTranslationOutput(
+                query=(
+                    'category:"Food & Groceries" OR category:Restaurants '
+                    "date>=2026-01-01"
+                ),
+                confidence=0.82,
+                clarification_needed=False,
+            )
+        )
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "compare groceries and restaurants this year",
+            reference_date=date(2026, 5, 25),
+        )
+
+        assert result.query == ""
+        assert result.clarification_needed is True
+        assert result.clarification_question == (
+            "I could not translate that into search syntax."
+        )
+        assert result.applied_tokens == []
+        assert result.free_terms == []
+
+
+@pytest.mark.anyio
+async def test_natural_language_search_translation_output_failure_returns_clarification() -> (
+    None
+):
+    with make_session() as session:
+        runner = FailingLLMRunner(LLMOutputError("Exceeded maximum output retries (2)"))
+
+        result = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).translate_search_query(
+            "restaurants or travel under 80 euros last month",
+            reference_date=date(2026, 5, 25),
+        )
+
+        job = session.scalar(select(LLMJob))
+        assert result.query == ""
+        assert result.clarification_needed is True
+        assert result.clarification_question == (
+            "I could not translate that into search syntax."
+        )
+        assert result.applied_tokens == []
+        assert result.free_terms == []
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error == "Exceeded maximum output retries (2)"
+
+
+@pytest.mark.anyio
 async def test_rule_mining_uses_confirmed_events_and_stores_previewed_proposals() -> (
     None
 ):
@@ -462,6 +711,52 @@ async def test_rule_mining_uses_confirmed_events_and_stores_previewed_proposals(
             runner.calls[0]["payload"]["correction_clusters"][0]["to_category"]["name"]
             == "Groceries"
         )
+
+
+@pytest.mark.anyio
+async def test_rule_mining_output_failure_returns_empty_list() -> None:
+    with make_session() as session:
+        groceries = CategoryService(session).create(
+            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
+        )
+        uncategorized = CategoryService(session).get_or_create_uncategorized(
+            TransactionType.expense
+        )
+        for index in range(2):
+            txn = TransactionService(session).create(
+                TransactionIn(
+                    date=date(2026, 5, index + 1),
+                    occurred_at=datetime(2026, 5, index + 1, 12, 0),
+                    type=TransactionType.expense,
+                    amount_cents=1000 + index,
+                    category_id=uncategorized.id,
+                    title=f"LIDL STORE {index}",
+                    tags=[],
+                )
+            )
+            TransactionService(session).update(
+                txn.id,
+                TransactionIn(
+                    date=txn.date,
+                    occurred_at=txn.occurred_at,
+                    type=txn.type,
+                    amount_cents=txn.amount_cents,
+                    category_id=groceries.id,
+                    title=txn.title or "LIDL",
+                    tags=[],
+                ),
+            )
+
+        runner = FailingLLMRunner(LLMOutputError("Exceeded maximum output retries (2)"))
+        suggestions = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).mine_rule_suggestions(since=date(2026, 4, 25))
+
+        job = session.scalar(select(LLMJob))
+        assert suggestions == []
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error == "Exceeded maximum output retries (2)"
 
 
 @pytest.mark.anyio

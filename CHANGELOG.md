@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Simplified LLM configuration to a single OpenAI-compatible base URL, model slug, optional API key, feature-specific reasoning settings, and optional global temperature/output-token overrides.
+- Made LLM structured responses use prompted JSON parsing, tightened natural-language search validation against runtime categories and tags, and increased the transaction-triage output cap for reasoning-token headroom.
+
+### Fixed
+- Natural-language search now returns a clarification instead of a server error when LLM output cannot be made valid after retries.
+- Natural-language search now rejects unsupported boolean connector syntax from LLM translations instead of treating it as title text.
+- Docker Compose now forwards the current LLM endpoint, model, API key, temperature, and output-token environment variables.
 
 ## [0.2.1] - 2026-06-24
 
