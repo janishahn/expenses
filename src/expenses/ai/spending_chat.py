@@ -72,8 +72,66 @@ Output rules:
 - Keep answers compact: use one short paragraph followed by a bullet list when useful.
 - When listing transactions or category changes, use a bullet list, not a table.
 - Never use markdown tables unless the user explicitly asks for a table.
+- Do not include process narration such as "let me check" or "I'll dig into" in
+  final answers. Start final answers with the answer.
 - Never use emoji.
 """.strip()
+
+
+def _split_leading_progress_narration(text: str) -> tuple[str, str]:
+    stripped = text.lstrip()
+    normalized = stripped.replace("\u2019", "'").lower()
+    if not normalized.startswith(
+        ("let me ", "i'll ", "i will ", "i'm ", "i am ", "i need to ")
+    ):
+        return "", text
+    sentence_end = -1
+    abbreviations = (
+        "a.m.",
+        "apr.",
+        "aug.",
+        "dec.",
+        "dr.",
+        "e.g.",
+        "etc.",
+        "feb.",
+        "i.e.",
+        "jan.",
+        "jul.",
+        "jun.",
+        "mar.",
+        "mr.",
+        "mrs.",
+        "ms.",
+        "no.",
+        "nov.",
+        "oct.",
+        "p.m.",
+        "prof.",
+        "sep.",
+        "sept.",
+        "u.k.",
+        "u.s.",
+        "vs.",
+    )
+    for index, character in enumerate(stripped):
+        if character not in ".!?":
+            continue
+        if index + 1 < len(stripped) and not stripped[index + 1].isspace():
+            continue
+        if character == ".":
+            previous_character = stripped[index - 1] if index > 0 else ""
+            next_character = stripped[index + 1] if index + 1 < len(stripped) else ""
+            if previous_character.isdigit() and next_character.isdigit():
+                continue
+            candidate = stripped[: index + 1].lower().rstrip()
+            if any(candidate.endswith(abbreviation) for abbreviation in abbreviations):
+                continue
+        sentence_end = index
+        break
+    if sentence_end < 0:
+        return "", text
+    return stripped[: sentence_end + 1].strip(), stripped[sentence_end + 1 :].lstrip()
 
 
 class SpendingChatMessage(BaseModel):
@@ -647,7 +705,9 @@ class PydanticAISpendingRunner:
             )
 
         tool_names_by_call_id: dict[str, str] = {}
-        streamed_text = ""
+        pending_text = ""
+        streamed_final_text = ""
+        final_text_started = False
         try:
             history = pydantic_message.ModelMessagesTypeAdapter.validate_python(
                 request.message_history
@@ -661,6 +721,13 @@ class PydanticAISpendingRunner:
             ):
                 match event:
                     case pydantic_message.FunctionToolCallEvent(part=part):
+                        narration = pending_text.strip()
+                        if narration:
+                            yield {
+                                "type": "progress_narration",
+                                "content": narration,
+                            }
+                            pending_text = ""
                         tool_names_by_call_id[part.tool_call_id] = part.tool_name
                         yield {
                             "type": "tool_call_start",
@@ -694,18 +761,51 @@ class PydanticAISpendingRunner:
                         part=pydantic_message.TextPart(content=content)
                     ):
                         if content:
-                            streamed_text += content
-                            yield {"type": "text_chunk", "content": content}
+                            if final_text_started:
+                                streamed_final_text += content
+                                yield {"type": "text_chunk", "content": content}
+                            else:
+                                pending_text += content
                     case pydantic_message.PartDeltaEvent(
                         delta=pydantic_message.TextPartDelta(
                             content_delta=content_delta
                         )
                     ):
                         if content_delta:
-                            streamed_text += content_delta
-                            yield {"type": "text_chunk", "content": content_delta}
+                            if final_text_started:
+                                streamed_final_text += content_delta
+                                yield {
+                                    "type": "text_chunk",
+                                    "content": content_delta,
+                                }
+                            else:
+                                pending_text += content_delta
+                    case pydantic_message.FinalResultEvent():
+                        final_text_started = True
+                        if pending_text:
+                            narration, pending_text = _split_leading_progress_narration(
+                                pending_text
+                            )
+                            if narration:
+                                yield {
+                                    "type": "progress_narration",
+                                    "content": narration,
+                                }
+                        if pending_text:
+                            streamed_final_text += pending_text
+                            yield {"type": "text_chunk", "content": pending_text}
+                            pending_text = ""
                     case AgentRunResultEvent(result=result):
-                        if streamed_text:
+                        assistant_message = result.output.strip()
+                        narration, cleaned_assistant_message = (
+                            _split_leading_progress_narration(assistant_message)
+                        )
+                        if narration and cleaned_assistant_message:
+                            assistant_message = cleaned_assistant_message
+                        if not final_text_started and assistant_message:
+                            streamed_final_text = assistant_message
+                            yield {"type": "text_chunk", "content": assistant_message}
+                        if streamed_final_text:
                             yield {"type": "text_commit"}
                         messages = result.all_messages()
                         usage_metadata = usage_metadata_from_result(
@@ -724,7 +824,7 @@ class PydanticAISpendingRunner:
                             base_url=self.base_url,
                         )
                         yield SpendingAgentTurnResult(
-                            assistant_message=result.output.strip(),
+                            assistant_message=assistant_message,
                             message_history=json.loads(
                                 pydantic_message.ModelMessagesTypeAdapter.dump_json(
                                     messages

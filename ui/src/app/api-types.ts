@@ -295,6 +295,11 @@ export type SpendingChatTextChunkEvent = {
   content: string
 }
 
+export type SpendingChatProgressNarrationEvent = {
+  type: "progress_narration"
+  content: string
+}
+
 export type SpendingChatTextCommitEvent = {
   type: "text_commit"
 }
@@ -318,6 +323,7 @@ export type SpendingChatStreamEvent =
   | SpendingChatTurnStartedEvent
   | SpendingChatToolCallStartEvent
   | SpendingChatToolCallEndEvent
+  | SpendingChatProgressNarrationEvent
   | SpendingChatTextChunkEvent
   | SpendingChatTextCommitEvent
   | SpendingChatResultEvent

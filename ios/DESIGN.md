@@ -38,6 +38,7 @@ Primary native areas:
 - Organize
 - Reconcile
 - Reports/Exports
+- Assistant
 - Settings
 - Admin
 
@@ -52,6 +53,48 @@ custom edge-swipe drawers for primary navigation on iPhone; they compete with
 system gestures and nested screen interactions. Page-specific top-right add
 buttons should be avoided unless the action is not covered by the global Add
 action.
+
+The Assistant belongs with lower-frequency tool destinations on iPhone unless
+usage proves it should become a primary tab. Keep the first native assistant
+surface read-only and session-memory-only: it can stream answers, show high-level
+tool activity, stop an in-flight turn, and reset the conversation, but it should
+not persist assistant transcript data on device. Render both user and assistant
+turns as message bubbles, render assistant text as Markdown, and hide the bottom
+tab bar while the Assistant detail is open so the composer owns the bottom
+interaction area. Drive that tab-bar hiding from the navigation parent's path
+(the More stack) rather than the pushed detail view, so the bar animates with the
+push and pop instead of blinking back in after the pop settles. Render assistant Markdown block by block — split paragraphs and
+lists into separate views with real spacing and parse only inline syntax
+(bold/emphasis/code/links) within each block. Do not pass the whole answer
+through a single `Text(AttributedString(markdown:))`; that folds block structure
+into presentation-intent attributes the text view ignores, collapsing the answer
+into one run and jamming sentences and bold labels together.
+
+Surface in-progress work with a stable thinking row and, once the first tool is
+called, a separate odometer-style tool ticker below it that rolls upward as the
+turn moves through tools, showing one current human-readable activity label
+rather than a persistent list of called tools. Route the model's intermediate
+progress sentences to their own full-width ephemeral status row in the working
+area; never fold that narration into the settled answer transcript, and clear it
+once the final answer begins streaming. Retire the tool ticker and working area
+once the final answer streams so the settled bubble shows only the answer, and
+cross-fade that handoff so it does not pop. While a turn is still streaming keep a
+working indicator visible so ongoing work never depends on the composer's stop
+control alone: a trailing typing caret follows the streamed answer text in place
+of a separate progress spinner. For turns that used tools, show a quiet,
+collapsed-by-default activity disclosure above — not inside — the assistant bubble
+that exposes only high-level activity labels and statuses, never raw tool names or
+arguments.
+
+Treat the assistant's in-progress motion as accessibility-gated polish. Gate every
+animation behind Reduce Motion and keep all status text fully readable without it.
+A single subtle, monochrome left-to-right shimmer is the primary working motion on
+ephemeral status text, and is the deliberate exception to the flat-surface
+preference because the glint is the concept itself; never pair it with a competing
+spinner, which should only stand in when Reduce Motion is on. Avoid fake progress
+bars or percentages, let the ticker and status rows scale with Dynamic Type
+without clipping, and keep VoiceOver sane by collapsing the working area into one
+stable element so rapid ticker flips and the shimmer never spam announcements.
 
 ## Components
 

@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.colorScheme) private var scheme
 
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
+    @State private var morePath: [AppDestination] = []
     @State private var quickAddSheet: QuickAddSheet?
     @State private var budgetQuickAddTrigger = 0
     @State private var categoryQuickAddTrigger = 0
@@ -105,13 +106,15 @@ struct RootView: View {
             AuthView()
         case .diagnostics:
             DiagnosticsView()
+        case .assistant:
+            AssistantView()
         case .more:
             EmptyView()
         }
     }
 
     private var moreTab: some View {
-        NavigationStack {
+        NavigationStack(path: $morePath) {
             List {
                 moreDestinationSection("Planning", destinations: AppDestination.planningDestinations)
                 moreDestinationSection("Manage", destinations: AppDestination.manageDestinations)
@@ -121,15 +124,17 @@ struct RootView: View {
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.inline)
             .expensesScreenStyle()
+            .navigationDestination(for: AppDestination.self) { destination in
+                destinationView(destination)
+            }
         }
+        .toolbar(morePath.last?.hidesTabBar == true ? .hidden : .visible, for: .tabBar)
     }
 
     private func moreDestinationSection(_ title: String, destinations: [AppDestination]) -> some View {
         Section(title) {
             ForEach(destinations) { destination in
-                NavigationLink {
-                    destinationView(destination)
-                } label: {
+                NavigationLink(value: destination) {
                     MoreDestinationRow(destination: destination)
                 }
             }
@@ -229,6 +234,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case organize
     case account
     case diagnostics
+    case assistant
 
     var id: String { rawValue }
 
@@ -266,6 +272,8 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "Account"
         case .diagnostics:
             "Diagnostics"
+        case .assistant:
+            "Assistant"
         }
     }
 
@@ -303,6 +311,8 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "person.crop.circle"
         case .diagnostics:
             "stethoscope"
+        case .assistant:
+            "bubble.left.and.bubble.right"
         }
     }
 
@@ -310,9 +320,13 @@ private enum AppDestination: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard, .transactions:
             true
-        case .budgets, .insights, .more, .forecast, .digest, .categories, .rules, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics:
+        case .budgets, .insights, .more, .forecast, .digest, .categories, .rules, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics, .assistant:
             false
         }
+    }
+
+    var hidesTabBar: Bool {
+        self == .assistant
     }
 
     static var planningDestinations: [AppDestination] {
@@ -324,7 +338,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     }
 
     static var toolsDestinations: [AppDestination] {
-        [.reconcile, .reports, .diagnostics]
+        [.assistant, .reconcile, .reports, .diagnostics]
     }
 
     static var accountDestinations: [AppDestination] {

@@ -214,6 +214,8 @@ function SpendingAssistantPage() {
             ),
           }))
           break
+        case "progress_narration":
+          break
         case "text_chunk":
           updateAssistant(assistantId, (turn) => ({
             ...turn,

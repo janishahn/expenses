@@ -231,6 +231,59 @@ struct ExpensesAPIClient {
         )
     }
 
+    func spendingChatStream(
+        _ body: AssistantStreamRequest,
+        token: String
+    ) -> AsyncThrowingStream<AssistantStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let producer = Task {
+                do {
+                    let baseURL = try validatedBaseURL()
+                    guard let url = URL(string: "/api/ai/spending-chat/stream", relativeTo: baseURL) else {
+                        throw APIErrorInfo(message: "Request URL is invalid.")
+                    }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.httpBody = try encoder.encode(body)
+
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse else {
+                        throw APIErrorInfo(message: "Backend returned an invalid response.")
+                    }
+                    guard (200..<300).contains(http.statusCode) else {
+                        var data = Data()
+                        for try await byte in bytes {
+                            data.append(byte)
+                        }
+                        throw APIErrorInfo(
+                            message: parseErrorMessage(data) ?? "Request failed.",
+                            statusCode: http.statusCode,
+                            requestID: http.value(forHTTPHeaderField: "X-Request-ID")
+                        )
+                    }
+                    for try await line in bytes.lines {
+                        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            continue
+                        }
+                        continuation.yield(
+                            try decoder.decode(AssistantStreamEvent.self, from: Data(trimmed.utf8))
+                        )
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                producer.cancel()
+            }
+        }
+    }
+
     func transactionSuggestions(transactionID: Int? = nil, token: String) async throws -> [TransactionSuggestion] {
         if let transactionID {
             try await request(path: "/api/ai/transaction-suggestions?transaction_id=\(transactionID)", bearerToken: token)

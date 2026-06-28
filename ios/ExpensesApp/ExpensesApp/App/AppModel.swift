@@ -65,6 +65,11 @@ final class AppModel {
     var isLoading = false
     var isMiningRuleSuggestions = false
     var ruleMiningStatus: RuleMiningStatus = .idle
+    var assistantTurns: [AssistantTurn] = []
+    var isAssistantStreaming = false
+    private var assistantMessageHistory: [JSONValue] = []
+    private var assistantStreamTask: Task<Void, Never>?
+    private var assistantTurnSeq = 0
     private var dashboardLoadState: PrimaryLoadState = .idle
     private var transactionsLoadState: PrimaryLoadState = .idle
     private var digestLoadState: PrimaryLoadState = .idle
@@ -511,6 +516,130 @@ final class AppModel {
         await runRequest {
             transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
         }
+    }
+
+    func sendAssistantMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isAssistantStreaming, let token else {
+            return
+        }
+
+        assistantTurnSeq += 1
+        assistantTurns.append(
+            AssistantTurn(
+                id: assistantTurnSeq,
+                role: .user,
+                content: trimmed,
+                progressNarration: "",
+                tools: [],
+                isStreaming: false,
+                isStopped: false,
+                errorMessage: nil
+            )
+        )
+        assistantTurnSeq += 1
+        let assistantTurnID = assistantTurnSeq
+        assistantTurns.append(
+            AssistantTurn(
+                id: assistantTurnID,
+                role: .assistant,
+                content: "",
+                progressNarration: "",
+                tools: [],
+                isStreaming: true,
+                isStopped: false,
+                errorMessage: nil
+            )
+        )
+        isAssistantStreaming = true
+
+        let request = AssistantStreamRequest(
+            messages: [AssistantStreamMessage(role: "user", content: trimmed)],
+            messageHistory: assistantMessageHistory
+        )
+        let client = apiClient
+        assistantStreamTask = Task {
+            do {
+                for try await event in client.spendingChatStream(request, token: token) {
+                    applyAssistantEvent(event, turnID: assistantTurnID)
+                }
+                finishAssistantStream(turnID: assistantTurnID, stopped: Task.isCancelled)
+            } catch let error as APIErrorInfo {
+                handleAPIError(error)
+                failAssistantStream(turnID: assistantTurnID, message: error.message)
+            } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                    finishAssistantStream(turnID: assistantTurnID, stopped: true)
+                } else {
+                    failAssistantStream(turnID: assistantTurnID, message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func cancelAssistantMessage() {
+        assistantStreamTask?.cancel()
+    }
+
+    func resetAssistantConversation() {
+        assistantStreamTask?.cancel()
+        assistantStreamTask = nil
+        assistantTurns = []
+        assistantMessageHistory = []
+        isAssistantStreaming = false
+    }
+
+    private func applyAssistantEvent(_ event: AssistantStreamEvent, turnID: Int) {
+        guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
+            return
+        }
+        switch event {
+        case let .toolCallStart(toolCallID, toolName):
+            assistantTurns[index].tools.append(
+                AssistantToolActivity(id: toolCallID, toolName: toolName, status: .running)
+            )
+        case let .toolCallEnd(toolCallID, success):
+            if let toolIndex = assistantTurns[index].tools.firstIndex(where: { $0.id == toolCallID }) {
+                assistantTurns[index].tools[toolIndex].status = success ? .success : .failed
+            }
+        case let .progressNarration(content):
+            assistantTurns[index].progressNarration = content
+        case let .textChunk(content):
+            assistantTurns[index].progressNarration = ""
+            assistantTurns[index].content += content
+        case let .result(assistantMessage, messageHistory):
+            assistantTurns[index].progressNarration = ""
+            assistantTurns[index].content = assistantMessage
+            assistantMessageHistory = messageHistory
+        case let .error(message):
+            assistantTurns[index].progressNarration = ""
+            assistantTurns[index].errorMessage = message
+            assistantTurns[index].isStreaming = false
+        case .turnStarted, .textCommit, .done, .unknown:
+            break
+        }
+    }
+
+    private func finishAssistantStream(turnID: Int, stopped: Bool) {
+        guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
+            return
+        }
+        assistantTurns[index].isStreaming = false
+        if stopped {
+            assistantTurns[index].isStopped = true
+        }
+        isAssistantStreaming = false
+        assistantStreamTask = nil
+    }
+
+    private func failAssistantStream(turnID: Int, message: String) {
+        guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
+            return
+        }
+        assistantTurns[index].errorMessage = message
+        assistantTurns[index].isStreaming = false
+        isAssistantStreaming = false
+        assistantStreamTask = nil
     }
 
     func triageTransaction(_ transaction: TransactionListItem) async -> Bool {
@@ -1852,6 +1981,11 @@ final class AppModel {
         transactionSuggestions = []
         ruleSuggestions = []
         ruleMiningStatus = .idle
+        assistantStreamTask?.cancel()
+        assistantStreamTask = nil
+        assistantTurns = []
+        assistantMessageHistory = []
+        isAssistantStreaming = false
         budgets = nil
         budgetBurndown = nil
         digest = nil

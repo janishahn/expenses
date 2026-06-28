@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added a read-only spending chat streaming API backed by Pydantic AI tools for period summaries, comparisons, breakdowns, transaction search/detail, and budget context.
 - Added a web Spending Assistant page that progressively streams the read-only spending chat — a live tool-activity ticker and incrementally rendered Markdown answers with smart typography (em dashes, ellipses) — within a single calm composer surface, and reuses conversation context across turns.
+- Added a native iOS Assistant screen under More > Tools that streams the read-only spending chat over a mobile bearer session, surfacing work with a stable thinking row plus a second rolling tool ticker that retires once the final answer streams — with a compact working indicator kept visible while streaming — alongside Markdown-rendered assistant bubbles, a tab-bar-free composer, a stop control, and a new-chat reset, and reuses conversation context across turns.
 - Added provider-reported LLM usage accounting for spending chat, including cached/reasoning token counters, precise cost decimals when available, structured chat lifecycle logs, and an authenticated usage-summary API for web and future mobile clients.
 - Added an Assistant usage panel to the web Admin page summarizing Spending Assistant chats, token totals with cached/reasoning counters, provider-reported cost, average tokens per chat, and p95 latency, with a week/month/all-time period switch.
 
@@ -17,8 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified LLM configuration to a single OpenAI-compatible base URL, model slug, optional API key, feature-specific reasoning settings, and optional global temperature/output-token overrides.
 - Made LLM structured responses use prompted JSON parsing, tightened natural-language search validation against runtime categories and tags, and increased the transaction-triage output cap for reasoning-token headroom.
 - Spending chat trace rows now retain output hashes and counts instead of storing the final assistant text and returned message history.
+- Polished the native iOS Assistant streaming presentation: the model's intermediate progress sentences now appear as an ephemeral full-width status row that stays out of the saved answer, the working status hands off cleanly to the Markdown answer, a trailing typing caret replaces the streaming progress spinner, a subtle shimmer marks ongoing status, and a quiet collapsed activity disclosure above each tool-using turn surfaces only high-level steps; all new motion is gated behind Reduce Motion, the tool ticker scales with Dynamic Type without clipping, and VoiceOver no longer narrates every status flip.
 
 ### Fixed
+- Native iOS bottom tab bar now animates back in together with the pop transition when leaving the Assistant chat, instead of blinking into existence after the pop finishes; tab-bar hiding is now driven by the More navigation stack rather than the pushed detail view.
+- Native iOS Assistant answers now render Markdown with real block structure — paragraph and list spacing is preserved instead of collapsing into one run, so sentences and bold category names no longer jam together.
+- Spending chat streaming now separates model progress narration from final answer chunks before they reach clients, preventing intermediate narration from flashing as assistant answer text on iOS.
 - Natural-language search now returns a clarification instead of a server error when LLM output cannot be made valid after retries.
 - Natural-language search now rejects unsupported boolean connector syntax from LLM translations instead of treating it as title text.
 - Docker Compose now forwards the current LLM endpoint, model, API key, temperature, and output-token environment variables.

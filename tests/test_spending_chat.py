@@ -15,6 +15,7 @@ from expenses.ai.spending_chat import (
     SpendingAgentTurnResult,
     SpendingAnalysisService,
     SpendingChatRequest,
+    _split_leading_progress_narration,
 )
 from expenses.core.config import get_settings
 from expenses.db.models import (
@@ -144,6 +145,26 @@ def _seed_spending_fixture(session: Session) -> dict[str, int]:
         "leisure_id": leisure.id,
         "concert_id": concert.id,
     }
+
+
+def test_leading_progress_split_uses_sentence_boundary() -> None:
+    narration, answer = _split_leading_progress_narration(
+        "I'll summarize the 3.2% increase. Groceries drove the change."
+    )
+    assert narration == "I'll summarize the 3.2% increase."
+    assert answer == "Groceries drove the change."
+
+    narration, answer = _split_leading_progress_narration(
+        "I'll summarize e.g. grocery changes. Food spending increased."
+    )
+    assert narration == "I'll summarize e.g. grocery changes."
+    assert answer == "Food spending increased."
+
+    narration, answer = _split_leading_progress_narration(
+        "I'll summarize the 3.2% increase."
+    )
+    assert narration == "I'll summarize the 3.2% increase."
+    assert answer == ""
 
 
 def test_spending_analysis_uses_net_amounts_for_overview_and_search() -> None:
@@ -413,6 +434,89 @@ def test_spending_chat_stream_route_emits_ndjson_events(
     assert rows[5]["message_history"] == [{"kind": "fake"}]
 
 
+def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
+    anonymous_api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
+    get_settings.cache_clear()
+
+    setup = anonymous_api_client.post(
+        "/api/mobile/auth/setup",
+        json={
+            "username": "bootstrap",
+            "password": "pw-12345",
+            "device_id": "iphone-1",
+            "device_name": "Test iPhone",
+        },
+    )
+    assert setup.status_code == 200
+    token = setup.json()["token"]
+    anonymous_api_client.cookies.clear()
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def session_factory() -> Session:
+        return session_local()
+
+    class FakeSpendingChatService:
+        def __init__(self, session: Session, *, user_id: int) -> None:
+            self.session = session
+            self.user_id = user_id
+
+        async def stream_turn(self, *, request):
+            yield {"type": "turn_started", "turn_id": "turn-mobile"}
+            yield {"type": "text_chunk", "content": "Net spending is down."}
+            yield {"type": "text_commit"}
+            yield SpendingAgentTurnResult(
+                assistant_message="Net spending is down.",
+                message_history=[{"kind": "fake"}],
+            )
+
+    app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
+        lambda: session_factory
+    )
+    app_main.app.dependency_overrides[routes.get_spending_chat_service_class] = (
+        lambda: FakeSpendingChatService
+    )
+    try:
+        with anonymous_api_client.stream(
+            "POST",
+            "/api/ai/spending-chat/stream",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messages": [{"role": "user", "content": "How does my spending look?"}]
+            },
+        ) as response:
+            assert response.status_code == 200
+            rows = [json.loads(line) for line in response.iter_lines() if line.strip()]
+    finally:
+        app_main.app.dependency_overrides.pop(
+            routes.get_spending_chat_session_factory, None
+        )
+        app_main.app.dependency_overrides.pop(
+            routes.get_spending_chat_service_class, None
+        )
+        get_settings.cache_clear()
+
+    assert [row["type"] for row in rows] == [
+        "turn_started",
+        "text_chunk",
+        "text_commit",
+        "result",
+        "done",
+    ]
+    assert rows[-2]["assistant_message"] == "Net spending is down."
+    assert rows[-2]["message_history"] == [{"kind": "fake"}]
+
+
 def test_spending_chat_rejects_invalid_message_history_before_stream(
     api_client: TestClient,
     csrf_headers: dict[str, str],
@@ -433,6 +537,186 @@ def test_spending_chat_rejects_invalid_message_history_before_stream(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid message_history"
+
+
+@pytest.mark.anyio
+async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
+    get_settings.cache_clear()
+
+    from pydantic_ai import messages as pydantic_message
+    import pydantic_ai
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def instructions(self, func):
+            return func
+
+        async def run_stream_events(self, *args, **kwargs):
+            yield pydantic_message.PartStartEvent(
+                index=0,
+                part=pydantic_message.TextPart(content="I'll inspect the details."),
+            )
+            yield pydantic_message.FunctionToolCallEvent(
+                part=pydantic_message.ToolCallPart(
+                    tool_name="search_transactions",
+                    args={"sort": "amount_desc"},
+                    tool_call_id="call-1",
+                )
+            )
+            yield pydantic_message.FunctionToolResultEvent(
+                part=pydantic_message.ToolReturnPart(
+                    tool_name="search_transactions",
+                    content={"ok": True},
+                    tool_call_id="call-1",
+                )
+            )
+            yield pydantic_message.PartStartEvent(
+                index=0,
+                part=pydantic_message.TextPart(content="Final answer"),
+            )
+            yield pydantic_message.FinalResultEvent(tool_name=None, tool_call_id=None)
+            yield pydantic_message.PartDeltaEvent(
+                index=0,
+                delta=pydantic_message.TextPartDelta(content_delta=" with detail."),
+            )
+
+    monkeypatch.setattr(pydantic_ai, "Agent", FakeAgent)
+
+    with make_session() as session:
+        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
+        context = SpendingAgentContext(
+            analysis=analysis,
+            user_id=1,
+            today=date(2026, 6, 27),
+            now=datetime(2026, 6, 27, 12, 0),
+        )
+        stream = PydanticAISpendingRunner().stream_turn(
+            request=SpendingChatRequest(
+                messages=[{"role": "user", "content": "What changed this month?"}]
+            ),
+            analysis=analysis,
+            context=context,
+        )
+        events = []
+        try:
+            async for event in stream:
+                events.append(event)
+                if (
+                    isinstance(event, dict)
+                    and event["type"] == "text_chunk"
+                    and event["content"].endswith(" with detail.")
+                ):
+                    break
+        finally:
+            await stream.aclose()
+            get_settings.cache_clear()
+
+    assert [event["type"] for event in events] == [
+        "turn_started",
+        "progress_narration",
+        "tool_call_start",
+        "tool_call_end",
+        "text_chunk",
+        "text_chunk",
+    ]
+    assert events[1]["content"] == "I'll inspect the details."
+    assert [event["content"] for event in events if event["type"] == "text_chunk"] == [
+        "Final answer",
+        " with detail.",
+    ]
+
+
+@pytest.mark.anyio
+async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
+    get_settings.cache_clear()
+
+    from pydantic_ai import messages as pydantic_message
+    import pydantic_ai
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def instructions(self, func):
+            return func
+
+        async def run_stream_events(self, *args, **kwargs):
+            yield pydantic_message.FunctionToolCallEvent(
+                part=pydantic_message.ToolCallPart(
+                    tool_name="compare_spending_periods",
+                    args={},
+                    tool_call_id="call-1",
+                )
+            )
+            yield pydantic_message.FunctionToolResultEvent(
+                part=pydantic_message.ToolReturnPart(
+                    tool_name="compare_spending_periods",
+                    content={"ok": True},
+                    tool_call_id="call-1",
+                )
+            )
+            yield pydantic_message.PartStartEvent(
+                index=0,
+                part=pydantic_message.TextPart(
+                    content="Let me dig into the biggest changes."
+                ),
+            )
+            yield pydantic_message.FinalResultEvent(tool_name=None, tool_call_id=None)
+            yield pydantic_message.PartDeltaEvent(
+                index=0,
+                delta=pydantic_message.TextPartDelta(
+                    content_delta="Here is what changed."
+                ),
+            )
+
+    monkeypatch.setattr(pydantic_ai, "Agent", FakeAgent)
+
+    with make_session() as session:
+        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
+        context = SpendingAgentContext(
+            analysis=analysis,
+            user_id=1,
+            today=date(2026, 6, 27),
+            now=datetime(2026, 6, 27, 12, 0),
+        )
+        stream = PydanticAISpendingRunner().stream_turn(
+            request=SpendingChatRequest(
+                messages=[{"role": "user", "content": "What changed this month?"}]
+            ),
+            analysis=analysis,
+            context=context,
+        )
+        events = []
+        try:
+            async for event in stream:
+                events.append(event)
+                if isinstance(event, dict) and event["type"] == "text_chunk":
+                    break
+        finally:
+            await stream.aclose()
+            get_settings.cache_clear()
+
+    assert [event["type"] for event in events] == [
+        "turn_started",
+        "tool_call_start",
+        "tool_call_end",
+        "progress_narration",
+        "text_chunk",
+    ]
+    assert events[3]["content"] == "Let me dig into the biggest changes."
+    assert events[4]["content"] == "Here is what changed."
 
 
 @pytest.mark.anyio
