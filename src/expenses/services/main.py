@@ -3257,6 +3257,7 @@ class MetricsService:
         *,
         category_ids: Optional[list[int]] = None,
         tag_ids: Optional[list[int]] = None,
+        limit: Optional[int] = 8,
     ) -> list[dict[str, object]]:
         if transaction_type is None:
             transaction_type = TransactionType.expense
@@ -3272,7 +3273,8 @@ class MetricsService:
             if not tag_ids
             else "tags_" + "_".join(str(i) for i in sorted(set(tag_ids)))
         )
-        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}"
+        limit_suffix = "all" if limit is None else str(limit)
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}_{limit_suffix}"
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
@@ -3378,7 +3380,8 @@ class MetricsService:
             total += net
             breakdown.append({"name": row.name, "amount_cents": net, "percent": 0})
         breakdown.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
-        breakdown = breakdown[:8]
+        if limit is not None:
+            breakdown = breakdown[:limit]
         for item in breakdown:
             amount = int(item["amount_cents"])
             item["percent"] = (amount / total * 100) if total else 0

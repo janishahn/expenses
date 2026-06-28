@@ -34,6 +34,7 @@ from expenses.ai.search_validation import (
     SearchTranslationValidationError,
     validate_search_translation_output,
 )
+from expenses.ai.usage import apply_usage_metadata
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
@@ -517,8 +518,11 @@ class LLMAssistantService:
             )
             if isinstance(result, LLMRunResult):
                 output = result.output
-                job.usage_input_tokens = result.input_tokens
-                job.usage_output_tokens = result.output_tokens
+                if result.usage_metadata is not None:
+                    apply_usage_metadata(job, result.usage_metadata)
+                else:
+                    job.usage_input_tokens = result.input_tokens
+                    job.usage_output_tokens = result.output_tokens
             else:
                 output = result
         except LLMDisabledError:

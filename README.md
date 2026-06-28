@@ -22,7 +22,7 @@ The native iOS app is shown near the end of this README, including [iPhone scree
 - A web app for desktop and mobile browsers, plus a native SwiftUI iOS client that points at the same backend.
 - Multi-user with per-user data isolation, so a household can share one instance while keeping separate data.
 - Log spend at the moment you pay through a token-authenticated ingest endpoint, for example an Apple Shortcuts automation that fires on an Apple Wallet card tap.
-- Optional LLM assistance for natural-language search, Uncategorized triage, and rule mining through an OpenAI-compatible endpoint, off by default.
+- Optional LLM assistance for natural-language search, Uncategorized triage, rule mining, and a read-only spending assistant chat through an OpenAI-compatible endpoint, off by default.
 
 ## Features
 
@@ -63,6 +63,10 @@ Recurring rules model the fixed parts of your finances: salary, rent, subscripti
 ![Categorization rules](docs/screenshots/rules-dark.png)
 
 Categorization rules keep the ledger tidy without manual sorting. A rule matches transactions by title text or regex, amount range, and type, then assigns a category and optional tags, with priorities deciding which rule wins when several match. New transactions are categorized as they arrive, and existing ones can be reprocessed. With optional LLM assistance enabled, "Mine rules" suggests rules from your existing transaction history.
+
+### Spending assistant
+
+When optional LLM assistance is enabled, the Assistant page is a read-only chat for asking about your spending in plain language, such as "what drove my spending last month" or "compare this month to last". It streams the reply as it is written and shows a compact ticker of the lookups it runs — spending overviews, period comparisons, category and tag breakdowns, transaction search and detail, and budget progress. The assistant can only read your data; it never creates, edits, or reclassifies transactions.
 
 ### And more
 
@@ -304,7 +308,9 @@ EXPENSES_LLM_TEMPERATURE=
 EXPENSES_LLM_MAX_OUTPUT_TOKENS=
 ```
 
-`EXPENSES_LLM_BASE_URL` can point to a private Tailnet/MagicDNS endpoint or any hosted OpenAI-compatible API such as OpenRouter. Leave `EXPENSES_LLM_API_KEY` blank for unauthenticated private endpoints. The app sends feature-specific OpenAI/OpenRouter-compatible `reasoning.effort` values and output caps: search translation uses `none` with 512 output tokens, transaction triage uses `low` with 2048 output tokens, and rule mining uses `medium` with 4096 output tokens. Reasoning tokens count toward the same output-token cap as the visible JSON response, so lowering `EXPENSES_LLM_MAX_OUTPUT_TOKENS` can truncate reasoning-model responses. Leave `EXPENSES_LLM_TEMPERATURE` and `EXPENSES_LLM_MAX_OUTPUT_TOKENS` blank to use the built-in per-feature defaults; when set, those values replace the defaults for every LLM feature. LLM responses are parsed as structured JSON and validated against the runtime categories, tags, and search syntax before the app accepts them. If validated output cannot be produced after retries, search returns a clarification, while triage and rule mining skip suggestions and leave the failure in the LLM trace logs.
+`EXPENSES_LLM_BASE_URL` can point to a private Tailnet/MagicDNS endpoint or any hosted OpenAI-compatible API such as OpenRouter. Leave `EXPENSES_LLM_API_KEY` blank for unauthenticated private endpoints. The app sends feature-specific OpenAI/OpenRouter-compatible `reasoning.effort` values and output caps: search translation uses `none` with 512 output tokens, transaction triage uses `low` with 2048 output tokens, rule mining uses `medium` with 4096 output tokens, and spending chat uses `medium` with 4096 output tokens. Reasoning tokens count toward the same output-token cap as the visible JSON response, so lowering `EXPENSES_LLM_MAX_OUTPUT_TOKENS` can truncate reasoning-model responses. Leave `EXPENSES_LLM_TEMPERATURE` and `EXPENSES_LLM_MAX_OUTPUT_TOKENS` blank to use the built-in per-feature defaults; when set, those values replace the defaults for every LLM feature. LLM responses are parsed as structured JSON and validated against the runtime categories, tags, and search syntax before the app accepts them. If validated output cannot be produced after retries, search returns a clarification, while triage and rule mining skip suggestions and leave the failure in the LLM trace logs.
+
+The read-only spending chat powers the web Assistant page and is exposed at `POST /api/ai/spending-chat/stream` (a future iOS chat surface can use the same endpoint). It requires normal app authentication and streams `application/x-ndjson` events such as `turn_started`, `tool_call_start`, `tool_call_end`, `text_chunk`, `text_commit`, `result`, `done`, and `error`. Its tools can read spending overviews, compare periods, break down spending, search and inspect transactions, and read budget progress; they cannot create, update, delete, or reclassify data. Each turn is recorded as one `spending_chat` row in the LLM trace log with status, duration, provider metadata, token counters, cached/reasoning-token counters when available, and provider-reported cost when available. Chat trace rows store output hashes and counts instead of the final assistant text or returned message history. Authenticated clients can read aggregate usage through `GET /api/ai/usage/summary?feature=spending_chat&period=week|month|all`. The web Admin page surfaces this summary as an Assistant usage panel — chat counts, token totals with cached/reasoning counters, provider-reported cost, average tokens per chat, and p95 latency — with a week/month/all-time switch.
 
 ## Data, Backups, And Logs
 

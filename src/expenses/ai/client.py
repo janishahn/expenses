@@ -17,6 +17,14 @@ from expenses.ai.search_validation import (
     SearchTranslationValidationError,
     validate_search_translation_output,
 )
+from expenses.ai.usage import (
+    LLMUsageMetadata,
+    OpenAICompatibleUsageCapture,
+    UsageCaptureTransport,
+    apply_captured_provider_usage,
+    enrich_openrouter_generation_usage,
+    usage_metadata_from_result,
+)
 from expenses.core.config import get_settings
 
 
@@ -37,6 +45,7 @@ class LLMRunResult(Generic[OutputT]):
     output: OutputT
     input_tokens: int | None = None
     output_tokens: int | None = None
+    usage_metadata: LLMUsageMetadata | None = None
 
 
 class LLMRunner:
@@ -99,10 +108,12 @@ class PydanticAILLMRunner(LLMRunner):
         except ImportError as exc:
             raise LLMDisabledError("Install pydantic-ai to enable LLM usage") from exc
 
+        usage_capture = OpenAICompatibleUsageCapture()
         http_client = _retrying_http_client(
             AsyncTenacityTransport=AsyncTenacityTransport,
             RetryConfig=RetryConfig,
             wait_retry_after=wait_retry_after,
+            usage_capture=usage_capture,
         )
         model = OpenAIChatModel(
             self.model_name,
@@ -212,14 +223,30 @@ class PydanticAILLMRunner(LLMRunner):
                 ),
                 deps=payload,
             )
+            usage_metadata = usage_metadata_from_result(
+                usage=result.usage,
+                messages=result.all_messages(),
+                base_url=self.base_url,
+                configured_model=self.model_name,
+            )
+            usage_metadata = apply_captured_provider_usage(
+                usage_metadata, usage_capture
+            )
+            usage_metadata = await enrich_openrouter_generation_usage(
+                usage_metadata,
+                http_client=http_client,
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
         except UnexpectedModelBehavior as exc:
             raise LLMOutputError(str(exc)) from exc
         finally:
             await http_client.aclose()
         return LLMRunResult(
             output=result.output,
-            input_tokens=result.usage.input_tokens or None,
-            output_tokens=result.usage.output_tokens or None,
+            input_tokens=usage_metadata.input_tokens,
+            output_tokens=usage_metadata.output_tokens,
+            usage_metadata=usage_metadata,
         )
 
 
@@ -247,6 +274,7 @@ def _retrying_http_client(
     AsyncTenacityTransport: type,
     RetryConfig: type,
     wait_retry_after: Any,
+    usage_capture: OpenAICompatibleUsageCapture | None = None,
 ) -> AsyncClient:
     def should_retry_status(response: Response) -> None:
         if response.status_code in {429, 502, 503, 504}:
@@ -264,6 +292,8 @@ def _retrying_http_client(
         ),
         validate_response=should_retry_status,
     )
+    if usage_capture is not None:
+        transport = UsageCaptureTransport(transport, usage_capture)
     return AsyncClient(transport=transport)
 
 

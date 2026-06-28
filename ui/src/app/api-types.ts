@@ -230,3 +230,96 @@ export type BankStatementPreviewResponse = {
   new_count: number
   duplicate_count: number
 }
+
+export type SpendingChatRole = "user" | "assistant"
+
+export type SpendingChatMessageInput = {
+  role: SpendingChatRole
+  content: string
+}
+
+// Opaque Pydantic AI message dicts. Preserved across turns and sent back as
+// context, but never inspected or displayed in the UI.
+export type SpendingChatHistoryEntry = Record<string, unknown>
+
+export type SpendingChatStreamRequest = {
+  messages: SpendingChatMessageInput[]
+  message_history?: SpendingChatHistoryEntry[]
+}
+
+export type AIUsageSummary = {
+  feature: string
+  period: "week" | "month" | "all"
+  started_at: string | null
+  total_chats: number
+  completed_chats: number
+  failed_chats: number
+  cancelled_chats: number
+  costed_chats: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cached_input_tokens: number
+  cache_write_tokens: number
+  reasoning_tokens: number
+  total_cost_decimal: string
+  average_cost_decimal: string
+  cost_unit: string | null
+  average_total_tokens: number
+  p95_duration_ms: number | null
+}
+
+export type SpendingChatTurnStartedEvent = {
+  type: "turn_started"
+  turn_id: string
+}
+
+export type SpendingChatToolCallStartEvent = {
+  type: "tool_call_start"
+  tool_call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+}
+
+export type SpendingChatToolCallEndEvent = {
+  type: "tool_call_end"
+  tool_call_id: string
+  tool_name: string
+  // Display-only preview, not source data; the UI uses only `success`.
+  result_preview: string
+  success: boolean
+}
+
+export type SpendingChatTextChunkEvent = {
+  type: "text_chunk"
+  content: string
+}
+
+export type SpendingChatTextCommitEvent = {
+  type: "text_commit"
+}
+
+export type SpendingChatResultEvent = {
+  type: "result"
+  assistant_message: string
+  message_history: SpendingChatHistoryEntry[]
+}
+
+export type SpendingChatDoneEvent = {
+  type: "done"
+}
+
+export type SpendingChatErrorEvent = {
+  type: "error"
+  message: string
+}
+
+export type SpendingChatStreamEvent =
+  | SpendingChatTurnStartedEvent
+  | SpendingChatToolCallStartEvent
+  | SpendingChatToolCallEndEvent
+  | SpendingChatTextChunkEvent
+  | SpendingChatTextCommitEvent
+  | SpendingChatResultEvent
+  | SpendingChatDoneEvent
+  | SpendingChatErrorEvent

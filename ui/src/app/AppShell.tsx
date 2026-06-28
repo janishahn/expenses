@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react"
 import { FileTextIcon } from "@phosphor-icons/react/FileText"
 import { SquaresFourIcon } from "@phosphor-icons/react/SquaresFour"
 import { ChartLineIcon } from "@phosphor-icons/react/ChartLine"
+import { ChatCircleDotsIcon } from "@phosphor-icons/react/ChatCircleDots"
 import { ListBulletsIcon } from "@phosphor-icons/react/ListBullets"
 import { ListIcon } from "@phosphor-icons/react/List"
 import { NewspaperIcon } from "@phosphor-icons/react/Newspaper"
@@ -30,6 +31,7 @@ const mainNav = [
   { to: "/forecast", label: "Forecast", icon: TrendUpIcon },
   { to: "/budgets", label: "Budgets", icon: WalletIcon },
   { to: "/digest", label: "Digest", icon: NewspaperIcon },
+  { to: "/assistant", label: "Assistant", icon: ChatCircleDotsIcon },
 ]
 
 const manageNav = [
@@ -163,6 +165,7 @@ function AppShell() {
     }`
   const shellRailClass = "h-[64px] shrink-0 border-b border-border/80"
   const showShellThemeQuickToggle = !location.pathname.startsWith("/admin")
+  const isAssistant = location.pathname === "/assistant"
 
   const navIndicator = (isActive: boolean) =>
     isActive ? (
@@ -309,7 +312,11 @@ function AppShell() {
 
         <main
           className={`flex-1 min-w-0 px-5 pt-6 desk:px-7 desk:pt-7 ${
-            isDesktop ? "pb-9" : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+            isAssistant
+              ? "pb-0"
+              : isDesktop
+                ? "pb-9"
+                : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
           }`}
         >
           <div className="page-enter">
@@ -318,7 +325,11 @@ function AppShell() {
         </main>
       </div>
 
-      {!isDesktop && !sidebarOpen && !addTransactionOpen && !mobileFieldFocused ? (
+      {!isDesktop &&
+      !isAssistant &&
+      !sidebarOpen &&
+      !addTransactionOpen &&
+      !mobileFieldFocused ? (
         <Button
           type="button"
           variant="unstyled"

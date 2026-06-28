@@ -109,6 +109,7 @@ test.describe("Navigation (mobile)", () => {
     await page.goto("/")
 
     const routes = [
+      { label: "Assistant", path: "/assistant", heading: "Spending Assistant" },
       { label: "Forecast", path: "/forecast", heading: "Forecast" },
       { label: "Budgets", path: "/budgets", heading: "Budgets" },
       { label: "Recurring", path: "/recurring", heading: "Recurring" },

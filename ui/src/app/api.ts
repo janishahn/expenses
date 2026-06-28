@@ -1,3 +1,9 @@
+import type {
+  AIUsageSummary,
+  SpendingChatStreamEvent,
+  SpendingChatStreamRequest,
+} from "./api-types"
+
 let csrfToken: string | null = null
 let csrfPromise: Promise<string> | null = null
 let csrfFetchedAt: number | null = null
@@ -129,4 +135,97 @@ export async function apiFetchFormData<T>(
     includeCsrfHeader: true,
     setJsonContentType: false,
   })
+}
+
+export function fetchAIUsageSummary(
+  period: AIUsageSummary["period"] = "week"
+): Promise<AIUsageSummary> {
+  return apiFetch<AIUsageSummary>(
+    `/api/ai/usage/summary?feature=spending_chat&period=${period}`
+  )
+}
+
+function streamErrorMessage(text: string, status: number): string {
+  const trimmed = text.trim()
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed) as { detail?: unknown }
+      if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+        return parsed.detail
+      }
+    } catch {
+      // Non-JSON error body; surface the raw text below.
+    }
+    return trimmed
+  }
+  return `Request failed (${status})`
+}
+
+async function openSpendingChatStream(
+  request: SpendingChatStreamRequest,
+  signal: AbortSignal
+): Promise<Response> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch("/api/ai/spending-chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+        "X-CSRF-Token": await getCsrfToken(attempt === 1),
+      },
+      body: JSON.stringify(request),
+      signal,
+    })
+    if (response.ok) {
+      return response
+    }
+    const text = await response.text().catch(() => "")
+    if (
+      attempt === 0 &&
+      response.status === 400 &&
+      text.includes("Invalid CSRF token")
+    ) {
+      invalidateCsrfToken()
+      continue
+    }
+    throw new Error(streamErrorMessage(text, response.status))
+  }
+  throw new Error("Request failed due to CSRF token validation")
+}
+
+export async function* streamSpendingChat(
+  request: SpendingChatStreamRequest,
+  signal: AbortSignal
+): AsyncGenerator<SpendingChatStreamEvent> {
+  const response = await openSpendingChatStream(request, signal)
+  if (!response.body) {
+    throw new Error("Spending chat stream returned no body")
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      let newlineIndex = buffer.indexOf("\n")
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim()
+        buffer = buffer.slice(newlineIndex + 1)
+        if (line) {
+          yield JSON.parse(line) as SpendingChatStreamEvent
+        }
+        newlineIndex = buffer.indexOf("\n")
+      }
+    }
+    const tail = buffer.trim()
+    if (tail) {
+      yield JSON.parse(tail) as SpendingChatStreamEvent
+    }
+  } finally {
+    void reader.cancel().catch(() => {})
+  }
 }
