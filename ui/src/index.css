@@ -386,6 +386,7 @@
       input[type="datetime-local"]::-webkit-datetime-edit {
         display: block;
         padding-inline: 0.875rem;
+        text-align: center;
       }
 
       input[type="date"]::-webkit-calendar-picker-indicator,
@@ -659,7 +660,7 @@
   }
 
   .description-editor {
-    @apply w-full rounded-xl px-3.5 py-2.5 text-[0.95rem] text-text transition;
+    @apply w-full rounded-xl px-3.5 py-2.5 text-base text-text transition md:text-[0.95rem];
     border: 1px solid rgb(var(--border));
     background: rgb(var(--surface-hi));
     box-shadow:

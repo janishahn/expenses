@@ -48,7 +48,7 @@ test.describe("Spending Assistant (mobile)", () => {
     page,
   }) => {
     await page.goto("/assistant")
-    await expect(page.locator("main h1")).toContainText("Spending Assistant")
+    await expect(page.locator("main h1")).toContainText("Assistant")
     await expect(page.getByTestId("spending-assistant-composer")).toBeVisible()
     await expect(page.getByTestId("spending-assistant-input")).toBeVisible()
     await expect(page.getByTestId("app-shell-mobile-add-fab")).toHaveCount(0)

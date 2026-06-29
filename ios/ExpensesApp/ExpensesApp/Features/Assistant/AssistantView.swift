@@ -6,6 +6,8 @@ struct AssistantView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var input = ""
     @FocusState private var inputFocused: Bool
+    @State private var sendTick = 0
+    @State private var stopTick = 0
 
     private let bottomAnchor = "assistant.bottom"
     private static let starterPrompts = [
@@ -110,25 +112,22 @@ struct AssistantView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .bottom, spacing: 6) {
             TextField("Ask about your spending...", text: $input, axis: .vertical)
                 .lineLimit(1...5)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(
-                    ExpensesTheme.surface(for: scheme),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                )
                 .focused($inputFocused)
                 .accessibilityIdentifier("assistant.input")
+                .padding(.leading, 16)
+                .padding(.vertical, 11)
 
             if model.isAssistantStreaming {
                 Button {
+                    stopTick += 1
                     model.cancelAssistantMessage()
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 40, height: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ExpensesTheme.expense(for: scheme))
@@ -140,7 +139,7 @@ struct AssistantView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28, weight: .semibold))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 40, height: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ExpensesTheme.accent(for: scheme))
@@ -150,10 +149,24 @@ struct AssistantView: View {
                 .accessibilityIdentifier("assistant.send")
             }
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
+        .sensoryFeedback(.impact(flexibility: .rigid), trigger: stopTick)
+        .padding(.trailing, 6)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(ExpensesTheme.surface(for: scheme).opacity(scheme == .dark ? 0.82 : 0.74))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.18 : 0.06), radius: 14, y: 6)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(scheme == .dark ? 0.08 : 0.38), lineWidth: 0.75)
+        }
+        .glassEffect(
+            .regular.tint(ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.025 : 0.035)),
+            in: .rect(cornerRadius: 24)
+        )
         .padding(.horizontal, 16)
-        .padding(.top, 10)
         .padding(.bottom, 8)
-        .background(.bar)
     }
 
     private var canSend: Bool {
@@ -171,6 +184,7 @@ struct AssistantView: View {
         guard canSend else {
             return
         }
+        sendTick += 1
         model.sendAssistantMessage(input)
         input = ""
     }

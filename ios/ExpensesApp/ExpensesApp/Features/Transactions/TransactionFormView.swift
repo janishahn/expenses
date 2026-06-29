@@ -21,6 +21,8 @@ struct TransactionFormView: View {
     @State private var storedCoordinate: CLLocationCoordinate2D?
     @State private var coordinate: CLLocationCoordinate2D?
     @State private var formError: String?
+    @State private var saveAttempts = 0
+    @State private var lastSaveSucceeded = false
     @State private var locationProvider = LocationProvider()
 
     init(mode: TransactionFormMode, categories: [CategorySummary], onSaved: @escaping () -> Void = {}) {
@@ -85,6 +87,7 @@ struct TransactionFormView: View {
                             isReimbursement = false
                         }
                     }
+                    .sensoryFeedback(.selection, trigger: type)
 
                     DatePicker("Date", selection: $occurredAt)
 
@@ -110,6 +113,7 @@ struct TransactionFormView: View {
                 if type == "income" {
                     Section {
                         Toggle("This is a reimbursement", isOn: $isReimbursement)
+                            .sensoryFeedback(.selection, trigger: isReimbursement)
                     }
                 }
 
@@ -122,6 +126,7 @@ struct TransactionFormView: View {
                                 coordinate = storedCoordinate
                             }
                         }
+                        .sensoryFeedback(.selection, trigger: includeCurrentLocation)
                     if let storedCoordinate, !includeCurrentLocation {
                         Label(
                             "Stored location: \(coordinateLabel(storedCoordinate))",
@@ -167,6 +172,9 @@ struct TransactionFormView: View {
             .task {
                 await model.loadOrganizeData()
             }
+            .sensoryFeedback(trigger: saveAttempts) { _, _ in
+                lastSaveSucceeded ? .success : .error
+            }
         }
     }
 
@@ -203,9 +211,13 @@ struct TransactionFormView: View {
         }
 
         if saved {
+            lastSaveSucceeded = true
+            saveAttempts += 1
             onSaved()
             dismiss()
         } else {
+            lastSaveSucceeded = false
+            saveAttempts += 1
             formError = model.lastError?.message ?? "Transaction could not be saved."
         }
     }

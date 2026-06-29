@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 const inputToneClass =
-  "field w-full rounded-lg border border-border bg-surface-hi px-3.5 py-2.5 text-[0.95rem] text-text shadow-[inset_0_1px_0_rgb(var(--surface-highlight)_/_0.06),0_1px_0_rgb(255_255_255_/_0.02)] hover:border-border-hi focus-visible:border-accent focus-visible:ring-0 focus-visible:shadow-[inset_0_1px_0_rgb(var(--surface-highlight)_/_0.08),var(--ring-focus)]"
+  "field w-full rounded-lg border border-border bg-surface-hi px-3.5 py-2.5 text-base text-text shadow-[inset_0_1px_0_rgb(var(--surface-highlight)_/_0.06),0_1px_0_rgb(255_255_255_/_0.02)] hover:border-border-hi focus-visible:border-accent focus-visible:ring-0 focus-visible:shadow-[inset_0_1px_0_rgb(var(--surface-highlight)_/_0.08),var(--ring-focus)] md:text-[0.95rem]"
 
 function AppFieldLabel({ className, ...props }: React.ComponentProps<"label">) {
   return <label className={cn("form-label", className)} {...props} />

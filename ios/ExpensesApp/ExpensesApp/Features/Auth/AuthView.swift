@@ -410,6 +410,7 @@ struct AuthView: View {
                 Text("Dark").tag("dark")
             }
             .pickerStyle(.segmented)
+            .sensoryFeedback(.selection, trigger: appearanceBinding.wrappedValue)
         }
     }
 

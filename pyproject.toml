@@ -1,6 +1,6 @@
 [project]
 name = "expenses"
-version = "0.3.0"
+version = "0.3.1"
 description = "A lightweight, mobile-first expense tracker"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 dev = "expenses.cli.dev:main"
 export-ios-fixtures = "expenses.cli.export_ios_fixtures:main"
+run-ios-device = "expenses.cli.run_ios_device:main"
 export-openapi = "expenses.cli.export_openapi:main"
 migrations = "expenses.cli.migrations:main"
 test = "expenses.cli.test:main"

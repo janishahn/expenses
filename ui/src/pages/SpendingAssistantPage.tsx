@@ -377,18 +377,18 @@ function SpendingAssistantPage() {
       className="flex min-h-[calc(100dvh-5.5rem)] flex-col desk:min-h-[calc(100dvh-2rem)]"
     >
       <PageIntro
-        title="Spending Assistant"
-        actions={
+        title="Assistant"
+        titleAccessoryAlign="end"
+        titleAccessory={
           messages.length > 0 ? (
             <button
               type="button"
               onClick={handleNewChat}
-              className="btn-inline"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted transition hover:border-border-hi hover:text-text"
               aria-label="New chat"
               data-testid="spending-assistant-new-chat"
             >
               <NotePencilIcon className="h-4 w-4" />
-              New chat
             </button>
           ) : undefined
         }
