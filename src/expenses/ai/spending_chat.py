@@ -255,9 +255,9 @@ def _category_payload(category: Category | None) -> dict[str, Any] | None:
 
 
 def _transaction_payload(txn: Transaction) -> dict[str, Any]:
-    gross = int(getattr(txn, "gross_amount_cents", txn.amount_cents))
-    reimbursed = int(getattr(txn, "reimbursed_total_cents", 0))
-    net = int(getattr(txn, "net_amount_cents", max(0, gross - reimbursed)))
+    gross = int(txn.gross_amount_cents)
+    reimbursed = int(txn.reimbursed_total_cents)
+    net = int(txn.net_amount_cents)
     return {
         "id": txn.id,
         "date": txn.date.isoformat(),
@@ -403,41 +403,27 @@ class SpendingAnalysisService:
         )
         transaction_service = TransactionService(self.session, self.user_id)
         total_count = transaction_service.count_for_period(period, filters)
-        transactions = transaction_service.list_for_period(period, filters, limit=5_000)
-        transaction_rows = [_transaction_payload(txn) for txn in transactions]
 
         if group_by == "category":
-            totals: dict[int, dict[str, Any]] = {}
-            for txn in transaction_rows:
-                category = txn["category"]
-                if not category:
-                    continue
-                row = totals.setdefault(
-                    int(category["id"]),
-                    {
-                        "id": category["id"],
-                        "name": category["name"],
-                        "amount_cents": 0,
-                        "percent": 0.0,
-                    },
-                )
-                row["amount_cents"] += int(txn["net_amount_cents"])
-            total_amount = sum(int(row["amount_cents"]) for row in totals.values())
-            rows = sorted(
-                totals.values(), key=lambda row: int(row["amount_cents"]), reverse=True
+            rows = MetricsService(self.session, self.user_id).category_breakdown(
+                period,
+                TransactionType.expense,
+                category_ids=[category_id] if category_id is not None else None,
+                tag_ids=[tag_id] if tag_id is not None else None,
+                limit=limit,
             )
-            for row in rows:
-                amount = int(row["amount_cents"])
-                row["percent"] = (amount / total_amount * 100) if total_amount else 0.0
             return {
                 "ok": True,
                 "status": "ok",
                 "group_by": group_by,
                 "period": {"start": start.isoformat(), "end": end.isoformat()},
                 "transaction_count": total_count,
-                "candidate_truncated": total_count > len(transaction_rows),
-                "rows": rows[:limit],
+                "candidate_truncated": False,
+                "rows": rows,
             }
+
+        transactions = transaction_service.list_for_period(period, filters, limit=5_000)
+        transaction_rows = [_transaction_payload(txn) for txn in transactions]
 
         if group_by == "tag":
             totals: dict[int, dict[str, Any]] = {}
@@ -521,7 +507,7 @@ class SpendingAnalysisService:
         )
         if sort == "amount_desc":
             transactions.sort(
-                key=lambda txn: int(getattr(txn, "net_amount_cents", txn.amount_cents)),
+                key=lambda txn: int(txn.net_amount_cents),
                 reverse=True,
             )
         transactions = transactions[:limit]

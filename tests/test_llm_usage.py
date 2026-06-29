@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from httpx import AsyncClient, MockTransport, Response
 
@@ -6,6 +8,7 @@ from expenses.ai.usage import (
     OpenAICompatibleUsageCapture,
     apply_captured_provider_usage,
     enrich_openrouter_generation_usage,
+    usage_metadata_from_result,
 )
 
 
@@ -111,3 +114,41 @@ def test_captured_openrouter_stream_usage_preserves_cost_and_cache_details() -> 
         "prompt_tokens_details": {"cache_write_tokens": 1, "cached_tokens": 2},
         "total_tokens": 22,
     }
+
+
+def test_usage_metadata_from_result_captures_openai_compatible_metadata() -> None:
+    usage = SimpleNamespace(
+        input_tokens=12,
+        output_tokens=5,
+        cache_read_tokens=3,
+        cache_write_tokens=2,
+        details={"reasoning_tokens": 4},
+        requests=1,
+        tool_calls=2,
+    )
+    response = SimpleNamespace(
+        kind="response",
+        provider_name="LocalProvider",
+        model_name="qwen-local",
+        provider_response_id="resp-123",
+    )
+
+    metadata = usage_metadata_from_result(
+        usage=usage,
+        messages=[SimpleNamespace(kind="request"), response],
+        base_url="http://llm.local/v1",
+        configured_model="configured-model",
+    )
+
+    assert metadata.input_tokens == 12
+    assert metadata.output_tokens == 5
+    assert metadata.total_tokens == 17
+    assert metadata.cached_input_tokens == 3
+    assert metadata.cache_write_tokens == 2
+    assert metadata.reasoning_tokens == 4
+    assert metadata.request_count == 1
+    assert metadata.tool_call_count == 2
+    assert metadata.llm_provider == "openai_compatible"
+    assert metadata.provider_name == "LocalProvider"
+    assert metadata.provider_model == "qwen-local"
+    assert metadata.provider_response_id == "resp-123"

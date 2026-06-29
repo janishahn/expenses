@@ -565,7 +565,9 @@ final class AppModel {
                 }
                 finishAssistantStream(turnID: assistantTurnID, stopped: Task.isCancelled)
             } catch let error as APIErrorInfo {
-                handleAPIError(error)
+                if error.statusCode == 401 {
+                    handleAPIError(error)
+                }
                 failAssistantStream(turnID: assistantTurnID, message: error.message)
             } catch {
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled {

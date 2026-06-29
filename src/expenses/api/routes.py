@@ -65,7 +65,6 @@ from expenses.ai.schemas import (
 )
 from expenses.ai.service import LLMAssistantService
 from expenses.ai.spending_chat import (
-    SpendingAgentTurnResult,
     SpendingChatError,
     SpendingChatRequest,
     SpendingChatService,
@@ -4160,18 +4159,8 @@ def api_ai_usage_summary(
     }
 
 
-def _spending_chat_event_line(
-    event: dict[str, object] | SpendingAgentTurnResult,
-) -> str:
-    if isinstance(event, SpendingAgentTurnResult):
-        payload: dict[str, object] = {
-            "type": "result",
-            "assistant_message": event.assistant_message,
-            "message_history": event.message_history,
-        }
-    else:
-        payload = event
-    return json.dumps(payload, ensure_ascii=False, default=str) + "\n"
+def _spending_chat_event_line(event: dict[str, object]) -> str:
+    return json.dumps(event, ensure_ascii=False, default=str) + "\n"
 
 
 @router.post("/api/ai/spending-chat/stream", response_class=StreamingResponse)

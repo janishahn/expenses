@@ -36,7 +36,6 @@ __all__ = [
 ]
 
 _MAIN_EXPORTS = {
-    "AdvancedSearchFilters",
     "BalanceAnchorService",
     "BudgetService",
     "CSVService",
@@ -50,7 +49,6 @@ _MAIN_EXPORTS = {
     "IngestService",
     "InsightsService",
     "MetricsService",
-    "parse_advanced_search",
     "ReceiptAttachmentService",
     "RecurringRuleService",
     "ReimbursementService",

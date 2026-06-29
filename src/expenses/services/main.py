@@ -3280,7 +3280,11 @@ class MetricsService:
 
         if transaction_type == TransactionType.income:
             stmt = (
-                select(Category.name, func.sum(Transaction.amount_cents).label("total"))
+                select(
+                    Category.id.label("category_id"),
+                    Category.name,
+                    func.sum(Transaction.amount_cents).label("total"),
+                )
                 .join(Category, Category.id == Transaction.category_id)
                 .where(
                     Transaction.user_id == self.user_id,
@@ -3289,7 +3293,7 @@ class MetricsService:
                     Transaction.is_reimbursement.is_(False),
                     Transaction.date.between(period.start, period.end),
                 )
-                .group_by(Category.name)
+                .group_by(Category.id, Category.name)
                 .order_by(func.sum(Transaction.amount_cents).desc())
             )
             if category_ids:
@@ -3304,7 +3308,12 @@ class MetricsService:
                 amount = int(row.total or 0)
                 percent = (amount / total * 100) if total else 0
                 breakdown.append(
-                    {"name": row.name, "amount_cents": amount, "percent": percent}
+                    {
+                        "id": row.category_id,
+                        "name": row.name,
+                        "amount_cents": amount,
+                        "percent": percent,
+                    }
                 )
             self._category_breakdown_cache[period_key] = breakdown
             return breakdown
@@ -3378,7 +3387,14 @@ class MetricsService:
             if net <= 0:
                 continue
             total += net
-            breakdown.append({"name": row.name, "amount_cents": net, "percent": 0})
+            breakdown.append(
+                {
+                    "id": row.category_id,
+                    "name": row.name,
+                    "amount_cents": net,
+                    "percent": 0,
+                }
+            )
         breakdown.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
         if limit is not None:
             breakdown = breakdown[:limit]

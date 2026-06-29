@@ -166,6 +166,47 @@ test.describe("Spending Assistant", () => {
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
   })
 
+  test("shows query and type details in transaction search tool chips", async ({
+    page,
+  }) => {
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: ndjson([
+          { type: "turn_started", turn_id: "turn-1" },
+          {
+            type: "tool_call_start",
+            tool_call_id: "call-1",
+            tool_name: "search_transactions",
+            arguments: { query: "coffee", transaction_type: "expense" },
+          },
+          {
+            type: "tool_call_end",
+            tool_call_id: "call-1",
+            tool_name: "search_transactions",
+            result_preview: "display only",
+            success: true,
+          },
+          {
+            type: "result",
+            assistant_message: "Coffee spending was concentrated this week.",
+            message_history: [],
+          },
+          { type: "done" },
+        ]),
+      })
+    })
+
+    await page.goto("/assistant")
+    await sendQuestion(page, "Find coffee expenses")
+
+    const ticker = page.getByTestId("spending-assistant-tool")
+    await expect(ticker).toContainText("Searching transactions")
+    await expect(ticker).toContainText("coffee")
+    await expect(ticker).toContainText("expense")
+  })
+
   test("reuses prior message_history on the next turn and only sends the latest user message", async ({
     page,
   }) => {

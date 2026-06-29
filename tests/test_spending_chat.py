@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import date, datetime, timedelta
 
@@ -14,7 +15,9 @@ from expenses.ai.spending_chat import (
     SpendingAgentContext,
     SpendingAgentTurnResult,
     SpendingAnalysisService,
+    SpendingChatError,
     SpendingChatRequest,
+    SpendingChatService,
     _split_leading_progress_narration,
 )
 from expenses.core.config import get_settings
@@ -325,6 +328,49 @@ def test_breakdown_spending_category_limit_is_not_dashboard_truncated() -> None:
         assert breakdown["rows"][-1]["name"] == "Category 1"
 
 
+def test_breakdown_spending_category_uses_sql_aggregation() -> None:
+    with make_session() as session:
+        ids = _seed_spending_fixture(session)
+        select_statements: list[str] = []
+
+        @event.listens_for(session.bind, "before_cursor_execute")
+        def capture_select(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().lower().startswith("select"):
+                select_statements.append(statement.lower())
+
+        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
+        breakdown = service.breakdown_spending(
+            start=date(2026, 6, 1),
+            end=date(2026, 6, 30),
+            group_by="category",
+            limit=10,
+        )
+
+        assert breakdown["ok"] is True
+        assert breakdown["transaction_count"] == 3
+        assert breakdown["candidate_truncated"] is False
+        assert breakdown["rows"] == [
+            {
+                "id": ids["groceries_id"],
+                "name": "Groceries",
+                "amount_cents": 31_000,
+                "percent": pytest.approx(63.26530612244898),
+            },
+            {
+                "id": ids["leisure_id"],
+                "name": "Free time",
+                "amount_cents": 18_000,
+                "percent": pytest.approx(36.734693877551024),
+            },
+        ]
+        assert not any(
+            "select transactions.id, transactions.user_id" in statement
+            and "order by transactions.occurred_at desc" in statement
+            and "limit" in statement
+            for statement in select_statements
+        )
+
+
 def test_spending_chat_disabled_returns_503_before_stream(
     api_client: TestClient,
     csrf_headers: dict[str, str],
@@ -384,10 +430,11 @@ def test_spending_chat_stream_route_emits_ndjson_events(
             }
             yield {"type": "text_chunk", "content": "Big grocery run"}
             yield {"type": "text_commit"}
-            yield SpendingAgentTurnResult(
-                assistant_message="Big grocery run",
-                message_history=[{"kind": "fake"}],
-            )
+            yield {
+                "type": "result",
+                "assistant_message": "Big grocery run",
+                "message_history": [{"kind": "fake"}],
+            }
 
     app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
         lambda: session_factory
@@ -475,10 +522,11 @@ def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
             yield {"type": "turn_started", "turn_id": "turn-mobile"}
             yield {"type": "text_chunk", "content": "Net spending is down."}
             yield {"type": "text_commit"}
-            yield SpendingAgentTurnResult(
-                assistant_message="Net spending is down.",
-                message_history=[{"kind": "fake"}],
-            )
+            yield {
+                "type": "result",
+                "assistant_message": "Net spending is down.",
+                "message_history": [{"kind": "fake"}],
+            }
 
     app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
         lambda: session_factory
@@ -515,6 +563,63 @@ def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
     ]
     assert rows[-2]["assistant_message"] == "Net spending is down."
     assert rows[-2]["message_history"] == [{"kind": "fake"}]
+
+
+def test_spending_chat_stream_route_emits_terminal_error_event(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
+    get_settings.cache_clear()
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def session_factory() -> Session:
+        return session_local()
+
+    class FakeSpendingChatService:
+        def __init__(self, session: Session, *, user_id: int) -> None:
+            self.session = session
+            self.user_id = user_id
+
+        async def stream_turn(self, *, request):
+            yield {"type": "turn_started", "turn_id": "turn-error"}
+            raise SpendingChatError("The spending assistant is temporarily unavailable")
+
+    app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
+        lambda: session_factory
+    )
+    app_main.app.dependency_overrides[routes.get_spending_chat_service_class] = (
+        lambda: FakeSpendingChatService
+    )
+    try:
+        with api_client.stream(
+            "POST",
+            "/api/ai/spending-chat/stream",
+            headers=csrf_headers,
+            json={"messages": [{"role": "user", "content": "Summarize June"}]},
+        ) as response:
+            assert response.status_code == 200
+            rows = [json.loads(line) for line in response.iter_lines() if line.strip()]
+    finally:
+        app_main.app.dependency_overrides.pop(
+            routes.get_spending_chat_session_factory, None
+        )
+        app_main.app.dependency_overrides.pop(
+            routes.get_spending_chat_service_class, None
+        )
+        get_settings.cache_clear()
+
+    assert [row["type"] for row in rows] == ["turn_started", "error", "done"]
+    assert rows[1]["message"] == "The spending assistant is temporarily unavailable"
 
 
 def test_spending_chat_rejects_invalid_message_history_before_stream(
@@ -820,6 +925,34 @@ async def test_spending_chat_stream_logs_one_job_with_fake_runner() -> None:
         assert output_trace["assistant_message_chars"] == 6
 
 
+@pytest.mark.anyio
+async def test_spending_chat_stream_records_cancelled_turn() -> None:
+    with make_session() as session:
+
+        class FakeRunner:
+            async def stream_turn(self, *, request, analysis, context):
+                yield {"type": "turn_started", "turn_id": "cancel-test"}
+                raise asyncio.CancelledError
+
+        request = SpendingChatRequest(
+            messages=[{"role": "user", "content": "Summarize June"}]
+        )
+
+        service = SpendingChatService(session, user_id=1, runner=FakeRunner())
+        events = []
+        with pytest.raises(asyncio.CancelledError):
+            async for event in service.stream_turn(request=request):
+                events.append(event)
+
+        assert events == [{"type": "turn_started", "turn_id": "cancel-test"}]
+        job = session.scalars(select(LLMJob)).one()
+        assert job.feature == "spending_chat"
+        assert job.status == "failed"
+        assert job.error == "stream_cancelled"
+        assert job.finished_at is not None
+        assert job.duration_ms is not None
+
+
 def test_ai_usage_summary_returns_precise_spending_chat_accounting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -919,6 +1052,18 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
                             created_at=now - timedelta(hours=1),
                             finished_at=now - timedelta(hours=1),
                         ),
+                        LLMJob(
+                            user_id=1,
+                            feature="spending_chat",
+                            status="failed",
+                            prompt_version="spending_chat",
+                            model="openai/gpt-test",
+                            input_hash="hash-4",
+                            error="stream_cancelled",
+                            duration_ms=600,
+                            created_at=now - timedelta(minutes=30),
+                            finished_at=now - timedelta(minutes=30),
+                        ),
                     ]
                 )
                 session.commit()
@@ -933,9 +1078,10 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
         payload = response.json()
         assert payload["feature"] == "spending_chat"
         assert payload["period"] == "week"
-        assert payload["total_chats"] == 3
+        assert payload["total_chats"] == 4
         assert payload["completed_chats"] == 2
         assert payload["failed_chats"] == 1
+        assert payload["cancelled_chats"] == 1
         assert payload["input_tokens"] == 150
         assert payload["output_tokens"] == 60
         assert payload["total_tokens"] == 210

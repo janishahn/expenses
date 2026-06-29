@@ -72,6 +72,9 @@ function toolDetail(args: Record<string, unknown>): string {
     typeof args.current_start === "string" ? args.current_start : null
   const currentEnd =
     typeof args.current_end === "string" ? args.current_end : null
+  const query = typeof args.query === "string" ? args.query : null
+  const transactionType =
+    typeof args.transaction_type === "string" ? args.transaction_type : null
   const groupBy = typeof args.group_by === "string" ? args.group_by : null
   const sort = typeof args.sort === "string" ? args.sort : null
   const limit = typeof args.limit === "number" ? args.limit : null
@@ -83,6 +86,12 @@ function toolDetail(args: Record<string, unknown>): string {
   }
   if (currentStart && currentEnd) {
     parts.push(`${currentStart} to ${currentEnd}`)
+  }
+  if (query) {
+    parts.push(query)
+  }
+  if (transactionType) {
+    parts.push(transactionType)
   }
   if (groupBy) {
     parts.push(`by ${groupBy}`)
