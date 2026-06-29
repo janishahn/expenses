@@ -168,7 +168,7 @@ test.describe("Navigation", () => {
     await page.goto("/")
     await clickSidebarLink(page, "Assistant")
     await expect(page).toHaveURL("/assistant")
-    await expect(page.locator("main h1")).toContainText("Spending Assistant")
+    await expect(page.locator("main h1")).toContainText("Assistant")
   })
 
   test("should navigate to recurring rules page", async ({ page }) => {

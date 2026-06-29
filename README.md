@@ -292,8 +292,8 @@ These `VITE_*` values are read when the React app is built. Rebuild the UI or Do
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `VITE_MAP_TILE_URL` | Leaflet tile URL template for transaction location maps, for example `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. Leave blank to show markers without external tile requests. | unset |
-| `VITE_MAP_TILE_ATTRIBUTION` | Attribution HTML shown by Leaflet when map tiles are configured. | OpenStreetMap attribution |
+| `VITE_MAP_TILE_URL` | Leaflet tile URL template for transaction location maps. Leave unset for the default OpenStreetMap tiles, set a different provider's template to override, or set it to an empty value to render markers without external tile requests. | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` |
+| `VITE_MAP_TILE_ATTRIBUTION` | Attribution HTML shown by Leaflet over the map tiles. | OpenStreetMap attribution |
 
 ### Optional LLM Assistance
 

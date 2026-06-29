@@ -539,7 +539,7 @@ Use the local Radix-backed overlay primitives instead of hand-rolled one-off wra
 
 The Spending Assistant (`/assistant`) is the canonical pattern for conversational, read-only AI surfaces. It reads as a focused chat column rather than a dense data page.
 
-- **Layout**: The `PageIntro` spans the normal page width like every other page so the title, page actions, and desktop theme toggle align with the rest of the app; a centered `max-w-3xl` column directly below it holds the scrolling conversation and the docked composer as a narrower readable measure. The section fills the viewport (`min-h-[calc(100dvh-…)]`) so the composer rests at the bottom even on an empty thread. On `/assistant` the shell drops its main bottom padding and hides the mobile add FAB so the composer docks cleanly and nothing overlaps it.
+- **Layout**: The `PageIntro` spans the normal page width like every other page so the title, page actions, and desktop theme toggle align with the rest of the app; a centered `max-w-3xl` column directly below it holds the scrolling conversation and the docked composer as a narrower readable measure. The section fills the viewport (`min-h-[calc(100dvh-…)]`) so the composer rests at the bottom even on an empty thread. On `/assistant` the shell drops its main bottom padding and hides the mobile add FAB so the composer docks cleanly and nothing overlaps it. Once a conversation exists, a compact icon-only New Chat button (`NotePencilIcon`, `aria-label="New chat"`) is pinned to the end of the title row through `PageIntro`'s `titleAccessory` (`titleAccessoryAlign="end"`), so it stays beside the title at any width instead of wrapping onto its own line.
 - **Messages**: User turns are right-aligned accent-tinted bubbles (`rounded-2xl rounded-br-md border-accent/25 bg-accent/12`, `whitespace-pre-wrap`). Assistant turns are left-aligned with a small round chat avatar and render Markdown through the shared `transaction-markdown` prose styles (GFM plus SmartyPants smart typography, so plain model output like `--` renders as an em dash and `...` as an ellipsis while code spans stay verbatim; links open in a new tab).
 - **Tool ticker**: While the assistant works, show a compact wrap of status pills — a spinning `CircleNotch` (accent) for running, a `Check` (green) for success, a `Warning` (red) for failure — labeled with friendly tool names. Show activity and status only; never render raw tool output (`result_preview`) or the opaque `message_history`, and never fabricate a reasoning trace.
 - **Streaming**: Render events as they arrive — tool pills appear and resolve live, and answer text streams in incrementally — never deferring the whole turn to the final result. While streaming with no answer text yet and no tool running, show a single muted "Thinking…" hint. The NDJSON response must reach the client unbuffered; the stream route sets `Content-Encoding: identity` so `GZipMiddleware` does not hold events in its deflate buffer until the turn ends.
@@ -548,7 +548,17 @@ The Spending Assistant (`/assistant`) is the canonical pattern for conversationa
 
 ```tsx
 <section className="flex min-h-[calc(100dvh-5.5rem)] flex-col desk:min-h-[calc(100dvh-2rem)]">
-  <PageIntro title="Spending Assistant" />
+  <PageIntro
+    title="Assistant"
+    titleAccessoryAlign="end"
+    titleAccessory={
+      hasMessages ? (
+        <button aria-label="New chat" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border text-muted hover:border-border-hi hover:text-text">
+          <NotePencilIcon className="h-4 w-4" />
+        </button>
+      ) : undefined
+    }
+  />
   <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
     <div role="log" aria-live="polite" className="flex flex-1 flex-col gap-5 pt-5 pb-4">
       {/* user + assistant turns */}
@@ -725,6 +735,8 @@ transition-transform duration-[280ms] ease-[cubic-bezier(.4,0,.2,1)]
   }
 }
 ```
+
+Field components must never render below 16px on mobile. Tailwind utilities sit in a higher cascade layer than this base rule, so a flat `text-[…]` smaller than 16px on a shared field class (for example `inputToneClass` or `.description-editor`) overrides it and reintroduces the focus zoom. Size fields responsively instead — `text-base md:text-[…]` — so they stay 16px on mobile and may shrink on desktop.
 
 ### No Horizontal Scroll Policy
 

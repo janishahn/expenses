@@ -87,7 +87,6 @@ export default defineConfig({
         `VITE_API_PROXY_TARGET=${backendUrl} npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`,
       env: {
         ...process.env,
-        VITE_MAP_TILE_URL: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       },
       url: "http://127.0.0.1:4173",
       reuseExistingServer: false,

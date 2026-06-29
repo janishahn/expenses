@@ -140,7 +140,7 @@ test.describe("Spending Assistant", () => {
     })
 
     await page.goto("/assistant")
-    await expect(page.locator("main h1")).toContainText("Spending Assistant")
+    await expect(page.locator("main h1")).toContainText("Assistant")
     await expect(page.getByTestId("spending-assistant-prompt").first()).toBeVisible()
 
     await sendQuestion(page, "How much did I spend last month?")
