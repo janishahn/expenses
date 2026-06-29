@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spending Assistant category breakdown tools now use SQL aggregation instead of hydrating transaction rows, and transaction-search tool chips include query/type details when present.
 - Spending Assistant "largest transactions" searches now order by amount in the query, so the biggest transactions over long periods are no longer missed when they fall outside the most recent candidate window.
 - Admin Assistant-usage cost totals now label the unit as `mixed` whenever costed jobs disagree on a unit, including when some jobs report a cost with no unit, instead of letting row order pick a single label for incompatible costs.
+- Admin Assistant-usage average cost now keeps enough decimal scale for the division instead of rounding to the inputs' scale, so an average of `0.01` and `0.02` reports `0.015` rather than `0.02`.
+- Spending Assistant now derives the current date and timestamp from `EXPENSES_TIMEZONE` instead of the process/UTC clock, so "today", "this month", and budget-progress answers use the configured local day even when the server runs in another timezone near midnight.
 - Natural-language search now returns a clarification instead of a server error when LLM output cannot be made valid after retries.
 - Natural-language search now rejects unsupported boolean connector syntax from LLM translations instead of treating it as title text.
 - Docker Compose now forwards the current LLM endpoint, model, API key, temperature, and output-token environment variables.

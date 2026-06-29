@@ -4153,6 +4153,10 @@ def api_ai_usage_summary(
         round(completed_total_tokens / completed_chats) if completed_chats else 0
     )
     average_cost = cost_total / costed_chats if costed_chats else Decimal("0")
+    average_cost_scale = min(
+        max(cost_scale, _decimal_scale(format(average_cost, "f"))),
+        cost_scale + 8,
+    )
     return {
         "feature": feature,
         "period": period,
@@ -4169,7 +4173,7 @@ def api_ai_usage_summary(
         "cache_write_tokens": int(summary.cache_write_tokens or 0),
         "reasoning_tokens": int(summary.reasoning_tokens or 0),
         "total_cost_decimal": _format_decimal(cost_total, cost_scale),
-        "average_cost_decimal": _format_decimal(average_cost, cost_scale),
+        "average_cost_decimal": _format_decimal(average_cost, average_cost_scale),
         "cost_unit": cost_unit,
         "average_total_tokens": average_total_tokens,
         "p95_duration_ms": p95_duration_ms,

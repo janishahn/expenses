@@ -1005,6 +1005,98 @@ async def test_spending_chat_stream_records_cancelled_turn() -> None:
         assert job.duration_ms is not None
 
 
+def test_spending_chat_service_defaults_dates_to_configured_timezone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _UnusedRunner:
+        async def stream_turn(self, *, request, analysis, context):
+            raise AssertionError("runner should not run")
+            yield  # pragma: no cover
+
+    monkeypatch.setenv("EXPENSES_TIMEZONE", "Etc/GMT-14")
+    get_settings.cache_clear()
+    try:
+        with make_session() as session:
+            service = SpendingChatService(session, user_id=1, runner=_UnusedRunner())
+        assert service.now.utcoffset() == timedelta(hours=14)
+        assert service.today == service.now.date()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_ai_usage_summary_average_cost_keeps_division_precision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "usage-avg-data"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    get_settings.cache_clear()
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def override_get_db():
+        session = session_local()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app_main.app.dependency_overrides[app_main.get_db] = override_get_db
+    try:
+        with TestClient(app_main.app) as client:
+            assert (
+                client.post(
+                    "/api/auth/setup",
+                    json={"username": "bootstrap", "password": "pw-12345"},
+                ).status_code
+                == 200
+            )
+            with session_local() as session:
+                session.add_all(
+                    [
+                        LLMJob(
+                            user_id=1,
+                            feature="spending_chat",
+                            status="completed",
+                            prompt_version="spending_chat",
+                            model="openai/gpt-test",
+                            input_hash="hash-cost-1",
+                            usage_cost_decimal="0.01",
+                            usage_cost_unit="openrouter_credits",
+                        ),
+                        LLMJob(
+                            user_id=1,
+                            feature="spending_chat",
+                            status="completed",
+                            prompt_version="spending_chat",
+                            model="openai/gpt-test",
+                            input_hash="hash-cost-2",
+                            usage_cost_decimal="0.02",
+                            usage_cost_unit="openrouter_credits",
+                        ),
+                    ]
+                )
+                session.commit()
+
+            response = client.get(
+                "/api/ai/usage/summary",
+                params={"feature": "spending_chat", "period": "all"},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["total_cost_decimal"] == "0.03"
+            assert payload["average_cost_decimal"] == "0.015"
+    finally:
+        app_main.app.dependency_overrides.pop(app_main.get_db, None)
+        get_settings.cache_clear()
+
+
 def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

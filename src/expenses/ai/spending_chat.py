@@ -6,7 +6,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from time import perf_counter
 from typing import Any, Literal, Protocol, cast, get_args
 from uuid import uuid4
@@ -944,8 +945,9 @@ class SpendingChatService:
         self.session = session
         self.user_id = user_id
         self.runner = runner or PydanticAISpendingRunner()
-        self.today = today or date.today()
-        self.now = now or datetime.now(UTC)
+        local_now = datetime.now(ZoneInfo(get_settings().timezone))
+        self.today = today or local_now.date()
+        self.now = now or local_now
 
     async def stream_turn(
         self, *, request: SpendingChatRequest
