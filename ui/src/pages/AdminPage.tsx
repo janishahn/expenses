@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, fetchAIUsageSummary } from "../app/api"
+import { useAuth } from "../app/auth"
+import type { AIUsageSummary } from "../app/api-types"
 import { formatEuroDateTime, formatFileSize } from "../app/format"
 import Sparkline from "../components/charts/Sparkline"
 import PageIntro from "../components/PageIntro"
@@ -93,7 +95,33 @@ function toSparklinePoints(values: number[]): string | undefined {
     .join(" ")
 }
 
+const INTEGER_FORMAT = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+})
+
+function trimDecimal(value: string): string {
+  if (!value.includes(".")) {
+    return value
+  }
+  return value.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "")
+}
+
+function formatCostAmount(decimal: string, unit: string | null): string {
+  const value = trimDecimal(decimal)
+  if (unit === "openrouter_credits") {
+    return `${value} credits`
+  }
+  if (unit === "usd") {
+    return `$${value}`
+  }
+  if (unit === "mixed") {
+    return `${value} (mixed)`
+  }
+  return unit ? `${value} ${unit}` : value
+}
+
 function AdminPage() {
+  const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
   const [purgeDays, setPurgeDays] = useState("30")
   const [recurringCatchUpMessage, setRecurringCatchUpMessage] = useState<{
@@ -104,6 +132,8 @@ function AdminPage() {
   const [logSearch, setLogSearch] = useState("")
   const [logCursor, setLogCursor] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
+  const [usagePeriod, setUsagePeriod] =
+    useState<AIUsageSummary["period"]>("week")
   const [isPageVisible, setIsPageVisible] = useState(() => !document.hidden)
   const sparklineHistoryRef = useRef<SparklineHistory>({
     cpu_temp_celsius: [],
@@ -127,6 +157,12 @@ function AdminPage() {
     queryFn: () => apiFetch<SystemHealth>("/api/admin/system-health"),
     enabled: isPageVisible,
     refetchInterval: isPageVisible ? 60_000 : false,
+  })
+  const usageQuery = useQuery({
+    queryKey: ["ai-usage-summary", "spending_chat", usagePeriod],
+    queryFn: () => fetchAIUsageSummary(usagePeriod),
+    staleTime: 60_000,
+    enabled: llmEnabled,
   })
   const logQueryParams = new URLSearchParams({ limit: "40" })
   if (logCursor) {
@@ -350,6 +386,41 @@ function AdminPage() {
             systemHealth.db_size_bytes -
             systemHealth.receipts_size_bytes
         )
+
+  const usage = usageQuery.data
+  const usageTiles = usage
+    ? [
+        {
+          label: "Total cost",
+          value:
+            usage.costed_chats > 0
+              ? formatCostAmount(usage.total_cost_decimal, usage.cost_unit)
+              : "Not reported",
+          detail:
+            usage.costed_chats > 0
+              ? `Ø ${formatCostAmount(usage.average_cost_decimal, usage.cost_unit)} per chat`
+              : "No billed usage",
+        },
+        {
+          label: "Total tokens",
+          value: INTEGER_FORMAT.format(usage.total_tokens),
+          detail: `${INTEGER_FORMAT.format(usage.cached_input_tokens)} cached · ${INTEGER_FORMAT.format(usage.reasoning_tokens)} reasoning`,
+        },
+        {
+          label: "Chats",
+          value: INTEGER_FORMAT.format(usage.total_chats),
+          detail: `${INTEGER_FORMAT.format(usage.completed_chats)} completed · ${INTEGER_FORMAT.format(usage.failed_chats)} failed`,
+        },
+        {
+          label: "Avg / chat",
+          value: `${INTEGER_FORMAT.format(usage.average_total_tokens)} tok`,
+          detail:
+            usage.p95_duration_ms != null
+              ? `${INTEGER_FORMAT.format(usage.p95_duration_ms)} ms p95`
+              : "no latency yet",
+        },
+      ]
+    : []
 
   return (
     <section className="space-y-6">
@@ -583,6 +654,78 @@ function AdminPage() {
           ))}
         </div>
       </AppCard>
+
+      {llmEnabled ? (
+      <AppCard data-testid="admin-ai-usage">
+        <div className="border-b border-border px-4 py-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="font-head text-lg font-bold">Assistant usage</h2>
+              <p className="text-sm text-muted">
+                Spending Assistant model usage and cost.
+              </p>
+            </div>
+            <div className="pill-group">
+              {([
+                ["week", "Week"],
+                ["month", "Month"],
+                ["all", "All time"],
+              ] as Array<[AIUsageSummary["period"], string]>).map(
+                ([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setUsagePeriod(value)}
+                    className={`pill-button ${usagePeriod === value ? "pill-button-active" : ""}`}
+                  >
+                    {label}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-4">
+          {usageQuery.isLoading ? (
+            <p className="text-sm text-muted">Loading usage…</p>
+          ) : usageQuery.error || !usage ? (
+            <p className="text-sm text-muted">
+              Usage stats are unavailable right now.
+            </p>
+          ) : usage.total_chats === 0 ? (
+            <p className="text-sm text-muted">
+              No assistant usage recorded for this period.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
+                {usageTiles.map((tile) => (
+                  <div
+                    key={tile.label}
+                    className="min-w-0 rounded-lg border border-border bg-surface-hi p-2.5 md:p-3"
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
+                      {tile.label}
+                    </p>
+                    <p className="mt-1 truncate font-mono text-sm font-semibold text-text md:text-base">
+                      {tile.value}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-muted">
+                      {tile.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="min-h-4 text-xs text-muted">
+                {usage.started_at
+                  ? `Since ${formatEuroDateTime(usage.started_at)}`
+                  : null}
+              </p>
+            </div>
+          )}
+        </div>
+      </AppCard>
+      ) : null}
 
       <AppCard>
         <div className="border-b border-border px-4 py-3">

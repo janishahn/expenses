@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from time import perf_counter
 from typing import Any
@@ -13,9 +14,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from expenses.ai.client import (
     LLMDisabledError,
+    LLMOutputError,
     LLMRunner,
     LLMRunResult,
     PydanticAILLMRunner,
+    ReasoningEffort,
 )
 from expenses.ai.schemas import (
     RuleMiningOutput,
@@ -27,9 +30,15 @@ from expenses.ai.schemas import (
     TransactionSuggestionOut,
     TransactionTriageOutput,
 )
+from expenses.ai.search_validation import (
+    SearchTranslationValidationError,
+    validate_search_translation_output,
+)
+from expenses.ai.usage import apply_usage_metadata
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
+from expenses.core.search import parse_advanced_search
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -45,7 +54,6 @@ from expenses.services.main import (
     CategoryService,
     RuleService,
     TransactionService,
-    parse_advanced_search,
 )
 from expenses.schemas import RuleIn, TransactionIn
 
@@ -55,11 +63,41 @@ logger = get_logger("expenses.ai")
 SEARCH_TRANSLATE_PROMPT = "search_translate_v2"
 TRANSACTION_TRIAGE_PROMPT = "transaction_triage_v2"
 RULE_MINING_PROMPT = "rule_mining_v2"
+SEARCH_TRANSLATION_FALLBACK_QUESTION = "I could not translate that into search syntax."
 
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
 
-NO_THINKING_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+
+@dataclass(frozen=True)
+class LLMFeatureSettings:
+    temperature: float | None
+    max_tokens: int
+    reasoning_effort: ReasoningEffort
+
+
+LLM_DEFAULT_FEATURE_SETTINGS = LLMFeatureSettings(
+    temperature=0.7,
+    max_tokens=1_024,
+    reasoning_effort="low",
+)
+LLM_FEATURE_SETTINGS = {
+    "search_translate": LLMFeatureSettings(
+        temperature=0.0,
+        max_tokens=512,
+        reasoning_effort="none",
+    ),
+    "transaction_triage": LLMFeatureSettings(
+        temperature=0.7,
+        max_tokens=2_048,
+        reasoning_effort="low",
+    ),
+    "rule_mining": LLMFeatureSettings(
+        temperature=0.7,
+        max_tokens=4_096,
+        reasoning_effort="medium",
+    ),
+}
 
 
 class LLMAssistantService:
@@ -94,19 +132,29 @@ class LLMAssistantService:
             "categories": self._category_payload(),
             "tags": self._tag_payload(),
         }
-        output, _job_id = await self._run_llm(
-            feature="search_translate",
-            prompt_version=SEARCH_TRANSLATE_PROMPT,
-            payload=payload,
-            output_type=SearchTranslationOutput,
-        )
         try:
-            parsed = parse_advanced_search(output.query)
-        except ValueError:
-            output.clarification_needed = True
-            output.clarification_question = (
-                "I could not translate that into search syntax."
+            output, _job_id = await self._run_llm(
+                feature="search_translate",
+                prompt_version=SEARCH_TRANSLATE_PROMPT,
+                payload=payload,
+                output_type=SearchTranslationOutput,
             )
+        except LLMOutputError:
+            parsed = parse_advanced_search("")
+            return SearchTranslationResult(
+                query="",
+                confidence=0,
+                clarification_needed=True,
+                clarification_question=SEARCH_TRANSLATION_FALLBACK_QUESTION,
+                applied_tokens=parsed.applied_tokens,
+                free_terms=parsed.free_terms,
+            )
+        try:
+            validate_search_translation_output(output, payload)
+            parsed = parse_advanced_search(output.query)
+        except (SearchTranslationValidationError, ValueError):
+            output.clarification_needed = True
+            output.clarification_question = SEARCH_TRANSLATION_FALLBACK_QUESTION
             output.query = ""
             parsed = parse_advanced_search("")
         if parsed.free_terms and all(
@@ -158,14 +206,17 @@ class LLMAssistantService:
             "tags": [row["name"] for row in self._tag_payload()],
             "similar_confirmed_transactions": self._similar_confirmed_transactions(txn),
         }
-        output, job_id = await self._run_llm(
-            feature="transaction_triage",
-            prompt_version=TRANSACTION_TRIAGE_PROMPT,
-            payload=payload,
-            output_type=TransactionTriageOutput,
-            entity_type="transaction",
-            entity_id=txn.id,
-        )
+        try:
+            output, job_id = await self._run_llm(
+                feature="transaction_triage",
+                prompt_version=TRANSACTION_TRIAGE_PROMPT,
+                payload=payload,
+                output_type=TransactionTriageOutput,
+                entity_type="transaction",
+                entity_id=txn.id,
+            )
+        except LLMOutputError:
+            return None
         fresh_txn = self._transaction_for_triage(transaction_id)
         if fresh_txn is None or self._transaction_fingerprint(fresh_txn) != fingerprint:
             log_event(
@@ -223,12 +274,15 @@ class LLMAssistantService:
         }
         if not payload["correction_clusters"]:
             return []
-        output, job_id = await self._run_llm(
-            feature="rule_mining",
-            prompt_version=RULE_MINING_PROMPT,
-            payload=payload,
-            output_type=RuleMiningOutput,
-        )
+        try:
+            output, job_id = await self._run_llm(
+                feature="rule_mining",
+                prompt_version=RULE_MINING_PROMPT,
+                payload=payload,
+                output_type=RuleMiningOutput,
+            )
+        except LLMOutputError:
+            return []
         suggestions: list[RuleSuggestionResult] = []
         for proposal in output.proposals:
             if proposal.set_category_id is None:
@@ -464,8 +518,11 @@ class LLMAssistantService:
             )
             if isinstance(result, LLMRunResult):
                 output = result.output
-                job.usage_input_tokens = result.input_tokens
-                job.usage_output_tokens = result.output_tokens
+                if result.usage_metadata is not None:
+                    apply_usage_metadata(job, result.usage_metadata)
+                else:
+                    job.usage_input_tokens = result.input_tokens
+                    job.usage_output_tokens = result.output_tokens
             else:
                 output = result
         except LLMDisabledError:
@@ -477,6 +534,17 @@ class LLMAssistantService:
             job.finished_at = datetime.utcnow()
             job.duration_ms = int((perf_counter() - start) * 1000)
             self.session.commit()
+            log_event(
+                logger,
+                logging.ERROR,
+                "llm_job_failed",
+                job_id=job.id,
+                feature=feature,
+                model=job.model,
+                duration_ms=job.duration_ms,
+                api_key_configured=bool(settings.llm_api_key),
+                error=str(exc),
+            )
             raise
         job.status = "completed"
         job.output_json = output.model_dump_json()
@@ -499,28 +567,18 @@ class LLMAssistantService:
     def _runner_for_feature(self, feature: str) -> LLMRunner:
         if self.runner is not None:
             return self.runner
-        if feature == "search_translate":
-            return PydanticAILLMRunner(
-                temperature=0.0,
-                max_tokens=512,
-                extra_body=NO_THINKING_BODY,
-            )
-        if feature == "transaction_triage":
-            return PydanticAILLMRunner(
-                temperature=0.1,
-                max_tokens=512,
-                extra_body=NO_THINKING_BODY,
-            )
-        if feature == "rule_mining":
-            return PydanticAILLMRunner(
-                temperature=0.1,
-                max_tokens=1_536,
-                extra_body=NO_THINKING_BODY,
-            )
+        settings = get_settings()
+        feature_settings = LLM_FEATURE_SETTINGS.get(
+            feature, LLM_DEFAULT_FEATURE_SETTINGS
+        )
         return PydanticAILLMRunner(
-            temperature=0.1,
-            max_tokens=512,
-            extra_body=NO_THINKING_BODY,
+            temperature=settings.llm_temperature
+            if settings.llm_temperature is not None
+            else feature_settings.temperature,
+            max_tokens=settings.llm_max_output_tokens
+            if settings.llm_max_output_tokens is not None
+            else feature_settings.max_tokens,
+            reasoning_effort=feature_settings.reasoning_effort,
         )
 
     def _transaction_for_triage(self, transaction_id: int) -> Transaction | None:

@@ -164,6 +164,13 @@ test.describe("Navigation", () => {
     await expect(page.locator("main h1")).toContainText("Digest")
   })
 
+  test("should navigate to spending assistant page", async ({ page }) => {
+    await page.goto("/")
+    await clickSidebarLink(page, "Assistant")
+    await expect(page).toHaveURL("/assistant")
+    await expect(page.locator("main h1")).toContainText("Spending Assistant")
+  })
+
   test("should navigate to recurring rules page", async ({ page }) => {
     await page.goto("/")
     await clickSidebarLink(page, "Recurring")

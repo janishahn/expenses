@@ -4,6 +4,7 @@ import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { XCircleIcon } from "@phosphor-icons/react/XCircle"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { apiFetch } from "../app/api"
+import { useAuth } from "../app/auth"
 import { formatCurrency } from "../app/format"
 import { Toggle } from "../components/Toggle"
 import { CategoryIcon } from "../components/CategoryIcon"
@@ -82,6 +83,7 @@ type RuleSuggestion = {
 }
 
 function RulesPage() {
+  const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
   const formRef = useRef<HTMLFormElement | null>(null)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
@@ -110,6 +112,7 @@ function RulesPage() {
   const suggestionsQuery = useQuery({
     queryKey: ["ai", "rule-suggestions"],
     queryFn: () => apiFetch<RuleSuggestion[]>("/api/ai/rules/suggestions"),
+    enabled: llmEnabled,
   })
 
   const createMutation = useMutation({
@@ -357,28 +360,30 @@ function RulesPage() {
         }
       />
 
-      <AppCard className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="font-head text-lg font-bold text-text">Rule suggestions</h2>
-            {ruleMiningStatus === "none_found" && !ruleSuggestions.length ? (
-              <span className="shrink-0 text-xs font-semibold text-muted">
-                No suggestions
-              </span>
-            ) : null}
+      {llmEnabled ? (
+        <AppCard className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="font-head text-lg font-bold text-text">Rule suggestions</h2>
+              {ruleMiningStatus === "none_found" && !ruleSuggestions.length ? (
+                <span className="shrink-0 text-xs font-semibold text-muted">
+                  No suggestions
+                </span>
+              ) : null}
+            </div>
+            <AppButton
+              type="button"
+              onClick={() => mineRulesMutation.mutate()}
+              disabled={mineRulesMutation.isPending}
+              className="shrink-0"
+            >
+              {mineRulesMutation.isPending ? "Mining…" : "Mine rules"}
+            </AppButton>
           </div>
-          <AppButton
-            type="button"
-            onClick={() => mineRulesMutation.mutate()}
-            disabled={mineRulesMutation.isPending}
-            className="shrink-0"
-          >
-            {mineRulesMutation.isPending ? "Mining…" : "Mine rules"}
-          </AppButton>
-        </div>
-      </AppCard>
+        </AppCard>
+      ) : null}
 
-      {ruleSuggestions.length ? (
+      {llmEnabled && ruleSuggestions.length ? (
         <div className="space-y-2">
           {ruleSuggestions.map((suggestion) => (
             <div

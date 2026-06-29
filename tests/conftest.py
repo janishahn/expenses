@@ -18,6 +18,7 @@ def anonymous_api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
     monkeypatch.setenv("EXPENSES_RECEIPTS_DIR", str(receipts_dir))
     monkeypatch.setenv("EXPENSES_AUTH_SIGNUP_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "false")
     get_settings.cache_clear()
 
     engine = create_engine(

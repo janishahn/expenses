@@ -74,6 +74,60 @@ test.describe("Admin Page", () => {
     }
   })
 
+  test("renders assistant usage stats and switches the reporting period", async ({
+    page,
+  }) => {
+    const requestedPeriods: string[] = []
+    await page.route("**/api/ai/usage/summary?*", async (route) => {
+      const period =
+        new URL(route.request().url()).searchParams.get("period") ?? "week"
+      requestedPeriods.push(period)
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          feature: "spending_chat",
+          period,
+          started_at: period === "all" ? null : "2026-06-21T00:00:00",
+          total_chats: period === "all" ? 42 : 7,
+          completed_chats: period === "all" ? 40 : 6,
+          failed_chats: 1,
+          cancelled_chats: 0,
+          costed_chats: 5,
+          input_tokens: 1000,
+          output_tokens: 500,
+          total_tokens: 1500,
+          cached_input_tokens: 200,
+          cache_write_tokens: 0,
+          reasoning_tokens: 50,
+          total_cost_decimal: "0.0123",
+          average_cost_decimal: "0.0025",
+          cost_unit: "usd",
+          average_total_tokens: 214,
+          p95_duration_ms: 4200,
+        }),
+      })
+    })
+
+    await page.reload()
+
+    const usage = page.getByTestId("admin-ai-usage")
+    await expect(
+      usage.getByRole("heading", { name: "Assistant usage" })
+    ).toBeVisible()
+    await expect(usage.getByText("$0.0123")).toBeVisible()
+    await expect(usage.getByText("Ø $0.0025 per chat")).toBeVisible()
+    await expect(usage.getByText(/^Since /)).toBeVisible()
+
+    await expect.poll(() => requestedPeriods.includes("week")).toBeTruthy()
+
+    await usage.getByRole("button", { name: "All time" }).click()
+
+    await expect.poll(() => requestedPeriods.includes("all")).toBeTruthy()
+    await expect(usage.getByText("42")).toBeVisible()
+    await expect(usage.getByText(/^Since /)).toHaveCount(0)
+  })
+
   test("navigates to sqlite importer and back", async ({ page }) => {
     await page.getByRole("link", { name: "Open importer" }).click()
     await expect(page).toHaveURL("/admin/import")

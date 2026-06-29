@@ -84,3 +84,32 @@ def test_test_environment_allows_low_password_hash_iterations(
 
     assert settings.environment == "test"
     assert settings.auth_password_hash_iterations == 1000
+
+
+def test_llm_config_uses_single_openai_compatible_endpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("EXPENSES_LLM_MODEL", "deepseek/deepseek-v4-flash")
+    monkeypatch.setenv("EXPENSES_LLM_API_KEY", "")
+
+    settings = get_settings()
+
+    assert settings.llm_base_url == "https://openrouter.ai/api/v1"
+    assert settings.llm_model == "deepseek/deepseek-v4-flash"
+    assert settings.llm_api_key == ""
+    assert settings.llm_temperature is None
+    assert settings.llm_max_output_tokens is None
+
+
+def test_llm_optional_generation_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_LLM_TEMPERATURE", "0.65")
+    monkeypatch.setenv("EXPENSES_LLM_MAX_OUTPUT_TOKENS", "4096")
+
+    settings = get_settings()
+
+    assert settings.llm_temperature == 0.65
+    assert settings.llm_max_output_tokens == 4_096

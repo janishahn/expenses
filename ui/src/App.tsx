@@ -33,6 +33,7 @@ const ScenariosPage = lazy(() => import("./pages/ScenariosPage"))
 const SettingsPage = lazy(() => import("./pages/SettingsPage"))
 const SetupPage = lazy(() => import("./pages/SetupPage"))
 const SignupPage = lazy(() => import("./pages/SignupPage"))
+const SpendingAssistantPage = lazy(() => import("./pages/SpendingAssistantPage"))
 const TagDetailPage = lazy(() => import("./pages/TagDetailPage"))
 const TagsPage = lazy(() => import("./pages/TagsPage"))
 const TemplatesPage = lazy(() => import("./pages/TemplatesPage"))
@@ -202,6 +203,7 @@ function AdminRoute() {
 }
 
 function AppRoutes() {
+  const { llmEnabled } = useAuth()
   return (
     <Routes>
       <Route path="/setup" element={<SetupRoute />} />
@@ -216,6 +218,10 @@ function AppRoutes() {
           <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
+          <Route
+            path="/assistant"
+            element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
+          />
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
           <Route path="/budgets" element={<BudgetsPage />} />

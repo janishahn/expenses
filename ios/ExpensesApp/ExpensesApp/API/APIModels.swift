@@ -8,6 +8,7 @@ struct MobileStatus: Codable, Equatable {
     let signupAllowed: Bool
     let timezone: String
     let receiptMaxBytes: Int
+    let llmEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case app
@@ -17,6 +18,7 @@ struct MobileStatus: Codable, Equatable {
         case signupAllowed = "signup_allowed"
         case timezone
         case receiptMaxBytes = "receipt_max_bytes"
+        case llmEnabled = "llm_enabled"
     }
 }
 

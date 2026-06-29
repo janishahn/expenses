@@ -28,6 +28,7 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             "setup_required": False,
             "timezone": settings.timezone,
             "receipt_max_bytes": settings.receipt_max_bytes,
+            "llm_enabled": settings.llm_enabled,
         },
     )
 

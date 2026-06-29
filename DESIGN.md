@@ -535,6 +535,33 @@ Use the local Radix-backed overlay primitives instead of hand-rolled one-off wra
 - Promote overlays to `z-[70]` only when they must sit above page-local sheets, such as the add-transaction flow.
 - App-level dialogs dismiss on backdrop click and Escape unless the flow explicitly protects unsaved work.
 
+### Agent Chat Surface
+
+The Spending Assistant (`/assistant`) is the canonical pattern for conversational, read-only AI surfaces. It reads as a focused chat column rather than a dense data page.
+
+- **Layout**: The `PageIntro` spans the normal page width like every other page so the title, page actions, and desktop theme toggle align with the rest of the app; a centered `max-w-3xl` column directly below it holds the scrolling conversation and the docked composer as a narrower readable measure. The section fills the viewport (`min-h-[calc(100dvh-…)]`) so the composer rests at the bottom even on an empty thread. On `/assistant` the shell drops its main bottom padding and hides the mobile add FAB so the composer docks cleanly and nothing overlaps it.
+- **Messages**: User turns are right-aligned accent-tinted bubbles (`rounded-2xl rounded-br-md border-accent/25 bg-accent/12`, `whitespace-pre-wrap`). Assistant turns are left-aligned with a small round chat avatar and render Markdown through the shared `transaction-markdown` prose styles (GFM plus SmartyPants smart typography, so plain model output like `--` renders as an em dash and `...` as an ellipsis while code spans stay verbatim; links open in a new tab).
+- **Tool ticker**: While the assistant works, show a compact wrap of status pills — a spinning `CircleNotch` (accent) for running, a `Check` (green) for success, a `Warning` (red) for failure — labeled with friendly tool names. Show activity and status only; never render raw tool output (`result_preview`) or the opaque `message_history`, and never fabricate a reasoning trace.
+- **Streaming**: Render events as they arrive — tool pills appear and resolve live, and answer text streams in incrementally — never deferring the whole turn to the final result. While streaming with no answer text yet and no tool running, show a single muted "Thinking…" hint. The NDJSON response must reach the client unbuffered; the stream route sets `Content-Encoding: identity` so `GZipMiddleware` does not hold events in its deflate buffer until the turn ends.
+- **Composer**: A `sticky bottom-0` band (`bg-bg`, safe-area bottom padding) holds a single elevated `composer-surface` card — one `surface-hi` `rounded-2xl` surface that owns a single calm focus affordance on `:focus-within` (a warmer accent border plus a subtle accent glow and the standard soft elevation, not the hard 4px `--ring-focus`) — wrapping a transparent, chrome-free auto-growing textarea plus a single trailing action. The textarea carries no border, background, or focus ring of its own; the surface owns the focus state, so keep the composer to that one bordered surface rather than nesting borders or rings within borders. Enter sends, Shift+Enter inserts a newline. The trailing action is a circular accent Send button while idle and a circular red Stop button while streaming; Stop aborts the in-flight request and leaves any partial answer in place.
+- **Empty state**: Center a short hero (chat icon, one-line invitation) above a row of tappable prompt chips that send immediately.
+
+```tsx
+<section className="flex min-h-[calc(100dvh-5.5rem)] flex-col desk:min-h-[calc(100dvh-2rem)]">
+  <PageIntro title="Spending Assistant" />
+  <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+    <div role="log" aria-live="polite" className="flex flex-1 flex-col gap-5 pt-5 pb-4">
+      {/* user + assistant turns */}
+    </div>
+    <form className="sticky bottom-0 z-10 bg-bg pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+      <div className="composer-surface flex items-end gap-2 rounded-2xl border p-2">
+        {/* auto-growing textarea + circular Send/Stop */}
+      </div>
+    </form>
+  </div>
+</section>
+```
+
 ---
 
 ## Interactive States

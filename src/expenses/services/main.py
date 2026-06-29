@@ -1,11 +1,9 @@
 import json
 import logging
-import re
-import shlex
 from calendar import monthrange
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Literal, Optional
 from uuid import uuid4
@@ -24,6 +22,7 @@ from expenses.core.safe_regex import (
     safe_regex_search,
     validate_regex,
 )
+from expenses.core.search import AdvancedSearchFilters
 from expenses.db.models import (
     BalanceAnchor,
     BudgetFrequency,
@@ -86,126 +85,6 @@ logger = get_logger("expenses.services")
 
 def get_current_user_id() -> int:
     return 1
-
-
-@dataclass
-class AdvancedSearchFilters:
-    raw_query: str
-    free_terms: list[str] = field(default_factory=list)
-    token_type: Optional[TransactionType] = None
-    category_values: list[str] = field(default_factory=list)
-    tag_values: list[str] = field(default_factory=list)
-    amount_filters: list[tuple[str, int]] = field(default_factory=list)
-    date_filters: list[tuple[str, date]] = field(default_factory=list)
-    is_reimbursement: Optional[bool] = None
-    has_receipt: Optional[bool] = None
-    applied_tokens: list[dict[str, str]] = field(default_factory=list)
-
-
-def parse_advanced_search(raw_query: str) -> AdvancedSearchFilters:
-    parsed = AdvancedSearchFilters(raw_query=raw_query)
-    if not raw_query.strip():
-        return parsed
-    try:
-        tokens = shlex.split(raw_query)
-    except ValueError as exc:
-        raise ValueError("Invalid search syntax") from exc
-
-    amount_pattern = re.compile(r"^amount(<=|>=|=|<|>)(.+)$", re.IGNORECASE)
-    date_pattern = re.compile(r"^date(<=|>=|=|<|>)(.+)$", re.IGNORECASE)
-
-    for token in tokens:
-        amount_match = amount_pattern.match(token)
-        if amount_match:
-            op = amount_match.group(1)
-            value = amount_match.group(2).strip()
-            try:
-                cents = int(
-                    (Decimal(value.replace(",", ".")) * 100).quantize(Decimal("1"))
-                )
-            except (InvalidOperation, ValueError) as exc:
-                raise ValueError(f"Invalid amount filter: {token}") from exc
-            parsed.amount_filters.append((op, cents))
-            parsed.applied_tokens.append(
-                {"key": "amount", "operator": op, "value": value}
-            )
-            continue
-
-        date_match = date_pattern.match(token)
-        if date_match:
-            op = date_match.group(1)
-            value = date_match.group(2).strip()
-            try:
-                date_value = date.fromisoformat(value)
-            except ValueError as exc:
-                raise ValueError(f"Invalid date filter: {token}") from exc
-            parsed.date_filters.append((op, date_value))
-            parsed.applied_tokens.append(
-                {"key": "date", "operator": op, "value": value}
-            )
-            continue
-
-        if ":" not in token:
-            parsed.free_terms.append(token)
-            continue
-
-        key, value = token.split(":", 1)
-        key = key.strip().lower()
-        value = value.strip()
-
-        if key in {"category", "cat"}:
-            if not value:
-                raise ValueError("Empty category token")
-            parsed.category_values.append(value)
-            parsed.applied_tokens.append({"key": "category", "value": value})
-            continue
-        if key == "tag":
-            if not value:
-                raise ValueError("Empty tag token")
-            parsed.tag_values.append(value)
-            parsed.applied_tokens.append({"key": "tag", "value": value})
-            continue
-        if key == "type":
-            if not value:
-                raise ValueError("Empty type token")
-            try:
-                parsed.token_type = TransactionType(value.lower())
-            except ValueError as exc:
-                raise ValueError(f"Invalid type token: {value}") from exc
-            parsed.applied_tokens.append(
-                {"key": "type", "value": parsed.token_type.value}
-            )
-            continue
-        if key == "date":
-            if not value:
-                raise ValueError("Empty date token")
-            try:
-                date_value = date.fromisoformat(value)
-            except ValueError as exc:
-                raise ValueError(f"Invalid date token: {value}") from exc
-            parsed.date_filters.append(("=", date_value))
-            parsed.applied_tokens.append(
-                {"key": "date", "operator": "=", "value": value}
-            )
-            continue
-        if key == "is":
-            normalized = value.lower()
-            if normalized != "reimbursement":
-                raise ValueError(f"Invalid is token: {value}")
-            parsed.is_reimbursement = True
-            parsed.applied_tokens.append({"key": "is", "value": "reimbursement"})
-            continue
-        if key == "has":
-            normalized = value.lower()
-            if normalized != "receipt":
-                raise ValueError(f"Invalid has token: {value}")
-            parsed.has_receipt = True
-            parsed.applied_tokens.append({"key": "has", "value": "receipt"})
-            continue
-
-        parsed.free_terms.append(token)
-
-    return parsed
 
 
 @dataclass
@@ -1797,11 +1676,13 @@ class TransactionService:
         filters: TransactionFilters,
         limit: int = 50,
         offset: int = 0,
+        order_by_amount: bool = False,
     ) -> list[Transaction]:
         stmt = self._build_period_query(
             period,
             include_deleted=False,
             order_desc=True,
+            order_by_amount=order_by_amount,
         )
         stmt = self._apply_filters(stmt, filters)
         stmt = stmt.offset(offset).limit(limit)
@@ -2000,6 +1881,7 @@ class TransactionService:
         *,
         include_deleted: bool,
         order_desc: bool,
+        order_by_amount: bool = False,
     ):
         stmt = (
             select(Transaction)
@@ -2014,7 +1896,9 @@ class TransactionService:
             stmt = stmt.where(Transaction.deleted_at.isnot(None))
         else:
             stmt = stmt.where(Transaction.deleted_at.is_(None))
-        if order_desc:
+        if order_by_amount:
+            stmt = stmt.order_by(Transaction.amount_cents.desc(), Transaction.id.desc())
+        elif order_desc:
             stmt = stmt.order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
         else:
             stmt = stmt.order_by(Transaction.occurred_at.asc(), Transaction.id.asc())
@@ -3378,6 +3262,7 @@ class MetricsService:
         *,
         category_ids: Optional[list[int]] = None,
         tag_ids: Optional[list[int]] = None,
+        limit: Optional[int] = 8,
     ) -> list[dict[str, object]]:
         if transaction_type is None:
             transaction_type = TransactionType.expense
@@ -3393,13 +3278,18 @@ class MetricsService:
             if not tag_ids
             else "tags_" + "_".join(str(i) for i in sorted(set(tag_ids)))
         )
-        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}"
+        limit_suffix = "all" if limit is None else str(limit)
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}_{limit_suffix}"
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
         if transaction_type == TransactionType.income:
             stmt = (
-                select(Category.name, func.sum(Transaction.amount_cents).label("total"))
+                select(
+                    Category.id.label("category_id"),
+                    Category.name,
+                    func.sum(Transaction.amount_cents).label("total"),
+                )
                 .join(Category, Category.id == Transaction.category_id)
                 .where(
                     Transaction.user_id == self.user_id,
@@ -3408,7 +3298,7 @@ class MetricsService:
                     Transaction.is_reimbursement.is_(False),
                     Transaction.date.between(period.start, period.end),
                 )
-                .group_by(Category.name)
+                .group_by(Category.id, Category.name)
                 .order_by(func.sum(Transaction.amount_cents).desc())
             )
             if category_ids:
@@ -3423,7 +3313,12 @@ class MetricsService:
                 amount = int(row.total or 0)
                 percent = (amount / total * 100) if total else 0
                 breakdown.append(
-                    {"name": row.name, "amount_cents": amount, "percent": percent}
+                    {
+                        "id": row.category_id,
+                        "name": row.name,
+                        "amount_cents": amount,
+                        "percent": percent,
+                    }
                 )
             self._category_breakdown_cache[period_key] = breakdown
             return breakdown
@@ -3497,9 +3392,17 @@ class MetricsService:
             if net <= 0:
                 continue
             total += net
-            breakdown.append({"name": row.name, "amount_cents": net, "percent": 0})
+            breakdown.append(
+                {
+                    "id": row.category_id,
+                    "name": row.name,
+                    "amount_cents": net,
+                    "percent": 0,
+                }
+            )
         breakdown.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
-        breakdown = breakdown[:8]
+        if limit is not None:
+            breakdown = breakdown[:limit]
         for item in breakdown:
             amount = int(item["amount_cents"])
             item["percent"] = (amount / total * 100) if total else 0

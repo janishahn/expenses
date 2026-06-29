@@ -45,6 +45,7 @@ def test_mobile_status_reports_public_capabilities(
         "signup_allowed": False,
         "timezone": "Europe/Berlin",
         "receipt_max_bytes": 10485760,
+        "llm_enabled": False,
     }
 
 

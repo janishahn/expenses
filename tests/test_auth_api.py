@@ -29,6 +29,7 @@ def test_bootstrap_status_reports_setup_required_and_blocks_login_signup(
         "setup_allowed": True,
         "setup_token_required": False,
         "signup_allowed": False,
+        "llm_enabled": False,
         "authenticated": False,
         "user": None,
     }
@@ -79,6 +80,7 @@ def test_setup_creates_bootstrap_admin_user_one_and_is_one_time(
         "setup_allowed": False,
         "setup_token_required": False,
         "signup_allowed": True,
+        "llm_enabled": False,
         "authenticated": True,
         "user": {"id": 1, "username": "bootstrap", "is_admin": True},
     }

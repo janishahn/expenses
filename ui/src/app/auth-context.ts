@@ -13,6 +13,7 @@ export type AuthState = {
   setupRequired: boolean
   setupTokenRequired: boolean
   signupAllowed: boolean
+  llmEnabled: boolean
   authenticated: boolean
   user: AuthUser | null
   adminElevation: AdminElevationState

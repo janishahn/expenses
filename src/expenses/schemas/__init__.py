@@ -101,6 +101,7 @@ class MobileStatusOut(BaseModel):
     signup_allowed: bool
     timezone: str
     receipt_max_bytes: int
+    llm_enabled: bool
 
 
 class RecurringPreviewIn(BaseModel):
@@ -567,6 +568,28 @@ class AdminSystemHealthOut(BaseModel):
 class AdminLogsResponseOut(BaseModel):
     entries: list[dict[str, Any]]
     next_cursor: Optional[str] = None
+
+
+class AIUsageSummaryOut(BaseModel):
+    feature: str
+    period: Literal["week", "month", "all"]
+    started_at: Optional[datetime] = None
+    total_chats: int
+    completed_chats: int
+    failed_chats: int
+    cancelled_chats: int
+    costed_chats: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cached_input_tokens: int
+    cache_write_tokens: int
+    reasoning_tokens: int
+    total_cost_decimal: str
+    average_cost_decimal: str
+    cost_unit: Optional[str] = None
+    average_total_tokens: int
+    p95_duration_ms: Optional[int] = None
 
 
 class AdminPurgeDeletedIn(BaseModel):

@@ -37,6 +37,8 @@
 		001000000000000000000028 /* LocalUnlockGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000030 /* LocalUnlockGate.swift */; };
 		001000000000000000000029 /* CategoryIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000031 /* CategoryIcons.swift */; };
 		001000000000000000000030 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000032 /* Assets.xcassets */; };
+		001000000000000000000031 /* AssistantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000033 /* AssistantModels.swift */; };
+		001000000000000000000032 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000034 /* AssistantView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -72,6 +74,8 @@
 		002000000000000000000030 /* LocalUnlockGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalUnlockGate.swift; sourceTree = "<group>"; };
 		002000000000000000000031 /* CategoryIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryIcons.swift; sourceTree = "<group>"; };
 		002000000000000000000032 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		002000000000000000000033 /* AssistantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantModels.swift; sourceTree = "<group>"; };
+		002000000000000000000034 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000004 /* APIModels.swift */,
+				002000000000000000000033 /* AssistantModels.swift */,
 				002000000000000000000013 /* DomainModels.swift */,
 				002000000000000000000005 /* ExpensesAPIClient.swift */,
 			);
@@ -148,6 +153,7 @@
 			isa = PBXGroup;
 			children = (
 				004000000000000000000021 /* Admin */,
+				004000000000000000000022 /* Assistant */,
 				004000000000000000000008 /* Auth */,
 				004000000000000000000015 /* Budgets */,
 				004000000000000000000012 /* Dashboard */,
@@ -283,6 +289,14 @@
 			path = Admin;
 			sourceTree = "<group>";
 		};
+		004000000000000000000022 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000034 /* AssistantView.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -381,6 +395,8 @@
 				001000000000000000000027 /* AdminView.swift in Sources */,
 				001000000000000000000028 /* LocalUnlockGate.swift in Sources */,
 				001000000000000000000029 /* CategoryIcons.swift in Sources */,
+				001000000000000000000031 /* AssistantModels.swift in Sources */,
+				001000000000000000000032 /* AssistantView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -684,6 +684,30 @@
     pointer-events: none;
   }
 
+  .composer-surface {
+    border-color: rgb(var(--border));
+    background: rgb(var(--surface-hi));
+    box-shadow:
+      inset 0 1px 0 rgb(var(--surface-highlight) / 0.06),
+      var(--shadow-soft);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .composer-surface:focus-within {
+    border-color: rgb(var(--accent));
+    box-shadow:
+      inset 0 1px 0 rgb(var(--surface-highlight) / 0.08),
+      0 10px 30px -18px rgb(var(--accent) / 0.25),
+      var(--shadow-soft);
+  }
+
+  /* Composer owns focus; its textarea stays chrome-free so no second outline stacks inside. */
+  .composer-surface textarea,
+  .composer-surface textarea:hover,
+  .composer-surface textarea:focus {
+    border: 0;
+    box-shadow: none;
+  }
+
   .transaction-markdown {
     @apply text-sm leading-6 text-text;
   }
