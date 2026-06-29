@@ -873,6 +873,7 @@ The SwiftUI app should share the web app's product tone while using native iOS s
 - Use icon-only toolbar refresh actions with accessibility labels so navigation bars stay quiet.
 - Keep colors aligned with the web app: warm gold accent in dark mode, teal in light mode, semantic green/red for income and expenses, and neutral surfaces for dense data.
 - Use monospaced digits for metric-heavy surfaces and keep spacing compact enough for one-handed iPhone use.
+- Keep haptics tight, subtle, and reserved for committed actions and discrete state changes — never for navigation, scrolling, or per-keystroke streaming. Use the declarative `.sensoryFeedback` modifier driven off the relevant state (no UIKit feedback generators): `.selection` for every toggle and segmented picker so like controls feel uniform across the app, `.impact(weight: .light)` for primary commit actions (the floating Quick Add button, sending an Assistant message), `.impact(flexibility: .rigid)` for interrupting an in-flight action (stopping a streaming response) so it reads as distinct from sending, and `.success`/`.error` for the outcome of a data mutation such as saving a transaction. When a control is swapped out at the moment it is tapped (for example the Send/Stop button toggling on streaming state), attach the feedback to a stable parent driven by a tap counter so the modifier is not torn down before it fires. The system haptic setting is honored automatically, so no separate enable/disable control is needed.
 
 ---
 

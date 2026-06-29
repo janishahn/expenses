@@ -1,11 +1,13 @@
 import LocalAuthentication
 import SwiftUI
+import UIKit
 
 struct LocalUnlockGate<Content: View>: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var unlockState: LocalUnlockState = .locked
     @State private var lastProtectedAt: Date?
     @State private var coversProtectedContent = false
+    @State private var coverWindow = PrivacyCoverWindow()
 
     let model: AppModel
     @ViewBuilder var content: () -> Content
@@ -14,21 +16,19 @@ struct LocalUnlockGate<Content: View>: View {
 
     var body: some View {
         Group {
-            if coversProtectedContent || requiresLocalUnlock {
-                LocalUnlockView(
-                    state: coversProtectedContent && isUnlocked ? .locked : unlockState,
-                    biometricLabel: biometricLabel,
-                    biometricSystemImage: biometricSystemImage,
-                    retry: {
-                        Task { await unlock() }
-                    }
-                )
+            if requiresLocalUnlock {
+                lockView(state: unlockState)
             } else {
                 content()
             }
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhaseChange(phase)
+        }
+        .onChange(of: coversProtectedContent) { _, covering in
+            coverWindow.update(visible: covering) {
+                lockView(state: isUnlocked ? .locked : unlockState)
+            }
         }
         .onChange(of: model.identity?.authenticated == true) { _, authenticated in
             if authenticated, scenePhase == .active, lastProtectedAt == nil {
@@ -40,6 +40,17 @@ struct LocalUnlockGate<Content: View>: View {
                 await unlock()
             }
         }
+    }
+
+    private func lockView(state: LocalUnlockState) -> some View {
+        LocalUnlockView(
+            state: state,
+            biometricLabel: biometricLabel,
+            biometricSystemImage: biometricSystemImage,
+            retry: {
+                Task { await unlock() }
+            }
+        )
     }
 
     private var unlockTaskID: String {
@@ -168,6 +179,34 @@ struct LocalUnlockGate<Content: View>: View {
         } catch {
             unlockState = .failed(error.localizedDescription)
         }
+    }
+}
+
+@MainActor
+private final class PrivacyCoverWindow {
+    private var window: UIWindow?
+
+    func update<Cover: View>(visible: Bool, @ViewBuilder content: () -> Cover) {
+        guard visible else {
+            window?.isHidden = true
+            return
+        }
+        if window == nil {
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first
+            else {
+                return
+            }
+            let created = UIWindow(windowScene: scene)
+            created.windowLevel = .alert + 1
+            created.isUserInteractionEnabled = false
+            window = created
+        }
+        let host = UIHostingController(rootView: content())
+        host.view.backgroundColor = .clear
+        window?.rootViewController = host
+        window?.isHidden = false
     }
 }
 

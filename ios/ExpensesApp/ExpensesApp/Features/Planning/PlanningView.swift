@@ -256,6 +256,7 @@ private struct PlanningSectionPicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: section)
     }
 }
 

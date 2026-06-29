@@ -424,6 +424,8 @@ The iOS client lives in `ios/ExpensesApp` and targets iOS 26+. It uses device-sp
 
 Open `ios/ExpensesApp/ExpensesApp.xcodeproj` in Xcode to build locally. Simulator/debug builds default to a local backend. For device use, set the backend URL to your tailnet HTTPS origin (the host's MagicDNS name, for example `https://<host>.<tailnet>.ts.net`). That name has a valid certificate, so device builds work over HTTPS without an App Transport Security exception; the only built-in ATS exception is for `localhost` during local development.
 
+To build, install, and launch on a connected device from the command line (macOS with Xcode), run `uv run run-ios-device`. It auto-detects the only paired iPhone — or pass `--device <name-or-UDID>` when several are connected — builds the Debug configuration with the project's existing automatic code-signing, installs over the previous build, and launches it. Because it reuses your current signing certificate and provisioning profile, you do not need to re-trust the developer on the device between reinstalls. Pass `--no-launch` to install without launching, or `--configuration Release` for a release build.
+
 Screenshots from the native iOS app are below. They use the same `uv run mock-db` sample data as the web app screenshots above.
 
 <p>

@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 dev = "expenses.cli.dev:main"
 export-ios-fixtures = "expenses.cli.export_ios_fixtures:main"
+run-ios-device = "expenses.cli.run_ios_device:main"
 export-openapi = "expenses.cli.export_openapi:main"
 migrations = "expenses.cli.migrations:main"
 test = "expenses.cli.test:main"

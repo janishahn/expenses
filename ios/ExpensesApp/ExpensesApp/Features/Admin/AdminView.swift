@@ -546,11 +546,15 @@ private struct AdminImportPreviewView: View {
         }
 
         Toggle("Import recurring rules", isOn: $importRecurringRules)
+            .sensoryFeedback(.selection, trigger: importRecurringRules)
         Toggle("Auto-post imported recurring rules", isOn: $recurringAutoPost)
             .disabled(!importRecurringRules)
+            .sensoryFeedback(.selection, trigger: recurringAutoPost)
         Toggle("Link recurring transactions", isOn: $linkRecurringTransactions)
             .disabled(!importRecurringRules)
+            .sensoryFeedback(.selection, trigger: linkRecurringTransactions)
         Toggle("Preserve non-midnight times in titles", isOn: $preserveTimeInTitle)
+            .sensoryFeedback(.selection, trigger: preserveTimeInTitle)
 
         ForEach(preview.preview.mappingRows) { row in
             Picker(

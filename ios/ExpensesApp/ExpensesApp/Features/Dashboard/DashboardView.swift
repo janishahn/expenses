@@ -91,6 +91,7 @@ private struct DashboardPeriodPicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: selectedPeriod)
     }
 }
 

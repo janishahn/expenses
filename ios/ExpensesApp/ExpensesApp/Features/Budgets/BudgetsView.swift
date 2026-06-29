@@ -126,6 +126,7 @@ private struct BudgetViewModePicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: viewMode)
     }
 }
 
@@ -475,6 +476,7 @@ private struct BudgetTemplateFormView: View {
                         Text("Yearly").tag("yearly")
                     }
                     .pickerStyle(.segmented)
+                    .sensoryFeedback(.selection, trigger: frequency)
                     Picker("Category", selection: $categoryID) {
                         Text("All expense categories").tag(Int?.none)
                         ForEach(expenseCategories) { category in
@@ -487,6 +489,7 @@ private struct BudgetTemplateFormView: View {
                 Section {
                     DatePicker("Starts on", selection: $startsOn, displayedComponents: .date)
                     Toggle("Has end date", isOn: $hasEndDate)
+                        .sensoryFeedback(.selection, trigger: hasEndDate)
                     if hasEndDate {
                         DatePicker(
                             "Ends on",

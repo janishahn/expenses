@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added subtle, click-like haptic feedback throughout the native iOS app: a light tap on the floating Quick Add button, a selection tick on every toggle and segmented picker (the type/range/mode/section switches across Dashboard, Insights, Transactions, Organize, Budgets, Recurring, Reports, Admin, Planning, and Account), success/error feedback when saving a transaction, and a light tap when sending an Assistant message with a distinct sharper tap when stopping a streaming response. Haptics respect the system setting, so there is no separate control.
+
 ### Changed
 - Refreshed the native iOS app icon with an editable Icon Composer Liquid Glass receipt source.
+- Redesigned the native iOS Assistant composer as a floating rounded glass capsule with margins on all sides instead of an edge-to-edge bar, so it reads as an intentional floating control rather than a detached slab when the keyboard raises it.
+
+### Fixed
+- Native iOS app no longer resets to the Dashboard after a brief background (for example pulling down the notification shade): the open Assistant chat, navigation depth, and an open Add-Transaction sheet now survive quick app switches within the local-unlock grace window. The local-unlock cover is now drawn in a separate top-level window above the live content — including any presented sheet — instead of replacing the content, so it preserves navigation state while still hiding sensitive content (sheets included) in the app switcher and under the notification shade.
 
 ## [0.3.0] - 2026-06-29
 

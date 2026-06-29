@@ -440,6 +440,7 @@ private struct OrganizeSectionPicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: selection)
     }
 }
 
@@ -1318,6 +1319,7 @@ private struct CategoryFormView: View {
                             Text("Income").tag("income")
                         }
                         .pickerStyle(.segmented)
+                        .sensoryFeedback(.selection, trigger: type)
                     }
                     Picker("Icon", selection: $iconKey) {
                         if let current = category?.icon, categoryIconOption(for: current) == nil {
@@ -1402,6 +1404,7 @@ private struct TagFormView: View {
                     TextField("Color", text: $color)
                         .textInputAutocapitalization(.never)
                     Toggle("Hidden from budgets", isOn: $hiddenFromBudget)
+                        .sensoryFeedback(.selection, trigger: hiddenFromBudget)
                 }
                 if let formError {
                     Section {
@@ -1484,6 +1487,7 @@ private struct TemplateFormView: View {
                         Text("Income").tag("income")
                     }
                     .pickerStyle(.segmented)
+                    .sensoryFeedback(.selection, trigger: type)
                     .onChange(of: type) { _, nextType in
                         if !filteredCategories(for: nextType).contains(where: { $0.id == categoryID }) {
                             categoryID = filteredCategories(for: nextType).first?.id
@@ -1630,6 +1634,7 @@ private struct RuleFormView: View {
                 Section("Rule") {
                     TextField("Name", text: $name)
                     Toggle("Apply automatically", isOn: $enabled)
+                        .sensoryFeedback(.selection, trigger: enabled)
                     Stepper("Priority \(priority)", value: $priority, in: 0...10_000)
                 }
 

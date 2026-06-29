@@ -11,6 +11,7 @@ struct RootView: View {
     @State private var categoryQuickAddTrigger = 0
     @State private var ruleQuickAddTrigger = 0
     @State private var recurringQuickAddTrigger = 0
+    @State private var quickAddTapTick = 0
 
     private var selectedDestination: AppDestination {
         selectedPrimaryDestination
@@ -174,6 +175,7 @@ struct RootView: View {
                     in: .rect(cornerRadius: 27)
                 )
                 .accessibilityLabel("Quick Add")
+                .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
                 .opacity(model.identity?.authenticated == true ? 1 : 0.48)
                 .padding(.trailing, 18)
@@ -184,6 +186,7 @@ struct RootView: View {
     }
 
     private func performQuickAdd() {
+        quickAddTapTick += 1
         switch selectedDestination {
         case .budgets:
             budgetQuickAddTrigger += 1

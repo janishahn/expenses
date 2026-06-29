@@ -177,6 +177,7 @@ private struct InsightsSectionPicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: section)
     }
 }
 

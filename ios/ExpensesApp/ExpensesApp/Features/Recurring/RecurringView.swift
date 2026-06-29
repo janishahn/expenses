@@ -211,6 +211,7 @@ private struct RecurringRuleFormView: View {
                         Text("Income").tag("income")
                     }
                     .pickerStyle(.segmented)
+                    .sensoryFeedback(.selection, trigger: type)
                     .onChange(of: type) { _, nextType in
                         if !filteredCategories(for: nextType).contains(where: { $0.id == categoryID }) {
                             categoryID = filteredCategories(for: nextType).first?.id
@@ -240,6 +241,7 @@ private struct RecurringRuleFormView: View {
                         Text("Year").tag("year")
                     }
                     Toggle("Has end date", isOn: $hasEndDate)
+                        .sensoryFeedback(.selection, trigger: hasEndDate)
                     if hasEndDate {
                         DatePicker(
                             "End date",
@@ -251,7 +253,9 @@ private struct RecurringRuleFormView: View {
                         )
                     }
                     Toggle("Auto-post", isOn: $autoPost)
+                        .sensoryFeedback(.selection, trigger: autoPost)
                     Toggle("Skip weekends", isOn: $skipWeekends)
+                        .sensoryFeedback(.selection, trigger: skipWeekends)
                     Picker("Missing month day", selection: $monthDayPolicy) {
                         Text("Last day").tag("snap_to_end")
                         Text("Skip").tag("skip")

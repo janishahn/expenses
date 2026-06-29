@@ -45,6 +45,7 @@ struct ReportsView: View {
                 Section("Sections") {
                     ForEach(reportSections, id: \.key) { section in
                         Toggle(section.label, isOn: sectionBinding(section.key))
+                            .sensoryFeedback(.selection, trigger: sectionBinding(section.key).wrappedValue)
                     }
                 }
 
@@ -60,8 +61,11 @@ struct ReportsView: View {
                     }
                     .disabled(showRunningBalance)
                     Toggle("Show running balance", isOn: $showRunningBalance)
+                        .sensoryFeedback(.selection, trigger: showRunningBalance)
                     Toggle("Include category subtotals", isOn: $includeCategorySubtotals)
+                        .sensoryFeedback(.selection, trigger: includeCategorySubtotals)
                     Toggle("Include cents", isOn: $includeCents)
+                        .sensoryFeedback(.selection, trigger: includeCents)
                 }
 
                 Section("Categories") {
@@ -79,6 +83,7 @@ struct ReportsView: View {
                                     category.name,
                                     isOn: categoryBinding(category.id)
                                 )
+                                .sensoryFeedback(.selection, trigger: categoryBinding(category.id).wrappedValue)
                             }
                         }
                     }
