@@ -242,6 +242,9 @@ async def enrich_openrouter_generation_usage(
     output_tokens = _positive_int(data.get("tokens_completion")) or _positive_int(
         data.get("native_tokens_completion")
     )
+    cost_value = data.get("total_cost")
+    if cost_value is None:
+        cost_value = data.get("usage")
     return replace(
         metadata,
         input_tokens=input_tokens or metadata.input_tokens,
@@ -254,8 +257,7 @@ async def enrich_openrouter_generation_usage(
         or metadata.cached_input_tokens,
         reasoning_tokens=_positive_int(data.get("native_tokens_reasoning"))
         or metadata.reasoning_tokens,
-        cost_decimal=_decimal_text(data.get("total_cost") or data.get("usage"))
-        or metadata.cost_decimal,
+        cost_decimal=_decimal_text(cost_value) or metadata.cost_decimal,
         cost_unit="openrouter_credits"
         if data.get("total_cost") is not None or data.get("usage") is not None
         else metadata.cost_unit,

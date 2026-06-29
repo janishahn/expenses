@@ -18,11 +18,21 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_openrouter_generation_enrichment_preserves_tiny_costs() -> None:
+async def test_openrouter_generation_enrichment_preserves_provider_costs() -> None:
     async def handler(request):
         assert request.url.path == "/api/v1/generation"
-        assert request.url.params["id"] == "gen-test"
         assert request.headers["authorization"] == "Bearer sk-test"
+        if request.url.params["id"] == "gen-zero":
+            return Response(
+                200,
+                json={
+                    "data": {
+                        "total_cost": 0,
+                        "tokens_completion": 7,
+                        "tokens_prompt": 11,
+                    }
+                },
+            )
         return Response(
             200,
             json={
@@ -76,6 +86,21 @@ async def test_openrouter_generation_enrichment_preserves_tiny_costs() -> None:
         "tokens_prompt": 11,
         "total_cost": 1.25e-07,
     }
+
+    async with AsyncClient(transport=MockTransport(handler)) as client:
+        zero_metadata = await enrich_openrouter_generation_usage(
+            LLMUsageMetadata(
+                cost_decimal=None,
+                llm_provider="openrouter",
+                provider_response_id="gen-zero",
+            ),
+            http_client=client,
+            api_key="sk-test",
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+    assert zero_metadata.cost_decimal == "0"
+    assert zero_metadata.cost_unit == "openrouter_credits"
 
 
 def test_captured_openrouter_stream_usage_preserves_cost_and_cache_details() -> None:

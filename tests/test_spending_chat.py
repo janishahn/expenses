@@ -147,6 +147,7 @@ def _seed_spending_fixture(session: Session) -> dict[str, int]:
         "groceries_id": groceries.id,
         "leisure_id": leisure.id,
         "concert_id": concert.id,
+        "reimbursement_id": reimbursement.id,
     }
 
 
@@ -170,7 +171,7 @@ def test_leading_progress_split_uses_sentence_boundary() -> None:
     assert answer == ""
 
 
-def test_spending_analysis_uses_net_amounts_for_overview_and_search() -> None:
+def test_spending_analysis_uses_net_amounts_across_tools() -> None:
     with make_session() as session:
         ids = _seed_spending_fixture(session)
         service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
@@ -198,6 +199,13 @@ def test_spending_analysis_uses_net_amounts_for_overview_and_search() -> None:
         ]
         assert results["transactions"][1]["id"] == ids["concert_id"]
         assert results["transactions"][1]["net_amount_cents"] == 18_000
+
+        detail = service.get_transaction_detail(transaction_id=ids["reimbursement_id"])
+        assert detail["transaction"]["net_amount_cents"] == 12_000
+        assert (
+            detail["reimbursement_allocations"][0]["expense_transaction_id"]
+            == ids["concert_id"]
+        )
 
 
 def test_spending_analysis_compares_periods_and_reports_budget_context() -> None:

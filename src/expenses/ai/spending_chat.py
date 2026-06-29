@@ -564,11 +564,10 @@ class SpendingAnalysisService:
             return {"ok": False, "status": "not_found", "message": str(exc)}
 
         reimbursement_service = ReimbursementService(self.session, self.user_id)
+        gross = int(txn.amount_cents)
+        reimbursed = 0
         if txn.type == TransactionType.expense:
             reimbursed = reimbursement_service.reimbursed_total_for_expense(txn.id)
-            setattr(txn, "gross_amount_cents", int(txn.amount_cents))
-            setattr(txn, "reimbursed_total_cents", reimbursed)
-            setattr(txn, "net_amount_cents", max(0, int(txn.amount_cents) - reimbursed))
             allocations = [
                 {
                     "id": allocation.id,
@@ -594,6 +593,16 @@ class SpendingAnalysisService:
             ]
         else:
             allocations = []
+
+        setattr(txn, "gross_amount_cents", gross)
+        setattr(txn, "reimbursed_total_cents", reimbursed)
+        setattr(
+            txn,
+            "net_amount_cents",
+            max(0, gross - reimbursed)
+            if txn.type == TransactionType.expense
+            else gross,
+        )
 
         return {
             "ok": True,
