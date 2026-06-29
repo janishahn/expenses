@@ -75,6 +75,8 @@ export default defineConfig({
       env: {
         ...process.env,
         EXPENSES_AUTH_SIGNUP_ENABLED: "true",
+        EXPENSES_LLM_ENABLED: "true",
+        EXPENSES_LLM_BASE_URL: "http://127.0.0.1:1/v1",
       },
       url: `${backendUrl}/api/csrf`,
       reuseExistingServer: false,

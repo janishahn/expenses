@@ -297,7 +297,7 @@ These `VITE_*` values are read when the React app is built. Rebuild the UI or Do
 
 ### Optional LLM Assistance
 
-LLM features are disabled by default and are review-first when enabled. The configured endpoint must be OpenAI-compatible.
+LLM features are disabled by default and are review-first when enabled. The configured endpoint must be OpenAI-compatible. While `EXPENSES_LLM_ENABLED` is off, the feature is cleanly absent rather than visible-but-broken: the web and iOS apps hide every AI surface (the Assistant nav entry and page, rule mining and suggestions, Uncategorized triage, natural-language search, and the admin Assistant-usage panel), and every `/api/ai/*` endpoint returns `503`. Clients learn the flag's state from `/api/auth/bootstrap-status` (web) and `/api/mobile/status` (iOS).
 
 ```env
 EXPENSES_LLM_ENABLED=false

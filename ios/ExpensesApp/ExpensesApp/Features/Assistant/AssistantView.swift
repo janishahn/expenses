@@ -16,11 +16,20 @@ struct AssistantView: View {
 
     var body: some View {
         Group {
-            if model.identity?.authenticated == true {
+            if model.identity?.authenticated != true {
+                List {
+                    SignedOutStateSection()
+                }
+                .expensesScreenStyle()
+            } else if model.llmEnabled {
                 conversation
             } else {
                 List {
-                    SignedOutStateSection()
+                    ContentUnavailableView(
+                        "Assistant unavailable",
+                        systemImage: "sparkles",
+                        description: Text("LLM features are turned off.")
+                    )
                 }
                 .expensesScreenStyle()
             }

@@ -28,6 +28,7 @@ final class AppModel {
         }
     }
     var status: MobileStatus?
+    var llmEnabled: Bool { status?.llmEnabled ?? false }
     var identity: MobileAuthIdentity?
     var dashboard: DashboardResponse?
     var dashboardPeriod = "this_month"
@@ -488,7 +489,9 @@ final class AppModel {
                 tagID: tagID,
                 token: token
             )
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+            if llmEnabled {
+                transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+            }
         }
     }
 
@@ -510,7 +513,7 @@ final class AppModel {
     }
 
     func loadTransactionSuggestions() async {
-        guard let token else {
+        guard llmEnabled, let token else {
             return
         }
         await runRequest {
@@ -742,7 +745,7 @@ final class AppModel {
     }
 
     func loadRuleSuggestions() async {
-        guard let token else {
+        guard llmEnabled, let token else {
             return
         }
         await runRequest {
@@ -1905,7 +1908,9 @@ final class AppModel {
         dashboardLoadState = .loaded
         transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
         transactionsLoadState = .loaded
-        transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+        if llmEnabled {
+            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+        }
         try await reloadOrganizeData(token: token)
     }
 
@@ -1914,7 +1919,9 @@ final class AppModel {
         tags = try await apiClient.tags(token: token)
         templates = try await apiClient.templates(token: token)
         rules = try await apiClient.rules(token: token)
-        ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+        if llmEnabled {
+            ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+        }
     }
 
     private func reloadBudgetBurndownIfNeeded(view: String, token: String) async throws {

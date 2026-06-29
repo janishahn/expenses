@@ -203,6 +203,7 @@ function AdminRoute() {
 }
 
 function AppRoutes() {
+  const { llmEnabled } = useAuth()
   return (
     <Routes>
       <Route path="/setup" element={<SetupRoute />} />
@@ -217,7 +218,10 @@ function AppRoutes() {
           <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
-          <Route path="/assistant" element={<SpendingAssistantPage />} />
+          <Route
+            path="/assistant"
+            element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
+          />
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
           <Route path="/budgets" element={<BudgetsPage />} />

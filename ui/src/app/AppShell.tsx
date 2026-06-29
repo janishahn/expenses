@@ -57,7 +57,10 @@ export type AppShellOutletContext = {
 
 function AppShell() {
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, llmEnabled } = useAuth()
+  const mainNavItems = llmEnabled
+    ? mainNav
+    : mainNav.filter((item) => item.to !== "/assistant")
   const toolsNav = user?.is_admin ? [...toolsNavBase, adminNavItem] : toolsNavBase
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
@@ -211,7 +214,7 @@ function AppShell() {
           <p className="px-3 pb-[5px] pt-[14px] text-[10px] font-bold uppercase tracking-[1.3px] text-muted">
             Main
           </p>
-          {mainNav.map((item) => (
+          {mainNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={periodSearch ? `${item.to}${periodSearch}` : item.to}

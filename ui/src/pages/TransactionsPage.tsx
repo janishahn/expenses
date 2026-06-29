@@ -10,6 +10,7 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { Link, useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { apiFetch } from "../app/api"
+import { useAuth } from "../app/auth"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
@@ -281,6 +282,7 @@ function TransactionLocationDialog({
 }
 
 function TransactionsPage() {
+  const { llmEnabled } = useAuth()
   const { openAddTransaction } = useOutletContext<AppShellOutletContext>()
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -767,40 +769,42 @@ function TransactionsPage() {
             placeholder="title text or: tag:Work amount>20 has:receipt"
           />
         </AppFieldLabel>
-        <div className="desk:col-span-4">
-          <div className="flex flex-col gap-2 md:flex-row">
-            <AppInput
-              type="text"
-              value={naturalQuery}
-              onChange={(event) => setNaturalQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault()
-                  runNaturalSearch()
-                }
-              }}
-              placeholder="Ask in plain language"
-            />
-            <AppButton
-              type="button"
-              onClick={runNaturalSearch}
-              disabled={naturalSearchMutation.isPending || !naturalQuery.trim()}
-              className="shrink-0"
-            >
-              {naturalSearchMutation.isPending ? "Translating…" : "Translate"}
-            </AppButton>
+        {llmEnabled ? (
+          <div className="desk:col-span-4">
+            <div className="flex flex-col gap-2 md:flex-row">
+              <AppInput
+                type="text"
+                value={naturalQuery}
+                onChange={(event) => setNaturalQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    runNaturalSearch()
+                  }
+                }}
+                placeholder="Ask in plain language"
+              />
+              <AppButton
+                type="button"
+                onClick={runNaturalSearch}
+                disabled={naturalSearchMutation.isPending || !naturalQuery.trim()}
+                className="shrink-0"
+              >
+                {naturalSearchMutation.isPending ? "Translating…" : "Translate"}
+              </AppButton>
+            </div>
+            {naturalSearchMessage ? (
+              <p className="mt-2 text-xs text-semantic-red">{naturalSearchMessage}</p>
+            ) : null}
+            {naturalSearchResult && !naturalSearchMessage ? (
+              <p className="mt-2 text-xs text-muted">
+                Applied: <span className="font-mono text-text">{naturalSearchResult.query}</span>
+                {" · "}
+                {Math.round(naturalSearchResult.confidence * 100)}% confidence
+              </p>
+            ) : null}
           </div>
-          {naturalSearchMessage ? (
-            <p className="mt-2 text-xs text-semantic-red">{naturalSearchMessage}</p>
-          ) : null}
-          {naturalSearchResult && !naturalSearchMessage ? (
-            <p className="mt-2 text-xs text-muted">
-              Applied: <span className="font-mono text-text">{naturalSearchResult.query}</span>
-              {" · "}
-              {Math.round(naturalSearchResult.confidence * 100)}% confidence
-            </p>
-          ) : null}
-        </div>
+        ) : null}
       </AppCard>
 
       <div className="desk:hidden">

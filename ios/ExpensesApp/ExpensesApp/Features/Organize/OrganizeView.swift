@@ -130,20 +130,22 @@ struct RulesView: View {
             if model.identity?.authenticated != true {
                 SignedOutStateSection()
             } else if let rules = model.rules {
-                RuleSuggestionsSection(
-                    suggestions: model.ruleSuggestions,
-                    isLoading: model.isMiningRuleSuggestions,
-                    status: model.ruleMiningStatus,
-                    onMine: {
-                        Task { await model.mineRuleSuggestions() }
-                    },
-                    onAccept: { suggestion in
-                        Task { await model.acceptRuleSuggestion(suggestion) }
-                    },
-                    onReject: { suggestion in
-                        Task { await model.rejectRuleSuggestion(suggestion) }
-                    }
-                )
+                if model.llmEnabled {
+                    RuleSuggestionsSection(
+                        suggestions: model.ruleSuggestions,
+                        isLoading: model.isMiningRuleSuggestions,
+                        status: model.ruleMiningStatus,
+                        onMine: {
+                            Task { await model.mineRuleSuggestions() }
+                        },
+                        onAccept: { suggestion in
+                            Task { await model.acceptRuleSuggestion(suggestion) }
+                        },
+                        onReject: { suggestion in
+                            Task { await model.rejectRuleSuggestion(suggestion) }
+                        }
+                    )
+                }
                 RuleList(rules: rules.rules) { rule in
                     activeSheet = .rule(rule)
                 } onToggle: { rule in
@@ -273,20 +275,22 @@ struct OrganizeView: View {
                         Task { await model.moveTemplate(from: source, to: destination) }
                     }
                 case .rules:
-                    RuleSuggestionsSection(
-                        suggestions: model.ruleSuggestions,
-                        isLoading: model.isMiningRuleSuggestions,
-                        status: model.ruleMiningStatus,
-                        onMine: {
-                            Task { await model.mineRuleSuggestions() }
-                        },
-                        onAccept: { suggestion in
-                            Task { await model.acceptRuleSuggestion(suggestion) }
-                        },
-                        onReject: { suggestion in
-                            Task { await model.rejectRuleSuggestion(suggestion) }
-                        }
-                    )
+                    if model.llmEnabled {
+                        RuleSuggestionsSection(
+                            suggestions: model.ruleSuggestions,
+                            isLoading: model.isMiningRuleSuggestions,
+                            status: model.ruleMiningStatus,
+                            onMine: {
+                                Task { await model.mineRuleSuggestions() }
+                            },
+                            onAccept: { suggestion in
+                                Task { await model.acceptRuleSuggestion(suggestion) }
+                            },
+                            onReject: { suggestion in
+                                Task { await model.rejectRuleSuggestion(suggestion) }
+                            }
+                        )
+                    }
                     RuleList(rules: model.rules?.rules ?? []) { rule in
                         activeSheet = .rule(rule)
                     } onToggle: { rule in

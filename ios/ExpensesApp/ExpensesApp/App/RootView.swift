@@ -118,7 +118,7 @@ struct RootView: View {
             List {
                 moreDestinationSection("Planning", destinations: AppDestination.planningDestinations)
                 moreDestinationSection("Manage", destinations: AppDestination.manageDestinations)
-                moreDestinationSection("Tools", destinations: AppDestination.toolsDestinations)
+                moreDestinationSection("Tools", destinations: toolsDestinations)
                 moreDestinationSection("Account", destinations: AppDestination.accountDestinations)
             }
             .navigationTitle("More")
@@ -129,6 +129,10 @@ struct RootView: View {
             }
         }
         .toolbar(morePath.last?.hidesTabBar == true ? .hidden : .visible, for: .tabBar)
+    }
+
+    private var toolsDestinations: [AppDestination] {
+        AppDestination.toolsDestinations.filter { $0 != .assistant || model.llmEnabled }
     }
 
     private func moreDestinationSection(_ title: String, destinations: [AppDestination]) -> some View {

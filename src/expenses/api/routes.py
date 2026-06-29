@@ -643,6 +643,11 @@ def get_db():
         db.close()
 
 
+def require_llm_enabled() -> None:
+    if not get_settings().llm_enabled:
+        raise HTTPException(status_code=503, detail="LLM features are disabled")
+
+
 @router.get("/api/auth/bootstrap-status")
 def api_auth_bootstrap_status(
     request: Request,
@@ -656,6 +661,7 @@ def api_auth_bootstrap_status(
         "setup_token_required": setup_required
         and settings.auth_setup_token is not None,
         "signup_allowed": not setup_required and settings.auth_signup_enabled,
+        "llm_enabled": settings.llm_enabled,
         **_serialize_auth_identity(request, db),
     }
 
@@ -819,6 +825,7 @@ def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
         signup_allowed=not setup_required and settings.auth_signup_enabled,
         timezone=settings.timezone,
         receipt_max_bytes=settings.receipt_max_bytes,
+        llm_enabled=settings.llm_enabled,
     )
 
 
@@ -2448,6 +2455,7 @@ def api_preview_rule(data: RuleIn, request: Request, db: Session = Depends(get_d
 @router.get(
     "/api/ai/rules/suggestions",
     response_model=list[RuleSuggestionOut],
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_rule_suggestions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -2457,6 +2465,7 @@ def api_ai_rule_suggestions(request: Request, db: Session = Depends(get_db)):
 @router.post(
     "/api/ai/rules/mine",
     response_model=list[RuleSuggestionOut],
+    dependencies=[Depends(require_llm_enabled)],
 )
 async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -2480,6 +2489,7 @@ async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
 @router.post(
     "/api/ai/rules/suggestions/{suggestion_id}/accept",
     response_model=IdOut,
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_accept_rule_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -2498,6 +2508,7 @@ def api_ai_accept_rule_suggestion(
 @router.post(
     "/api/ai/rules/suggestions/{suggestion_id}/reject",
     response_model=IdOut,
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_reject_rule_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -4013,7 +4024,11 @@ def _format_decimal(value: Decimal, scale: int) -> str:
     return f"{value:.{scale}f}"
 
 
-@router.get("/api/ai/usage/summary", response_model=AIUsageSummaryOut)
+@router.get(
+    "/api/ai/usage/summary",
+    response_model=AIUsageSummaryOut,
+    dependencies=[Depends(require_llm_enabled)],
+)
 def api_ai_usage_summary(
     request: Request,
     db: Session = Depends(get_db),
@@ -4163,7 +4178,11 @@ def _spending_chat_event_line(event: dict[str, object]) -> str:
     return json.dumps(event, ensure_ascii=False, default=str) + "\n"
 
 
-@router.post("/api/ai/spending-chat/stream", response_class=StreamingResponse)
+@router.post(
+    "/api/ai/spending-chat/stream",
+    response_class=StreamingResponse,
+    dependencies=[Depends(require_llm_enabled)],
+)
 async def api_ai_spending_chat_stream(
     data: SpendingChatRequest,
     request: Request,
@@ -4214,6 +4233,7 @@ async def api_ai_spending_chat_stream(
 @router.post(
     "/api/ai/search/translate",
     response_model=SearchTranslationResult,
+    dependencies=[Depends(require_llm_enabled)],
 )
 async def api_ai_translate_search(
     data: SearchTranslateIn, request: Request, db: Session = Depends(get_db)
@@ -4232,6 +4252,7 @@ async def api_ai_translate_search(
 @router.get(
     "/api/ai/transaction-suggestions",
     response_model=list[TransactionSuggestionOut],
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_transaction_suggestions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -4248,6 +4269,7 @@ def api_ai_transaction_suggestions(request: Request, db: Session = Depends(get_d
 @router.post(
     "/api/ai/transactions/{transaction_id:int}/triage",
     response_model=TransactionSuggestionOut | None,
+    dependencies=[Depends(require_llm_enabled)],
 )
 async def api_ai_triage_transaction(
     transaction_id: int, request: Request, db: Session = Depends(get_db)
@@ -4267,6 +4289,7 @@ async def api_ai_triage_transaction(
 @router.post(
     "/api/ai/transaction-suggestions/{suggestion_id}/accept",
     response_model=IdOut,
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_accept_transaction_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -4285,6 +4308,7 @@ def api_ai_accept_transaction_suggestion(
 @router.post(
     "/api/ai/transaction-suggestions/{suggestion_id}/reject",
     response_model=IdOut,
+    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_reject_transaction_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)

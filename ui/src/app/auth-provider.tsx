@@ -13,6 +13,7 @@ type AuthBootstrapStatus = {
   setup_required: boolean
   setup_token_required: boolean
   signup_allowed: boolean
+  llm_enabled: boolean
   authenticated: boolean
   user: AuthUser | null
 }
@@ -37,6 +38,7 @@ function toAuthState(
     setupRequired: payload.setup_required,
     setupTokenRequired: payload.setup_token_required ?? false,
     signupAllowed: payload.signup_allowed ?? false,
+    llmEnabled: payload.llm_enabled ?? false,
     authenticated: payload.authenticated,
     user: payload.user,
     adminElevation,
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setupRequired: true,
     setupTokenRequired: false,
     signupAllowed: false,
+    llmEnabled: false,
     authenticated: false,
     user: null,
     adminElevation: "unknown",

@@ -4,6 +4,7 @@ import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { XCircleIcon } from "@phosphor-icons/react/XCircle"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import { useAuth } from "../app/auth"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
@@ -87,6 +88,7 @@ type TransactionSuggestion = {
 }
 
 function UncategorizedInboxPage() {
+  const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -113,6 +115,7 @@ function UncategorizedInboxPage() {
   const suggestionsQuery = useQuery({
     queryKey: ["ai", "transaction-suggestions"],
     queryFn: () => apiFetch<TransactionSuggestion[]>("/api/ai/transaction-suggestions"),
+    enabled: llmEnabled,
   })
 
   const bulkMutation = useMutation({
@@ -447,7 +450,7 @@ function UncategorizedInboxPage() {
                       </AppButton>
                     </div>
                   </div>
-                ) : (
+                ) : llmEnabled ? (
                   <div className="mt-3 flex justify-end">
                     <AppButton
                       type="button"
@@ -459,7 +462,7 @@ function UncategorizedInboxPage() {
                       {triageMutation.isPending ? "Suggesting…" : "Suggest"}
                     </AppButton>
                   </div>
-                )}
+                ) : null}
               </AppCard>
             )
           })

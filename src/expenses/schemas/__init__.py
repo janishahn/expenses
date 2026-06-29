@@ -101,6 +101,7 @@ class MobileStatusOut(BaseModel):
     signup_allowed: bool
     timezone: str
     receipt_max_bytes: int
+    llm_enabled: bool
 
 
 class RecurringPreviewIn(BaseModel):

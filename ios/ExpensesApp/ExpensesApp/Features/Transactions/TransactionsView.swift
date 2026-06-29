@@ -27,7 +27,7 @@ struct TransactionsView: View {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()
                 } else {
-                    if canAskSearch || isTranslatingSearch {
+                    if model.llmEnabled, canAskSearch || isTranslatingSearch {
                         SearchAskSection(
                             query: draftSearchQuery,
                             isLoading: isTranslatingSearch,
@@ -73,6 +73,7 @@ struct TransactionsView: View {
                                 transactions: transactions.items,
                                 categories: transactions.categories,
                                 suggestions: model.transactionSuggestions,
+                                llmEnabled: model.llmEnabled,
                                 selecting: selectingTransactions,
                                 selectedIDs: $selectedTransactionIDs,
                                 onSuggest: { transaction in
@@ -608,6 +609,7 @@ private struct UncategorizedTriageRows: View {
     let transactions: [TransactionListItem]
     let categories: [CategorySummary]
     let suggestions: [TransactionSuggestion]
+    let llmEnabled: Bool
     let selecting: Bool
     @Binding var selectedIDs: Set<Int>
     var onSuggest: (TransactionListItem) -> Void
@@ -640,21 +642,23 @@ private struct UncategorizedTriageRows: View {
                     }
                 }
 
-                if let suggestion {
-                    TransactionSuggestionReview(
-                        suggestion: suggestion,
-                        onAccept: { onAccept(suggestion) },
-                        onReject: { onReject(suggestion) }
-                    )
-                } else if !selecting {
-                    HStack {
-                        Spacer()
-                        Button {
-                            onSuggest(transaction)
-                        } label: {
-                            Label("Suggest", systemImage: "sparkles")
+                if llmEnabled {
+                    if let suggestion {
+                        TransactionSuggestionReview(
+                            suggestion: suggestion,
+                            onAccept: { onAccept(suggestion) },
+                            onReject: { onReject(suggestion) }
+                        )
+                    } else if !selecting {
+                        HStack {
+                            Spacer()
+                            Button {
+                                onSuggest(transaction)
+                            } label: {
+                                Label("Suggest", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.bordered)
                     }
                 }
             }

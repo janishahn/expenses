@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { apiFetch, fetchAIUsageSummary } from "../app/api"
+import { useAuth } from "../app/auth"
 import type { AIUsageSummary } from "../app/api-types"
 import { formatEuroDateTime, formatFileSize } from "../app/format"
 import Sparkline from "../components/charts/Sparkline"
@@ -120,6 +121,7 @@ function formatCostAmount(decimal: string, unit: string | null): string {
 }
 
 function AdminPage() {
+  const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
   const [purgeDays, setPurgeDays] = useState("30")
   const [recurringCatchUpMessage, setRecurringCatchUpMessage] = useState<{
@@ -160,6 +162,7 @@ function AdminPage() {
     queryKey: ["ai-usage-summary", "spending_chat", usagePeriod],
     queryFn: () => fetchAIUsageSummary(usagePeriod),
     staleTime: 60_000,
+    enabled: llmEnabled,
   })
   const logQueryParams = new URLSearchParams({ limit: "40" })
   if (logCursor) {
@@ -652,6 +655,7 @@ function AdminPage() {
         </div>
       </AppCard>
 
+      {llmEnabled ? (
       <AppCard data-testid="admin-ai-usage">
         <div className="border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -721,6 +725,7 @@ function AdminPage() {
           )}
         </div>
       </AppCard>
+      ) : null}
 
       <AppCard>
         <div className="border-b border-border px-4 py-3">

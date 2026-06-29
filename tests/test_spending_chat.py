@@ -393,7 +393,7 @@ def test_spending_chat_disabled_returns_503_before_stream(
         json={"messages": [{"role": "user", "content": "What changed this month?"}]},
     )
     assert response.status_code == 503
-    assert response.json()["detail"] == "LLM is not configured"
+    assert response.json()["detail"] == "LLM features are disabled"
 
 
 def test_spending_chat_stream_route_emits_ndjson_events(
@@ -967,6 +967,7 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
 ) -> None:
     data_dir = tmp_path / "usage-data"
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
     get_settings.cache_clear()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
