@@ -299,6 +299,21 @@ def apply_usage_metadata(job: LLMJob, metadata: LLMUsageMetadata) -> None:
         )
 
 
+def chat_input_trace(
+    current_message: str, message_count: int, message_history_entries: int
+) -> str:
+    payload = {
+        "kind": "request",
+        "current_message_sha256": hashlib.sha256(
+            current_message.encode("utf-8")
+        ).hexdigest(),
+        "current_message_chars": len(current_message),
+        "message_count": message_count,
+        "message_history_entries": message_history_entries,
+    }
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True)
+
+
 def chat_output_trace(
     assistant_message: str, message_history: list[dict[str, Any]]
 ) -> str:

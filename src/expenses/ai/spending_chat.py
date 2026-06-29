@@ -25,6 +25,7 @@ from expenses.ai.usage import (
     OpenAICompatibleUsageCapture,
     apply_captured_provider_usage,
     apply_usage_metadata,
+    chat_input_trace,
     chat_output_trace,
     enrich_openrouter_generation_usage,
     usage_metadata_from_result,
@@ -201,16 +202,6 @@ class SpendingChatRunner(Protocol):
         context: SpendingAgentContext,
     ) -> AsyncIterator[dict[str, Any] | SpendingAgentTurnResult]:
         pass
-
-
-def _json_dumps(payload: dict[str, Any]) -> str:
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
 
 
 def validate_spending_chat_message_history(
@@ -503,7 +494,10 @@ class SpendingAnalysisService:
             limit if sort == "date_desc" else min(max(limit * 20, 250), 5_000)
         )
         transactions = transaction_service.list_for_period(
-            period, filters, limit=candidate_limit
+            period,
+            filters,
+            limit=candidate_limit,
+            order_by_amount=sort == "amount_desc",
         )
         if sort == "amount_desc":
             transactions.sort(
@@ -956,8 +950,11 @@ class SpendingChatService:
     async def stream_turn(
         self, *, request: SpendingChatRequest
     ) -> AsyncIterator[dict[str, Any]]:
-        payload = request.model_dump(mode="json")
-        input_json = _json_dumps(payload)
+        input_json = chat_input_trace(
+            request.current_message,
+            len(request.messages),
+            len(request.message_history),
+        )
         settings = get_settings()
         job = LLMJob(
             user_id=self.user_id,

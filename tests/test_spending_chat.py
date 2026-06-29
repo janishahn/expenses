@@ -379,6 +379,42 @@ def test_breakdown_spending_category_uses_sql_aggregation() -> None:
         )
 
 
+def test_search_transactions_amount_desc_finds_largest_beyond_candidate_window() -> (
+    None
+):
+    with make_session() as session:
+        category = CategoryService(session, user_id=1).create(
+            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
+        )
+        transaction_service = TransactionService(session, user_id=1)
+        # 250 recent small expenses fill the date-ordered candidate window.
+        for index in range(250):
+            _create_txn(
+                transaction_service,
+                title=f"Small {index}",
+                amount_cents=1_000,
+                txn_date=date(2026, 6, 1),
+                category_id=category.id,
+            )
+        # The single largest expense is the oldest, so a date-ordered candidate
+        # slice would drop it before the amount sort runs.
+        _create_txn(
+            transaction_service,
+            title="Largest oldest",
+            amount_cents=500_000,
+            txn_date=date(2020, 1, 1),
+            category_id=category.id,
+        )
+
+        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 30))
+        result = analysis.search_transactions(sort="amount_desc", limit=1)
+
+        assert result["ok"] is True
+        assert result["candidate_truncated"] is True
+        assert [txn["title"] for txn in result["transactions"]] == ["Largest oldest"]
+        assert result["transactions"][0]["net_amount_cents"] == 500_000
+
+
 def test_spending_chat_disabled_returns_503_before_stream(
     api_client: TestClient,
     csrf_headers: dict[str, str],
@@ -895,7 +931,8 @@ async def test_spending_chat_stream_logs_one_job_with_fake_runner() -> None:
         from expenses.ai.spending_chat import SpendingChatService, SpendingChatRequest
 
         request = SpendingChatRequest(
-            messages=[{"role": "user", "content": "Summarize June"}]
+            messages=[{"role": "user", "content": "Summarize June"}],
+            message_history=[{"parts": [{"content": "SENSITIVE-TXN-DETAIL-42"}]}],
         )
 
         service = SpendingChatService(session, user_id=1, runner=FakeRunner())
@@ -927,6 +964,13 @@ async def test_spending_chat_stream_logs_one_job_with_fake_runner() -> None:
         output_trace = json.loads(job.output_json or "{}")
         assert "assistant_message" not in output_trace
         assert "message_history" not in output_trace
+        input_trace = json.loads(job.input_json or "{}")
+        assert input_trace["kind"] == "request"
+        assert input_trace["message_count"] == 1
+        assert input_trace["message_history_entries"] == 1
+        assert input_trace["current_message_chars"] == len("Summarize June")
+        assert "Summarize June" not in (job.input_json or "")
+        assert "SENSITIVE-TXN-DETAIL-42" not in (job.input_json or "")
         assert output_trace["assistant_message_sha256"] == (
             "b2a3aa602762a782e47a4f8e93bb5ae1b8819d1b92b7e6ceb3ef46a3c7077eb0"
         )

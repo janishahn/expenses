@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All AI features now respect `EXPENSES_LLM_ENABLED`: when it is off (the default), the web and iOS apps hide every AI surface — the Assistant nav entry and route, the rule-mining and suggestions controls, transaction triage, natural-language search, and the admin Assistant-usage panel — and every `/api/ai/*` endpoint returns `503`, so the feature is cleanly absent rather than failing on use. The flag is surfaced to clients via `/api/auth/bootstrap-status` and `/api/mobile/status`.
 - Simplified LLM configuration to a single OpenAI-compatible base URL, model slug, optional API key, feature-specific reasoning settings, and optional global temperature/output-token overrides.
 - Made LLM structured responses use prompted JSON parsing, tightened natural-language search validation against runtime categories and tags, and increased the transaction-triage output cap for reasoning-token headroom.
-- Spending chat trace rows now retain output hashes and counts instead of storing the final assistant text and returned message history.
+- Spending chat trace rows now retain only hashes and counts for both the request input and the response output, instead of persisting the prompt, the running message history, the final assistant text, or returned tool data.
 - Polished the native iOS Assistant streaming presentation: the model's intermediate progress sentences now appear as an ephemeral full-width status row that stays out of the saved answer, the working status hands off cleanly to the Markdown answer, a trailing typing caret replaces the streaming progress spinner, a subtle shimmer marks ongoing status, and a quiet collapsed activity disclosure above each tool-using turn surfaces only high-level steps; all new motion is gated behind Reduce Motion, the tool ticker scales with Dynamic Type without clipping, and VoiceOver no longer narrates every status flip.
 
 ### Fixed
@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native iOS Assistant answers now render Markdown with real block structure — paragraph and list spacing is preserved instead of collapsing into one run, so sentences and bold category names no longer jam together.
 - Spending chat streaming now separates model progress narration from final answer chunks before they reach clients, preventing intermediate narration from flashing as assistant answer text on iOS.
 - Spending Assistant category breakdown tools now use SQL aggregation instead of hydrating transaction rows, and transaction-search tool chips include query/type details when present.
+- Spending Assistant "largest transactions" searches now order by amount in the query, so the biggest transactions over long periods are no longer missed when they fall outside the most recent candidate window.
 - Natural-language search now returns a clarification instead of a server error when LLM output cannot be made valid after retries.
 - Natural-language search now rejects unsupported boolean connector syntax from LLM translations instead of treating it as title text.
 - Docker Compose now forwards the current LLM endpoint, model, API key, temperature, and output-token environment variables.

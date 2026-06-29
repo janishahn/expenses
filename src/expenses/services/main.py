@@ -1676,11 +1676,13 @@ class TransactionService:
         filters: TransactionFilters,
         limit: int = 50,
         offset: int = 0,
+        order_by_amount: bool = False,
     ) -> list[Transaction]:
         stmt = self._build_period_query(
             period,
             include_deleted=False,
             order_desc=True,
+            order_by_amount=order_by_amount,
         )
         stmt = self._apply_filters(stmt, filters)
         stmt = stmt.offset(offset).limit(limit)
@@ -1879,6 +1881,7 @@ class TransactionService:
         *,
         include_deleted: bool,
         order_desc: bool,
+        order_by_amount: bool = False,
     ):
         stmt = (
             select(Transaction)
@@ -1893,7 +1896,9 @@ class TransactionService:
             stmt = stmt.where(Transaction.deleted_at.isnot(None))
         else:
             stmt = stmt.where(Transaction.deleted_at.is_(None))
-        if order_desc:
+        if order_by_amount:
+            stmt = stmt.order_by(Transaction.amount_cents.desc(), Transaction.id.desc())
+        elif order_desc:
             stmt = stmt.order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
         else:
             stmt = stmt.order_by(Transaction.occurred_at.asc(), Transaction.id.asc())
