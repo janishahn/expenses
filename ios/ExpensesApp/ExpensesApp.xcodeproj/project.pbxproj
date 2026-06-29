@@ -76,6 +76,7 @@
 		002000000000000000000032 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		002000000000000000000033 /* AssistantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantModels.swift; sourceTree = "<group>"; };
 		002000000000000000000034 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
+		002000000000000000000035 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,6 +108,7 @@
 				004000000000000000000007 /* Features */,
 				004000000000000000000010 /* Shared */,
 				002000000000000000000032 /* Assets.xcassets */,
+				002000000000000000000035 /* AppIcon.icon */,
 				002000000000000000000011 /* Info.plist */,
 			);
 			path = ExpensesApp;

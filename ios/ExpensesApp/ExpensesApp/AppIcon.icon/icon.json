@@ -1,0 +1,33 @@
+{
+  "color-space-for-untagged-svg-colors": "display-p3",
+  "fill": "automatic",
+  "groups": [
+    {
+      "name": "Simple Receipt",
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "receipt-simple-cutout.png",
+          "name": "Receipt Cutout"
+        },
+        {
+          "glass": false,
+          "image-name": "receipt-simple-edge.png",
+          "name": "Receipt Edge"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.16
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": true,
+        "value": 0.08
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
