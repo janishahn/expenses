@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-29
+
 ### Added
 - Added subtle, click-like haptic feedback throughout the native iOS app: a light tap on the floating Quick Add button, a selection tick on every toggle and segmented picker (the type/range/mode/section switches across Dashboard, Insights, Transactions, Organize, Budgets, Recurring, Reports, Admin, Planning, and Account), success/error feedback when saving a transaction, and a light tap when sending an Assistant message with a distinct sharper tap when stopping a streaming response. Haptics respect the system setting, so there is no separate control.
 
