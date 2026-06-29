@@ -1005,6 +1005,81 @@ async def test_spending_chat_stream_records_cancelled_turn() -> None:
         assert job.duration_ms is not None
 
 
+def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "usage-mixed-data"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
+    get_settings.cache_clear()
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def override_get_db():
+        session = session_local()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app_main.app.dependency_overrides[app_main.get_db] = override_get_db
+    try:
+        with TestClient(app_main.app) as client:
+            assert (
+                client.post(
+                    "/api/auth/setup",
+                    json={"username": "bootstrap", "password": "pw-12345"},
+                ).status_code
+                == 200
+            )
+            with session_local() as session:
+                # The unitless costed job is inserted first, so an unordered scan
+                # sees it before the job that carries a real unit.
+                session.add_all(
+                    [
+                        LLMJob(
+                            user_id=1,
+                            feature="spending_chat",
+                            status="completed",
+                            prompt_version="spending_chat",
+                            model="openai/gpt-test",
+                            input_hash="hash-no-unit",
+                            usage_cost_decimal="0.5",
+                            usage_cost_unit=None,
+                        ),
+                        LLMJob(
+                            user_id=1,
+                            feature="spending_chat",
+                            status="completed",
+                            prompt_version="spending_chat",
+                            model="openai/gpt-test",
+                            input_hash="hash-real-unit",
+                            usage_cost_decimal="0.3",
+                            usage_cost_unit="openrouter_credits",
+                        ),
+                    ]
+                )
+                session.commit()
+
+            response = client.get(
+                "/api/ai/usage/summary",
+                params={"feature": "spending_chat", "period": "all"},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["costed_chats"] == 2
+            assert payload["cost_unit"] == "mixed"
+    finally:
+        app_main.app.dependency_overrides.pop(app_main.get_db, None)
+        get_settings.cache_clear()
+
+
 def test_ai_usage_summary_returns_precise_spending_chat_accounting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

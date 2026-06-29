@@ -4104,6 +4104,7 @@ def api_ai_usage_summary(
     cost_total = Decimal("0")
     cost_scale = 0
     cost_unit: str | None = None
+    cost_unit_seen = False
     mixed_cost_units = False
     costed_chats = 0
     cost_rows = db.execute(
@@ -4121,8 +4122,9 @@ def api_ai_usage_summary(
         cost_total += cost
         cost_scale = max(cost_scale, _decimal_scale(row.usage_cost_decimal))
         costed_chats += 1
-        if cost_unit is None:
+        if not cost_unit_seen:
             cost_unit = row.usage_cost_unit
+            cost_unit_seen = True
         elif row.usage_cost_unit != cost_unit:
             mixed_cost_units = True
     if mixed_cost_units:
