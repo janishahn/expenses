@@ -34,6 +34,8 @@ struct BudgetsView: View {
                     }
                 } else if model.isLoading {
                     LoadingStateSection(title: "Loading budgets")
+                } else if model.showsBudgetsLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load budgets", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No budgets loaded", systemImage: "chart.bar")
                 }

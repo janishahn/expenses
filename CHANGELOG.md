@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Recurring screen now shows each rule's amount in its own currency ($ for USD rules) instead of always rendering euros — matching the web. The monthly Income/Expenses/Net totals stay in euros, with USD rules folded in at the backend's converted rate.
 - The native iOS floating "+" Quick Add button now appears only at the root of the Dashboard and Transactions tabs and hides once you open a transaction's detail, instead of hovering over the detail content.
 - The native iOS sign-in screen now recovers from a failed tracker-status check: it shows "Couldn't reach the tracker." with a Retry button (and supports pull-to-refresh) instead of staying stuck on "Checking tracker status…" with the setup/create-account buttons disabled.
+- The native iOS Dashboard, Digest, Insights, Forecast, Budgets, and Recurring screens now show a distinct "Couldn't load …" error card (with the underlying reason and pull-to-refresh) when an initial load fails, instead of the same "No … loaded" empty state used for genuinely empty data.
 
 ## [0.3.1] - 2026-06-29
 

@@ -75,6 +75,11 @@ final class AppModel {
     private var transactionsLoadState: PrimaryLoadState = .idle
     private var digestLoadState: PrimaryLoadState = .idle
     private var insightsLoadState: PrimaryLoadState = .idle
+    private var insightsFlowLoadState: PrimaryLoadState = .idle
+    private var durablePurchasesLoadState: PrimaryLoadState = .idle
+    private var forecastLoadState: PrimaryLoadState = .idle
+    private var budgetsLoadState: PrimaryLoadState = .idle
+    private var recurringLoadState: PrimaryLoadState = .idle
     private var dashboardLoadID = 0
     private var transactionsLoadID = 0
     private var digestLoadID = 0
@@ -137,6 +142,17 @@ final class AppModel {
     var showsInsightsInitialLoading: Bool {
         insights == nil && insightsLoadState.showsInitialPlaceholder
     }
+
+    // A cold load (no cached content) that failed — distinct from a successful
+    // load that returned empty data, which leaves the response non-nil.
+    var showsDashboardLoadFailed: Bool { dashboard == nil && dashboardLoadState == .failed }
+    var showsDigestLoadFailed: Bool { digest == nil && digestLoadState == .failed }
+    var showsInsightsLoadFailed: Bool { insights == nil && insightsLoadState == .failed }
+    var showsInsightsFlowLoadFailed: Bool { insightsFlow == nil && insightsFlowLoadState == .failed }
+    var showsDurablePurchasesLoadFailed: Bool { durablePurchases == nil && durablePurchasesLoadState == .failed }
+    var showsForecastLoadFailed: Bool { forecast == nil && forecastLoadState == .failed }
+    var showsBudgetsLoadFailed: Bool { budgets == nil && budgetsLoadState == .failed }
+    var showsRecurringLoadFailed: Bool { recurring == nil && recurringLoadState == .failed }
 
     func testConnection() async {
         await runRequest {
@@ -847,6 +863,7 @@ final class AppModel {
             budgets = try await apiClient.budgets(view: view, token: token)
             try await reloadBudgetBurndownIfNeeded(view: view, token: token)
         }
+        budgetsLoadState = budgets != nil ? .loaded : .failed
     }
 
     func loadDigest(weekOf: String? = nil) async {
@@ -904,6 +921,7 @@ final class AppModel {
             forecast = try await apiClient.forecast(horizon: horizon, mode: mode, token: token)
             forecastScenario = nil
         }
+        forecastLoadState = forecast != nil ? .loaded : .failed
     }
 
     func runForecastScenario(
@@ -984,6 +1002,7 @@ final class AppModel {
         await runRequest {
             insightsFlow = try await apiClient.insightsFlow(period: period, type: type, tagID: tagID, token: token)
         }
+        insightsFlowLoadState = insightsFlow != nil ? .loaded : .failed
     }
 
     func loadDurablePurchases() async {
@@ -993,6 +1012,7 @@ final class AppModel {
         await runRequest {
             durablePurchases = try await apiClient.durablePurchases(token: token)
         }
+        durablePurchasesLoadState = durablePurchases != nil ? .loaded : .failed
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest) async -> AttachmentDownload? {
@@ -1292,6 +1312,7 @@ final class AppModel {
         await runRequest {
             recurring = try await apiClient.recurring(token: token)
         }
+        recurringLoadState = recurring != nil ? .loaded : .failed
     }
 
     func loadRecurringOccurrences(ruleID: Int) async {
@@ -1996,15 +2017,19 @@ final class AppModel {
         assistantMessageHistory = []
         isAssistantStreaming = false
         budgets = nil
+        budgetsLoadState = .idle
         budgetBurndown = nil
         digest = nil
         digestLoadState = .idle
         forecast = nil
+        forecastLoadState = .idle
         forecastScenario = nil
         insights = nil
         insightsLoadState = .idle
         insightsFlow = nil
+        insightsFlowLoadState = .idle
         durablePurchases = nil
+        durablePurchasesLoadState = .idle
         reconciliation = nil
         adminInfo = nil
         adminSystemHealth = nil
@@ -2014,6 +2039,7 @@ final class AppModel {
         settings = nil
         csvPreview = nil
         recurring = nil
+        recurringLoadState = .idle
         recurringOccurrences = nil
         selectedTransaction = nil
         transactionReimbursements = nil
@@ -2047,7 +2073,7 @@ enum RuleMiningStatus: Equatable {
     case noneFound
 }
 
-private enum PrimaryLoadState {
+private enum PrimaryLoadState: Equatable {
     case idle
     case loading
     case loaded

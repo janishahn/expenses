@@ -55,6 +55,8 @@ struct RecurringView: View {
                 }
             } else if model.isLoading {
                 LoadingStateSection(title: "Loading recurring rules")
+            } else if model.showsRecurringLoadFailed {
+                UnavailableStateSection(title: "Couldn't load recurring rules", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
             } else {
                 ContentUnavailableView("No recurring rules loaded", systemImage: "repeat")
             }

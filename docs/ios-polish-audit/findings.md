@@ -146,29 +146,32 @@ feedback) · P2 polish · P3 nit.
   Recurring, Organize, …) all still resolve and navigate. (Pure code-health cleanup, no behavior change
   → no CHANGELOG entry.)
 
-### F-005 · Dashboard / Digest / Insights / Forecast / Budgets / Recurring · P2 · State coverage · Deferred
-- What: A failed primary load with no cached data collapses into the same
+### F-005 · Dashboard / Digest / Insights / Forecast / Budgets / Recurring · P2 · State coverage · Fixed
+- What: A failed primary load with no cached data collapsed into the same
   `ContentUnavailableView("No X loaded")` used for genuine emptiness — no error message, no retry.
-  Error and empty are conflated. (Mechanism confirmed: on failure with `!hadContent`,
-  `dashboardLoadState = .failed` and `lastError` is set, but `showsInitialPlaceholder` is false for
-  `.failed`, so the view falls to the generic `else` empty branch — the error data exists, unused.)
-- Where: DashboardView.swift:63-64 (confirmed); InsightsView.swift:57,63,69; PlanningView.swift
-  (digest/forecast empty branches); BudgetsView.swift:42-43; RecurringView.swift:63-64.
-- Why it's a gap: State coverage — error/offline should be distinct from empty. BUT the common
-  failure (refresh with cached data) is already graceful: `if !hadContent` guards the `.failed`
-  transition, so a failed refresh retains stale data. Only the rare cold-load-failure-while-authed
-  hits the generic empty card.
-- Repro: **Not reproducible on-simulator.** Auth (`loadCurrentSession` → live `mobileMe` call) and
-  data share one backend, so a cold start with the backend down yields "Sign in required" (unauth),
-  never the authed-but-data-failed branch. Triggering only the data endpoint to fail needs backend
-  mutation (out of scope).
-- Fix: **Deferred — needs user decision** (see Summary Q3). Recommended minimal fix: add a precise
-  `dashboardLoadFailed` computed (`dashboard == nil && state == .failed`) and, in the `else` branch,
-  show `UnavailableStateSection(title: "Couldn't load dashboard", systemImage:
-  "exclamationmark.triangle", message: lastError?.message ?? …)` — reuses existing chrome, no new
-  pattern. Apply consistently across the 6 sibling surfaces.
-- Verified: n/a — fixed state can't be observed on-simulator; not implemented to avoid claiming an
-  unverifiable fix.
+  Error and empty were conflated.
+- User decision: **implement the minimal shared fix.**
+- Where: DashboardView, InsightsView (charts/flow/durables), PlanningView (digest/forecast),
+  BudgetsView, RecurringView — the eight final `else` empty branches.
+- Fix: per-surface precise `.failed` detection. Dashboard/Digest/Insights(charts) already track a
+  `PrimaryLoadState`; added the same `.idle/.loading/.loaded/.failed` tracking to the five surfaces
+  that only used the shared `isLoading` (forecast, budgets, recurring, insights-flow, durables) via a
+  one-line post-`runRequest` set: `xLoadState = data != nil ? .loaded : .failed` (deterministic — a
+  successful-but-empty load leaves `data` non-nil, and a failed *refresh* keeps the cached non-nil
+  data, so only a cold failure yields `.failed`). Added `showsXLoadFailed` computeds (`data == nil &&
+  state == .failed`) and inserted an `UnavailableStateSection(title: "Couldn't load X", systemImage:
+  "exclamationmark.triangle", message: lastError?.message ?? "Pull to refresh to try again.")` branch
+  ahead of each generic empty card. The new load-states reset to `.idle` on sign-out.
+- Important correction (this is why it shipped reliably): the first attempt gated the error branch on
+  `model.lastError` directly. Driven live, it **failed** — the Forecast cold-load showed the generic
+  "No forecast loaded" because `lastError` (shared across all `runRequest` calls, cleared at each
+  request start) was nil at render time. Switching the gate to the precise per-surface `.failed` state
+  fixed it; `lastError?.message` is now only the (best-effort) message, not the gate.
+- Verified: ✅ built green and driven live (now reproducible — I control a second backend on :8001):
+  authenticated, killed the backend, opened the not-yet-loaded Forecast → cold load failed → the
+  screen showed the "Couldn't load the forecast" card with the real message "Could not connect to the
+  server." (f005-03); restarting the backend + pull-to-refresh recovered the forecast (f005-04). The
+  earlier racy `lastError`-only attempt is captured in f005-02 (showed the generic empty) for contrast.
 
 ### F-029 · Dashboard (BudgetPaceCompactRow) · P3 · Layout & visual fit · Open
 - What: At `accessibility-extra-large` Dynamic Type, the Projected pace figures truncate to
@@ -327,9 +330,13 @@ feedback) · P2 polish · P3 nit.
 - Why it's a gap: mutation failures should be visible. BUT this is the same app-wide question as F-005
   (how to surface async-mutation errors on list screens — toast vs inline banner). The success case
   already gives visible feedback via the list update.
-- Fix: Deferred — folds into the shared error-surfacing decision (see F-005). Not worth a one-off
-  pattern here; resolve once for all list screens.
-- Verified: n/a.
+- Fix: **Still deferred — distinct from F-005.** F-005 (now Fixed) addressed the cold-*load* error-vs-
+  empty conflation. F-012 is about async-*mutation* failures (a failed swipe toggle/delete leaves the
+  list unchanged with no message). That needs an app-wide decision on how mutation errors surface on
+  list screens (transient toast vs inline banner), applied consistently — not a one-off Recurring
+  banner, which would create the very inconsistency this finding warns against. Left for the user's
+  product call (see Closing Summary open questions).
+- Verified: n/a (not implemented — needs the app-wide toast-vs-banner decision).
 
 ### F-013 · Organize (Rules) · P3 · Content & copy · Won't-fix (not a bug)
 - What: Suspected the rule-row subtitle "title `<matchType>` 'value'" hardcoded "title" misleadingly.

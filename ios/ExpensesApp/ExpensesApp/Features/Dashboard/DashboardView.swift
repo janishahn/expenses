@@ -65,6 +65,8 @@ struct DashboardView: View {
                         DashboardBreakdownSection(donut: dashboard.donut)
                     } else if model.showsDashboardInitialLoading {
                         LoadingStateSection(title: "Loading dashboard")
+                    } else if model.showsDashboardLoadFailed {
+                        UnavailableStateSection(title: "Couldn't load dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                     } else {
                         ContentUnavailableView("No dashboard loaded", systemImage: "chart.line.uptrend.xyaxis")
                     }

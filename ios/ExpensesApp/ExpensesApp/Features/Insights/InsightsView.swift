@@ -54,6 +54,8 @@ struct InsightsView: View {
                             InsightsBudgetSection(insights: insights)
                         } else if model.showsInsightsInitialLoading {
                             LoadingStateSection(title: "Loading insights")
+                        } else if model.showsInsightsLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No insights loaded", systemImage: "chart.xyaxis.line")
                         }
@@ -62,6 +64,8 @@ struct InsightsView: View {
                             InsightsFlowSection(flow: flow)
                         } else if model.isLoading {
                             LoadingStateSection(title: "Loading flow")
+                        } else if model.showsInsightsFlowLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load the cash flow", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No flow loaded", systemImage: "point.3.connected.trianglepath.dotted")
                         }
@@ -70,6 +74,8 @@ struct InsightsView: View {
                             DurablePurchasesSection(items: durablePurchases.items)
                         } else if model.isLoading {
                             LoadingStateSection(title: "Loading durable purchases")
+                        } else if model.showsDurablePurchasesLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load durable purchases", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No durable purchases loaded", systemImage: "shippingbox")
                         }

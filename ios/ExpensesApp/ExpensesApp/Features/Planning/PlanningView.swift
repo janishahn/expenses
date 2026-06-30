@@ -17,6 +17,8 @@ struct DigestView: View {
                     DigestRecurringSection(rows: digest.recurringPostings)
                 } else if model.showsDigestInitialLoading {
                     LoadingStateSection(title: "Loading digest")
+                } else if model.showsDigestLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load the weekly digest", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No digest loaded", systemImage: "newspaper")
                 }
@@ -98,6 +100,8 @@ struct ForecastView: View {
                     ForecastMonthSection(months: forecast.months)
                 } else if model.isLoading {
                     LoadingStateSection(title: "Loading forecast")
+                } else if model.showsForecastLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No forecast loaded", systemImage: "chart.line.uptrend.xyaxis")
                 }
