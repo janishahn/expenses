@@ -44,9 +44,7 @@ struct ReconciliationView: View {
                         Text(formError)
                             .foregroundStyle(.red)
                     }
-                }
-
-                if let lastError = model.lastError {
+                } else if let lastError = model.lastError {
                     Section("Error") {
                         Text(lastError.message)
                             .foregroundStyle(.red)
