@@ -3,10 +3,10 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 22 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 23 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
-  Assistant(+LLM-off pass), Reconcile, **Reports ✅ Fixed** (F-016 completed; F-017 dismissed) +
-  S-36 DocumentPreviewView (Audited — verified via the report PDF QuickLook). Confidence: **high**.
+  Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), **Diagnostics ✅ Audited**
+  (clean config screen; F-018 no-auth-gate stays the parked decision). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
 - **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 13 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-015, F-016, F-025, F-026, F-030, F-031). Won't-fix: 2 (F-013, F-017). Deferred
