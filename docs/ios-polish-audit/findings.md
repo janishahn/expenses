@@ -1,9 +1,68 @@
 # iOS App Polish — Findings & Fix Log
 
+## Closing Summary (audit complete — 38 / 38 surfaces)
+
+Every reachable user-facing surface of the native SwiftUI iOS app was mapped, driven in the iPhone 17
+Pro / iOS 26.4 simulator (via the `axe` HID driver), and polished against the 9-dimension bar. Build is
+green throughout; the work lives on branch `ios-app-polish` (24 commits, **not pushed**), one commit per
+surface.
+
+**Findings tally — 35 total (F-001, F-005–F-037):**
+- **Fixed: 22** — F-006, F-007, F-008, F-009, F-010, F-011a, F-014, F-015, F-016
+  (Reconcile+Reports+Account+Admin), F-020, F-021, F-022, F-023, F-025, F-026, F-027, F-030, F-031,
+  F-033, F-034, F-035, F-036. Each was observed fixed in the simulator except where a state is
+  physically unreachable there (noted per finding: e.g. F-027's `.unavailable` gate, F-035's `.menu`-gated
+  dialog — code-verified + build-green).
+- **Won't-fix (dismissed with rationale): 4** — F-013 (rule "title" label is accurate), F-017 (a blocking
+  Reports loading placeholder would hide the usable form), F-024 (Save-on-isLoading matches every sibling
+  form), F-028 (markdown descriptions are an intended, documented feature; web uses react-markdown).
+- **Deferred — need your decision: 7** (parked as Open Questions Q1–Q5 + two others, see the Summary
+  below): F-001 (unreachable dead code in RootView), F-005 (error-vs-empty state across 6 read-only
+  surfaces), F-011b (Recurring per-rule currency display), F-012 (list mutation-failure feedback — folds
+  into F-005), F-018 (Diagnostics has no auth gate), F-019 (signed-out status-fetch retry), F-037
+  (Quick Add FAB persists over pushed detail screens).
+- **Open candidates remaining: 0** — every actionable finding is fixed or explicitly deferred to you.
+
+**Key user-visible fixes (all in CHANGELOG `[Unreleased]`):** empty/loading/failed-state coverage
+(Transactions empty states, Insights Flow/Durables loading, RecurringOccurrences + TransactionDetail
+recoverable load failures with pull-to-refresh); a real interaction bug where clearing the Transactions
+filters also wiped the active search (F-033); semantic income/expense theme colors swept across Deleted
+list, Recurring rows, Reimbursements, Forecast breakdown, and Insights breakdown (F-007/F-023/F-031/F-036);
+single-error-surface consolidation across Reconcile/Reports/Account/Admin (F-016); a dead Admin "Preview"
+button made re-openable (F-020); clearer copy on Admin log-copy, BulkEdit scope/confirm, and the
+local-unlock "Check Settings" button that now actually opens Settings (F-021/F-034/F-035/F-027);
+Budgets "+" disabled on Year + consistent labels (F-009/F-010); scenario-run failure surfacing (F-025);
+descriptive VoiceOver labels on Digest week-nav (F-030).
+
+**Per-surface commit list (`git log main..ios-app-polish`, newest first):** S-37 LocalUnlockGate
+(e2adf57), S-38 Privacy overlay (1a8e637), S-01 RootView (94e40a3), S-32 Insights filters + F-036
+(9c6d6ae), S-21/S-22 Budget forms (ce0741d), S-19 BulkEdit (42c8b6c), S-18 Filters (a09f673), S-17
+TransactionForm (9502f91), S-16 TransactionDetail (0d24c53), S-15 Admin (a4130e9), S-14 Account
+(704e69c), S-13 Diagnostics (ed118bf), S-12 Reports (574f6a5), S-11 Reconcile (8b35a5a), S-10 Assistant
+(eb5791e), S-09 Organize (d275ff8), S-08 Recurring (0914af3), S-07 Forecast (7fb61dd), S-06 Budgets
+(8bfb99b), S-05 Insights (5fad5b1), S-04 Digest (acea4e3), S-03 Transactions (d3c5743), S-02 Dashboard
+(b4c7ddf), Phase-1 inventory (30db917). (S-35 Camera audit folds into this final closing commit.)
+
+**Test-harness limitations (documented honestly so claims aren't overstated):** the `axe` HID driver
+reliably drives segmented/navigationLink pickers, text fields, date pickers, and list/sheet/tab buttons,
+but **cannot** open SwiftUI `.menu`-style Picker popovers or flip `Toggle` switches inside Forms (separate
+system overlays) — those behaviors were code-verified. The **camera** (S-35), the local-unlock
+**`.unavailable`** gate (S-37), and the **privacy shield** on the app-switcher snapshot (S-38) are not
+actuable/observable on the simulator — all code-verified + build-green.
+
+**Release recommendation (NOT cut here — for you to action):** the branch carries 22 user-visible iOS UX
+fixes since `v0.3.1` with no breaking changes, so a **patch release `v0.3.2`** is warranted. Per
+`CLAUDE.md` → Releases, the deliberate steps (left to you): review/merge `ios-app-polish`; bump
+`pyproject.toml` `version` to `0.3.2`; move CHANGELOG `[Unreleased]` → `## [0.3.2] - <date>` (reconcile
+against `git log v0.3.1..HEAD`); `uv lock` and commit `uv.lock`; tag `v0.3.2` and push the tag; create the
+GitHub Release. I did not perform any release action (out of the audit's scope).
+
+---
+
 ## Summary
 
-- **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 37 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Phase:** 2 (per-surface audit/fix loop) — **complete (38/38)**.
+- **Surfaces:** 38 / 38 done ✅ — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
