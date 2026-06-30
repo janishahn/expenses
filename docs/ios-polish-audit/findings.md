@@ -129,17 +129,22 @@ feedback) · P2 polish · P3 nit.
 
 ---
 
-### F-001 · App shell (RootView) · P3 · Completeness/code-health · Open
-- What: `CategoriesView` (Organize.swift:3), `RulesView` (Organize.swift:118) and `PlanningView`
-  (Planning.swift:123) are wired into `destinationView`/`#Preview` but have no navigation path.
-  The reachable equivalents are `OrganizeView`, `DigestView`, `ForecastView`. The per-destination
-  `quickAddTrigger` branches in `performQuickAdd()` for budgets/categories/rules/recurring can never
-  fire because the Quick Add FAB only shows on Dashboard/Transactions.
-- Where: App/RootView.swift:92-95, :188-202; Organize.swift:3,118; Planning.swift:123.
-- Why it's a gap: dead code from an incomplete refactor; misleads maintainers, inflates surface area.
-- Repro: static (grep-verified: `.categories`/`.rules` absent from all More section lists).
-- Fix: Deferred — needs user decision (delete dead views + unused triggers, or keep for planned nav).
-- Verified: n/a (static, grep-confirmed reachability).
+### F-001 · App shell (RootView) · P3 · Completeness/code-health · Fixed (deleted)
+- What: `CategoriesView`, `RulesView` (OrganizeView.swift) and `PlanningView` (PlanningView.swift) were
+  wired into `destinationView`/`#Preview` but had no navigation path (superseded by `OrganizeView`,
+  `DigestView`, `ForecastView`). The per-destination `quickAddTrigger` plumbing in RootView (budgets/
+  categories/rules/recurring) could never fire because the Quick Add FAB only shows on
+  Dashboard/Transactions.
+- User decision: **delete the dead code.**
+- Fix: Removed the three unreachable view structs (+ the `PlanningSectionPicker`/`PlanningSection` enum
+  only they used, + the orphan `#Preview`); removed the `.categories`/`.rules` cases from
+  `AppDestination` and every switch (destinationView/title/systemImage/showsFloatingQuickAdd);
+  simplified `performQuickAdd()` to always present the transaction sheet; and removed the now-dead
+  `quickAddTrigger` bindings + `onChange` handlers from RootView, BudgetsView, and RecurringView
+  (394 deletions, 4 insertions across 5 files).
+- Verified: ✅ build green; relaunched and confirmed no regression — the More groups (Budgets, Forecast,
+  Recurring, Organize, …) all still resolve and navigate. (Pure code-health cleanup, no behavior change
+  → no CHANGELOG entry.)
 
 ### F-005 · Dashboard / Digest / Insights / Forecast / Budgets / Recurring · P2 · State coverage · Deferred
 - What: A failed primary load with no cached data collapses into the same

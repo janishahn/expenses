@@ -7,10 +7,6 @@ struct RootView: View {
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
     @State private var morePath: [AppDestination] = []
     @State private var quickAddSheet: QuickAddSheet?
-    @State private var budgetQuickAddTrigger = 0
-    @State private var categoryQuickAddTrigger = 0
-    @State private var ruleQuickAddTrigger = 0
-    @State private var recurringQuickAddTrigger = 0
     @State private var quickAddTapTick = 0
 
     private var selectedDestination: AppDestination {
@@ -82,17 +78,13 @@ struct RootView: View {
         case .transactions:
             TransactionsView()
         case .budgets:
-            BudgetsView(quickAddTrigger: $budgetQuickAddTrigger)
+            BudgetsView()
         case .insights:
             InsightsView()
         case .forecast:
             ForecastView()
         case .digest:
             DigestView()
-        case .categories:
-            CategoriesView(quickAddTrigger: $categoryQuickAddTrigger)
-        case .rules:
-            RulesView(quickAddTrigger: $ruleQuickAddTrigger)
         case .reports:
             ReportsView()
         case .reconcile:
@@ -100,7 +92,7 @@ struct RootView: View {
         case .admin:
             AdminView()
         case .recurring:
-            RecurringView(quickAddTrigger: $recurringQuickAddTrigger)
+            RecurringView()
         case .organize:
             OrganizeView()
         case .account:
@@ -187,18 +179,7 @@ struct RootView: View {
 
     private func performQuickAdd() {
         quickAddTapTick += 1
-        switch selectedDestination {
-        case .budgets:
-            budgetQuickAddTrigger += 1
-        case .categories:
-            categoryQuickAddTrigger += 1
-        case .rules:
-            ruleQuickAddTrigger += 1
-        case .recurring:
-            recurringQuickAddTrigger += 1
-        default:
-            quickAddSheet = .transaction
-        }
+        quickAddSheet = .transaction
     }
 
     private func colorScheme(for preference: String) -> ColorScheme? {
@@ -232,8 +213,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case more
     case forecast
     case digest
-    case categories
-    case rules
     case reports
     case reconcile
     case admin
@@ -261,10 +240,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "Forecast"
         case .digest:
             "Digest"
-        case .categories:
-            "Categories"
-        case .rules:
-            "Rules"
         case .reports:
             "Reports"
         case .reconcile:
@@ -300,10 +275,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "chart.line.uptrend.xyaxis"
         case .digest:
             "newspaper"
-        case .categories:
-            "square.grid.2x2"
-        case .rules:
-            "wand.and.stars"
         case .reports:
             "doc.text"
         case .reconcile:
@@ -327,7 +298,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard, .transactions:
             true
-        case .budgets, .insights, .more, .forecast, .digest, .categories, .rules, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics, .assistant:
+        case .budgets, .insights, .more, .forecast, .digest, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics, .assistant:
             false
         }
     }

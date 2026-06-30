@@ -2,15 +2,10 @@ import SwiftUI
 
 struct BudgetsView: View {
     @Environment(AppModel.self) private var model
-    @Binding private var quickAddTrigger: Int
     @State private var viewMode: BudgetViewMode = .month
     @State private var activeSheet: BudgetSheet?
     @State private var pendingOverrideDelete: BudgetScope?
     @State private var pendingTemplateDelete: BudgetTemplateRow?
-
-    init(quickAddTrigger: Binding<Int> = .constant(0)) {
-        _quickAddTrigger = quickAddTrigger
-    }
 
     var body: some View {
         List {
@@ -90,11 +85,6 @@ struct BudgetsView: View {
             await model.loadBudgets(view: viewMode.rawValue)
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.budgets == nil)
-        .onChange(of: quickAddTrigger) { _, _ in
-            if let sheet = viewMode.defaultSheet {
-                activeSheet = sheet
-            }
-        }
     }
 
     private var overrideDeletePresented: Binding<Bool> {

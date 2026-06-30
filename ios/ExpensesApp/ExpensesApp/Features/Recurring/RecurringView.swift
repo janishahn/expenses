@@ -2,13 +2,8 @@ import SwiftUI
 
 struct RecurringView: View {
     @Environment(AppModel.self) private var model
-    @Binding private var quickAddTrigger: Int
     @State private var activeSheet: RecurringSheet?
     @State private var pendingDelete: RecurringRule?
-
-    init(quickAddTrigger: Binding<Int> = .constant(0)) {
-        _quickAddTrigger = quickAddTrigger
-    }
 
     var body: some View {
         List {
@@ -108,9 +103,6 @@ struct RecurringView: View {
             await model.loadRecurring()
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.recurring == nil)
-        .onChange(of: quickAddTrigger) { _, _ in
-            activeSheet = .rule(nil)
-        }
     }
 }
 
