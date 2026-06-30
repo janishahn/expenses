@@ -3,21 +3,24 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 30 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 31 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
   ✅ Fixed** (S-16 + S-33 Reimbursements; F-022 failed-state+retry, F-023 themed reimbursement colors,
   F-028 dismissed; folded in the PlanningView Forecast color sweep), **TransactionForm ✅ Audited**
   (S-17; F-024 dismissed — Save-gating matches every sibling form), **Filters ✅ Fixed** (S-18;
-  F-033 — chip-X/Reset no longer also wipes the search query). Confidence: **high**.
+  F-033 — chip-X/Reset no longer also wipes the search query), **BulkEdit ✅ Fixed** (S-19; F-034/F-035
+  — clearer scope-option + confirm-dialog copy). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 31 (F-001, F-005–F-033). By status — Fixed: 18 (F-006, F-007, F-008, F-009,
+- **Findings:** total 33 (F-001, F-005–F-035). By status — Fixed: 20 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031, F-033). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred (need user
-  decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their surface's
-  turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
-  follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16).
+  F-025, F-026, F-030, F-031, F-033, F-034, F-035). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred
+  (need user decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their
+  surface's turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
+  follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16). Harness
+  note: axe can't actuate SwiftUI `.menu` Picker popovers (separate overlay), so states reachable only
+  via a `.menu` picker (e.g. BulkEdit operation → Apply dialog) are code-verified where applicable.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -552,3 +555,31 @@ feedback) · P2 polish · P3 nit.
   once one is set; the Type/Category/Tag navigationLink pickers round-trip; Done applies; the summary
   chip is accurate ("Income", "Income · Housing"); the F-006 empty state still triggers on a
   zero-result combo ("No matching transactions") with Select correctly disabled (s18-05-empty-state).
+
+### F-034 · Transactions (Bulk Edit) · P3 · Content & copy · Fixed
+- What: The "Apply to" scope picker's `.filtered` option read "All loaded filter" (in active/deleted
+  modes) — grammatically awkward and misleading: the option targets *all* transactions matching the
+  current filters across all time (the request uses period "all"), not just the "loaded" page.
+- Where: TransactionsView.swift BulkEditSheet (Selection picker, the `.filtered` tag's Text).
+- Why it's a gap: copy quality — on a consequential bulk-edit scope choice the label should clearly
+  convey "everything matching the current filters", not imply only the loaded page.
+- Fix: "All loaded filter" → "All filtered" (parallels the uncategorized variant "All inbox").
+- Verified: ✅ rebuilt (green). Observed on-screen: opening Bulk Edit with 0 selected rows defaults the
+  scope to `.filtered` (init: `selectedIDs.isEmpty ? .filtered : .selected`), and the "Apply to" value
+  now renders "All filtered" (s19-06-after-fix). Sheet otherwise unregressed.
+
+### F-035 · Transactions (Bulk Edit) · P3 · Content & copy · Fixed
+- What: The apply confirmation dialog message read "The backend will update every resolved transaction
+  in this selection." — leaks an implementation detail ("the backend") and uses jargon ("resolved
+  transaction" = the resolved query set) in user-facing copy.
+- Where: TransactionsView.swift BulkEditSheet `.confirmationDialog("Apply bulk changes?", …)` message.
+- Why it's a gap: copy quality — a confirmation should state the consequence in user terms, not the
+  mechanism.
+- Fix: → "This will update every transaction in the selection." (drops "backend" and "resolved";
+  reads naturally for both the Selected-rows and All-filtered scopes).
+- Verified: code-applied + ✅ build green; the Bulk Edit sheet renders unregressed (s19-06-after-fix)
+  and the empty-Apply validation ("Choose at least one change.") still fires. The dialog itself was
+  NOT on-screen-actuated: reaching it requires setting a valid operation via the `.menu`-style Lifecycle/
+  Category/Tags pickers, and axe cannot reliably open SwiftUI `.menu` Picker popovers (separate system
+  overlay) — a test-harness limitation, not an app issue. So this exact string is verified by code
+  review, not screenshot. (The change is a literal swap in an otherwise-correct dialog block.)

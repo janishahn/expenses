@@ -882,7 +882,7 @@ private struct BulkEditSheet: View {
                     Picker("Apply to", selection: $selectionScope) {
                         Text("Selected").tag(BulkSelectionScope.selected)
                             .disabled(selectedIDs.isEmpty)
-                        Text(mode == .uncategorized ? "All inbox" : "All loaded filter").tag(BulkSelectionScope.filtered)
+                        Text(mode == .uncategorized ? "All inbox" : "All filtered").tag(BulkSelectionScope.filtered)
                     }
                     LabeledContent("Selected rows", value: "\(selectedIDs.count)")
                 }
@@ -951,7 +951,7 @@ private struct BulkEditSheet: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("The backend will update every resolved transaction in this selection.")
+                Text("This will update every transaction in the selection.")
             }
         }
     }
