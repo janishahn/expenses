@@ -33,7 +33,7 @@ struct RecurringView: View {
                                 RecurringRuleRow(rule: rule)
                             }
                             .swipeActions(edge: .leading) {
-                                Button(rule.autoPost ? "Disable" : "Enable") {
+                                Button(rule.autoPost ? "Manual" : "Auto") {
                                     Task { await model.toggleRecurringRule(rule, autoPost: !rule.autoPost) }
                                 }
                                 .tint(rule.autoPost ? .orange : .green)
@@ -126,6 +126,8 @@ private enum RecurringSheet: Identifiable {
 }
 
 private struct RecurringRuleRow: View {
+    @Environment(\.colorScheme) private var scheme
+
     let rule: RecurringRule
 
     var body: some View {
@@ -141,7 +143,7 @@ private struct RecurringRuleRow: View {
             VStack(alignment: .trailing, spacing: 4) {
                 Text(AppFormatters.euros(rule.type == "income" ? rule.amountCents : -rule.amountCents))
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(rule.type == "income" ? .green : .primary)
+                    .foregroundStyle(rule.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                 Text(rule.autoPost ? "Auto" : "Manual")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -407,12 +409,21 @@ private struct RecurringOccurrencesView: View {
                         }
                     }
                 }
-            } else {
+            } else if model.isLoading {
                 ProgressView()
+            } else {
+                ContentUnavailableView(
+                    "Couldn't load occurrences",
+                    systemImage: "clock.arrow.circlepath",
+                    description: Text("Pull to refresh to try again.")
+                )
             }
         }
         .navigationTitle(data?.rule.name ?? "Occurrences")
         .task {
+            await model.loadRecurringOccurrences(ruleID: ruleID)
+        }
+        .refreshable {
             await model.loadRecurringOccurrences(ruleID: ruleID)
         }
     }

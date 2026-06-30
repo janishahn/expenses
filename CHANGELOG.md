@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Insights Flow and Durables sections now show a loading indicator while their data loads instead of briefly flashing the "No flow loaded" / "No durable purchases loaded" empty message — most noticeable on slower self-hosted hardware.
 - The native iOS Budgets "+" button is now disabled on the Year tab (which has no add action) instead of opening the unrelated "Set Month Budget" form, and the month-budget row's remove action in the "…" menu now reads "Remove Month Budget" to match its confirmation dialog.
 - The native iOS Forecast "What If" scenario runner now shows an error message when a scenario fails to run (for example an invalid effective month) instead of silently doing nothing.
+- The native iOS Recurring rule list now colors amounts with the app's semantic income/expense theme colors (expenses now read red like every other transaction screen, instead of plain black), and the left-swipe auto-posting toggle is labeled "Manual"/"Auto" to match the row badge instead of the ambiguous "Disable"/"Enable".
+- The native iOS recurring-rule occurrences screen now shows a clear "Couldn't load occurrences" message with pull-to-refresh when the load fails, instead of spinning forever with no way to retry.
 
 ## [0.3.1] - 2026-06-29
 

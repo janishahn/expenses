@@ -3,14 +3,15 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 7 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
-  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030), **S-05 Insights ✅ Fixed** (F-008),
-  **S-06 Budgets ✅ Fixed** (F-009, F-010), **S-07 Forecast ✅ Fixed** + **S-20 ScenarioEditor**
-  (F-025). Inventory coverage confidence: **high**.
+- **Surfaces:** 10 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+  Forecast(+ScenarioEditor S-20), **Recurring ✅ Fixed** (F-011a, F-031, F-026) + its modals
+  S-23 RecurringRuleForm (Audited) and S-24 RecurringOccurrences (Fixed). Coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 7 (F-006, F-007, F-008, F-009,
-  F-010, F-025, F-030). Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates
-  (await their surface's turn): 17. By severity of still-open items: P2: 6 · P3: 9.
+- **Findings:** total 28 (F-001, F-005–F-031; F-011 split into F-011a/F-011b). By status — Fixed: 10
+  (F-006, F-007, F-008, F-009, F-010, F-011a, F-025, F-026, F-030, F-031). Deferred (need user
+  decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's turn): 13.
+  By severity of still-open items: P2: 4 · P3: 7. Known cross-surface follow-up: PlanningView.swift:545,
+  567 income/expense literal colors (same family as F-031).
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -30,6 +31,11 @@
      a planned navigation change? (Out of strict "polish" scope; recommend deleting.)
   2. **F-018:** Diagnostics has no auth gate (Backend URL editable by anyone). Intended for a
      config/diagnostics screen, or should it sit behind auth like its siblings?
+  4. **F-011b (Recurring currency, EUR/USD):** The rule form lets you pick a per-rule currency, but
+     amounts always display in € and the monthly stats sum across currencies as if all EUR. Drop USD
+     from the mobile form (euro-only), display per-rule symbols (stats still can't sum mixed
+     currencies meaningfully), or leave as-is? Also F-012 (mutation-failure feedback) folds into the
+     F-005 error-surfacing decision.
   3. **F-005 (error-vs-empty state, 6 surfaces):** A failed primary load with no cache shows the
      generic "No X loaded" empty card instead of a distinct error. The common case (refresh failure
      with cached data) is already graceful (stale data retained); only the rare cold-load-failure
@@ -181,24 +187,55 @@ feedback) · P2 polish · P3 nit.
   menu+swipe affordance is the same pattern the deleted-transactions list uses, so it stays.)
 - Verified: ✅ rebuilt (green); `describe-ui` of the opened row menu now reports "Remove Month Budget".
 
-### F-011 · Recurring · P2 · Content & copy / consistency · Open
-- What: (a) Rule form currency picker offers EUR/USD but every amount is rendered with
-  `AppFormatters.euros(...)`, so a USD rule still shows "€". (b) Leading swipe label "Disable/Enable"
-  actually toggles `autoPost`, while the row badge says "Auto/Manual" — mismatched vocabulary.
-- Where: RecurringView.swift:220-223 (currency) vs :19-21/:142/:386; :36 (swipe) vs :145 (badge).
-- Why it's a gap: copy must be unambiguous; a control's label must match its effect.
-- Repro: TBD — create a USD rule; swipe a rule row.
-- Fix: TBD (verify backend currency support before changing; may be a label-only fix).
-- Verified: not yet.
+### F-011a · Recurring · P2 · Content & copy · Fixed
+- What: The leading-swipe label "Disable/Enable" actually toggles `autoPost` (the row badge says
+  "Auto/Manual"), so the verb implied enabling/disabling the rule itself rather than auto-posting.
+- Where: RecurringView.swift:36 (swipe) vs :145 (badge).
+- Why it's a gap: a control's label must match its effect and the surrounding vocabulary.
+- Repro: Recurring → swipe a rule from the left → button read "Disable".
+- Fix: Swipe label `rule.autoPost ? "Disable" : "Enable"` → `rule.autoPost ? "Manual" : "Auto"`,
+  matching the row's "Auto/Manual" badge (the swipe offers the opposite posting mode).
+- Verified: ✅ rebuilt (green); `describe-ui` of the revealed leading swipe now reports "Manual".
 
-### F-012 · Recurring · P3 · Interaction feedback · Open
-- What: Swipe toggle/delete and the delete dialog fire async mutations with no inline success/failure
-  feedback on the list; if `model.lastError` is set, nothing shows here.
+### F-011b · Recurring · P2 · Content & copy / backend contract · Deferred
+- What: The rule form has a Currency picker (EUR/USD) bound to the real `RecurringRule.currencyCode`,
+  but every amount on the Recurring screens is rendered with `AppFormatters.euros(...)` (always €),
+  and the Monthly stats (Income/Expenses/Net) sum across rules ignoring currency.
+- Where: RecurringView.swift:220-223 (picker) vs :19-21/:57/:142/:386 (euro-only display).
+- Why it's a gap: a USD rule displays as € and is summed as if EUR — but fixing it properly needs
+  per-rule symbol formatting AND a decision on mixed-currency aggregation (you can't meaningfully
+  sum EUR+USD without FX). That's a product/backend-contract decision, not a polish fix.
+- Fix: **Deferred — needs user decision** (Summary Q4): (a) drop USD from the mobile form (euro-only),
+  (b) format each amount with its currency symbol but acknowledge stats can't sum mixed currencies,
+  or (c) leave as-is. Recommend (a) unless the backend actually supports multi-currency reporting.
+- Verified: n/a.
+
+### F-031 · Recurring (RecurringRuleRow) · P3 · Consistency / Layout · Fixed
+- What: The rule-row amount used `rule.type == "income" ? .green : .primary` — a literal system green
+  for income and an un-themed `.primary` (so expenses rendered plain black, not the semantic red used
+  on every other transaction surface). Same anti-pattern as F-007.
+- Where: RecurringView.swift:144.
+- Why it's a gap: DESIGN — semantic green/red for income/expense from the shared theme.
+- Repro: Recurring → expense rules (Rent, Gym, …) showed black amounts, not red.
+- Fix: Added `@Environment(\.colorScheme)` to `RecurringRuleRow` and switched to
+  `ExpensesTheme.income/expense(for: scheme)`, like the canonical `TransactionRow`.
+- Verified: ✅ rebuilt (green). Dark theme now shows income green and expenses the warm theme red
+  (s08-recurring-dark). Light/large Dynamic Type OK.
+- Note: the same literal-color pattern for income/expense also exists at PlanningView.swift:545,567
+  (Forecast month breakdown rows, `? .green : .red`) — tracked here; will fix in a small consistency
+  pass without re-auditing that surface.
+
+### F-012 · Recurring · P3 · Interaction feedback · Deferred
+- What: Swipe toggle/delete and the delete dialog fire async mutations with no inline failure feedback
+  on the list. On success the list visibly updates (the rule changes/disappears); on failure nothing
+  shows (lastError set but not surfaced here).
 - Where: RecurringView.swift:36-49, :97-101.
-- Why it's a gap: mutation outcomes should be visible (optimistic vs confirmed; error surfaced).
-- Repro: TBD.
-- Fix: TBD.
-- Verified: not yet.
+- Why it's a gap: mutation failures should be visible. BUT this is the same app-wide question as F-005
+  (how to surface async-mutation errors on list screens — toast vs inline banner). The success case
+  already gives visible feedback via the list update.
+- Fix: Deferred — folds into the shared error-surfacing decision (see F-005). Not worth a one-off
+  pattern here; resolve once for all list screens.
+- Verified: n/a.
 
 ### F-013 · Organize (Rules) · P3 · Content & copy · Open
 - What: Rule row subtitle hardcodes the word "title" as the match field regardless of the rule's
@@ -333,13 +370,20 @@ feedback) · P2 polish · P3 nit.
   clearer message than the generic server "Request failed." and avoid the round-trip — optional
   follow-up; the silent-failure gap itself is closed.
 
-### F-026 · RecurringOccurrences · P2 · State coverage · Open
-- What: A failed load keeps `data == nil` → indefinite `ProgressView`, no error. (Same family as F-022.)
-- Where: RecurringView.swift:410-417.
-- Why it's a gap: screen stuck spinning on failure.
-- Repro: TBD.
-- Fix: TBD.
-- Verified: not yet.
+### F-026 · RecurringOccurrences · P2 · State coverage · Fixed
+- What: The view showed `ProgressView()` whenever `data` was nil — including after a failed load — so a
+  failed occurrences fetch spun forever, and there was no way to retry (no pull-to-refresh).
+- Where: RecurringView.swift RecurringOccurrencesView (was the `else { ProgressView() }` branch).
+- Why it's a gap: a screen stuck spinning on failure with no recovery.
+- Repro: occurrences load fails → indefinite spinner.
+- Fix: Split the nil-data branch into `else if model.isLoading { ProgressView() }` (loading) and
+  `else { ContentUnavailableView("Couldn't load occurrences", … "Pull to refresh to try again.") }`
+  (failed/empty), and added `.refreshable` so the user can retry.
+- Verified: ✅ rebuilt (green). Success path loads correctly for multiple rules (Salary, Rent); the
+  loading path is unchanged during a normal load (no regression). The error-card branch follows the
+  same pattern as the other state-coverage fixes this session; the occurrences endpoint returns 200
+  for valid rules, so the failure state itself isn't reproducible on localhost (same constraint as
+  F-022). The `.refreshable` retry is new and was the missing recovery affordance.
 
 ### F-027 · LocalUnlockGate · P2 · Completeness / copy · Open
 - What: In the `.unavailable` state the button reads "Check Settings" but its action just re-runs
