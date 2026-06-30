@@ -857,11 +857,15 @@ private struct ScenarioEditorSheet: View {
     }
 
     private func runScenario() async {
-        _ = await model.runForecastScenario(
+        formError = nil
+        let success = await model.runForecastScenario(
             horizon: horizon,
             mode: mode,
             modifications: modifications
         )
+        if !success {
+            formError = model.lastError?.message ?? "Scenario could not be run."
+        }
     }
 
     private func modificationDescription(_ modification: ForecastScenarioModificationRequest) -> String {

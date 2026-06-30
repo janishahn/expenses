@@ -3,13 +3,14 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 5 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
+- **Surfaces:** 7 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
   (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030), **S-05 Insights ✅ Fixed** (F-008),
-  **S-06 Budgets ✅ Fixed** (F-009, F-010). Inventory coverage confidence: **high**.
+  **S-06 Budgets ✅ Fixed** (F-009, F-010), **S-07 Forecast ✅ Fixed** + **S-20 ScenarioEditor**
+  (F-025). Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 6 (F-006, F-007, F-008, F-009,
-  F-010, F-030). Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates (await
-  their surface's turn): 18. By severity of still-open items: P2: 7 · P3: 9.
+- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 7 (F-006, F-007, F-008, F-009,
+  F-010, F-025, F-030). Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates
+  (await their surface's turn): 17. By severity of still-open items: P2: 6 · P3: 9.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -312,14 +313,25 @@ feedback) · P2 polish · P3 nit.
 - Fix: TBD (decide vs sibling forms; consistency matters more than the individual call).
 - Verified: not yet.
 
-### F-025 · ScenarioEditor (What-If) · P2 · State coverage · Open
-- What: `runScenario()` discards the result (`_ = await …`); a scenario-run failure is never surfaced
-  (no error label). Free-text month fields are validated only for non-empty (no format guidance).
-- Where: PlanningView.swift:857-863, :769/:779.
-- Why it's a gap: failed mutation silently does nothing; malformed input passes client validation.
-- Repro: TBD — run a scenario while backend errors.
-- Fix: TBD.
-- Verified: not yet.
+### F-025 · ScenarioEditor (What-If) · P2 · State coverage · Fixed
+- What: `runScenario()` discarded the result (`_ = await model.runForecastScenario(...)`), so a
+  failed scenario run did nothing visible — no impact section, no error. The free-text "Effective
+  month" / "Month" fields are validated only for non-empty, so a malformed month reached the server
+  and failed silently.
+- Where: PlanningView.swift:859-865 (runScenario).
+- Why it's a gap: a failed mutation must be visible; silently doing nothing reads as a broken button.
+- Repro: What If → Change rule → set "Effective month" to "2026-07xx" → Add Adjustment → Run Scenario
+  → previously nothing happened.
+- Fix: `runScenario()` now captures the `Bool` result and sets the existing `formError` to
+  `model.lastError?.message ?? "Scenario could not be run."` on failure (clearing it first),
+  mirroring the formError pattern used across the app's forms. This also makes the unvalidated
+  free-text month fail gracefully with a visible error.
+- Verified: ✅ rebuilt (green). Success path renders the Result/impact section (s07-scenario-result);
+  the malformed-month run now shows "Request failed." in red (s07-scenario-error). Run Scenario /
+  Clear disabled states correct; light/dark + large Dynamic Type OK.
+- Note (minor, not fixed): a client-side `yyyy-MM` format check on the month fields would give a
+  clearer message than the generic server "Request failed." and avoid the round-trip — optional
+  follow-up; the silent-failure gap itself is closed.
 
 ### F-026 · RecurringOccurrences · P2 · State coverage · Open
 - What: A failed load keeps `data == nil` → indefinite `ProgressView`, no error. (Same family as F-022.)
