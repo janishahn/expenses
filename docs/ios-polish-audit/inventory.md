@@ -9,8 +9,11 @@ against grep enumeration of every `struct …: View`, `.sheet`, `.alert`, `.conf
 Status legend: Pending → In Progress → Audited (no issues) / Fixed / Deferred / Blocked.
 
 Verification environment: backend `uv run dev` on :8000 (`llm_enabled=true`), mock DB seeded,
-iPhone 17 Pro / iOS 26.4 simulator, logged in as `test` (admin). UI driven via
-`scratchpad/simui.py` (CoreGraphics tap/swipe/scroll/type; coordinate-mapped to device points).
+iPhone 17 Pro / iOS 26.4 simulator (UDID 7B6C7A40-2FCA-48C2-9804-19FAF28A5824), logged in as
+`test` (admin). UI driven via the **`axe`** CLI bundled with XcodeBuildMCP
+(`~/.npm/_npx/99336612077b7094/node_modules/xcodebuildmcp/bundled/axe`): `axe describe-ui --udid`
+for the element tree + frames, `axe tap --label/-x -y`, `swipe`, `type`, `key`, `screenshot`.
+Theme via `xcrun simctl ui booted appearance dark|light`, Dynamic Type via `… content_size <size>`.
 
 ## Navigation spine (RootView.swift)
 
@@ -28,7 +31,7 @@ See finding F-001. They are excluded from the reachable-surface rows below.
 |----|-----------|----------------|-----------|----------------------|------------|----------|--------|-------------|---------------|
 | S-01 | Root | App shell / TabView + Quick Add FAB | App/RootView.swift:3 | switch 5 tabs; More→push destinations; Quick Add FAB (impact-light haptic) → transaction sheet (only Dashboard/Transactions); FAB disabled+dimmed when unauthenticated; tabBar hides for Assistant | success, unauthenticated | authenticated (FAB) | Pending | F-001 | — |
 | S-02 | Dashboard | DashboardView | Features/Dashboard/DashboardView.swift:4 | period segmented picker (This/Last/All); incognito eye toggle (@AppStorage); tap recent row → TransactionDetail; pull-to-refresh; read-only overview/budgets/durables/breakdown rings | loading, empty, success, partial, unauthenticated, (error→empty) | authenticated | Audited | F-005(deferred), F-029 | 2026-06-30 |
-| S-03 | Transactions | TransactionsView (list) | Features/Transactions/TransactionsView.swift:3 | mode Menu (Current/Inbox/Deleted); searchable + live search; LLM Ask search; filters sheet; filter summary clear; row→detail; Select/bulk mode; bulk bar (page/clear/bulk edit); inbox triage+suggest; deleted restore/delete-forever (swipe+menu+dialog); pull-refresh | loading(active only), empty, success, partial, error(LLM only), unauthenticated | authenticated; llmEnabled (Ask, suggestions) | Pending | F-006, F-007 | — |
+| S-03 | Transactions | TransactionsView (list) | Features/Transactions/TransactionsView.swift:3 | mode Menu (Current/Inbox/Deleted); searchable + live search; LLM Ask search; filters sheet; filter summary clear; row→detail; Select/bulk mode; bulk bar (page/clear/bulk edit); inbox triage+suggest; deleted restore/delete-forever (swipe+menu+dialog); pull-refresh | loading(active only), empty, success, partial, error(LLM only), unauthenticated | authenticated; llmEnabled (Ask, suggestions) | Fixed | F-006, F-007 | 2026-06-30 |
 | S-04 | Digest | DigestView | Features/Planning/PlanningView.swift:3 | prev/next week toolbar chevrons (disabled when digest nil); pull-refresh; read-only headline/categories/budget-pulse/flagged/auto-posted | loading, empty, success, unauthenticated, (error→empty) | authenticated | Pending | F-005 | — |
 | S-05 | Insights | InsightsView | Features/Insights/InsightsView.swift:4 | section segmented picker (Charts/Flow/Durables); filters sheet (toolbar + summary chip + clear); trend category picker; pull-refresh; read-only charts/breakdown/flow/durables | loading(Charts only), empty, success, partial, unauthenticated, (error→empty) | authenticated | Pending | F-005, F-008 | — |
 | S-06 | Planning | BudgetsView (+Month/Year/Recurring) | Features/Budgets/BudgetsView.swift:3 | mode segmented picker (Month/Recurring/Year); + add (sheet by mode); override remove (swipe+menu+dialog); template delete (swipe+menu+dialog); pull-refresh; quickAddTrigger | loading, empty, success, partial, unauthenticated, (error→empty) | authenticated | Pending | F-009, F-010 | — |

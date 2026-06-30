@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The native iOS Transactions list now shows clear empty states instead of a blank screen: a "No matching transactions" card (guiding you to adjust the search or clear filters) when a search or filter returns nothing, a "No transactions yet" card for a genuinely empty list, and an "Inbox zero" card when no transactions are waiting to be categorized.
+
+### Fixed
+- The native iOS deleted-transactions list now colors amounts with the app's semantic income/expense theme colors (matching the active list) instead of a literal green for income and an un-themed neutral tone for expenses.
+
 ## [0.3.1] - 2026-06-29
 
 ### Added

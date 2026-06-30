@@ -53,12 +53,28 @@ struct TransactionsView: View {
                     switch listMode {
                     case .active:
                         if let transactions = model.transactions {
-                            TransactionRows(
-                                transactions: transactions.items,
-                                categories: transactions.categories,
-                                selecting: selectingTransactions,
-                                selectedIDs: $selectedTransactionIDs
-                            )
+                            if transactions.items.isEmpty {
+                                if hasActiveQueryOrFilters {
+                                    ContentUnavailableView(
+                                        "No matching transactions",
+                                        systemImage: "magnifyingglass",
+                                        description: Text("Try a different search or clear your filters.")
+                                    )
+                                } else {
+                                    ContentUnavailableView(
+                                        "No transactions yet",
+                                        systemImage: "list.bullet.rectangle",
+                                        description: Text("Add your first transaction with the + button.")
+                                    )
+                                }
+                            } else {
+                                TransactionRows(
+                                    transactions: transactions.items,
+                                    categories: transactions.categories,
+                                    selecting: selectingTransactions,
+                                    selectedIDs: $selectedTransactionIDs
+                                )
+                            }
                         } else if model.showsTransactionsInitialLoading {
                             LoadingStateSection(title: "Loading transactions")
                         } else {
@@ -66,10 +82,17 @@ struct TransactionsView: View {
                         }
                     case .uncategorized:
                         if let transactions = model.uncategorizedTransactions {
-                            Section {
-                                LabeledContent("Open items", value: "\(transactions.total)")
-                            }
-                            UncategorizedTriageRows(
+                            if transactions.total == 0 {
+                                ContentUnavailableView(
+                                    "Inbox zero",
+                                    systemImage: "checkmark.circle",
+                                    description: Text("Every transaction has a category.")
+                                )
+                            } else {
+                                Section {
+                                    LabeledContent("Open items", value: "\(transactions.total)")
+                                }
+                                UncategorizedTriageRows(
                                 transactions: transactions.items,
                                 categories: transactions.categories,
                                 suggestions: model.transactionSuggestions,
@@ -89,7 +112,8 @@ struct TransactionsView: View {
                                 onReject: { suggestion in
                                     Task { await model.rejectTransactionSuggestion(suggestion) }
                                 }
-                            )
+                                )
+                            }
                         } else {
                             ContentUnavailableView("No uncategorized transactions loaded", systemImage: "tray")
                         }
@@ -368,6 +392,10 @@ struct TransactionsView: View {
 
     private var hasStructuredFilters: Bool {
         !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
+    }
+
+    private var hasActiveQueryOrFilters: Bool {
+        hasStructuredFilters || !appliedSearchQuery.isEmpty
     }
 
     private var canAskSearch: Bool {
@@ -1053,6 +1081,8 @@ private struct BulkPreviewSection: View {
 }
 
 private struct DeletedTransactionsList: View {
+    @Environment(\.colorScheme) private var scheme
+
     let transactions: [DeletedTransaction]
     var onRestore: (DeletedTransaction) -> Void
     var onPermanentDelete: (DeletedTransaction) -> Void
@@ -1085,7 +1115,7 @@ private struct DeletedTransactionsList: View {
                     Spacer()
                     Text(AppFormatters.euros(signedAmount(transaction)))
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(transaction.type == "income" ? .green : .primary)
+                        .foregroundStyle(transaction.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                     Menu {
                         Button("Restore") {
                             onRestore(transaction)

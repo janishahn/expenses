@@ -3,16 +3,22 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 1 / 38 audited — **S-02 Dashboard ✅ Audited** (polished in all observable states;
-  see below). Inventory coverage confidence: **high**.
+- **Surfaces:** 2 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
+  (F-006, F-007). Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 26 (F-001, F-005–F-029). By status — Deferred (need user decision): 3
-  (F-001, F-005, F-018). Open candidates (await their surface's turn): 22. Fixed: 0.
-  By severity of still-open items: P2: 11 · P3: 12.
+- **Findings:** total 26 (F-001, F-005–F-029). By status — Fixed: 2 (F-006, F-007). Deferred (need
+  user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's turn): 21.
+  By severity of still-open items: P2: 9 · P3: 11.
 - **Method:** Candidates were surfaced while reading code; each is **driven and verified in the
   simulator** on its surface's turn before any fix — some get downgraded or dismissed (e.g. the
-  "More list won't scroll" suspicion was a tooling artifact; the period-picker "not switching" is a
-  synthetic-tap limitation on UIKit `UISegmentedControl`, not an app bug).
+  "More list won't scroll" suspicion was a tooling artifact).
+- **UI-driver upgrade (this session):** switched from the hand-rolled CoreGraphics `simui.py` to the
+  **`axe`** CLI bundled with XcodeBuildMCP (`~/.npm/_npx/99336612077b7094/node_modules/xcodebuildmcp/
+  bundled/axe`). `axe describe-ui --udid <UDID>` returns the real iOS accessibility tree with
+  device-point frames (no coordinate calibration); `axe tap --label "<AXLabel>"` / `tap -x -y` /
+  `swipe` / `type` / `key` / `gesture` / `screenshot` drive the app via the simulator's real HID, so
+  it reliably actuates UIKit-backed controls (e.g. the segmented period picker that `simui.py`
+  couldn't) — confirming that picker is a working control, not an app bug.
 - **Open questions for the user (parked — loop continues on unaffected surfaces meanwhile):**
   1. **F-001 (dead code):** `CategoriesView`, `RulesView`, `PlanningView` and the per-destination
      `quickAddTrigger` plumbing in RootView are unreachable. Delete them, or are they intended for
@@ -82,24 +88,37 @@ feedback) · P2 polish · P3 nit.
   pace figures to wrap or reduce to a vertical layout at AX sizes. Not fixed this pass.
 - Verified: observed at AX-XL; no fix applied.
 
-### F-006 · Transactions · P2 · State coverage · Open
-- What: When `transactions != nil` but the list is empty, no empty-state renders (ForEach shows
-  nothing). Inbox empty shows "Open items: 0" with no guidance. "No transactions loaded" only fires
-  when `transactions == nil`.
-- Where: TransactionsView.swift:64-66, :69-72.
-- Why it's a gap: empty state should guide to next action; a genuinely-empty list is blank.
-- Repro: TBD — filter to a query with zero results.
-- Fix: TBD.
-- Verified: not yet.
+### F-006 · Transactions · P2 · State coverage · Fixed
+- What: When `model.transactions` was loaded but `items` was empty (e.g. a search/filter with zero
+  results), the list rendered nothing — a blank screen below the search bar. Uncategorized empty
+  showed "Open items: 0" with no guidance.
+- Where: TransactionsView.swift active case (was :54-66), uncategorized case (was :67-95).
+- Why it's a gap: State coverage — empty must be handled distinctly and guide the next action;
+  a blank screen reads as broken/stuck. (Deleted mode already had a proper empty state, so this was
+  also a within-surface inconsistency.)
+- Repro: Transactions → search "Zzqqxxnope" → blank below the bar (screenshot s03-empty-search.png).
+- Fix: Active case now branches on `transactions.items.isEmpty`: a contextual
+  `ContentUnavailableView` — "No matching transactions / Try a different search or clear your
+  filters." when `hasActiveQueryOrFilters` (new computed), else "No transactions yet / Add your
+  first transaction with the + button." Uncategorized case shows an "Inbox zero / Every transaction
+  has a category." card when `transactions.total == 0`. Reuses the existing `ContentUnavailableView`
+  pattern already used by this view (no new component).
+- Verified: ✅ rebuilt (green), relaunched. Zero-result search → "No matching transactions"
+  (s03-empty-fixed.png); empty inbox → "Inbox zero" (s03-inbox.png); non-empty modes unregressed.
 
-### F-007 · Transactions (Deleted) · P3 · Consistency · Open
-- What: Deleted-list income amount uses literal `.green` instead of the semantic theme color used
-  elsewhere. (Pairs with F-023.)
-- Where: TransactionsView.swift:1088.
-- Why it's a gap: Layout/consistency — semantic colors must come from the shared theme.
-- Repro: TBD.
-- Fix: TBD (use ExpensesTheme semantic income color).
-- Verified: not yet.
+### F-007 · Transactions (Deleted) · P3 · Consistency / Layout · Fixed
+- What: Deleted-list amount used `transaction.type == "income" ? .green : .primary` — a literal
+  system green for income and an un-themed `.primary` (black/white) for expenses, instead of the
+  semantic `ExpensesTheme.income/expense(for: scheme)` the canonical `TransactionRow` (and the rest
+  of the app) uses. Internally inconsistent (income colored, expense not) and off-theme.
+- Where: TransactionsView.swift:1088 (now :1118) in `DeletedTransactionsList`.
+- Why it's a gap: DESIGN — semantic green/red for income/expense, sourced from the shared theme.
+- Repro: Transactions → Deleted → expense amounts were neutral black, not the theme red.
+- Fix: Added `@Environment(\.colorScheme)` to `DeletedTransactionsList` and switched the amount to
+  `transaction.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for:
+  scheme)`, matching `TransactionRow`.
+- Verified: ✅ rebuilt (green). Deleted expenses now render theme red in light (s03-deleted.png) and
+  the warm dark-mode red in dark (s03-deleted-dark.png).
 
 ### F-008 · Insights (Flow / Durables) · P2 · State coverage · Open
 - What: Flow and Durables sections have no loading placeholder; during load they render
