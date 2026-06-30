@@ -3,18 +3,19 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 28 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 29 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
   ✅ Fixed** (S-16 + S-33 Reimbursements; F-022 failed-state+retry, F-023 themed reimbursement colors,
-  F-028 dismissed; folded in the PlanningView Forecast color sweep). Confidence: **high**.
+  F-028 dismissed; folded in the PlanningView Forecast color sweep), **TransactionForm ✅ Audited**
+  (S-17; F-024 dismissed — Save-gating matches every sibling form). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
 - **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 17 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031). Won't-fix: 3 (F-013, F-017, F-028). Deferred (need user decision): 6
-  (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their surface's turn): 2 (F-024;
-  F-027 Local unlock). By severity of still-open items: P2: 1 (F-027) · P3: 1 (F-024). Cross-surface
+  F-025, F-026, F-030, F-031). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred (need user
+  decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their surface's
+  turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16).
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
@@ -442,14 +443,28 @@ feedback) · P2 polish · P3 nit.
   red in light (s16-04) and in dark, where they match the warm dark-mode theme colors of the rest of
   the app (s16-05-reimb-dark).
 
-### F-024 · TransactionForm · P3 · Interaction feedback · Open
-- What: Save is only disabled by `model.isLoading`, never by form validity; an incomplete form looks
-  tappable and fails at submit time.
-- Where: TransactionFormView.swift:165-170, :225.
-- Why it's a gap: disabled states should signal "not ready"; may be acceptable (verify against siblings).
-- Repro: TBD — open create form blank, observe Save enabled.
-- Fix: TBD (decide vs sibling forms; consistency matters more than the individual call).
-- Verified: not yet.
+### F-024 · TransactionForm · P3 · Interaction feedback · Won't-fix (consistent pattern)
+- What: Suspected the Save button being gated only by `model.isLoading` (never by form validity) was a
+  gap — an incomplete form looks tappable and "fails" at submit time.
+- Resolution: **Dismissed — this is the app-wide form pattern, and submit-time validation is clear.**
+  Verified by reading every sibling create/edit form: BudgetOverrideFormView (BudgetsView:423),
+  BudgetTemplateFormView (:524), RecurringRuleFormView (RecurringView:302), and the Category/Tag/
+  Template/Rule forms (OrganizeView:1353/1427/1528/1713) ALL gate Save on `.disabled(model.isLoading)`
+  only and validate on submit. (Only the merge views — a distinct destructive source/target pattern —
+  validity-gate via `!canSubmit`.) Adding an `isValid` gate to TransactionForm alone would make it the
+  inconsistent one. And the submit-time path is graceful: `makePayload()` returns a specific inline
+  `formError` ("Title is required." / "Amount is invalid." / "Location is still unavailable.") rather
+  than failing silently.
+- Verified live: opened the create form, tapped Save empty → "Title is required." renders in the red
+  error section (s17-02-validation); income switch reveals the reimbursement toggle; edit mode seeds
+  every field incl. the reimbursement toggle ON (s17-05-edit-mode). Haptics correct by code (type/
+  reimbursement/location pickers `.selection`; save success/error via the `saveAttempts` trigger). The
+  LocationProvider can't hang indefinitely (`requestLocation()` always resumes its continuation; the
+  `loadCurrentLocation` catch auto-resets the toggle with a clear error). No change made.
+- Minor note (not fixed, consistent): the `formError` is the form's last section, so tapping Save from
+  the top of a long invalid form shows the error below the fold — true of every form in the app; the
+  realistic fill-then-save flow leaves the user near the bottom. A scroll-to-error would be an
+  app-wide enhancement, not a one-off S-17 fix.
 
 ### F-025 · ScenarioEditor (What-If) · P2 · State coverage · Fixed
 - What: `runScenario()` discarded the result (`_ = await model.runForecastScenario(...)`), so a
