@@ -3,7 +3,7 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 31 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 33 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
@@ -11,7 +11,8 @@
   F-028 dismissed; folded in the PlanningView Forecast color sweep), **TransactionForm ✅ Audited**
   (S-17; F-024 dismissed — Save-gating matches every sibling form), **Filters ✅ Fixed** (S-18;
   F-033 — chip-X/Reset no longer also wipes the search query), **BulkEdit ✅ Fixed** (S-19; F-034/F-035
-  — clearer scope-option + confirm-dialog copy). Confidence: **high**.
+  — clearer scope-option + confirm-dialog copy), **Budget forms ✅ Audited** (S-21 override + S-22
+  template; clean, consistent form pattern, no findings). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
 - **Findings:** total 33 (F-001, F-005–F-035). By status — Fixed: 20 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
@@ -583,3 +584,18 @@ feedback) · P2 polish · P3 nit.
   Category/Tags pickers, and axe cannot reliably open SwiftUI `.menu` Picker popovers (separate system
   overlay) — a test-harness limitation, not an app issue. So this exact string is verified by code
   review, not screenshot. (The change is a literal swap in an otherwise-correct dialog block.)
+
+### S-21/S-22 · Budget forms · Audited (no findings)
+- BudgetOverrideFormView ("Set Month Budget") and BudgetTemplateFormView ("Recurring Budget") were
+  driven live (Month "+" and Recurring "+"). Both follow the app's standard form pattern: Save gated on
+  `model.isLoading` + validate-on-submit (`BudgetFormParsing.parseAmount` → "Amount is invalid." for an
+  empty/invalid amount — observed on both), `.selection` haptics on the segmented Frequency picker and
+  the Has-end-date toggle, and a clean formError section. Consistent with the F-024 sibling-form
+  decision — no change.
+- Verified live: both forms render cleanly (light); the override validation fires; the template
+  Frequency segmented control switches Monthly↔Yearly and the `onChange(frequency)` start-date
+  adaptation works (Starts on changed 1 Jun 2026 → 1 Jan 2026 on Yearly); Cancel dismisses; the Year
+  tab "+" stays disabled (F-009).
+- Not HID-actuated (axe limitations, behaviors correct by code): the `Has end date` Toggle (SwiftUI
+  Toggle-in-Form taps don't register — the `if hasEndDate { DatePicker("Ends on", …) }` reveal is a
+  trivial conditional) and the Category `.menu` Picker (popover overlay).
