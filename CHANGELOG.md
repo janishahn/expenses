@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified copy in the native iOS bulk-edit sheet: the scope option that targets every transaction matching the current filters now reads "All filtered" (was the awkward "All loaded filter"), and the apply confirmation now reads "This will update every transaction in the selection." instead of referencing "the backend" and "resolved" transactions.
 - The native iOS Insights Expenses/Income breakdown bars and ring now use the app's semantic income/expense theme colors instead of literal red/green, matching the Monthly Trend chart on the same screen and the rest of the app — most visible in dark mode.
 - The native iOS local-unlock screen's "Check Settings" button (shown when device authentication isn't available) now actually opens Settings instead of silently re-running the failed unlock check, so the label matches what the button does.
+- The native iOS Recurring screen now shows each rule's amount in its own currency ($ for USD rules) instead of always rendering euros — matching the web. The monthly Income/Expenses/Net totals stay in euros, with USD rules folded in at the backend's converted rate.
 
 ## [0.3.1] - 2026-06-29
 

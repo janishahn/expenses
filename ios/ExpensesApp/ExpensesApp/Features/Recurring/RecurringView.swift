@@ -141,7 +141,7 @@ private struct RecurringRuleRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(AppFormatters.euros(rule.type == "income" ? rule.amountCents : -rule.amountCents))
+                Text(AppFormatters.amount(rule.type == "income" ? rule.amountCents : -rule.amountCents, currencyCode: rule.currencyCode))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(rule.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                 Text(rule.autoPost ? "Auto" : "Manual")
@@ -385,7 +385,7 @@ private struct RecurringOccurrencesView: View {
         List {
             if let data {
                 Section {
-                    LabeledContent("Amount", value: AppFormatters.euros(data.rule.amountCents))
+                    LabeledContent("Amount", value: AppFormatters.amount(data.rule.amountCents, currencyCode: data.rule.currencyCode))
                     LabeledContent("Category", value: data.rule.category?.name ?? "-")
                     LabeledContent("Next", value: AppFormatters.day(data.rule.nextOccurrence))
                     LabeledContent("Auto-post", value: data.rule.autoPost ? "Yes" : "No")

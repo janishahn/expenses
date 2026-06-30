@@ -276,18 +276,26 @@ feedback) · P2 polish · P3 nit.
   matching the row's "Auto/Manual" badge (the swipe offers the opposite posting mode).
 - Verified: ✅ rebuilt (green); `describe-ui` of the revealed leading swipe now reports "Manual".
 
-### F-011b · Recurring · P2 · Content & copy / backend contract · Deferred
+### F-011b · Recurring · P2 · Content & copy / backend contract · Fixed (USD supported)
 - What: The rule form has a Currency picker (EUR/USD) bound to the real `RecurringRule.currencyCode`,
-  but every amount on the Recurring screens is rendered with `AppFormatters.euros(...)` (always €),
-  and the Monthly stats (Income/Expenses/Net) sum across rules ignoring currency.
-- Where: RecurringView.swift:220-223 (picker) vs :19-21/:57/:142/:386 (euro-only display).
-- Why it's a gap: a USD rule displays as € and is summed as if EUR — but fixing it properly needs
-  per-rule symbol formatting AND a decision on mixed-currency aggregation (you can't meaningfully
-  sum EUR+USD without FX). That's a product/backend-contract decision, not a polish fix.
-- Fix: **Deferred — needs user decision** (Summary Q4): (a) drop USD from the mobile form (euro-only),
-  (b) format each amount with its currency symbol but acknowledge stats can't sum mixed currencies,
-  or (c) leave as-is. Recommend (a) unless the backend actually supports multi-currency reporting.
-- Verified: n/a.
+  but the per-rule amount was rendered with `AppFormatters.euros(...)` (always €) — so a USD rule
+  displayed as €.
+- User decision + investigation: the **backend and web fully support USD** — `recurrence/engine.py`
+  FX-converts a USD rule's `amount_cents` to EUR at post time (with `source_currency_code`/FX metadata
+  preserved), and `RecurringRuleService.overview()` (services/main.py) converts each USD rule's amount
+  via today's USD→EUR quote so the per-rule `monthly_equivalent_cents` and the aggregate `stats` are
+  EUR-normalized. The web (`ui/.../RecurringRulesPage.tsx`) renders each rule's native amount with its
+  symbol (`rule.currency_code === "USD" ? "$" : "€"`) while keeping the monthly stats in €. So the iOS
+  "always €" per-rule display was the only thing wrong — the stats were already correct.
+- Fix (iOS-only, no backend change): added `AppFormatters.amount(_ cents:, currencyCode:)` (delegates
+  EUR to the existing formatter; uses a currency NumberFormatter for others) and used it for the native
+  per-rule amount in `RecurringRuleRow` and the occurrences rule-detail. The EUR-normalized stats /
+  breakdown / posted-occurrence amounts stay on `euros(...)` (correct — they're already converted).
+- Verified: ✅ built green and driven live (after restoring the backend on :8001). Inserted a test USD
+  expense rule ($25/mo): the Recurring list row renders "-25,00 US$" (native USD) while the Monthly
+  Expenses total reads 1.030,92 € — i.e. the USD rule's FX-converted equivalent is correctly folded
+  into the EUR aggregate (the .92 cents reflects the conversion) (f011b-03-recurring). Test rule deleted
+  afterward.
 
 ### F-031 · Recurring (RecurringRuleRow) · P3 · Consistency / Layout · Fixed
 - What: The rule-row amount used `rule.type == "income" ? .green : .primary` — a literal system green
