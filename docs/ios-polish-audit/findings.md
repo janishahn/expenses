@@ -2,20 +2,31 @@
 
 ## Summary
 
-- **Phase:** 1 complete (map + verification gate). Phase 2 (per-surface audit/fix loop) not started.
-- **Surfaces:** 0 / 38 audited (all Pending). Inventory coverage confidence: **high**.
+- **Phase:** 2 (per-surface audit/fix loop) in progress.
+- **Surfaces:** 1 / 38 audited — **S-02 Dashboard ✅ Audited** (polished in all observable states;
+  see below). Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings (candidates from static mapping — not yet dynamically verified):**
-  P0: 0 · P1: 0 · P2: 12 · P3: 12 · Total: 24 open candidates.
-- **Method:** Candidates below were surfaced while reading code. Each will be **driven and verified
-  in the simulator** during its surface's Phase-2 iteration before any fix — some may be downgraded
-  or dismissed (e.g. an early "More list won't scroll" suspicion was a tooling artifact, not a bug).
-- **Open questions for the user:**
+- **Findings:** total 26 (F-001, F-005–F-029). By status — Deferred (need user decision): 3
+  (F-001, F-005, F-018). Open candidates (await their surface's turn): 22. Fixed: 0.
+  By severity of still-open items: P2: 11 · P3: 12.
+- **Method:** Candidates were surfaced while reading code; each is **driven and verified in the
+  simulator** on its surface's turn before any fix — some get downgraded or dismissed (e.g. the
+  "More list won't scroll" suspicion was a tooling artifact; the period-picker "not switching" is a
+  synthetic-tap limitation on UIKit `UISegmentedControl`, not an app bug).
+- **Open questions for the user (parked — loop continues on unaffected surfaces meanwhile):**
   1. **F-001 (dead code):** `CategoriesView`, `RulesView`, `PlanningView` and the per-destination
      `quickAddTrigger` plumbing in RootView are unreachable. Delete them, or are they intended for
      a planned navigation change? (Out of strict "polish" scope; recommend deleting.)
   2. **F-018:** Diagnostics has no auth gate (Backend URL editable by anyone). Intended for a
      config/diagnostics screen, or should it sit behind auth like its siblings?
+  3. **F-005 (error-vs-empty state, 6 surfaces):** A failed primary load with no cache shows the
+     generic "No X loaded" empty card instead of a distinct error. The common case (refresh failure
+     with cached data) is already graceful (stale data retained); only the rare cold-load-failure
+     hits it, and it is **not reproducible on-simulator** (auth + data share one backend). Recommend
+     a minimal shared fix — distinguish the `.failed` load state and reuse the existing
+     `UnavailableStateSection` with the error message (no new pattern). Implement across Dashboard /
+     Digest / Insights / Forecast / Budgets / Recurring, or leave as-is? Deferred because it spans 6
+     shared surfaces and the fixed state can't be dynamically verified here.
 
 Severity: P0 broken · P1 major (wrong nav / unhandled state / broken layout / missing critical
 feedback) · P2 polish · P3 nit.
@@ -34,16 +45,42 @@ feedback) · P2 polish · P3 nit.
 - Fix: Deferred — needs user decision (delete dead views + unused triggers, or keep for planned nav).
 - Verified: n/a (static, grep-confirmed reachability).
 
-### F-005 · Dashboard / Digest / Insights / Forecast / Budgets / Recurring · P2 · State coverage · Open
-- What: A failed (or offline) primary load collapses into the same `ContentUnavailableView("No X
-  loaded")` used for genuine emptiness — no error message, no retry. Error and empty are conflated.
-- Where: DashboardView.swift:63-64; InsightsView.swift:57,63,69; PlanningView.swift (digest/forecast
-  empty branches); BudgetsView.swift:42-43; RecurringView.swift:63-64.
-- Why it's a gap: State coverage — error/offline must be distinct from empty (DESIGN: handle states
-  deliberately). User sees benign emptiness when the network failed.
-- Repro: TBD in Phase 2 — kill backend, pull-to-refresh, observe.
-- Fix: TBD (shared treatment; audit siblings together per project convention).
-- Verified: not yet.
+### F-005 · Dashboard / Digest / Insights / Forecast / Budgets / Recurring · P2 · State coverage · Deferred
+- What: A failed primary load with no cached data collapses into the same
+  `ContentUnavailableView("No X loaded")` used for genuine emptiness — no error message, no retry.
+  Error and empty are conflated. (Mechanism confirmed: on failure with `!hadContent`,
+  `dashboardLoadState = .failed` and `lastError` is set, but `showsInitialPlaceholder` is false for
+  `.failed`, so the view falls to the generic `else` empty branch — the error data exists, unused.)
+- Where: DashboardView.swift:63-64 (confirmed); InsightsView.swift:57,63,69; PlanningView.swift
+  (digest/forecast empty branches); BudgetsView.swift:42-43; RecurringView.swift:63-64.
+- Why it's a gap: State coverage — error/offline should be distinct from empty. BUT the common
+  failure (refresh with cached data) is already graceful: `if !hadContent` guards the `.failed`
+  transition, so a failed refresh retains stale data. Only the rare cold-load-failure-while-authed
+  hits the generic empty card.
+- Repro: **Not reproducible on-simulator.** Auth (`loadCurrentSession` → live `mobileMe` call) and
+  data share one backend, so a cold start with the backend down yields "Sign in required" (unauth),
+  never the authed-but-data-failed branch. Triggering only the data endpoint to fail needs backend
+  mutation (out of scope).
+- Fix: **Deferred — needs user decision** (see Summary Q3). Recommended minimal fix: add a precise
+  `dashboardLoadFailed` computed (`dashboard == nil && state == .failed`) and, in the `else` branch,
+  show `UnavailableStateSection(title: "Couldn't load dashboard", systemImage:
+  "exclamationmark.triangle", message: lastError?.message ?? …)` — reuses existing chrome, no new
+  pattern. Apply consistently across the 6 sibling surfaces.
+- Verified: n/a — fixed state can't be observed on-simulator; not implemented to avoid claiming an
+  unverifiable fix.
+
+### F-029 · Dashboard (BudgetPaceCompactRow) · P3 · Layout & visual fit · Open
+- What: At `accessibility-extra-large` Dynamic Type, the Projected pace figures truncate to
+  "1.215… of 2.5…" and "Velocity" crowds the row. No clipping/overflow of the card; progress bar and
+  velocity multiplier stay visible.
+- Where: DashboardView.swift:117 (`BudgetPaceCompactRow`), rendered at :26-28.
+- Why it's a gap: DESIGN asks layouts to survive large Dynamic Type without awkward truncation;
+  borderline-acceptable at this extreme AX size but the currency figure is lost.
+- Repro: `xcrun simctl ui booted content_size accessibility-extra-large`, open Dashboard. (Observed
+  — screenshot s02-dark-xl.png.)
+- Fix: Deferred as low-value P3 (extreme AX size only; private Dashboard row). Candidate: allow the
+  pace figures to wrap or reduce to a vertical layout at AX sizes. Not fixed this pass.
+- Verified: observed at AX-XL; no fix applied.
 
 ### F-006 · Transactions · P2 · State coverage · Open
 - What: When `transactions != nil` but the list is empty, no empty-state renders (ForEach shows
