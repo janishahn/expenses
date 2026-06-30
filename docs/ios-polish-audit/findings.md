@@ -4,24 +4,28 @@
 
 Every reachable user-facing surface of the native SwiftUI iOS app was mapped, driven in the iPhone 17
 Pro / iOS 26.4 simulator (via the `axe` HID driver), and polished against the 9-dimension bar. Build is
-green throughout; the work lives on branch `ios-app-polish` (24 commits, **not pushed**), one commit per
-surface.
+green throughout; the work lives on branch `ios-app-polish` (30 commits, **not pushed**) — Phase 1 was
+one commit per surface; **Phase 2** then resolved the deferred findings after you answered their open
+questions (one commit per finding).
 
 **Findings tally — 35 total (F-001, F-005–F-037):**
-- **Fixed: 22** — F-006, F-007, F-008, F-009, F-010, F-011a, F-014, F-015, F-016
+- **Fixed: 27** — Phase 1: F-006, F-007, F-008, F-009, F-010, F-011a, F-014, F-015, F-016
   (Reconcile+Reports+Account+Admin), F-020, F-021, F-022, F-023, F-025, F-026, F-027, F-030, F-031,
-  F-033, F-034, F-035, F-036. Each was observed fixed in the simulator except where a state is
-  physically unreachable there (noted per finding: e.g. F-027's `.unavailable` gate, F-035's `.menu`-gated
-  dialog — code-verified + build-green).
-- **Won't-fix (dismissed with rationale): 4** — F-013 (rule "title" label is accurate), F-017 (a blocking
+  F-033, F-034, F-035, F-036. **Phase 2** (deferred → fixed after your decisions): F-001 (deleted dead
+  code), F-011b (USD per-rule currency display), F-037 (FAB scoped to tab root), F-019 (signed-out retry),
+  F-005 (cold-load error vs empty across 6 surfaces). Each was observed fixed in the simulator except
+  where a state is physically unreachable there (noted per finding: e.g. F-027's `.unavailable` gate,
+  F-035's `.menu`-gated dialog, F-019's signed-out-status-failed branch — code-verified + build-green).
+- **Won't-fix (dismissed with rationale): 5** — F-013 (rule "title" label is accurate), F-017 (a blocking
   Reports loading placeholder would hide the usable form), F-024 (Save-on-isLoading matches every sibling
-  form), F-028 (markdown descriptions are an intended, documented feature; web uses react-markdown).
-- **Deferred — need your decision: 7** (parked as Open Questions Q1–Q5 + two others, see the Summary
-  below): F-001 (unreachable dead code in RootView), F-005 (error-vs-empty state across 6 read-only
-  surfaces), F-011b (Recurring per-rule currency display), F-012 (list mutation-failure feedback — folds
-  into F-005), F-018 (Diagnostics has no auth gate), F-019 (signed-out status-fetch retry), F-037
-  (Quick Add FAB persists over pushed detail screens).
-- **Open candidates remaining: 0** — every actionable finding is fixed or explicitly deferred to you.
+  form), F-028 (markdown descriptions are an intended, documented feature; web uses react-markdown),
+  **F-018** (Diagnostics' ungated Backend URL is the deliberate pre-login escape hatch — keep ungated).
+- **Deferred — still need your decision: 1** — **F-012** (list async-*mutation* failure feedback). This
+  is distinct from the now-fixed F-005 (which was about cold-*load* errors): it needs an app-wide call on
+  how mutation errors surface on list screens (transient toast vs inline banner), applied consistently
+  rather than as a one-off. See the open question below.
+- **Open candidates remaining: 0** — every actionable finding is fixed, dismissed, or (F-012) parked on
+  one app-wide UX decision.
 
 **Key user-visible fixes (all in CHANGELOG `[Unreleased]`):** empty/loading/failed-state coverage
 (Transactions empty states, Insights Flow/Durables loading, RecurringOccurrences + TransactionDetail
@@ -34,7 +38,23 @@ local-unlock "Check Settings" button that now actually opens Settings (F-021/F-0
 Budgets "+" disabled on Year + consistent labels (F-009/F-010); scenario-run failure surfacing (F-025);
 descriptive VoiceOver labels on Digest week-nav (F-030).
 
-**Per-surface commit list (`git log main..ios-app-polish`, newest first):** S-37 LocalUnlockGate
+**Phase 2 — deferred findings resolved (after your decisions; one commit per finding, newest first):**
+F-005 cold-load error states (3734ac1), F-019 signed-out retry (4254674), F-037 FAB scoped to tab root
+(7cf604d), F-001 dead-code deletion (4517bad), F-011b USD currency display (fba5b64). F-018 resolved as
+by-design (this doc commit). To verify the runtime-dependent fixes (F-011b USD row, F-037 FAB, F-005 cold-
+load failure) the backend was run on a **second port `:8001`** (the original `:8000` had been taken over by
+an unrelated project) and the simulator repointed via the Diagnostics URL field + a fresh `test`/`test`
+login; the Keychain session for the original backend was already gone, so no live session was discarded.
+F-005's first attempt (gating on the shared `model.lastError`) was caught **failing live** and corrected
+to a precise per-surface `.failed` load-state — see the F-005 entry.
+
+**One open question remaining for you (F-012):** failed async *mutations* on list screens (e.g. a swipe
+toggle/delete on Recurring that errors) currently leave the list unchanged with no message. Surfacing
+this well is an app-wide choice — a transient toast vs an inline banner — that should be applied
+consistently across every list screen, so it's intentionally left for your call rather than bolted onto
+one screen.
+
+**Per-surface commit list — Phase 1 (`git log`, newest first):** S-37 LocalUnlockGate
 (e2adf57), S-38 Privacy overlay (1a8e637), S-01 RootView (94e40a3), S-32 Insights filters + F-036
 (9c6d6ae), S-21/S-22 Budget forms (ce0741d), S-19 BulkEdit (42c8b6c), S-18 Filters (a09f673), S-17
 TransactionForm (9502f91), S-16 TransactionDetail (0d24c53), S-15 Admin (a4130e9), S-14 Account
@@ -50,8 +70,9 @@ system overlays) — those behaviors were code-verified. The **camera** (S-35), 
 **`.unavailable`** gate (S-37), and the **privacy shield** on the app-switcher snapshot (S-38) are not
 actuable/observable on the simulator — all code-verified + build-green.
 
-**Release recommendation (NOT cut here — for you to action):** the branch carries 22 user-visible iOS UX
-fixes since `v0.3.1` with no breaking changes, so a **patch release `v0.3.2`** is warranted. Per
+**Release recommendation (NOT cut here — for you to action):** the branch carries ~26 user-visible iOS UX
+fixes since `v0.3.1` (Phase 1 + the Phase-2 deferred fixes) with no breaking changes, so a **patch release
+`v0.3.2`** is warranted. Per
 `CLAUDE.md` → Releases, the deliberate steps (left to you): review/merge `ios-app-polish`; bump
 `pyproject.toml` `version` to `0.3.2`; move CHANGELOG `[Unreleased]` → `## [0.3.2] - <date>` (reconcile
 against `git log v0.3.1..HEAD`); `uv lock` and commit `uv.lock`; tag `v0.3.2` and push the tag; create the
@@ -77,11 +98,12 @@ GitHub Release. I did not perform any release action (out of the audit's scope).
   inactive+background; sheets covered in production by the S-37 cover window), **LocalUnlockGate
   ✅ Fixed** (S-37; F-027 "Check Settings" now opens Settings; sheet-coverage resolved). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 22 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-027, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024,
-  F-028). Deferred (need user decision): 7 (F-001, F-005, F-011b, F-012, F-018, F-019, F-037). Open
-  candidates (await their surface's turn): 0. By severity of still-open items: P3: 1 (F-037, deferred).
+- **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 27 (Phase 1: F-006, F-007, F-008,
+  F-009, F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022,
+  F-023, F-025, F-026, F-027, F-030, F-031, F-033, F-034, F-035, F-036; Phase 2: F-001, F-005, F-011b,
+  F-019, F-037). Won't-fix: 5 (F-013, F-017, F-018, F-024, F-028). Deferred (need user decision): 1
+  (F-012 — app-wide list-mutation-error surfacing). Open candidates: 0. Still-open items: P3: 1
+  (F-012, deferred).
   Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16). Harness
   note: axe can't actuate SwiftUI `.menu` Picker popovers (separate overlay), so states reachable only
@@ -437,14 +459,19 @@ feedback) · P2 polish · P3 nit.
 - Fix: TBD.
 - Verified: not yet.
 
-### F-018 · Diagnostics · P3 · Navigation & flow · Open
+### F-018 · Diagnostics · P3 · Navigation & flow · Won't-fix (by design)
 - What: No auth gate (unlike Admin/Reconcile/Reports). Editable Backend URL + "Reset to local backend"
   exposed unconditionally.
 - Where: DiagnosticsView.swift:3.
-- Why it's a gap: possibly intentional for a config screen; flagged for confirmation.
-- Repro: static.
-- Fix: Deferred — needs user decision (see Summary Q2).
-- Verified: n/a.
+- User decision: **keep it ungated — resolved as by-design.**
+- Resolution: The ungated Backend URL field is the deliberate pre-login escape hatch: if the stored
+  baseURL points at the wrong/unreachable server, the user is signed out *everywhere*, so the only way
+  to fix the URL must itself be reachable while signed out. It exposes no user data (only the backend
+  URL + an unauthenticated /api/mobile/status probe), so gating it behind auth would be a chicken-and-
+  egg lock-out. Left intentionally ungated. (This was confirmed firsthand this session — after a port
+  change stranded the app on the wrong backend, the Diagnostics URL field was exactly how the
+  simulator was repointed.)
+- Verified: n/a (no code change — by-design).
 
 ### F-019 · Auth (signed-out) · P3 · State coverage · Fixed
 - What: In the SIGNED-OUT branch, when `model.status` was nil the Create-account/Setup buttons were
@@ -737,11 +764,11 @@ feedback) · P2 polish · P3 nit.
 ### S-01 · App shell (RootView) · Audited
 - The TabView shell is well-built and verified live: the 5 primary tabs; the More groups (Planning /
   Manage / Tools / Account) with Assistant filtered out of Tools when `!llmEnabled` (F-032); the
-  floating Quick Add FAB shows (opacity 1 + hit-testing) only on Dashboard & Transactions and is
-  hidden (opacity 0) elsewhere (confirmed: visible on Dashboard, invisible on Digest, s01-01); the FAB
-  is disabled + dimmed (0.48) when unauthenticated; its haptic is `.impact(weight: .light)` on a tap
-  counter (DESIGN-correct); the tab bar hides only for Assistant (`hidesTabBar`). F-001 (dead code)
-  re-confirmed accurate and still deferred (see Summary Q1).
+  floating Quick Add FAB shows (opacity 1 + hit-testing) only at the **root** of Dashboard & Transactions
+  and is hidden (opacity 0) elsewhere — and, after F-037 (Phase 2), also when a detail is pushed onto
+  either tab; the FAB is disabled + dimmed (0.48) when unauthenticated; its haptic is
+  `.impact(weight: .light)` on a tap counter (DESIGN-correct); the tab bar hides only for Assistant
+  (`hidesTabBar`). F-001 (dead code) and F-037 (FAB-over-detail) were both **fixed in Phase 2**.
 
 ### F-037 · App shell (Quick Add FAB) · P3 · Layout & visual fit / navigation · Fixed
 - What: The floating Quick Add FAB persisted over pushed detail/sub-screens within the Dashboard and
