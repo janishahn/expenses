@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Insights Expenses/Income breakdown bars and ring now use the app's semantic income/expense theme colors instead of literal red/green, matching the Monthly Trend chart on the same screen and the rest of the app — most visible in dark mode.
 - The native iOS local-unlock screen's "Check Settings" button (shown when device authentication isn't available) now actually opens Settings instead of silently re-running the failed unlock check, so the label matches what the button does.
 - The native iOS Recurring screen now shows each rule's amount in its own currency ($ for USD rules) instead of always rendering euros — matching the web. The monthly Income/Expenses/Net totals stay in euros, with USD rules folded in at the backend's converted rate.
+- The native iOS floating "+" Quick Add button now appears only at the root of the Dashboard and Transactions tabs and hides once you open a transaction's detail, instead of hovering over the detail content.
 
 ## [0.3.1] - 2026-06-29
 

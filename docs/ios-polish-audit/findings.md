@@ -733,25 +733,22 @@ feedback) · P2 polish · P3 nit.
   counter (DESIGN-correct); the tab bar hides only for Assistant (`hidesTabBar`). F-001 (dead code)
   re-confirmed accurate and still deferred (see Summary Q1).
 
-### F-037 · App shell (Quick Add FAB) · P3 · Layout & visual fit / navigation · Deferred (needs user decision)
-- What: The floating Quick Add FAB persists over pushed detail/sub-screens within the Dashboard and
-  Transactions tabs (e.g. it floats over the lower content of a pushed TransactionDetail — observed
-  s16-02/s16-03), not just at the tab root. Over the list it's the standard FAB-over-content pattern
-  (fine); over a specific transaction's detail it visually overlaps content and offers a contextually
-  odd "add a new transaction" action.
-- Where: RootView.swift:21-28 — the FAB is a root-level `ZStack` overlay above the whole `TabView`,
-  gated only on `selectedDestination.showsFloatingQuickAdd` (the TAB), with no knowledge of nav depth
-  inside the tab (each tab's `NavigationStack` is internal to DashboardView/TransactionsView).
-- Why it's a gap: minor — content scrolls under the FAB and it's a common pattern, but a global
-  quick-add hovering over a detail screen is slightly incongruous.
-- Repro: Transactions (or Dashboard) → tap a row → on the pushed detail the "+" FAB still shows
-  bottom-right.
-- Fix: **Deferred — needs user decision** (Summary Q5). The clean fix (show the FAB only at the tab
-  root — depth 0) requires lifting the Dashboard/Transactions `NavigationStack` paths up to RootView,
-  or a PreferenceKey from the child views, i.e. a structural change to the nav architecture across
-  multiple files — beyond a smallest-viable-diff and also a product call (is the persistent global
-  quick-add desirable, or should it be tab-root only?). Recommend scoping the FAB to the tab root.
-- Verified: n/a (logged, not fixed).
+### F-037 · App shell (Quick Add FAB) · P3 · Layout & visual fit / navigation · Fixed
+- What: The floating Quick Add FAB persisted over pushed detail/sub-screens within the Dashboard and
+  Transactions tabs (it floated over the lower content of a pushed TransactionDetail — s16-02/s16-03),
+  not just at the tab root — offering a contextually odd "add a new transaction" action over a specific
+  transaction and overlapping its content.
+- Where: RootView.swift — the FAB is a root-level `ZStack` overlay above the whole `TabView`, was gated
+  only on the TAB selection with no knowledge of nav depth inside the tab.
+- User decision: **scope the FAB to the tab root.**
+- Fix: Lifted the Dashboard and Transactions `NavigationStack` paths up to RootView (`@State
+  dashboardPath`/`transactionsPath: [Int]`, passed as bindings; both views now use
+  `NavigationStack(path:)` with a defaulted init so previews/other callers are unaffected). Replaced the
+  enum `showsFloatingQuickAdd` with a RootView computed that returns true only when the active tab is
+  Dashboard/Transactions AND its path is empty, and drove the FAB opacity/hit-testing/animation off it.
+- Verified: ✅ built green and driven live: on the Transactions root the FAB shows (over the last row —
+  standard pattern, f037-03); tapping a row to push the detail hides the FAB (f037-02, vs the earlier
+  overlap in s16-01); popping back restores it. The snappy animation handles the transition.
 
 ### S-38 · Privacy overlay · Audited
 - PrivacyOverlayModifier (Shared/PrivacyOverlayModifier.swift), applied via `.protectSensitiveSnapshots()`

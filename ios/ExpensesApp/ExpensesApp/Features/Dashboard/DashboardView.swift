@@ -3,10 +3,15 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
+    @Binding var path: [Int]
     @State private var selectedPeriod: DashboardPeriod = .thisMonth
 
+    init(path: Binding<[Int]> = .constant([])) {
+        _path = path
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()

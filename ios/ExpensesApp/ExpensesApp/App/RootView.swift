@@ -6,6 +6,8 @@ struct RootView: View {
 
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
     @State private var morePath: [AppDestination] = []
+    @State private var dashboardPath: [Int] = []
+    @State private var transactionsPath: [Int] = []
     @State private var quickAddSheet: QuickAddSheet?
     @State private var quickAddTapTick = 0
 
@@ -13,14 +15,27 @@ struct RootView: View {
         selectedPrimaryDestination
     }
 
+    // The Quick Add FAB shows only at the root of the Dashboard and Transactions
+    // tabs — it hides once a detail is pushed onto either tab's navigation stack.
+    private var showsFloatingQuickAdd: Bool {
+        switch selectedDestination {
+        case .dashboard:
+            dashboardPath.isEmpty
+        case .transactions:
+            transactionsPath.isEmpty
+        default:
+            false
+        }
+    }
+
     var body: some View {
         ZStack {
             primaryTabs
 
             quickAddButton
-                .opacity(selectedDestination.showsFloatingQuickAdd ? 1 : 0)
-                .allowsHitTesting(selectedDestination.showsFloatingQuickAdd)
-                .animation(.snappy(duration: 0.18), value: selectedDestination)
+                .opacity(showsFloatingQuickAdd ? 1 : 0)
+                .allowsHitTesting(showsFloatingQuickAdd)
+                .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
         }
         .tint(ExpensesTheme.accent(for: scheme))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
@@ -74,9 +89,9 @@ struct RootView: View {
     private func destinationView(_ destination: AppDestination) -> some View {
         switch destination {
         case .dashboard:
-            DashboardView()
+            DashboardView(path: $dashboardPath)
         case .transactions:
-            TransactionsView()
+            TransactionsView(path: $transactionsPath)
         case .budgets:
             BudgetsView()
         case .insights:
@@ -291,15 +306,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "stethoscope"
         case .assistant:
             "bubble.left.and.bubble.right"
-        }
-    }
-
-    var showsFloatingQuickAdd: Bool {
-        switch self {
-        case .dashboard, .transactions:
-            true
-        case .budgets, .insights, .more, .forecast, .digest, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics, .assistant:
-            false
         }
     }
 

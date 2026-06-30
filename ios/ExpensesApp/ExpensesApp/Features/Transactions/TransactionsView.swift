@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TransactionsView: View {
     @Environment(AppModel.self) private var model
+    @Binding var path: [Int]
     @State private var listMode: TransactionListMode = .active
     @State private var selectingTransactions = false
     @State private var selectedTransactionIDs: Set<Int> = []
@@ -21,8 +22,12 @@ struct TransactionsView: View {
     @State private var appliedCategoryID: Int?
     @State private var appliedTagID: Int?
 
+    init(path: Binding<[Int]> = .constant([])) {
+        _path = path
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()
