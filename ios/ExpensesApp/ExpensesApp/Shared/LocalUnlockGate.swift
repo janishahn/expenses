@@ -247,8 +247,8 @@ private struct LocalUnlockView: View {
                 ProgressView()
                     .controlSize(.regular)
             } else {
-                Button(action: retry) {
-                    Label(buttonTitle, systemImage: biometricSystemImage)
+                Button(action: primaryAction) {
+                    Label(buttonTitle, systemImage: buttonSystemImage)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -328,6 +328,22 @@ private struct LocalUnlockView: View {
             "Check Settings"
         default:
             "Unlock"
+        }
+    }
+
+    private var buttonSystemImage: String {
+        if case .unavailable = state {
+            "gearshape"
+        } else {
+            biometricSystemImage
+        }
+    }
+
+    private func primaryAction() {
+        if case .unavailable = state, let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        } else {
+            retry()
         }
     }
 

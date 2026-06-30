@@ -65,7 +65,7 @@ See finding F-001. They are excluded from the reachable-surface rows below.
 | S-34 | Modal | AdminLogDetailView | Features/Admin/AdminView.swift:485 | read-only summary/body/payload (raw JSON); copy req-id/payload; share JSON | success only | admin+elevated (context) | Fixed | F-021 | 2026-06-30 |
 | S-35 | Modal | CameraCaptureView | Shared/CameraCaptureView.swift:4 | UIImagePickerController camera; capture→onCapture; cancel | success, cancel (UIKit) | camera availability | Pending | — | — |
 | S-36 | Modal | DocumentPreviewView | Shared/DocumentPreviewView.swift:9 | QLPreviewController; Done dismiss | single-item (QuickLook) | — | Audited | — | 2026-06-30 |
-| S-37 | Gate | LocalUnlockGate / LocalUnlockView | Shared/LocalUnlockGate.swift:5 | wraps content; auto/retry unlock; privacy cover; grace re-lock | locked, authenticating, unlocked, failed, unavailable | hasStoredToken & not skip-flag | Pending | F-027 | — |
+| S-37 | Gate | LocalUnlockGate / LocalUnlockView | Shared/LocalUnlockGate.swift:5 | wraps content; auto/retry unlock; privacy cover; grace re-lock | locked, authenticating, unlocked, failed, unavailable | hasStoredToken & not skip-flag | Fixed | F-027 | 2026-06-30 |
 | S-38 | Overlay | PrivacyOverlayModifier | Shared/PrivacyOverlayModifier.swift:3 | snapshot shield when inactive | backgrounded, active | scenePhase | Audited | (sheet-coverage→S-37) | 2026-06-30 |
 
 ## Coverage cross-check (Phase 1 gate)

@@ -3,7 +3,7 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 36 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 37 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
@@ -15,14 +15,15 @@
   template; clean, consistent form pattern, no findings), **Insights filters ✅ Audited** (S-32; clean,
   no F-033 analogue) + **F-036 Fixed** (Charts breakdown income/expense theme colors), **App shell
   ✅ Audited** (S-01; F-001 re-confirmed, F-037 deferred), **Privacy overlay ✅ Audited** (S-38; covers
-  inactive+background; sheet-coverage examined under S-37). Confidence: **high**.
+  inactive+background; sheets covered in production by the S-37 cover window), **LocalUnlockGate
+  ✅ Fixed** (S-37; F-027 "Check Settings" now opens Settings; sheet-coverage resolved). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 21 (F-006, F-007, F-008, F-009,
+- **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 22 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024, F-028).
-  Deferred (need user decision): 7 (F-001, F-005, F-011b, F-012, F-018, F-019, F-037). Open candidates
-  (await their surface's turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027) ·
-  P3: 1 (F-037). Cross-surface
+  F-025, F-026, F-027, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024,
+  F-028). Deferred (need user decision): 7 (F-001, F-005, F-011b, F-012, F-018, F-019, F-037). Open
+  candidates (await their surface's turn): 0. By severity of still-open items: P3: 1 (F-037, deferred).
+  Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16). Harness
   note: axe can't actuate SwiftUI `.menu` Picker popovers (separate overlay), so states reachable only
   via a `.menu` picker (e.g. BulkEdit operation → Apply dialog) are code-verified where applicable.
@@ -515,15 +516,27 @@ feedback) · P2 polish · P3 nit.
   for valid rules, so the failure state itself isn't reproducible on localhost (same constraint as
   F-022). The `.refreshable` retry is new and was the missing recovery affordance.
 
-### F-027 · LocalUnlockGate · P2 · Completeness / copy · Open
-- What: In the `.unavailable` state the button reads "Check Settings" but its action just re-runs
-  `evaluatePolicy()` (retry) — it does NOT open `UIApplication.openSettingsURLString`. The label
-  promises navigation the handler doesn't perform.
-- Where: LocalUnlockGate.swift:250, :323-326.
-- Why it's a gap: a button whose label lies about what it does.
-- Repro: hard to reach on simulator (biometrics unavailable); verify via code + a device note.
-- Fix: TBD (open Settings, or relabel to "Try Again").
-- Verified: not yet.
+### F-027 · LocalUnlockGate · P2 · Completeness / copy · Fixed
+- What: In the `.unavailable` state the button read "Check Settings" but its action was the shared
+  `retry` closure — it just re-ran `unlock()` → `evaluatePolicy()`, it did NOT open Settings. The label
+  promised navigation the handler didn't perform.
+- Where: LocalUnlockView (the else-branch Button, was `action: retry`).
+- Why it's a gap: a button whose label lies about what it does. The `.unavailable` state is reached
+  when `canEvaluatePolicy(.deviceOwnerAuthentication)` returns false — i.e. no device passcode/biometrics
+  set up — so the user genuinely must go to Settings to enable device auth; a silent retry can't help
+  until they do.
+- Fix: Made the button's action `.unavailable`-aware via a new `primaryAction()` — for `.unavailable`
+  it opens `UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)` (truthful +
+  the helpful action); all other states keep retrying. Also gave the button a state-appropriate icon
+  (`gearshape` for "Check Settings", the biometric glyph otherwise). Chose open-Settings over relabel
+  to "Try Again" because the unavailable cause (no device auth set up) is fixed in Settings, not by
+  retrying. (openSettingsURLString lands on the app's Settings page — the standard "take me to Settings"
+  pattern; iOS has no public deep-link to the Passcode page.)
+- Verified: ✅ build green; app relaunches normally (gate bypassed via `--skip-local-unlock`, no
+  regression). The live `.unavailable` state is **not reachable in the dev simulator** — the
+  `--skip-local-unlock` flag bypasses the gate entirely, and reaching it otherwise needs a
+  passcode-less device + would risk the session — so the fix is verified by code review + build, not
+  on-screen capture (per the loop's "don't jeopardize the session" guardrail).
 
 ### F-028 · TransactionDetail · P3 · Content & copy · Won't-fix (by design)
 - What: The description is rendered via `Text(.init(description))` → `LocalizedStringKey` markdown
@@ -679,8 +692,28 @@ feedback) · P2 polish · P3 nit.
   works: launching Settings backgrounds the app (s38-01-transition shows "◀ Expenses" with Settings
   sliding in); re-foregrounding restores normal content with no shield (Dashboard/Transactions/Insights
   tabs visible). Code path is unambiguous.
-- Note (sheet coverage → resolved in S-37): the modifier is a SwiftUI `.overlay`, which does NOT cover
-  presented sheets. The 0.3.1 changelog states the *local-unlock cover* (LocalUnlockGate's separate
-  top-level `UIWindow`) was built to cover sheets in the app switcher. Whether a sheet open during a
-  plain background (with local-unlock disabled or within the grace window) is left unshielded depends
-  on when that local-unlock cover is drawn — examined under S-37.
+- Note (sheet coverage → RESOLVED in S-37): the modifier is a SwiftUI `.overlay`, which does NOT cover
+  presented sheets. But the *local-unlock cover* (LocalUnlockGate's `PrivacyCoverWindow`, a separate
+  `UIWindow` at `windowLevel = .alert + 1` — above sheets) IS the authoritative snapshot shield: it's
+  shown on every `.inactive`/`.background` while unlocked, gated on `hasStoredToken &&
+  !skipsLocalUnlockForSimulator`. So in production (real device, logged in with a stored token) sheets
+  ARE covered in the app-switcher snapshot — no leak. The `.overlay` sheet-gap only manifests in the
+  dev simulator under `--skip-local-unlock`, which intentionally bypasses the whole gate. No finding.
+
+### S-37 · LocalUnlockGate / LocalUnlockView · Fixed (F-027) + Audited
+- F-027 fixed (see above): the `.unavailable` "Check Settings" button now opens Settings.
+- The rest of the gate audited by code (the live gate is bypassed in the dev sim via
+  `--skip-local-unlock`, so states aren't on-screen-actuable there without risking the session):
+  - States: `.locked`/`.unlocked` ("Unlock Expenses" + "Unlock"), `.authenticating` ("Unlocking
+    Expenses" + ProgressView + pulsing symbol), `.failed` ("Try Again" title + button, red icon +
+    detail), `.unavailable` ("Unlock Unavailable" + "Check Settings", red icon + detail) — all
+    well-formed with clear copy, the ExpensesBackground, and a 0.18s ease animation. SwiftUI #Previews
+    exist for ready/authenticating/failed/unavailable.
+  - Grace re-lock: `unlockGraceInterval = 20s`; on re-foreground within grace, nav state is preserved
+    (no re-lock); past grace, `unlockState = .locked`. The privacy cover is drawn in a separate window
+    (preserves nav, doesn't replace content) — matches the 0.3.1 changelog.
+  - **Sheet-coverage conclusion (resolves the S-38 cross-ref):** the `PrivacyCoverWindow` at
+    `windowLevel = .alert + 1` covers presented sheets, and it's raised on every `.inactive`/
+    `.background` while unlocked with a stored token → production sheets are shielded in the app
+    switcher. The PrivacyOverlayModifier `.overlay` is a redundant baseline content shield; no real
+    sheet leak in production.
