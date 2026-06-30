@@ -305,6 +305,8 @@ struct AdminView: View {
     private func perform(_ action: AdminAction) async {
         formError = nil
         statusText = nil
+        lastDocument = nil
+        shareURL = nil
         switch action {
         case .purge:
             guard let days = Int(purgeDays), days >= 1 else {
@@ -334,6 +336,8 @@ struct AdminView: View {
     private func handleSQLiteImport(_ result: Result<URL, Error>) {
         formError = nil
         statusText = nil
+        lastDocument = nil
+        shareURL = nil
         switch result {
         case let .success(url):
             Task {

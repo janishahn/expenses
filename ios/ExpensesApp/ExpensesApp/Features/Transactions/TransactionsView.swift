@@ -88,11 +88,19 @@ struct TransactionsView: View {
                     case .uncategorized:
                         if let transactions = model.uncategorizedTransactions {
                             if transactions.total == 0 {
-                                ContentUnavailableView(
-                                    "Inbox zero",
-                                    systemImage: "checkmark.circle",
-                                    description: Text("Every transaction has a category.")
-                                )
+                                if hasActiveQueryOrFilters {
+                                    ContentUnavailableView(
+                                        "No matching transactions",
+                                        systemImage: "magnifyingglass",
+                                        description: Text("Try a different search or clear your filters.")
+                                    )
+                                } else {
+                                    ContentUnavailableView(
+                                        "Inbox zero",
+                                        systemImage: "checkmark.circle",
+                                        description: Text("Every transaction has a category.")
+                                    )
+                                }
                             } else {
                                 Section {
                                     LabeledContent("Open items", value: "\(transactions.total)")
