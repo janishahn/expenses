@@ -9,6 +9,7 @@ struct AdminView: View {
     @State private var statusText: String?
     @State private var formError: String?
     @State private var selectedAction: AdminAction?
+    @State private var lastDocument: PreviewDocument?
     @State private var previewDocument: PreviewDocument?
     @State private var shareURL: URL?
     @State private var logFilter: AdminLogFilter = .errors
@@ -57,9 +58,9 @@ struct AdminView: View {
                 if let statusText {
                     Section("Latest Result") {
                         Text(statusText)
-                        if let previewDocument {
+                        if let lastDocument {
                             Button {
-                                self.previewDocument = previewDocument
+                                previewDocument = lastDocument
                             } label: {
                                 Label("Preview", systemImage: "doc.viewfinder")
                             }
@@ -77,9 +78,7 @@ struct AdminView: View {
                         Text(formError)
                             .foregroundStyle(.red)
                     }
-                }
-
-                if let lastError = model.lastError {
+                } else if let lastError = model.lastError {
                     ErrorDetailsView(error: lastError)
                 }
             }
@@ -414,7 +413,9 @@ struct AdminView: View {
             let filename = Self.safeFilename(download.filename, fallback: "expenses_download")
             let url = directory.appendingPathComponent(filename)
             try download.data.write(to: url, options: .atomic)
-            previewDocument = PreviewDocument(url: url)
+            let document = PreviewDocument(url: url)
+            lastDocument = document
+            previewDocument = document
             shareURL = url
             statusText = filename
         } catch {
@@ -511,10 +512,17 @@ private struct AdminLogDetailView: View {
                     Text(entry.prettyPayload())
                         .font(.footnote.monospaced())
                         .textSelection(.enabled)
+                    if let requestID = entry.requestID {
+                        Button {
+                            UIPasteboard.general.string = requestID
+                        } label: {
+                            Label("Copy Request ID", systemImage: "doc.on.doc")
+                        }
+                    }
                     Button {
-                        UIPasteboard.general.string = entry.requestID ?? entry.prettyPayload()
+                        UIPasteboard.general.string = entry.prettyPayload()
                     } label: {
-                        Label("Copy Request ID or Payload", systemImage: "doc.on.doc")
+                        Label("Copy Payload", systemImage: "doc.on.doc")
                     }
                     ShareLink(item: entry.prettyPayload()) {
                         Label("Share Log JSON", systemImage: "square.and.arrow.up")

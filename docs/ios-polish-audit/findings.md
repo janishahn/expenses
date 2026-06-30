@@ -3,17 +3,18 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 24 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 26 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
-  Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, **Account ✅ Fixed**
-  (F-016 extended; F-019 deferred). Confidence: **high**.
+  Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
+  (F-016 extended; F-019 deferred), **Admin ✅ Fixed** (S-15 + S-34 AdminLogDetail; F-020 re-openable
+  preview, F-021 clearer log copy, F-016 extended). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 13 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-015, F-016 [Reconcile+Reports+Account], F-025, F-026, F-030, F-031). Won't-fix: 2
-  (F-013, F-017). Deferred (need user decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open
-  candidates (await their surface's turn): 6 (F-020, F-021, F-022, F-023, F-024, F-028; F-027 Local
-  unlock). By severity of still-open items: P2: 1 · P3: 5. Cross-surface follow-up: PlanningView.swift
-  :545,567 income/expense literal colors.
+- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 15 (F-006, F-007, F-008, F-009,
+  F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-025, F-026,
+  F-030, F-031). Won't-fix: 2 (F-013, F-017). Deferred (need user decision): 6 (F-001, F-005, F-011b,
+  F-012, F-018, F-019). Open candidates (await their surface's turn): 5 (F-022, F-023, F-024, F-028;
+  F-027 Local unlock). By severity of still-open items: P2: 2 (F-022, F-027) · P3: 3 (F-023, F-024,
+  F-028). Cross-surface follow-up: PlanningView.swift:545,567 income/expense literal colors.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -286,12 +287,13 @@ feedback) · P2 polish · P3 nit.
   `llm_enabled=true` afterward. (Inbox triage Suggest and Admin assistant-usage share the same
   `llmEnabled` gate.) No issue — gating is correct.
 
-### F-016 · Reconcile & Reports & Account · P2 · State coverage / copy · Fixed
-- What: Both screens could render two stacked red error sections at once — a "Import Error"/"Error"
+### F-016 · Reconcile & Reports & Account & Admin · P2 · State coverage / copy · Fixed
+- What: Each screen could render two stacked red error sections at once — a "Import Error"/"Error"
   section for `formError` plus a separate "Error" section for `model.lastError`. (In practice they
   fire from different sources — formError = file-picker/validation, lastError = API — and rarely
   co-occur, but two red sections is inelegant.)
-- Where: ReconciliationView.swift:42-57; ReportsView.swift:117-150.
+- Where: ReconciliationView.swift:42-57; ReportsView.swift:117-150; AuthView.swift (signed-in);
+  AdminView.swift:75-84.
 - Fix (Reconcile, this turn): chained the two error sections into `if formError … else if lastError …`
   so at most one ever shows (the specific import error wins over a generic global one). The raw
   `error.localizedDescription` set in selectCSV (file-picker catch) is left as-is (file-picker errors
@@ -304,10 +306,18 @@ feedback) · P2 polish · P3 nit.
   Gated the ErrorDetailsView on `formError == nil` (`if formError == nil, let error = …`). Verified
   safe: `formError` is only rendered/set in the signed-in branch, so the signed-out branch (always
   `formError == nil`) still shows `lastError` normally — no regression.
+- Fix (Admin, S-15): AdminView had the same shape with the two error surfaces adjacent — a `formError`
+  Section("Error") immediately followed by a `model.lastError` ErrorDetailsView. Neither `perform`
+  (validation/maintenance) nor `storeDownload` (file-write catch) clears `model.lastError`, so a
+  lingering API error plus a new validation message could stack. Chained them into
+  `if formError … else if let lastError …` (the Reconcile shape — adjacent, so a plain `else if`
+  works), so at most one ever shows and the specific formError wins.
 - Verified: ✅ rebuilt (green). Reconcile success + Bank Queue render in light/dark (s11-*); Reports
-  form usable + PDF generation success (s12-*); Account all sections (identity/token/CSV/snapshots/
-  sessions/appearance) render in light/dark with no error in the success state (s14-*). Error states
-  are hard to stage via automation, so the one-error-at-a-time behavior is by construction.
+  form usable + PDF generation success (s12-*); Account all sections render in light/dark with no
+  error in the success state (s14-*); Admin elevated (health/backup/import/info/logs) renders in
+  light + dark with no error in the success state (s15-02, s15-10-admin-dark). Error states are hard
+  to stage via automation (Admin's would need a lingering lastError plus a new formError without
+  triggering a destructive op), so the one-error-at-a-time behavior is by construction.
 
 ### F-017 · Reports · P2 · State coverage · Won't-fix (premise wrong)
 - What: Suspected the lack of a top-level loading placeholder during the initial category fetch was a
@@ -352,25 +362,41 @@ feedback) · P2 polish · P3 nit.
   user decide whether it's worth a signed-out retry affordance.
 - Verified: n/a (cannot safely reach the signed-out branch).
 
-### F-020 · Admin · P2 · Completeness / navigation · Open
-- What: The "Preview" button in Latest Result is effectively dead. `storeDownload` sets
+### F-020 · Admin · P2 · Completeness / navigation · Fixed
+- What: The "Preview" button in Latest Result was effectively dead. `storeDownload` set
   `previewDocument`, which auto-presents the sheet; on dismiss SwiftUI nils the binding, so the
-  `if let previewDocument` guard hides the button, and its body just reassigns the value to itself.
-  Unlike Reports, Admin keeps no persistent `lastDocument`, so Preview never re-opens.
+  `if let previewDocument` guard hid the button, and its body just reassigned the value to itself.
+  Unlike Reports, Admin kept no persistent `lastDocument`, so Preview never re-opened.
 - Where: AdminView.swift:60-66 (vs ReportsView.swift:127-129).
 - Why it's a gap: a control that does nothing / cannot function as labeled.
-- Repro: TBD — Admin → download/export → after the auto-preview dismisses, try Preview.
-- Fix: TBD (mirror Reports' persistent lastDocument, or remove the button).
-- Verified: not yet.
+- Repro: Admin → Download database backup → the auto-preview opens; dismiss it → the Latest Result
+  section showed only the filename + Share, no Preview button (confirmed live, s15-05-bug-no-preview).
+- Fix: Mirrored Reports' pattern exactly — added a persistent `@State lastDocument`, set it alongside
+  `previewDocument` in `storeDownload`, guarded the button on `lastDocument`, and made the button
+  present `previewDocument = lastDocument`. (Read-only ops only: verified via Download backup, never
+  the destructive maintenance/import actions.)
+- Verified: ✅ rebuilt (green). After downloading a backup and dismissing the auto-preview, the Latest
+  Result section now keeps a working Preview button (s15-07 region) that re-opens the document
+  (s15-08-preview-reopened), alongside Share. No regression to the auto-present-on-create behavior.
 
-### F-021 · Admin (logs) · P3 · Content & copy · Open
-- What: Raw JSON `rawBody`/`prettyPayload()` dumped verbatim in monospaced Text; "Copy Request ID or
-  Payload" label ambiguous (silently falls back to full payload when no request ID).
-- Where: AdminView.swift:502-518.
-- Why it's a gap: dev-style raw output; ambiguous action label. (Admin is a power-user surface — low.)
-- Repro: TBD.
-- Fix: TBD.
-- Verified: not yet.
+### F-021 · Admin (logs) · P3 · Content & copy · Fixed
+- What: The log-detail copy action read "Copy Request ID or Payload" — a single button that copied
+  `entry.requestID ?? entry.prettyPayload()`, i.e. the request ID when present and silently the whole
+  payload otherwise. The label doesn't say which, and the request ID could not be copied separately
+  from the payload (or vice versa).
+- Where: AdminView.swift (AdminLogDetailView Payload section).
+- Why it's a gap: copy quality — an action label should name exactly what it does. (Admin is a
+  power-user surface, so P3.)
+- Repro: Admin (elevated) → Application Logs → tap a log row → Payload section showed the ambiguous
+  "Copy Request ID or Payload" (confirmed live, s15-07-logdetail-buttons).
+- Fix: Split into two explicit actions — "Copy Request ID" (shown only when the entry has a request
+  ID) and "Copy Payload" (always) — so each names exactly what it copies and both are independently
+  available; "Share Log JSON" unchanged. The raw pretty-printed `prettyPayload()` JSON block itself is
+  **left as-is and that half dismissed** — verbatim JSON is appropriate (and expected) on an admin log
+  inspector, and `prettyPayload()` already indents/sorts it; there is no lossless structured
+  alternative worth a new pattern here.
+- Verified: ✅ rebuilt (green). The Payload section now shows "Copy Request ID" / "Copy Payload" /
+  "Share Log JSON" as three distinct labeled rows (s15-09-logdetail-fixed).
 
 ### F-022 · TransactionDetail · P2 · State coverage · Open
 - What: If `loadTransactionDetail` fails, `transaction` stays nil and the view shows an infinite

@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS recurring-rule occurrences screen now shows a clear "Couldn't load occurrences" message with pull-to-refresh when the load fails, instead of spinning forever with no way to retry.
 - The native iOS Organize category/tag merge sheets now open with a clean error slate instead of occasionally showing a leftover error message from an unrelated earlier action.
 - The native iOS Assistant's "LLM features are turned off" state now uses the same glass card styling as the other unavailable states on that screen instead of a plain system placeholder.
-- The native iOS Reconcile, Reports, and Account screens now show a single error message at a time instead of occasionally stacking a generic error beneath the action-specific one.
+- The native iOS Reconcile, Reports, Account, and Admin screens now show a single error message at a time instead of occasionally stacking a generic error beneath the action-specific one.
+- The native iOS Admin screen's "Latest Result" Preview button now keeps working after the first auto-preview is dismissed — it reliably re-opens the last database backup or CSV export instead of disappearing with no way to view the file again.
+- The native iOS Admin log-entry detail now offers separate "Copy Request ID" and "Copy Payload" actions instead of a single ambiguous "Copy Request ID or Payload" button that silently copied one or the other depending on whether the entry had a request ID.
 
 ## [0.3.1] - 2026-06-29
 
