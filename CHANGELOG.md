@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Reconcile, Reports, Account, and Admin screens now show a single error message at a time instead of occasionally stacking a generic error beneath the action-specific one.
 - The native iOS Admin screen's "Latest Result" Preview button now keeps working after the first auto-preview is dismissed — it reliably re-opens the last database backup or CSV export instead of disappearing with no way to view the file again.
 - The native iOS Admin log-entry detail now offers separate "Copy Request ID" and "Copy Payload" actions instead of a single ambiguous "Copy Request ID or Payload" button that silently copied one or the other depending on whether the entry had a request ID.
+- The native iOS transaction detail screen now shows a "Couldn't load transaction" message with pull-to-refresh when its data fails to load, instead of spinning forever with no way to retry — most noticeable when the connection drops or on slower self-hosted hardware.
+- The native iOS transaction detail's reimbursement amounts (linked reimbursement rows and the expense-search results) and the Forecast monthly breakdown amounts (income/expenses totals, recurring rules, variable estimates, one-time events) now use the app's semantic income/expense theme colors instead of literal green/red, so they match every other transaction screen — most visible in dark mode's warmer tones.
 
 ## [0.3.1] - 2026-06-29
 

@@ -526,12 +526,13 @@ private struct ForecastMonthSection: View {
 }
 
 private struct ForecastBreakdownRows: View {
+    @Environment(\.colorScheme) private var scheme
     let month: ForecastMonth
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForecastLine(label: "Income", amount: month.projectedIncomeCents, color: .green)
-            ForecastLine(label: "Expenses", amount: month.projectedExpensesCents, color: .red)
+            ForecastLine(label: "Income", amount: month.projectedIncomeCents, color: ExpensesTheme.income(for: scheme))
+            ForecastLine(label: "Expenses", amount: month.projectedExpensesCents, color: ExpensesTheme.expense(for: scheme))
             if !month.breakdown.recurringRules.isEmpty {
                 Divider()
                 Text("Recurring")
@@ -542,7 +543,7 @@ private struct ForecastBreakdownRows: View {
                         label: row.name,
                         detail: row.categoryName,
                         amount: row.type == "income" ? row.amountCents : -row.amountCents,
-                        color: row.type == "income" ? .green : .red
+                        color: row.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme)
                     )
                 }
             }
@@ -552,7 +553,7 @@ private struct ForecastBreakdownRows: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach(month.breakdown.variableEstimates) { row in
-                    ForecastLine(label: row.name, amount: -row.amountCents, color: .red)
+                    ForecastLine(label: row.name, amount: -row.amountCents, color: ExpensesTheme.expense(for: scheme))
                 }
             }
             if !month.breakdown.oneTimeEvents.isEmpty {
@@ -564,7 +565,7 @@ private struct ForecastBreakdownRows: View {
                     ForecastLine(
                         label: row.name,
                         amount: row.type == "income" ? row.amountCents : -row.amountCents,
-                        color: row.type == "income" ? .green : .red
+                        color: row.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme)
                     )
                 }
             }

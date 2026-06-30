@@ -123,8 +123,14 @@ struct TransactionDetailView: View {
                 } header: {
                     Text("Receipts")
                 }
-            } else {
+            } else if model.isLoading {
                 ProgressView()
+            } else {
+                ContentUnavailableView(
+                    "Couldn't load transaction",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("Pull to refresh to try again.")
+                )
             }
         }
         .navigationTitle(transaction?.title ?? "Transaction")
@@ -194,6 +200,9 @@ struct TransactionDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .task {
+            await model.loadTransactionDetail(id: transactionID)
+        }
+        .refreshable {
             await model.loadTransactionDetail(id: transactionID)
         }
     }
@@ -510,6 +519,7 @@ private struct ReimbursementsSection: View {
     var onAllocate: (Int, Int) async -> Bool
     var onDelete: (Int) async -> Bool
 
+    @Environment(\.colorScheme) private var scheme
     @State private var searchQuery = ""
     @State private var allocationAmounts: [Int: String] = [:]
     @State private var errorMessage: String?
@@ -609,7 +619,7 @@ private struct ReimbursementsSection: View {
             }
             Spacer()
             Text(AppFormatters.euros(amountCents))
-                .foregroundStyle(.green)
+                .foregroundStyle(ExpensesTheme.income(for: scheme))
             Button(role: .destructive) {
                 pendingDeleteAllocationID = allocationID
             } label: {
@@ -630,7 +640,7 @@ private struct ReimbursementsSection: View {
                 }
                 Spacer()
                 Text(AppFormatters.euros(-row.expense.amountCents))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ExpensesTheme.expense(for: scheme))
             }
             LabeledContent("Remaining", value: AppFormatters.euros(row.remainingUnreimbursedCents))
             HStack {

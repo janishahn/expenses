@@ -3,18 +3,19 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 26 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 28 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
-  (F-016 extended; F-019 deferred), **Admin ✅ Fixed** (S-15 + S-34 AdminLogDetail; F-020 re-openable
-  preview, F-021 clearer log copy, F-016 extended). Confidence: **high**.
+  (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
+  ✅ Fixed** (S-16 + S-33 Reimbursements; F-022 failed-state+retry, F-023 themed reimbursement colors,
+  F-028 dismissed; folded in the PlanningView Forecast color sweep). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 15 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-025, F-026,
-  F-030, F-031). Won't-fix: 2 (F-013, F-017). Deferred (need user decision): 6 (F-001, F-005, F-011b,
-  F-012, F-018, F-019). Open candidates (await their surface's turn): 5 (F-022, F-023, F-024, F-028;
-  F-027 Local unlock). By severity of still-open items: P2: 2 (F-022, F-027) · P3: 3 (F-023, F-024,
-  F-028). Cross-surface follow-up: PlanningView.swift:545,567 income/expense literal colors.
+- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 17 (F-006, F-007, F-008, F-009,
+  F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
+  F-025, F-026, F-030, F-031). Won't-fix: 3 (F-013, F-017, F-028). Deferred (need user decision): 6
+  (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their surface's turn): 2 (F-024;
+  F-027 Local unlock). By severity of still-open items: P2: 1 (F-027) · P3: 1 (F-024). Cross-surface
+  follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16).
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -224,9 +225,11 @@ feedback) · P2 polish · P3 nit.
   `ExpensesTheme.income/expense(for: scheme)`, like the canonical `TransactionRow`.
 - Verified: ✅ rebuilt (green). Dark theme now shows income green and expenses the warm theme red
   (s08-recurring-dark). Light/large Dynamic Type OK.
-- Note: the same literal-color pattern for income/expense also exists at PlanningView.swift:545,567
-  (Forecast month breakdown rows, `? .green : .red`) — tracked here; will fix in a small consistency
-  pass without re-auditing that surface.
+- Note (resolved with S-16): the same literal-color pattern existed in PlanningView's
+  `ForecastBreakdownRows` (Forecast month breakdown) — five literal `.green`/`.red` color args
+  (Income/Expenses totals, recurring rules, variable estimates, one-time events). Swept all five to
+  `ExpensesTheme.income/expense(for: scheme)` (added the `colorScheme` env to that view) in the S-16
+  consistency commit, so the whole component sources income/expense colors from the shared theme.
 
 ### F-012 · Recurring · P3 · Interaction feedback · Deferred
 - What: Swipe toggle/delete and the delete dialog fire async mutations with no inline failure feedback
@@ -398,23 +401,46 @@ feedback) · P2 polish · P3 nit.
 - Verified: ✅ rebuilt (green). The Payload section now shows "Copy Request ID" / "Copy Payload" /
   "Share Log JSON" as three distinct labeled rows (s15-09-logdetail-fixed).
 
-### F-022 · TransactionDetail · P2 · State coverage · Open
-- What: If `loadTransactionDetail` fails, `transaction` stays nil and the view shows an infinite
-  `ProgressView` with no error/retry/not-found state.
-- Where: TransactionDetailView.swift:126-128, :196-198.
-- Why it's a gap: a screen stuck spinning on failure.
-- Repro: TBD — open a detail while backend errors.
-- Fix: TBD.
-- Verified: not yet.
+### F-022 · TransactionDetail · P2 · State coverage · Fixed
+- What: If `loadTransactionDetail` failed, `transaction` stayed nil and the view showed an infinite
+  `ProgressView` with no error/retry/not-found state — a screen stuck spinning on failure.
+- Where: TransactionDetailView.swift:126-128 (was the bare `else { ProgressView() }`).
+- Why it's a gap: loading must be distinct from failure; a failed load needs a visible error + a way
+  to recover. (`runRequest` sets `isLoading=true` during the load and `defer`s it false; on failure
+  `selectedTransaction` is left unchanged, so the id-matched `transaction` computed stays nil.)
+- Repro: open transaction B while `selectedTransaction` holds A, with the backend worker suspended
+  (`kill -STOP`), so the detail load hangs then times out (URLSession default 60s) → previously an
+  endless spinner.
+- Fix: Split the nil-`transaction` branch into `else if model.isLoading { ProgressView() }` (loading)
+  and `else { ContentUnavailableView("Couldn't load transaction", systemImage:
+  "exclamationmark.triangle", description: "Pull to refresh to try again.") }` (failed/not-found),
+  and added `.refreshable { await model.loadTransactionDetail(id:) }` so the user can retry — the same
+  pattern as F-026 (RecurringOccurrences).
+- Verified: ✅ rebuilt (green). Drove the full sequence on-simulator: suspend worker → open a detail →
+  spinner (s16-06b-loading); after the ~60s timeout the failed card "Couldn't load transaction / Pull
+  to refresh to try again." appears (s16-07-failed-state); resume worker → pull-to-refresh reloads the
+  detail (s16-08-retry-recovered). Worker resumed; backend healthy afterward.
 
-### F-023 · TransactionDetail (Reimbursements) · P3 · Consistency · Open
-- What: `reimbursementRow` amount is hardcoded `.green` even on the expense side, instead of the
-  semantic theme color. (Pairs with F-007.)
-- Where: TransactionDetailView.swift:611-612.
-- Why it's a gap: semantic colors must come from the shared theme; expense isn't income-green.
-- Repro: TBD.
-- Fix: TBD.
-- Verified: not yet.
+### F-023 · TransactionDetail (Reimbursements) · P3 · Consistency · Fixed
+- What: `reimbursementRow` colored its amount with a literal `.green`, and `expenseSearchRow` colored
+  its amount with a literal `.red`, instead of the shared semantic theme. Same off-theme anti-pattern
+  as F-007/F-031 — most visible in dark mode, where the theme uses a warm-adjusted red/green that the
+  literals don't match.
+- Where: TransactionDetailView.swift `ReimbursementsSection` — `reimbursementRow` (was `.green`),
+  `expenseSearchRow` (was `.red`).
+- Why it's a gap: DESIGN — income/expense colors come from `ExpensesTheme`. A reimbursement allocation
+  is reimbursed (income-like) money in both the income and expense views → income green; the
+  expense-search candidate row is an expense → expense red.
+- Repro: open the seeded reimbursement pair (mock_db.py): the expense "Work conference travel
+  (reimbursable)" shows the linked reimbursement row; the income "Conference travel reimbursement from
+  employer" shows the allocation row + expense search results. Amounts used literal colors.
+- Fix: Added `@Environment(\.colorScheme) private var scheme` to `ReimbursementsSection`; switched
+  `reimbursementRow` → `ExpensesTheme.income(for: scheme)` and `expenseSearchRow` →
+  `ExpensesTheme.expense(for: scheme)`. Both literal colors in this one component swept together (same
+  rationale as F-007/F-031), so the surface is internally consistent. (Closes S-33's only finding.)
+- Verified: ✅ rebuilt (green). Allocation row renders themed green and the expense-search rows themed
+  red in light (s16-04) and in dark, where they match the warm dark-mode theme colors of the rest of
+  the app (s16-05-reimb-dark).
 
 ### F-024 · TransactionForm · P3 · Interaction feedback · Open
 - What: Save is only disabled by `model.isLoading`, never by form validity; an incomplete form looks
@@ -470,12 +496,18 @@ feedback) · P2 polish · P3 nit.
 - Fix: TBD (open Settings, or relabel to "Try Again").
 - Verified: not yet.
 
-### F-028 · TransactionDetail · P3 · Content & copy · Open
+### F-028 · TransactionDetail · P3 · Content & copy · Won't-fix (by design)
 - What: The description is rendered via `Text(.init(description))` → `LocalizedStringKey` markdown
-  parsing, so user free-text containing `*`, `_`, `[]()` is reinterpreted as markdown.
+  parsing, so markdown in the description is interpreted (bold/italic/links) rather than shown raw.
 - Where: TransactionDetailView.swift:33.
-- Why it's a gap: user content shown differently than entered. (May be intentional if descriptions
-  are meant to support markdown — verify against the web app's behavior.)
-- Repro: TBD — add a description with `*stars*`.
-- Fix: TBD (confirm intended; the web Transaction Row renders markdown, so this may be by design).
-- Verified: not yet.
+- Resolution: **Dismissed — markdown is the intended format.** Descriptions are a documented markdown
+  feature (CHANGELOG [0.1.0]: "markdown descriptions"); the web renders them through `react-markdown`
+  (`ui/src/components/TransactionDescription.tsx`) and edits them with a TipTap markdown editor
+  (`ui/src/components/DescriptionEditor.tsx`). So iOS interpreting markdown is correct and
+  cross-platform-consistent, not a bug.
+- Note (fidelity gap, not fixed): SwiftUI `Text(.init(...))` renders only *inline* markdown
+  (`*bold*`, `_italic_`, `[link](url)`), not *block* markdown — so a bulleted list (`- item`) or
+  blockquote (`> quote`) appears with the literal `-`/`>` prefix instead of rendered blocks (observed
+  live on the seeded "Work conference travel" list and "Conference travel reimbursement" blockquote).
+  The text stays fully legible; matching the web's block rendering would need a block-markdown
+  renderer (AttributedString block parsing / a custom view) — a feature, not a polish fix. Left as-is.
