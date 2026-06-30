@@ -3,15 +3,18 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 10 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
-  Forecast(+ScenarioEditor S-20), **Recurring ✅ Fixed** (F-011a, F-031, F-026) + its modals
-  S-23 RecurringRuleForm (Audited) and S-24 RecurringOccurrences (Fixed). Coverage confidence: **high**.
+- **Surfaces:** 18 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+  Forecast(+ScenarioEditor S-20), Recurring(+S-23 RuleForm, S-24 Occurrences), **Organize ✅ Fixed**
+  (F-014; F-013 dismissed) + its modals S-29 CategoryMerge & S-30 TagMerge (Fixed) and S-25 CategoryForm
+  / S-26 TagForm / S-27 TemplateForm / S-28 RuleForm / S-31 ArchivedCategories (Audited — share the
+  verified app-wide Form/list pattern; core Organize sections + LLM rule mining + merge driven live).
+  Coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 28 (F-001, F-005–F-031; F-011 split into F-011a/F-011b). By status — Fixed: 10
-  (F-006, F-007, F-008, F-009, F-010, F-011a, F-025, F-026, F-030, F-031). Deferred (need user
-  decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's turn): 13.
-  By severity of still-open items: P2: 4 · P3: 7. Known cross-surface follow-up: PlanningView.swift:545,
-  567 income/expense literal colors (same family as F-031).
+- **Findings:** total 28 (F-001, F-005–F-031). By status — Fixed: 11 (F-006, F-007, F-008, F-009,
+  F-010, F-011a, F-014, F-025, F-026, F-030, F-031). Won't-fix: 1 (F-013, not a bug). Deferred (need
+  user decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's
+  turn): 11. By severity of still-open items: P2: 4 · P3: 6. Cross-surface follow-up: PlanningView.swift
+  :545,567 income/expense literal colors (same family as F-031).
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -237,23 +240,25 @@ feedback) · P2 polish · P3 nit.
   pattern here; resolve once for all list screens.
 - Verified: n/a.
 
-### F-013 · Organize (Rules) · P3 · Content & copy · Open
-- What: Rule row subtitle hardcodes the word "title" as the match field regardless of the rule's
-  actual match configuration.
+### F-013 · Organize (Rules) · P3 · Content & copy · Won't-fix (not a bug)
+- What: Suspected the rule-row subtitle "title `<matchType>` 'value'" hardcoded "title" misleadingly.
 - Where: OrganizeView.swift:1234.
-- Why it's a gap: label can misrepresent the rule.
-- Repro: TBD — inspect a rule row.
-- Fix: TBD (derive label from match field, or drop it).
-- Verified: not yet.
+- Resolution: **Dismissed.** Rules only match on the transaction *title* — the rule form's sole
+  text-match field is "Title text". So "title" accurately names the matched field. Confirmed live:
+  rows read "Priority 10 · title contains 'netflix'", "title regex 'uber|bolt'", etc. The label is
+  correct; no change made.
 
-### F-014 · Organize (Merge sheets) · P3 · State coverage · Open
-- What: Category/Tag merge sheets render the global `model.lastError` inline but never clear it on
-  entry — a stale error from an unrelated prior op can appear at the bottom of the form on open.
-- Where: OrganizeView.swift:970-975, :1073-1078.
-- Why it's a gap: error must reflect this surface's state, not leak global state.
-- Repro: TBD — trigger an error elsewhere, then open a merge sheet.
-- Fix: TBD (clear lastError on appear, or use a sheet-local error).
-- Verified: not yet.
+### F-014 · Organize (Merge sheets) · P3 · State coverage · Fixed
+- What: The Category/Tag merge sheets render the global `model.lastError` inline but never cleared it
+  on entry — a stale error from an unrelated prior operation could appear at the bottom on open.
+- Where: OrganizeView.swift:970-975 (CategoryMerge), :1073-1078 (TagMerge).
+- Why it's a gap: the error shown should reflect this sheet's own operations, not leak global state.
+- Fix: Added `.onAppear { model.lastError = nil }` to both merge sheets, so each opens with a clean
+  error slate; preview/merge failures still set and show it afterward.
+- Verified: ✅ rebuilt (green). The Tag merge sheet opens cleanly (Source/Target pickers, Merge/Preview
+  correctly disabled, no error text) — no regression (s09-tagmerge2). The stale-error-clearing is
+  correct by construction; the exact stale-error trigger (an unrelated error with no intervening
+  clearing load, then opening merge) is a narrow edge case not easily staged on localhost.
 
 ### F-015 · Assistant · P2 · Consistency · Open
 - What: LLM-disabled state uses a raw `ContentUnavailableView` instead of the shared

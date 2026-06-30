@@ -1003,6 +1003,7 @@ private struct CategoryMergeView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
+            .onAppear { model.lastError = nil }
         }
     }
 
@@ -1106,6 +1107,7 @@ private struct TagMergeView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
+            .onAppear { model.lastError = nil }
         }
     }
 
