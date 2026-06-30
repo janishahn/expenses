@@ -3,7 +3,7 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 35 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 36 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
@@ -14,7 +14,8 @@
   — clearer scope-option + confirm-dialog copy), **Budget forms ✅ Audited** (S-21 override + S-22
   template; clean, consistent form pattern, no findings), **Insights filters ✅ Audited** (S-32; clean,
   no F-033 analogue) + **F-036 Fixed** (Charts breakdown income/expense theme colors), **App shell
-  ✅ Audited** (S-01; F-001 re-confirmed, F-037 deferred). Confidence: **high**.
+  ✅ Audited** (S-01; F-001 re-confirmed, F-037 deferred), **Privacy overlay ✅ Audited** (S-38; covers
+  inactive+background; sheet-coverage examined under S-37). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
 - **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 21 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
@@ -666,3 +667,20 @@ feedback) · P2 polish · P3 nit.
   multiple files — beyond a smallest-viable-diff and also a product call (is the persistent global
   quick-add desirable, or should it be tab-root only?). Recommend scoping the FAB to the tab root.
 - Verified: n/a (logged, not fixed).
+
+### S-38 · Privacy overlay · Audited
+- PrivacyOverlayModifier (Shared/PrivacyOverlayModifier.swift), applied via `.protectSensitiveSnapshots()`
+  on `LocalUnlockGate { RootView() }` in ExpensesApp.swift. Correct by code: it shields content for
+  `scenePhase != .active` (covers BOTH `.inactive` and `.background`, not just one), with a clean
+  `.regularMaterial` blur + `lock.shield` icon + "Expenses" title, and no animation (no Reduce Motion
+  concern). The shield disappears on `.active`.
+- Verified: the shield itself renders on the app-switcher snapshot / `.inactive`, which isn't directly
+  capturable on the simulator (same constraint as camera/local-unlock). Confirmed the background cycle
+  works: launching Settings backgrounds the app (s38-01-transition shows "◀ Expenses" with Settings
+  sliding in); re-foregrounding restores normal content with no shield (Dashboard/Transactions/Insights
+  tabs visible). Code path is unambiguous.
+- Note (sheet coverage → resolved in S-37): the modifier is a SwiftUI `.overlay`, which does NOT cover
+  presented sheets. The 0.3.1 changelog states the *local-unlock cover* (LocalUnlockGate's separate
+  top-level `UIWindow`) was built to cover sheets in the app switcher. Whether a sheet open during a
+  plain background (with local-unlock disabled or within the grace window) is left unshielded depends
+  on when that local-unlock cover is drawn — examined under S-37.
