@@ -48,12 +48,14 @@ struct BudgetsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    activeSheet = viewMode.defaultSheet ?? .override
+                    if let sheet = viewMode.defaultSheet {
+                        activeSheet = sheet
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Budget")
-                .disabled(model.identity?.authenticated != true)
+                .disabled(model.identity?.authenticated != true || viewMode.defaultSheet == nil)
             }
         }
         .expensesScreenStyle()
@@ -89,7 +91,9 @@ struct BudgetsView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.budgets == nil)
         .onChange(of: quickAddTrigger) { _, _ in
-            activeSheet = viewMode.defaultSheet ?? .override
+            if let sheet = viewMode.defaultSheet {
+                activeSheet = sheet
+            }
         }
     }
 
@@ -304,7 +308,7 @@ private struct BudgetScopeRow: View {
                     .font(.body.weight(.semibold))
                 if let onRemove {
                     Menu {
-                        Button("Remove override", role: .destructive) {
+                        Button("Remove Month Budget", role: .destructive) {
                             onRemove()
                         }
                     } label: {

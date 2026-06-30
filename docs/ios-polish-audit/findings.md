@@ -3,13 +3,13 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 4 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
-  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030), **S-05 Insights ✅ Fixed** (F-008).
-  Inventory coverage confidence: **high**.
+- **Surfaces:** 5 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
+  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030), **S-05 Insights ✅ Fixed** (F-008),
+  **S-06 Budgets ✅ Fixed** (F-009, F-010). Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 4 (F-006, F-007, F-008, F-030).
-  Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's
-  turn): 20. By severity of still-open items: P2: 8 · P3: 11.
+- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 6 (F-006, F-007, F-008, F-009,
+  F-010, F-030). Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates (await
+  their surface's turn): 18. By severity of still-open items: P2: 7 · P3: 9.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -155,23 +155,30 @@ feedback) · P2 polish · P3 nit.
   the glass "Loading durable purchases" card (screenshot s05-durables-loading.png); on resume the
   data loads normally (no regression). Light/dark + large Dynamic Type all render correctly.
 
-### F-009 · Budgets (Year) · P2 · Navigation & flow · Open
-- What: On the Year tab, the "+" toolbar button and external quickAddTrigger fall back to `.override`
-  (the Month Budget form) because `viewMode.defaultSheet` is nil for Year — opens an unexpected form.
-- Where: BudgetsView.swift:51, :91-93 (with :151-160).
-- Why it's a gap: row taps/buttons must do what the context implies; adding on Year opens a Month form.
-- Repro: TBD — Budgets → Year → tap "+".
-- Fix: TBD (disable "+" on Year, or route to the correct affordance).
-- Verified: not yet.
+### F-009 · Budgets (Year) · P2 · Navigation & flow · Fixed
+- What: On the Year tab, tapping "+" opened the "Set Month Budget" (override) form — because Year's
+  `defaultSheet` is nil and the button fell back to `?? .override`. An illogical click-through
+  (Year budgets are read-only/computed; there is no Year add).
+- Where: BudgetsView.swift:51 (toolbar), :91-93 (quickAddTrigger), with :151-160 (defaultSheet).
+- Why it's a gap: a control must do what its context implies; "+" on Year opened a Month form.
+- Repro: Budgets → Year → tap "+" → "Set Month Budget" sheet appeared (screenshot s06-year-add.png).
+- Fix: The "+" now only presents a sheet when `viewMode.defaultSheet != nil`, and is `.disabled`
+  when it is nil (Year). Mirrored the same guard on the quickAddTrigger path. Disabling (vs hiding)
+  keeps the toolbar stable across tab switches.
+- Verified: ✅ rebuilt (green). On Year, `describe-ui` reports the Add Budget button `enabled: false`
+  and tapping it opens no form; Month/Recurring still open their correct forms.
 
-### F-010 · Budgets · P3 · Consistency · Open
-- What: Override removal has redundant entry points with inconsistent labels: row Menu "Remove
-  override", swipe "Remove", dialog "Remove month budget?".
-- Where: BudgetsView.swift:201, :307, :68-75.
-- Why it's a gap: same control/job should read consistently.
-- Repro: TBD.
-- Fix: TBD (unify copy).
-- Verified: not yet.
+### F-010 · Budgets · P3 · Consistency · Fixed
+- What: The override-budget row Menu read "Remove override" — internal jargon ("override") that
+  disagreed with the row's own subtitle "Month budget", the swipe action "Remove", and the dialog
+  "Remove month budget?" / "Remove Month Budget".
+- Where: BudgetsView.swift:307 (menu) vs :201 (swipe) vs :68-69 (dialog) vs :298 (row subtitle).
+- Why it's a gap: the same action should read consistently and avoid dev jargon.
+- Repro: Budgets → Month → row "…" menu showed "Remove override".
+- Fix: Menu label "Remove override" → "Remove Month Budget", matching the dialog button and the row
+  subtitle. (Swipe stays the conventional short "Remove"; the menu + dialog now agree. The dual
+  menu+swipe affordance is the same pattern the deleted-transactions list uses, so it stays.)
+- Verified: ✅ rebuilt (green); `describe-ui` of the opened row menu now reports "Remove Month Budget".
 
 ### F-011 · Recurring · P2 · Content & copy / consistency · Open
 - What: (a) Rule form currency picker offers EUR/USD but every amount is rendered with

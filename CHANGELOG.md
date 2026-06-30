@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS deleted-transactions list now colors amounts with the app's semantic income/expense theme colors (matching the active list) instead of a literal green for income and an un-themed neutral tone for expenses.
 - The native iOS Digest week-navigation chevrons now read "Previous week" and "Next week" to VoiceOver instead of the generic "Back"/"Forward", so their action is clear.
 - The native iOS Insights Flow and Durables sections now show a loading indicator while their data loads instead of briefly flashing the "No flow loaded" / "No durable purchases loaded" empty message — most noticeable on slower self-hosted hardware.
+- The native iOS Budgets "+" button is now disabled on the Year tab (which has no add action) instead of opening the unrelated "Set Month Budget" form, and the month-budget row's remove action in the "…" menu now reads "Remove Month Budget" to match its confirmation dialog.
 
 ## [0.3.1] - 2026-06-29
 
