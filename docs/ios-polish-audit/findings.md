@@ -3,15 +3,16 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 20 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 22 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
-  Assistant(+LLM-off pass), **Reconcile ✅ Fixed** (F-016 Reconcile part). Coverage confidence: **high**.
+  Assistant(+LLM-off pass), Reconcile, **Reports ✅ Fixed** (F-016 completed; F-017 dismissed) +
+  S-36 DocumentPreviewView (Audited — verified via the report PDF QuickLook). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 12 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-015, F-025, F-026, F-030, F-031) + F-016 partial (Reconcile done, Reports pending
-  S-12). Won't-fix: 1 (F-013). Deferred (need user decision): 5 (F-001, F-005, F-011b, F-012, F-018).
-  Open candidates (await their surface's turn): 9 (incl. F-017). By severity of still-open items:
-  P2: 3 · P3: 5. Cross-surface follow-up: PlanningView.swift:545,567 income/expense literal colors.
+- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 13 (F-006, F-007, F-008, F-009,
+  F-010, F-011a, F-015, F-016, F-025, F-026, F-030, F-031). Won't-fix: 2 (F-013, F-017). Deferred
+  (need user decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's
+  turn): 7 (F-019, F-020, F-021, F-022, F-023, F-024, F-027, F-028). By severity of still-open items:
+  P2: 2 · P3: 5. Cross-surface follow-up: PlanningView.swift:545,567 income/expense literal colors.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -284,7 +285,7 @@ feedback) · P2 polish · P3 nit.
   `llm_enabled=true` afterward. (Inbox triage Suggest and Admin assistant-usage share the same
   `llmEnabled` gate.) No issue — gating is correct.
 
-### F-016 · Reconcile & Reports · P2 · State coverage / copy · Fixed (Reconcile) / Reports pending
+### F-016 · Reconcile & Reports · P2 · State coverage / copy · Fixed
 - What: Both screens could render two stacked red error sections at once — a "Import Error"/"Error"
   section for `formError` plus a separate "Error" section for `model.lastError`. (In practice they
   fire from different sources — formError = file-picker/validation, lastError = API — and rarely
@@ -293,11 +294,23 @@ feedback) · P2 polish · P3 nit.
 - Fix (Reconcile, this turn): chained the two error sections into `if formError … else if lastError …`
   so at most one ever shows (the specific import error wins over a generic global one). The raw
   `error.localizedDescription` set in selectCSV (file-picker catch) is left as-is (file-picker errors
-  are rare and the system message is acceptable). **Reports has the same pattern — fix on S-12.**
-- Verified: ✅ rebuilt (green); the Reconcile success state + Bank Queue render correctly in light and
-  dark (s11-reconcile / s11-bankrows / s11-dark) — no regression. The error states are hard to stage
-  via automation (Preview is disabled without a file; lastError needs a server error), so the
-  one-error-at-a-time behavior is verified by construction, not directly observed.
+  are rare and the system message is acceptable).
+- Fix (Reports, S-12): made the lastError "Error" section conditional on `formError == nil`
+  (`if formError == nil, let lastError = …`) — the layout keeps the "Latest File" section between
+  them, so a plain `else if` wasn't possible; this still guarantees at most one error section.
+- Verified: ✅ rebuilt (green). Reconcile success + Bank Queue render in light/dark (s11-*); Reports
+  form is fully usable, PDF generation succeeds and the success state shows no error (s12-*). Error
+  states are hard to stage via automation, so the one-error-at-a-time behavior is by construction.
+
+### F-017 · Reports · P2 · State coverage · Won't-fix (premise wrong)
+- What: Suspected the lack of a top-level loading placeholder during the initial category fetch was a
+  gap.
+- Resolution: **Dismissed.** The Reports *form* (date range, section/transaction toggles, type/sort
+  pickers, notes, generate/export) renders and is fully usable immediately — it does not depend on
+  the categories load. A blocking top-level `LoadingStateSection` would *hide* the usable form, i.e.
+  a regression. The only load-dependent piece is the per-category checklist shown when category mode =
+  "selected" (default is "all", so it isn't shown), which briefly reads "No active categories." during
+  the background fetch — a narrow, self-resolving edge case not worth a state change. No fix.
 
 ### F-017 · Reports · P2 · State coverage · Open
 - What: No top-level loading/empty placeholder during the initial category fetch; the only progress

@@ -139,7 +139,7 @@ struct ReportsView: View {
                     }
                 }
 
-                if let lastError = model.lastError {
+                if formError == nil, let lastError = model.lastError {
                     Section("Error") {
                         Text(lastError.message)
                             .foregroundStyle(.red)
