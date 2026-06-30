@@ -439,19 +439,22 @@ feedback) · P2 polish · P3 nit.
 - Fix: Deferred — needs user decision (see Summary Q2).
 - Verified: n/a.
 
-### F-019 · Auth (signed-out) · P3 · State coverage · Deferred
-- What: In the SIGNED-OUT branch, when `model.status` is nil the Create-account/Setup buttons are
-  disabled with the helper "Checking tracker status..." and there is no retry/timeout — pull-to-
-  refresh in AuthView only reloads account settings when authenticated, so a signed-out user whose
-  status fetch failed has no in-app recovery besides relaunching.
-- Where: AuthView.swift:204-212 (signed-out branch).
-- Why it's a gap: a stuck "checking" state with no recovery — but it requires the backend to be
-  unreachable at launch *while signed out*, a narrow edge case.
-- Fix: **Deferred.** It's in the signed-out flow, which can't be reached/verified without logging out
-  the persistent test session (the loop must preserve the Keychain login). A small fix (a "Retry"
-  button or making the signed-out view refreshable) is plausible but unverifiable here. Recommend the
-  user decide whether it's worth a signed-out retry affordance.
-- Verified: n/a (cannot safely reach the signed-out branch).
+### F-019 · Auth (signed-out) · P3 · State coverage · Fixed
+- What: In the SIGNED-OUT branch, when `model.status` was nil the Create-account/Setup buttons were
+  disabled with the helper "Checking tracker status..." and there was no retry — AuthView's
+  `.task`/`.refreshable` only ran when authenticated, so a signed-out user whose status fetch failed
+  had no in-app recovery besides relaunching.
+- Where: AuthView.swift (signed-out branch + `.task`/`.refreshable`).
+- User decision: **add a retry.**
+- Fix: (1) `.task` now also fetches the status (`model.testConnection()`) when signed out and status is
+  nil; (2) `.refreshable` now refreshes the status when signed out (pull-to-refresh works); (3) the
+  status-nil helper now distinguishes loading from failure — "Checking tracker status..." while
+  `model.isLoading`, else "Couldn't reach the tracker." with an inline **Retry** button that re-runs
+  `testConnection()`.
+- Verified: code-verified + ✅ build green. The signed-out-AND-status-failed state requires the backend
+  to be unreachable *while signed out*; staging it means logging out the live session, so it was not
+  on-screen-actuated (per the preserve-the-session guardrail). The change is a small additive recovery
+  affordance matching the app's existing `.task`/`.refreshable`/isLoading patterns.
 
 ### F-020 · Admin · P2 · Completeness / navigation · Fixed
 - What: The "Preview" button in Latest Result was effectively dead. `storeDownload` set

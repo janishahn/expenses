@@ -59,11 +59,15 @@ struct AuthView: View {
         .task {
             if model.identity?.authenticated == true {
                 await model.loadAccountSettings()
+            } else if model.status == nil {
+                await model.testConnection()
             }
         }
         .refreshable {
             if model.identity?.authenticated == true {
                 await model.loadAccountSettings()
+            } else {
+                await model.testConnection()
             }
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.settings == nil)
@@ -205,10 +209,21 @@ struct AuthView: View {
                     Text(setupRequired ? "This tracker still needs first-time setup." : "First-time setup is complete.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } else {
+                } else if model.isLoading {
                     Text("Checking tracker status...")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Text("Couldn't reach the tracker.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Retry") {
+                            Task { await model.testConnection() }
+                        }
+                        .font(.footnote)
+                    }
                 }
             }
         }
