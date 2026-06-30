@@ -3,7 +3,7 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 34 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 35 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
@@ -13,13 +13,15 @@
   F-033 — chip-X/Reset no longer also wipes the search query), **BulkEdit ✅ Fixed** (S-19; F-034/F-035
   — clearer scope-option + confirm-dialog copy), **Budget forms ✅ Audited** (S-21 override + S-22
   template; clean, consistent form pattern, no findings), **Insights filters ✅ Audited** (S-32; clean,
-  no F-033 analogue) + **F-036 Fixed** (Charts breakdown income/expense theme colors). Confidence: **high**.
+  no F-033 analogue) + **F-036 Fixed** (Charts breakdown income/expense theme colors), **App shell
+  ✅ Audited** (S-01; F-001 re-confirmed, F-037 deferred). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 34 (F-001, F-005–F-036). By status — Fixed: 21 (F-006, F-007, F-008, F-009,
+- **Findings:** total 35 (F-001, F-005–F-037). By status — Fixed: 21 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred
-  (need user decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their
-  surface's turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
+  F-025, F-026, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024, F-028).
+  Deferred (need user decision): 7 (F-001, F-005, F-011b, F-012, F-018, F-019, F-037). Open candidates
+  (await their surface's turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027) ·
+  P3: 1 (F-037). Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16). Harness
   note: axe can't actuate SwiftUI `.menu` Picker popovers (separate overlay), so states reachable only
   via a `.menu` picker (e.g. BulkEdit operation → Apply dialog) are code-verified where applicable.
@@ -55,6 +57,11 @@
      `UnavailableStateSection` with the error message (no new pattern). Implement across Dashboard /
      Digest / Insights / Forecast / Budgets / Recurring, or leave as-is? Deferred because it spans 6
      shared surfaces and the fixed state can't be dynamically verified here.
+  5. **F-037 (Quick Add FAB over pushed detail):** The floating "+" FAB persists over pushed
+     detail/sub-screens within the Dashboard/Transactions tabs, not just at the tab root. Scope it to
+     the tab root (hide once a detail is pushed) — which needs lifting those tabs' NavigationStack
+     paths up to RootView, a structural nav-architecture change — or keep the persistent global
+     quick-add as-is? Recommend scoping to the tab root.
 
 Severity: P0 broken · P1 major (wrong nav / unhandled state / broken layout / missing critical
 feedback) · P2 polish · P3 nit.
@@ -630,3 +637,32 @@ feedback) · P2 polish · P3 nit.
 - Verified: ✅ rebuilt (green). Breakdown bars + dominant ring slice now render the warm theme expense
   red in dark (s32-05-breakdown-fixed-dark, vs the brighter literal red in s32-04) and the deeper theme
   red in light (s32-06), matching the Monthly Trend chart; the per-category ring palette is unchanged.
+
+### S-01 · App shell (RootView) · Audited
+- The TabView shell is well-built and verified live: the 5 primary tabs; the More groups (Planning /
+  Manage / Tools / Account) with Assistant filtered out of Tools when `!llmEnabled` (F-032); the
+  floating Quick Add FAB shows (opacity 1 + hit-testing) only on Dashboard & Transactions and is
+  hidden (opacity 0) elsewhere (confirmed: visible on Dashboard, invisible on Digest, s01-01); the FAB
+  is disabled + dimmed (0.48) when unauthenticated; its haptic is `.impact(weight: .light)` on a tap
+  counter (DESIGN-correct); the tab bar hides only for Assistant (`hidesTabBar`). F-001 (dead code)
+  re-confirmed accurate and still deferred (see Summary Q1).
+
+### F-037 · App shell (Quick Add FAB) · P3 · Layout & visual fit / navigation · Deferred (needs user decision)
+- What: The floating Quick Add FAB persists over pushed detail/sub-screens within the Dashboard and
+  Transactions tabs (e.g. it floats over the lower content of a pushed TransactionDetail — observed
+  s16-02/s16-03), not just at the tab root. Over the list it's the standard FAB-over-content pattern
+  (fine); over a specific transaction's detail it visually overlaps content and offers a contextually
+  odd "add a new transaction" action.
+- Where: RootView.swift:21-28 — the FAB is a root-level `ZStack` overlay above the whole `TabView`,
+  gated only on `selectedDestination.showsFloatingQuickAdd` (the TAB), with no knowledge of nav depth
+  inside the tab (each tab's `NavigationStack` is internal to DashboardView/TransactionsView).
+- Why it's a gap: minor — content scrolls under the FAB and it's a common pattern, but a global
+  quick-add hovering over a detail screen is slightly incongruous.
+- Repro: Transactions (or Dashboard) → tap a row → on the pushed detail the "+" FAB still shows
+  bottom-right.
+- Fix: **Deferred — needs user decision** (Summary Q5). The clean fix (show the FAB only at the tab
+  root — depth 0) requires lifting the Dashboard/Transactions `NavigationStack` paths up to RootView,
+  or a PreferenceKey from the child views, i.e. a structural change to the nav architecture across
+  multiple files — beyond a smallest-viable-diff and also a product call (is the persistent global
+  quick-add desirable, or should it be tab-root only?). Recommend scoping the FAB to the tab root.
+- Verified: n/a (logged, not fixed).
