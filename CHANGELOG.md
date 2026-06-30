@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS transaction detail's reimbursement amounts (linked reimbursement rows and the expense-search results) and the Forecast monthly breakdown amounts (income/expenses totals, recurring rules, variable estimates, one-time events) now use the app's semantic income/expense theme colors instead of literal green/red, so they match every other transaction screen — most visible in dark mode's warmer tones.
 - Clearing the native iOS Transactions filters (the filter chip's clear button or the Filters sheet's Reset) now clears only the type/category/tag filters and keeps your active search text, instead of also wiping the search; the search field's own clear button still clears the search independently.
 - Clarified copy in the native iOS bulk-edit sheet: the scope option that targets every transaction matching the current filters now reads "All filtered" (was the awkward "All loaded filter"), and the apply confirmation now reads "This will update every transaction in the selection." instead of referencing "the backend" and "resolved" transactions.
+- The native iOS Insights Expenses/Income breakdown bars and ring now use the app's semantic income/expense theme colors instead of literal red/green, matching the Monthly Trend chart on the same screen and the rest of the app — most visible in dark mode.
 
 ## [0.3.1] - 2026-06-29
 

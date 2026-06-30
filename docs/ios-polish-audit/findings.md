@@ -3,7 +3,7 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 33 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 34 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
@@ -12,11 +12,12 @@
   (S-17; F-024 dismissed — Save-gating matches every sibling form), **Filters ✅ Fixed** (S-18;
   F-033 — chip-X/Reset no longer also wipes the search query), **BulkEdit ✅ Fixed** (S-19; F-034/F-035
   — clearer scope-option + confirm-dialog copy), **Budget forms ✅ Audited** (S-21 override + S-22
-  template; clean, consistent form pattern, no findings). Confidence: **high**.
+  template; clean, consistent form pattern, no findings), **Insights filters ✅ Audited** (S-32; clean,
+  no F-033 analogue) + **F-036 Fixed** (Charts breakdown income/expense theme colors). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 33 (F-001, F-005–F-035). By status — Fixed: 20 (F-006, F-007, F-008, F-009,
+- **Findings:** total 34 (F-001, F-005–F-036). By status — Fixed: 21 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031, F-033, F-034, F-035). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred
+  F-025, F-026, F-030, F-031, F-033, F-034, F-035, F-036). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred
   (need user decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their
   surface's turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16). Harness
@@ -599,3 +600,33 @@ feedback) · P2 polish · P3 nit.
 - Not HID-actuated (axe limitations, behaviors correct by code): the `Has end date` Toggle (SwiftUI
   Toggle-in-Form taps don't register — the `if hasEndDate { DatePicker("Ends on", …) }` reveal is a
   trivial conditional) and the Category `.menu` Picker (popover overlay).
+
+### S-32 · Insights filters · Audited (no findings)
+- InsightsFiltersSheet (period/type/tag navigationLink pickers; Reset; Done) was driven live from the
+  Charts section. Mirrors the Transactions filter sheet: Reset disabled when no filters
+  (`period == "all" && typeFilter.isEmpty && selectedTagID == nil`) and enables once one is set; the
+  period picker round-trips; Done applies and the data reloads reactively via `.task(id: reloadKey)`;
+  the summary chip is accurate ("This month"); the chip-X clears cleanly.
+- **No F-033 analogue:** `clearFilters()` resets only the draft+applied period/type/tag (exactly what
+  the chip represents) and leaves `selectedTrendCategoryID` and the section untouched — the clear scope
+  matches the affordance's apparent scope (Insights has no search query). Clean.
+
+### F-036 · Insights (Charts breakdown) · P3 · Consistency · Fixed
+- What: The Expenses/Income breakdown sections were tinted with literal `.red`/`.green` (the per-row
+  ProgressView bars and the ring's dominant slice), while the Monthly Trend chart on the SAME Charts
+  screen already uses `ExpensesTheme.income/expense(for: scheme)`. A visible same-screen inconsistency,
+  most noticeable in dark mode (bright system red bars vs the trend line's warm theme red).
+- Where: InsightsView.swift:47-48 (the two `InsightsBreakdownSection(… color: .red/.green)` call
+  sites), vs the trend chart at :319/:328/:347/:348 which is already themed.
+- Why it's a gap: DESIGN — income/expense colors come from the shared theme; the breakdown should match
+  the trend chart (and the rest of the app) rather than use literal system red/green.
+- Fix: Added `@Environment(\.colorScheme) private var scheme` to `InsightsView` and passed
+  `ExpensesTheme.expense(for: scheme)` / `ExpensesTheme.income(for: scheme)` to the breakdown sections.
+- Scope: limited to the unambiguous income/expense breakdown. Left literal (distinct semantics, not
+  income/expense): the Movement Increases/Decreases delta rows (:354-355, an up/down change semantic),
+  the Flow Sources/Uses node tints (:547/:550 — a cash-flow source/use grouping that includes
+  deficit/savings, not pure income/expense, and on a separate tab), and the over-budget/amortized
+  status tints (:493/:624).
+- Verified: ✅ rebuilt (green). Breakdown bars + dominant ring slice now render the warm theme expense
+  red in dark (s32-05-breakdown-fixed-dark, vs the brighter literal red in s32-04) and the deeper theme
+  red in light (s32-06), matching the Monthly Trend chart; the per-category ring palette is unchanged.

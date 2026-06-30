@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InsightsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
     @State private var section: InsightsViewSection = .charts
     @State private var presentingFilters = false
     @State private var period = "all"
@@ -44,8 +45,8 @@ struct InsightsView: View {
                     case .charts:
                         if let insights = model.insights {
                             InsightsChartsSection(insights: insights)
-                            InsightsBreakdownSection(title: "Expenses", rows: insights.expenseBreakdown, color: .red)
-                            InsightsBreakdownSection(title: "Income", rows: insights.incomeBreakdown, color: .green)
+                            InsightsBreakdownSection(title: "Expenses", rows: insights.expenseBreakdown, color: ExpensesTheme.expense(for: scheme))
+                            InsightsBreakdownSection(title: "Income", rows: insights.incomeBreakdown, color: ExpensesTheme.income(for: scheme))
                             InsightsTrendSection(
                                 insights: insights,
                                 selectedTrendCategoryID: $selectedTrendCategoryID
