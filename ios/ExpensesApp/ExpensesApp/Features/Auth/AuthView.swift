@@ -50,7 +50,7 @@ struct AuthView: View {
 
             appearanceSection
 
-            if let error = model.lastError {
+            if formError == nil, let error = model.lastError {
                 ErrorDetailsView(error: error)
             }
         }

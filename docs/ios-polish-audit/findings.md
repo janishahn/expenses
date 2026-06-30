@@ -3,16 +3,17 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 23 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 24 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
-  Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), **Diagnostics ✅ Audited**
-  (clean config screen; F-018 no-auth-gate stays the parked decision). Confidence: **high**.
+  Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, **Account ✅ Fixed**
+  (F-016 extended; F-019 deferred). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
 - **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 13 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-015, F-016, F-025, F-026, F-030, F-031). Won't-fix: 2 (F-013, F-017). Deferred
-  (need user decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's
-  turn): 7 (F-019, F-020, F-021, F-022, F-023, F-024, F-027, F-028). By severity of still-open items:
-  P2: 2 · P3: 5. Cross-surface follow-up: PlanningView.swift:545,567 income/expense literal colors.
+  F-010, F-011a, F-015, F-016 [Reconcile+Reports+Account], F-025, F-026, F-030, F-031). Won't-fix: 2
+  (F-013, F-017). Deferred (need user decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open
+  candidates (await their surface's turn): 6 (F-020, F-021, F-022, F-023, F-024, F-028; F-027 Local
+  unlock). By severity of still-open items: P2: 1 · P3: 5. Cross-surface follow-up: PlanningView.swift
+  :545,567 income/expense literal colors.
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -285,7 +286,7 @@ feedback) · P2 polish · P3 nit.
   `llm_enabled=true` afterward. (Inbox triage Suggest and Admin assistant-usage share the same
   `llmEnabled` gate.) No issue — gating is correct.
 
-### F-016 · Reconcile & Reports · P2 · State coverage / copy · Fixed
+### F-016 · Reconcile & Reports & Account · P2 · State coverage / copy · Fixed
 - What: Both screens could render two stacked red error sections at once — a "Import Error"/"Error"
   section for `formError` plus a separate "Error" section for `model.lastError`. (In practice they
   fire from different sources — formError = file-picker/validation, lastError = API — and rarely
@@ -298,9 +299,15 @@ feedback) · P2 polish · P3 nit.
 - Fix (Reports, S-12): made the lastError "Error" section conditional on `formError == nil`
   (`if formError == nil, let lastError = …`) — the layout keeps the "Latest File" section between
   them, so a plain `else if` wasn't possible; this still guarantees at most one error section.
+- Fix (Account, S-14): AuthView signed-in branch had the same shape — a `formError` Section("Error")
+  plus a `model.lastError` ErrorDetailsView (also "Error"), separated by the Appearance section.
+  Gated the ErrorDetailsView on `formError == nil` (`if formError == nil, let error = …`). Verified
+  safe: `formError` is only rendered/set in the signed-in branch, so the signed-out branch (always
+  `formError == nil`) still shows `lastError` normally — no regression.
 - Verified: ✅ rebuilt (green). Reconcile success + Bank Queue render in light/dark (s11-*); Reports
-  form is fully usable, PDF generation succeeds and the success state shows no error (s12-*). Error
-  states are hard to stage via automation, so the one-error-at-a-time behavior is by construction.
+  form usable + PDF generation success (s12-*); Account all sections (identity/token/CSV/snapshots/
+  sessions/appearance) render in light/dark with no error in the success state (s14-*). Error states
+  are hard to stage via automation, so the one-error-at-a-time behavior is by construction.
 
 ### F-017 · Reports · P2 · State coverage · Won't-fix (premise wrong)
 - What: Suspected the lack of a top-level loading placeholder during the initial category fetch was a
@@ -331,14 +338,19 @@ feedback) · P2 polish · P3 nit.
 - Fix: Deferred — needs user decision (see Summary Q2).
 - Verified: n/a.
 
-### F-019 · Auth (signed-out) · P3 · State coverage · Open
-- What: When `model.status` is nil, the Create-account/Setup buttons are disabled with the helper
-  "Checking tracker status..." indefinitely — no timeout/retry affordance if status never loads.
-- Where: AuthView.swift:204-212.
-- Why it's a gap: a stuck "checking" state with no recovery.
-- Repro: TBD — start app with backend unreachable, open Account.
-- Fix: TBD.
-- Verified: not yet.
+### F-019 · Auth (signed-out) · P3 · State coverage · Deferred
+- What: In the SIGNED-OUT branch, when `model.status` is nil the Create-account/Setup buttons are
+  disabled with the helper "Checking tracker status..." and there is no retry/timeout — pull-to-
+  refresh in AuthView only reloads account settings when authenticated, so a signed-out user whose
+  status fetch failed has no in-app recovery besides relaunching.
+- Where: AuthView.swift:204-212 (signed-out branch).
+- Why it's a gap: a stuck "checking" state with no recovery — but it requires the backend to be
+  unreachable at launch *while signed out*, a narrow edge case.
+- Fix: **Deferred.** It's in the signed-out flow, which can't be reached/verified without logging out
+  the persistent test session (the loop must preserve the Keychain login). A small fix (a "Retry"
+  button or making the signed-out view refreshable) is plausible but unverifiable here. Recommend the
+  user decide whether it's worth a signed-out retry affordance.
+- Verified: n/a (cannot safely reach the signed-out branch).
 
 ### F-020 · Admin · P2 · Completeness / navigation · Open
 - What: The "Preview" button in Latest Result is effectively dead. `storeDownload` sets
