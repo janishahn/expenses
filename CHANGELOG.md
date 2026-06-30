@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Recurring rule list now colors amounts with the app's semantic income/expense theme colors (expenses now read red like every other transaction screen, instead of plain black), and the left-swipe auto-posting toggle is labeled "Manual"/"Auto" to match the row badge instead of the ambiguous "Disable"/"Enable".
 - The native iOS recurring-rule occurrences screen now shows a clear "Couldn't load occurrences" message with pull-to-refresh when the load fails, instead of spinning forever with no way to retry.
 - The native iOS Organize category/tag merge sheets now open with a clean error slate instead of occasionally showing a leftover error message from an unrelated earlier action.
+- The native iOS Assistant's "LLM features are turned off" state now uses the same glass card styling as the other unavailable states on that screen instead of a plain system placeholder.
 
 ## [0.3.1] - 2026-06-29
 

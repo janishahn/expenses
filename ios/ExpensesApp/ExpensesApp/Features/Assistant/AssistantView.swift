@@ -27,10 +27,10 @@ struct AssistantView: View {
                 conversation
             } else {
                 List {
-                    ContentUnavailableView(
-                        "Assistant unavailable",
+                    UnavailableStateSection(
+                        title: "Assistant unavailable",
                         systemImage: "sparkles",
-                        description: Text("LLM features are turned off.")
+                        message: "LLM features are turned off."
                     )
                 }
                 .expensesScreenStyle()

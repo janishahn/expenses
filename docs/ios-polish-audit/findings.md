@@ -3,18 +3,16 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 18 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
-  Forecast(+ScenarioEditor S-20), Recurring(+S-23 RuleForm, S-24 Occurrences), **Organize ✅ Fixed**
-  (F-014; F-013 dismissed) + its modals S-29 CategoryMerge & S-30 TagMerge (Fixed) and S-25 CategoryForm
-  / S-26 TagForm / S-27 TemplateForm / S-28 RuleForm / S-31 ArchivedCategories (Audited — share the
-  verified app-wide Form/list pattern; core Organize sections + LLM rule mining + merge driven live).
-  Coverage confidence: **high**.
+- **Surfaces:** 19 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+  Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
+  **Assistant ✅ Fixed** (F-015) + the LLM-off gating pass (F-032 note). Coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 28 (F-001, F-005–F-031). By status — Fixed: 11 (F-006, F-007, F-008, F-009,
-  F-010, F-011a, F-014, F-025, F-026, F-030, F-031). Won't-fix: 1 (F-013, not a bug). Deferred (need
-  user decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's
-  turn): 11. By severity of still-open items: P2: 4 · P3: 6. Cross-surface follow-up: PlanningView.swift
-  :545,567 income/expense literal colors (same family as F-031).
+  Backend was toggled to EXPENSES_LLM_ENABLED=off for the gating pass and **restored to on**.
+- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 12 (F-006, F-007, F-008, F-009,
+  F-010, F-011a, F-014, F-015, F-025, F-026, F-030, F-031). Won't-fix: 1 (F-013). Deferred (need user
+  decision): 5 (F-001, F-005, F-011b, F-012, F-018). Open candidates (await their surface's turn): 10.
+  By severity of still-open items: P2: 4 · P3: 5. Cross-surface follow-up: PlanningView.swift:545,567
+  income/expense literal colors (same family as F-031).
 - **Loading-state verification technique:** because localhost loads are sub-frame, loading
   placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
   resume) so the request hangs while the loading card is captured.
@@ -260,15 +258,32 @@ feedback) · P2 polish · P3 nit.
   correct by construction; the exact stale-error trigger (an unrelated error with no intervening
   clearing load, then opening merge) is a narrow edge case not easily staged on localhost.
 
-### F-015 · Assistant · P2 · Consistency · Open
-- What: LLM-disabled state uses a raw `ContentUnavailableView` instead of the shared
-  `UnavailableStateSection`; the empty-conversation state is a third hand-rolled empty pattern. The
-  unauthenticated state right above it does use the shared `SignedOutStateSection`.
-- Where: AssistantView.swift:30-37, :93-112 (vs :23).
-- Why it's a gap: shared empty/unavailable chrome should be consistent within a screen and vs siblings.
-- Repro: TBD — toggle EXPENSES_LLM_ENABLED off; open Assistant signed-out and empty.
-- Fix: TBD.
-- Verified: not yet.
+### F-015 · Assistant · P2 → P3 · Consistency · Fixed (chrome) / partly dismissed
+- What: The LLM-disabled state used a raw `ContentUnavailableView`, while the signed-out state right
+  above it (line 23) uses the shared glass `SignedOutStateSection` — two "unavailable" states on one
+  screen with different chrome.
+- Where: AssistantView.swift:30-37 (vs :23).
+- Fix: LLM-disabled state now uses `UnavailableStateSection(title: "Assistant unavailable",
+  systemImage: "sparkles", message: "LLM features are turned off.")`, matching the signed-out chrome.
+- Empty-conversation state (:93-112): **dismissed** — it's an intentional guiding first-use state
+  (bubble icon + tappable starter prompts), not an "unavailable" state, so a custom VStack is correct
+  (ContentUnavailableView/UnavailableStateSection can't host the interactive prompts as cleanly).
+- Verified: ✅ rebuilt (green). The reachable Assistant states were driven live and are all polished:
+  empty/first-use (starter prompts), streaming ("Thinking…" + red Stop, Send↔Stop swap), per-turn
+  error ("The spending assistant is temporarily unavailable" in red), and New-chat reset. Haptics
+  verified by code: send `.impact(.light)`, stop `.impact(.rigid)`, both on the stable composer HStack
+  driven by sendTick/stopTick counters — exactly per DESIGN. NOTE: the LLM-*disabled* branch itself is
+  nearly unreachable (the More>Tools Assistant entry is hidden when `llmEnabled` is false), so it only
+  shows if `llmEnabled` flips false while the Assistant screen is already open — the fix is a harmless
+  consistency improvement for that edge case and was not directly observable.
+
+### F-032 · Cross-cutting · LLM-off gating · Audited (note)
+- What: Verified the `EXPENSES_LLM_ENABLED=off` behavior by restarting the backend with the flag off
+  and relaunching the app: AI surfaces are **cleanly absent**, not visible-but-broken — no Assistant
+  entry in More>Tools (Tools = Reconcile/Reports/Diagnostics only), no "Ask" natural-language search
+  row in Transactions, no "Mine"/rule-suggestions card in Organize>Rules. Backend restored to
+  `llm_enabled=true` afterward. (Inbox triage Suggest and Admin assistant-usage share the same
+  `llmEnabled` gate.) No issue — gating is correct.
 
 ### F-016 · Reconcile & Reports · P2 · State coverage / copy · Open
 - What: Both screens can render two stacked red error sections simultaneously (`formError` +
