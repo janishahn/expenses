@@ -59,12 +59,16 @@ struct InsightsView: View {
                     case .flow:
                         if let flow = model.insightsFlow {
                             InsightsFlowSection(flow: flow)
+                        } else if model.isLoading {
+                            LoadingStateSection(title: "Loading flow")
                         } else {
                             ContentUnavailableView("No flow loaded", systemImage: "point.3.connected.trianglepath.dotted")
                         }
                     case .durables:
                         if let durablePurchases = model.durablePurchases {
                             DurablePurchasesSection(items: durablePurchases.items)
+                        } else if model.isLoading {
+                            LoadingStateSection(title: "Loading durable purchases")
                         } else {
                             ContentUnavailableView("No durable purchases loaded", systemImage: "shippingbox")
                         }

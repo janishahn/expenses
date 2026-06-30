@@ -3,12 +3,16 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 3 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
-  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030). Inventory coverage confidence: **high**.
+- **Surfaces:** 4 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
+  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030), **S-05 Insights ✅ Fixed** (F-008).
+  Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 3 (F-006, F-007, F-030). Deferred
-  (need user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's turn): 21.
-  By severity of still-open items: P2: 9 · P3: 11.
+- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 4 (F-006, F-007, F-008, F-030).
+  Deferred (need user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's
+  turn): 20. By severity of still-open items: P2: 8 · P3: 11.
+- **Loading-state verification technique:** because localhost loads are sub-frame, loading
+  placeholders are observed by suspending the backend worker (`kill -STOP <pid>` / `-CONT` to
+  resume) so the request hangs while the loading card is captured.
 - **Method:** Candidates were surfaced while reading code; each is **driven and verified in the
   simulator** on its surface's turn before any fix — some get downgraded or dismissed (e.g. the
   "More list won't scroll" suspicion was a tooling artifact).
@@ -134,14 +138,22 @@ feedback) · P2 polish · P3 nit.
 - Verified: ✅ rebuilt (green). Deleted expenses now render theme red in light (s03-deleted.png) and
   the warm dark-mode red in dark (s03-deleted-dark.png).
 
-### F-008 · Insights (Flow / Durables) · P2 · State coverage · Open
-- What: Flow and Durables sections have no loading placeholder; during load they render
-  "No flow loaded" / "No durable purchases loaded" — a false-empty flicker. Charts has a loader.
-- Where: InsightsView.swift:59-64, :65-70 (vs :54).
-- Why it's a gap: loading must be distinct from empty; inconsistent with the Charts section sibling.
-- Repro: TBD — switch to Flow/Durables with cold cache.
-- Fix: TBD.
-- Verified: not yet.
+### F-008 · Insights (Flow / Durables) · P2 · State coverage · Fixed
+- What: The Flow and Durables sections had no loading branch — a cold section switch went straight
+  from `if let data` to the "No flow loaded" / "No durable purchases loaded" empty card, so during
+  the fetch the user saw a false "empty" state. Charts already had a `LoadingStateSection`. On fast
+  localhost the window is sub-frame, but on the project's target slow hardware (Raspberry Pi-class)
+  it is a visible, misleading beat.
+- Where: InsightsView.swift Flow case (:59) and Durables case (:65), vs Charts (:54).
+- Why it's a gap: loading must be distinct from empty (DESIGN: handle states deliberately) and
+  consistent with the Charts sibling on the same screen.
+- Repro: suspend the backend worker (`kill -STOP <pid>`), switch to a cold section → previously the
+  empty card showed.
+- Fix: Added `else if model.isLoading { LoadingStateSection(title: "Loading flow" / "Loading durable
+  purchases") }` before the empty branch in both cases, mirroring Charts.
+- Verified: ✅ rebuilt (green). With the backend worker suspended, the cold Durables switch now shows
+  the glass "Loading durable purchases" card (screenshot s05-durables-loading.png); on resume the
+  data loads normally (no regression). Light/dark + large Dynamic Type all render correctly.
 
 ### F-009 · Budgets (Year) · P2 · Navigation & flow · Open
 - What: On the Year tab, the "+" toolbar button and external quickAddTrigger fall back to `.override`
