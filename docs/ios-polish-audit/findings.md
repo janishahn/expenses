@@ -3,17 +3,18 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 29 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
+- **Surfaces:** 30 / 38 done — Dashboard (Audited), Transactions, Digest, Insights, Budgets,
   Forecast(+ScenarioEditor), Recurring(+RuleForm, Occurrences), Organize(+merges, forms),
   Assistant(+LLM-off pass), Reconcile, Reports(+DocumentPreview), Diagnostics, Account
   (F-016 extended; F-019 deferred), Admin (S-15 + S-34; F-020/F-021/F-016), **TransactionDetail
   ✅ Fixed** (S-16 + S-33 Reimbursements; F-022 failed-state+retry, F-023 themed reimbursement colors,
   F-028 dismissed; folded in the PlanningView Forecast color sweep), **TransactionForm ✅ Audited**
-  (S-17; F-024 dismissed — Save-gating matches every sibling form). Confidence: **high**.
+  (S-17; F-024 dismissed — Save-gating matches every sibling form), **Filters ✅ Fixed** (S-18;
+  F-033 — chip-X/Reset no longer also wipes the search query). Confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 30 (F-001, F-005–F-032). By status — Fixed: 17 (F-006, F-007, F-008, F-009,
+- **Findings:** total 31 (F-001, F-005–F-033). By status — Fixed: 18 (F-006, F-007, F-008, F-009,
   F-010, F-011a, F-014, F-015, F-016 [Reconcile+Reports+Account+Admin], F-020, F-021, F-022, F-023,
-  F-025, F-026, F-030, F-031). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred (need user
+  F-025, F-026, F-030, F-031, F-033). Won't-fix: 4 (F-013, F-017, F-024, F-028). Deferred (need user
   decision): 6 (F-001, F-005, F-011b, F-012, F-018, F-019). Open candidates (await their surface's
   turn): 1 (F-027 Local unlock). By severity of still-open items: P2: 1 (F-027). Cross-surface
   follow-up: none outstanding (PlanningView income/expense literal colors resolved with S-16).
@@ -526,3 +527,28 @@ feedback) · P2 polish · P3 nit.
   live on the seeded "Work conference travel" list and "Conference travel reimbursement" blockquote).
   The text stays fully legible; matching the web's block rendering would need a block-markdown
   renderer (AttributedString block parsing / a custom view) — a feature, not a polish fix. Left as-is.
+
+### F-033 · Transactions (Filters) · P3 · Navigation & flow / consistency · Fixed
+- What: The filter summary chip's "Clear filters" X (and the Filters sheet's "Reset" button) cleared
+  the active search query in addition to the structured type/category/tag filters — even though the
+  chip displays only structured-filter labels, the chip-X's accessibility label is literally "Clear
+  filters", and the Reset button's own disabled-state is gated only on structured filters
+  (`type.isEmpty && categoryID == nil && tagID == nil`). So a user who searched "Salary", added an
+  "Income" filter, then tapped the chip-X to drop the filter unexpectedly lost their search too.
+- Where: TransactionsView.swift `clearFilters()` (was also resetting draftSearchQuery/
+  appliedSearchQuery/searchAlert/isTranslatingSearch/lastTranslatedSearchQuery); used by both the
+  chip-X (FilterSummarySection onClear) and the sheet Reset (onClear).
+- Why it's a gap: the affordance's apparent scope ("filters") disagreed with its action (also clearing
+  search). The Reset disabled-logic being structured-filters-only is the tell that the search-clearing
+  was incidental, not intended — and a search-only state can't even use Reset (it stays disabled).
+- Repro: Transactions → search "Salary" → Filters → Type = Income → Done → tap the chip "Income" X →
+  the search "Salary" was also wiped (s18-03-after-chipclear).
+- Fix: Scoped `clearFilters()` to the structured filters only (type/category/tag + reload), leaving the
+  search query untouched. The search bar keeps its own native clear, so the two concerns are cleared
+  independently — matching the chip/Reset's apparent scope and the Reset disabled-state logic.
+- Verified: ✅ rebuilt (green). Repeated the repro: tapping the chip-X now clears only the Income filter
+  and the "Salary" search persists (the list shows all Salary matches) (s18-04-fix-search-survives).
+  Also re-confirmed the rest of the surface: Reset is disabled with no structured filters and enables
+  once one is set; the Type/Category/Tag navigationLink pickers round-trip; Done applies; the summary
+  chip is accurate ("Income", "Income · Housing"); the F-006 empty state still triggers on a
+  zero-result combo ("No matching transactions") with Select correctly disabled (s18-05-empty-state).

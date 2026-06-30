@@ -335,12 +335,6 @@ struct TransactionsView: View {
     }
 
     private func clearFilters() {
-        liveSearchTask?.cancel()
-        draftSearchQuery = ""
-        appliedSearchQuery = ""
-        searchAlert = nil
-        isTranslatingSearch = false
-        lastTranslatedSearchQuery = nil
         draftType = ""
         draftCategoryID = nil
         draftTagID = nil
