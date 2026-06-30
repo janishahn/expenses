@@ -30,6 +30,7 @@ struct DigestView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                     }
+                    .accessibilityLabel("Previous week")
                     .disabled(model.digest == nil)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -38,6 +39,7 @@ struct DigestView: View {
                     } label: {
                         Image(systemName: "chevron.right")
                     }
+                    .accessibilityLabel("Next week")
                     .disabled(model.digest == nil)
                 }
             }

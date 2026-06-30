@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The native iOS deleted-transactions list now colors amounts with the app's semantic income/expense theme colors (matching the active list) instead of a literal green for income and an un-themed neutral tone for expenses.
+- The native iOS Digest week-navigation chevrons now read "Previous week" and "Next week" to VoiceOver instead of the generic "Back"/"Forward", so their action is clear.
 
 ## [0.3.1] - 2026-06-29
 

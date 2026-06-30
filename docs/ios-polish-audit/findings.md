@@ -3,11 +3,11 @@
 ## Summary
 
 - **Phase:** 2 (per-surface audit/fix loop) in progress.
-- **Surfaces:** 2 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
-  (F-006, F-007). Inventory coverage confidence: **high**.
+- **Surfaces:** 3 / 38 done — **S-02 Dashboard ✅ Audited**, **S-03 Transactions ✅ Fixed**
+  (F-006, F-007), **S-04 Digest ✅ Fixed** (F-030). Inventory coverage confidence: **high**.
 - **Build status:** ✅ green (Debug, iPhone 17 Pro simulator). App installed + logged in (`test`, admin).
-- **Findings:** total 26 (F-001, F-005–F-029). By status — Fixed: 2 (F-006, F-007). Deferred (need
-  user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's turn): 21.
+- **Findings:** total 27 (F-001, F-005–F-030). By status — Fixed: 3 (F-006, F-007, F-030). Deferred
+  (need user decision): 3 (F-001, F-005, F-018). Open candidates (await their surface's turn): 21.
   By severity of still-open items: P2: 9 · P3: 11.
 - **Method:** Candidates were surfaced while reading code; each is **driven and verified in the
   simulator** on its surface's turn before any fix — some get downgraded or dismissed (e.g. the
@@ -87,6 +87,20 @@ feedback) · P2 polish · P3 nit.
 - Fix: Deferred as low-value P3 (extreme AX size only; private Dashboard row). Candidate: allow the
   pace figures to wrap or reduce to a vertical layout at AX sizes. Not fixed this pass.
 - Verified: observed at AX-XL; no fix applied.
+
+### F-030 · Digest · P3 · Accessibility · Fixed
+- What: The prev/next-week toolbar chevrons exposed only the SF Symbol default accessibility labels
+  "Back" / "Forward" — ambiguous for week navigation (VoiceOver reads "Back button", which suggests
+  dismissing the screen rather than stepping to the previous week).
+- Where: PlanningView.swift:26-43 (DigestView toolbar).
+- Why it's a gap: DESIGN/Accessibility — icon-only controls should carry descriptive accessibility
+  labels that name the action, not the glyph.
+- Repro: Digest → `describe-ui` showed the chevron buttons as AXLabel "Back"/"Forward".
+- Fix: Added `.accessibilityLabel("Previous week")` / `.accessibilityLabel("Next week")` to the two
+  chevron buttons. (Digest is the only reachable week-nav surface, so no sibling to mirror.)
+- Verified: ✅ rebuilt (green), relaunched; `describe-ui` now reports the buttons as "Previous week"
+  and "Next week". Week navigation, light/dark, and large Dynamic Type all render correctly
+  (s04-digest-lastweek / s04-digest-dark / s04-digest-xl).
 
 ### F-006 · Transactions · P2 · State coverage · Fixed
 - What: When `model.transactions` was loaded but `items` was empty (e.g. a search/filter with zero
