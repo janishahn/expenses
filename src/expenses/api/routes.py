@@ -4924,8 +4924,14 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     ][:10]
     budget_service = BudgetService(db, user_id=user_id)
     today = date.today()
-    budget_pace = budget_service.dashboard_budget_pace(today=today)
-    category_budget_pulse = budget_service.dashboard_category_budget_pulse(today=today)
+    # Monthly budgets track the selected period's month: a completed last month
+    # is evaluated as of its final day (so pace reflects actual spend, not a
+    # partway projection), while this_month/all/custom stay on the current month.
+    budget_as_of = period.end if period.slug == "last_month" else today
+    budget_pace = budget_service.dashboard_budget_pace(today=budget_as_of)
+    category_budget_pulse = budget_service.dashboard_category_budget_pulse(
+        today=budget_as_of
+    )
 
     payload = {
         "period": {

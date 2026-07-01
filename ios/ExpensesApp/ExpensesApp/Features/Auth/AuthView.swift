@@ -50,7 +50,7 @@ struct AuthView: View {
 
             appearanceSection
 
-            if let error = model.lastError {
+            if formError == nil, let error = model.lastError {
                 ErrorDetailsView(error: error)
             }
         }
@@ -59,11 +59,15 @@ struct AuthView: View {
         .task {
             if model.identity?.authenticated == true {
                 await model.loadAccountSettings()
+            } else if model.status == nil {
+                await model.testConnection()
             }
         }
         .refreshable {
             if model.identity?.authenticated == true {
                 await model.loadAccountSettings()
+            } else {
+                await model.testConnection()
             }
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.settings == nil)
@@ -107,7 +111,7 @@ struct AuthView: View {
             LabeledContent("Admin", value: user.isAdmin ? "Yes" : "No")
             if let session = model.identity?.session {
                 LabeledContent("Device", value: session.deviceName)
-                LabeledContent("Expires", value: session.expiresAt.formatted())
+                LabeledContent("Expires", value: AppFormatters.dateTime(session.expiresAt))
             }
             Button("Log out", role: .destructive) {
                 Task { await model.logout() }
@@ -205,10 +209,21 @@ struct AuthView: View {
                     Text(setupRequired ? "This tracker still needs first-time setup." : "First-time setup is complete.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } else {
+                } else if model.isLoading {
                     Text("Checking tracker status...")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Text("Couldn't reach the tracker.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Retry") {
+                            Task { await model.testConnection() }
+                        }
+                        .font(.footnote)
+                    }
                 }
             }
         }
@@ -236,8 +251,8 @@ struct AuthView: View {
         Section("Ingest Token") {
             if let token = model.settings?.ingestToken {
                 LabeledContent("Token hint", value: token.tokenHint)
-                LabeledContent("Updated", value: token.updatedAt.formatted())
-                LabeledContent("Last used", value: token.lastUsedAt?.formatted() ?? "Never")
+                LabeledContent("Updated", value: AppFormatters.dateTime(token.updatedAt))
+                LabeledContent("Last used", value: token.lastUsedAt.map(AppFormatters.dateTime) ?? "Never")
             } else {
                 Text("No ingest token configured.")
                     .foregroundStyle(.secondary)
@@ -346,7 +361,7 @@ struct AuthView: View {
                         Text(AppFormatters.euros(anchor.balanceCents))
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(anchor.asOfAt.formatted())
+                        Text(AppFormatters.dateTime(anchor.asOfAt))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -383,11 +398,11 @@ struct AuthView: View {
                                 .foregroundStyle(.green)
                         }
                     }
-                    Text("Expires \(session.expiresAt.formatted())")
+                    Text("Expires \(AppFormatters.dateTime(session.expiresAt))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let revokedAt = session.revokedAt {
-                        Text("Revoked \(revokedAt.formatted())")
+                        Text("Revoked \(AppFormatters.dateTime(revokedAt))")
                             .font(.caption)
                             .foregroundStyle(.red)
                     } else {

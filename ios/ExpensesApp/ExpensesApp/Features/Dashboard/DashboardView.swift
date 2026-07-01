@@ -3,10 +3,15 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
+    @Binding var path: [Int]
     @State private var selectedPeriod: DashboardPeriod = .thisMonth
 
+    init(path: Binding<[Int]> = .constant([])) {
+        _path = path
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()
@@ -60,6 +65,8 @@ struct DashboardView: View {
                         DashboardBreakdownSection(donut: dashboard.donut)
                     } else if model.showsDashboardInitialLoading {
                         LoadingStateSection(title: "Loading dashboard")
+                    } else if model.showsDashboardLoadFailed {
+                        UnavailableStateSection(title: "Couldn't load dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                     } else {
                         ContentUnavailableView("No dashboard loaded", systemImage: "chart.line.uptrend.xyaxis")
                     }

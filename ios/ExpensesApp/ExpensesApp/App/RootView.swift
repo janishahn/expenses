@@ -6,15 +6,27 @@ struct RootView: View {
 
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
     @State private var morePath: [AppDestination] = []
+    @State private var dashboardPath: [Int] = []
+    @State private var transactionsPath: [Int] = []
+    @State private var transactionsSelecting = false
     @State private var quickAddSheet: QuickAddSheet?
-    @State private var budgetQuickAddTrigger = 0
-    @State private var categoryQuickAddTrigger = 0
-    @State private var ruleQuickAddTrigger = 0
-    @State private var recurringQuickAddTrigger = 0
     @State private var quickAddTapTick = 0
 
     private var selectedDestination: AppDestination {
         selectedPrimaryDestination
+    }
+
+    // The Quick Add FAB shows only at the root of the Dashboard and Transactions
+    // tabs — it hides once a detail is pushed onto either tab's navigation stack.
+    private var showsFloatingQuickAdd: Bool {
+        switch selectedDestination {
+        case .dashboard:
+            dashboardPath.isEmpty
+        case .transactions:
+            transactionsPath.isEmpty && !transactionsSelecting
+        default:
+            false
+        }
     }
 
     var body: some View {
@@ -22,9 +34,9 @@ struct RootView: View {
             primaryTabs
 
             quickAddButton
-                .opacity(selectedDestination.showsFloatingQuickAdd ? 1 : 0)
-                .allowsHitTesting(selectedDestination.showsFloatingQuickAdd)
-                .animation(.snappy(duration: 0.18), value: selectedDestination)
+                .opacity(showsFloatingQuickAdd ? 1 : 0)
+                .allowsHitTesting(showsFloatingQuickAdd)
+                .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
         }
         .tint(ExpensesTheme.accent(for: scheme))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
@@ -78,21 +90,17 @@ struct RootView: View {
     private func destinationView(_ destination: AppDestination) -> some View {
         switch destination {
         case .dashboard:
-            DashboardView()
+            DashboardView(path: $dashboardPath)
         case .transactions:
-            TransactionsView()
+            TransactionsView(path: $transactionsPath, selecting: $transactionsSelecting)
         case .budgets:
-            BudgetsView(quickAddTrigger: $budgetQuickAddTrigger)
+            BudgetsView()
         case .insights:
             InsightsView()
         case .forecast:
             ForecastView()
         case .digest:
             DigestView()
-        case .categories:
-            CategoriesView(quickAddTrigger: $categoryQuickAddTrigger)
-        case .rules:
-            RulesView(quickAddTrigger: $ruleQuickAddTrigger)
         case .reports:
             ReportsView()
         case .reconcile:
@@ -100,7 +108,7 @@ struct RootView: View {
         case .admin:
             AdminView()
         case .recurring:
-            RecurringView(quickAddTrigger: $recurringQuickAddTrigger)
+            RecurringView()
         case .organize:
             OrganizeView()
         case .account:
@@ -187,18 +195,7 @@ struct RootView: View {
 
     private func performQuickAdd() {
         quickAddTapTick += 1
-        switch selectedDestination {
-        case .budgets:
-            budgetQuickAddTrigger += 1
-        case .categories:
-            categoryQuickAddTrigger += 1
-        case .rules:
-            ruleQuickAddTrigger += 1
-        case .recurring:
-            recurringQuickAddTrigger += 1
-        default:
-            quickAddSheet = .transaction
-        }
+        quickAddSheet = .transaction
     }
 
     private func colorScheme(for preference: String) -> ColorScheme? {
@@ -232,8 +229,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case more
     case forecast
     case digest
-    case categories
-    case rules
     case reports
     case reconcile
     case admin
@@ -261,10 +256,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "Forecast"
         case .digest:
             "Digest"
-        case .categories:
-            "Categories"
-        case .rules:
-            "Rules"
         case .reports:
             "Reports"
         case .reconcile:
@@ -300,10 +291,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "chart.line.uptrend.xyaxis"
         case .digest:
             "newspaper"
-        case .categories:
-            "square.grid.2x2"
-        case .rules:
-            "wand.and.stars"
         case .reports:
             "doc.text"
         case .reconcile:
@@ -320,15 +307,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "stethoscope"
         case .assistant:
             "bubble.left.and.bubble.right"
-        }
-    }
-
-    var showsFloatingQuickAdd: Bool {
-        switch self {
-        case .dashboard, .transactions:
-            true
-        case .budgets, .insights, .more, .forecast, .digest, .categories, .rules, .reports, .reconcile, .admin, .recurring, .organize, .account, .diagnostics, .assistant:
-            false
         }
     }
 

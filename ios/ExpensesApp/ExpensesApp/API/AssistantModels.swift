@@ -101,6 +101,8 @@ struct AssistantToolActivity: Identifiable, Equatable {
     let toolName: String
     var status: AssistantToolStatus
 
+    /// Short noun label for the Activity disclosure step list, where it reads alongside a
+    /// status ("Spending overview ✓"). The live progress spinner uses `spinnerPhrase` instead.
     var label: String {
         switch toolName {
         case "get_spending_overview":
@@ -117,6 +119,26 @@ struct AssistantToolActivity: Identifiable, Equatable {
             "Transaction detail"
         default:
             "Using tool"
+        }
+    }
+
+    /// Verb phrase shown in the single-line progress spinner while the tool runs.
+    var spinnerPhrase: String {
+        switch toolName {
+        case "get_spending_overview":
+            "Getting spending overview…"
+        case "compare_spending_periods":
+            "Comparing periods…"
+        case "breakdown_spending":
+            "Breaking down spending…"
+        case "search_transactions":
+            "Searching transactions…"
+        case "get_budget_context":
+            "Checking your budgets…"
+        case "get_transaction_detail":
+            "Looking up the transaction…"
+        default:
+            "Working on your request…"
         }
     }
 }

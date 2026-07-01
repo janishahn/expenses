@@ -2,8 +2,9 @@ import SwiftUI
 
 struct TransactionsView: View {
     @Environment(AppModel.self) private var model
+    @Binding var path: [Int]
+    @Binding var selectingTransactions: Bool
     @State private var listMode: TransactionListMode = .active
-    @State private var selectingTransactions = false
     @State private var selectedTransactionIDs: Set<Int> = []
     @State private var presentingBulkEdit = false
     @State private var pendingPermanentDelete: DeletedTransaction?
@@ -12,6 +13,7 @@ struct TransactionsView: View {
     @State private var draftType = ""
     @State private var draftCategoryID: Int?
     @State private var draftTagID: Int?
+    @State private var draftPeriod: TransactionPeriodFilter = .all
     @State private var searchAlert: TransactionSearchAlert?
     @State private var isTranslatingSearch = false
     @State private var liveSearchTask: Task<Void, Never>?
@@ -20,9 +22,15 @@ struct TransactionsView: View {
     @State private var appliedType = ""
     @State private var appliedCategoryID: Int?
     @State private var appliedTagID: Int?
+    @State private var appliedPeriod: TransactionPeriodFilter = .all
+
+    init(path: Binding<[Int]> = .constant([]), selecting: Binding<Bool> = .constant(false)) {
+        _path = path
+        _selectingTransactions = selecting
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()
@@ -53,12 +61,28 @@ struct TransactionsView: View {
                     switch listMode {
                     case .active:
                         if let transactions = model.transactions {
-                            TransactionRows(
-                                transactions: transactions.items,
-                                categories: transactions.categories,
-                                selecting: selectingTransactions,
-                                selectedIDs: $selectedTransactionIDs
-                            )
+                            if transactions.items.isEmpty {
+                                if hasActiveQueryOrFilters {
+                                    ContentUnavailableView(
+                                        "No matching transactions",
+                                        systemImage: "magnifyingglass",
+                                        description: Text("Try a different search or clear your filters.")
+                                    )
+                                } else {
+                                    ContentUnavailableView(
+                                        "No transactions yet",
+                                        systemImage: "list.bullet.rectangle",
+                                        description: Text("Add your first transaction with the + button.")
+                                    )
+                                }
+                            } else {
+                                TransactionRows(
+                                    transactions: transactions.items,
+                                    categories: transactions.categories,
+                                    selecting: selectingTransactions,
+                                    selectedIDs: $selectedTransactionIDs
+                                )
+                            }
                         } else if model.showsTransactionsInitialLoading {
                             LoadingStateSection(title: "Loading transactions")
                         } else {
@@ -66,10 +90,25 @@ struct TransactionsView: View {
                         }
                     case .uncategorized:
                         if let transactions = model.uncategorizedTransactions {
-                            Section {
-                                LabeledContent("Open items", value: "\(transactions.total)")
-                            }
-                            UncategorizedTriageRows(
+                            if transactions.total == 0 {
+                                if hasActiveQueryOrFilters {
+                                    ContentUnavailableView(
+                                        "No matching transactions",
+                                        systemImage: "magnifyingglass",
+                                        description: Text("Try a different search or clear your filters.")
+                                    )
+                                } else {
+                                    ContentUnavailableView(
+                                        "Inbox zero",
+                                        systemImage: "checkmark.circle",
+                                        description: Text("Every transaction has a category.")
+                                    )
+                                }
+                            } else {
+                                Section {
+                                    LabeledContent("Open items", value: "\(transactions.total)")
+                                }
+                                UncategorizedTriageRows(
                                 transactions: transactions.items,
                                 categories: transactions.categories,
                                 suggestions: model.transactionSuggestions,
@@ -89,7 +128,8 @@ struct TransactionsView: View {
                                 onReject: { suggestion in
                                     Task { await model.rejectTransactionSuggestion(suggestion) }
                                 }
-                            )
+                                )
+                            }
                         } else {
                             ContentUnavailableView("No uncategorized transactions loaded", systemImage: "tray")
                         }
@@ -142,6 +182,7 @@ struct TransactionsView: View {
             }
             .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFiltersToApplied) {
                 TransactionFiltersSheet(
+                    period: $draftPeriod,
                     type: $draftType,
                     categoryID: $draftCategoryID,
                     tagID: $draftTagID,
@@ -161,7 +202,8 @@ struct TransactionsView: View {
                     query: appliedSearchQuery,
                     type: appliedType,
                     filterCategoryID: appliedCategoryID,
-                    filterTagID: appliedTagID
+                    filterTagID: appliedTagID,
+                    period: appliedPeriod.rawValue
                 ) { request in
                     await model.previewBulkEdit(request)
                 } onApply: { request in
@@ -235,14 +277,16 @@ struct TransactionsView: View {
                 query: appliedSearchQuery,
                 type: appliedType,
                 categoryID: appliedCategoryID,
-                tagID: appliedTagID
+                tagID: appliedTagID,
+                period: appliedPeriod.rawValue
             )
         case .uncategorized:
             await model.loadUncategorizedTransactions(
                 query: appliedSearchQuery,
                 type: appliedType,
                 categoryID: appliedCategoryID,
-                tagID: appliedTagID
+                tagID: appliedTagID,
+                period: appliedPeriod.rawValue
             )
         case .deleted:
             await model.loadDeletedTransactions()
@@ -255,6 +299,7 @@ struct TransactionsView: View {
         appliedType = draftType
         appliedCategoryID = draftCategoryID
         appliedTagID = draftTagID
+        appliedPeriod = draftPeriod
         Task { await loadSelectedMode() }
     }
 
@@ -311,18 +356,14 @@ struct TransactionsView: View {
     }
 
     private func clearFilters() {
-        liveSearchTask?.cancel()
-        draftSearchQuery = ""
-        appliedSearchQuery = ""
-        searchAlert = nil
-        isTranslatingSearch = false
-        lastTranslatedSearchQuery = nil
         draftType = ""
         draftCategoryID = nil
         draftTagID = nil
+        draftPeriod = .all
         appliedType = ""
         appliedCategoryID = nil
         appliedTagID = nil
+        appliedPeriod = .all
         Task { await loadSelectedMode() }
     }
 
@@ -331,6 +372,7 @@ struct TransactionsView: View {
         draftType = appliedType
         draftCategoryID = appliedCategoryID
         draftTagID = appliedTagID
+        draftPeriod = appliedPeriod
     }
 
     private var currentTransactions: [TransactionListItem] {
@@ -367,7 +409,11 @@ struct TransactionsView: View {
     }
 
     private var hasStructuredFilters: Bool {
-        !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
+        appliedPeriod != .all || !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
+    }
+
+    private var hasActiveQueryOrFilters: Bool {
+        hasStructuredFilters || !appliedSearchQuery.isEmpty
     }
 
     private var canAskSearch: Bool {
@@ -377,6 +423,9 @@ struct TransactionsView: View {
 
     private var activeFilterLabels: [String] {
         var labels: [String] = []
+        if appliedPeriod != .all {
+            labels.append(appliedPeriod.title)
+        }
         if !appliedType.isEmpty {
             labels.append(appliedType == "income" ? "Income" : "Expenses")
         }
@@ -471,8 +520,28 @@ private struct FilterSummarySection: View {
     }
 }
 
+private enum TransactionPeriodFilter: String, CaseIterable, Identifiable {
+    case all
+    case thisMonth = "this_month"
+    case lastMonth = "last_month"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            "All time"
+        case .thisMonth:
+            "This month"
+        case .lastMonth:
+            "Last month"
+        }
+    }
+}
+
 private struct TransactionFiltersSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Binding var period: TransactionPeriodFilter
     @Binding var type: String
     @Binding var categoryID: Int?
     @Binding var tagID: Int?
@@ -484,6 +553,12 @@ private struct TransactionFiltersSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Picker("Time range", selection: $period) {
+                    ForEach(TransactionPeriodFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+
                 Picker("Type", selection: $type) {
                     Text("All").tag("")
                     Text("Income").tag("income")
@@ -514,7 +589,7 @@ private struct TransactionFiltersSheet: View {
                         onClear()
                         dismiss()
                     }
-                    .disabled(type.isEmpty && categoryID == nil && tagID == nil)
+                    .disabled(period == .all && type.isEmpty && categoryID == nil && tagID == nil)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -816,6 +891,7 @@ private struct BulkEditSheet: View {
     let type: String
     let filterCategoryID: Int?
     let filterTagID: Int?
+    let period: String
     var onPreview: (BulkEditRequest) async -> BulkEditResponse?
     var onApply: (BulkEditRequest) async -> BulkEditResponse?
 
@@ -837,6 +913,7 @@ private struct BulkEditSheet: View {
         type: String,
         filterCategoryID: Int?,
         filterTagID: Int?,
+        period: String,
         onPreview: @escaping (BulkEditRequest) async -> BulkEditResponse?,
         onApply: @escaping (BulkEditRequest) async -> BulkEditResponse?
     ) {
@@ -848,6 +925,7 @@ private struct BulkEditSheet: View {
         self.type = type
         self.filterCategoryID = filterCategoryID
         self.filterTagID = filterTagID
+        self.period = period
         self.onPreview = onPreview
         self.onApply = onApply
         _selectionScope = State(initialValue: selectedIDs.isEmpty ? .filtered : .selected)
@@ -860,7 +938,7 @@ private struct BulkEditSheet: View {
                     Picker("Apply to", selection: $selectionScope) {
                         Text("Selected").tag(BulkSelectionScope.selected)
                             .disabled(selectedIDs.isEmpty)
-                        Text(mode == .uncategorized ? "All inbox" : "All loaded filter").tag(BulkSelectionScope.filtered)
+                        Text(mode == .uncategorized ? "All inbox" : "All filtered").tag(BulkSelectionScope.filtered)
                     }
                     LabeledContent("Selected rows", value: "\(selectedIDs.count)")
                 }
@@ -929,7 +1007,7 @@ private struct BulkEditSheet: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("The backend will update every resolved transaction in this selection.")
+                Text("This will update every transaction in the selection.")
             }
         }
     }
@@ -992,7 +1070,7 @@ private struct BulkEditSheet: View {
                 mode: "query",
                 transactionIDs: [],
                 query: BulkSelectionQueryRequest(
-                    period: "all",
+                    period: period,
                     start: nil,
                     end: nil,
                     type: type.isEmpty ? nil : type,
@@ -1053,6 +1131,8 @@ private struct BulkPreviewSection: View {
 }
 
 private struct DeletedTransactionsList: View {
+    @Environment(\.colorScheme) private var scheme
+
     let transactions: [DeletedTransaction]
     var onRestore: (DeletedTransaction) -> Void
     var onPermanentDelete: (DeletedTransaction) -> Void
@@ -1085,7 +1165,7 @@ private struct DeletedTransactionsList: View {
                     Spacer()
                     Text(AppFormatters.euros(signedAmount(transaction)))
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(transaction.type == "income" ? .green : .primary)
+                        .foregroundStyle(transaction.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                     Menu {
                         Button("Restore") {
                             onRestore(transaction)

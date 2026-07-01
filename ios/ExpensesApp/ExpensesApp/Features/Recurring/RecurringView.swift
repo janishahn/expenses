@@ -2,13 +2,8 @@ import SwiftUI
 
 struct RecurringView: View {
     @Environment(AppModel.self) private var model
-    @Binding private var quickAddTrigger: Int
     @State private var activeSheet: RecurringSheet?
     @State private var pendingDelete: RecurringRule?
-
-    init(quickAddTrigger: Binding<Int> = .constant(0)) {
-        _quickAddTrigger = quickAddTrigger
-    }
 
     var body: some View {
         List {
@@ -33,7 +28,7 @@ struct RecurringView: View {
                                 RecurringRuleRow(rule: rule)
                             }
                             .swipeActions(edge: .leading) {
-                                Button(rule.autoPost ? "Disable" : "Enable") {
+                                Button(rule.autoPost ? "Manual" : "Auto") {
                                     Task { await model.toggleRecurringRule(rule, autoPost: !rule.autoPost) }
                                 }
                                 .tint(rule.autoPost ? .orange : .green)
@@ -60,6 +55,8 @@ struct RecurringView: View {
                 }
             } else if model.isLoading {
                 LoadingStateSection(title: "Loading recurring rules")
+            } else if model.showsRecurringLoadFailed {
+                UnavailableStateSection(title: "Couldn't load recurring rules", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
             } else {
                 ContentUnavailableView("No recurring rules loaded", systemImage: "repeat")
             }
@@ -78,10 +75,13 @@ struct RecurringView: View {
         }
         .expensesScreenStyle()
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .rule(let rule):
-                RecurringRuleFormView(rule: rule, categories: model.recurring?.categories ?? [])
+            Group {
+                switch sheet {
+                case .rule(let rule):
+                    RecurringRuleFormView(rule: rule, categories: model.recurring?.categories ?? [])
+                }
             }
+            .themeAccentTint()
         }
         .confirmationDialog(
             "Delete recurring rule?",
@@ -108,9 +108,6 @@ struct RecurringView: View {
             await model.loadRecurring()
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.recurring == nil)
-        .onChange(of: quickAddTrigger) { _, _ in
-            activeSheet = .rule(nil)
-        }
     }
 }
 
@@ -126,6 +123,8 @@ private enum RecurringSheet: Identifiable {
 }
 
 private struct RecurringRuleRow: View {
+    @Environment(\.colorScheme) private var scheme
+
     let rule: RecurringRule
 
     var body: some View {
@@ -139,9 +138,9 @@ private struct RecurringRuleRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(AppFormatters.euros(rule.type == "income" ? rule.amountCents : -rule.amountCents))
+                Text(AppFormatters.amount(rule.type == "income" ? rule.amountCents : -rule.amountCents, currencyCode: rule.currencyCode))
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(rule.type == "income" ? .green : .primary)
+                    .foregroundStyle(rule.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                 Text(rule.autoPost ? "Auto" : "Manual")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -374,6 +373,7 @@ private struct RecurringRuleFormView: View {
 private struct RecurringOccurrencesView: View {
     @Environment(AppModel.self) private var model
     let ruleID: Int
+    @State private var loadFailed = false
 
     private var data: RecurringOccurrencesResponse? {
         model.recurringOccurrences?.rule.id == ruleID ? model.recurringOccurrences : nil
@@ -383,7 +383,7 @@ private struct RecurringOccurrencesView: View {
         List {
             if let data {
                 Section {
-                    LabeledContent("Amount", value: AppFormatters.euros(data.rule.amountCents))
+                    LabeledContent("Amount", value: AppFormatters.amount(data.rule.amountCents, currencyCode: data.rule.currencyCode))
                     LabeledContent("Category", value: data.rule.category?.name ?? "-")
                     LabeledContent("Next", value: AppFormatters.day(data.rule.nextOccurrence))
                     LabeledContent("Auto-post", value: data.rule.autoPost ? "Yes" : "No")
@@ -407,14 +407,29 @@ private struct RecurringOccurrencesView: View {
                         }
                     }
                 }
+            } else if loadFailed {
+                ContentUnavailableView(
+                    "Couldn't load occurrences",
+                    systemImage: "clock.arrow.circlepath",
+                    description: Text("Pull to refresh to try again.")
+                )
             } else {
                 ProgressView()
             }
         }
         .navigationTitle(data?.rule.name ?? "Occurrences")
         .task {
-            await model.loadRecurringOccurrences(ruleID: ruleID)
+            await reload()
         }
+        .refreshable {
+            await reload()
+        }
+    }
+
+    private func reload() async {
+        loadFailed = false
+        await model.loadRecurringOccurrences(ruleID: ruleID)
+        loadFailed = data == nil
     }
 }
 

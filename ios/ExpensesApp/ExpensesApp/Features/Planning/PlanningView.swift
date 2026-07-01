@@ -17,6 +17,8 @@ struct DigestView: View {
                     DigestRecurringSection(rows: digest.recurringPostings)
                 } else if model.showsDigestInitialLoading {
                     LoadingStateSection(title: "Loading digest")
+                } else if model.showsDigestLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load the weekly digest", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No digest loaded", systemImage: "newspaper")
                 }
@@ -30,6 +32,7 @@ struct DigestView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                     }
+                    .accessibilityLabel("Previous week")
                     .disabled(model.digest == nil)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -38,6 +41,7 @@ struct DigestView: View {
                     } label: {
                         Image(systemName: "chevron.right")
                     }
+                    .accessibilityLabel("Next week")
                     .disabled(model.digest == nil)
                 }
             }
@@ -96,6 +100,8 @@ struct ForecastView: View {
                     ForecastMonthSection(months: forecast.months)
                 } else if model.isLoading {
                     LoadingStateSection(title: "Loading forecast")
+                } else if model.showsForecastLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No forecast loaded", systemImage: "chart.line.uptrend.xyaxis")
                 }
@@ -108,6 +114,7 @@ struct ForecastView: View {
         }
         .sheet(isPresented: $showingScenarioEditor) {
             ScenarioEditorSheet(horizon: forecastHorizon, mode: forecastMode)
+                .themeAccentTint()
         }
         .refreshable {
             await loadForecast()
@@ -117,162 +124,6 @@ struct ForecastView: View {
 
     private func loadForecast() async {
         await model.loadForecast(horizon: forecastHorizon, mode: forecastMode)
-    }
-}
-
-struct PlanningView: View {
-    @Environment(AppModel.self) private var model
-    @State private var section: PlanningSection = .digest
-    @State private var weekOf: Date?
-    @State private var forecastHorizon = 6
-    @State private var forecastMode = "full"
-    @State private var showingScenarioEditor = false
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if model.identity?.authenticated != true {
-                    SignedOutStateSection()
-                } else {
-                    Section {
-                        PlanningSectionPicker(section: $section)
-                    }
-
-                    switch section {
-                    case .digest:
-                        if let digest = model.digest {
-                            DigestHeadlineSection(digest: digest)
-                            DigestCategoriesSection(categories: digest.topCategories)
-                            DigestBudgetPulseSection(rows: digest.budgetPulse)
-                            DigestUnusualSection(rows: digest.unusualTransactions)
-                            DigestRecurringSection(rows: digest.recurringPostings)
-                        } else if model.showsDigestInitialLoading {
-                            LoadingStateSection(title: "Loading digest")
-                        } else {
-                            ContentUnavailableView("No digest loaded", systemImage: "newspaper")
-                        }
-                    case .forecast:
-                        ForecastControlsSection(
-                            horizon: $forecastHorizon,
-                            mode: $forecastMode
-                        )
-                        ForecastScenarioEntrySection {
-                            showingScenarioEditor = true
-                        }
-                        if let forecast = model.forecast {
-                            ForecastSummarySection(forecast: forecast)
-                            ForecastMonthSection(months: forecast.months)
-                        } else {
-                            ContentUnavailableView("No forecast loaded", systemImage: "chart.line.uptrend.xyaxis")
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Planning")
-            .expensesScreenStyle()
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        shiftWeek(by: -7)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(section != .digest || model.digest == nil)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        shiftWeek(by: 7)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(section != .digest || model.digest == nil)
-                }
-            }
-            .task(id: section) {
-                await loadSelectedSection()
-            }
-            .task(id: forecastHorizon) {
-                if section == .forecast {
-                    await loadForecast()
-                }
-            }
-            .task(id: forecastMode) {
-                if section == .forecast {
-                    await loadForecast()
-                }
-            }
-            .sheet(isPresented: $showingScenarioEditor) {
-                ScenarioEditorSheet(horizon: forecastHorizon, mode: forecastMode)
-            }
-            .refreshable {
-                await loadSelectedSection()
-            }
-            .animation(.easeInOut(duration: 0.18), value: model.showsDigestInitialLoading)
-        }
-    }
-
-    private func loadSelectedSection() async {
-        switch section {
-        case .digest:
-            await loadDigest()
-        case .forecast:
-            await loadForecast()
-        }
-    }
-
-    private func loadDigest() async {
-        await model.loadDigest(weekOf: weekOf.map(Self.dateString))
-        if let digest = model.digest {
-            weekOf = digest.weekStart
-        }
-    }
-
-    private func loadForecast() async {
-        await model.loadForecast(horizon: forecastHorizon, mode: forecastMode)
-    }
-
-    private func shiftWeek(by days: Int) {
-        let base = weekOf ?? model.digest?.weekStart ?? Date()
-        weekOf = Calendar.current.date(byAdding: .day, value: days, to: base) ?? base
-        Task { await loadDigest() }
-    }
-
-    private static func dateString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
-}
-
-private struct PlanningSectionPicker: View {
-    @Binding var section: PlanningSection
-
-    var body: some View {
-        Picker("Section", selection: $section) {
-            ForEach(PlanningSection.allCases) { item in
-                Text(item.title).tag(item)
-            }
-        }
-        .pickerStyle(.segmented)
-        .sensoryFeedback(.selection, trigger: section)
-    }
-}
-
-private enum PlanningSection: String, CaseIterable, Identifiable {
-    case digest
-    case forecast
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .digest:
-            "Digest"
-        case .forecast:
-            "Forecast"
-        }
     }
 }
 
@@ -524,12 +375,13 @@ private struct ForecastMonthSection: View {
 }
 
 private struct ForecastBreakdownRows: View {
+    @Environment(\.colorScheme) private var scheme
     let month: ForecastMonth
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForecastLine(label: "Income", amount: month.projectedIncomeCents, color: .green)
-            ForecastLine(label: "Expenses", amount: month.projectedExpensesCents, color: .red)
+            ForecastLine(label: "Income", amount: month.projectedIncomeCents, color: ExpensesTheme.income(for: scheme))
+            ForecastLine(label: "Expenses", amount: month.projectedExpensesCents, color: ExpensesTheme.expense(for: scheme))
             if !month.breakdown.recurringRules.isEmpty {
                 Divider()
                 Text("Recurring")
@@ -540,7 +392,7 @@ private struct ForecastBreakdownRows: View {
                         label: row.name,
                         detail: row.categoryName,
                         amount: row.type == "income" ? row.amountCents : -row.amountCents,
-                        color: row.type == "income" ? .green : .red
+                        color: row.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme)
                     )
                 }
             }
@@ -550,7 +402,7 @@ private struct ForecastBreakdownRows: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach(month.breakdown.variableEstimates) { row in
-                    ForecastLine(label: row.name, amount: -row.amountCents, color: .red)
+                    ForecastLine(label: row.name, amount: -row.amountCents, color: ExpensesTheme.expense(for: scheme))
                 }
             }
             if !month.breakdown.oneTimeEvents.isEmpty {
@@ -562,7 +414,7 @@ private struct ForecastBreakdownRows: View {
                     ForecastLine(
                         label: row.name,
                         amount: row.type == "income" ? row.amountCents : -row.amountCents,
-                        color: row.type == "income" ? .green : .red
+                        color: row.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme)
                     )
                 }
             }
@@ -855,11 +707,15 @@ private struct ScenarioEditorSheet: View {
     }
 
     private func runScenario() async {
-        _ = await model.runForecastScenario(
+        formError = nil
+        let success = await model.runForecastScenario(
             horizon: horizon,
             mode: mode,
             modifications: modifications
         )
+        if !success {
+            formError = model.lastError?.message ?? "Scenario could not be run."
+        }
     }
 
     private func modificationDescription(_ modification: ForecastScenarioModificationRequest) -> String {
@@ -933,9 +789,4 @@ private struct ScenarioImpactSection: View {
     private func signedEuros(_ amount: Int) -> String {
         "\(amount >= 0 ? "+" : "")\(AppFormatters.euros(amount))"
     }
-}
-
-#Preview {
-    PlanningView()
-        .environment(AppModel())
 }

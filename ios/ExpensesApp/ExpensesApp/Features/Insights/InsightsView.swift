@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InsightsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
     @State private var section: InsightsViewSection = .charts
     @State private var presentingFilters = false
     @State private var period = "all"
@@ -44,8 +45,8 @@ struct InsightsView: View {
                     case .charts:
                         if let insights = model.insights {
                             InsightsChartsSection(insights: insights)
-                            InsightsBreakdownSection(title: "Expenses", rows: insights.expenseBreakdown, color: .red)
-                            InsightsBreakdownSection(title: "Income", rows: insights.incomeBreakdown, color: .green)
+                            InsightsBreakdownSection(title: "Expenses", rows: insights.expenseBreakdown, color: ExpensesTheme.expense(for: scheme))
+                            InsightsBreakdownSection(title: "Income", rows: insights.incomeBreakdown, color: ExpensesTheme.income(for: scheme))
                             InsightsTrendSection(
                                 insights: insights,
                                 selectedTrendCategoryID: $selectedTrendCategoryID
@@ -53,18 +54,28 @@ struct InsightsView: View {
                             InsightsBudgetSection(insights: insights)
                         } else if model.showsInsightsInitialLoading {
                             LoadingStateSection(title: "Loading insights")
+                        } else if model.showsInsightsLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No insights loaded", systemImage: "chart.xyaxis.line")
                         }
                     case .flow:
                         if let flow = model.insightsFlow {
                             InsightsFlowSection(flow: flow)
+                        } else if model.isLoading {
+                            LoadingStateSection(title: "Loading flow")
+                        } else if model.showsInsightsFlowLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load the cash flow", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No flow loaded", systemImage: "point.3.connected.trianglepath.dotted")
                         }
                     case .durables:
                         if let durablePurchases = model.durablePurchases {
                             DurablePurchasesSection(items: durablePurchases.items)
+                        } else if model.isLoading {
+                            LoadingStateSection(title: "Loading durable purchases")
+                        } else if model.showsDurablePurchasesLoadFailed {
+                            UnavailableStateSection(title: "Couldn't load durable purchases", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
                             ContentUnavailableView("No durable purchases loaded", systemImage: "shippingbox")
                         }
@@ -309,7 +320,7 @@ private struct InsightsChartsSection: View {
                     ForEach(insights.series.suffix(12)) { point in
                         LineMark(
                             x: .value("Month", point.label),
-                            y: .value("Income", point.incomeCents),
+                            y: .value("Income", Double(point.incomeCents) / 100),
                             series: .value("Series", "Income")
                         )
                         .foregroundStyle(ExpensesTheme.income(for: scheme))
@@ -318,7 +329,7 @@ private struct InsightsChartsSection: View {
 
                         LineMark(
                             x: .value("Month", point.label),
-                            y: .value("Expenses", point.expenseCents),
+                            y: .value("Expenses", Double(point.expenseCents) / 100),
                             series: .value("Series", "Expenses")
                         )
                         .foregroundStyle(ExpensesTheme.expense(for: scheme))
@@ -331,10 +342,10 @@ private struct InsightsChartsSection: View {
                 .chartYAxis {
                     AxisMarks(position: .trailing) {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(.secondary.opacity(0.18))
-                        AxisValueLabel()
+                            .foregroundStyle(Color(.separator))
+                        AxisValueLabel(format: .currency(code: "EUR").precision(.fractionLength(0)))
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.secondaryLabel))
                     }
                 }
                 .frame(height: 220)
@@ -347,8 +358,8 @@ private struct InsightsChartsSection: View {
         }
 
         Section("Movement") {
-            InsightDeltaRows(title: "Increases", rows: insights.deltas.increases, color: .red)
-            InsightDeltaRows(title: "Decreases", rows: insights.deltas.decreases, color: .green)
+            InsightDeltaRows(title: "Increases", rows: insights.deltas.increases, color: ExpensesTheme.expense(for: scheme))
+            InsightDeltaRows(title: "Decreases", rows: insights.deltas.decreases, color: ExpensesTheme.income(for: scheme))
         }
 
         Section("Top Tags") {

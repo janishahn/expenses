@@ -2,15 +2,10 @@ import SwiftUI
 
 struct BudgetsView: View {
     @Environment(AppModel.self) private var model
-    @Binding private var quickAddTrigger: Int
     @State private var viewMode: BudgetViewMode = .month
     @State private var activeSheet: BudgetSheet?
     @State private var pendingOverrideDelete: BudgetScope?
     @State private var pendingTemplateDelete: BudgetTemplateRow?
-
-    init(quickAddTrigger: Binding<Int> = .constant(0)) {
-        _quickAddTrigger = quickAddTrigger
-    }
 
     var body: some View {
         List {
@@ -39,6 +34,8 @@ struct BudgetsView: View {
                     }
                 } else if model.isLoading {
                     LoadingStateSection(title: "Loading budgets")
+                } else if model.showsBudgetsLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load budgets", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                 } else {
                     ContentUnavailableView("No budgets loaded", systemImage: "chart.bar")
                 }
@@ -48,22 +45,27 @@ struct BudgetsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    activeSheet = viewMode.defaultSheet ?? .override
+                    if let sheet = viewMode.defaultSheet {
+                        activeSheet = sheet
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Budget")
-                .disabled(model.identity?.authenticated != true)
+                .disabled(model.identity?.authenticated != true || viewMode.defaultSheet == nil)
             }
         }
         .expensesScreenStyle()
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .override:
-                BudgetOverrideFormView(budgets: model.budgets)
-            case .template:
-                BudgetTemplateFormView(budgets: model.budgets)
+            Group {
+                switch sheet {
+                case .override:
+                    BudgetOverrideFormView(budgets: model.budgets)
+                case .template:
+                    BudgetTemplateFormView(budgets: model.budgets)
+                }
             }
+            .themeAccentTint()
         }
         .confirmationDialog("Remove month budget?", isPresented: overrideDeletePresented) {
             Button("Remove Month Budget", role: .destructive) {
@@ -88,9 +90,6 @@ struct BudgetsView: View {
             await model.loadBudgets(view: viewMode.rawValue)
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.budgets == nil)
-        .onChange(of: quickAddTrigger) { _, _ in
-            activeSheet = viewMode.defaultSheet ?? .override
-        }
     }
 
     private var overrideDeletePresented: Binding<Bool> {
@@ -304,7 +303,7 @@ private struct BudgetScopeRow: View {
                     .font(.body.weight(.semibold))
                 if let onRemove {
                     Menu {
-                        Button("Remove override", role: .destructive) {
+                        Button("Remove Month Budget", role: .destructive) {
                             onRemove()
                         }
                     } label: {
