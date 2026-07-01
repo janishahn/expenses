@@ -8,8 +8,10 @@ struct AssistantView: View {
     @FocusState private var inputFocused: Bool
     @State private var sendTick = 0
     @State private var stopTick = 0
+    @State private var viewportHeight: CGFloat = 0
+    @State private var latestUserHeight: CGFloat = 0
+    @State private var latestAnswerHeight: CGFloat = 0
 
-    private let bottomAnchor = "assistant.bottom"
     private static let starterPrompts = [
         "What changed in my spending this month?",
         "Where did I spend the most recently?",
@@ -72,19 +74,36 @@ struct AssistantView: View {
                         ForEach(model.assistantTurns) { turn in
                             AssistantTurnView(turn: turn)
                                 .id(turn.id)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                    if turn.id == latestUserTurnID {
+                                        latestUserHeight = height
+                                    } else if turn.id == latestAssistantTurnID {
+                                        latestAnswerHeight = height
+                                    }
+                                }
                         }
                     }
+                    // Reserve room below the newest exchange so a freshly sent question can rest at
+                    // the top of the viewport with space for the reply, instead of the reply starting
+                    // at the bottom. Shrinks as the answer grows; gone once the exchange fills the screen.
                     Color.clear
-                        .frame(height: 1)
-                        .id(bottomAnchor)
+                        .frame(height: bottomReserve)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 18)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: scrollSignal) {
-                withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            .onChange(of: latestUserTurnID) { _, newID in
+                guard let newID else { return }
+                // Reset the measured heights so the reserve is at full height for the near-empty
+                // new exchange, then scroll on the next layout pass so the question reaches the top.
+                latestUserHeight = 0
+                latestAnswerHeight = 0
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(newID, anchor: .top)
+                    }
                 }
             }
         }
@@ -173,11 +192,20 @@ struct AssistantView: View {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isAssistantStreaming
     }
 
-    private var scrollSignal: Int {
-        model.assistantTurns.count
-            + (model.assistantTurns.last?.content.count ?? 0)
-            + (model.assistantTurns.last?.progressNarration.count ?? 0)
-            + (model.assistantTurns.last?.tools.count ?? 0)
+    private var latestUserTurnID: Int? {
+        model.assistantTurns.last(where: { $0.role == .user })?.id
+    }
+
+    private var latestAssistantTurnID: Int? {
+        model.assistantTurns.last(where: { $0.role == .assistant })?.id
+    }
+
+    // Space to leave below the newest exchange so its question can sit at the top of the
+    // viewport. As the answer streams and grows, the reserve shrinks to keep the total near
+    // one screen; once the exchange is taller than the screen no reserve is needed.
+    private var bottomReserve: CGFloat {
+        guard viewportHeight > 0, latestUserTurnID != nil else { return 0 }
+        return max(0, viewportHeight - latestUserHeight - latestAnswerHeight)
     }
 
     private func send() {
@@ -192,105 +220,204 @@ struct AssistantView: View {
 
 private struct AssistantTurnView: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let turn: AssistantTurn
 
     var body: some View {
         switch turn.role {
         case .user:
-            HStack {
-                Spacer(minLength: 40)
-                Text(turn.content)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        ExpensesTheme.accent(for: scheme).opacity(0.14),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    )
-            }
+            UserMessageBubble(text: turn.content)
         case .assistant:
+            // Progress lives above/outside the bubble: the Activity disclosure, then the
+            // single-line spinner while the turn is still working. The answer bubble only
+            // materializes once final user-visible content exists, so thinking, tool calls,
+            // and intermediate reasoning never render inside a bubble.
             VStack(alignment: .leading, spacing: 6) {
                 if !turn.tools.isEmpty {
                     AssistantActivityDisclosure(tools: turn.tools)
                 }
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        assistantBody
-                        if turn.isStopped {
-                            Text("Stopped")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let errorMessage = turn.errorMessage {
-                            Text(errorMessage)
-                                .font(.footnote)
-                                .foregroundStyle(ExpensesTheme.expense(for: scheme))
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        ExpensesTheme.surface(for: scheme),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                if showsSpinner {
+                    AssistantProgressSpinner(
+                        narration: turn.progressNarration,
+                        tools: turn.tools
                     )
-                    Spacer(minLength: 40)
+                    .padding(.leading, 14)
+                    .transition(reduceMotion ? .identity : .opacity)
+                }
+                if !turn.content.isEmpty {
+                    answerBubble
+                        .transition(reduceMotion ? .identity : .opacity)
+                } else {
+                    terminalStatus
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: turn.content.isEmpty)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: turn.isStreaming)
         }
     }
 
-    @ViewBuilder
-    private var assistantBody: some View {
-        if turn.content.isEmpty {
-            if turn.isStreaming {
-                AssistantWorkingStatus(
-                    narration: turn.progressNarration,
-                    toolLabel: toolTickerLabel
-                )
+    private var showsSpinner: Bool {
+        turn.isStreaming && turn.content.isEmpty && turn.errorMessage == nil
+    }
+
+    private var answerBubble: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                AssistantMarkdownText(content: turn.content, showsCaret: turn.isStreaming)
+                if turn.isStopped {
+                    Text("Stopped")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let errorMessage = turn.errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(ExpensesTheme.expense(for: scheme))
+                }
             }
-        } else {
-            AssistantMarkdownText(content: turn.content, showsCaret: turn.isStreaming)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ExpensesTheme.surface(for: scheme),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            Spacer(minLength: 40)
         }
     }
 
-    private var toolTickerLabel: String? {
-        turn.tools.last?.label
+    // A finished turn that produced no answer text reads as a quiet status line rather than
+    // an empty bubble: the stop/error/no-response outcome shown where the spinner used to be.
+    @ViewBuilder
+    private var terminalStatus: some View {
+        if !turn.isStreaming {
+            Group {
+                if let errorMessage = turn.errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(ExpensesTheme.expense(for: scheme))
+                } else if turn.isStopped {
+                    Text("Stopped")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No response")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.footnote)
+            .padding(.leading, 14)
+        }
     }
 }
 
-private struct AssistantWorkingStatus: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let narration: String
-    let toolLabel: String?
+/// A right-aligned user turn. Ordinary questions render in full; only extremely long ones
+/// collapse to a few lines behind a "See more" toggle so a pasted wall of text can't dominate
+/// the transcript. Assistant answers are never truncated this way.
+private struct UserMessageBubble: View {
+    @Environment(\.colorScheme) private var scheme
+    let text: String
+    @State private var expanded = false
+
+    private var isCollapsible: Bool { text.count > 600 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                if reduceMotion {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-                ShimmerText(text: "Thinking…", active: !reduceMotion)
-            }
-
-            if !narration.isEmpty {
-                Text(narration)
+        HStack {
+            Spacer(minLength: 40)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(text)
+                    .lineLimit(expanded || !isCollapsible ? nil : 6)
                     .fixedSize(horizontal: false, vertical: true)
-                    .transition(reduceMotion ? .identity : .opacity)
+                if isCollapsible {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(expanded ? "See less" : "See more")
+                            Image(systemName: "chevron.down")
+                                .rotationEffect(.degrees(expanded ? 180 : 0))
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(expanded ? "See less" : "See more")
+                }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ExpensesTheme.accent(for: scheme).opacity(0.14),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+        }
+    }
+}
 
-            if let toolLabel {
-                AssistantToolTicker(label: toolLabel)
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+/// The single shimmering progress line shown above the answer bubble while a turn works.
+/// Exactly one phrase is visible at a time, chosen by a small precedence rule:
+///   1. a freshly started tool's verb phrase, shown for a bounded window (`toolWindow`);
+///   2. otherwise the latest user-visible intermediate reasoning (`narration`);
+///   3. otherwise the default "Thinking…".
+/// The backend emits a `progress_narration` immediately before each `tool_call_start`, so a
+/// running tool intentionally supersedes its own lead-in narration with the crisp verb. When
+/// a tool runs longer than the window with nothing newer, the phrase falls back so a slow tool
+/// never pins one label; each new tool resets the window, which also debounces rapid tool
+/// bursts into a smooth text roll instead of blinking back to "Thinking…".
+private struct AssistantProgressSpinner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .subheadline) private var lineHeight: CGFloat = 20
+    let narration: String
+    let tools: [AssistantToolActivity]
+
+    private static let toolWindow: Duration = .seconds(2)
+
+    // The tool whose verb currently overrides the base phrase; cleared when its window lapses.
+    @State private var overrideToolID: String?
+
+    private var phrase: String {
+        if let overrideToolID, let tool = tools.first(where: { $0.id == overrideToolID }) {
+            return tool.spinnerPhrase
+        }
+        if !narration.isEmpty {
+            return narration
+        }
+        return "Thinking…"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if reduceMotion {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            ZStack(alignment: .leading) {
+                ShimmerText(text: phrase, active: !reduceMotion)
+                    .id(phrase)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
+            }
+            .frame(minHeight: lineHeight, alignment: .leading)
+            .clipped()
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85), value: phrase)
+        .onChange(of: tools.last?.id) { _, newID in
+            if let newID {
+                overrideToolID = newID
             }
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: narration)
-        // Key on presence only; the ticker handles its own odometer roll between labels.
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: toolLabel == nil)
+        .task(id: overrideToolID) {
+            guard overrideToolID != nil else { return }
+            try? await Task.sleep(for: Self.toolWindow)
+            if !Task.isCancelled {
+                overrideToolID = nil
+            }
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(narration.isEmpty ? "Assistant is working" : narration)
+        .accessibilityLabel("Assistant is working")
+        .accessibilityValue(phrase.replacingOccurrences(of: "…", with: ""))
     }
 }
 
@@ -324,25 +451,6 @@ private struct ShimmerText: View {
                     phase = 1
                 }
             }
-    }
-}
-
-private struct AssistantToolTicker: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .caption) private var lineHeight: CGFloat = 18
-    let label: String
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            ShimmerText(text: label, active: !reduceMotion)
-                .id(label)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
-        }
-        .frame(minHeight: lineHeight, alignment: .leading)
-        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85), value: label)
-        .clipped()
     }
 }
 
