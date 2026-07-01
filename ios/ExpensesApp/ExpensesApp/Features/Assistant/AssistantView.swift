@@ -368,7 +368,7 @@ private struct AssistantProgressSpinner: View {
     let narration: String
     let tools: [AssistantToolActivity]
 
-    private static let toolWindow: Duration = .seconds(2)
+    private static let toolWindow: Duration = .seconds(3)
 
     // The tool whose verb currently overrides the base phrase; cleared when its window lapses.
     @State private var overrideToolID: String?

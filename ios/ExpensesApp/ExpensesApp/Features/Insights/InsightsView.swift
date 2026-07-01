@@ -320,7 +320,7 @@ private struct InsightsChartsSection: View {
                     ForEach(insights.series.suffix(12)) { point in
                         LineMark(
                             x: .value("Month", point.label),
-                            y: .value("Income", point.incomeCents),
+                            y: .value("Income", Double(point.incomeCents) / 100),
                             series: .value("Series", "Income")
                         )
                         .foregroundStyle(ExpensesTheme.income(for: scheme))
@@ -329,7 +329,7 @@ private struct InsightsChartsSection: View {
 
                         LineMark(
                             x: .value("Month", point.label),
-                            y: .value("Expenses", point.expenseCents),
+                            y: .value("Expenses", Double(point.expenseCents) / 100),
                             series: .value("Series", "Expenses")
                         )
                         .foregroundStyle(ExpensesTheme.expense(for: scheme))
@@ -343,7 +343,7 @@ private struct InsightsChartsSection: View {
                     AxisMarks(position: .trailing) {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                             .foregroundStyle(Color(.separator))
-                        AxisValueLabel()
+                        AxisValueLabel(format: .currency(code: "EUR").precision(.fractionLength(0)))
                             .font(.caption2)
                             .foregroundStyle(Color(.secondaryLabel))
                     }
