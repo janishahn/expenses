@@ -15,6 +15,7 @@ struct TransactionDetailView: View {
     @State private var previewDocument: PreviewDocument?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var attachmentError: String?
+    @State private var loadFailed = false
     let transactionID: Int
 
     var transaction: TransactionDetail? {
@@ -123,14 +124,14 @@ struct TransactionDetailView: View {
                 } header: {
                     Text("Receipts")
                 }
-            } else if model.isLoading {
-                ProgressView()
-            } else {
+            } else if loadFailed {
                 ContentUnavailableView(
                     "Couldn't load transaction",
                     systemImage: "exclamationmark.triangle",
                     description: Text("Pull to refresh to try again.")
                 )
+            } else {
+                ProgressView()
             }
         }
         .navigationTitle(transaction?.title ?? "Transaction")
@@ -200,11 +201,17 @@ struct TransactionDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .task {
-            await model.loadTransactionDetail(id: transactionID)
+            await reload()
         }
         .refreshable {
-            await model.loadTransactionDetail(id: transactionID)
+            await reload()
         }
+    }
+
+    private func reload() async {
+        loadFailed = false
+        await model.loadTransactionDetail(id: transactionID)
+        loadFailed = transaction == nil
     }
 
     private static let allowedAttachmentTypes: [UTType] = [

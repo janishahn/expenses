@@ -373,6 +373,7 @@ private struct RecurringRuleFormView: View {
 private struct RecurringOccurrencesView: View {
     @Environment(AppModel.self) private var model
     let ruleID: Int
+    @State private var loadFailed = false
 
     private var data: RecurringOccurrencesResponse? {
         model.recurringOccurrences?.rule.id == ruleID ? model.recurringOccurrences : nil
@@ -406,23 +407,29 @@ private struct RecurringOccurrencesView: View {
                         }
                     }
                 }
-            } else if model.isLoading {
-                ProgressView()
-            } else {
+            } else if loadFailed {
                 ContentUnavailableView(
                     "Couldn't load occurrences",
                     systemImage: "clock.arrow.circlepath",
                     description: Text("Pull to refresh to try again.")
                 )
+            } else {
+                ProgressView()
             }
         }
         .navigationTitle(data?.rule.name ?? "Occurrences")
         .task {
-            await model.loadRecurringOccurrences(ruleID: ruleID)
+            await reload()
         }
         .refreshable {
-            await model.loadRecurringOccurrences(ruleID: ruleID)
+            await reload()
         }
+    }
+
+    private func reload() async {
+        loadFailed = false
+        await model.loadRecurringOccurrences(ruleID: ruleID)
+        loadFailed = data == nil
     }
 }
 
