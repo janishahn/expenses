@@ -69,7 +69,7 @@ function RecurringOccurrencesPage() {
         <div className="grid gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
           <div>
             <p className="text-xs uppercase text-muted">Type</p>
-            <p className="font-semibold text-text">{rule.type}</p>
+            <p className="font-semibold capitalize text-text">{rule.type}</p>
           </div>
           <div>
             <p className="text-xs uppercase text-muted">Amount</p>

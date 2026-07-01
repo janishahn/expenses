@@ -444,6 +444,23 @@
     background: rgb(var(--surface-hi) / 0.18);
   }
 
+  .donut-figure {
+    container-type: inline-size;
+  }
+
+  .donut-figure-grid {
+    display: grid;
+    min-width: 0;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  @container (min-width: 30rem) {
+    .donut-figure-grid {
+      grid-template-columns: 200px minmax(0, 1fr);
+    }
+  }
+
   .mobile-list-title-clamp {
     line-height: 1.25rem;
     overflow: hidden;

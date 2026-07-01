@@ -774,6 +774,27 @@ Base styles target mobile, with responsive variants (`sm:`, `md:`, `lg:`, `desk:
 | Forms | Full width | Constrained width + sticky rail |
 | KPI cards | Stacked | Grid layout |
 
+### Container-Responsive Components
+
+A component that can be dropped into columns of different widths (for example a chart
+card that lives in a wide layout on one page and a narrow `0.9fr` column on another)
+should respond to the width it actually gets, not the viewport breakpoint. Keying such a
+component off `lg:`/`desk:` makes it snap to the desktop layout even inside a narrow
+column, which crushes its content. Use native CSS container queries instead: mark the
+wrapper as a query container and switch layout on its own width.
+
+```css
+.donut-figure { container-type: inline-size; }
+.donut-figure-grid { display: grid; gap: 1.5rem; align-items: center; min-width: 0; }
+@container (min-width: 30rem) {
+  .donut-figure-grid { grid-template-columns: 200px minmax(0, 1fr); }
+}
+```
+
+The `DonutChart` legend uses this so its category names stay readable whether the chart
+is full-width or in a narrow sidebar column. Prefer this over a viewport breakpoint
+whenever the same component appears at multiple column widths.
+
 ---
 
 ## Chart Visualization

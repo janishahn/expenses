@@ -446,7 +446,7 @@ function InsightsPage() {
       {mobileFiltersOpen && !isDesktop ? (
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
           <SheetContent side="bottom" className="max-h-[88vh]" aria-label="Insights filters">
-            <SheetHeader className="flex-row items-center justify-between gap-3 px-5 pt-5 pb-0">
+            <SheetHeader>
               <SheetTitle className="text-sm">Insights filters</SheetTitle>
               <SheetClose asChild>
                 <AppButton

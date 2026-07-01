@@ -343,10 +343,10 @@ function ReconciliationPage() {
               {unresolvedRows.slice(0, 6).map((row) => (
                 <div key={row.id} className="rounded-lg border border-border bg-surface-hi/40 p-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-sm font-semibold text-text">
+                    <p className="min-w-0 truncate text-sm font-semibold text-text">
                       {row.payee || row.booking_text || "Bank row"}
                     </p>
-                    <span className={`font-mono text-sm font-semibold ${amountTone(row.amount_cents)}`}>
+                    <span className={`shrink-0 font-mono text-sm font-semibold ${amountTone(row.amount_cents)}`}>
                       {formatCurrency(row.amount_cents)} €
                     </span>
                   </div>
@@ -377,10 +377,10 @@ function ReconciliationPage() {
                   className="block rounded-lg border border-border bg-surface-hi/40 p-3 transition hover:border-border-hi hover:bg-faint/70 active:scale-[0.99]"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-sm font-semibold text-text">
+                    <p className="min-w-0 truncate text-sm font-semibold text-text">
                       {transaction.title || "Untitled transaction"}
                     </p>
-                    <span className={`font-mono text-sm font-semibold ${amountTone(transaction.signed_amount_cents)}`}>
+                    <span className={`shrink-0 font-mono text-sm font-semibold ${amountTone(transaction.signed_amount_cents)}`}>
                       {formatCurrency(transaction.signed_amount_cents)} €
                     </span>
                   </div>

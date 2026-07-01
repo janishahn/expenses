@@ -71,10 +71,10 @@ function DonutChart({
   }
 
   return (
-    <AppCard className="min-w-0 w-full space-y-5 p-5">
+    <AppCard className="donut-figure min-w-0 w-full space-y-5 p-5">
       <h3 className="font-head text-lg font-bold text-text">{title}</h3>
-      <div className="grid min-w-0 items-center gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="mx-auto w-full max-w-[220px]">
+      <div className="donut-figure-grid">
+        <div className="mx-auto w-full max-w-[200px]">
           <div className="rounded-full border border-border bg-surface-hi/60 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="relative aspect-square">
               <Doughnut
