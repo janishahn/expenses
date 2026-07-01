@@ -202,7 +202,8 @@ struct TransactionsView: View {
                     query: appliedSearchQuery,
                     type: appliedType,
                     filterCategoryID: appliedCategoryID,
-                    filterTagID: appliedTagID
+                    filterTagID: appliedTagID,
+                    period: appliedPeriod.rawValue
                 ) { request in
                     await model.previewBulkEdit(request)
                 } onApply: { request in
@@ -890,6 +891,7 @@ private struct BulkEditSheet: View {
     let type: String
     let filterCategoryID: Int?
     let filterTagID: Int?
+    let period: String
     var onPreview: (BulkEditRequest) async -> BulkEditResponse?
     var onApply: (BulkEditRequest) async -> BulkEditResponse?
 
@@ -911,6 +913,7 @@ private struct BulkEditSheet: View {
         type: String,
         filterCategoryID: Int?,
         filterTagID: Int?,
+        period: String,
         onPreview: @escaping (BulkEditRequest) async -> BulkEditResponse?,
         onApply: @escaping (BulkEditRequest) async -> BulkEditResponse?
     ) {
@@ -922,6 +925,7 @@ private struct BulkEditSheet: View {
         self.type = type
         self.filterCategoryID = filterCategoryID
         self.filterTagID = filterTagID
+        self.period = period
         self.onPreview = onPreview
         self.onApply = onApply
         _selectionScope = State(initialValue: selectedIDs.isEmpty ? .filtered : .selected)
@@ -1066,7 +1070,7 @@ private struct BulkEditSheet: View {
                 mode: "query",
                 transactionIDs: [],
                 query: BulkSelectionQueryRequest(
-                    period: "all",
+                    period: period,
                     start: nil,
                     end: nil,
                     type: type.isEmpty ? nil : type,
