@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native iOS Assistant now scrolls a freshly sent question to the top of the viewport (instead of leaving the reply pinned to the bottom), so the answer has room to render in a natural reading position while earlier messages stay scrollable above. Extremely long questions are collapsed to a few lines with a "See more" toggle so a pasted wall of text can't dominate the transcript.
 
 ### Fixed
+- The dashboard's budget pace and per-category budget progress now follow the selected time range's month instead of always showing the current month: choosing "Last month" shows that month's budgets and spending (evaluated as a completed month, so the pace reflects actual spend rather than a partway projection), while "This month" and "All time" continue to show the current month. This affects the web and native iOS dashboards.
 - The native iOS deleted-transactions list now colors amounts with the app's semantic income/expense theme colors (matching the active list) instead of a literal green for income and an un-themed neutral tone for expenses.
 - The native iOS Digest week-navigation chevrons now read "Previous week" and "Next week" to VoiceOver instead of the generic "Back"/"Forward", so their action is clear.
 - The native iOS Insights Flow and Durables sections now show a loading indicator while their data loads instead of briefly flashing the "No flow loaded" / "No durable purchases loaded" empty message — most noticeable on slower self-hosted hardware.

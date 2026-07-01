@@ -247,6 +247,64 @@ def test_dashboard_category_budget_pulse_shows_top_category_budgets(
     }
 
 
+def test_dashboard_budget_pulse_tracks_selected_period_month(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    first_of_this_month = today.replace(day=1)
+    last_month_end = first_of_this_month - timedelta(days=1)
+    last_month_first = last_month_end.replace(day=1)
+    last_month_mid = last_month_end.replace(day=15)
+
+    groceries_id = _create_category(api_client, csrf_headers, "Groceries", "expense")
+
+    # A monthly budget effective for both last month and this month.
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": groceries_id,
+            "amount_cents": 50_000,
+            "starts_on": last_month_first.isoformat(),
+            "ends_on": None,
+        },
+    )
+    assert response.status_code == 200
+
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=last_month_mid,
+        txn_type="expense",
+        amount_cents=30_000,
+        category_id=groceries_id,
+        title="Groceries last month",
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        txn_type="expense",
+        amount_cents=12_000,
+        category_id=groceries_id,
+        title="Groceries this month",
+    )
+
+    def pulse_spent(period: str) -> int:
+        response = api_client.get(f"/api/dashboard?period={period}")
+        assert response.status_code == 200
+        rows = response.json()["category_budget_pulse"]
+        groceries = next(row for row in rows if row["scope_label"] == "Groceries")
+        return int(groceries["spent_cents"])
+
+    # The dashboard budget pulse reflects the month the selected period refers to.
+    assert pulse_spent("this_month") == 12_000
+    assert pulse_spent("last_month") == 30_000
+    # "All time" includes the current month, so it falls back to the current month.
+    assert pulse_spent("all") == 12_000
+
+
 def test_burndown_matches_progress_when_hidden_budget_tags_exist(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
