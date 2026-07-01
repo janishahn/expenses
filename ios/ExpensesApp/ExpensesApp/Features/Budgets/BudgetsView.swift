@@ -57,12 +57,15 @@ struct BudgetsView: View {
         }
         .expensesScreenStyle()
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .override:
-                BudgetOverrideFormView(budgets: model.budgets)
-            case .template:
-                BudgetTemplateFormView(budgets: model.budgets)
+            Group {
+                switch sheet {
+                case .override:
+                    BudgetOverrideFormView(budgets: model.budgets)
+                case .template:
+                    BudgetTemplateFormView(budgets: model.budgets)
+                }
             }
+            .themeAccentTint()
         }
         .confirmationDialog("Remove month budget?", isPresented: overrideDeletePresented) {
             Button("Remove Month Budget", role: .destructive) {

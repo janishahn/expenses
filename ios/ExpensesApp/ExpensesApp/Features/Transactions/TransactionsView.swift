@@ -3,8 +3,8 @@ import SwiftUI
 struct TransactionsView: View {
     @Environment(AppModel.self) private var model
     @Binding var path: [Int]
+    @Binding var selectingTransactions: Bool
     @State private var listMode: TransactionListMode = .active
-    @State private var selectingTransactions = false
     @State private var selectedTransactionIDs: Set<Int> = []
     @State private var presentingBulkEdit = false
     @State private var pendingPermanentDelete: DeletedTransaction?
@@ -22,8 +22,9 @@ struct TransactionsView: View {
     @State private var appliedCategoryID: Int?
     @State private var appliedTagID: Int?
 
-    init(path: Binding<[Int]> = .constant([])) {
+    init(path: Binding<[Int]> = .constant([]), selecting: Binding<Bool> = .constant(false)) {
         _path = path
+        _selectingTransactions = selecting
     }
 
     var body: some View {

@@ -114,6 +114,7 @@ struct ForecastView: View {
         }
         .sheet(isPresented: $showingScenarioEditor) {
             ScenarioEditorSheet(horizon: forecastHorizon, mode: forecastMode)
+                .themeAccentTint()
         }
         .refreshable {
             await loadForecast()

@@ -143,7 +143,7 @@ struct AdminView: View {
     private var elevationSection: some View {
         Section("Admin Access") {
             if isElevated {
-                LabeledContent("Elevated until", value: model.identity?.session?.elevatedUntil?.formatted() ?? "-")
+                LabeledContent("Elevated until", value: model.identity?.session?.elevatedUntil.map(AppFormatters.dateTime) ?? "-")
             } else {
                 SecureField("Password", text: $password)
                 Button {
@@ -247,10 +247,10 @@ struct AdminView: View {
                 LabeledContent("Users", value: String(info.usersCount))
                 LabeledContent("Database path", value: info.dbPath)
                 LabeledContent("DB size", value: String(format: "%.2f MB", info.dbSizeMB))
-                LabeledContent("DB modified", value: info.dbModified?.formatted() ?? "-")
+                LabeledContent("DB modified", value: info.dbModified.map(AppFormatters.dateTime) ?? "-")
                 LabeledContent("Log path", value: info.logPath)
                 LabeledContent("Log size", value: String(format: "%.2f MB", info.logSizeMB))
-                LabeledContent("Log modified", value: info.logModified?.formatted() ?? "-")
+                LabeledContent("Log modified", value: info.logModified.map(AppFormatters.dateTime) ?? "-")
                 LabeledContent("Retained logs", value: String(info.logRetainedFiles))
             } else {
                 Text("No admin info loaded.")

@@ -35,7 +35,7 @@ struct DiagnosticsView: View {
             if let session = model.identity?.session {
                 Section("Mobile session") {
                     LabeledContent("Device", value: session.deviceName)
-                    LabeledContent("Expires", value: session.expiresAt.formatted())
+                    LabeledContent("Expires", value: AppFormatters.dateTime(session.expiresAt))
                 }
             }
 

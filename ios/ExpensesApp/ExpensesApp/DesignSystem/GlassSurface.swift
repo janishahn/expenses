@@ -23,6 +23,23 @@ enum ExpensesTheme {
     }
 }
 
+extension View {
+    /// Applies the app's theme accent as the tint using the current color scheme.
+    /// Sheets don't inherit the root tint, so menu-style pickers inside a presented
+    /// sheet otherwise fall back to the light accent regardless of appearance.
+    func themeAccentTint() -> some View {
+        modifier(ThemeAccentTint())
+    }
+}
+
+private struct ThemeAccentTint: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.tint(ExpensesTheme.accent(for: scheme))
+    }
+}
+
 struct ExpensesBackground: View {
     @Environment(\.colorScheme) private var scheme
 

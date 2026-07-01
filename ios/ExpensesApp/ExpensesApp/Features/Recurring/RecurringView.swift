@@ -75,10 +75,13 @@ struct RecurringView: View {
         }
         .expensesScreenStyle()
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .rule(let rule):
-                RecurringRuleFormView(rule: rule, categories: model.recurring?.categories ?? [])
+            Group {
+                switch sheet {
+                case .rule(let rule):
+                    RecurringRuleFormView(rule: rule, categories: model.recurring?.categories ?? [])
+                }
             }
+            .themeAccentTint()
         }
         .confirmationDialog(
             "Delete recurring rule?",

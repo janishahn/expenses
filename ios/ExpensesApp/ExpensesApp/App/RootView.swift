@@ -8,6 +8,7 @@ struct RootView: View {
     @State private var morePath: [AppDestination] = []
     @State private var dashboardPath: [Int] = []
     @State private var transactionsPath: [Int] = []
+    @State private var transactionsSelecting = false
     @State private var quickAddSheet: QuickAddSheet?
     @State private var quickAddTapTick = 0
 
@@ -22,7 +23,7 @@ struct RootView: View {
         case .dashboard:
             dashboardPath.isEmpty
         case .transactions:
-            transactionsPath.isEmpty
+            transactionsPath.isEmpty && !transactionsSelecting
         default:
             false
         }
@@ -91,7 +92,7 @@ struct RootView: View {
         case .dashboard:
             DashboardView(path: $dashboardPath)
         case .transactions:
-            TransactionsView(path: $transactionsPath)
+            TransactionsView(path: $transactionsPath, selecting: $transactionsSelecting)
         case .budgets:
             BudgetsView()
         case .insights:

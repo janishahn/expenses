@@ -32,6 +32,7 @@ private struct ArchivedCategoriesView: View {
         .expensesScreenStyle()
         .sheet(item: $editingCategory) { category in
             CategoryFormView(category: category)
+                .themeAccentTint()
         }
         .task {
             await model.loadOrganizeData()
@@ -135,24 +136,27 @@ struct OrganizeView: View {
         }
         .expensesScreenStyle()
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .category(let category):
-                CategoryFormView(category: category)
-            case .tag(let tag):
-                TagFormView(tag: tag)
-            case .mergeCategories:
-                CategoryMergeView(categories: model.categories?.categories ?? [])
-            case .mergeTags:
-                TagMergeView(tags: model.tags?.tags ?? [])
-            case .template(let template):
-                TemplateFormView(template: template, categories: model.knownCategories)
-            case .rule(let rule):
-                RuleFormView(
-                    rule: rule,
-                    categories: model.rules?.categories ?? model.knownCategories,
-                    tags: model.rules?.tags ?? []
-                )
+            Group {
+                switch sheet {
+                case .category(let category):
+                    CategoryFormView(category: category)
+                case .tag(let tag):
+                    TagFormView(tag: tag)
+                case .mergeCategories:
+                    CategoryMergeView(categories: model.categories?.categories ?? [])
+                case .mergeTags:
+                    TagMergeView(tags: model.tags?.tags ?? [])
+                case .template(let template):
+                    TemplateFormView(template: template, categories: model.knownCategories)
+                case .rule(let rule):
+                    RuleFormView(
+                        rule: rule,
+                        categories: model.rules?.categories ?? model.knownCategories,
+                        tags: model.rules?.tags ?? []
+                    )
+                }
             }
+            .themeAccentTint()
         }
         .confirmationDialog("Delete tag?", isPresented: deleteTagPresented) {
             Button("Delete Tag", role: .destructive) {

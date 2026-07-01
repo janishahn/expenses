@@ -175,6 +175,7 @@ struct TransactionFormView: View {
             .sensoryFeedback(trigger: saveAttempts) { _, _ in
                 lastSaveSucceeded ? .success : .error
             }
+            .themeAccentTint()
         }
     }
 

@@ -342,10 +342,10 @@ private struct InsightsChartsSection: View {
                 .chartYAxis {
                     AxisMarks(position: .trailing) {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(.secondary.opacity(0.18))
+                            .foregroundStyle(Color(.separator))
                         AxisValueLabel()
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.secondaryLabel))
                     }
                 }
                 .frame(height: 220)
@@ -358,8 +358,8 @@ private struct InsightsChartsSection: View {
         }
 
         Section("Movement") {
-            InsightDeltaRows(title: "Increases", rows: insights.deltas.increases, color: .red)
-            InsightDeltaRows(title: "Decreases", rows: insights.deltas.decreases, color: .green)
+            InsightDeltaRows(title: "Increases", rows: insights.deltas.increases, color: ExpensesTheme.expense(for: scheme))
+            InsightDeltaRows(title: "Decreases", rows: insights.deltas.decreases, color: ExpensesTheme.income(for: scheme))
         }
 
         Section("Top Tags") {
