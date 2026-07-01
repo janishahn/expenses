@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The native iOS Transactions filter sheet now includes a "Time range" filter (All time / This month / Last month) alongside the existing type, category, and tag filters, so you can scope the list to the current or previous month. The active range shows as a filter chip and counts toward the filter button's active-state indicator (it applies to the active and uncategorized lists).
 - The native iOS Transactions list now shows clear empty states instead of a blank screen: a "No matching transactions" card (guiding you to adjust the search or clear filters) when a search or filter returns nothing, a "No transactions yet" card for a genuinely empty list, and an "Inbox zero" card when no transactions are waiting to be categorized.
 
 ### Changed

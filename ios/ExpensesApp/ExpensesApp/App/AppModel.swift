@@ -434,7 +434,8 @@ final class AppModel {
         query: String? = nil,
         type: String? = nil,
         categoryID: Int? = nil,
-        tagID: Int? = nil
+        tagID: Int? = nil,
+        period: String = "all"
     ) async {
         guard let token else {
             return
@@ -458,6 +459,7 @@ final class AppModel {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                period: period,
                 token: token
             )
             guard loadID == transactionsLoadID else {
@@ -492,7 +494,8 @@ final class AppModel {
         query: String? = nil,
         type: String? = nil,
         categoryID: Int? = nil,
-        tagID: Int? = nil
+        tagID: Int? = nil,
+        period: String = "all"
     ) async {
         guard let token else {
             return
@@ -503,6 +506,7 @@ final class AppModel {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                period: period,
                 token: token
             )
             if llmEnabled {

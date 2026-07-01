@@ -13,6 +13,7 @@ struct TransactionsView: View {
     @State private var draftType = ""
     @State private var draftCategoryID: Int?
     @State private var draftTagID: Int?
+    @State private var draftPeriod: TransactionPeriodFilter = .all
     @State private var searchAlert: TransactionSearchAlert?
     @State private var isTranslatingSearch = false
     @State private var liveSearchTask: Task<Void, Never>?
@@ -21,6 +22,7 @@ struct TransactionsView: View {
     @State private var appliedType = ""
     @State private var appliedCategoryID: Int?
     @State private var appliedTagID: Int?
+    @State private var appliedPeriod: TransactionPeriodFilter = .all
 
     init(path: Binding<[Int]> = .constant([]), selecting: Binding<Bool> = .constant(false)) {
         _path = path
@@ -180,6 +182,7 @@ struct TransactionsView: View {
             }
             .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFiltersToApplied) {
                 TransactionFiltersSheet(
+                    period: $draftPeriod,
                     type: $draftType,
                     categoryID: $draftCategoryID,
                     tagID: $draftTagID,
@@ -273,14 +276,16 @@ struct TransactionsView: View {
                 query: appliedSearchQuery,
                 type: appliedType,
                 categoryID: appliedCategoryID,
-                tagID: appliedTagID
+                tagID: appliedTagID,
+                period: appliedPeriod.rawValue
             )
         case .uncategorized:
             await model.loadUncategorizedTransactions(
                 query: appliedSearchQuery,
                 type: appliedType,
                 categoryID: appliedCategoryID,
-                tagID: appliedTagID
+                tagID: appliedTagID,
+                period: appliedPeriod.rawValue
             )
         case .deleted:
             await model.loadDeletedTransactions()
@@ -293,6 +298,7 @@ struct TransactionsView: View {
         appliedType = draftType
         appliedCategoryID = draftCategoryID
         appliedTagID = draftTagID
+        appliedPeriod = draftPeriod
         Task { await loadSelectedMode() }
     }
 
@@ -352,9 +358,11 @@ struct TransactionsView: View {
         draftType = ""
         draftCategoryID = nil
         draftTagID = nil
+        draftPeriod = .all
         appliedType = ""
         appliedCategoryID = nil
         appliedTagID = nil
+        appliedPeriod = .all
         Task { await loadSelectedMode() }
     }
 
@@ -363,6 +371,7 @@ struct TransactionsView: View {
         draftType = appliedType
         draftCategoryID = appliedCategoryID
         draftTagID = appliedTagID
+        draftPeriod = appliedPeriod
     }
 
     private var currentTransactions: [TransactionListItem] {
@@ -399,7 +408,7 @@ struct TransactionsView: View {
     }
 
     private var hasStructuredFilters: Bool {
-        !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
+        appliedPeriod != .all || !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
     }
 
     private var hasActiveQueryOrFilters: Bool {
@@ -413,6 +422,9 @@ struct TransactionsView: View {
 
     private var activeFilterLabels: [String] {
         var labels: [String] = []
+        if appliedPeriod != .all {
+            labels.append(appliedPeriod.title)
+        }
         if !appliedType.isEmpty {
             labels.append(appliedType == "income" ? "Income" : "Expenses")
         }
@@ -507,8 +519,28 @@ private struct FilterSummarySection: View {
     }
 }
 
+private enum TransactionPeriodFilter: String, CaseIterable, Identifiable {
+    case all
+    case thisMonth = "this_month"
+    case lastMonth = "last_month"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            "All time"
+        case .thisMonth:
+            "This month"
+        case .lastMonth:
+            "Last month"
+        }
+    }
+}
+
 private struct TransactionFiltersSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Binding var period: TransactionPeriodFilter
     @Binding var type: String
     @Binding var categoryID: Int?
     @Binding var tagID: Int?
@@ -520,6 +552,12 @@ private struct TransactionFiltersSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Picker("Time range", selection: $period) {
+                    ForEach(TransactionPeriodFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+
                 Picker("Type", selection: $type) {
                     Text("All").tag("")
                     Text("Income").tag("income")
@@ -550,7 +588,7 @@ private struct TransactionFiltersSheet: View {
                         onClear()
                         dismiss()
                     }
-                    .disabled(type.isEmpty && categoryID == nil && tagID == nil)
+                    .disabled(period == .all && type.isEmpty && categoryID == nil && tagID == nil)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

@@ -142,6 +142,7 @@ struct ExpensesAPIClient {
         type: String?,
         categoryID: Int?,
         tagID: Int?,
+        period: String = "all",
         token: String
     ) async throws -> TransactionsResponse {
         try await request(
@@ -150,7 +151,8 @@ struct ExpensesAPIClient {
                 query: query,
                 type: type,
                 categoryID: categoryID,
-                tagID: tagID
+                tagID: tagID,
+                period: period
             ),
             bearerToken: token
         )
@@ -161,6 +163,7 @@ struct ExpensesAPIClient {
         type: String?,
         categoryID: Int?,
         tagID: Int?,
+        period: String = "all",
         token: String
     ) async throws -> UncategorizedTransactionsResponse {
         try await request(
@@ -169,7 +172,8 @@ struct ExpensesAPIClient {
                 query: query,
                 type: type,
                 categoryID: categoryID,
-                tagID: tagID
+                tagID: tagID,
+                period: period
             ),
             bearerToken: token
         )
@@ -954,12 +958,13 @@ struct ExpensesAPIClient {
         query: String?,
         type: String?,
         categoryID: Int?,
-        tagID: Int?
+        tagID: Int?,
+        period: String
     ) -> String {
         var components = URLComponents()
         components.path = base
         var items = [
-            URLQueryItem(name: "period", value: "all"),
+            URLQueryItem(name: "period", value: period),
             URLQueryItem(name: "limit", value: "50"),
         ]
         let trimmedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -976,7 +981,7 @@ struct ExpensesAPIClient {
             items.append(URLQueryItem(name: "tag", value: String(tagID)))
         }
         components.queryItems = items
-        return components.string ?? "\(base)?period=all&limit=50"
+        return components.string ?? "\(base)?period=\(period)&limit=50"
     }
 
     private func adminLogsPath(filter: AdminLogFilter, search: String, cursor: String?) -> String {
