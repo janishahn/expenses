@@ -1016,7 +1016,7 @@ function TransactionsPage() {
       {bulkActionsOpen && !isDesktop ? (
         <Sheet open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
           <SheetContent aria-label="Bulk edit" side="bottom" className="max-h-[88vh]">
-            <SheetHeader className="flex-row items-center justify-between px-5 pt-5 pb-0">
+            <SheetHeader>
               <SheetTitle className="text-sm">Bulk edit</SheetTitle>
               <SheetClose asChild>
                 <AppButton
@@ -1136,7 +1136,7 @@ function TransactionsPage() {
       {mobileFiltersOpen && !isDesktop ? (
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
           <SheetContent aria-label="Transaction filters" side="bottom" className="max-h-[88vh]">
-            <SheetHeader className="flex-row items-center justify-between px-5 pt-5 pb-0">
+            <SheetHeader>
               <SheetTitle className="text-sm">Transaction filters</SheetTitle>
               <SheetClose asChild>
                 <AppButton

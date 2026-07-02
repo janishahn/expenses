@@ -206,7 +206,7 @@ function DigestPage() {
                     <CategoryIcon icon={row.icon} />
                     <span className="truncate">{row.name}</span>
                   </span>
-                  <span className="inline-flex items-center gap-1 font-mono text-semantic-red">
+                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-semantic-red">
                     {formatCurrency(row.amount_cents)} €
                     {row.is_above_trailing_50 ? (
                       <TrendUpIcon className="h-3.5 w-3.5 text-semantic-red" />

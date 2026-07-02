@@ -79,7 +79,11 @@ function SheetContent({
 
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div data-slot="sheet-header" className={cn("p-5 pb-0", className)} {...props} />
+    <div
+      data-slot="sheet-header"
+      className={cn("flex items-center justify-between gap-3 p-5 pb-0", className)}
+      {...props}
+    />
   )
 }
 
