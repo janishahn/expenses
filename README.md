@@ -442,6 +442,7 @@ Screenshots from the native iOS app are below. They use the same `uv run mock-db
 
 <p>
   <img src="docs/screenshots/ios/rules-dark.png" alt="iPhone categorization rules" height="530">
+  <img src="docs/screenshots/ios/assistant-dark.png" alt="iPhone spending assistant" height="530">
 </p>
 
 ## License
