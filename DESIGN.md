@@ -493,6 +493,18 @@ sign-up). The ghost switch button on sign-in is only shown when self-service sig
 
 Use `chip` for non-interactive display pills such as counts, tags, and status badges that should feel lighter than buttons but more structured than plain text.
 
+### Tag Selection
+
+Assigning tags to a transaction is a selection from existing tags, never free-text entry. The Add/Edit transaction forms use a compact picker that stays small even with a large, growing tag set (for example many single-use, event-specific tags like a trip):
+
+- Selected tags show as removable accent chips (`aria-label="Remove tag <name>"`).
+- A short "recent" row of neutral chips (`aria-label="Add tag <name>"`, capped at 3, newest-first) offers quick one-tap selection — a freshly created one-off surfaces here.
+- A search field below the chips filters the recent row into matches as you type (there is no long scrolling list); a muted helper points to search when more tags exist than are shown. These interactive chips are not the rounded-full segmented `pill-group` container, which is reserved for small fixed option sets like the type switch.
+
+New tags are created on the Tags page, not inline, and archiving a finished tag drops it from the picker. A tag already on the transaction that is no longer in the active tag list still renders as a selected chip so saving never silently drops it.
+
+The native iOS form intentionally differs: its tag row pushes a full-screen searchable checklist (native idiom with room to scroll), rather than the web's inline compact chips.
+
 ### Page Header
 
 ```tsx

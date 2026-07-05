@@ -20,6 +20,7 @@ import type {
 import { formatCurrency, formatEuroDate, formatFileSize } from "../app/format"
 import PageIntro from "../components/PageIntro"
 import DescriptionEditor from "../components/DescriptionEditor"
+import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
@@ -60,7 +61,7 @@ function TransactionEditForm({
   const [title, setTitle] = useState(transaction.title)
   const [description, setDescription] = useState(transaction.description || "")
   const [isReimbursement, setIsReimbursement] = useState(transaction.is_reimbursement)
-  const [tags, setTags] = useState(transaction.tags.join(", "))
+  const [tags, setTags] = useState<string[]>(transaction.tags)
   const [formError, setFormError] = useState("")
 
   const activeCategories = categories.filter((category) => category.archived_at === null)
@@ -102,10 +103,7 @@ function TransactionEditForm({
       title: title.trim(),
       description: description.trim() || null,
       is_reimbursement: type === "income" ? isReimbursement : false,
-      tags: tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      tags,
     })
   }
 
@@ -181,14 +179,9 @@ function TransactionEditForm({
         />
       </div>
 
-      <AppFieldLabel className="mt-4">
-        <span>Tags (comma-separated)</span>
-        <AppInput
-          value={tags}
-          onChange={(event) => setTags(event.target.value)}
-          placeholder="e.g. groceries, weekly"
-        />
-      </AppFieldLabel>
+      <div className="mt-4">
+        <TagSelector selected={tags} onChange={setTags} />
+      </div>
 
       {type === "income" && (
         <label className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-xs text-muted">

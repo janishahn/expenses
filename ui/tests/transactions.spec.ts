@@ -374,6 +374,57 @@ const samplePdf = Buffer.from(
     await expect(page).toHaveURL("/transactions")
   })
 
+  test("edits transaction tags by toggling existing-tag chips", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Tag Edit")
+    const keepTag = `keep-${Date.now()}`
+    const addTag = `add-${Date.now()}`
+    for (const name of [keepTag, addTag]) {
+      const tagResponse = await request.post("/api/tags", {
+        headers: { "X-CSRF-Token": token },
+        data: { name, is_hidden_from_budget: false },
+      })
+      expect(tagResponse.ok()).toBeTruthy()
+    }
+    const title = `E2E Tag Edit ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T14:00:00",
+      type: "expense",
+      amount_cents: 5000,
+      category_id: categoryId,
+      title,
+      tags: [keepTag],
+    })
+
+    await page.goto(`/transactions/${transactionId}/edit`)
+    // The existing tag is pre-selected; the new tag is added from search.
+    await expect(
+      page.getByRole("button", { name: `Remove tag ${keepTag}` })
+    ).toBeVisible()
+    await page.getByPlaceholder("Search tags").fill(addTag)
+    await page.getByRole("button", { name: `Add tag ${addTag}` }).click()
+    await expect(
+      page.getByRole("button", { name: `Remove tag ${addTag}` })
+    ).toBeVisible()
+
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/transactions/${transactionId}`) &&
+        response.request().method() === "PUT" &&
+        response.ok()
+    )
+    await page.getByRole("button", { name: "Save changes" }).click()
+    await saveResponse
+
+    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+    await expect(page.locator(".chip").filter({ hasText: keepTag })).toBeVisible()
+    await expect(page.locator(".chip").filter({ hasText: addTag })).toBeVisible()
+  })
+
   test("deleting from edit keeps browser back away from dead transaction routes", async ({
     page,
     request,

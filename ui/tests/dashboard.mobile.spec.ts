@@ -74,6 +74,12 @@ test.describe("Dashboard Page (mobile)", () => {
   test("quick adds a transaction from the mobile sheet", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Expense")
+    const tagName = `mobile-fab-${Date.now()}`
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: tagName, is_hidden_from_budget: false },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
 
     await page.getByRole("button", { name: "Add", exact: true }).click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
@@ -85,8 +91,11 @@ test.describe("Dashboard Page (mobile)", () => {
     await dialog.getByLabel("Category").selectOption(String(categoryId))
     await dialog.getByLabel("Title").fill(title)
     await dialog.getByPlaceholder("Optional description").fill("Mobile description")
-    await dialog.getByLabel("Tags (comma-separated)").fill("mobile,fab")
-    await dialog.getByLabel("Tags (comma-separated)").press("Enter")
+    await dialog.getByRole("button", { name: `Add tag ${tagName}` }).click()
+    await expect(
+      dialog.getByRole("button", { name: `Remove tag ${tagName}` })
+    ).toBeVisible()
+    await dialog.getByRole("button", { name: "Add transaction" }).click()
 
     await expect(dialog).toBeHidden()
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)

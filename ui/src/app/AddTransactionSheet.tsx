@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate } from "react-router-dom"
 import { CategoryIcon } from "../components/CategoryIcon"
+import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { AppButton } from "../components/ui/product-button"
 import {
@@ -49,7 +50,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
   const [categoryId, setCategoryId] = useState("")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [tags, setTags] = useState("")
+  const [tags, setTags] = useState<string[]>([])
   const [isReimbursement, setIsReimbursement] = useState(false)
   const [formError, setFormError] = useState("")
 
@@ -92,7 +93,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
       setAmount("")
       setTitle("")
       setDescription("")
-      setTags("")
+      setTags([])
       setType("expense")
       setCategoryId("")
       setIsReimbursement(false)
@@ -115,7 +116,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
     setCategoryId(String(template.category_id))
     setTitle(template.title || "")
     setDescription("")
-    setTags(template.tags.join(", "))
+    setTags(template.tags)
     setFormError("")
     if (template.type !== "income") {
       setIsReimbursement(false)
@@ -158,10 +159,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
       title: title.trim(),
       description: description.trim() || null,
       is_reimbursement: type === "income" ? isReimbursement : false,
-      tags: tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      tags,
     })
   }
 
@@ -318,15 +316,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                 />
               </div>
 
-              <AppFieldLabel>
-                <span>Tags (comma-separated)</span>
-                <AppInput
-                  type="text"
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  placeholder="e.g. groceries, weekly"
-                />
-              </AppFieldLabel>
+              <TagSelector selected={tags} onChange={setTags} />
 
               {type === "income" && (
                 <label className="flex items-center gap-3 rounded-xl border border-border bg-surface-hi/60 px-3.5 py-3 text-xs text-muted">
