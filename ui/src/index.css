@@ -370,6 +370,27 @@
     overflow: hidden;
   }
 
+  @media (hover: none) and (pointer: coarse) {
+    /* WebKit on touch devices renders these as a flex "button" whose value is a
+       non-stretching flex item, so centering needs justify-content; the
+       ::-webkit-date-and-time-value text-align covers older iOS where the value
+       renders as a stretched block instead. ::-webkit-datetime-edit does not
+       exist in this rendering path. */
+    input[type="date"],
+    input[type="month"],
+    input[type="time"],
+    input[type="datetime-local"] {
+      justify-content: center;
+    }
+
+    input[type="date"]::-webkit-date-and-time-value,
+    input[type="month"]::-webkit-date-and-time-value,
+    input[type="time"]::-webkit-date-and-time-value,
+    input[type="datetime-local"]::-webkit-date-and-time-value {
+      text-align: center;
+    }
+  }
+
   @supports (-webkit-touch-callout: none) {
     @media (hover: none) and (pointer: coarse) {
       input[type="date"],
@@ -378,15 +399,6 @@
       input[type="datetime-local"] {
         padding-inline: 0;
         line-height: normal;
-      }
-
-      input[type="date"]::-webkit-datetime-edit,
-      input[type="month"]::-webkit-datetime-edit,
-      input[type="time"]::-webkit-datetime-edit,
-      input[type="datetime-local"]::-webkit-datetime-edit {
-        display: block;
-        padding-inline: 0.875rem;
-        text-align: center;
       }
 
       input[type="date"]::-webkit-calendar-picker-indicator,
