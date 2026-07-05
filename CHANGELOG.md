@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The native iOS app icon now follows the system's icon appearance, switching between its light, dark, and tinted variants automatically (for example when a Focus mode forces all icons dark, or in Dark Mode / tinted home-screen styles). The appearance-aware Icon Composer icon was present in the project but never wired into the app target's build, so the build fell back to a light-only icon set that ignored the system appearance.
 - The web app's date and time fields (for example "When" in the Add transaction sheet) now center their displayed value on iPhone Safari and other mobile WebKit browsers. The previous centering rule targeted a pseudo-element that iOS Safari never renders, so the value sat left-aligned against the field edge.
 - The web transaction detail page's Edit and Delete buttons now sit in the top-right corner of the header on mobile, on the same row as the "Transaction" title, instead of stacking on their own row beneath it.
 
