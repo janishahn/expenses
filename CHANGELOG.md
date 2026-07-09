@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-09
+
 ### Changed
 - The native iOS transaction detail screen now shows a transaction's exact time next to the date (labeled "Date & time") when a time was recorded, instead of only the date. Transactions with no recorded time still show just the date. This matches the web detail page, which already displayed the time.
 - Adding or editing a transaction now assigns tags by choosing from your existing tags instead of typing free text. The web Add/Edit forms show your current selection as removable chips plus a short "recent tags" chip row for one-tap picking and a search field to find the rest — a compact picker that stays small even with a large, growing tag set (for example many single-use, event-specific tags). The native iOS form's Tags row opens a searchable checklist of your tags, ordered newest-first. This makes the predefined tag list discoverable and avoids accidental typo-duplicates; new tags are still created on the Tags page (web) or in Organize (iOS), and archiving a finished tag removes it from the picker. A tag already on a transaction that has since been archived stays selected and is preserved unless you remove it.
