@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The web app's date and time fields (for example "When" in the Add transaction sheet) now center their displayed value on iPhone Safari and other mobile WebKit browsers. The previous centering rule targeted a pseudo-element that iOS Safari never renders, so the value sat left-aligned against the field edge.
 - The web transaction detail page's Edit and Delete buttons now sit in the top-right corner of the header on mobile, on the same row as the "Transaction" title, instead of stacking on their own row beneath it.
 
+### Dependencies
+- Upgraded WeasyPrint (PDF report rendering) from 68.1 to 69.0 to resolve CVE-2026-49452.
+
 ## [0.3.2] - 2026-07-02
 
 ### Added
