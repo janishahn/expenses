@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-09
+
 ### Changed
 - The native iOS transaction detail screen now shows the date and time on two separate rows (date above, time below) instead of on a single line.
 
