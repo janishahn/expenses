@@ -116,6 +116,13 @@ Define small shared primitives rather than a broad component framework:
 
 - Transaction add/edit is native optimized, not field-for-field copied from web.
 - Use an amount-first flow with integer cents in app state.
+- Assign tags by choosing from existing tags, not free text: the tag form row
+  pushes a native, searchable multi-select checklist of the user's tags (checkmark
+  on the selected rows), ordered newest-first so a freshly created one-off (e.g. a
+  trip) is at the top and a large tag set stays manageable. New tags are created in
+  Organize, not inline on the form; archiving a finished tag drops it from the
+  picker. A tag already on the transaction that is no longer in the active list
+  stays listed and selected so editing never silently drops it.
 - Keep plain text search plus native filters; do not expose advanced search
   syntax initially.
 - Keep transaction scope and filters secondary by default: use toolbar/menu

@@ -224,7 +224,7 @@ font-mono: "JetBrains Mono", ui-monospace, monospace;       /* Numbers, code */
 </section>
 ```
 
-On mobile, `PageIntro` actions wrap onto their own row when needed. Keep action groups compact and touch-safe rather than forcing dense desktop alignment into the mobile header.
+On mobile, the `actions` slot wraps onto its own full-width row under the title, so reserve it for desktop-oriented controls (or hide its buttons behind `desk:`). Page-level actions that should stay in the top-right corner of the mobile header — a compact menu button, or a short Edit/Delete pair on detail pages — belong in `titleAccessory` with `titleAccessoryAlign="end"`, which pins them to the end of the title row at any width. Keep such groups compact and touch-safe rather than forcing dense desktop alignment into the mobile header.
 
 **Content padding** (main in AppShell):
 - Mobile: `px-5 pt-6 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]`
@@ -454,6 +454,7 @@ sign-up). The ghost switch button on sign-in is only shown when self-service sig
 - Background: `bg-surface-hi` with inset highlight
 - Use `.form-label` for standard field labels and helper text stacks.
 - Use `text-[11px] uppercase tracking-[0.08-0.12em]` for section kickers or sublabels, not field labels.
+- Date/time inputs center their displayed value on touch devices. Mobile WebKit renders them as flex "button" controls, so centering comes from `justify-content: center` on the input (plus a `::-webkit-date-and-time-value` text-align fallback for older iOS) — `text-align` and `::-webkit-datetime-edit` have no effect there.
 
 ### Pill Groups & Tabs
 
@@ -491,6 +492,18 @@ sign-up). The ghost switch button on sign-in is only shown when self-service sig
 ```
 
 Use `chip` for non-interactive display pills such as counts, tags, and status badges that should feel lighter than buttons but more structured than plain text.
+
+### Tag Selection
+
+Assigning tags to a transaction is a selection from existing tags, never free-text entry. The Add/Edit transaction forms use a compact picker that stays small even with a large, growing tag set (for example many single-use, event-specific tags like a trip):
+
+- Selected tags show as removable accent chips (`aria-label="Remove tag <name>"`).
+- A short "recent" row of neutral chips (`aria-label="Add tag <name>"`, capped at 3, newest-first) offers quick one-tap selection — a freshly created one-off surfaces here.
+- A search field below the chips filters the recent row into matches as you type (there is no long scrolling list); a muted helper points to search when more tags exist than are shown. These interactive chips are not the rounded-full segmented `pill-group` container, which is reserved for small fixed option sets like the type switch.
+
+New tags are created on the Tags page, not inline, and archiving a finished tag drops it from the picker. A tag already on the transaction that is no longer in the active tag list still renders as a selected chip so saving never silently drops it.
+
+The native iOS form intentionally differs: its tag row pushes a full-screen searchable checklist (native idiom with room to scroll), rather than the web's inline compact chips.
 
 ### Page Header
 

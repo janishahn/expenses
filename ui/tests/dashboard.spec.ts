@@ -102,7 +102,35 @@ test.describe("Dashboard Page", () => {
 
     await expect(dialog.getByLabel("Amount")).toHaveValue("4.25")
     await expect(dialog.getByLabel("Title")).toHaveValue("Template title")
-    await expect(dialog.getByLabel("Tags (comma-separated)")).toHaveValue("template")
+    await expect(
+      dialog.getByRole("button", { name: "Remove tag template" })
+    ).toBeVisible()
+  })
+
+  test("filters the add-sheet tag picker by search", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const marker = Date.now()
+    const alphaTag = `alpha-${marker}`
+    const betaTag = `beta-${marker}`
+    for (const name of [alphaTag, betaTag]) {
+      const tagResponse = await request.post("/api/tags", {
+        headers: { "X-CSRF-Token": token },
+        data: { name, is_hidden_from_budget: false },
+      })
+      expect(tagResponse.ok()).toBeTruthy()
+    }
+
+    await page.goto("/")
+    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add transaction" })
+    await expect(dialog).toBeVisible()
+
+    await expect(dialog.getByRole("button", { name: `Add tag ${alphaTag}` })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toBeVisible()
+
+    await dialog.getByPlaceholder("Search tags").fill(alphaTag)
+    await expect(dialog.getByRole("button", { name: `Add tag ${alphaTag}` })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toHaveCount(0)
   })
 
   test("hides archived categories in add sheet category options", async ({
@@ -188,7 +216,7 @@ test.describe("Dashboard Page", () => {
     await expect(dialog.getByLabel("Amount")).toBeVisible()
     await expect(dialog.getByLabel("Category")).toBeVisible()
     await expect(dialog.getByLabel("Title")).toBeVisible()
-    await expect(dialog.getByLabel("Tags (comma-separated)")).toBeVisible()
+    await expect(dialog.getByText("Tags", { exact: true })).toBeVisible()
     await expect(dialog.getByText("Templates", { exact: true })).toBeVisible()
     await expect(dialog.getByText("This is a reimbursement")).toHaveCount(0)
 

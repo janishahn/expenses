@@ -15,7 +15,7 @@ struct TransactionFormView: View {
     @State private var categoryID: Int?
     @State private var title: String
     @State private var description: String
-    @State private var tags: String
+    @State private var selectedTags: [String]
     @State private var isReimbursement: Bool
     @State private var includeCurrentLocation = false
     @State private var storedCoordinate: CLLocationCoordinate2D?
@@ -37,7 +37,7 @@ struct TransactionFormView: View {
         _categoryID = State(initialValue: seed.categoryID)
         _title = State(initialValue: seed.title)
         _description = State(initialValue: seed.description)
-        _tags = State(initialValue: seed.tags)
+        _selectedTags = State(initialValue: seed.tags)
         _isReimbursement = State(initialValue: seed.isReimbursement)
         _storedCoordinate = State(initialValue: seed.coordinate)
         _coordinate = State(initialValue: seed.coordinate)
@@ -106,8 +106,14 @@ struct TransactionFormView: View {
                     TextField("Title", text: $title)
                     TextField("Description", text: $description, axis: .vertical)
                         .lineLimit(3...8)
-                    TextField("Tags", text: $tags)
-                        .textInputAutocapitalization(.never)
+                    NavigationLink {
+                        TagSelectionView(available: model.tags?.tags ?? [], selected: $selectedTags)
+                    } label: {
+                        LabeledContent("Tags") {
+                            Text(tagsSummary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
 
                 if type == "income" {
@@ -193,8 +199,12 @@ struct TransactionFormView: View {
         }
         title = template.title ?? ""
         description = ""
-        tags = template.tags.joined(separator: ", ")
+        selectedTags = template.tags
         isReimbursement = false
+    }
+
+    private var tagsSummary: String {
+        selectedTags.isEmpty ? "None" : selectedTags.joined(separator: ", ")
     }
 
     private func save() async {
@@ -250,10 +260,7 @@ struct TransactionFormView: View {
             description: trimmedDescription.isEmpty ? nil : trimmedDescription,
             latitude: coordinate?.latitude,
             longitude: coordinate?.longitude,
-            tags: tags
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            tags: selectedTags
         )
     }
 
@@ -285,6 +292,80 @@ struct TransactionFormView: View {
     }
 }
 
+private struct TagSelectionView: View {
+    let available: [TagRow]
+    @Binding var selected: [String]
+    @State private var search = ""
+
+    private var allNames: [String] {
+        // Newest tags first so a freshly created one-off (e.g. a trip) is at the
+        // top. Any already-attached tag no longer in the active list (e.g.
+        // archived) is kept so editing never silently drops it.
+        let sorted = available.sorted { $0.id > $1.id }.map(\.name)
+        let availableLower = Set(sorted.map { $0.lowercased() })
+        var names = selected.filter { !availableLower.contains($0.lowercased()) }
+        names.append(contentsOf: sorted)
+        return names
+    }
+
+    private var displayNames: [String] {
+        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else {
+            return allNames
+        }
+        return allNames.filter { $0.lowercased().contains(trimmed) }
+    }
+
+    var body: some View {
+        List {
+            if allNames.isEmpty {
+                ContentUnavailableView(
+                    "No Tags",
+                    systemImage: "tag",
+                    description: Text("Create tags in Organize to assign them here.")
+                )
+            } else {
+                ForEach(displayNames, id: \.self) { name in
+                    Button {
+                        toggle(name)
+                    } label: {
+                        HStack {
+                            Text(name)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if isSelected(name) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .searchable(
+            text: $search,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search tags"
+        )
+        .navigationTitle("Tags")
+        .navigationBarTitleDisplayMode(.inline)
+        .themeAccentTint()
+    }
+
+    private func isSelected(_ name: String) -> Bool {
+        selected.contains { $0.lowercased() == name.lowercased() }
+    }
+
+    private func toggle(_ name: String) {
+        if isSelected(name) {
+            selected.removeAll { $0.lowercased() == name.lowercased() }
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
 enum TransactionFormMode {
     case create
     case edit(TransactionDetail)
@@ -309,7 +390,7 @@ enum TransactionFormMode {
                 categoryID: nil,
                 title: "",
                 description: "",
-                tags: "",
+                tags: [],
                 isReimbursement: false,
                 coordinate: nil
             )
@@ -327,7 +408,7 @@ enum TransactionFormMode {
                 categoryID: transaction.categoryID,
                 title: transaction.title,
                 description: transaction.description ?? "",
-                tags: transaction.tags.joined(separator: ", "),
+                tags: transaction.tags,
                 isReimbursement: transaction.isReimbursement,
                 coordinate: coordinate
             )
@@ -342,7 +423,7 @@ struct TransactionFormSeed {
     let categoryID: Int?
     let title: String
     let description: String
-    let tags: String
+    let tags: [String]
     let isReimbursement: Bool
     let coordinate: CLLocationCoordinate2D?
 }

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The native iOS transaction detail screen now shows a transaction's exact time next to the date (labeled "Date & time") when a time was recorded, instead of only the date. Transactions with no recorded time still show just the date. This matches the web detail page, which already displayed the time.
+- Adding or editing a transaction now assigns tags by choosing from your existing tags instead of typing free text. The web Add/Edit forms show your current selection as removable chips plus a short "recent tags" chip row for one-tap picking and a search field to find the rest — a compact picker that stays small even with a large, growing tag set (for example many single-use, event-specific tags). The native iOS form's Tags row opens a searchable checklist of your tags, ordered newest-first. This makes the predefined tag list discoverable and avoids accidental typo-duplicates; new tags are still created on the Tags page (web) or in Organize (iOS), and archiving a finished tag removes it from the picker. A tag already on a transaction that has since been archived stays selected and is preserved unless you remove it.
+
+### Fixed
+- The native iOS app icon now follows the system's icon appearance, switching between its light, dark, and tinted variants automatically (for example when a Focus mode forces all icons dark, or in Dark Mode / tinted home-screen styles). The appearance-aware Icon Composer icon was present in the project but never wired into the app target's build, so the build fell back to a light-only icon set that ignored the system appearance.
+- The web app's date and time fields (for example "When" in the Add transaction sheet) now center their displayed value on iPhone Safari and other mobile WebKit browsers. The previous centering rule targeted a pseudo-element that iOS Safari never renders, so the value sat left-aligned against the field edge.
+- The web transaction detail page's Edit and Delete buttons now sit in the top-right corner of the header on mobile, on the same row as the "Transaction" title, instead of stacking on their own row beneath it.
+
+### Dependencies
+- Upgraded WeasyPrint (PDF report rendering) from 68.1 to 69.0 to resolve CVE-2026-49452.
+
 ## [0.3.2] - 2026-07-02
 
 ### Added

@@ -351,8 +351,9 @@ function TransactionDetailPage() {
         title="Transaction"
         backHref={returnTo}
         backLabel="← Back"
-        actions={
-          <>
+        titleAccessoryAlign="end"
+        titleAccessory={
+          <div className="flex shrink-0 items-center gap-2.5">
             <AppButton asChild tone="ghost">
               <Link
                 to={`/transactions/${transaction.id}/edit`}
@@ -369,7 +370,7 @@ function TransactionDetailPage() {
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
             </AppButton>
-          </>
+          </div>
         }
       />
 
