@@ -381,8 +381,9 @@ private struct TransactionSummaryCard: View {
 
             HStack(alignment: .top, spacing: 14) {
                 TransactionSummaryMetric(
-                    title: "Date",
-                    value: AppFormatters.day(transaction.date),
+                    title: transaction.occurredAt != nil ? "Date & time" : "Date",
+                    value: transaction.occurredAt.map(AppFormatters.dateTime)
+                        ?? AppFormatters.day(transaction.date),
                     systemImage: "calendar",
                     color: ExpensesTheme.accent(for: scheme)
                 )
