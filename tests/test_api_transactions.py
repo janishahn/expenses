@@ -89,6 +89,40 @@ def test_api_create_transaction_stores_location(
     assert payload["longitude"] == 13.404954
 
 
+def test_transaction_occurred_at_is_timezone_aware(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    # occurred_at is stored as a naive local datetime; the API must emit it
+    # timezone-aware so clients that assume UTC (the native iOS app) do not shift
+    # the displayed wall-clock by the local offset.
+    response = api_client.post(
+        "/api/transactions",
+        json={
+            "date": "2025-01-10",
+            "occurred_at": "2025-01-10T12:00:00",
+            "type": "expense",
+            "amount_cents": 5_000,
+            "title": "Lunch",
+        },
+        headers=csrf_headers,
+    )
+    assert response.status_code == 200
+    transaction_id = int(response.json()["id"])
+
+    detail = api_client.get(f"/api/transactions/{transaction_id}")
+    assert detail.status_code == 200
+    raw = detail.json()["occurred_at"]
+    parsed = datetime.fromisoformat(raw)
+    assert parsed.utcoffset() is not None
+    assert parsed.replace(tzinfo=None) == datetime(2025, 1, 10, 12, 0, 0)
+
+    # Every serialization site agrees (list endpoint matches detail endpoint).
+    listing = api_client.get("/api/transactions?period=all")
+    assert listing.status_code == 200
+    item = next(row for row in listing.json()["items"] if row["id"] == transaction_id)
+    assert item["occurred_at"] == raw
+
+
 def test_period_all_includes_future_dated_transactions(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

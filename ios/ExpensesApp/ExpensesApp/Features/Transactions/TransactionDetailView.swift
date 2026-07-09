@@ -382,8 +382,8 @@ private struct TransactionSummaryCard: View {
             HStack(alignment: .top, spacing: 14) {
                 TransactionSummaryMetric(
                     title: transaction.occurredAt != nil ? "Date & time" : "Date",
-                    value: transaction.occurredAt.map(AppFormatters.dateTime)
-                        ?? AppFormatters.day(transaction.date),
+                    value: AppFormatters.day(transaction.occurredAt ?? transaction.date),
+                    secondary: transaction.occurredAt.map(AppFormatters.time),
                     systemImage: "calendar",
                     color: ExpensesTheme.accent(for: scheme)
                 )
@@ -406,6 +406,7 @@ private struct TransactionSummaryCard: View {
 private struct TransactionSummaryMetric: View {
     let title: String
     let value: String
+    var secondary: String? = nil
     let systemImage: String
     let color: Color
 
@@ -419,11 +420,20 @@ private struct TransactionSummaryMetric: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            Text(value)
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                if let secondary {
+                    Text(secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

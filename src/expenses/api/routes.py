@@ -1165,11 +1165,26 @@ def _purge_deleted_for_all_users(db: Session, cutoff_date: datetime) -> tuple[in
     return deleted_count, deleted_attachments
 
 
+def _occurred_at_iso(value: datetime | None) -> str | None:
+    """Serialize an occurred_at as a timezone-aware ISO string.
+
+    occurred_at is stored as a naive datetime in the configured local zone. Emitting
+    it without an offset is ambiguous: clients that assume UTC (the native iOS app)
+    render it shifted by the local offset. Attaching the configured zone makes the
+    wall-clock unambiguous while staying correct across DST.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo(get_settings().timezone))
+    return value.isoformat()
+
+
 def _serialize_transaction_item(txn: Transaction) -> dict[str, object]:
     return {
         "id": txn.id,
         "date": txn.date.isoformat(),
-        "occurred_at": txn.occurred_at.isoformat(),
+        "occurred_at": _occurred_at_iso(txn.occurred_at),
         "type": txn.type.value,
         "amount_cents": txn.amount_cents,
         "net_amount_cents": txn.net_amount_cents,
@@ -1679,7 +1694,7 @@ def api_tag_detail(tag_id: int, request: Request, db: Session = Depends(get_db))
             {
                 "id": txn.id,
                 "date": txn.date.isoformat(),
-                "occurred_at": txn.occurred_at.isoformat(),
+                "occurred_at": _occurred_at_iso(txn.occurred_at),
                 "type": txn.type.value,
                 "amount_cents": txn.amount_cents,
                 "net_amount_cents": txn.net_amount_cents,
@@ -3538,7 +3553,7 @@ def api_get_transaction(
     return {
         "id": txn.id,
         "date": txn.date.isoformat(),
-        "occurred_at": txn.occurred_at.isoformat() if txn.occurred_at else None,
+        "occurred_at": _occurred_at_iso(txn.occurred_at),
         "type": txn.type.value,
         "amount_cents": txn.amount_cents,
         "category_id": txn.category_id,
@@ -4948,7 +4963,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
             {
                 "id": txn.id,
                 "date": txn.date.isoformat(),
-                "occurred_at": txn.occurred_at.isoformat(),
+                "occurred_at": _occurred_at_iso(txn.occurred_at),
                 "type": txn.type.value,
                 "amount_cents": txn.amount_cents,
                 "net_amount_cents": txn.net_amount_cents,

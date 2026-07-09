@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The native iOS transaction detail screen now shows the date and time on two separate rows (date above, time below) instead of on a single line.
+
+### Fixed
+- Transaction timestamps are no longer shown shifted by the timezone offset in the native iOS app (for example a transaction entered at 10:23 previously displayed, and pre-filled when editing, as 12:23 in Central European Summer Time). `occurred_at` is stored as a naive datetime in the configured local timezone; the API now emits it with that zone's offset so clients that would otherwise assume UTC display the correct local time. The web app was already correct and is unaffected. This applies to both manually entered and auto-ingested transactions.
+
 ## [0.3.3] - 2026-07-09
 
 ### Changed

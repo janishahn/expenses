@@ -27,6 +27,10 @@ enum AppFormatters {
         date.formatted(date: .abbreviated, time: .shortened)
     }
 
+    static func time(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
     private static let currencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
