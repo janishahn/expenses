@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Transaction search now accepts untitled records.
+- Filtered transaction summaries now evaluate fuzzy title and description matching once per request instead of repeatedly scanning the ledger for each total.
 - Query-wide bulk actions now wait for the authoritative matching count before they can run, preventing the selection copy from understating how many transactions will be affected.
 - Mobile transaction periods now remain staged until Apply, long Assistant replies stay scrolled within the conversation, and the Dashboard skips its desktop-only forecast request on mobile and historical periods.
 - Keyboard focus is visible on shell actions and the reconciliation file picker; future budgets no longer show premature pace labels, Insights reports the selected range length, and reopened category/tag dialogs clear prior create errors.
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added axe-core Playwright integration for automated accessibility checks across canonical web routes.
 - Bundled IBM Plex Mono with the web app for privacy-preserving financial typography instead of loading a font from a third-party service at runtime.
 - Added dnd-kit for accessible pointer and keyboard sorting of transaction templates.
+- Updated Click and Pillow to releases that resolve their current published security advisories.
 
 ## [0.3.4] - 2026-07-09
 

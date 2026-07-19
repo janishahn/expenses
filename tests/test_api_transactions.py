@@ -4,22 +4,28 @@ from io import BytesIO
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
 from expenses.api import routes
 from expenses.core.config import get_settings
-from expenses.db.session import Base, _fuzzy_text_match
+from expenses.core.periods import Period
 from expenses.db.models import Category, Transaction, TransactionType
+from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.schemas import TransactionIn
-from expenses.services import TransactionService
+from expenses.services import (
+    ReimbursementService,
+    TransactionFilters,
+    TransactionService,
+)
 
 
 def make_session():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}
     )
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     return session_local()
@@ -182,6 +188,53 @@ def test_transaction_summary_aggregates_the_filtered_query(
         "net_cents": 5_000,
         "count": 2,
     }
+
+
+def test_transaction_summary_evaluates_fuzzy_filter_once() -> None:
+    session = make_session()
+    transactions = TransactionService(session)
+    created: dict[str, Transaction] = {}
+    for transaction_type, amount_cents, title, is_reimbursement in [
+        (TransactionType.expense, 5_000, "Summary lunch", False),
+        (TransactionType.expense, 2_000, "Different purchase", False),
+        (TransactionType.income, 10_000, "Summary pay", False),
+        (TransactionType.income, 1_000, "Payback", True),
+    ]:
+        created[title] = transactions.create(
+            TransactionIn(
+                date=date(2025, 1, 10),
+                occurred_at=datetime(2025, 1, 10, 12, 0),
+                type=transaction_type,
+                is_reimbursement=is_reimbursement,
+                amount_cents=amount_cents,
+                title=title,
+            )
+        )
+    ReimbursementService(session).upsert_allocation(
+        created["Payback"].id, created["Summary lunch"].id, 1_000
+    )
+    select_statements: list[str] = []
+
+    @event.listens_for(session.bind, "before_cursor_execute")
+    def capture_select(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().lower().startswith("select"):
+            select_statements.append(statement.lower())
+
+    summary = transactions.summary_for_period(
+        Period("all", date(1970, 1, 1), date(2025, 1, 31)),
+        TransactionFilters(query="Sumary"),
+    )
+
+    assert summary == {
+        "income_cents": 10_000,
+        "expense_cents": 4_000,
+        "net_cents": 6_000,
+        "count": 2,
+    }
+    assert (
+        sum("expenses_fuzzy_text_match" in statement for statement in select_statements)
+        == 1
+    )
 
 
 def test_fuzzy_text_match_uses_balanced_whole_query_semantics() -> None:
