@@ -425,7 +425,6 @@ function TransactionsPage() {
       setBulkPreview(result)
       setSelectedIds([])
       setBulkSelectionMode("ids")
-      setBulkActionsOpen(false)
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
@@ -564,6 +563,7 @@ function TransactionsPage() {
       ? selectedIds.filter((value) => value !== id)
       : [...selectedIds, id]
     setSelectedIds(nextSelectedIds)
+    setBulkPreview(null)
     if (!nextSelectedIds.length) {
       setBulkSelectionMode("ids")
       setBulkActionsOpen(false)
@@ -571,6 +571,7 @@ function TransactionsPage() {
   }
 
   const toggleSelectAllPage = () => {
+    setBulkPreview(null)
     if (allPageSelected) {
       const pageIds = new Set(items.map((txn) => txn.id))
       const nextSelectedIds = selectedIds.filter((id) => !pageIds.has(id))
@@ -689,6 +690,13 @@ function TransactionsPage() {
     bulkApplyMutation.mutate(payload)
   }
 
+  const dismissBulkPreview = () => {
+    setBulkPreview(null)
+    if (!selectedIds.length) {
+      setBulkActionsOpen(false)
+    }
+  }
+
   return (
     <section className="min-w-0 space-y-3 md:space-y-4">
       <PageIntro
@@ -777,7 +785,7 @@ function TransactionsPage() {
                 <FunnelSimpleIcon className="h-4 w-4" aria-hidden="true" />
                 {mobileFilterCount ? (
                   <span
-                    className="absolute -right-1 -top-1 grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-accent px-1 font-mono text-[10px] text-white"
+                    className="absolute -right-1 -top-1 grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-accent px-1 font-mono text-[10px] text-[rgb(var(--accent-contrast))]"
                     aria-hidden="true"
                   >
                     {mobileFilterCount}
@@ -978,7 +986,10 @@ function TransactionsPage() {
                       disabled: !summary,
                     },
                   ]}
-                  onValueChange={setBulkSelectionMode}
+                  onValueChange={(value) => {
+                    setBulkSelectionMode(value)
+                    setBulkPreview(null)
+                  }}
                 />
                 <AppButton
                   type="button"
@@ -993,6 +1004,7 @@ function TransactionsPage() {
                   onClick={() => {
                     setSelectedIds([])
                     setBulkSelectionMode("ids")
+                    setBulkPreview(null)
                     setBulkActionsOpen(false)
                   }}
                   tone="ghost"
@@ -1015,6 +1027,7 @@ function TransactionsPage() {
                   onClick={() => {
                     setSelectedIds([])
                     setBulkSelectionMode("ids")
+                    setBulkPreview(null)
                     setBulkActionsOpen(false)
                   }}
                   tone="ghost"
@@ -1030,14 +1043,19 @@ function TransactionsPage() {
           )}
         </div>
 
-        {bulkActionsOpen && selectedIds.length > 0 && (
+        {bulkActionsOpen && (selectedIds.length > 0 || bulkPreview !== null) && (
           <div className="hidden border-b border-border p-4 desk:block">
+          {selectedIds.length > 0 && (
+          <>
           <div className="grid gap-3 desk:grid-cols-4">
             <AppFieldLabel>
               <span>Lifecycle</span>
               <AppNativeSelect
                 value={bulkLifecycle}
-                onChange={(event) => setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")}
+                onChange={(event) => {
+                  setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")
+                  setBulkPreview(null)
+                }}
               >
                 <option value="none">None</option>
                 <option value="soft_delete">Soft delete</option>
@@ -1049,7 +1067,10 @@ function TransactionsPage() {
               <AppNativeSelect
                 value={bulkCategoryId}
                 disabled={bulkLifecycle !== "none"}
-                onChange={(event) => setBulkCategoryId(event.target.value)}
+                onChange={(event) => {
+                  setBulkCategoryId(event.target.value)
+                  setBulkPreview(null)
+                }}
               >
                 <option value="">No change</option>
                 {categories.map((category) => (
@@ -1064,11 +1085,12 @@ function TransactionsPage() {
               <AppNativeSelect
                 value={bulkTagMode}
                 disabled={bulkLifecycle !== "none"}
-                onChange={(event) =>
+                onChange={(event) => {
                   setBulkTagMode(
                     event.target.value as "none" | "add" | "remove" | "replace" | "clear"
                   )
-                }
+                  setBulkPreview(null)
+                }}
               >
                 <option value="none">No change</option>
                 <option value="add">Add tags</option>
@@ -1083,7 +1105,10 @@ function TransactionsPage() {
                 type="text"
                 value={bulkTags}
                 disabled={bulkLifecycle !== "none" || bulkTagMode === "none" || bulkTagMode === "clear"}
-                onChange={(event) => setBulkTags(event.target.value)}
+                onChange={(event) => {
+                  setBulkTags(event.target.value)
+                  setBulkPreview(null)
+                }}
                 placeholder="work, travel"
               />
             </AppFieldLabel>
@@ -1118,8 +1143,12 @@ function TransactionsPage() {
               </span>
             )}
           </div>
+          </>
+          )}
           {bulkPreview && (
-            <div className="mt-3 rounded-lg border border-border bg-surface-hi/55 p-3 text-xs text-muted">
+            <div
+              className={`${selectedIds.length ? "mt-3 " : ""}rounded-lg border border-border bg-surface-hi/55 p-3 text-xs text-muted`}
+            >
               <p>
                 Resolved {bulkPreview.resolved_count}, skipped {bulkPreview.skipped_count}
               </p>
@@ -1131,12 +1160,20 @@ function TransactionsPage() {
               <p>
                 Deleted {bulkPreview.changes.deleted}, restored {bulkPreview.changes.restored}
               </p>
+              <AppButton
+                type="button"
+                tone="inline"
+                className="mt-2"
+                onClick={dismissBulkPreview}
+              >
+                Dismiss
+              </AppButton>
             </div>
           )}
           </div>
         )}
 
-        {bulkActionsOpen && selectedIds.length > 0 && !isDesktop ? (
+        {bulkActionsOpen && (selectedIds.length > 0 || bulkPreview !== null) && !isDesktop ? (
         <Sheet open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
           <SheetContent aria-label="Bulk edit" side="bottom" className="max-h-[88vh]">
             <SheetHeader>
@@ -1152,6 +1189,8 @@ function TransactionsPage() {
               </SheetClose>
             </SheetHeader>
             <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
+              {selectedIds.length > 0 && (
+              <>
               <AppFieldLabel>
                 <span>Apply to</span>
                 <SegmentedControl
@@ -1170,16 +1209,20 @@ function TransactionsPage() {
                       disabled: !summary,
                     },
                   ]}
-                  onValueChange={(value) =>
+                  onValueChange={(value) => {
                     setBulkSelectionMode(value as "ids" | "query")
-                  }
+                    setBulkPreview(null)
+                  }}
                 />
               </AppFieldLabel>
               <AppFieldLabel>
                 <span>Lifecycle</span>
                 <AppNativeSelect
                   value={bulkLifecycle}
-                  onChange={(event) => setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")}
+                  onChange={(event) => {
+                    setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")
+                    setBulkPreview(null)
+                  }}
                 >
                   <option value="none">None</option>
                   <option value="soft_delete">Soft delete</option>
@@ -1191,7 +1234,10 @@ function TransactionsPage() {
                 <AppNativeSelect
                   value={bulkCategoryId}
                   disabled={bulkLifecycle !== "none"}
-                  onChange={(event) => setBulkCategoryId(event.target.value)}
+                  onChange={(event) => {
+                    setBulkCategoryId(event.target.value)
+                    setBulkPreview(null)
+                  }}
                 >
                   <option value="">No change</option>
                   {categories.map((category) => (
@@ -1206,11 +1252,12 @@ function TransactionsPage() {
                 <AppNativeSelect
                   value={bulkTagMode}
                   disabled={bulkLifecycle !== "none"}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setBulkTagMode(
                       event.target.value as "none" | "add" | "remove" | "replace" | "clear"
                     )
-                  }
+                    setBulkPreview(null)
+                  }}
                 >
                   <option value="none">No change</option>
                   <option value="add">Add tags</option>
@@ -1225,10 +1272,15 @@ function TransactionsPage() {
                   type="text"
                   value={bulkTags}
                   disabled={bulkLifecycle !== "none" || bulkTagMode === "none" || bulkTagMode === "clear"}
-                  onChange={(event) => setBulkTags(event.target.value)}
+                  onChange={(event) => {
+                    setBulkTags(event.target.value)
+                    setBulkPreview(null)
+                  }}
                   placeholder="work, travel"
                 />
               </AppFieldLabel>
+              </>
+              )}
               {bulkPreview && (
                 <div className="rounded-lg border border-border bg-surface-hi/55 p-3 text-xs text-muted">
                   <p>
@@ -1251,37 +1303,49 @@ function TransactionsPage() {
               )}
             </div>
             <div className="mt-1 flex shrink-0 gap-2 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
-              <AppButton
-                type="button"
-                onClick={runBulkPreview}
-                disabled={
-                  bulkPreviewMutation.isPending ||
-                  !operationValid ||
-                  !bulkScopeCountReady
-                }
-                tone="ghost"
-              >
-                {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={() => setBulkActionsOpen(false)}
-                tone="ghost"
-              >
-                Cancel
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={runBulkApply}
-                disabled={
-                  bulkApplyMutation.isPending ||
-                  !operationValid ||
-                  !bulkScopeCountReady
-                }
-                className="flex-1"
-              >
-                {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
-              </AppButton>
+              {selectedIds.length > 0 ? (
+                <>
+                  <AppButton
+                    type="button"
+                    onClick={runBulkPreview}
+                    disabled={
+                      bulkPreviewMutation.isPending ||
+                      !operationValid ||
+                      !bulkScopeCountReady
+                    }
+                    tone="ghost"
+                  >
+                    {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
+                  </AppButton>
+                  <AppButton
+                    type="button"
+                    onClick={() => setBulkActionsOpen(false)}
+                    tone="ghost"
+                  >
+                    Cancel
+                  </AppButton>
+                  <AppButton
+                    type="button"
+                    onClick={runBulkApply}
+                    disabled={
+                      bulkApplyMutation.isPending ||
+                      !operationValid ||
+                      !bulkScopeCountReady
+                    }
+                    className="flex-1"
+                  >
+                    {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
+                  </AppButton>
+                </>
+              ) : (
+                <AppButton
+                  type="button"
+                  onClick={dismissBulkPreview}
+                  className="flex-1"
+                >
+                  Done
+                </AppButton>
+              )}
             </div>
           </SheetContent>
         </Sheet>

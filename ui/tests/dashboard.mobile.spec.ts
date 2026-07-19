@@ -1,47 +1,39 @@
 import { expect, test } from "./fixtures"
-import { ensureCategory, getCsrfToken, mockDashboardApi } from "./helpers"
+import {
+  createTransaction,
+  ensureCategory,
+  getCsrfToken,
+  loginAsIsolatedUser,
+} from "./helpers"
+import type { APIRequestContext } from "@playwright/test"
 
 test.describe.configure({ mode: "parallel" })
 
-const dashboardMobileLayoutPayload = {
-  period: { slug: "this_month", start: "2026-03-01", end: "2026-03-05" },
-  filters: { type: null },
-  kpis: { income: 265_650, expenses: 548_950, balance: -283_300 },
-  sparklines: {},
-  deltas: { income: 11_100, expenses: -9_900, balance: 1_200 },
-  donut: {
-    has_any_transactions: true,
-    mode: "expense-only" as const,
-    expense_breakdown: [
-      { name: "Housing", amount_cents: 120_000, percent: 60 },
-      { name: "Food", amount_cents: 80_000, percent: 40 },
-    ],
-  },
-  recent: [
-    {
-      id: 1,
-      date: "2026-03-05",
-      occurred_at: "2026-03-05T12:00:00Z",
-      type: "expense",
-      amount_cents: 3_000,
-      net_amount_cents: 3_000,
-      reimbursed_total_cents: 0,
-      is_reimbursement: false,
-      category: { id: 1, name: "Food", type: "expense", icon: null },
-      title: "Lunch",
-      tags: [],
+function localToday(): string {
+  const now = new Date()
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-")
+}
+
+async function createOverallMonthlyBudget(
+  request: APIRequestContext,
+  csrfToken: string,
+  amountCents: number
+): Promise<void> {
+  const response = await request.post("/api/budgets/templates", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      frequency: "monthly",
+      category_id: null,
+      amount_cents: amountCents,
+      starts_on: `${localToday().slice(0, 7)}-01`,
+      ends_on: null,
     },
-  ],
-  categories: [
-    { id: 1, name: "Food", type: "expense", icon: null },
-    { id: 2, name: "Housing", type: "expense", icon: null },
-  ],
-  budget_pace: {
-    velocity_ratio: 1.74,
-    projected_cents: 540_000,
-    budget_cents: 310_000,
-    sparkline: "0.8,1.0,1.2,1.5,1.7",
-  },
+  })
+  expect(response.ok()).toBeTruthy()
 }
 
 test.describe("Dashboard Page (mobile)", () => {
@@ -116,8 +108,12 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(page.locator("body")).toContainText(title)
   })
 
-  test("uses one balance hero and four semantic metric lanes", async ({ page }) => {
-    await mockDashboardApi(page, dashboardMobileLayoutPayload)
+  test("uses one balance hero and four semantic metric lanes", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    await createOverallMonthlyBudget(request, token, 310_000)
     await page.goto("/")
 
     await expect(page.getByRole("button", { name: "This month" })).toHaveAttribute(
@@ -157,10 +153,8 @@ test.describe("Dashboard Page (mobile)", () => {
   test("uses a complete second row for net movement when no budgets exist", async ({
     page,
   }) => {
-    await mockDashboardApi(page, {
-      ...dashboardMobileLayoutPayload,
-      budget_pace: undefined,
-    })
+    const isolated = await loginAsIsolatedUser(page)
+    await isolated.request.dispose()
     await page.goto("/")
 
     await expect(page.getByTestId("dashboard-planning-card")).toHaveCount(0)
@@ -192,22 +186,47 @@ test.describe("Dashboard Page (mobile)", () => {
   })
 
   test("keeps category budget health as the fourth metric lane", async ({ page }) => {
-    await mockDashboardApi(page, {
-      ...dashboardMobileLayoutPayload,
-      budget_pace: undefined,
-      category_budget_summary: {
-        total: 3,
-        needs_attention: 1,
-        priority: {
-          scope_category_id: 1,
-          scope_label: "Food",
-          amount_cents: 80_000,
-          spent_cents: 84_000,
-          remaining_cents: -4_000,
-          velocity_ratio: 1.3,
+    const isolated = await loginAsIsolatedUser(page)
+    const monthStart = `${localToday().slice(0, 7)}-01`
+    const today = localToday()
+    // One overspent budget is at risk on any day of the month; the two
+    // untouched budgets always stay on track.
+    const plans = [
+      { name: "Food", budgetCents: 80_000, spentCents: 84_000 },
+      { name: "Transport", budgetCents: 50_000, spentCents: 0 },
+      { name: "Utilities", budgetCents: 50_000, spentCents: 0 },
+    ]
+    for (const [index, plan] of plans.entries()) {
+      const categoryResponse = await isolated.request.post("/api/categories", {
+        headers: { "X-CSRF-Token": isolated.csrfToken },
+        data: { name: plan.name, type: "expense", order: index },
+      })
+      expect(categoryResponse.ok()).toBeTruthy()
+      const category = (await categoryResponse.json()) as { id: number }
+      const budgetResponse = await isolated.request.post("/api/budgets/templates", {
+        headers: { "X-CSRF-Token": isolated.csrfToken },
+        data: {
+          frequency: "monthly",
+          category_id: category.id,
+          amount_cents: plan.budgetCents,
+          starts_on: monthStart,
+          ends_on: null,
         },
-      },
-    })
+      })
+      expect(budgetResponse.ok()).toBeTruthy()
+      if (plan.spentCents > 0) {
+        await createTransaction(isolated.request, isolated.csrfToken, {
+          date: today,
+          occurred_at: `${today}T09:0${index}:00`,
+          type: "expense",
+          amount_cents: plan.spentCents,
+          category_id: category.id,
+          title: `${plan.name} spending`,
+          tags: [],
+        })
+      }
+    }
+    await isolated.request.dispose()
     await page.goto("/")
 
     const planningCard = page.getByTestId("dashboard-planning-card")
@@ -221,13 +240,46 @@ test.describe("Dashboard Page (mobile)", () => {
   test("keeps budget pace and recent amounts readable when headline values are hidden", async ({
     page,
   }) => {
-    await mockDashboardApi(page, dashboardMobileLayoutPayload)
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const incomeCategoryResponse = await isolated.request.post("/api/categories", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name: "Salary", type: "income", order: 0 },
+    })
+    expect(incomeCategoryResponse.ok()).toBeTruthy()
+    const incomeCategory = (await incomeCategoryResponse.json()) as { id: number }
+    const expenseCategoryResponse = await isolated.request.post("/api/categories", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name: "Food", type: "expense", order: 0 },
+    })
+    expect(expenseCategoryResponse.ok()).toBeTruthy()
+    const expenseCategory = (await expenseCategoryResponse.json()) as { id: number }
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T08:00:00`,
+      type: "income",
+      amount_cents: 265_650,
+      category_id: incomeCategory.id,
+      title: "Salary payment",
+      tags: [],
+    })
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T12:00:00`,
+      type: "expense",
+      amount_cents: 3_000,
+      category_id: expenseCategory.id,
+      title: "Lunch",
+      tags: [],
+    })
+    await createOverallMonthlyBudget(isolated.request, isolated.csrfToken, 310_000)
+    await isolated.request.dispose()
     await page.goto("/")
 
     await page.getByRole("button", { name: "Hide values" }).click()
 
     await expect(
-      page.getByTestId("dashboard-balance-card").getByText("-2 833,00 €", {
+      page.getByTestId("dashboard-balance-card").getByText("2 626,50 €", {
         exact: true,
       }),
     ).toHaveClass(/kpi-hidden/)
@@ -237,7 +289,7 @@ test.describe("Dashboard Page (mobile)", () => {
     ).toHaveClass(/kpi-hidden/)
     await expect(
       page.getByTestId("dashboard-secondary-kpi-card").filter({ hasText: "Spent" })
-        .getByText("5 489,50 €", { exact: true }),
+        .getByText("30,00 €", { exact: true }),
     ).toHaveClass(/kpi-hidden/)
     await expect(page.getByTestId("dashboard-balance-budget-pace")).not.toHaveClass(
       /kpi-hidden/,
@@ -252,8 +304,22 @@ test.describe("Dashboard Page (mobile)", () => {
     ).not.toHaveClass(/kpi-hidden/)
   })
 
-  test("keeps recent transactions above breakdown charts", async ({ page }) => {
-    await mockDashboardApi(page, dashboardMobileLayoutPayload)
+  test("keeps recent transactions above breakdown charts", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Order")
+    const today = localToday()
+    await createTransaction(request, token, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 3_000,
+      category_id: categoryId,
+      title: `E2E Mobile Order ${Date.now()}`,
+      tags: [],
+    })
     await page.goto("/")
 
     const recentHeading = page.getByRole("heading", { name: "Recent transactions" })
@@ -266,15 +332,25 @@ test.describe("Dashboard Page (mobile)", () => {
     expect((recentBox?.y ?? 0) < (expensesBox?.y ?? 0)).toBeTruthy()
   })
 
-  test("keeps the recent list compact and non-scrollable", async ({ page }) => {
-    await mockDashboardApi(page, {
-      ...dashboardMobileLayoutPayload,
-      recent: Array.from({ length: 6 }, (_, index) => ({
-        ...dashboardMobileLayoutPayload.recent[0],
-        id: index + 1,
-        title: `Mobile recent transaction ${index + 1}`,
-      })),
-    })
+  test("keeps the recent list compact and non-scrollable", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Recent")
+    const today = localToday()
+    const seed = Date.now()
+    for (let index = 0; index < 6; index += 1) {
+      await createTransaction(request, token, {
+        date: today,
+        occurred_at: `${today}T08:0${index}:00`,
+        type: "expense",
+        amount_cents: 2_000 + index,
+        category_id: categoryId,
+        title: `Mobile recent transaction ${seed}-${index + 1}`,
+        tags: [],
+      })
+    }
     await page.goto("/")
 
     const recentList = page.getByTestId("dashboard-recent-list")
@@ -288,16 +364,20 @@ test.describe("Dashboard Page (mobile)", () => {
 
   test("keeps long recent transaction titles inside the mobile viewport", async ({
     page,
+    request,
   }) => {
-    await mockDashboardApi(page, {
-      ...dashboardMobileLayoutPayload,
-      recent: [
-        {
-          ...dashboardMobileLayoutPayload.recent[0],
-          title:
-            "This is a very long mobile transaction title with SupercalifragilisticexpialidociousStyleSegmentsThatShouldNeverStretchTheViewport",
-        },
-      ],
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Long Title")
+    const today = localToday()
+    await createTransaction(request, token, {
+      date: today,
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 3_000,
+      category_id: categoryId,
+      title:
+        "This is a very long mobile transaction title with SupercalifragilisticexpialidociousStyleSegmentsThatShouldNeverStretchTheViewport",
+      tags: [],
     })
     await page.goto("/")
 
@@ -312,28 +392,49 @@ test.describe("Dashboard Page (mobile)", () => {
   test("keeps large accumulated financial values inside the mobile viewport", async ({
     page,
   }) => {
-    await mockDashboardApi(page, {
-      ...dashboardMobileLayoutPayload,
-      kpis: {
-        income: 610_000,
-        expenses: 1_000_793_493,
-        balance: -1_000_183_493,
-      },
-      deltas: {
-        income: 610_000,
-        expenses: 1_000_793_493,
-        balance: -1_000_183_493,
-      },
-      budget_pace: {
-        velocity_ratio: 9_695.19,
-        projected_cents: 1_939_037_400,
-        budget_cents: 200_000,
-        sparkline: "1200,2400,4800,7200,9695",
-      },
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const incomeCategoryResponse = await isolated.request.post("/api/categories", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name: "Salary", type: "income", order: 0 },
     })
+    expect(incomeCategoryResponse.ok()).toBeTruthy()
+    const incomeCategory = (await incomeCategoryResponse.json()) as { id: number }
+    const expenseCategoryResponse = await isolated.request.post("/api/categories", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name: "Large purchase", type: "expense", order: 0 },
+    })
+    expect(expenseCategoryResponse.ok()).toBeTruthy()
+    const expenseCategory = (await expenseCategoryResponse.json()) as { id: number }
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T08:00:00`,
+      type: "income",
+      amount_cents: 610_000,
+      category_id: incomeCategory.id,
+      title: "Salary payment",
+      tags: [],
+    })
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 1_000_793_493,
+      category_id: expenseCategory.id,
+      title: "Accumulated large purchase",
+      tags: [],
+    })
+    // A small overall budget makes the projected pace figures extreme too.
+    await createOverallMonthlyBudget(isolated.request, isolated.csrfToken, 200_000)
+    await isolated.request.dispose()
     await page.goto("/")
 
-    await expect(page.getByText("10 007 934,93 €", { exact: true })).toBeVisible()
+    await expect(
+      page
+        .getByTestId("dashboard-secondary-kpi-card")
+        .filter({ hasText: "Spent" })
+        .getByText("10 007 934,93 €", { exact: true }),
+    ).toBeVisible()
     const viewport = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,

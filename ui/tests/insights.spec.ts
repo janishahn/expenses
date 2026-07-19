@@ -60,16 +60,6 @@ test.describe("Insights Page", () => {
     await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
   })
 
-  test("should apply filters", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const dialog = page.getByRole("dialog", { name: "Insights filters" })
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole("button", { name: "Expense", exact: true }).click()
-    await dialog.getByRole("button", { name: "Apply" }).click()
-    await expect(page).toHaveURL(/type=expense/)
-  })
-
   test("should show filter controls at tablet viewport (768-1024px)", async ({
     page,
   }) => {

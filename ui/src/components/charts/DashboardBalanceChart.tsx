@@ -32,7 +32,7 @@ const EMPTY_FORECAST_MONTHS: DashboardForecast["months"] = []
 
 function shortMonth(month: string): string {
   return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(
-    new Date(`${month}-01T00:00:00Z`),
+    new Date(`${month}-01T00:00:00`),
   )
 }
 
@@ -243,7 +243,7 @@ function DashboardBalanceChart({
           </span>
           {forecastMonths.length ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-5 border-t-[3px] border-dashed border-[#EDBD35]" aria-hidden="true" />
+              <span className="w-5 border-t-[3px] border-dashed border-[rgb(var(--warning))]" aria-hidden="true" />
               Likely
             </span>
           ) : null}

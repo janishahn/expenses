@@ -49,6 +49,7 @@ npm run test:e2e:headed
 | Project | Engine and layout | Scope |
 |---|---|---|
 | `auth-bootstrap-chromium` | Chromium desktop | Fresh setup, login, logout, signup, and route guards |
+| `auth-bootstrap-mobile-webkit` | WebKit with iPhone 15 emulation | Fresh setup, login, logout, signup, and route guards on the mobile layout |
 | `desktop-chromium` | Chromium, 1280×800 | Complete desktop behavior, accessibility, and visual contracts |
 | `mobile-webkit` | WebKit with iPhone 15 emulation | Complete mobile behavior, accessibility, overflow, and visual contracts |
 | `critical-desktop-firefox` | Firefox, 1280×800 | Critical authenticated navigation and transaction creation |

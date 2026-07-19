@@ -28,12 +28,17 @@ test.describe("Budgets Page", () => {
     await expect(dialog.getByRole("button", { name: "Save month budget" })).toBeVisible()
   })
 
-  test("keeps the yearly toolbar aligned while the view indicator slides", async ({ page }) => {
+  test("switches budget views from the segmented control and keeps the yearly toolbar within bounds", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1159, height: 787 })
+    const toolbar = page.getByTestId("budget-workspace-toolbar")
     const viewGroup = page.getByRole("group", { name: "Budget view" })
-    const indicator = viewGroup.locator(".segmented-control-indicator")
-    await expect(indicator).toHaveCSS("opacity", "1")
-    const monthTransform = await indicator.evaluate((element) => element.style.transform)
+    await expect(viewGroup.getByRole("button", { name: "Month" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(toolbar.getByLabel("Month")).toBeVisible()
 
     await viewGroup.getByRole("button", { name: "Year" }).click()
     await expect(page).toHaveURL(/view=year/)
@@ -41,11 +46,11 @@ test.describe("Budgets Page", () => {
       "aria-pressed",
       "true"
     )
-    await expect
-      .poll(() => indicator.evaluate((element) => element.style.transform))
-      .not.toBe(monthTransform)
-
-    const toolbar = page.getByTestId("budget-workspace-toolbar")
+    await expect(viewGroup.getByRole("button", { name: "Month" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
+    await expect(toolbar.getByLabel("Month")).toHaveCount(0)
     await expect(toolbar.getByLabel("Year")).toBeVisible()
     await expect(toolbar.getByRole("button", { name: "Apply" })).toBeVisible()
     await expect

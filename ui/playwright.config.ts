@@ -42,8 +42,18 @@ export default defineConfig({
       },
     },
     {
+      name: "auth-bootstrap-mobile-webkit",
+      testMatch: /(^|\/)auth\.mobile\.spec\.ts$/,
+      expect: { timeout: 15_000 },
+      use: {
+        browserName: "webkit",
+        ...devices["iPhone 15"],
+      },
+    },
+    {
       name: "mobile-webkit",
       testMatch: /.*\.mobile\.spec\.ts/,
+      testIgnore: [/(^|\/)auth\.mobile\.spec\.ts$/],
       // WebKit paints slowest under parallel load; charts and screenshot
       // stabilization need a wider assertion budget than the other projects.
       expect: { timeout: 15_000 },

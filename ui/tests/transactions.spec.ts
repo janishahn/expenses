@@ -241,6 +241,72 @@ test.describe("Transactions Page", () => {
     await expect(row).toBeVisible()
   })
 
+  test("keeps the bulk-apply outcome summary visible until dismissed", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const sourceCategoryId = await ensureCategory(request, token, "expense", "E2E Bulk Source")
+    const targetResponse = await request.post("/api/categories", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: `E2E Bulk Target ${Date.now()}`, type: "expense", order: 0 },
+    })
+    expect(targetResponse.ok()).toBeTruthy()
+    const targetCategory = (await targetResponse.json()) as { id: number }
+
+    const marker = `E2E Bulk Outcome ${Date.now()}`
+    const transactionIds: number[] = []
+    for (let index = 0; index < 3; index += 1) {
+      transactionIds.push(
+        await createTransaction(request, token, {
+          date: new Date().toISOString().slice(0, 10),
+          occurred_at: new Date().toISOString(),
+          type: "expense",
+          amount_cents: 2_000 + index,
+          category_id: sourceCategoryId,
+          title: `${marker} ${index + 1}`,
+          tags: [],
+        })
+      )
+    }
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    for (const transactionId of transactionIds) {
+      await page
+        .getByTestId(`transaction-row-${transactionId}`)
+        .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
+        .check()
+    }
+    const selectionControls = page.getByTestId("transactions-selection-controls")
+    await expect(selectionControls).toContainText("3 selected")
+    await selectionControls.getByRole("button", { name: "Bulk edit" }).click()
+
+    await page.getByLabel("Set category").selectOption(String(targetCategory.id))
+    page.once("dialog", (dialog) => dialog.accept())
+    const applyResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/transactions/bulk/apply") &&
+        response.request().method() === "POST" &&
+        response.status() === 200
+    )
+    await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await applyResponse
+
+    await expect(page.getByText("Resolved 3, skipped 0")).toBeVisible()
+    await expect(page.getByText("Deleted 0, restored 0")).toBeVisible()
+    await expect(selectionControls).toContainText("matching transactions")
+    await expect(selectionControls).not.toContainText("selected")
+
+    const detailResponse = await request.get(`/api/transactions/${transactionIds[0]}`)
+    expect(detailResponse.ok()).toBeTruthy()
+    const detailPayload = (await detailResponse.json()) as { category_id: number }
+    expect(detailPayload.category_id).toBe(targetCategory.id)
+
+    await page.getByRole("button", { name: "Dismiss" }).click()
+    await expect(page.getByText("Resolved 3, skipped 0")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Dismiss" })).toHaveCount(0)
+  })
+
   test("should save and remove durable purchase tracking", async ({
     page,
     request,

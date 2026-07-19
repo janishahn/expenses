@@ -78,6 +78,7 @@ A release is a deliberate, versioned, deployable checkpoint. It is made up of fo
 - For Playwright UI layout regressions, attach a screenshot artifact on failure so CI and local reruns preserve visual context.
 - When debugging a failing Playwright test that provides a screenshot artifact, review that artifact first and use it to guide the fix before changing code.
 - Playwright layout matrix is explicit and must stay that way:
+  - `auth-bootstrap-chromium` and `auth-bootstrap-mobile-webkit` run only the auth specs (`auth.spec.ts`, `auth.mobile.spec.ts`) on pristine per-worker instances; the primary desktop and mobile projects ignore those files.
   - `desktop-chromium` runs non-mobile specs (default `*.spec.ts` and `*.desktop.spec.ts`).
   - `mobile-webkit` runs only mobile specs (`*.mobile.spec.ts`) using iPhone emulation.
   - `critical-desktop-firefox`, `critical-desktop-webkit`, and `critical-mobile-chromium` rerun only `*.critical.spec.ts` or `*.critical.mobile.spec.ts` journeys.

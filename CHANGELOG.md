@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Transaction search now accepts untitled records, and transaction-list API responses continue to emit deprecated `search` metadata solely so already-installed iOS clients can decode them.
+- Transaction search now accepts untitled records.
 - Query-wide bulk actions now wait for the authoritative matching count before they can run, preventing the selection copy from understating how many transactions will be affected.
 - Mobile transaction periods now remain staged until Apply, long Assistant replies stay scrolled within the conversation, and the Dashboard skips its desktop-only forecast request on mobile and historical periods.
 - Keyboard focus is visible on shell actions and the reconciliation file picker; future budgets no longer show premature pace labels, Insights reports the selected range length, and reopened category/tag dialogs clear prior create errors.
@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The web Dashboard now fills the available desktop recent-transactions panel with complete rows while keeping four rows on mobile, and category donuts use aligned responsive legends plus percentage-only segment tooltips, removing nested scroll regions that previously intercepted normal page scrolling.
 - The Dashboard privacy toggle now keeps budget pace and recent transaction amounts readable while still concealing headline and analytical financial values.
 - Forecasts now include expected cash flow between today and the end of the current month, removing the previous gap before the first projected month.
+- Forecasts and the forecast backtest no longer double-count auto-posted recurring rules: a rule's monthly amount is only subtracted from months where the rule did not post its own transaction, so categories with an auto-posting rule keep their genuine variable spending in the model instead of it being zeroed out.
+- The Dashboard balance chart and six-month category bands now label months correctly in timezones west of UTC; previously every month label rendered one month early there.
+- Applying a bulk transaction change now leaves its outcome summary (resolved, skipped, deleted, and restored counts) visible on both desktop and mobile until dismissed, instead of closing the bulk panel with no confirmation.
+- Accent-colored controls in dark mode now use dark ink text that meets WCAG AA contrast instead of low-contrast white, and the category-band chart assigns colors in stable first-appearance order so different categories no longer collide on the same color.
 
 ### Added
 - Added an accessible six-month category-band view to the web Dashboard, backed by real monthly category totals and balances, plus filtered transaction summary totals for the working ledger.
@@ -37,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reworked the mobile web layout around an unobtrusive top bar and full-height menu drawer, condensed Dashboard metrics and Transactions controls, removed the mobile balance history chart, made one-month Insights data visible, moved Budget and recurring-rule creation into the top-right action, and shortened recurring History controls.
 
 ### Removed
+- Removed the legacy `search` metadata block from transaction-list and uncategorized-inbox API responses. No current client reads it; iOS apps older than this release fail to decode transaction lists until updated, so update the iOS app together with the server.
 - Removed technical transaction-search syntax and its token metadata; search-like text such as `tag:Work` is now treated literally and filters are applied through the visible controls.
 - Removed LLM-backed search translation, including its API endpoint and web/iOS client surfaces; natural-language transaction requests remain available through the read-only spending Assistant.
 

@@ -235,12 +235,6 @@ class TransactionFiltersOut(BaseModel):
     query: Optional[str] = None
 
 
-class TransactionSearchOut(BaseModel):
-    raw_q: str
-    applied_tokens: list[dict[str, object]] = Field(default_factory=list)
-    free_terms: list[str] = Field(default_factory=list)
-
-
 class TransactionsResponseOut(BaseModel):
     items: list[TransactionListItemOut]
     page: int
@@ -248,7 +242,6 @@ class TransactionsResponseOut(BaseModel):
     has_more: bool
     period: PeriodOut
     filters: TransactionFiltersOut
-    search: TransactionSearchOut
     categories: list[CategorySummaryOut]
     tags: list[TransactionTagOut]
 

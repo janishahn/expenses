@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
+import expenses.app as app_main
+from expenses.db.models import Transaction, TransactionType
 from expenses.infra.fx_rates import FxQuote
 
 
@@ -477,6 +479,72 @@ def test_forecast_keeps_non_recurring_remainder_in_recurring_category(
             category_id=housing_id,
             title=f"Housing {offset}",
         )
+
+    response = api_client.get("/api/forecast?horizon=3&mode=full")
+    assert response.status_code == 200
+    first_month = response.json()["months"][0]
+    assert first_month["projected_expenses_cents"] == 120_000
+    assert first_month["breakdown"]["variable_estimates"] == [
+        {
+            "category_id": housing_id,
+            "name": "Housing",
+            "icon": None,
+            "amount_cents": 20_000,
+        }
+    ]
+
+
+def test_forecast_keeps_manual_spend_alongside_auto_posted_rule(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    housing_id = _create_category(api_client, csrf_headers, "Housing", "expense")
+    rule_id = _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Rent",
+        txn_type="expense",
+        category_id=housing_id,
+        amount_cents=100_000,
+        next_occurrence=date(2026, 8, 1),
+        anchor_date=date(2026, 1, 1),
+    )
+    for offset in range(1, 7):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=12),
+            txn_type="expense",
+            amount_cents=20_000,
+            category_id=housing_id,
+            title=f"Repairs {offset}",
+        )
+
+    override = app_main.app.dependency_overrides[app_main.get_db]
+    db_gen = override()
+    db = next(db_gen)
+    try:
+        for offset in range(1, 7):
+            month = _add_months(fixed_today.replace(day=1), -offset)
+            db.add(
+                Transaction(
+                    user_id=1,
+                    date=month,
+                    occurred_at=datetime.combine(month, datetime.min.time()),
+                    type=TransactionType.expense,
+                    is_reimbursement=False,
+                    amount_cents=100_000,
+                    category_id=housing_id,
+                    title="Rent",
+                    origin_rule_id=rule_id,
+                    occurrence_date=month,
+                )
+            )
+        db.commit()
+    finally:
+        db_gen.close()
 
     response = api_client.get("/api/forecast?horizon=3&mode=full")
     assert response.status_code == 200

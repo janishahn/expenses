@@ -1,6 +1,16 @@
 import { expect, test } from "./fixtures"
 
 test.describe("Insights Page (mobile)", () => {
+  test("applies filters from the mobile filter sheet", async ({ page }) => {
+    await page.goto("/insights")
+    await page.getByRole("button", { name: /Filters/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Insights filters" })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole("button", { name: "Expense", exact: true }).click()
+    await dialog.getByRole("button", { name: "Apply" }).click()
+    await expect(page).toHaveURL(/type=expense/)
+  })
+
   test("keeps the view switch compact and renders single-month chart points", async ({
     page,
   }) => {

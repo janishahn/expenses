@@ -1,4 +1,6 @@
+import { request as playwrightRequest } from "@playwright/test"
 import type { APIRequestContext, Page } from "@playwright/test"
+import { loginWith } from "./auth-helpers"
 
 type DashboardMockPayload = {
   period: { slug: string; start: string; end: string }
@@ -51,6 +53,39 @@ export async function getCsrfToken(request: APIRequestContext): Promise<string> 
   const response = await request.get("/api/csrf")
   const payload = (await response.json()) as { token: string }
   return payload.token
+}
+
+// Signs the browser page in as a brand-new account so tests can assert exact
+// dashboard states (budget counts, empty states, exact KPI amounts) without
+// interference from data other tests seeded for the shared worker admin user.
+export async function loginAsIsolatedUser(
+  page: Page
+): Promise<{ request: APIRequestContext; csrfToken: string }> {
+  const credentials = {
+    username: `e2e-isolated-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`,
+    password: "hunter22",
+  }
+  const context = await playwrightRequest.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: { cookies: [], origins: [] },
+  })
+  const signupResponse = await context.post("/api/auth/signup", {
+    data: credentials,
+  })
+  if (!signupResponse.ok()) {
+    throw new Error(
+      `signup failed: ${signupResponse.status()} ${await signupResponse.text()}`
+    )
+  }
+  const loginResponse = await context.post("/api/auth/login", {
+    data: credentials,
+  })
+  if (!loginResponse.ok()) {
+    throw new Error(`login failed: ${loginResponse.status()}`)
+  }
+  await page.context().clearCookies()
+  await loginWith(page, credentials)
+  return { request: context, csrfToken: await getCsrfToken(context) }
 }
 
 export async function ensureCategory(

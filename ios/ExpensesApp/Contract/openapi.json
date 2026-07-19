@@ -7631,34 +7631,6 @@
         "title": "TransactionReimbursementsResponseOut",
         "type": "object"
       },
-      "TransactionSearchOut": {
-        "properties": {
-          "applied_tokens": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Applied Tokens",
-            "type": "array"
-          },
-          "free_terms": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Free Terms",
-            "type": "array"
-          },
-          "raw_q": {
-            "title": "Raw Q",
-            "type": "string"
-          }
-        },
-        "required": [
-          "raw_q"
-        ],
-        "title": "TransactionSearchOut",
-        "type": "object"
-      },
       "TransactionSuggestionOut": {
         "properties": {
           "category_id": {
@@ -7920,9 +7892,6 @@
           "period": {
             "$ref": "#/components/schemas/PeriodOut"
           },
-          "search": {
-            "$ref": "#/components/schemas/TransactionSearchOut"
-          },
           "tags": {
             "items": {
               "$ref": "#/components/schemas/TransactionTagOut"
@@ -7938,7 +7907,6 @@
           "has_more",
           "period",
           "filters",
-          "search",
           "categories",
           "tags"
         ],
@@ -8003,9 +7971,6 @@
           "period": {
             "$ref": "#/components/schemas/PeriodOut"
           },
-          "search": {
-            "$ref": "#/components/schemas/TransactionSearchOut"
-          },
           "tags": {
             "items": {
               "$ref": "#/components/schemas/TransactionTagOut"
@@ -8025,7 +7990,6 @@
           "has_more",
           "period",
           "filters",
-          "search",
           "categories",
           "tags",
           "total",

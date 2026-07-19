@@ -43,8 +43,4 @@ def test_export_ios_fixtures_writes_curated_foundation_snapshots(tmp_path) -> No
     assert dashboard["kpis"]["balance"] == 235450
     assert dashboard["category_budget_summary"]["total"] == 1
     assert transactions["items"][0]["title"] == "Weekly groceries"
-    assert transactions["search"] == {
-        "raw_q": "",
-        "applied_tokens": [],
-        "free_terms": [],
-    }
+    assert "search" not in transactions

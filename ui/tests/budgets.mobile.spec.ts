@@ -33,24 +33,20 @@ test.describe("Budgets Page Mobile", () => {
       clientWidth: document.documentElement.clientWidth,
     }))
 
+    let message = `${label}: scrollWidth ${scrollWidth} exceeds clientWidth ${clientWidth}`
     if (scrollWidth > clientWidth) {
       const debug = await findOverflowingElements(page)
-      console.log(
-        `\n--- Overflow debug for ${label} ---\n` +
-          `viewport: ${debug.viewportWidth}px, scroll: ${scrollWidth}px\n` +
-          debug.overflowing
-            .map(
-              (entry) =>
-                `  <${entry.tag}> scrollW=${entry.scrollWidth} clientW=${entry.clientWidth} class="${entry.className}" text="${entry.textSnippet}"`,
-            )
-            .join("\n"),
-      )
+      message +=
+        `\nviewport: ${debug.viewportWidth}px, scroll: ${scrollWidth}px\n` +
+        debug.overflowing
+          .map(
+            (entry) =>
+              `  <${entry.tag}> scrollW=${entry.scrollWidth} clientW=${entry.clientWidth} class="${entry.className}" text="${entry.textSnippet}"`,
+          )
+          .join("\n")
     }
 
-    expect(
-      scrollWidth,
-      `${label}: scrollWidth ${scrollWidth} exceeds clientWidth ${clientWidth}`,
-    ).toBeLessThanOrEqual(clientWidth)
+    expect(scrollWidth, message).toBeLessThanOrEqual(clientWidth)
   }
 
   test("should open the recurring budget modal from the mobile page action", async ({

@@ -526,7 +526,7 @@ function SpendingAssistantPage() {
                 aria-label="Send"
                 data-testid="spending-assistant-send"
                 disabled={!canSend}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-accent text-white shadow-[var(--shadow-accent)] transition hover:brightness-105 disabled:opacity-50"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-accent text-[rgb(var(--accent-contrast))] shadow-[var(--shadow-accent)] transition hover:brightness-105 disabled:opacity-50"
               >
                 <PaperPlaneTiltIcon className="h-4 w-4" weight="fill" />
               </button>

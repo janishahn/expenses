@@ -1,7 +1,6 @@
 import { request, test as base } from "@playwright/test"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
-import net from "node:net"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -13,16 +12,6 @@ type Backend = {
   url: string
   dataDir: string
   process: ChildProcess
-}
-
-function freePort(): Promise<number> {
-  return new Promise((resolvePort) => {
-    const server = net.createServer()
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as net.AddressInfo
-      server.close(() => resolvePort(port))
-    })
-  })
 }
 
 async function startBackend(): Promise<Backend> {
@@ -46,41 +35,48 @@ async function startBackend(): Promise<Backend> {
     throw new Error(`alembic upgrade failed:\n${migrate.stdout}${migrate.stderr}`)
   }
 
-  const port = await freePort()
-  const url = `http://127.0.0.1:${port}`
-  const child = spawn(
-    "uv",
-    [
-      "run",
-      "python",
-      "-m",
-      "uvicorn",
-      "expenses.app:app",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--no-access-log",
-    ],
-    { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] }
-  )
+  // The child binds port 0 itself and reports the kernel-assigned port before
+  // uvicorn starts, so concurrent workers can never race each other for the
+  // same probed-then-released port. Uvicorn's own startup log line is not
+  // usable for this: the app's setup_logging() reroutes it away from stderr.
+  const serverScript = [
+    "import socket",
+    "import uvicorn",
+    'sock = socket.create_server(("127.0.0.1", 0))',
+    'print(f"EXPENSES_E2E_PORT={sock.getsockname()[1]}", flush=True)',
+    'uvicorn.run("expenses.app:app", fd=sock.fileno(), access_log=False)',
+  ].join("\n")
+  const child = spawn("uv", ["run", "python", "-c", serverScript], {
+    cwd: repoRoot,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  })
   const output: Buffer[] = []
   child.stdout!.on("data", (chunk: Buffer) => output.push(chunk))
   child.stderr!.on("data", (chunk: Buffer) => output.push(chunk))
 
   const deadline = Date.now() + 120_000
+  let url: string | undefined
   for (;;) {
     if (child.exitCode !== null) {
       rmSync(dataDir, { recursive: true, force: true })
       throw new Error(`backend exited during startup:\n${Buffer.concat(output).toString()}`)
     }
-    try {
-      const response = await fetch(`${url}/api/csrf`)
-      if (response.ok) {
-        break
+    if (!url) {
+      const bound = Buffer.concat(output).toString().match(/EXPENSES_E2E_PORT=(\d+)/)
+      if (bound) {
+        url = `http://127.0.0.1:${bound[1]}`
       }
-    } catch {
-      // not listening yet
+    }
+    if (url) {
+      try {
+        const response = await fetch(`${url}/api/csrf`)
+        if (response.ok) {
+          break
+        }
+      } catch {
+        // not listening yet
+      }
     }
     if (Date.now() > deadline) {
       child.kill()

@@ -14,7 +14,7 @@ colors:
   surface: "#FBFCF8"
   surface-strong: "#FFFFFF"
   surface-muted: "#E8EBE5"
-  muted: "#747A76"
+  muted: "#656D68"
   line: "#D9DCD6"
   success: "#15936D"
   success-soft: "#DAF3E8"
@@ -26,6 +26,8 @@ colors:
   info-soft: "#E5E8FF"
   purple: "#7855D8"
   purple-soft: "#EEE8FF"
+  dark-primary: "#7E8DFF"
+  dark-on-primary: "#111511"
   dark-canvas: "#111511"
   dark-surface: "#1A201C"
   dark-surface-strong: "#222A25"
@@ -257,7 +259,9 @@ The light palette begins with warm stone `canvas` (`#EEEFE9`), paper `surface` (
 
 Cobalt `primary` is the interaction accent for links, focus, selection, and the single accent action. It must not cover most of a page. Mint, coral, butter, and violet are compact financial signals used for income, expenses, warnings, planning lanes, category tiles, and charts. Their soft companions create distinct semantic fields while keeping text in ink for readability.
 
-Dark mode maps the same roles onto the explicit `dark-*` tokens. Cobalt becomes slightly lighter in implementation where needed for contrast, while semantic colors remain recognizable. A dark screen still needs visible canvas, panel, and strong-surface levels; flattening everything into black is a failure.
+Dark mode maps the same roles onto the explicit `dark-*` tokens. Cobalt becomes lighter (`dark-primary`), while semantic colors remain recognizable. A dark screen still needs visible canvas, panel, and strong-surface levels; flattening everything into black is a failure.
+
+Text on cobalt surfaces uses the per-theme `--accent-contrast` token: `on-primary` white in light mode and `dark-on-primary` near-black ink in dark mode, keeping AA contrast on the lighter dark cobalt. Butter `warning` is available as the `--warning` token in both themes for the forecast stroke and related chart accents.
 
 Color never carries meaning alone. Icons, labels, signs, amounts, patterns, and accessible names reinforce every state. Normal text and interactive states meet WCAG AA; focus indicators remain obvious in both themes and forced-color environments.
 

@@ -455,6 +455,89 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(row).toBeHidden()
   })
 
+  test("keeps the bulk-apply outcome visible in the mobile sheet until dismissed", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Mobile bulk source")
+    const targetResponse = await request.post("/api/categories", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: `Mobile bulk target ${Date.now()}`, type: "expense", order: 0 },
+    })
+    expect(targetResponse.ok()).toBeTruthy()
+    const targetId = ((await targetResponse.json()) as { id: number }).id
+    const title = `Mobile bulk outcome ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 2750,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
+    await page
+      .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
+      .check()
+    await page.getByRole("button", { name: "Bulk edit" }).click()
+
+    const dialog = page.getByRole("dialog", { name: "Bulk edit" })
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel("Set category").selectOption(String(targetId))
+    page.once("dialog", (confirmDialog) => confirmDialog.accept())
+    await dialog.getByRole("button", { name: "Apply", exact: true }).click()
+
+    await expect(dialog.getByText("Resolved 1, skipped 0")).toBeVisible()
+    await expect(dialog.getByRole("group", { name: "Bulk edit scope" })).toHaveCount(0)
+    const done = dialog.getByRole("button", { name: "Done" })
+    await expect(done).toBeVisible()
+    await done.click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByText("Resolved 1, skipped 0")).toHaveCount(0)
+  })
+
+  test("deletes a transaction from mobile detail and permanently deletes it from Trash", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Mobile delete")
+    const title = `Mobile delete ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 1450,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
+    const row = page.getByTestId(`transaction-row-${transactionId}`)
+    await expect(row).toBeVisible()
+    await row.click()
+    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+
+    page.once("dialog", (dialog) => dialog.accept())
+    await page.getByRole("button", { name: "Delete transaction" }).click()
+    await expect(page).toHaveURL(/\/transactions\?/)
+    await expect(page.getByTestId(`transaction-row-${transactionId}`)).toHaveCount(0)
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Trash" }).click()
+    await expect(page).toHaveURL(/\/transactions\/deleted$/)
+    const deletedRow = page.getByTestId(`deleted-transaction-${transactionId}`)
+    await expect(deletedRow).toBeVisible()
+
+    page.once("dialog", (dialog) => dialog.accept())
+    await deletedRow.getByRole("button", { name: "Delete forever" }).click()
+    await expect(deletedRow).toHaveCount(0)
+  })
+
   test("restores a transaction from mobile Trash", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "Mobile trash")

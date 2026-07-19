@@ -49,3 +49,7 @@ xcuserdata/
 .claude/
 .factory/
 .superset/
+
+# Playwright artifacts
+output/playwright/
+.playwright-cli/

@@ -704,11 +704,7 @@ def test_bulk_edit_fuzzy_search_and_uncategorized_inbox(
     receipt_result_ids = {int(item["id"]) for item in response.json()["items"]}
     assert txn_with_receipt in receipt_result_ids
     assert txn_without_receipt not in receipt_result_ids
-    assert response.json()["search"] == {
-        "raw_q": "documntation",
-        "applied_tokens": [],
-        "free_terms": ["documntation"],
-    }
+    assert "search" not in response.json()
 
     response = api_client.get("/api/transactions?period=all&q=tag%3AWork")
     assert response.status_code == 200
@@ -729,11 +725,7 @@ def test_bulk_edit_fuzzy_search_and_uncategorized_inbox(
         txn_without_receipt,
     }
     assert payload["definition"]["matched_category_ids"] == [uncategorized_id]
-    assert payload["search"] == {
-        "raw_q": "",
-        "applied_tokens": [],
-        "free_terms": [],
-    }
+    assert "search" not in payload
 
     bulk_payload = {
         "selection": {

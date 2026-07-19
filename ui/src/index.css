@@ -54,6 +54,8 @@
     --accent: 126 141 255;
     --accent-strong: 153 164 255;
     --accent-soft: 96 112 235;
+    --accent-contrast: 17 21 17;
+    --warning: 237 189 53;
     --semantic-green: 83 205 159;
     --semantic-red: 255 132 109;
     --semantic-blue: 126 141 255;
@@ -89,6 +91,8 @@
     --accent: 59 78 232;
     --accent-strong: 72 91 241;
     --accent-soft: 109 122 239;
+    --accent-contrast: 255 255 255;
+    --warning: 237 189 53;
     --semantic-green: 21 147 109;
     --semantic-red: 242 95 72;
     --semantic-blue: 59 78 232;
@@ -572,7 +576,7 @@
     flex: 0 0 auto;
     place-items: center;
     border-radius: var(--radius-sm);
-    color: white;
+    color: rgb(var(--accent-contrast));
     background: rgb(var(--accent));
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-size: 0.75rem;
@@ -612,7 +616,7 @@
     border: 0;
     border-radius: var(--radius-md);
     padding: 0 0.75rem;
-    color: white;
+    color: rgb(var(--accent-contrast));
     background: rgb(var(--accent));
     box-shadow: var(--shadow-accent);
     font-size: 0.75rem;
@@ -664,7 +668,7 @@
     border: 0;
     border-radius: var(--radius-md);
     padding: 0 1rem;
-    color: white;
+    color: rgb(var(--accent-contrast));
     background: rgb(var(--accent));
     box-shadow: var(--shadow-accent);
     font-size: 0.8125rem;
@@ -1197,7 +1201,7 @@
 
   .btn-secondary[aria-expanded="true"] {
     background: rgb(var(--accent));
-    color: white;
+    color: rgb(var(--accent-contrast));
     box-shadow:
       0 0 0 1px rgb(var(--accent)),
       var(--shadow-soft);

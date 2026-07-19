@@ -4563,11 +4563,6 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
             "tag_id": filters.tag_id,
             "query": filters.query,
         },
-        "search": {
-            "raw_q": filters.query or "",
-            "applied_tokens": [],
-            "free_terms": [filters.query] if filters.query else [],
-        },
         "categories": [
             {
                 "id": category.id,
@@ -4647,11 +4642,6 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
             "category_id": filters.category_id,
             "tag_id": filters.tag_id,
             "query": filters.query,
-        },
-        "search": {
-            "raw_q": filters.query or "",
-            "applied_tokens": [],
-            "free_terms": [filters.query] if filters.query else [],
         },
         "categories": [
             {

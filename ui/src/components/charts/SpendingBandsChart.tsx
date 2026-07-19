@@ -35,7 +35,7 @@ const monthFormatter = new Intl.DateTimeFormat("en-GB", {
 })
 
 function monthLabel(month: string): string {
-  return monthFormatter.format(new Date(`${month}-01T00:00:00Z`))
+  return monthFormatter.format(new Date(`${month}-01T00:00:00`))
 }
 
 function monthEnd(month: string): string {
@@ -53,15 +53,6 @@ function segmentKey(segment: SpendingBandSegment): string {
     : `category:${segment.category_id}`
 }
 
-function segmentColor(segment: SpendingBandSegment): string {
-  const key = segmentKey(segment)
-  let hash = 0
-  for (const character of key) {
-    hash = (hash * 31 + character.codePointAt(0)!) >>> 0
-  }
-  return palette[hash % palette.length]
-}
-
 function SpendingBandsChart({
   months,
   incognito,
@@ -77,6 +68,18 @@ function SpendingBandsChart({
     amountCents: number
   } | null>(null)
   const maxTotal = Math.max(0, ...months.map((month) => month.total_cents))
+  const segmentColors = useMemo(() => {
+    const colors = new Map<string, string>()
+    for (const month of months) {
+      for (const segment of month.segments) {
+        const key = segmentKey(segment)
+        if (!colors.has(key)) {
+          colors.set(key, palette[colors.size % palette.length])
+        }
+      }
+    }
+    return colors
+  }, [months])
   const categories = useMemo(() => {
     const totals = new Map<
       string,
@@ -210,7 +213,7 @@ function SpendingBandsChart({
                               }
                               style={{
                                 width: `${(segment.amount_cents / month.total_cents) * 100}%`,
-                                backgroundColor: segmentColor(segment),
+                                backgroundColor: segmentColors.get(segmentKey(segment)),
                               }}
                             />
                           )
@@ -240,7 +243,7 @@ function SpendingBandsChart({
                   <span
                     aria-hidden="true"
                     className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                    style={{ backgroundColor: segmentColor(segment) }}
+                    style={{ backgroundColor: segmentColors.get(segmentKey(segment)) }}
                   />
                   <span className="max-w-28 truncate">{segment.name}</span>
                 </span>

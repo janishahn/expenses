@@ -154,7 +154,6 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
                 "tag_id": None,
                 "query": None,
             },
-            "search": {"raw_q": "", "applied_tokens": [], "free_terms": []},
             "categories": dashboard["categories"],
             "tags": dashboard["tags"],
         },
