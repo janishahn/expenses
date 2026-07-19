@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Recurring Occurrences Page", () => {
@@ -38,6 +38,8 @@ test.describe("Recurring Occurrences Page", () => {
     ).resolves.toBe("light")
     await expect(page.locator("main h1")).toContainText(ruleName)
     await expect(page.locator("body")).toContainText("Posted transactions")
+    await expect(page.getByTestId("recurring-occurrence-summary")).toBeVisible()
+    await expect(page.getByTestId("recurring-occurrence-ledger")).toBeVisible()
 
     await page.getByRole("link", { name: "← Back to recurring" }).click()
     await expect(page).toHaveURL("/recurring")

@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import expenses.app as app_main
 from expenses.core.config import get_settings
-from expenses.db.session import Base
+from expenses.db.session import Base, _enable_sqlite_pragmas
 
 
 @pytest.fixture()
@@ -26,6 +26,7 @@ def anonymous_api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

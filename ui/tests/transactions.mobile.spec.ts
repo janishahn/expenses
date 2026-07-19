@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import {
   createIngestTransaction,
   createTransaction,
@@ -7,6 +7,8 @@ import {
   stubOsmTiles,
   uploadAttachment,
 } from "./helpers"
+
+test.describe.configure({ mode: "parallel" })
 
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pfdvK0AAAAASUVORK5CYII=",
@@ -24,78 +26,194 @@ test.describe("Transactions Page (mobile)", () => {
 
     await expect(page.getByRole("button", { name: /Filters/ })).toBeVisible()
     await expect(page.getByRole("combobox", { name: "Category", exact: true })).toHaveCount(0)
+    await expect(
+      page.getByTestId("transactions-control-zone").getByRole("group", {
+        name: "Period",
+      }),
+    ).toHaveCount(0)
 
     await page.getByRole("button", { name: /Filters/ }).click()
-    const filterDialog = page.getByRole("dialog", { name: "Transaction filters" })
+    const filterDialog = page.getByRole("dialog", { name: "Filter transactions" })
     await expect(filterDialog).toBeVisible()
+    await expect(filterDialog.getByRole("group", { name: "Period" })).toBeVisible()
     await expect(
       filterDialog.getByRole("combobox", { name: "Category", exact: true })
     ).toBeVisible()
 
-    await filterDialog.getByRole("button", { name: "Expense", exact: true }).click()
-    await filterDialog.getByRole("button", { name: "Apply" }).click()
+    await filterDialog.getByRole("button", { name: "This month" }).click()
+    await filterDialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(page).not.toHaveURL(/period=this_month/)
+
+    await page.getByRole("button", { name: /Filters/ }).click()
+    const reopenedFilterDialog = page.getByRole("dialog", {
+      name: "Filter transactions",
+    })
+    await reopenedFilterDialog.getByRole("button", { name: "This month" }).click()
+    await reopenedFilterDialog
+      .getByRole("button", { name: "Expense", exact: true })
+      .click()
+    await reopenedFilterDialog.getByRole("button", { name: "Apply" }).last().click()
     await expect(page).toHaveURL(/type=expense/)
+    await expect(page).toHaveURL(/period=this_month/)
   })
 
-  test("keeps mobile page actions beside the title and opens the menu onscreen", async ({
+  test("waits for the complete matching count before enabling query bulk edit", async ({
     page,
+    request,
   }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      "Mobile Bulk Count",
+    )
+    const title = `Mobile Bulk Count ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 1200,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+
+    let releaseSummary: (() => void) | undefined
+    const summaryReady = new Promise<void>((resolve) => {
+      releaseSummary = resolve
+    })
+    await page.route("**/api/transactions/summary?*", async (route) => {
+      await summaryReady
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          income_cents: 0,
+          expense_cents: 1_200_000,
+          net_cents: -1_200_000,
+          count: 1000,
+        }),
+      })
+    })
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page
+      .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
+      .check()
+    await page.getByRole("button", { name: "Bulk edit" }).click()
+
+    const dialog = page.getByRole("dialog", { name: "Bulk edit" })
+    await expect(dialog.getByRole("button", { name: "Counting matching…" })).toBeDisabled()
+
+    releaseSummary?.()
+    await expect(
+      dialog.getByRole("button", { name: "All 1000 matching" }),
+    ).toBeEnabled()
+  })
+
+  test("opens fuzzy search in a full-width popover inside the viewport", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Mobile Fuzzy Search")
+    const transactionId = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T14:00:00",
+      type: "expense",
+      amount_cents: 5000,
+      category_id: categoryId,
+      title: `Mobile description result ${Date.now()}`,
+      description: "Warranty paperwork stored here",
+      tags: [],
+    })
     await page.goto("/transactions")
 
+    await page.getByRole("button", { name: "Search transactions" }).click()
+    const searchbox = page.getByRole("searchbox", { name: "Search transactions" })
+    await expect(searchbox).toBeVisible()
+
+    const popoverBox = await page.locator("#transaction-search").boundingBox()
+    expect(popoverBox).not.toBeNull()
+    const viewportWidth = await page.evaluate(() => window.innerWidth)
+    expect(popoverBox!.x).toBeGreaterThanOrEqual(0)
+    expect(popoverBox!.x + popoverBox!.width).toBeLessThanOrEqual(viewportWidth)
+    expect(popoverBox!.width).toBeGreaterThan(viewportWidth * 0.85)
+
+    await searchbox.fill("waranty paperwork")
+    await expect(page).toHaveURL(/q=waranty(?:\+|%20)paperwork/)
+    await expect(page.getByTestId(`transaction-row-${transactionId}`)).toBeVisible()
+    await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
+  })
+
+  test("collapses secondary actions into an overflow menu and keeps selection discoverable", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      "E2E Mobile Selection",
+    )
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 2145,
+      category_id: categoryId,
+      title: `E2E Mobile Selection ${Date.now()}`,
+      tags: [],
+    })
+    await page.goto("/transactions?period=all")
+
     const title = page.getByRole("heading", { name: "Transactions" })
-    const moreActions = page.getByRole("button", { name: "More actions" })
     await expect(title).toBeVisible()
-    await expect(moreActions).toBeVisible()
+    await expect(page.getByTestId("transactions-control-zone")).toBeHidden()
 
-    const layout = await page.evaluate(() => {
-      const title = document.querySelector("main h1")
-      const button = document.querySelector<HTMLButtonElement>(
-        "button[aria-label='More actions']"
-      )
-      if (!title || !button) {
-        return null
-      }
-      const titleRect = title.getBoundingClientRect()
-      const buttonRect = button.getBoundingClientRect()
-      return {
-        buttonCenterY: buttonRect.top + buttonRect.height / 2,
-        buttonLeft: buttonRect.left,
-        buttonRight: buttonRect.right,
-        titleCenterY: titleRect.top + titleRect.height / 2,
-        titleRight: titleRect.right,
-        viewportWidth: window.innerWidth,
-      }
-    })
+    const titleBox = await title.boundingBox()
+    const moreBox = await page
+      .getByRole("button", { name: "More actions" })
+      .boundingBox()
+    expect(titleBox).not.toBeNull()
+    expect(moreBox).not.toBeNull()
+    expect(moreBox!.y).toBeLessThan(titleBox!.y + titleBox!.height)
+    await expect(page.getByRole("link", { name: "Inbox" })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Select", exact: true })).toHaveCount(0)
+    await expect(page.getByTestId("transactions-selection-controls")).toBeVisible()
 
-    expect(layout).not.toBeNull()
-    if (!layout) {
-      return
-    }
-    expect(Math.abs(layout.buttonCenterY - layout.titleCenterY)).toBeLessThan(10)
-    expect(layout.buttonLeft).toBeGreaterThan(layout.titleRight)
-    expect(layout.viewportWidth - layout.buttonRight).toBeLessThan(72)
+    const filtersTrigger = page.getByRole("button", { name: /Filters/ })
+    await expect(filtersTrigger).toBeVisible()
+    const filtersBox = await filtersTrigger.boundingBox()
+    expect(filtersBox).not.toBeNull()
+    expect(filtersBox!.width).toBeLessThanOrEqual(56)
 
-    await moreActions.click()
-    const menu = page.getByTestId("transactions-mobile-actions-menu")
-    await expect(menu).toBeVisible()
-    await expect(menu.getByRole("link", { name: "Inbox" })).toBeVisible()
-    await expect(menu.getByRole("link", { name: "Trash" })).toBeVisible()
-    await expect(menu.getByRole("button", { name: "Select" })).toBeVisible()
+    await page.getByRole("button", { name: "More actions" }).click()
+    const menu = page.getByRole("menu")
+    await expect(menu.getByRole("menuitem", { name: "Inbox" })).toBeVisible()
+    await expect(menu.getByRole("menuitem", { name: "Trash" })).toBeVisible()
+    await expect(menu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(menu).toHaveCount(0)
 
-    const menuBox = await menu.evaluate((node) => {
-      const rect = node.getBoundingClientRect()
-      return {
-        bottom: rect.bottom,
-        left: rect.left,
-        right: rect.right,
-        viewportHeight: window.innerHeight,
-        viewportWidth: window.innerWidth,
-      }
-    })
+    const layout = await page.evaluate(() => ({
+      viewportWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }))
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth)
 
-    expect(menuBox.left).toBeGreaterThanOrEqual(0)
-    expect(menuBox.right).toBeLessThanOrEqual(menuBox.viewportWidth)
-    expect(menuBox.bottom).toBeLessThanOrEqual(menuBox.viewportHeight)
+    const firstRow = page.getByTestId(`transaction-row-${transactionId}`)
+    const checkbox = firstRow.getByRole("checkbox", { name: /Select transaction/ })
+    await expect(checkbox).toBeVisible()
+    await checkbox.check()
+    await expect(page.getByTestId("transactions-selection-controls")).toContainText(
+      "1 selected",
+    )
+    await expect(page.getByRole("button", { name: "Bulk edit" })).toBeVisible()
   })
 
   test("opens and dismisses the transaction location dialog", async ({
@@ -188,7 +306,7 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(page.locator("main")).toContainText("-23,15 €")
     await expect(page.locator("main")).toContainText("18.04.2026 07:20")
 
-    const summaryCard = page.locator("main .surface-card").first()
+    const summaryCard = page.locator('[data-financial-surface="hero"]')
     const bounds = await summaryCard.boundingBox()
     if (!bounds) {
       throw new Error("Expected detail summary card bounds")
@@ -243,30 +361,129 @@ test.describe("Transactions Page (mobile)", () => {
 
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
     await expect(page.getByTestId("app-shell-bottom-nav")).toHaveCount(0)
-    const addFab = page.getByTestId("app-shell-mobile-add-fab")
-    await expect(addFab).toBeVisible()
-
-    const fabBox = await addFab.boundingBox()
-    expect(fabBox).not.toBeNull()
-    if (!fabBox) {
-      return
-    }
-
-    const fabReceivesPointer = await page.evaluate(
-      ({ x, y }) => {
-        const target = document.elementFromPoint(x, y)
-        return target instanceof Element
-          ? target.closest('[data-testid="app-shell-mobile-add-fab"]') !== null
-          : false
-      },
-      { x: fabBox.x + fabBox.width / 2, y: fabBox.y + fabBox.height / 2 }
-    )
-    expect(fabReceivesPointer).toBeTruthy()
+    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
 
     const viewport = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
     }))
     expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  })
+
+  test("edits a transaction from its mobile detail surface", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Mobile edit")
+    const title = `Mobile edit ${Date.now()}`
+    const updatedTitle = `${title} updated`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 2450,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+
+    await page.goto(`/transactions/${transactionId}`)
+    await page.getByRole("link", { name: "Edit transaction" }).click()
+    await expect(page).toHaveURL(`/transactions/${transactionId}/edit`)
+    await page.getByLabel("Title").fill(updatedTitle)
+    await page.getByRole("button", { name: "Save changes" }).click()
+
+    await expect(page).toHaveURL(`/transactions/${transactionId}`)
+    await expect(page.getByRole("heading", { name: updatedTitle })).toBeVisible()
+  })
+
+  test("recategorizes a transaction from the mobile Inbox", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoriesResponse = await request.get("/api/categories?period=all")
+    const categories = (await categoriesResponse.json()) as {
+      categories: Array<{
+        id: number
+        name: string
+        type: string
+        archived_at: string | null
+      }>
+    }
+    let uncategorizedId = categories.categories.find(
+      (category) =>
+        category.type === "expense" &&
+        category.archived_at === null &&
+        category.name.toLowerCase() === "uncategorized"
+    )?.id
+    if (!uncategorizedId) {
+      const created = await request.post("/api/categories", {
+        headers: { "X-CSRF-Token": token },
+        data: { name: "Uncategorized", type: "expense", order: 0 },
+      })
+      expect(created.ok()).toBeTruthy()
+      uncategorizedId = ((await created.json()) as { id: number }).id
+    }
+    const targetCategory = await request.post("/api/categories", {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        name: `Mobile inbox target ${Date.now()}`,
+        type: "expense",
+        order: 0,
+      },
+    })
+    expect(targetCategory.ok()).toBeTruthy()
+    const targetId = ((await targetCategory.json()) as { id: number }).id
+    const title = `Mobile inbox ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 3100,
+      category_id: uncategorizedId,
+      title,
+      tags: [],
+    })
+
+    await page.goto("/transactions")
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Inbox" }).click()
+    await expect(page).toHaveURL(/\/transactions\/inbox$/)
+    await page.getByRole("button", { name: "All time", exact: true }).click()
+    await page.getByRole("textbox", { name: "Search", exact: true }).fill(title)
+    const row = page.getByTestId(`uncategorized-row-${transactionId}`)
+    await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
+    await page.getByLabel("Move selected to category").selectOption(String(targetId))
+    page.once("dialog", (dialog) => dialog.accept())
+    await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await expect(row).toBeHidden()
+  })
+
+  test("restores a transaction from mobile Trash", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Mobile trash")
+    const title = `Mobile trash ${Date.now()}`
+    const transactionId = await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 1999,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    const deleted = await request.delete(`/api/transactions/${transactionId}`, {
+      headers: { "X-CSRF-Token": token },
+    })
+    expect(deleted.ok()).toBeTruthy()
+
+    await page.goto("/transactions")
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Trash" }).click()
+    await expect(page).toHaveURL(/\/transactions\/deleted$/)
+    const row = page.getByTestId(`deleted-transaction-${transactionId}`)
+    await expect(row).toBeVisible()
+    await row.getByRole("button", { name: "Restore" }).click()
+    await expect(row).toBeHidden()
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await expect(
+      page.locator('[data-testid^="transaction-row-"]').filter({ hasText: title })
+    ).toBeVisible()
   })
 })

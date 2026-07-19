@@ -23,6 +23,7 @@ def _create_transaction(
     occurred_at: datetime,
     category_id: int,
     title: str,
+    amount_cents: int = 1_000,
 ) -> int:
     response = client.post(
         "/api/transactions",
@@ -31,7 +32,7 @@ def _create_transaction(
             "date": txn_date.isoformat(),
             "occurred_at": occurred_at.isoformat(),
             "type": "expense",
-            "amount_cents": 1_000,
+            "amount_cents": amount_cents,
             "category_id": category_id,
             "title": title,
             "tags": [],
@@ -71,3 +72,63 @@ def test_dashboard_recent_transactions_returns_latest_ten(
     assert [item["title"] for item in payload["recent"]] == [
         f"Recent {index:02d}" for index in range(10)
     ]
+
+
+def test_monthly_category_breakdown_returns_six_month_spending_bands(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    groceries_id = _create_category(
+        api_client, csrf_headers, "Band Groceries", "expense"
+    )
+    transport_id = _create_category(
+        api_client, csrf_headers, "Band Transport", "expense"
+    )
+    today = date.today()
+    previous_month = today.replace(day=1) - timedelta(days=1)
+
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        occurred_at=datetime.combine(today, datetime.min.time()).replace(hour=10),
+        category_id=groceries_id,
+        title="Current groceries",
+        amount_cents=12_500,
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        occurred_at=datetime.combine(today, datetime.min.time()).replace(hour=11),
+        category_id=transport_id,
+        title="Current transport",
+        amount_cents=4_000,
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=previous_month,
+        occurred_at=datetime.combine(previous_month, datetime.min.time()).replace(
+            hour=12
+        ),
+        category_id=groceries_id,
+        title="Previous groceries",
+        amount_cents=8_000,
+    )
+
+    response = api_client.get("/api/category-breakdown?view=monthly&period=this_month")
+    assert response.status_code == 200
+    bands = response.json()["months"]
+
+    assert len(bands) == 6
+    assert all(isinstance(month["balance_cents"], int) for month in bands)
+    assert bands[-1]["month"] == f"{today.year:04d}-{today.month:02d}"
+    assert bands[-1]["total_cents"] == 16_500
+    assert [segment["name"] for segment in bands[-1]["segments"]] == [
+        "Band Groceries",
+        "Band Transport",
+    ]
+    assert bands[-2]["month"] == (
+        f"{previous_month.year:04d}-{previous_month.month:02d}"
+    )
+    assert bands[-2]["total_cents"] == 8_000

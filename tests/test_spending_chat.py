@@ -26,7 +26,7 @@ from expenses.db.models import (
     LLMJob,
     TransactionType,
 )
-from expenses.db.session import Base
+from expenses.db.session import Base, _enable_sqlite_pragmas
 from expenses.schemas import BudgetTemplateIn, CategoryIn, TransactionIn
 from expenses.services import (
     BudgetService,
@@ -43,6 +43,7 @@ def anyio_backend() -> str:
 
 def make_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
     return Session(engine)
 
@@ -199,6 +200,16 @@ def test_spending_analysis_uses_net_amounts_across_tools() -> None:
         ]
         assert results["transactions"][1]["id"] == ids["concert_id"]
         assert results["transactions"][1]["net_amount_cents"] == 18_000
+
+        fuzzy_results = service.search_transactions(
+            query="grocerry run",
+            start=date(2026, 6, 1),
+            end=date(2026, 6, 30),
+        )
+        assert fuzzy_results["ok"] is True
+        assert [row["title"] for row in fuzzy_results["transactions"]] == [
+            "Big grocery run"
+        ]
 
         detail = service.get_transaction_detail(transaction_id=ids["reimbursement_id"])
         assert detail["transaction"]["net_amount_cents"] == 12_000

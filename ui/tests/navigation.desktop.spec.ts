@@ -1,4 +1,6 @@
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect, type Page } from "./fixtures"
+
+test.describe.configure({ mode: "parallel" })
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
 
@@ -11,12 +13,14 @@ async function readThemePreference(page: Page): Promise<string | null> {
 
 test.describe("Navigation", () => {
   const clickSidebarLink = async (page: Page, name: string) => {
-    const sidebar = page.locator("aside")
+    const sidebar = page.getByRole("complementary", {
+      name: "Application navigation",
+    })
     await expect(sidebar).toBeVisible()
     await sidebar.getByRole("link", { name }).click()
   }
 
-  test("uses only in-content page titles on desktop without a shell header strip", async ({
+  test("uses in-content page titles beneath the compact desktop utility bar", async ({
     page,
   }) => {
     const routes = [
@@ -30,13 +34,72 @@ test.describe("Navigation", () => {
       await page.goto(route.path)
       await expect(page.locator("main h1")).toContainText(route.heading)
       await expect(page.getByTestId("app-shell-header")).toBeHidden()
+      await expect(page.getByTestId("app-shell-utility")).toBeVisible()
     }
+  })
+
+  test("uses one animated selector pattern without repeating period context in the shell", async ({
+    page,
+  }) => {
+    const selectors = [
+      { path: "/", label: "Period" },
+      { path: "/budgets", label: "Budget view" },
+      { path: "/forecast", label: "Forecast horizon" },
+      { path: "/scenarios", label: "Scenario model" },
+      { path: "/insights", label: "Insights view" },
+      { path: "/recurring", label: "Recurring view" },
+      { path: "/settings", label: "Theme mode" },
+    ]
+
+    for (const selector of selectors) {
+      await page.goto(selector.path)
+      const group = page.getByRole("group", { name: selector.label })
+      await expect(group).toBeVisible()
+      await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
+    }
+
+    await expect(page.getByLabel(/^Period:/)).toHaveCount(0)
   })
 
   test("should load dashboard as home page", async ({ page }) => {
     await page.goto("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
     await expect(page).toHaveTitle("Expenses")
+  })
+
+  test("keeps every available desktop destination visible without an overflow menu", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.goto("/")
+
+    const sidebar = page.getByRole("complementary", {
+      name: "Application navigation",
+    })
+    await expect(sidebar).toBeVisible()
+    for (const label of [
+      "Dashboard",
+      "Transactions",
+      "Budgets",
+      "Forecast",
+      "Insights",
+      "Digest",
+      "Assistant",
+      "Recurring",
+      "Templates",
+      "Rules",
+      "Categories",
+      "Tags",
+      "What If",
+      "Reconcile",
+      "Reports",
+      "Settings",
+      "Admin",
+    ]) {
+      await expect(sidebar.getByRole("link", { name: label })).toBeVisible()
+    }
+    await expect(sidebar.getByRole("button", { name: /More/i })).toHaveCount(0)
+    await expect(sidebar.getByRole("link", { name: /More/i })).toHaveCount(0)
   })
 
   test("exposes a desktop quick theme toggle and persists shell-initiated changes", async ({
@@ -50,7 +113,9 @@ test.describe("Navigation", () => {
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
-    const shellThemeQuickToggle = page.getByTestId("shell-theme-quick-toggle")
+    const shellThemeQuickToggle = page
+      .getByTestId("app-shell-utility")
+      .getByTestId("shell-theme-quick-toggle")
     await expect(shellThemeQuickToggle).toBeVisible()
     await expect(shellThemeQuickToggle).toHaveAttribute("data-theme-icon", "light")
     await expect
@@ -127,6 +192,17 @@ test.describe("Navigation", () => {
 
     await clickSidebarLink(page, "Dashboard")
     await expect(page).toHaveURL(/\/\?period=this_month/)
+  })
+
+  test("keeps ledger search local to Transactions", async ({ page }) => {
+    await page.goto("/?period=last_month")
+    await expect(page.getByRole("searchbox")).toHaveCount(0)
+
+    await clickSidebarLink(page, "Transactions")
+    await page.getByRole("button", { name: "Search transactions" }).click()
+    const search = page.getByRole("searchbox", { name: "Search transactions" })
+    await search.fill("coffee beans")
+    await expect(page).toHaveURL(/\/transactions\?period=last_month.*q=coffee/)
   })
 
   test("should navigate to transactions page", async ({ page }) => {
@@ -227,25 +303,34 @@ test.describe("Navigation", () => {
     await expect(page.locator("main h1")).toContainText("Re-enter your password")
   })
 
-  test("keeps a desktop add-transaction entry point on primary pages", async ({
+  test("uses page-specific desktop utility actions", async ({
     page,
   }) => {
-    const routes = ["/", "/transactions", "/insights", "/budgets"]
-
-    for (const route of routes) {
+    for (const route of ["/", "/transactions"]) {
       await page.goto(route)
-      await page.getByRole("button", { name: "Add", exact: true }).click()
+      await page.getByRole("button", { name: "Add transaction" }).click()
       await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
       await page.keyboard.press("Escape")
-      await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeHidden()
     }
+
+    await page.goto("/insights")
+    await expect(page.getByRole("button", { name: "Add transaction" })).toHaveCount(0)
+
+    await page.goto("/budgets")
+    await page.getByRole("button", { name: "Add budget" }).click()
+    await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
+    await page.keyboard.press("Escape")
+
+    await page.goto("/recurring")
+    await page.getByRole("button", { name: "Add rule" }).click()
+    await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
   })
 
   test("restores desktop shell interactivity after closing the global add sheet", async ({
     page,
   }) => {
     await page.goto("/transactions")
-    const addButton = page.getByRole("button", { name: "Add", exact: true })
+    const addButton = page.getByRole("button", { name: "Add transaction" })
     await addButton.click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()

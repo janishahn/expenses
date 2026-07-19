@@ -1,6 +1,133 @@
 {
   "components": {
     "schemas": {
+      "AIUsageSummaryOut": {
+        "properties": {
+          "average_cost_decimal": {
+            "title": "Average Cost Decimal",
+            "type": "string"
+          },
+          "average_total_tokens": {
+            "title": "Average Total Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "cached_input_tokens": {
+            "title": "Cached Input Tokens",
+            "type": "integer"
+          },
+          "cancelled_chats": {
+            "title": "Cancelled Chats",
+            "type": "integer"
+          },
+          "completed_chats": {
+            "title": "Completed Chats",
+            "type": "integer"
+          },
+          "cost_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Unit"
+          },
+          "costed_chats": {
+            "title": "Costed Chats",
+            "type": "integer"
+          },
+          "failed_chats": {
+            "title": "Failed Chats",
+            "type": "integer"
+          },
+          "feature": {
+            "title": "Feature",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "period": {
+            "enum": [
+              "week",
+              "month",
+              "all"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "reasoning_tokens": {
+            "title": "Reasoning Tokens",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "total_chats": {
+            "title": "Total Chats",
+            "type": "integer"
+          },
+          "total_cost_decimal": {
+            "title": "Total Cost Decimal",
+            "type": "string"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "feature",
+          "period",
+          "total_chats",
+          "completed_chats",
+          "failed_chats",
+          "cancelled_chats",
+          "costed_chats",
+          "input_tokens",
+          "output_tokens",
+          "total_tokens",
+          "cached_input_tokens",
+          "cache_write_tokens",
+          "reasoning_tokens",
+          "total_cost_decimal",
+          "average_cost_decimal",
+          "average_total_tokens"
+        ],
+        "title": "AIUsageSummaryOut",
+        "type": "object"
+      },
       "AdminElevationIn": {
         "properties": {
           "password": {
@@ -2318,6 +2445,28 @@
         "title": "DashboardCategoryBudgetPulseOut",
         "type": "object"
       },
+      "DashboardCategoryBudgetSummaryOut": {
+        "properties": {
+          "needs_attention": {
+            "title": "Needs Attention",
+            "type": "integer"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/DashboardCategoryBudgetPulseOut"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "needs_attention",
+          "priority"
+        ],
+        "title": "DashboardCategoryBudgetSummaryOut",
+        "type": "object"
+      },
       "DashboardDeltasOut": {
         "properties": {
           "balance": {
@@ -2561,6 +2710,16 @@
               }
             ],
             "title": "Category Budget Pulse"
+          },
+          "category_budget_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardCategoryBudgetSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "deltas": {
             "anyOf": [
@@ -3155,14 +3314,55 @@
             },
             "title": "Variable Estimates",
             "type": "array"
+          },
+          "variable_income_estimates": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastVariableEstimateOut"
+            },
+            "title": "Variable Income Estimates",
+            "type": "array"
           }
         },
         "required": [
           "recurring_rules",
           "variable_estimates",
+          "variable_income_estimates",
           "one_time_events"
         ],
         "title": "ForecastBreakdownOut",
+        "type": "object"
+      },
+      "ForecastModelOut": {
+        "properties": {
+          "history_months": {
+            "title": "History Months",
+            "type": "integer"
+          },
+          "method": {
+            "enum": [
+              "recurring_only",
+              "recent_median",
+              "seasonal_median"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "prediction_interval_available": {
+            "title": "Prediction Interval Available",
+            "type": "boolean"
+          },
+          "seasonality_applied": {
+            "title": "Seasonality Applied",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "method",
+          "history_months",
+          "seasonality_applied",
+          "prediction_interval_available"
+        ],
+        "title": "ForecastModelOut",
         "type": "object"
       },
       "ForecastMonthOut": {
@@ -3176,6 +3376,32 @@
           },
           "end_balance_cents": {
             "title": "End Balance Cents",
+            "type": "integer"
+          },
+          "end_balance_p10_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Balance P10 Cents"
+          },
+          "end_balance_p90_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Balance P90 Cents"
+          },
+          "minimum_balance_cents": {
+            "title": "Minimum Balance Cents",
             "type": "integer"
           },
           "month": {
@@ -3202,6 +3428,7 @@
           "projected_expenses_cents",
           "projected_net_cents",
           "end_balance_cents",
+          "minimum_balance_cents",
           "crosses_negative",
           "breakdown"
         ],
@@ -3237,6 +3464,10 @@
       },
       "ForecastProjectionOut": {
         "properties": {
+          "current_month_net_cents": {
+            "title": "Current Month Net Cents",
+            "type": "integer"
+          },
           "mode": {
             "enum": [
               "recurring",
@@ -3244,6 +3475,9 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ForecastModelOut"
           },
           "months": {
             "items": {
@@ -3263,7 +3497,9 @@
         "required": [
           "mode",
           "start_balance_cents",
+          "current_month_net_cents",
           "months",
+          "model",
           "summary"
         ],
         "title": "ForecastProjectionOut",
@@ -3337,6 +3573,10 @@
       },
       "ForecastResponseOut": {
         "properties": {
+          "current_month_net_cents": {
+            "title": "Current Month Net Cents",
+            "type": "integer"
+          },
           "horizon": {
             "enum": [
               3,
@@ -3353,6 +3593,9 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ForecastModelOut"
           },
           "months": {
             "items": {
@@ -3372,7 +3615,9 @@
         "required": [
           "mode",
           "start_balance_cents",
+          "current_month_net_cents",
           "months",
+          "model",
           "summary",
           "horizon"
         ],
@@ -3522,6 +3767,10 @@
           "baseline": {
             "$ref": "#/components/schemas/ForecastProjectionOut"
           },
+          "current_month_net_cents": {
+            "title": "Current Month Net Cents",
+            "type": "integer"
+          },
           "horizon": {
             "enum": [
               3,
@@ -3542,6 +3791,9 @@
             "title": "Mode",
             "type": "string"
           },
+          "model": {
+            "$ref": "#/components/schemas/ForecastModelOut"
+          },
           "months": {
             "items": {
               "$ref": "#/components/schemas/ForecastMonthOut"
@@ -3560,7 +3812,9 @@
         "required": [
           "mode",
           "start_balance_cents",
+          "current_month_net_cents",
           "months",
+          "model",
           "summary",
           "horizon",
           "baseline",
@@ -3589,6 +3843,39 @@
           "projected_balance_cents": {
             "title": "Projected Balance Cents",
             "type": "integer"
+          },
+          "projected_balance_p10_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Balance P10 Cents"
+          },
+          "projected_balance_p90_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Balance P90 Cents"
+          },
+          "risk_months_until_negative": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Months Until Negative"
           }
         },
         "required": [
@@ -4888,6 +5175,10 @@
             "title": "App",
             "type": "string"
           },
+          "llm_enabled": {
+            "title": "Llm Enabled",
+            "type": "boolean"
+          },
           "receipt_max_bytes": {
             "title": "Receipt Max Bytes",
             "type": "integer"
@@ -4920,7 +5211,8 @@
           "setup_token_required",
           "signup_allowed",
           "timezone",
-          "receipt_max_bytes"
+          "receipt_max_bytes",
+          "llm_enabled"
         ],
         "title": "MobileStatusOut",
         "type": "object"
@@ -6555,86 +6847,6 @@
         "title": "ScenarioRemoveRuleIn",
         "type": "object"
       },
-      "SearchTranslateIn": {
-        "properties": {
-          "query": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Query",
-            "type": "string"
-          },
-          "reference_date": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reference Date"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "title": "SearchTranslateIn",
-        "type": "object"
-      },
-      "SearchTranslationResult": {
-        "properties": {
-          "applied_tokens": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Applied Tokens",
-            "type": "array"
-          },
-          "clarification_needed": {
-            "default": false,
-            "title": "Clarification Needed",
-            "type": "boolean"
-          },
-          "clarification_question": {
-            "anyOf": [
-              {
-                "maxLength": 240,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Clarification Question"
-          },
-          "confidence": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
-          },
-          "free_terms": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Free Terms",
-            "type": "array"
-          },
-          "query": {
-            "default": "",
-            "maxLength": 500,
-            "title": "Query",
-            "type": "string"
-          }
-        },
-        "required": [
-          "confidence"
-        ],
-        "title": "SearchTranslationResult",
-        "type": "object"
-      },
       "SettingsResponseOut": {
         "properties": {
           "balance_anchors": {
@@ -6664,6 +6876,59 @@
           "balance_anchors"
         ],
         "title": "SettingsResponseOut",
+        "type": "object"
+      },
+      "SpendingChatMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "SpendingChatMessage",
+        "type": "object"
+      },
+      "SpendingChatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "message_history": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Message History",
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingChatMessage"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "SpendingChatRequest",
         "type": "object"
       },
       "StatusOut": {
@@ -8452,14 +8717,14 @@
         "summary": "Api Ai Reject Rule Suggestion"
       }
     },
-    "/api/ai/search/translate": {
+    "/api/ai/spending-chat/stream": {
       "post": {
-        "operationId": "api_ai_translate_search_api_ai_search_translate_post",
+        "operationId": "api_ai_spending_chat_stream_api_ai_spending_chat_stream_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SearchTranslateIn"
+                "$ref": "#/components/schemas/SpendingChatRequest"
               }
             }
           },
@@ -8467,13 +8732,6 @@
         },
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchTranslationResult"
-                }
-              }
-            },
             "description": "Successful Response"
           },
           "422": {
@@ -8487,7 +8745,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Api Ai Translate Search"
+        "summary": "Api Ai Spending Chat Stream"
       }
     },
     "/api/ai/transaction-suggestions": {
@@ -8635,6 +8893,61 @@
           }
         },
         "summary": "Api Ai Triage Transaction"
+      }
+    },
+    "/api/ai/usage/summary": {
+      "get": {
+        "operationId": "api_ai_usage_summary_api_ai_usage_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "feature",
+            "required": false,
+            "schema": {
+              "default": "spending_chat",
+              "title": "Feature",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "week",
+              "enum": [
+                "week",
+                "month",
+                "all"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIUsageSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Ai Usage Summary"
       }
     },
     "/api/attachments/{attachment_id}": {
@@ -9523,6 +9836,17 @@
           }
         },
         "summary": "Api Export User Csv"
+      }
+    },
+    "/api/export/portable.zip": {
+      "get": {
+        "operationId": "api_export_user_portable_zip_api_export_portable_zip_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Export User Portable Zip"
       }
     },
     "/api/forecast": {

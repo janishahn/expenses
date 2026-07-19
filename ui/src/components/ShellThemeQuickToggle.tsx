@@ -17,12 +17,9 @@ function ShellThemeQuickToggle({
   const { effectiveTheme, setPreference } = useThemePreference()
   const isDark = effectiveTheme === "dark"
   const nextPreference = isDark ? "light" : "dark"
-  const sizeClass = size === "mobile" ? "h-10 w-10" : "h-8 w-8"
+  const sizeClass = "h-11 w-11"
   const iconClass = size === "mobile" ? "h-[18px] w-[18px]" : "h-4 w-4"
-  const chromeClass =
-    size === "mobile"
-      ? "rounded-full bg-surface-hi/80 shadow-[0_16px_30px_-24px_rgba(0,0,0,0.82)]"
-      : "rounded-[1rem] bg-surface/92 shadow-[var(--shadow-soft)] backdrop-blur-xl"
+  const chromeClass = "rounded-md bg-surface shadow-[var(--shadow-soft)]"
 
   return (
     <Button
@@ -33,7 +30,7 @@ function ShellThemeQuickToggle({
       data-theme-icon={isDark ? "dark" : "light"}
       aria-label={`Switch to ${nextPreference} theme`}
       onClick={() => setPreference(nextPreference)}
-      className={`inline-flex ${sizeClass} ${chromeClass} items-center justify-center border border-border/80 text-muted transition hover:border-border-hi hover:text-text ${className}`.trim()}
+      className={`inline-flex ${sizeClass} ${chromeClass} items-center justify-center text-muted transition hover:bg-surface-hi hover:text-text ${className}`.trim()}
     >
       {isDark ? (
         <MoonIcon weight="fill" className={iconClass} aria-hidden="true" />

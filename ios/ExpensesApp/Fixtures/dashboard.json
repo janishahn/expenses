@@ -23,6 +23,18 @@
       "velocity_ratio": 0.91
     }
   ],
+  "category_budget_summary": {
+    "needs_attention": 0,
+    "priority": {
+      "amount_cents": 45000,
+      "remaining_cents": 10800,
+      "scope_category_id": 10,
+      "scope_label": "Groceries",
+      "spent_cents": 34200,
+      "velocity_ratio": 0.91
+    },
+    "total": 1
+  },
   "deltas": {
     "balance": 12400,
     "expenses": -12400,

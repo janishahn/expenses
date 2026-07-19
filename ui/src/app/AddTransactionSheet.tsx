@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { CategoryIcon } from "../components/CategoryIcon"
 import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
+import SegmentedControl from "../components/SegmentedControl"
 import { AppButton } from "../components/ui/product-button"
 import {
   AppCheckbox,
@@ -13,7 +14,6 @@ import {
   AppNativeSelect,
   AppTextarea,
 } from "../components/ui/product-fields"
-import { AppPillGroup, AppPillItem } from "../components/ui/product-pill-group"
 import {
   Dialog,
   DialogClose,
@@ -84,6 +84,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       queryClient.invalidateQueries({ queryKey: ["insights"] })
       queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       setOccurredAt(() => {
         const now = new Date()
         now.setSeconds(0, 0)
@@ -208,7 +209,10 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                         tone="inline"
                         className="shrink-0 border-border bg-surface-hi/80 text-text hover:border-border-hi hover:bg-faint/80"
                       >
-                        <CategoryIcon icon={template.category?.icon ?? null} />
+                        <CategoryIcon
+                          icon={template.category?.icon ?? null}
+                          label={template.category?.name ?? template.name}
+                        />
                         <span>{template.name}</span>
                       </AppButton>
                     ))}
@@ -229,29 +233,20 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <AppFieldLabel>
                   <span>Type</span>
-                  <AppPillGroup
-                    type="single"
+                  <SegmentedControl
                     value={type}
+                    ariaLabel="Transaction type"
+                    className="w-full"
+                    equalWidth
+                    items={[
+                      { value: "expense", label: "Expense" },
+                      { value: "income", label: "Income" },
+                    ]}
                     onValueChange={(value) => {
-                      if (!value) return
                       setType(value)
                       setCategoryId("")
                     }}
-                    className="w-full"
-                  >
-                    <AppPillItem
-                      value="expense"
-                      className="flex-1 data-[state=on]:border-semantic-red/45 data-[state=on]:bg-semantic-red/20 data-[state=on]:text-text data-[state=on]:shadow-[0_14px_24px_-20px_rgb(var(--semantic-red)_/_0.62)]"
-                    >
-                      Expense
-                    </AppPillItem>
-                    <AppPillItem
-                      value="income"
-                      className="flex-1 data-[state=on]:border-semantic-green/45 data-[state=on]:bg-semantic-green/20 data-[state=on]:text-text data-[state=on]:shadow-[0_14px_24px_-20px_rgb(var(--semantic-green)_/_0.62)]"
-                    >
-                      Income
-                    </AppPillItem>
-                  </AppPillGroup>
+                  />
                 </AppFieldLabel>
                 <TransactionDateTimeField
                   value={occurredAt}
@@ -279,6 +274,10 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                       icon={
                         filteredCategories.find((c) => String(c.id) === resolvedCategoryId)
                           ?.icon ?? null
+                      }
+                      label={
+                        filteredCategories.find((c) => String(c.id) === resolvedCategoryId)
+                          ?.name ?? "Uncategorized"
                       }
                     />
                     <AppNativeSelect

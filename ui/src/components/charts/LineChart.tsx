@@ -12,12 +12,16 @@ type LineSeries = {
   fill?: boolean | number
   fillColor?: string
   dashed?: boolean
+  lineWidth?: number
+  pointRadius?: number
 }
 
 type LineChartProps = {
+  ariaLabel: string
   labels: string[]
   series: LineSeries[]
   height?: number
+  tooltipComparisonLabel?: string
 }
 
 function withAlpha(color: string, alpha: number): string {
@@ -46,7 +50,13 @@ function withAlpha(color: string, alpha: number): string {
   return normalized
 }
 
-function LineChart({ labels, series, height = 240 }: LineChartProps) {
+function LineChart({
+  ariaLabel,
+  labels,
+  series,
+  height = 240,
+  tooltipComparisonLabel,
+}: LineChartProps) {
   const { effectiveTheme } = useThemePreference()
   const data = useMemo(
     () => ({
@@ -66,8 +76,13 @@ function LineChart({ labels, series, height = 240 }: LineChartProps) {
             fillTarget !== false
               ? item.fillColor || withAlpha(item.color, 0.2)
               : item.color,
-          pointRadius: 0,
-          borderWidth: 2,
+          pointRadius: item.pointRadius ?? (labels.length === 1 ? 4 : 0),
+          pointBackgroundColor: item.color,
+          pointBorderColor: item.color,
+          pointHitRadius: 16,
+          pointHoverRadius: 5,
+          pointHoverBorderWidth: 2,
+          borderWidth: item.lineWidth ?? 2,
           tension: 0.35,
           fill: fillTarget,
           borderDash: item.dashed ? [6, 4] : undefined,
@@ -80,17 +95,45 @@ function LineChart({ labels, series, height = 240 }: LineChartProps) {
   const options = useMemo(() => {
     const muted = readThemeColor("--muted", "142 160 170")
     const border = readThemeColor("--border", "44 60 70")
+    const surface = readThemeColor("--surface-hi", "255 255 255")
+    const text = readThemeColor("--text", "24 29 26")
     return {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { intersect: false, mode: "index" as const },
       plugins: {
         legend: { display: false },
         tooltip: {
+          position: "nearest" as const,
+          backgroundColor: surface,
+          titleColor: text,
+          bodyColor: text,
+          footerColor: muted,
+          borderColor: border,
+          borderWidth: 1,
+          cornerRadius: 10,
+          padding: 12,
+          caretPadding: 10,
+          displayColors: true,
+          usePointStyle: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          titleFont: { family: "IBM Plex Mono", size: 11, weight: 600 as const },
+          bodyFont: { family: "IBM Plex Mono", size: 11, weight: 500 as const },
+          footerFont: { family: "IBM Plex Mono", size: 10, weight: 500 as const },
           callbacks: {
+            title: (items: TooltipItem<"line">[]) => items[0]?.label ?? "",
             label: (context: TooltipItem<"line">) => {
               const label = context.dataset.label ?? ""
               const value = context.parsed.y ?? 0
               return `${label}: ${formatCurrency(value)} €`
+            },
+            footer: (items: TooltipItem<"line">[]) => {
+              if (!tooltipComparisonLabel || items.length < 2) return ""
+              const first = items[0].parsed.y ?? 0
+              const second = items[1].parsed.y ?? 0
+              const difference = second - first
+              return `${tooltipComparisonLabel}: ${difference >= 0 ? "+" : ""}${formatCurrency(difference)} €`
             },
           },
         },
@@ -110,12 +153,19 @@ function LineChart({ labels, series, height = 240 }: LineChartProps) {
         },
       },
     }
+    // Re-read CSS theme tokens when the resolved theme changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveTheme])
+  }, [effectiveTheme, tooltipComparisonLabel])
 
   return (
     <div style={{ height }}>
-      <Line key={`line-${effectiveTheme}`} data={data} options={options} />
+      <Line
+        key={`line-${effectiveTheme}`}
+        data={data}
+        options={options}
+        role="img"
+        aria-label={ariaLabel}
+      />
     </div>
   )
 }

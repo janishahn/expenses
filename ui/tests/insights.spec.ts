@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test"
+import { test, expect, type APIRequestContext } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
@@ -39,6 +39,11 @@ test.describe("Insights Page", () => {
 
   test("should display insights heading", async ({ page }) => {
     await expect(page.locator("main h1")).toContainText("Insights")
+  })
+
+  test("labels the analysis range from the selected period", async ({ page }) => {
+    await page.goto("/insights?period=this_month")
+    await expect(page.getByText("1 month view", { exact: true })).toBeVisible()
   })
 
   test("should show analytics content", async ({ page }) => {
@@ -108,7 +113,7 @@ test.describe("Insights Page", () => {
     await expect(page.getByText("Cash flow")).toBeVisible()
     await expect(page.getByText(/Date:/).first()).toBeVisible()
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
     const expenseNodeButton = expenseNodesPanel.locator("button").first()
@@ -170,7 +175,7 @@ test.describe("Insights Page", () => {
       .toBe("light")
 
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
     const expenseNodeButton = expenseNodesPanel.getByRole("button", {
@@ -258,7 +263,7 @@ test.describe("Insights Page", () => {
 
     await page.goto("/insights?view=flow&period=this_month")
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
 

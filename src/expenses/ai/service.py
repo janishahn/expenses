@@ -25,20 +25,13 @@ from expenses.ai.schemas import (
     RuleProposalOut,
     RuleSuggestionOut,
     RuleSuggestionResult,
-    SearchTranslationOutput,
-    SearchTranslationResult,
     TransactionSuggestionOut,
     TransactionTriageOutput,
-)
-from expenses.ai.search_validation import (
-    SearchTranslationValidationError,
-    validate_search_translation_output,
 )
 from expenses.ai.usage import apply_usage_metadata
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
-from expenses.core.search import parse_advanced_search
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -60,10 +53,8 @@ from expenses.schemas import RuleIn, TransactionIn
 
 logger = get_logger("expenses.ai")
 
-SEARCH_TRANSLATE_PROMPT = "search_translate_v2"
 TRANSACTION_TRIAGE_PROMPT = "transaction_triage_v2"
 RULE_MINING_PROMPT = "rule_mining_v2"
-SEARCH_TRANSLATION_FALLBACK_QUESTION = "I could not translate that into search syntax."
 
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
@@ -82,11 +73,6 @@ LLM_DEFAULT_FEATURE_SETTINGS = LLMFeatureSettings(
     reasoning_effort="low",
 )
 LLM_FEATURE_SETTINGS = {
-    "search_translate": LLMFeatureSettings(
-        temperature=0.0,
-        max_tokens=512,
-        reasoning_effort="none",
-    ),
     "transaction_triage": LLMFeatureSettings(
         temperature=0.7,
         max_tokens=2_048,
@@ -110,75 +96,6 @@ class LLMAssistantService:
         self.session = session
         self.user_id = user_id
         self.runner = runner
-
-    async def translate_search_query(
-        self, query: str, *, reference_date: date | None = None
-    ) -> SearchTranslationResult:
-        payload = {
-            "query": query.strip(),
-            "reference_date": (reference_date or date.today()).isoformat(),
-            "allowed_syntax": [
-                "type:expense",
-                "type:income",
-                "category:<name>",
-                "tag:<name>",
-                "amount>=20",
-                "amount<=20",
-                "date>=YYYY-MM-DD",
-                "date<=YYYY-MM-DD",
-                "is:reimbursement",
-                "has:receipt",
-            ],
-            "categories": self._category_payload(),
-            "tags": self._tag_payload(),
-        }
-        try:
-            output, _job_id = await self._run_llm(
-                feature="search_translate",
-                prompt_version=SEARCH_TRANSLATE_PROMPT,
-                payload=payload,
-                output_type=SearchTranslationOutput,
-            )
-        except LLMOutputError:
-            parsed = parse_advanced_search("")
-            return SearchTranslationResult(
-                query="",
-                confidence=0,
-                clarification_needed=True,
-                clarification_question=SEARCH_TRANSLATION_FALLBACK_QUESTION,
-                applied_tokens=parsed.applied_tokens,
-                free_terms=parsed.free_terms,
-            )
-        try:
-            validate_search_translation_output(output, payload)
-            parsed = parse_advanced_search(output.query)
-        except (SearchTranslationValidationError, ValueError):
-            output.clarification_needed = True
-            output.clarification_question = SEARCH_TRANSLATION_FALLBACK_QUESTION
-            output.query = ""
-            parsed = parse_advanced_search("")
-        if parsed.free_terms and all(
-            term.casefold() in {"date", "amount", "category", "tag", "type"}
-            for term in parsed.free_terms
-        ):
-            output.query = " ".join(
-                token
-                for token in output.query.split()
-                if token.casefold() not in {"date", "amount", "category", "tag", "type"}
-            )
-            parsed = parse_advanced_search(output.query)
-        if output.clarification_needed and output.clarification_question:
-            question = output.clarification_question.strip()
-            if len(question.split()) < 4:
-                output.clarification_question = (
-                    "Which transaction details should I search for?"
-                )
-        self.session.commit()
-        return SearchTranslationResult(
-            **output.model_dump(),
-            applied_tokens=parsed.applied_tokens,
-            free_terms=parsed.free_terms,
-        )
 
     async def suggest_uncategorized_transaction(
         self, transaction_id: int

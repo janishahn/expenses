@@ -126,6 +126,18 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
                 "velocity_ratio": 0.91,
             }
         ],
+        "category_budget_summary": {
+            "total": 1,
+            "needs_attention": 0,
+            "priority": {
+                "scope_category_id": 10,
+                "scope_label": "Groceries",
+                "amount_cents": 45000,
+                "spent_cents": 34200,
+                "remaining_cents": 10800,
+                "velocity_ratio": 0.91,
+            },
+        },
     }
     _write_json(output_dir / "dashboard.json", dashboard)
     _write_json(

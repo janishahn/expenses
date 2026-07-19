@@ -11,10 +11,15 @@ import { apiFetch } from "../app/api"
 import { formatCurrency } from "../app/format"
 import LineChart from "../components/charts/LineChart"
 import { readThemeAlpha, readThemeColor } from "../components/charts/chartSetup"
-import PageIntro from "../components/PageIntro"
+import SegmentedControl from "../components/SegmentedControl"
+import {
+  FinancialPanel,
+  MetricLane,
+  SectionHeading,
+  WorkspaceToolbar,
+} from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { useThemePreference } from "../theme/useThemePreference"
 
 type ForecastMonth = {
@@ -161,7 +166,8 @@ function ScenariosPage() {
   const [formError, setFormError] = useState("")
 
   const horizonRaw = Number(searchParams.get("horizon") || "6")
-  const horizon = [3, 6, 12].includes(horizonRaw) ? horizonRaw : 6
+  const horizon: 3 | 6 | 12 =
+    horizonRaw === 3 || horizonRaw === 12 ? horizonRaw : 6
   const modeRaw = (searchParams.get("mode") || "full").toLowerCase()
   const mode: "recurring" | "full" =
     modeRaw === "recurring" ? "recurring" : "full"
@@ -406,58 +412,75 @@ function ScenariosPage() {
   const negativeDeltaFill = readThemeAlpha("--semantic-red", 0.18, "224 114 102")
 
   return (
-    <section className="space-y-6">
-      <PageIntro
-        title="What If"
-        actions={scenarioFetching ? <span className="loading-hint">Updating…</span> : null}
-      />
+    <section className="space-y-4 md:space-y-5">
+      <header className="flex min-h-11 flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
+            What If
+          </h1>
+          <p className="mt-1 text-sm text-muted">
+            Test changes without modifying your real transactions or commitments
+          </p>
+        </div>
+        {scenarioFetching ? <span className="loading-hint">Updating…</span> : null}
+      </header>
 
-      <AppCard className="p-5">
-        <p className="text-sm text-muted">
-          Baseline: projected balance of{" "}
-          <span className="font-mono text-text">
+      <WorkspaceToolbar>
+        <SegmentedControl
+          value={horizon}
+          ariaLabel="Scenario horizon"
+          items={[
+            { value: 3, label: "3 months" },
+            { value: 6, label: "6 months" },
+            { value: 12, label: "12 months" },
+          ] as Array<{ value: 3 | 6 | 12; label: string }>}
+          onValueChange={setHorizon}
+        />
+        <SegmentedControl
+          value={mode}
+          ariaLabel="Scenario model"
+          items={[
+            { value: "recurring", label: "Recurring only" },
+            { value: "full", label: "Recurring + estimates" },
+          ]}
+          onValueChange={setMode}
+        />
+      </WorkspaceToolbar>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <MetricLane tone="plan">
+          <p className="text-sm font-semibold text-text">12-month baseline</p>
+          <p className="amount-text mt-2 text-2xl text-text">
             {formatCurrency(baselineProjectedBalance)} €
-          </span>{" "}
-          in 12 months based on current recurring rules and spending.
-        </p>
-      </AppCard>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="pill-group">
-          {[3, 6, 12].map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={`pill-button ${horizon === value ? "pill-button-active" : ""}`}
-              onClick={() => setHorizon(value as 3 | 6 | 12)}
-            >
-              {value} months
-            </button>
-          ))}
-        </div>
-        <div className="pill-group">
-          <button
-            type="button"
-            className={`pill-button ${mode === "recurring" ? "pill-button-active" : ""}`}
-            onClick={() => setMode("recurring")}
+          </p>
+          <p className="mono-meta mt-1 text-muted">Current rules and spending</p>
+        </MetricLane>
+        <MetricLane tone={hasAdjustments ? (delta >= 0 ? "income" : "expense") : "neutral"}>
+          <p className="text-sm font-semibold text-text">Scenario impact</p>
+          <p
+            className={`amount-text mt-2 text-2xl ${
+              !hasAdjustments
+                ? "text-muted"
+                : delta >= 0
+                  ? "text-semantic-green"
+                  : "text-semantic-red"
+            }`}
           >
-            Recurring only
-          </button>
-          <button
-            type="button"
-            className={`pill-button ${mode === "full" ? "pill-button-active" : ""}`}
-            onClick={() => setMode("full")}
-          >
-            Recurring + estimates
-          </button>
-        </div>
+            {hasAdjustments ? `${delta >= 0 ? "+" : ""}${formatCurrency(delta)} €` : "No changes"}
+          </p>
+          <p className="mono-meta mt-1 text-muted">After {horizon} months</p>
+        </MetricLane>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <AppCard>
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="font-head text-lg font-bold">Scenario adjustments</h2>
-          </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.15fr)]">
+        <FinancialPanel role="inspector">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Scenario adjustments</h2>
+              <p className="mt-0.5 text-xs text-muted">Build a temporary planning stack</p>
+            </div>
+            <span className="mono-meta text-muted">{modifications.length} active</span>
+          </SectionHeading>
           <div className="space-y-4 px-4 py-4">
             <label className="form-label">
               Adjustment type
@@ -666,8 +689,7 @@ function ScenariosPage() {
             {formError ? <p className="text-xs text-semantic-red">{formError}</p> : null}
             <AppButton
               type="button"
-              tone="ghost"
-              className="px-3 py-1.5 text-xs text-muted"
+              className="w-full"
               onClick={addModification}
             >
               Add adjustment
@@ -678,7 +700,7 @@ function ScenariosPage() {
                 modifications.map((modification) => (
                   <div
                     key={modification.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-md bg-faint px-3 py-2"
                   >
                     <span className="flex min-w-0 items-center gap-2 text-xs text-text">
                       {modification.type === "remove_rule" ? (
@@ -720,13 +742,20 @@ function ScenariosPage() {
               )}
             </div>
           </div>
-        </AppCard>
+        </FinancialPanel>
 
         {hasAdjustments ? (
-          <AppCard className="p-5">
-            <h2 className="font-head text-lg font-bold">Comparison</h2>
-            <div className="mt-4">
+          <FinancialPanel role="chart">
+            <SectionHeading>
+              <div>
+                <h2 className="font-head text-lg font-bold">Baseline vs scenario</h2>
+                <p className="mt-0.5 text-xs text-muted">How the balance path changes</p>
+              </div>
+              <span className="mono-meta text-muted">{horizon} months</span>
+            </SectionHeading>
+            <div className="p-4 md:p-5">
               <LineChart
+                ariaLabel="Baseline balance compared with the adjusted scenario"
                 labels={labels}
                 series={[
                   {
@@ -745,56 +774,71 @@ function ScenariosPage() {
                   },
                 ]}
                 height={320}
+                tooltipComparisonLabel="Scenario difference"
               />
             </div>
-          </AppCard>
+          </FinancialPanel>
         ) : (
-          <AppCard className="p-5">
-            <h2 className="font-head text-lg font-bold">Comparison</h2>
-            <p className="mt-3 text-sm text-muted">
-              Add an adjustment to render scenario comparison and impact.
-            </p>
-          </AppCard>
+          <FinancialPanel role="chart">
+            <SectionHeading>
+              <div>
+                <h2 className="font-head text-lg font-bold">Baseline vs scenario</h2>
+                <p className="mt-0.5 text-xs text-muted">How the balance path changes</p>
+              </div>
+            </SectionHeading>
+            <div className="flex min-h-[22rem] items-center justify-center p-5">
+              <p className="max-w-xs text-center text-sm text-muted">
+                Add an adjustment to render scenario comparison and impact.
+              </p>
+            </div>
+          </FinancialPanel>
         )}
       </div>
 
       {hasAdjustments ? (
-        <AppCard className="p-5">
-          <p
-            className={`font-semibold ${
-              delta >= 0 ? "text-semantic-green" : "text-semantic-red"
-            }`}
-          >
-            {delta >= 0
-              ? `This scenario saves ${formatCurrency(delta)} € over ${horizon} months.`
-              : `This scenario costs an additional ${formatCurrency(Math.abs(delta))} € over ${horizon} months.`}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            Average monthly delta:{" "}
-            <span className="font-mono">
-              {(impact?.average_monthly_delta_cents ?? 0) >= 0 ? "+" : ""}
+        <FinancialPanel role="ledger">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Impact attribution</h2>
+              <p className="mt-0.5 text-xs text-muted">Each adjustment’s contribution by month</p>
+            </div>
+            <span className="amount-text text-sm text-muted">
+              Average monthly delta: {(impact?.average_monthly_delta_cents ?? 0) >= 0 ? "+" : ""}
               {formatCurrency(impact?.average_monthly_delta_cents ?? 0)} €
             </span>
-          </p>
+          </SectionHeading>
+          <div className="p-4">
+            <MetricLane tone={delta >= 0 ? "income" : "expense"}>
+              <p
+                className={`font-semibold ${
+                  delta >= 0 ? "text-semantic-green" : "text-semantic-red"
+                }`}
+              >
+                {delta >= 0
+                  ? `This scenario saves ${formatCurrency(delta)} € over ${horizon} months.`
+                  : `This scenario costs an additional ${formatCurrency(Math.abs(delta))} € over ${horizon} months.`}
+              </p>
+            </MetricLane>
+          </div>
 
-          <div className="mt-4">
+          <div className="px-4 pb-4">
             {impact?.by_modification.length ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-border text-xs">
                   <thead>
                     <tr className="text-muted">
-                      <th className="py-2 pr-3 text-left font-semibold uppercase tracking-wide">
+                      <th className="py-2 pr-3 text-left font-semibold">
                         Modification
                       </th>
                       {impactMonthColumns.map((month) => (
                         <th
                           key={month}
-                          className="px-2 py-2 text-right font-semibold uppercase tracking-wide"
+                          className="px-2 py-2 text-right font-semibold"
                         >
                           {monthLabel(month)}
                         </th>
                       ))}
-                      <th className="pl-2 py-2 text-right font-semibold uppercase tracking-wide">
+                      <th className="pl-2 py-2 text-right font-semibold">
                         Total
                       </th>
                     </tr>
@@ -845,7 +889,7 @@ function ScenariosPage() {
               </p>
             )}
           </div>
-        </AppCard>
+        </FinancialPanel>
       ) : null}
     </section>
   )

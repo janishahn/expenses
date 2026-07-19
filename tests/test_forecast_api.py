@@ -63,6 +63,7 @@ def _create_recurring_rule(
     amount_cents: int,
     next_occurrence: date,
     currency_code: str = "EUR",
+    anchor_date: date | None = None,
 ) -> int:
     response = client.post(
         "/api/recurring",
@@ -73,7 +74,7 @@ def _create_recurring_rule(
             "currency_code": currency_code,
             "amount_cents": amount_cents,
             "category_id": category_id,
-            "anchor_date": next_occurrence.isoformat(),
+            "anchor_date": (anchor_date or next_occurrence).isoformat(),
             "interval_unit": "month",
             "interval_count": 1,
             "next_occurrence": next_occurrence.isoformat(),
@@ -321,6 +322,19 @@ def test_forecast_scenario_applies_modifications(
     assert len(data["impact"]["by_modification"]) == 5
     assert all("monthly_delta" in row for row in data["impact"]["by_modification"])
     assert data["impact"]["final_delta_cents"] > 0
+    for baseline_month, scenario_month, delta in zip(
+        data["baseline"]["months"], data["months"], data["impact"]["monthly_delta"]
+    ):
+        assert (
+            scenario_month["end_balance_p10_cents"]
+            - baseline_month["end_balance_p10_cents"]
+            == delta["delta_end_balance_cents"]
+        )
+        assert (
+            scenario_month["end_balance_p90_cents"]
+            - baseline_month["end_balance_p90_cents"]
+            == delta["delta_end_balance_cents"]
+        )
 
 
 def test_forecast_scenario_is_stateless_and_validates_inputs(
@@ -365,3 +379,163 @@ def test_forecast_scenario_is_stateless_and_validates_inputs(
     txns_after = api_client.get("/api/transactions?period=all").json()["items"]
     assert len(rules_before) == len(rules_after)
     assert len(txns_before) == len(txns_after)
+
+
+def test_forecast_includes_remaining_current_month_recurring_cash_flow(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    salary_id = _create_category(api_client, csrf_headers, "Salary", "income")
+    _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Salary",
+        txn_type="income",
+        category_id=salary_id,
+        amount_cents=100_000,
+        next_occurrence=date(2026, 7, 25),
+    )
+
+    response = api_client.get("/api/forecast?horizon=3&mode=recurring")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current_month_net_cents"] == 100_000
+    assert payload["months"][0]["projected_income_cents"] == 100_000
+    assert payload["months"][0]["end_balance_cents"] == 200_000
+
+
+def test_forecast_reports_intra_month_negative_balance_before_payday(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2026, 1, 31)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    salary_id = _create_category(api_client, csrf_headers, "Salary", "income")
+    rent_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=fixed_today,
+        txn_type="income",
+        amount_cents=50_000,
+        category_id=salary_id,
+        title="Opening balance",
+    )
+    _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Rent",
+        txn_type="expense",
+        category_id=rent_id,
+        amount_cents=100_000,
+        next_occurrence=date(2026, 2, 1),
+    )
+    _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Salary",
+        txn_type="income",
+        category_id=salary_id,
+        amount_cents=200_000,
+        next_occurrence=date(2026, 2, 25),
+    )
+
+    response = api_client.get("/api/forecast?horizon=3&mode=recurring")
+    assert response.status_code == 200
+    payload = response.json()
+    first_month = payload["months"][0]
+    assert first_month["end_balance_cents"] == 150_000
+    assert first_month["minimum_balance_cents"] == -50_000
+    assert first_month["crosses_negative"] is True
+    assert payload["summary"]["months_until_negative"] == 1
+
+
+def test_forecast_keeps_non_recurring_remainder_in_recurring_category(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    housing_id = _create_category(api_client, csrf_headers, "Housing", "expense")
+    _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Rent",
+        txn_type="expense",
+        category_id=housing_id,
+        amount_cents=100_000,
+        next_occurrence=date(2026, 8, 1),
+        anchor_date=date(2026, 1, 1),
+    )
+    for offset in range(1, 7):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=5),
+            txn_type="expense",
+            amount_cents=120_000,
+            category_id=housing_id,
+            title=f"Housing {offset}",
+        )
+
+    response = api_client.get("/api/forecast?horizon=3&mode=full")
+    assert response.status_code == 200
+    first_month = response.json()["months"][0]
+    assert first_month["projected_expenses_cents"] == 120_000
+    assert first_month["breakdown"]["variable_estimates"] == [
+        {
+            "category_id": housing_id,
+            "name": "Housing",
+            "icon": None,
+            "amount_cents": 20_000,
+        }
+    ]
+
+
+def test_forecast_applies_seasonality_variable_income_and_stable_prediction_band(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2027, 1, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    shopping_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    bonus_id = _create_category(api_client, csrf_headers, "Side income", "income")
+    for offset in range(24, 0, -1):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=10),
+            txn_type="expense",
+            amount_cents=30_000 if month.month == 12 else 10_000,
+            category_id=shopping_id,
+            title=f"Shopping {month.isoformat()}",
+        )
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=20),
+            txn_type="income",
+            amount_cents=5_000,
+            category_id=bonus_id,
+            title=f"Side income {month.isoformat()}",
+        )
+
+    first = api_client.get("/api/forecast?horizon=12&mode=full")
+    second = api_client.get("/api/forecast?horizon=12&mode=full")
+    assert first.status_code == 200
+    assert first.json() == second.json()
+    payload = first.json()
+    assert payload["model"] == {
+        "method": "seasonal_median",
+        "history_months": 24,
+        "seasonality_applied": True,
+        "prediction_interval_available": True,
+    }
+    november = next(month for month in payload["months"] if month["month"] == "2027-11")
+    december = next(month for month in payload["months"] if month["month"] == "2027-12")
+    assert december["projected_expenses_cents"] > november["projected_expenses_cents"]
+    assert november["projected_income_cents"] == 5_000
+    assert november["breakdown"]["variable_income_estimates"]
+    for month in payload["months"]:
+        assert month["end_balance_p10_cents"] <= month["end_balance_cents"]
+        assert month["end_balance_cents"] <= month["end_balance_p90_cents"]

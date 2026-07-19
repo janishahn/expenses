@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import {
   ADMIN_USER,
   ORDINARY_USER,
@@ -101,15 +101,17 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     const memberCategoryName = `CrossFlow Member ${Date.now()}`
     await page.goto("/categories")
-    await page.getByRole("textbox", { name: "Name" }).fill(memberCategoryName)
-    await page.getByLabel("Type").selectOption("expense")
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    const categoryDialog = page.getByRole("dialog", { name: "Add category" })
+    await categoryDialog.getByRole("textbox", { name: "Name" }).fill(memberCategoryName)
+    await categoryDialog.getByLabel("Type").selectOption("expense")
 
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/categories") &&
         response.request().method() === "POST"
     )
-    await page.getByRole("button", { name: "Create category" }).click()
+    await categoryDialog.getByRole("button", { name: "Add category" }).click()
     const createResponse = await createResponsePromise
     expect(createResponse.status()).toBe(200)
     await expect(page.locator("body")).toContainText(memberCategoryName)

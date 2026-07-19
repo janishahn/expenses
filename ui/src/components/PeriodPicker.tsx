@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { formatEuroDate } from "../app/format"
+import SegmentedControl from "./SegmentedControl"
 import { AppButton } from "./ui/product-button"
 import { AppCard } from "./ui/product-card"
 import {
@@ -59,29 +60,22 @@ function PeriodPicker({
 
   return (
     <div className="space-y-3">
-      <div className="ptabs">
-        {[
+      <SegmentedControl
+        value={periodSlug}
+        ariaLabel="Period"
+        className="w-full sm:w-96"
+        equalWidth
+        items={[
           { value: "this_month", label: "This month" },
           { value: "last_month", label: "Last month" },
           { value: "all", label: "All time" },
-        ].map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => setPreset(item.value as "this_month" | "last_month" | "all")}
-            className={`ptab ${periodSlug === item.value ? "ptab-active" : ""}`}
-          >
-            {item.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={openCustom}
-          className={`ptab ${periodSlug === "custom" ? "ptab-active" : ""}`}
-        >
-          Custom
-        </button>
-      </div>
+          { value: "custom", label: "Custom" },
+        ]}
+        onValueChange={(value) => {
+          if (value === "custom") openCustom()
+          else setPreset(value as "this_month" | "last_month" | "all")
+        }}
+      />
 
       {customOpen ? (
           <AppCard className="space-y-3 p-4 md:p-5">

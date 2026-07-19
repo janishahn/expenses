@@ -12,12 +12,13 @@ type BarSeries = {
 }
 
 type BarChartProps = {
+  ariaLabel: string
   labels: string[]
   series: BarSeries[]
   height?: number
 }
 
-function BarChart({ labels, series, height = 240 }: BarChartProps) {
+function BarChart({ ariaLabel, labels, series, height = 240 }: BarChartProps) {
   const { effectiveTheme } = useThemePreference()
   const data = useMemo(
     () => ({
@@ -71,7 +72,13 @@ function BarChart({ labels, series, height = 240 }: BarChartProps) {
 
   return (
     <div style={{ height }}>
-      <Bar key={`bar-${effectiveTheme}`} data={data} options={options} />
+      <Bar
+        key={`bar-${effectiveTheme}`}
+        data={data}
+        options={options}
+        role="img"
+        aria-label={ariaLabel}
+      />
     </div>
   )
 }

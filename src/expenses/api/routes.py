@@ -59,8 +59,6 @@ from expenses.auth import (
 from expenses.ai.client import LLMDisabledError
 from expenses.ai.schemas import (
     RuleSuggestionOut,
-    SearchTranslateIn,
-    SearchTranslationResult,
     TransactionSuggestionOut,
 )
 from expenses.ai.service import LLMAssistantService
@@ -201,7 +199,6 @@ from expenses.services import (
     IngestService,
     InsightsService,
     MetricsService,
-    parse_advanced_search,
     ReceiptAttachmentService,
     ReimbursementService,
     RecurringRuleService,
@@ -1052,19 +1049,11 @@ def filters_from_request(request: Request) -> TransactionFilters:
         except ValueError:
             tag_id = None
 
-    search = None
-    if query:
-        try:
-            search = parse_advanced_search(query)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     return TransactionFilters(
         type=txn_type,
         category_id=category_id,
         query=query,
         tag_id=tag_id,
-        search=search,
     )
 
 
@@ -1254,19 +1243,12 @@ def _filters_from_bulk_query(
         period = resolve_period(period_slug, start, end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    search = None
-    if query:
-        try:
-            search = parse_advanced_search(query)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
     return period, TransactionFilters(
         type=txn_type,
         category_id=category_id,
         matched_category_ids=matched_category_ids,
         query=query,
         tag_id=tag_id,
-        search=search,
     )
 
 
@@ -1434,6 +1416,12 @@ def api_kpis(request: Request, db: Session = Depends(get_db)):
 def api_category_breakdown(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
+    if request.query_params.get("view") == "monthly":
+        return {
+            "months": InsightsService(db, user_id=user_id).monthly_category_bands(
+                end=period.end, months_back=6
+            )
+        }
     data = MetricsService(db, user_id=user_id).category_breakdown(period)
     return data
 
@@ -4251,25 +4239,6 @@ async def api_ai_spending_chat_stream(
     )
 
 
-@router.post(
-    "/api/ai/search/translate",
-    response_model=SearchTranslationResult,
-    dependencies=[Depends(require_llm_enabled)],
-)
-async def api_ai_translate_search(
-    data: SearchTranslateIn, request: Request, db: Session = Depends(get_db)
-):
-    user_id = _require_current_user_id(request, db)
-    _require_csrf(request, db)
-    try:
-        return await LLMAssistantService(db, user_id=user_id).translate_search_query(
-            data.query,
-            reference_date=data.reference_date,
-        )
-    except LLMDisabledError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
 @router.get(
     "/api/ai/transaction-suggestions",
     response_model=list[TransactionSuggestionOut],
@@ -4595,11 +4564,9 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
             "query": filters.query,
         },
         "search": {
-            "raw_q": filters.search.raw_query
-            if filters.search
-            else (filters.query or ""),
-            "applied_tokens": filters.search.applied_tokens if filters.search else [],
-            "free_terms": filters.search.free_terms if filters.search else [],
+            "raw_q": filters.query or "",
+            "applied_tokens": [],
+            "free_terms": [filters.query] if filters.query else [],
         },
         "categories": [
             {
@@ -4612,6 +4579,14 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
         ],
         "tags": [{"id": tag.id, "name": tag.name} for tag in tags],
     }
+
+
+@router.get("/api/transactions/summary", include_in_schema=False)
+def api_transactions_summary(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    return TransactionService(db, user_id=user_id).summary_for_period(period, filters)
 
 
 @router.get(
@@ -4674,11 +4649,9 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
             "query": filters.query,
         },
         "search": {
-            "raw_q": filters.search.raw_query
-            if filters.search
-            else (filters.query or ""),
-            "applied_tokens": filters.search.applied_tokens if filters.search else [],
-            "free_terms": filters.search.free_terms if filters.search else [],
+            "raw_q": filters.query or "",
+            "applied_tokens": [],
+            "free_terms": [filters.query] if filters.query else [],
         },
         "categories": [
             {
@@ -4944,7 +4917,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     # partway projection), while this_month/all/custom stay on the current month.
     budget_as_of = period.end if period.slug == "last_month" else today
     budget_pace = budget_service.dashboard_budget_pace(today=budget_as_of)
-    category_budget_pulse = budget_service.dashboard_category_budget_pulse(
+    category_budget_overview = budget_service.dashboard_category_budget_overview(
         today=budget_as_of
     )
 
@@ -5000,8 +4973,13 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         payload["durable_purchases"] = active_durable
     if budget_pace:
         payload["budget_pace"] = budget_pace
-    if category_budget_pulse:
-        payload["category_budget_pulse"] = category_budget_pulse
+    if category_budget_overview:
+        payload["category_budget_pulse"] = category_budget_overview["items"]
+        payload["category_budget_summary"] = {
+            "total": category_budget_overview["total"],
+            "needs_attention": category_budget_overview["needs_attention"],
+            "priority": category_budget_overview["priority"],
+        }
     return payload
 
 

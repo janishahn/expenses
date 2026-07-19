@@ -349,6 +349,12 @@ class DashboardCategoryBudgetPulseOut(BaseModel):
     velocity_ratio: float
 
 
+class DashboardCategoryBudgetSummaryOut(BaseModel):
+    total: int
+    needs_attention: int
+    priority: DashboardCategoryBudgetPulseOut
+
+
 class DashboardResponseOut(BaseModel):
     period: PeriodOut
     filters: DashboardFiltersOut
@@ -362,6 +368,7 @@ class DashboardResponseOut(BaseModel):
     durable_purchases: Optional[list[DashboardDurablePurchaseOut]] = None
     budget_pace: Optional[DashboardBudgetPaceOut] = None
     category_budget_pulse: Optional[list[DashboardCategoryBudgetPulseOut]] = None
+    category_budget_summary: Optional[DashboardCategoryBudgetSummaryOut] = None
 
 
 class InsightsFiltersOut(BaseModel):
@@ -921,6 +928,7 @@ class ForecastOneTimeEventOut(BaseModel):
 class ForecastBreakdownOut(BaseModel):
     recurring_rules: list[ForecastRecurringRuleOut]
     variable_estimates: list[ForecastVariableEstimateOut]
+    variable_income_estimates: list[ForecastVariableEstimateOut]
     one_time_events: list[ForecastOneTimeEventOut]
 
 
@@ -930,20 +938,35 @@ class ForecastMonthOut(BaseModel):
     projected_expenses_cents: int
     projected_net_cents: int
     end_balance_cents: int
+    end_balance_p10_cents: Optional[int] = None
+    end_balance_p90_cents: Optional[int] = None
+    minimum_balance_cents: int
     crosses_negative: bool
     breakdown: ForecastBreakdownOut
 
 
 class ForecastSummaryOut(BaseModel):
     projected_balance_cents: int
+    projected_balance_p10_cents: Optional[int] = None
+    projected_balance_p90_cents: Optional[int] = None
     average_monthly_net_cents: int
     months_until_negative: Optional[int] = None
+    risk_months_until_negative: Optional[int] = None
+
+
+class ForecastModelOut(BaseModel):
+    method: Literal["recurring_only", "recent_median", "seasonal_median"]
+    history_months: int
+    seasonality_applied: bool
+    prediction_interval_available: bool
 
 
 class ForecastProjectionOut(BaseModel):
     mode: Literal["recurring", "full"]
     start_balance_cents: int
+    current_month_net_cents: int
     months: list[ForecastMonthOut]
+    model: ForecastModelOut
     summary: ForecastSummaryOut
 
 

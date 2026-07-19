@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect, type Page } from "./fixtures"
 
 async function disableLlmCapability(page: Page) {
   await page.route("**/api/auth/bootstrap-status", async (route) => {
@@ -27,10 +27,14 @@ test.describe("AI surfaces hidden when LLM is disabled", () => {
     await expect(page.locator("main h1")).toContainText("Dashboard")
   })
 
-  test("hides the natural-language search control on transactions", async ({ page }) => {
+  test("keeps plain transaction search without smart-search controls", async ({ page }) => {
     await page.goto("/transactions")
     await expect(page.locator("main h1")).toContainText("Transactions")
-    await expect(page.getByPlaceholder("Ask in plain language")).toHaveCount(0)
+    await page.getByRole("button", { name: "Search transactions" }).click()
+    await expect(
+      page.getByPlaceholder("Search titles and descriptions…"),
+    ).toBeVisible()
+    await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
   })
 
   test("hides the rule suggestions card on the rules page", async ({ page }) => {

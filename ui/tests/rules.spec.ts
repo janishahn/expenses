@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from "@playwright/test"
+import { test, expect, type Locator } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 async function readSwitchVisualState(toggle: Locator) {
@@ -21,15 +21,13 @@ test.describe("Categorization Rules Page", () => {
     await page.goto("/rules")
   })
 
-  test("should keep the inline editor as the desktop creation entry", async ({
+  test("should open the rule editor from the page action", async ({
     page,
   }) => {
-    await expect(page.getByRole("button", { name: "Create rule" })).toBeHidden()
-    await expect(page.getByText("Editor")).toBeVisible()
-    const editorPosition = await page
-      .locator("form", { has: page.getByRole("button", { name: "Save rule" }) })
-      .evaluate((node) => getComputedStyle(node).position)
-    expect(editorPosition).toBe("sticky")
+    await expect(page.getByTestId("automation-rules-board")).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Add rule" })).toBeHidden()
+    await page.getByRole("button", { name: "Add rule" }).first().click()
+    await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
   })
 
   test("should toggle rule enabled state via switch", async ({ page, request }) => {
@@ -37,19 +35,22 @@ test.describe("Categorization Rules Page", () => {
     await ensureCategory(request, token, "expense", "E2E Toggle")
 
     const ruleName = `E2E Toggle ${Date.now()}`
-    await page.getByLabel("Name").fill(ruleName)
-    await page.getByLabel("Title text").fill("toggle-test")
-    await page.getByRole("button", { name: "Save rule" }).click()
+    await page.getByRole("button", { name: "Add rule" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add rule" })
+    await dialog.getByLabel("Name").fill(ruleName)
+    await dialog.getByLabel("Title text").fill("toggle-test")
+    await dialog.getByRole("button", { name: "Add rule" }).click()
     await expect(page.locator("body")).toContainText(ruleName)
 
-    const ruleCard = page.locator("div.surface-card", { hasText: ruleName }).first()
+    const ruleCard = page.getByTestId("automation-rule").filter({ hasText: ruleName })
     const toggle = ruleCard.getByRole("switch")
     await expect(toggle).toBeVisible()
-    const deleteButton = ruleCard.getByRole("button", { name: "Delete" })
+    const deleteButton = ruleCard.getByRole("button", { name: `Delete ${ruleName}` })
     await expect(deleteButton).toHaveClass(
       /btn-inline-danger/
     )
     await expect(deleteButton.locator("svg")).toBeVisible()
+    await expect(ruleCard.locator("button").first()).toHaveAttribute("role", "switch")
 
     const initialState = await toggle.getAttribute("aria-checked")
     await toggle.click()
@@ -57,12 +58,21 @@ test.describe("Categorization Rules Page", () => {
       "aria-checked",
       initialState === "true" ? "false" : "true"
     )
+
+    await ruleCard.getByRole("button", { name: `Edit ${ruleName}` }).click()
+    const editDialog = page.getByRole("dialog", { name: "Edit rule" })
+    await expect(editDialog.getByLabel("Name")).toHaveValue(ruleName)
+    const updatedName = `${ruleName} Updated`
+    await editDialog.getByLabel("Name").fill(updatedName)
+    await editDialog.getByRole("button", { name: "Save changes" }).click()
+    await expect(page.getByTestId("automation-rule").filter({ hasText: updatedName })).toBeVisible()
   })
 
   test("should keep editor toggle visually distinct across checked and unchecked states", async ({
     page,
   }) => {
-    const editorToggle = page
+    await page.getByRole("button", { name: "Add rule" }).first().click()
+    const editorToggle = page.getByRole("dialog", { name: "Add rule" })
       .locator("label", { hasText: "Apply this rule automatically" })
       .getByRole("switch")
     await expect(editorToggle).toBeVisible()
@@ -101,14 +111,16 @@ test.describe("Categorization Rules Page", () => {
     )
 
     const ruleName = `E2E Rule ${Date.now()}`
-    await page.getByLabel("Name").fill(ruleName)
-    await page.getByLabel("Title text").fill("acme-stream")
-    await page.getByLabel("Set category (optional)").selectOption(
+    await page.getByRole("button", { name: "Add rule" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add rule" })
+    await dialog.getByLabel("Name").fill(ruleName)
+    await dialog.getByLabel("Title text").fill("acme-stream")
+    await dialog.getByLabel("Set category (optional)").selectOption(
       String(targetCategoryId)
     )
-    await page.getByLabel("Add tags (comma-separated)").fill("streaming,auto")
-    await page.getByRole("button", { name: "Preview matches" }).click()
-    await page.getByRole("button", { name: "Save rule" }).click()
+    await dialog.getByLabel("Add tags (comma-separated)").fill("streaming,auto")
+    await dialog.getByRole("button", { name: "Preview matches" }).click()
+    await dialog.getByRole("button", { name: "Add rule" }).click()
 
     await expect(page.locator("body")).toContainText(ruleName)
 

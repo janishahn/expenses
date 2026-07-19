@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Budgets Page", () => {
@@ -6,7 +6,7 @@ test.describe("Budgets Page", () => {
     await page.goto("/budgets")
   })
 
-  test("should use one shared month selector and a sticky desktop editor", async ({
+  test("should use one shared month selector and a focused budget modal", async ({
     page,
   }) => {
     await page.goto("/budgets")
@@ -16,14 +16,43 @@ test.describe("Budgets Page", () => {
     await expect(
       page.getByRole("button", { name: "Manage recurring budgets" }).first(),
     ).toBeVisible()
+    await expect(page.getByTestId("budget-summary-allocation")).toBeVisible()
+    await expect(page.getByTestId("budget-summary-spent")).toBeVisible()
+    await expect(page.getByTestId("budget-summary-remaining")).toBeVisible()
+    await expect(page.getByTestId("budget-summary-pace")).toBeVisible()
 
-    const editorPosition = await page
-      .getByRole("button", { name: "Save month budget" })
-      .evaluate((node) => {
-        const form = node.closest("form")
-        return form ? getComputedStyle(form).position : null
-      })
-    expect(editorPosition).toBe("sticky")
+    await expect(page.getByRole("button", { name: "Save month budget" })).toHaveCount(0)
+    await page.getByRole("button", { name: "Add budget" }).click()
+    const dialog = page.getByRole("dialog", { name: "Add budget" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Save month budget" })).toBeVisible()
+  })
+
+  test("keeps the yearly toolbar aligned while the view indicator slides", async ({ page }) => {
+    await page.setViewportSize({ width: 1159, height: 787 })
+    const viewGroup = page.getByRole("group", { name: "Budget view" })
+    const indicator = viewGroup.locator(".segmented-control-indicator")
+    await expect(indicator).toHaveCSS("opacity", "1")
+    const monthTransform = await indicator.evaluate((element) => element.style.transform)
+
+    await viewGroup.getByRole("button", { name: "Year" }).click()
+    await expect(page).toHaveURL(/view=year/)
+    await expect(viewGroup.getByRole("button", { name: "Year" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect
+      .poll(() => indicator.evaluate((element) => element.style.transform))
+      .not.toBe(monthTransform)
+
+    const toolbar = page.getByTestId("budget-workspace-toolbar")
+    await expect(toolbar.getByLabel("Year")).toBeVisible()
+    await expect(toolbar.getByRole("button", { name: "Apply" })).toBeVisible()
+    await expect
+      .poll(() =>
+        toolbar.evaluate((element) => element.scrollWidth - element.clientWidth)
+      )
+      .toBeLessThanOrEqual(1)
   })
 
   test("should create a month budget", async ({ page, request }) => {
@@ -31,16 +60,61 @@ test.describe("Budgets Page", () => {
     const categoryId = await ensureCategory(request, token, "expense", "E2E Budget")
 
     await page.goto("/budgets")
-    await page.getByLabel("Category").selectOption(String(categoryId))
-    await page.getByLabel("Amount").fill("321.00")
-    await page.getByRole("button", { name: "Save month budget" }).click()
+    await page.getByRole("button", { name: "Add budget" }).click()
+    const dialog = page.getByRole("dialog", { name: "Add budget" })
+    await dialog.getByLabel("Category").selectOption(String(categoryId))
+    await dialog.getByLabel("Amount").fill("321.00")
+    await dialog.getByRole("button", { name: "Save month budget" }).click()
 
-    const row = page.locator("div.rounded-lg", { hasText: "321,00" }).first()
+    const row = page
+      .getByTestId("budget-plan-card")
+      .filter({ hasText: "321,00" })
+      .first()
     await expect(page.locator("body")).toContainText("321,00")
+    await expect(row.getByTestId("category-icon")).toBeVisible()
+    await expect(row.getByTestId("category-icon")).not.toHaveAttribute(
+      "data-category-icon",
+      "currency-circle-dollar",
+    )
+    await expect(row.getByText("Actual", { exact: true })).toBeVisible()
+    await expect(row.getByText("Limit", { exact: true })).toBeVisible()
+    await expect(row.getByText("Remaining", { exact: true })).toBeVisible()
+    await expect(row.getByText("Projection", { exact: true })).toBeVisible()
+    await expect(row.getByRole("progressbar")).toBeVisible()
     const removeButton = row.getByRole("button", { name: "Remove month budget" })
     await expect(removeButton).toBeVisible()
     await expect(removeButton).toHaveClass(/btn-inline-danger/)
     await expect(removeButton.locator("svg")).toBeVisible()
+  })
+
+  test("does not assign a pace before a future budget month starts", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      "E2E Future Budget",
+    )
+    const templateResponse = await request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        frequency: "monthly",
+        category_id: categoryId,
+        amount_cents: 50_000,
+        starts_on: "2099-12-01",
+        ends_on: null,
+      },
+    })
+    expect(templateResponse.ok()).toBeTruthy()
+
+    await page.goto("/budgets?month=2099-12")
+    const pace = page.getByTestId("budget-summary-pace")
+    await expect(pace).toContainText("Pacing has not started for December 2099")
+    await expect(pace).not.toContainText("Under pace")
+    await expect(pace).not.toContainText("projected")
   })
 
   test("should expand budget burn-down chart", async ({ page, request }) => {

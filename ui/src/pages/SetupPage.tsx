@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
+import ProductMark from "../components/ProductMark"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 
 function SetupPage() {
@@ -32,21 +32,43 @@ function SetupPage() {
   }
 
   return (
-    <main className="min-h-app-screen flex items-center justify-center px-5 py-8">
-      <AppCard className="w-full max-w-md space-y-5 p-5 md:p-6">
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-            First-time setup
+    <main className="min-h-app-screen flex items-center justify-center bg-bg p-3 sm:p-6">
+      <section className="grid w-full max-w-5xl overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-hero)] lg:min-h-[42rem] lg:grid-cols-[minmax(19rem,0.85fr)_minmax(26rem,1.15fr)]">
+        <aside className="flex min-h-[13rem] flex-col justify-between bg-[#181d1a] p-6 text-[#fbfcf8] sm:p-8 lg:p-10">
+          <div className="flex items-center gap-3">
+            <ProductMark />
+            <div>
+              <p className="font-head text-sm font-bold tracking-[-0.02em]">expenses</p>
+              <p className="mono-meta text-[#a7b0a9]">household ledger</p>
+            </div>
+          </div>
+          <div className="mt-8 max-w-sm lg:mt-0">
+            <p className="mono-meta uppercase text-[#a7b0a9]">First circuit</p>
+            <h2 className="mt-3 font-head text-2xl font-bold tracking-[-0.035em] sm:text-3xl">
+              Make this ledger yours.
+            </h2>
+            <div className="mt-6 grid grid-cols-3 gap-2" aria-hidden="true">
+              <span className="h-2 rounded-full bg-[#15936d]" />
+              <span className="h-2 rounded-full bg-[#3b4ee8]" />
+              <span className="h-2 rounded-full bg-[#edbd35]" />
+            </div>
+          </div>
+          <p className="mt-8 hidden max-w-xs text-xs leading-relaxed text-[#a7b0a9] lg:block">
+            The first administrator owns access and system settings for this self-hosted workspace.
           </p>
-          <h1 className="font-head text-2xl font-bold tracking-[-0.045em] text-text">
-            Create your admin account
-          </h1>
-          <p className="text-sm text-muted">
-            Set up the first account to unlock the app.
-          </p>
-        </div>
+        </aside>
 
-        <form data-testid="setup-form" className="space-y-3.5" onSubmit={onSubmit}>
+        <div className="flex items-center justify-center p-5 sm:p-8 lg:p-12">
+          <div className="w-full max-w-md space-y-6">
+            <div className="space-y-2">
+              <p className="mono-meta uppercase text-muted">First-time setup</p>
+              <h1 className="font-head text-3xl font-bold tracking-[-0.045em] text-text">
+                Create your admin account
+              </h1>
+              <p className="text-sm text-muted">Set up the first account to unlock the app.</p>
+            </div>
+
+            <form data-testid="setup-form" className="space-y-4" onSubmit={onSubmit}>
           <AppFieldLabel>
             <span>Username</span>
             <AppInput
@@ -98,8 +120,10 @@ function SetupPage() {
           >
             {submitting ? "Setting up…" : "Create account"}
           </AppButton>
-        </form>
-      </AppCard>
+            </form>
+          </div>
+        </div>
+      </section>
     </main>
   )
 }

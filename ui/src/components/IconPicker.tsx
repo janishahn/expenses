@@ -12,6 +12,7 @@ import {
   CURATED_CATEGORY_ICONS,
   DEFAULT_CATEGORY_ICON_KEY,
 } from "./categoryIconsCatalog"
+import SegmentedControl from "./SegmentedControl"
 
 const RECENT_ICONS_STORAGE_KEY = "ew.recentCategoryIcons.v2"
 const RECENT_ICONS_LIMIT = 12
@@ -162,25 +163,18 @@ export function IconPicker({
 
   return (
     <div className="space-y-2">
-      <div className="ptabs">
-        <button
-          type="button"
-          onClick={() => setMode("quick")}
-          className={`ptab ${mode === "quick" ? "ptab-active" : ""}`}
-        >
-          Quick picks
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode("search")
-            setResultLimit(SEARCH_PAGE_SIZE)
-          }}
-          className={`ptab ${mode === "search" ? "ptab-active" : ""}`}
-        >
-          Search all
-        </button>
-      </div>
+      <SegmentedControl
+        value={mode}
+        ariaLabel="Icon source"
+        items={[
+          { value: "quick", label: "Quick picks" },
+          { value: "search", label: "Search all" },
+        ]}
+        onValueChange={(value) => {
+          setMode(value)
+          if (value === "search") setResultLimit(SEARCH_PAGE_SIZE)
+        }}
+      />
 
       <div className="rounded-lg border border-border bg-surface-hi/70 px-2.5 py-1.5 text-xs text-muted">
         Selected: <span className="font-semibold text-text">{selectedIconKey}</span>

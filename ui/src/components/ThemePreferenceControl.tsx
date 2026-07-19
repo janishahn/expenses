@@ -1,5 +1,6 @@
 import { type ThemePreference } from "../theme/runtime"
 import { useThemePreference } from "../theme/useThemePreference"
+import SegmentedControl from "./SegmentedControl"
 
 type ThemePreferenceControlProps = {
   testId: string
@@ -29,24 +30,15 @@ function ThemePreferenceControl({
         {label}
       </p>
       {helper ? <p className="text-xs text-muted">{helper}</p> : null}
-      <div className="pill-group" role="group" aria-label={groupLabel}>
-        {options.map((option) => {
-          return (
-            <button
-              key={option.value}
-              type="button"
-              className={`pill-button ${
-                preference === option.value ? "pill-button-active" : ""
-              }`}
-              aria-pressed={preference === option.value}
-              aria-label={option.label}
-              onClick={() => setPreference(option.value)}
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
+      <SegmentedControl
+        value={preference}
+        ariaLabel={groupLabel}
+        items={options.map((option) => ({
+          ...option,
+          ariaLabel: option.label,
+        }))}
+        onValueChange={setPreference}
+      />
     </div>
   )
 }

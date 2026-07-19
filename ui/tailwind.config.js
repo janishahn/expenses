@@ -18,9 +18,9 @@ export default {
         sidebar: "224px",
       },
       fontFamily: {
-        head: ["Plus Jakarta Sans", "ui-sans-serif", "system-ui"],
-        sans: ["Manrope", "ui-sans-serif", "system-ui"],
-        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        head: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        sans: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       colors: {
         bg: "rgb(var(--bg) / <alpha-value>)",
@@ -54,6 +54,11 @@ export default {
         "semantic-red": "rgb(var(--semantic-red) / <alpha-value>)",
         "semantic-blue": "rgb(var(--semantic-blue) / <alpha-value>)",
         "semantic-purple": "rgb(var(--semantic-purple) / <alpha-value>)",
+        "signal-blue-soft": "rgb(var(--signal-blue-soft) / <alpha-value>)",
+        "signal-green-soft": "rgb(var(--signal-green-soft) / <alpha-value>)",
+        "signal-red-soft": "rgb(var(--signal-red-soft) / <alpha-value>)",
+        "signal-yellow-soft": "rgb(var(--signal-yellow-soft) / <alpha-value>)",
+        "signal-purple-soft": "rgb(var(--signal-purple-soft) / <alpha-value>)",
         emerald: {
           200: "rgb(var(--emerald-200) / <alpha-value>)",
           300: "rgb(var(--emerald-300) / <alpha-value>)",

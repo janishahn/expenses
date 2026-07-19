@@ -149,6 +149,7 @@ def test_dashboard_budget_pace_only_for_overall_budget(
     response = api_client.get("/api/dashboard?period=this_month")
     assert response.status_code == 200
     assert "budget_pace" not in response.json()
+    assert "category_budget_summary" not in response.json()
 
     today = date.today()
     response = api_client.post(
@@ -168,6 +169,7 @@ def test_dashboard_budget_pace_only_for_overall_budget(
     assert response.status_code == 200
     payload = response.json()
     assert "budget_pace" in payload
+    assert "category_budget_summary" not in payload
     assert set(payload["budget_pace"].keys()) == {
         "velocity_ratio",
         "projected_cents",
@@ -245,6 +247,52 @@ def test_dashboard_category_budget_pulse_shows_top_category_budgets(
         "remaining_cents": -2_000,
         "velocity_ratio": payload["category_budget_pulse"][0]["velocity_ratio"],
     }
+    assert payload["category_budget_summary"]["total"] == 4
+    assert (
+        payload["category_budget_summary"]["priority"]
+        == payload["category_budget_pulse"][0]
+    )
+
+
+def test_dashboard_category_budget_summary_counts_attention(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    at_risk_id = _create_category(api_client, csrf_headers, "At risk", "expense")
+    safe_id = _create_category(api_client, csrf_headers, "Safe", "expense")
+
+    for category_id, amount_cents in ((at_risk_id, 10_000), (safe_id, 100_000)):
+        response = api_client.post(
+            "/api/budgets/templates",
+            headers=csrf_headers,
+            json={
+                "frequency": "monthly",
+                "category_id": category_id,
+                "amount_cents": amount_cents,
+                "starts_on": f"{today.year:04d}-{today.month:02d}-01",
+                "ends_on": None,
+            },
+        )
+        assert response.status_code == 200
+
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        txn_type="expense",
+        amount_cents=12_000,
+        category_id=at_risk_id,
+        title="At-risk spending",
+    )
+
+    response = api_client.get("/api/dashboard?period=this_month")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert "budget_pace" not in payload
+    assert payload["category_budget_summary"]["total"] == 2
+    assert payload["category_budget_summary"]["needs_attention"] == 1
+    assert payload["category_budget_summary"]["priority"]["scope_label"] == "At risk"
 
 
 def test_dashboard_budget_pulse_tracks_selected_period_month(

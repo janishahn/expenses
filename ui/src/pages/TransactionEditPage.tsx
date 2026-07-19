@@ -18,10 +18,12 @@ import type {
   TransactionRouteState,
 } from "../app/api-types"
 import { formatCurrency, formatEuroDate, formatFileSize } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import DescriptionEditor from "../components/DescriptionEditor"
 import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
 import {
@@ -108,7 +110,7 @@ function TransactionEditForm({
   }
 
   return (
-    <AppCard className="max-w-2xl p-6">
+    <FinancialPanel role="panel" className="p-5 md:p-6">
       <form onSubmit={handleSubmit}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <AppFieldLabel>
@@ -219,7 +221,7 @@ function TransactionEditForm({
         </AppButton>
       </div>
       </form>
-    </AppCard>
+    </FinancialPanel>
   )
 }
 
@@ -287,7 +289,7 @@ function TransactionAttachmentsCard({
   }
 
   return (
-    <AppCard className="max-w-xl p-6">
+    <FinancialPanel role="panel" className="p-5 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="font-head text-lg font-bold">Attachments</h2>
         <p className="inline-flex items-center gap-1 text-xs text-muted">
@@ -384,7 +386,7 @@ function TransactionAttachmentsCard({
           </p>
         )}
       </div>
-    </AppCard>
+    </FinancialPanel>
   )
 }
 
@@ -493,7 +495,7 @@ function TransactionDurablePurchaseCard({
   }
 
   return (
-    <AppCard className="max-w-xl p-6">
+    <FinancialPanel role="panel" className="p-5 md:p-6">
       <div className="mb-4">
         <h2 className="font-head text-lg font-bold">Amortized cost</h2>
       </div>
@@ -577,7 +579,7 @@ function TransactionDurablePurchaseCard({
           </div>
         </form>
       )}
-    </AppCard>
+    </FinancialPanel>
   )
 }
 
@@ -644,6 +646,11 @@ function TransactionReimbursementsCard({
       queryClient.invalidateQueries({
         queryKey: ["transaction", transaction.id, "reimbursements"],
       })
+      queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       const q = searchQuery.trim()
       searchMutation.mutate(q)
     },
@@ -661,6 +668,11 @@ function TransactionReimbursementsCard({
       queryClient.invalidateQueries({
         queryKey: ["transaction", transaction.id, "reimbursements"],
       })
+      queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       const q = searchQuery.trim()
       if (searchResults) {
         searchMutation.mutate(q)
@@ -687,7 +699,7 @@ function TransactionReimbursementsCard({
   const reimbursements = reimbursementsQuery.data
 
   return (
-    <AppCard className="max-w-xl p-6">
+    <FinancialPanel role="panel" className="p-5 md:p-6">
       <div className="mb-4">
         <h2 className="font-head text-lg font-bold">
           {transaction.type === "income"
@@ -1047,7 +1059,7 @@ function TransactionReimbursementsCard({
           </div>
         </div>
       )}
-    </AppCard>
+    </FinancialPanel>
   )
 }
 
@@ -1095,6 +1107,10 @@ function TransactionEditPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["transaction", transactionId] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       queryClient.invalidateQueries({
         queryKey: ["transaction", Number(transactionId), "reimbursements"],
       })
@@ -1107,6 +1123,10 @@ function TransactionEditPage() {
       apiFetch(`/api/transactions/${transactionId}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       queryClient.removeQueries({ queryKey: ["transaction", transactionId] })
       queryClient.removeQueries({
         queryKey: ["transaction", Number(transactionId), "reimbursements"],
@@ -1157,32 +1177,77 @@ function TransactionEditPage() {
         backLabel="← Back"
       />
 
-      <TransactionEditForm
-        key={transaction.id}
-        transaction={transaction}
-        categories={categoriesData?.categories || []}
-        updatePending={updateMutation.isPending}
-        deletePending={deleteMutation.isPending}
-        updateError={updateMutation.error}
-        deleteError={deleteMutation.error}
-        onSubmit={(payload) => updateMutation.mutate(payload)}
-        onDelete={handleDelete}
-      />
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <div className="space-y-5">
+          <TransactionEditForm
+            key={transaction.id}
+            transaction={transaction}
+            categories={categoriesData?.categories || []}
+            updatePending={updateMutation.isPending}
+            deletePending={deleteMutation.isPending}
+            updateError={updateMutation.error}
+            deleteError={deleteMutation.error}
+            onSubmit={(payload) => updateMutation.mutate(payload)}
+            onDelete={handleDelete}
+          />
 
-      <TransactionAttachmentsCard
-        transactionId={transaction.id}
-        attachments={transaction.attachments}
-      />
+          <TransactionReimbursementsCard transaction={transaction} />
+        </div>
 
-      <TransactionDurablePurchaseCard
-        transactionId={transaction.id}
-        transactionType={transaction.type}
-        transactionDate={transaction.date}
-        amountCents={transaction.amount_cents}
-        durablePurchase={transaction.durable_purchase}
-      />
+        <aside className="space-y-5 xl:sticky xl:top-4">
+          <FinancialPanel role="inspector" className="overflow-hidden">
+            <div className="flex items-start gap-3 p-5">
+              <CategoryIcon
+                icon={transaction.category?.icon ?? null}
+                label={transaction.category?.name ?? "Uncategorized"}
+                className="h-11 w-11 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="mono-meta uppercase text-muted">Editing ledger entry</p>
+                <h2 className="mt-1 truncate font-head text-lg font-bold text-text">
+                  {transaction.title}
+                </h2>
+                <p className="mt-1 text-xs text-muted">
+                  {transaction.category?.name ?? "Uncategorized"} · {formatEuroDate(transaction.date)}
+                </p>
+              </div>
+              <p
+                className={`amount-text shrink-0 ${
+                  transaction.type === "expense"
+                    ? "text-semantic-red"
+                    : "text-semantic-green"
+                }`}
+              >
+                {transaction.type === "expense" ? "−" : "+"}
+                {formatCurrency(transaction.amount_cents)} €
+              </p>
+            </div>
+            <div className="grid grid-cols-2 border-t border-border text-xs">
+              <div className="bg-signal-blue-soft p-3">
+                <p className="mono-meta uppercase text-muted">Receipts</p>
+                <p className="mt-1 font-semibold text-text">{transaction.attachments.length}</p>
+              </div>
+              <div className="border-l border-border bg-signal-purple-soft p-3">
+                <p className="mono-meta uppercase text-muted">Type</p>
+                <p className="mt-1 font-semibold capitalize text-text">{transaction.type}</p>
+              </div>
+            </div>
+          </FinancialPanel>
 
-      <TransactionReimbursementsCard transaction={transaction} />
+          <TransactionAttachmentsCard
+            transactionId={transaction.id}
+            attachments={transaction.attachments}
+          />
+
+          <TransactionDurablePurchaseCard
+            transactionId={transaction.id}
+            transactionType={transaction.type}
+            transactionDate={transaction.date}
+            amountCents={transaction.amount_cents}
+            durablePurchase={transaction.durable_purchase}
+          />
+        </aside>
+      </div>
     </section>
   )
 }

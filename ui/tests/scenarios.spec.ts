@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 function nextMonthValue(): string {
@@ -23,7 +23,7 @@ test.describe("Scenarios Page", () => {
   test("should add one-time event adjustment", async ({ page }) => {
     await page.getByLabel("Adjustment type").selectOption("one_time")
     await page.getByLabel("Name").fill("Vacation")
-    await page.getByLabel("Month").fill(nextMonthValue())
+    await page.getByRole("textbox", { name: "Month", exact: true }).fill(nextMonthValue())
     await page.getByLabel("Amount").fill("300.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
     await expect(page.locator("text=Vacation")).toBeVisible()
@@ -69,17 +69,23 @@ test.describe("Scenarios Page", () => {
   test("should render comparison chart and impact summary", async ({ page }) => {
     await page.getByLabel("Adjustment type").selectOption("one_time")
     await page.getByLabel("Name").fill("Scenario chart event")
-    await page.getByLabel("Month").fill(nextMonthValue())
+    await page.getByRole("textbox", { name: "Month", exact: true }).fill(nextMonthValue())
     await page.getByLabel("Amount").fill("200.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
-    await expect(page.locator("canvas").first()).toBeVisible()
+    const chart = page.locator("canvas").first()
+    await expect(chart).toBeVisible()
+    const restingChart = await chart.evaluate((canvas) => canvas.toDataURL())
+    await chart.hover({ position: { x: 180, y: 140 } })
+    await expect
+      .poll(() => chart.evaluate((canvas) => canvas.toDataURL()))
+      .not.toBe(restingChart)
     await expect(page.locator("text=Average monthly delta")).toBeVisible()
   })
 
   test("should render monthly impact table by modification", async ({ page }) => {
     await page.getByLabel("Adjustment type").selectOption("one_time")
     await page.getByLabel("Name").fill("Scenario table event")
-    await page.getByLabel("Month").fill(nextMonthValue())
+    await page.getByRole("textbox", { name: "Month", exact: true }).fill(nextMonthValue())
     await page.getByLabel("Amount").fill("120.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
     await expect(page.getByText("Modification")).toBeVisible()
@@ -91,7 +97,7 @@ test.describe("Scenarios Page", () => {
   }) => {
     await page.getByLabel("Adjustment type").selectOption("one_time")
     await page.getByLabel("Name").fill("Scenario delete event")
-    await page.getByLabel("Month").fill(nextMonthValue())
+    await page.getByRole("textbox", { name: "Month", exact: true }).fill(nextMonthValue())
     await page.getByLabel("Amount").fill("80.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
 

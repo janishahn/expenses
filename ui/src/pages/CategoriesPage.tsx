@@ -1,16 +1,29 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArchiveIcon } from "@phosphor-icons/react/Archive"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { XIcon } from "@phosphor-icons/react/X"
-import { useSearchParams } from "react-router-dom"
+import { useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import type { CategoryListItem } from "../app/api-types"
+import type { AppShellOutletContext } from "../app/AppShell"
 import { formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import { DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
+import {
+  FinancialPanel,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import {
   AppFieldLabel,
   AppInput,
@@ -55,10 +68,10 @@ const formatMutationError = (error: unknown) => {
 }
 
 function CategoriesPage() {
-  const formRef = useRef<HTMLFormElement | null>(null)
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
+  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
+  const [editorOpen, setEditorOpen] = useState(false)
   const [name, setName] = useState("")
   const [type, setType] = useState("expense")
   const [icon, setIcon] = useState(DEFAULT_CATEGORY_ICON_KEY)
@@ -70,7 +83,6 @@ function CategoriesPage() {
   const [editIcon, setEditIcon] = useState(DEFAULT_CATEGORY_ICON_KEY)
   const [editOrder, setEditOrder] = useState("0")
   const [editType, setEditType] = useState("expense")
-  const [mobileEditOpen, setMobileEditOpen] = useState(false)
   const [mergeSourceId, setMergeSourceId] = useState("")
   const [mergeTargetId, setMergeTargetId] = useState("")
   const [mergePreview, setMergePreview] = useState<Record<string, number> | null>(null)
@@ -99,13 +111,13 @@ function CategoriesPage() {
     queryFn: () => apiFetch<CategoriesPageResponse>(`/api/categories?${queryString}`),
   })
 
-  const resetEditState = () => {
+  const resetEditState = useCallback(() => {
     setEditingCategoryId(null)
     setEditName("")
     setEditIcon(DEFAULT_CATEGORY_ICON_KEY)
     setEditOrder("0")
     setEditType("expense")
-  }
+  }, [])
 
   const normalizeIconKey = (iconKey: string) =>
     iconKey.length > 0 ? iconKey : DEFAULT_CATEGORY_ICON_KEY
@@ -117,6 +129,7 @@ function CategoriesPage() {
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
+      setEditorOpen(false)
       setName("")
       setIcon(DEFAULT_CATEGORY_ICON_KEY)
       setOrder("0")
@@ -144,7 +157,7 @@ function CategoriesPage() {
       }),
     onSuccess: (_result, id) => {
       if (editingCategoryId === id) {
-        setMobileEditOpen(false)
+        setEditorOpen(false)
         resetEditState()
       }
       queryClient.invalidateQueries({ queryKey: ["categories"] })
@@ -215,33 +228,41 @@ function CategoriesPage() {
     })
   }
 
-  const jumpToForm = () => {
+  const resetCreateMutation = createMutation.reset
+  const openCreateEditor = useCallback(() => {
+    resetCreateMutation()
     resetEditState()
-    requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-      nameInputRef.current?.focus()
-    })
-  }
+    setName("")
+    setType("expense")
+    setIcon(DEFAULT_CATEGORY_ICON_KEY)
+    setOrder("0")
+    setEditorOpen(true)
+  }, [resetCreateMutation, resetEditState])
 
-  const startEdit = (row: CategoryListItem, useMobileModal: boolean) => {
+  useEffect(() => {
+    setUtilityAction({ label: "Add category", onClick: openCreateEditor })
+    return () => setUtilityAction(null)
+  }, [openCreateEditor, setUtilityAction])
+
+  const startEdit = (row: CategoryListItem) => {
     updateMutation.reset()
     setEditingCategoryId(row.id)
     setEditName(row.name)
     setEditIcon(row.icon ?? DEFAULT_CATEGORY_ICON_KEY)
     setEditOrder(String(row.order))
     setEditType(row.type)
-    setMobileEditOpen(useMobileModal)
+    setEditorOpen(true)
   }
 
-  const closeMobileEdit = () => {
+  const closeEditor = () => {
     if (updateMutation.isPending) {
       return
     }
-    setMobileEditOpen(false)
+    setEditorOpen(false)
     resetEditState()
   }
 
-  const submitEdit = (closeMobileModal: boolean) => {
+  const submitEdit = () => {
     if (!editingCategoryId) {
       return
     }
@@ -255,9 +276,7 @@ function CategoriesPage() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["categories"] })
-          if (closeMobileModal) {
-            setMobileEditOpen(false)
-          }
+          setEditorOpen(false)
           resetEditState()
           setSavedFlash(true)
         },
@@ -265,14 +284,9 @@ function CategoriesPage() {
     )
   }
 
-  const handleDesktopEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    submitEdit(false)
-  }
-
-  const handleMobileEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    submitEdit(true)
+    submitEdit()
   }
 
   if (isLoading) {
@@ -284,9 +298,9 @@ function CategoriesPage() {
 
   const activeCategories = data.categories.filter((row) => !row.archived_at)
   const archivedCategories = data.categories.filter((row) => row.archived_at)
-  const isDesktopEditing = editingCategoryId !== null && !mobileEditOpen
+  const isEditing = editingCategoryId !== null
   const iconPickerFallback = (
-    <div className="rounded-lg border border-border bg-surface-hi/65 px-3 py-2 text-xs text-muted">
+    <div className="rounded-lg bg-faint px-3 py-2 text-xs text-muted">
       Loading icon picker…
     </div>
   )
@@ -368,18 +382,7 @@ function CategoriesPage() {
 
   return (
     <section className="space-y-6">
-      <PageIntro
-        title="Categories"
-        actions={
-          <AppButton
-            type="button"
-            onClick={jumpToForm}
-            className="desk:hidden"
-          >
-            Add category
-          </AppButton>
-        }
-      />
+      <PageIntro title="Categories" />
 
       <PeriodPicker
         periodSlug={data.period.slug}
@@ -389,12 +392,20 @@ function CategoriesPage() {
         onApplyCustom={applyCustomPeriod}
       />
 
-      <div className="grid gap-6 desk:grid-cols-[1.2fr_0.8fr]">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <AppCard>
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="font-head text-lg font-bold">Income categories</h2>
-              <AppFieldLabel className="grid min-w-[8.75rem] gap-1 text-xs text-muted">
+      <div className="grid grid-cols-1 items-start gap-4 desk:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
+        <div
+          className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2"
+          data-testid="category-library"
+        >
+          <FinancialPanel role="ledger">
+            <SectionHeading className="items-stretch max-sm:flex-col sm:items-end">
+              <div>
+                <h2 className="font-head text-lg font-bold">Income categories</h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  {incomeCategories.length} active
+                </p>
+              </div>
+              <AppFieldLabel className="grid min-w-0 gap-1 text-xs text-muted sm:min-w-[8.75rem]">
                 Sort by
                 <AppNativeSelect
                   className="field-sm"
@@ -405,45 +416,39 @@ function CategoriesPage() {
                   <option value="name">Name</option>
                 </AppNativeSelect>
               </AppFieldLabel>
-            </div>
+            </SectionHeading>
             <div className="divide-y divide-border">
               {incomeCategories.length ? (
                 incomeCategories.map((row) => (
                   <div
                     key={row.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
+                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <CategoryIcon icon={row.icon} />
-                      <div>
-                        <p className="font-semibold text-text">{row.name}</p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <CategoryIcon icon={row.icon} label={row.name} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text">{row.name}</p>
                         <p className="text-xs text-muted">{row.usage_count} uses this period</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <AppButton
                         type="button"
-                        onClick={() => startEdit(row, false)}
+                        onClick={() => startEdit(row)}
                         tone="ghost"
-                        className="hidden px-3 py-1 text-xs desk:inline-flex"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Edit ${row.name}`}
                       >
-                        Edit
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={() => startEdit(row, true)}
-                        tone="ghost"
-                        className="px-3 py-1 text-xs desk:hidden"
-                      >
-                        Edit
+                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
                       </AppButton>
                       <AppButton
                         type="button"
                         onClick={() => archiveMutation.mutate(row.id)}
                         tone="ghost"
-                        className="px-3 py-1 text-xs"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Archive ${row.name}`}
                       >
-                        Archive
+                        <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
                       </AppButton>
                     </div>
                   </div>
@@ -452,12 +457,17 @@ function CategoriesPage() {
                 <div className="px-4 py-6 text-sm text-muted">No income categories yet.</div>
               )}
             </div>
-          </AppCard>
+          </FinancialPanel>
 
-          <AppCard>
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="font-head text-lg font-bold">Expense categories</h2>
-              <AppFieldLabel className="grid min-w-[8.75rem] gap-1 text-xs text-muted">
+          <FinancialPanel role="ledger">
+            <SectionHeading className="items-stretch max-sm:flex-col sm:items-end">
+              <div>
+                <h2 className="font-head text-lg font-bold">Expense categories</h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  {expenseCategories.length} active
+                </p>
+              </div>
+              <AppFieldLabel className="grid min-w-0 gap-1 text-xs text-muted sm:min-w-[8.75rem]">
                 Sort by
                 <AppNativeSelect
                   className="field-sm"
@@ -468,45 +478,39 @@ function CategoriesPage() {
                   <option value="name">Name</option>
                 </AppNativeSelect>
               </AppFieldLabel>
-            </div>
+            </SectionHeading>
             <div className="divide-y divide-border">
               {expenseCategories.length ? (
                 expenseCategories.map((row) => (
                   <div
                     key={row.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
+                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <CategoryIcon icon={row.icon} />
-                      <div>
-                        <p className="font-semibold text-text">{row.name}</p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <CategoryIcon icon={row.icon} label={row.name} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text">{row.name}</p>
                         <p className="text-xs text-muted">{row.usage_count} uses this period</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <AppButton
                         type="button"
-                        onClick={() => startEdit(row, false)}
+                        onClick={() => startEdit(row)}
                         tone="ghost"
-                        className="hidden px-3 py-1 text-xs desk:inline-flex"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Edit ${row.name}`}
                       >
-                        Edit
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={() => startEdit(row, true)}
-                        tone="ghost"
-                        className="px-3 py-1 text-xs desk:hidden"
-                      >
-                        Edit
+                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
                       </AppButton>
                       <AppButton
                         type="button"
                         onClick={() => archiveMutation.mutate(row.id)}
                         tone="ghost"
-                        className="px-3 py-1 text-xs"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Archive ${row.name}`}
                       >
-                        Archive
+                        <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
                       </AppButton>
                     </div>
                   </div>
@@ -515,143 +519,37 @@ function CategoriesPage() {
                 <div className="px-4 py-6 text-sm text-muted">No expense categories yet.</div>
               )}
             </div>
-          </AppCard>
+          </FinancialPanel>
         </div>
 
         <div className="space-y-6">
-          <AppCard>
-            <form
-              ref={formRef}
-              onSubmit={isDesktopEditing ? handleDesktopEditSubmit : handleCreate}
-              className="editor-rail p-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-head text-lg font-bold">
-                  {isDesktopEditing ? "Edit category" : "Add a category"}
-                </h2>
-                {isDesktopEditing && (
-                  <AppButton
-                    type="button"
-                    onClick={() => {
-                      updateMutation.reset()
-                      resetEditState()
-                    }}
-                    tone="ghost"
-                    className="px-3 py-1 text-xs"
-                  >
-                    Cancel
-                  </AppButton>
-                )}
+          <FinancialPanel role="ledger">
+            <SectionHeading>
+              <div>
+                <h2 className="font-head text-lg font-bold">Archived categories</h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Restore identities when they become useful again
+                </p>
               </div>
-              <div className="mt-4 space-y-3">
-                <AppFieldLabel>
-                  Name
-                  <AppInput
-                    ref={nameInputRef}
-                    value={isDesktopEditing ? editName : name}
-                    onChange={(event) => {
-                      if (isDesktopEditing) {
-                        setEditName(event.target.value)
-                        return
-                      }
-                      setName(event.target.value)
-                    }}
-                    className="mt-1"
-                    placeholder="e.g. Groceries"
-                    required
-                  />
-                </AppFieldLabel>
-              {isDesktopEditing ? (
-                <div className="form-label">
-                  Type
-                  <p className="mt-1 rounded-lg border border-border bg-surface-hi/60 px-3 py-2 text-sm font-semibold text-text">
-                    {editType}
-                  </p>
-                </div>
-              ) : (
-                <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={type}
-                    onChange={(event) => setType(event.target.value)}
-                    className="mt-1"
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-              )}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted">Icon</p>
-                <Suspense fallback={iconPickerFallback}>
-                  <IconPicker
-                    value={isDesktopEditing ? editIcon : icon}
-                    onChange={(nextIcon) => {
-                      if (isDesktopEditing) {
-                        setEditIcon(nextIcon)
-                        return
-                      }
-                      setIcon(nextIcon)
-                    }}
-                  />
-                </Suspense>
-              </div>
-              <AppFieldLabel>
-                Order (optional)
-                <AppInput
-                  value={isDesktopEditing ? editOrder : order}
-                  onChange={(event) => {
-                    if (isDesktopEditing) {
-                      setEditOrder(event.target.value)
-                      return
-                    }
-                    setOrder(event.target.value)
-                  }}
-                  type="number"
-                  className="mt-1"
-                />
-              </AppFieldLabel>
-              {isDesktopEditing && updateMutation.error && (
-                <p className="text-xs text-semantic-red">{String(updateMutation.error)}</p>
-              )}
-              {!isDesktopEditing && createMutation.error && (
-                <p className="text-xs text-semantic-red">{String(createMutation.error)}</p>
-              )}
-              <AppButton
-                type="submit"
-                className="w-full"
-                disabled={
-                  isDesktopEditing ? updateMutation.isPending : createMutation.isPending
-                }
-              >
-                {isDesktopEditing
-                  ? updateMutation.isPending
-                    ? "Saving…"
-                    : "Save changes"
-                  : createMutation.isPending
-                    ? "Creating…"
-                    : "Create category"}
-              </AppButton>
-              </div>
-            </form>
-          </AppCard>
-
-          <AppCard>
-            <div className="border-b border-border px-4 py-3">
-              <h2 className="font-head text-lg font-bold">Archived categories</h2>
-            </div>
+              <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+                {archivedCategories.length}
+              </span>
+            </SectionHeading>
             <div className="divide-y divide-border">
               {archivedCategories.length ? (
                 archivedCategories.map((row) => (
                   <div
                     key={row.id}
-                    className="flex items-center justify-between px-4 py-3"
+                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
                   >
-                    <div>
-                      <p className="font-semibold text-text">{row.name}</p>
-                      <p className="text-xs text-muted">
-                        {row.type} · Archived {formatEuroDate(row.archived_at ?? "")}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <CategoryIcon icon={row.icon} label={row.name} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text">{row.name}</p>
+                        <p className="text-xs text-muted">
+                          {row.type} · Archived {formatEuroDate(row.archived_at ?? "")}
+                        </p>
+                      </div>
                     </div>
                     <AppButton
                       type="button"
@@ -667,10 +565,11 @@ function CategoriesPage() {
                 <div className="px-4 py-6 text-sm text-muted">No archived categories.</div>
               )}
             </div>
-          </AppCard>
+          </FinancialPanel>
 
-          <AppCard className="p-4">
-            <h2 className="font-head text-lg font-bold">Merge categories</h2>
+          <FinancialPanel role="inspector" className="p-4">
+            <p className="mono-meta text-muted">Library maintenance</p>
+            <h2 className="mt-1 font-head text-lg font-bold">Merge categories</h2>
             <p className="mt-1 text-xs text-muted">
               Move all references to target and archive source.
             </p>
@@ -749,7 +648,7 @@ function CategoriesPage() {
               </AppButton>
             </div>
             {mergeConfirmOpen && (
-              <div className="mt-3 rounded-lg border border-accent/40 bg-accent/10 p-3 text-xs">
+              <div className="mt-3 rounded-lg bg-signal-blue-soft p-3 text-xs">
                 <p className="font-semibold text-text">Confirm category merge</p>
                 <p className="mt-1 text-muted">
                   Merge <span className="font-semibold text-text">{mergeSource?.name}</span>{" "}
@@ -786,12 +685,12 @@ function CategoriesPage() {
               </div>
             )}
             {mergeOutcomeMessage && (
-              <p className="mt-3 rounded-lg border border-semantic-green/40 bg-semantic-green/10 p-3 text-xs text-semantic-green">
+              <p className="mt-3 rounded-lg bg-signal-green-soft p-3 text-xs text-semantic-green">
                 {mergeOutcomeMessage}
               </p>
             )}
             {mergePreview && (
-              <div className="mt-3 rounded-lg border border-border bg-surface-hi/60 p-3 text-xs text-muted">
+              <div className="mt-3 rounded-lg bg-faint p-3 text-xs text-muted">
                 <p>Transactions: {mergePreview.transactions ?? 0}</p>
                 <p>Recurring rules: {mergePreview.recurring_rules ?? 0}</p>
                 <p>Rule category actions: {mergePreview.rules_set_category ?? 0}</p>
@@ -799,103 +698,124 @@ function CategoriesPage() {
                 <p>Budget overrides: {mergePreview.budget_overrides ?? 0}</p>
               </div>
             )}
-          </AppCard>
+          </FinancialPanel>
         </div>
       </div>
 
-      <div
-        className={`fixed inset-0 z-[70] desk:hidden ${
-          mobileEditOpen ? "pointer-events-auto" : "pointer-events-none"
-        }`}
-        aria-hidden={!mobileEditOpen}
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          if (!open && !createMutation.isPending && !updateMutation.isPending) {
+            closeEditor()
+          }
+        }}
       >
-        <button
-          type="button"
-          onClick={closeMobileEdit}
-          className={`drawer-overlay ${mobileEditOpen ? "opacity-100" : "opacity-0"}`}
-          aria-label="Close edit category dialog"
-        />
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit category"
-            className={`drawer-panel drawer-motion ${
-              mobileEditOpen
-                ? "pointer-events-auto scale-100 opacity-100"
-                : "pointer-events-none scale-95 opacity-0"
-            }`}
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="font-head text-xl font-bold tracking-tight">Edit category</h2>
-              </div>
-              <button
-                type="button"
-                onClick={closeMobileEdit}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted transition hover:text-text"
-                aria-label="Close edit category dialog"
-                disabled={updateMutation.isPending}
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
-            </div>
+        <DialogContent
+          aria-label={isEditing ? "Edit category" : "Add category"}
+          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
+        >
+          <div className="-mr-5 overflow-y-auto pr-5">
+            <DialogHeader>
+              <DialogTitle>{isEditing ? "Edit category" : "Add category"}</DialogTitle>
+              <DialogClose asChild>
+                <AppButton
+                  tone="ghost"
+                  className="h-9 w-9 rounded-full p-0"
+                  aria-label="Close category editor"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  <XIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+              </DialogClose>
+            </DialogHeader>
 
             <form
-              onSubmit={handleMobileEditSubmit}
-              className="grid min-h-0 flex-1 gap-4 overflow-y-auto pr-1"
+              onSubmit={isEditing ? handleEditSubmit : handleCreate}
+              className="space-y-4"
             >
               <AppFieldLabel>
                 Name
                 <AppInput
-                  value={editName}
-                  onChange={(event) => setEditName(event.target.value)}
+                  value={isEditing ? editName : name}
+                  onChange={(event) =>
+                    isEditing ? setEditName(event.target.value) : setName(event.target.value)
+                  }
+                  placeholder="e.g. Groceries"
+                  autoFocus
                   required
                 />
               </AppFieldLabel>
-              <div className="form-label">
-                Type
-                <p className="rounded-lg border border-border bg-surface-hi/60 px-3 py-2 text-sm font-semibold text-text">
-                  {editType}
-                </p>
-              </div>
+              {isEditing ? (
+                <div className="form-label">
+                  Type
+                  <p className="rounded-lg border border-border bg-surface-hi/60 px-3 py-2 text-sm font-semibold capitalize text-text">
+                    {editType}
+                  </p>
+                </div>
+              ) : (
+                <AppFieldLabel>
+                  Type
+                  <AppNativeSelect
+                    value={type}
+                    onChange={(event) => setType(event.target.value)}
+                    className="mt-1"
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </AppNativeSelect>
+                </AppFieldLabel>
+              )}
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted">Icon</p>
                 <Suspense fallback={iconPickerFallback}>
-                  <IconPicker value={editIcon} onChange={setEditIcon} />
+                  <IconPicker
+                    value={isEditing ? editIcon : icon}
+                    onChange={isEditing ? setEditIcon : setIcon}
+                  />
                 </Suspense>
               </div>
               <AppFieldLabel>
                 Order (optional)
                 <AppInput
-                  value={editOrder}
-                  onChange={(event) => setEditOrder(event.target.value)}
+                  value={isEditing ? editOrder : order}
+                  onChange={(event) =>
+                    isEditing ? setEditOrder(event.target.value) : setOrder(event.target.value)
+                  }
                   type="number"
                 />
               </AppFieldLabel>
-              {updateMutation.error && (
-                <p className="text-xs text-semantic-red">{String(updateMutation.error)}</p>
-              )}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <AppButton
-                  type="button"
-                  onClick={closeMobileEdit}
-                  tone="ghost"
-                  disabled={updateMutation.isPending}
-                >
-                  Cancel
-                </AppButton>
+              {(isEditing ? updateMutation.error : createMutation.error) ? (
+                <p className="text-xs text-semantic-red">
+                  {String(isEditing ? updateMutation.error : createMutation.error)}
+                </p>
+              ) : null}
+              <div className="flex gap-2 border-t border-border pt-4">
                 <AppButton
                   type="submit"
-                  disabled={updateMutation.isPending}
+                  className="flex-1"
+                  disabled={isEditing ? updateMutation.isPending : createMutation.isPending}
                 >
-                  {updateMutation.isPending ? "Saving…" : "Save changes"}
+                  {isEditing
+                    ? updateMutation.isPending
+                      ? "Saving…"
+                      : "Save changes"
+                    : createMutation.isPending
+                      ? "Creating…"
+                      : "Add category"}
+                </AppButton>
+                <AppButton
+                  type="button"
+                  onClick={closeEditor}
+                  tone="ghost"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  Cancel
                 </AppButton>
               </div>
             </form>
           </div>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
       {savedFlash && (
         <div className="fixed inset-x-0 bottom-6 z-[80] flex justify-center pointer-events-none">
           <div className="toast-flash pointer-events-auto rounded-full border border-border bg-surface px-4 py-2 text-sm font-semibold text-semantic-green shadow-[var(--shadow-raised)]">

@@ -20,6 +20,7 @@ wheels/
 htmlcov/
 test-results/
 playwright-report/
+output/playwright/*auth*.json
 
 # Implementation plans
 implementation_plan*.md

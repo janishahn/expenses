@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -19,25 +18,6 @@ class TransactionTriageOutput(BaseModel):
         if self.clean_title is not None:
             self.clean_title = self.clean_title.strip() or None
         return self
-
-
-class SearchTranslationOutput(BaseModel):
-    query: str = Field(default="", max_length=500)
-    confidence: float = Field(..., ge=0, le=1)
-    clarification_needed: bool = False
-    clarification_question: str | None = Field(default=None, max_length=240)
-
-    @model_validator(mode="after")
-    def normalize_query(self):
-        self.query = " ".join(self.query.strip().split())
-        if self.clarification_question is not None:
-            self.clarification_question = self.clarification_question.strip() or None
-        return self
-
-
-class SearchTranslationResult(SearchTranslationOutput):
-    applied_tokens: list[dict[str, object]] = Field(default_factory=list)
-    free_terms: list[str] = Field(default_factory=list)
 
 
 class RuleProposalOut(BaseModel):
@@ -69,11 +49,6 @@ class RuleMiningOutput(BaseModel):
 class RuleSuggestionResult(RuleProposalOut):
     id: int
     preview_matches_count: int
-
-
-class SearchTranslateIn(BaseModel):
-    query: str = Field(..., min_length=1, max_length=500)
-    reference_date: date | None = None
 
 
 class TransactionSuggestionOut(BaseModel):

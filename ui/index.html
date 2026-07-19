@@ -1,25 +1,25 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/expenses-mark.svg" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <meta
       name="theme-color"
-      content="#f0f6f8"
+      content="#eeefe9"
       media="not all"
       data-ew-theme-color="light"
-      data-ew-theme-background="rgb(240 246 248)"
+      data-ew-theme-background="rgb(238 239 233)"
     />
     <meta
       name="theme-color"
-      content="#000000"
+      content="#111511"
       media="all"
       data-ew-theme-color="dark"
-      data-ew-theme-background="#000000"
+      data-ew-theme-background="rgb(17 21 17)"
     />
     <script>
       ;(() => {
@@ -27,12 +27,12 @@
         const darkMediaQuery = "(prefers-color-scheme: dark)"
         const fallbackThemeChrome = {
           light: {
-            themeColor: "#f0f6f8",
-            backgroundColor: "rgb(240 246 248)",
+            themeColor: "#eeefe9",
+            backgroundColor: "rgb(238 239 233)",
           },
           dark: {
-            themeColor: "#000000",
-            backgroundColor: "#000000",
+            themeColor: "#111511",
+            backgroundColor: "rgb(17 21 17)",
           },
         }
         const parsePreference = (value) =>
@@ -98,12 +98,6 @@
         }
       })()
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
     <title>Expenses</title>
     <script>
       window.addEventListener('pageshow', function(e) { if (e.persisted) location.reload(); });

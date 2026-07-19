@@ -7,8 +7,8 @@ import { apiFetch, apiFetchFormData } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
 import PageIntro from "../components/PageIntro"
 import ThemePreferenceControl from "../components/ThemePreferenceControl"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 
 type BalanceAnchor = {
@@ -301,11 +301,11 @@ function SettingsPage() {
   }
 
   return (
-    <section data-testid="settings-page" className="space-y-6">
+    <section data-testid="settings-page" className="space-y-4">
       <PageIntro title="Settings" />
 
-      <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
-        <AppCard className="p-5 lg:col-span-2">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] [&>*]:min-w-0">
+        <FinancialPanel role="inspector" className="p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="space-y-1">
               <h2 className="font-head text-2xl font-bold tracking-tight">Account</h2>
@@ -330,7 +330,7 @@ function SettingsPage() {
 
           <div className="mt-4 border-t border-border pt-4">
             <div className="space-y-1">
-              <h3 className="font-head text-lg font-bold">Ingest Token</h3>
+              <h3 className="font-head text-lg font-bold">Ingest token</h3>
               <p className="text-sm text-muted">
                 Use this token for external POST calls to <code>/api/ingest</code>.
               </p>
@@ -378,17 +378,17 @@ function SettingsPage() {
             ) : null}
 
             {generatedIngestToken ? (
-              <div className="mt-3 space-y-2 rounded-lg border border-border bg-surface-hi/55 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+              <div className="mt-3 space-y-2 rounded-md bg-signal-yellow-soft/70 p-3">
+                <p className="text-xs font-semibold text-muted">
                   Copy now — this is shown once
                 </p>
                 <AppInput value={generatedIngestToken} readOnly className="font-mono text-xs" />
               </div>
             ) : null}
           </div>
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard className="p-5 lg:col-span-2">
+        <FinancialPanel className="p-5">
           <h2 className="font-head text-2xl font-bold tracking-tight">Appearance</h2>
           <ThemePreferenceControl
             testId="settings-theme-control"
@@ -396,15 +396,15 @@ function SettingsPage() {
             helper="Choose system, light, or dark mode for the whole app."
             className="mt-4"
           />
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard className="p-5 lg:col-span-2">
-          <h2 className="text-xl font-head font-bold">Balance Snapshots</h2>
+        <FinancialPanel role="inspector" className="p-5 lg:col-span-2">
+          <h2 className="text-xl font-head font-bold">Balance snapshots</h2>
           <p className="mt-2 text-sm text-muted">
             Reconcile your account balance at a specific moment. Transactions are
             applied before or after this timestamp.
           </p>
-          <div className="mt-4 text-sm text-muted">
+          <div className="mt-4 rounded-md bg-signal-blue-soft/70 p-3 text-sm text-muted">
             Current balance (as of now):{" "}
             <span className="font-mono font-semibold">
               {formatCurrency(data.current_balance)} €
@@ -473,7 +473,7 @@ function SettingsPage() {
 
           {data.balance_anchors.length > 0 ? (
             <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <p className="text-xs font-semibold uppercase text-muted">Saved snapshots</p>
+              <p className="text-xs font-semibold text-muted">Saved snapshots</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-border text-left text-xs uppercase text-muted">
@@ -517,12 +517,16 @@ function SettingsPage() {
               </div>
             </div>
           ) : null}
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard data-testid="settings-csv-import" className="p-5 lg:col-span-2">
+        <FinancialPanel
+          role="inspector"
+          data-testid="settings-csv-import"
+          className="p-5 lg:col-span-2"
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-head font-bold">CSV Import</h2>
+              <h2 className="text-xl font-head font-bold">CSV import</h2>
               <p className="mt-1 text-sm text-muted">
                 Preview and import transactions from a CSV export into your own account.
               </p>
@@ -546,7 +550,8 @@ function SettingsPage() {
               aria-label="CSV file"
               onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
             />
-            <div
+            <button
+              type="button"
               onClick={() => csvInputRef.current?.click()}
               onDragOver={(event) => {
                 event.preventDefault()
@@ -558,7 +563,7 @@ function SettingsPage() {
                 setIsCsvDragActive(false)
                 setCsvFile(event.dataTransfer.files[0] ?? null)
               }}
-              className={`cursor-pointer rounded-md border-2 border-dashed px-4 py-8 text-center transition ${
+              className={`w-full cursor-pointer rounded-md border-2 border-dashed px-4 py-8 text-center transition ${
                 isCsvDragActive
                   ? "border-accent bg-accent-dim"
                   : "border-border hover:border-accent hover:bg-accent-dim"
@@ -568,7 +573,7 @@ function SettingsPage() {
               <p className="mt-2 text-sm font-semibold text-text">Drop a CSV file here</p>
               <p className="text-xs text-muted">or click to browse</p>
               {csvFile ? <p className="mt-2 text-xs text-accent">{csvFile.name}</p> : null}
-            </div>
+            </button>
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <AppButton
@@ -594,7 +599,7 @@ function SettingsPage() {
             {csvStatus ? <p className="text-xs font-semibold text-semantic-green">{csvStatus}</p> : null}
 
             {csvPreview ? (
-              <div className="rounded-lg border border-border bg-surface-hi/55 p-3">
+              <div className="rounded-lg bg-surface-hi/65 p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-text">Preview</p>
                   <span className="chip text-[11px] text-text">
@@ -650,7 +655,7 @@ function SettingsPage() {
               </div>
             ) : null}
           </div>
-        </AppCard>
+        </FinancialPanel>
       </div>
     </section>
   )

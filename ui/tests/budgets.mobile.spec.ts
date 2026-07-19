@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Budgets Page Mobile", () => {
@@ -53,24 +53,18 @@ test.describe("Budgets Page Mobile", () => {
     ).toBeLessThanOrEqual(clientWidth)
   }
 
-  test("should jump to the recurring budget form from the mobile page action", async ({
+  test("should open the recurring budget modal from the mobile page action", async ({
     page,
   }) => {
     await page.goto("/budgets?view=templates")
-    await expect(
-      page.getByRole("button", { name: "Add recurring budget" })
-    ).toBeVisible()
+    const addAction = page.getByTestId("app-shell-mobile-add-action")
+    await expect(addAction).toHaveAccessibleName("Add budget")
+    await expect(addAction).toHaveText("Add budget")
+    await addAction.click()
 
-    const saveButton = page.getByRole("button", { name: "Save recurring budget" })
-    const initialY = await saveButton.evaluate(
-      (node) => node.getBoundingClientRect().top,
-    )
-
-    await page.getByRole("button", { name: "Add recurring budget" }).click()
-
-    await expect.poll(async () => {
-      return saveButton.evaluate((node) => node.getBoundingClientRect().top)
-    }).toBeLessThan(initialY)
+    const dialog = page.getByRole("dialog", { name: "Add recurring budget" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Save recurring budget" })).toBeVisible()
   })
 
   test("keeps expanded burndown and compare controls contained in the viewport", async ({

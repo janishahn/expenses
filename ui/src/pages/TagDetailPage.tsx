@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import DonutChart from "../components/charts/DonutChart"
 import type { BreakdownItem } from "../components/charts/DonutChart"
 import Sparkline from "../components/charts/Sparkline"
@@ -10,8 +11,12 @@ import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import TransactionDescription from "../components/TransactionDescription"
 import { Toggle } from "../components/Toggle"
+import {
+  FinancialPanel,
+  MetricLane,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
@@ -82,12 +87,14 @@ function TagSettingsForm({
   }
 
   return (
-    <AppCard>
+    <FinancialPanel role="inspector" data-testid="tag-settings-inspector">
       <form onSubmit={handleSubmit}>
-        <div className="surface-section-header flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <SectionHeading className="flex-col items-stretch md:flex-row md:items-center">
           <div>
             <h2 className="font-head text-lg font-bold">Tag settings</h2>
-            <p className="text-xs text-muted">Edit or delete this tag.</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Identity and budget treatment
+            </p>
           </div>
           <AppButton
             type="button"
@@ -97,7 +104,7 @@ function TagSettingsForm({
           >
             Delete tag
           </AppButton>
-        </div>
+        </SectionHeading>
         <div className="surface-section-body">
           <div className="grid gap-4 md:grid-cols-[1fr_auto]">
             <AppFieldLabel>
@@ -109,7 +116,7 @@ function TagSettingsForm({
                 required
               />
             </AppFieldLabel>
-            <label className="flex items-center gap-3 rounded-md border border-border bg-bg px-3 py-2 text-xs text-muted">
+            <label className="flex items-center gap-3 rounded-md bg-faint px-3 py-2 text-xs text-muted">
               <Toggle on={hidden} onChange={setHidden} />
               Exclude from budgets
             </label>
@@ -126,7 +133,7 @@ function TagSettingsForm({
           </AppButton>
         </div>
       </form>
-    </AppCard>
+    </FinancialPanel>
   )
 }
 
@@ -205,8 +212,8 @@ function TagDetailPage() {
         title={tag.name}
         titleAccessory={
           tag.is_hidden_from_budget ? (
-            <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs text-accent">
-              Hidden from budgets
+            <span className="rounded-full bg-signal-yellow-soft px-2.5 py-1 text-xs font-semibold text-text">
+              Excluded from budgets
             </span>
           ) : null
         }
@@ -222,8 +229,11 @@ function TagDetailPage() {
         onApplyCustom={applyCustomPeriod}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+        <div
+          data-testid="tag-detail-metrics"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        >
           {[
             {
               label: "Income",
@@ -244,10 +254,20 @@ function TagDetailPage() {
               points: sparklines.balance,
             },
           ].map((item) => (
-            <AppCard key={item.label} className="p-4">
+            <MetricLane
+              key={item.label}
+              tone={
+                item.label === "Income"
+                  ? "income"
+                  : item.label === "Expenses"
+                    ? "expense"
+                    : "plan"
+              }
+              className="p-4"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase text-muted">
+                  <p className="text-xs font-semibold text-muted">
                     {item.label}
                   </p>
                   <p className={`whitespace-nowrap font-mono text-2xl font-semibold ${item.tone}`}>
@@ -256,7 +276,7 @@ function TagDetailPage() {
                 </div>
                 <Sparkline points={item.points} className={`h-10 w-24 ${item.tone}`} />
               </div>
-            </AppCard>
+            </MetricLane>
           ))}
         </div>
 
@@ -271,10 +291,20 @@ function TagDetailPage() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Activity</h2>
-          <div className="mt-4 space-y-3">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+        <FinancialPanel role="ledger" data-testid="tag-activity-ledger">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Activity</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Transactions carrying this tag
+              </p>
+            </div>
+            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+              {transactions.length}
+            </span>
+          </SectionHeading>
+          <div className="divide-y divide-border">
             {transactions.length ? (
               transactions.map((txn) => {
                 const isExpense = txn.type === "expense"
@@ -284,22 +314,27 @@ function TagDetailPage() {
                 return (
                   <div
                     key={txn.id}
-                    className="flex flex-col gap-3 rounded-lg border border-border bg-bg px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-faint/60 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div>
-                      <p className="font-semibold text-text">
-                        {txn.title || txn.category?.name || "Untitled"}
-                      </p>
-                      <TransactionDescription
-                        markdown={txn.description}
-                        compact
-                        clamp
-                        className="mt-1"
+                    <div className="flex min-w-0 items-start gap-3">
+                      <CategoryIcon
+                        icon={txn.category?.icon ?? null}
+                        label={txn.category?.name}
                       />
-                      <p className="text-xs text-muted">
-                        {formatEuroDate(txn.date)} ·
-                        {txn.category?.name ?? "Uncategorized"}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text">
+                          {txn.title || txn.category?.name || "Untitled"}
+                        </p>
+                        <TransactionDescription
+                          markdown={txn.description}
+                          compact
+                          clamp
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted">
+                          {formatEuroDate(txn.date)} · {txn.category?.name ?? "Uncategorized"}
+                        </p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p
@@ -320,12 +355,12 @@ function TagDetailPage() {
                 )
               })
             ) : (
-              <p className="text-sm text-muted">
+              <p className="px-4 py-8 text-sm text-muted">
                 No transactions in this period.
               </p>
             )}
           </div>
-        </AppCard>
+        </FinancialPanel>
 
         <div className="space-y-4">
           {donut.has_any_transactions ? (
@@ -342,14 +377,14 @@ function TagDetailPage() {
               />
             </div>
           ) : (
-            <AppCard className="p-6 text-center">
+            <FinancialPanel className="p-6 text-center">
               <p className="font-head text-lg font-bold text-text">
                 No activity yet
               </p>
               <p className="text-sm text-muted">
                 Add transactions with this tag to see insights.
               </p>
-            </AppCard>
+            </FinancialPanel>
           )}
         </div>
       </div>

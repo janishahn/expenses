@@ -34,7 +34,6 @@ from expenses.ai.usage import (
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.core.periods import Period
-from expenses.core.search import parse_advanced_search
 from expenses.db.models import Category, LLMJob, Transaction, TransactionType
 from expenses.services import (
     BudgetService,
@@ -477,16 +476,11 @@ class SpendingAnalysisService:
         if isinstance(period, dict):
             return period
 
-        try:
-            search = parse_advanced_search(query) if query else None
-        except ValueError as exc:
-            return {"ok": False, "status": "invalid_query", "message": str(exc)}
-
         filters = TransactionFilters(
             type=TransactionType(transaction_type) if transaction_type else None,
             category_id=category_id,
             tag_id=tag_id,
-            search=search,
+            query=query,
         )
         transaction_service = TransactionService(self.session, self.user_id)
         count = transaction_service.count_for_period(period, filters)

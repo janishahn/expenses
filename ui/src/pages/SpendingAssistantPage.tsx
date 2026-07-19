@@ -140,7 +140,7 @@ function ToolTicker({ tools }: { tools: ToolActivity[] }) {
           key={tool.id}
           data-testid="spending-assistant-tool"
           data-status={tool.status}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-surface-hi/70 px-2.5 py-1 text-xs font-medium text-muted"
+          className="inline-flex items-center gap-1.5 rounded-md bg-faint/80 px-2.5 py-1.5 text-xs font-medium text-muted"
         >
           {tool.status === "running" ? (
             <CircleNotchIcon className="h-3.5 w-3.5 animate-spin text-accent" />
@@ -171,10 +171,14 @@ function SpendingAssistantPage() {
   const historyRef = useRef<SpendingChatHistoryEntry[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const threadRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      window.scrollTo({ top: document.documentElement.scrollHeight })
+      const thread = threadRef.current
+      if (thread) {
+        thread.scrollTop = thread.scrollHeight
+      }
     })
     return () => window.cancelAnimationFrame(frame)
   }, [messages])
@@ -374,7 +378,7 @@ function SpendingAssistantPage() {
   return (
     <section
       data-testid="spending-assistant-page"
-      className="flex min-h-[calc(100dvh-5.5rem)] flex-col desk:min-h-[calc(100dvh-2rem)]"
+      className="flex h-[calc(100dvh-5.75rem)] min-h-[32rem] flex-col desk:h-[calc(100dvh-7.75rem)] desk:min-h-[34rem]"
     >
       <PageIntro
         title="Assistant"
@@ -384,7 +388,7 @@ function SpendingAssistantPage() {
             <button
               type="button"
               onClick={handleNewChat}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted transition hover:border-border-hi hover:text-text"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-surface text-muted shadow-[var(--shadow-soft)] transition hover:bg-surface-hi hover:text-text"
               aria-label="New chat"
               data-testid="spending-assistant-new-chat"
             >
@@ -394,32 +398,36 @@ function SpendingAssistantPage() {
         }
       />
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
         <div
+          ref={threadRef}
           data-testid="spending-assistant-thread"
           role="log"
           aria-live="polite"
           aria-label="Conversation"
-          className="flex flex-1 flex-col gap-5 pt-5 pb-4"
+          className="financial-panel financial-panel-message mt-3 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pt-5 pb-4 md:px-6 md:pt-6"
         >
           {messages.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-5 py-10 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <div className="flex flex-1 flex-col items-center justify-center gap-5 py-8 text-center md:py-12">
+              <span className="flex h-12 w-12 items-center justify-center rounded-sm bg-signal-blue-soft text-accent">
                 <ChatCircleDotsIcon className="h-6 w-6" />
               </span>
-              <div className="space-y-1.5">
-                <p className="font-head text-lg font-bold text-text">
+              <div className="max-w-lg space-y-1.5">
+                <p className="font-head text-xl font-bold text-text">
                   What should we inspect?
                 </p>
+                <p className="text-sm text-muted">
+                  Ask about spending, budgets, and transactions in your private ledger.
+                </p>
               </div>
-              <div className="flex max-w-xl flex-wrap justify-center gap-2">
+              <div className="grid w-full max-w-2xl gap-2 sm:grid-cols-2">
                 {PROMPT_CHIPS.map((chip) => (
                   <button
                     key={chip}
                     type="button"
                     data-testid="spending-assistant-prompt"
                     onClick={() => void sendMessage(chip)}
-                    className="rounded-full border border-border/80 bg-surface-hi/60 px-3.5 py-2 text-sm text-muted transition hover:border-border-hi hover:text-text"
+                    className="min-h-11 rounded-lg bg-faint/75 px-4 py-3 text-left text-sm font-medium text-text transition hover:bg-signal-blue-soft focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {chip}
                   </button>
@@ -433,7 +441,7 @@ function SpendingAssistantPage() {
                   <div
                     data-testid="spending-assistant-message"
                     data-role="user"
-                    className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-accent/25 bg-accent/12 px-4 py-2.5 text-sm text-text"
+                    className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-signal-blue-soft px-4 py-3 text-sm text-text"
                   >
                     {turn.content}
                   </div>
@@ -442,7 +450,7 @@ function SpendingAssistantPage() {
                 <div key={turn.id} className="flex gap-3">
                   <span
                     data-testid="spending-assistant-avatar"
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent"
+                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-signal-purple-soft text-semantic-purple"
                   >
                     <ChatCircleDotsIcon className="h-4 w-4" />
                   </span>
@@ -472,7 +480,7 @@ function SpendingAssistantPage() {
                     {turn.error ? (
                       <div
                         data-testid="spending-assistant-error"
-                        className="flex items-start gap-2 rounded-xl border border-semantic-red/40 bg-semantic-red/10 px-3 py-2 text-sm text-semantic-red"
+                        className="flex items-start gap-2 rounded-lg bg-signal-red-soft px-3 py-2.5 text-sm text-semantic-red"
                       >
                         <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>{turn.error}</span>
@@ -488,9 +496,9 @@ function SpendingAssistantPage() {
         <form
           data-testid="spending-assistant-composer"
           onSubmit={handleSubmit}
-          className="sticky bottom-0 z-10 bg-bg pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+          className="z-10 shrink-0 bg-bg pt-3 pb-[env(safe-area-inset-bottom,0px)]"
         >
-          <div className="composer-surface flex items-end gap-2 rounded-2xl border p-2">
+          <div className="composer-surface flex items-end gap-2 rounded-lg border p-2">
             <textarea
               ref={inputRef}
               data-testid="spending-assistant-input"
@@ -508,7 +516,7 @@ function SpendingAssistantPage() {
                 onClick={handleStop}
                 aria-label="Stop"
                 data-testid="spending-assistant-stop"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-semantic-red/15 text-semantic-red transition hover:bg-semantic-red/25"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-signal-red-soft text-semantic-red transition hover:brightness-95"
               >
                 <StopIcon className="h-4 w-4" weight="fill" />
               </button>
@@ -518,7 +526,7 @@ function SpendingAssistantPage() {
                 aria-label="Send"
                 data-testid="spending-assistant-send"
                 disabled={!canSend}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-bg shadow-[var(--shadow-accent)] transition hover:brightness-110 disabled:opacity-60"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-accent text-white shadow-[var(--shadow-accent)] transition hover:brightness-105 disabled:opacity-50"
               >
                 <PaperPlaneTiltIcon className="h-4 w-4" weight="fill" />
               </button>

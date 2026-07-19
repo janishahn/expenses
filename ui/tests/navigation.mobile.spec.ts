@@ -1,5 +1,7 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
+
+test.describe.configure({ mode: "parallel" })
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
 
@@ -25,27 +27,15 @@ async function readThemeChrome(page: Page) {
   }))
 }
 
-async function clickMobileSidebarBackdrop(page: Page) {
-  const closeSidebarBackdrop = page.getByRole("button", { name: "Close sidebar" })
-  await expect(closeSidebarBackdrop).toBeVisible()
-  await expect
-    .poll(async () =>
-      closeSidebarBackdrop.evaluate((node) => {
-        const rect = node.getBoundingClientRect()
-        const topElement = document.elementFromPoint(
-          rect.left + rect.width / 2,
-          rect.top + rect.height / 2
-        )
-        return topElement === node || node.contains(topElement)
-      })
-    )
-    .toBeTruthy()
-  await closeSidebarBackdrop.click()
+async function closeMobileMenu(page: Page) {
+  const closeMenu = page.getByRole("button", { name: "Close menu" })
+  await expect(closeMenu).toBeVisible()
+  await closeMenu.click()
 }
 
 async function clickMobileSidebarLink(page: Page, label: string) {
-  await page.getByRole("button", { name: "Open sidebar" }).click()
-  const sidebar = page.locator("aside")
+  await page.getByRole("button", { name: "Open menu" }).click()
+  const sidebar = page.getByRole("complementary", { name: "Application menu" })
   await expect(sidebar).toBeVisible()
   const link = sidebar.getByRole("link", { name: label })
   await link.scrollIntoViewIfNeeded()
@@ -67,44 +57,48 @@ test.describe("Navigation (mobile)", () => {
     await clickMobileSidebarLink(page, "Transactions")
     await expect(page).toHaveURL(/\/transactions\?period=this_month/)
 
+    await page
+      .getByTestId("app-shell-header")
+      .getByRole("link", { name: "Expenses" })
+      .click()
+    await expect(page).toHaveURL(/\/\?period=this_month/)
+
+    await clickMobileSidebarLink(page, "Transactions")
     await clickMobileSidebarLink(page, "Dashboard")
     await expect(page).toHaveURL(/\/\?period=this_month/)
   })
 
-  test("uses a mobile add FAB instead of persistent bottom navigation", async ({
+  test("uses a compact mobile header action without fixed bottom navigation", async ({
     page,
   }) => {
     await page.goto("/")
     await expect(page.getByTestId("app-shell-bottom-nav")).toHaveCount(0)
+    const header = page.getByTestId("app-shell-header")
+    const addAction = header.getByTestId("app-shell-mobile-add-action")
+    await expect(addAction).toBeVisible()
+    await expect(addAction).toHaveAccessibleName("Add transaction")
+    await expect(header.getByRole("button", { name: "Open menu" })).toBeVisible()
+    await addAction.focus()
+    await expect(addAction).toHaveCSS("outline-style", "solid")
+    await expect(addAction).toHaveCSS("outline-width", "2px")
 
-    const addFab = page.getByTestId("app-shell-mobile-add-fab")
-    await expect(addFab).toBeVisible()
-    await expect(addFab).toHaveAccessibleName("Add")
-
-    const layout = await addFab.evaluate((node) => {
+    const layout = await addAction.evaluate((node) => {
       const rect = node.getBoundingClientRect()
       return {
-        bottom: window.innerHeight - rect.bottom,
         height: rect.height,
-        right: window.innerWidth - rect.right,
         width: rect.width,
       }
     })
 
-    expect(layout.bottom).toBeGreaterThanOrEqual(14)
-    expect(layout.bottom).toBeLessThanOrEqual(22)
-    expect(layout.right).toBeGreaterThanOrEqual(18)
-    expect(layout.right).toBeLessThanOrEqual(24)
-    expect(layout.width).toBe(56)
-    expect(layout.height).toBe(56)
+    expect(layout.width).toBeGreaterThanOrEqual(44)
+    expect(layout.height).toBeGreaterThanOrEqual(44)
 
-    await addFab.click()
+    await addAction.click()
     await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
-    await expect(addFab).toHaveCount(0)
   })
 
   test("navigates non-tab routes through the sidebar", async ({ page }) => {
-    test.setTimeout(60_000)
+    test.setTimeout(90_000)
 
     await page.goto("/")
 
@@ -112,6 +106,7 @@ test.describe("Navigation (mobile)", () => {
       { label: "Assistant", path: "/assistant", heading: "Assistant" },
       { label: "Forecast", path: "/forecast", heading: "Forecast" },
       { label: "Budgets", path: "/budgets", heading: "Budgets" },
+      { label: "Digest", path: "/digest", heading: "Digest" },
       { label: "Recurring", path: "/recurring", heading: "Recurring" },
       { label: "Templates", path: "/templates", heading: "Templates" },
       { label: "Rules", path: "/rules", heading: "Categorization Rules" },
@@ -119,12 +114,16 @@ test.describe("Navigation (mobile)", () => {
       { label: "Tags", path: "/tags", heading: "Tags" },
       { label: "Reports", path: "/reports/builder", heading: "Report Builder" },
       { label: "What If", path: "/scenarios", heading: "What If" },
+      { label: "Reconcile", path: "/reconciliation", heading: "Reconciliation" },
+      { label: "Settings", path: "/settings", heading: "Settings" },
       { label: "Admin", path: "/admin/elevate?redirect=%2Fadmin", heading: "Re-enter your password" },
     ]
 
     for (const route of routes) {
-      await page.getByRole("button", { name: "Open sidebar" }).click()
-      const sidebar = page.locator("aside")
+      await page.getByRole("button", { name: "Open menu" }).click()
+      const sidebar = page.getByRole("complementary", {
+        name: "Application menu",
+      })
       await expect(sidebar).toBeVisible()
       await sidebar.locator("nav").evaluate((node, label) => {
         const links = Array.from(node.querySelectorAll("a"))
@@ -141,13 +140,13 @@ test.describe("Navigation (mobile)", () => {
     }
   })
 
-  test("keeps bottom tool links tappable when sidebar is open", async ({
+  test("keeps every menu destination tappable in the edge-attached drawer", async ({
     page,
   }) => {
     await page.goto("/")
-    await page.getByRole("button", { name: "Open sidebar" }).click()
+    await page.getByRole("button", { name: "Open menu" }).click()
 
-    const sidebar = page.locator("aside")
+    const sidebar = page.getByRole("complementary", { name: "Application menu" })
     await expect(sidebar).toBeVisible()
     const adminLink = sidebar.getByRole("link", { name: "Admin" })
     await adminLink.scrollIntoViewIfNeeded()
@@ -165,33 +164,47 @@ test.describe("Navigation (mobile)", () => {
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
   })
 
-  test("closes the mobile sidebar via backdrop, escape, and destination navigation while restoring scrolling", async ({
+  test("closes the mobile menu via its close control, escape, and destination navigation while restoring scrolling", async ({
     page,
   }) => {
     await page.goto("/")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    await expect(page.locator("aside")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Close sidebar" })).toBeVisible()
+    await page.getByRole("button", { name: "Open menu" }).click()
+    await expect(
+      page.getByRole("complementary", { name: "Application menu" }),
+    ).toBeVisible()
+    await expect(page.getByRole("button", { name: "Close menu" })).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden")
 
     const dashboardUrl = page.url()
-    await clickMobileSidebarBackdrop(page)
+    await closeMobileMenu(page)
     await expect(page).toHaveURL(dashboardUrl)
-    await expect(page.locator("aside")).toHaveClass(/-translate-x-full/)
+    await expect(page.locator("aside.app-sidebar")).not.toHaveClass(
+      /app-sidebar-open/,
+    )
+    await expect(page.locator("aside.app-sidebar")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    await expect(page.locator("aside")).toBeVisible()
+    await page.getByRole("button", { name: "Open menu" }).click()
+    await expect(
+      page.getByRole("complementary", { name: "Application menu" }),
+    ).toBeVisible()
     await page.keyboard.press("Escape")
-    await expect(page.locator("aside")).toHaveClass(/-translate-x-full/)
+    await expect(page.locator("aside.app-sidebar")).not.toHaveClass(
+      /app-sidebar-open/,
+    )
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    const sidebar = page.locator("aside")
+    await page.getByRole("button", { name: "Open menu" }).click()
+    const sidebar = page.getByRole("complementary", { name: "Application menu" })
     await sidebar.getByRole("link", { name: "Transactions" }).click()
     await expect(page).toHaveURL("/transactions")
-    await expect(page.locator("aside")).toHaveClass(/-translate-x-full/)
+    await expect(page.locator("aside.app-sidebar")).not.toHaveClass(
+      /app-sidebar-open/,
+    )
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
   })
 
@@ -201,7 +214,9 @@ test.describe("Navigation (mobile)", () => {
     await page.goto("/")
     await page.evaluate((key) => window.localStorage.setItem(key, "dark"), THEME_STORAGE_KEY)
     await page.reload()
-    const shellThemeToggle = page.getByTestId("shell-theme-quick-toggle")
+    const shellThemeToggle = page
+      .getByTestId("app-shell-header")
+      .getByTestId("shell-theme-quick-toggle")
     await expect(shellThemeToggle).toBeVisible()
     await expect(shellThemeToggle).toHaveAttribute("data-theme-icon", "dark")
     await shellThemeToggle.click()
@@ -210,7 +225,7 @@ test.describe("Navigation (mobile)", () => {
       .toBe("light")
     await expect.poll(() => readThemeChrome(page)).toMatchObject({
       theme: "light",
-      themeColor: "#f0f6f8",
+      themeColor: "#eeefe9",
     })
     await expect
       .poll(
@@ -219,21 +234,21 @@ test.describe("Navigation (mobile)", () => {
       )
       .toBe("light")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    const sidebar = page.locator("aside")
+    await page.getByRole("button", { name: "Open menu" }).click()
+    const sidebar = page.getByRole("complementary", { name: "Application menu" })
     const adminLink = sidebar.getByRole("link", { name: "Admin" })
     await adminLink.scrollIntoViewIfNeeded()
     await adminLink.click()
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
+    await page.getByRole("button", { name: "Open menu" }).click()
     await page.keyboard.press("Escape")
-    await expect(page.getByRole("button", { name: "Close sidebar" })).not.toBeVisible()
+    await expect(page.getByRole("button", { name: "Close menu" })).not.toBeVisible()
 
     await clickMobileSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
-    await page.getByTestId("app-shell-mobile-add-fab").click()
+    await page.getByTestId("app-shell-mobile-add-action").click()
     await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
   })
 
@@ -243,7 +258,9 @@ test.describe("Navigation (mobile)", () => {
     await page.goto("/")
     await page.evaluate((key) => window.localStorage.setItem(key, "dark"), THEME_STORAGE_KEY)
     await page.reload()
-    const shellThemeToggle = page.getByTestId("shell-theme-quick-toggle")
+    const shellThemeToggle = page
+      .getByTestId("app-shell-header")
+      .getByTestId("shell-theme-quick-toggle")
     await shellThemeToggle.click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
@@ -255,8 +272,8 @@ test.describe("Navigation (mobile)", () => {
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    const sidebar = page.locator("aside")
+    await page.getByRole("button", { name: "Open menu" }).click()
+    const sidebar = page.getByRole("complementary", { name: "Application menu" })
     await sidebar.getByRole("link", { name: "Admin" }).click()
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect
@@ -283,27 +300,24 @@ test.describe("Navigation (mobile)", () => {
       .toBe("light")
   })
 
-  test("hides the mobile add FAB during sidebar and field focus states", async ({
+  test("keeps the page-specific Add action in the mobile header", async ({
     page,
   }) => {
-    await page.goto("/transactions")
-    const addFab = page.getByTestId("app-shell-mobile-add-fab")
-    await expect(addFab).toBeVisible()
+    await page.goto("/budgets")
+    const addAction = page
+      .getByTestId("app-shell-header")
+      .getByTestId("app-shell-mobile-add-action")
+    await expect(addAction).toBeVisible()
+    await expect(addAction).toHaveAccessibleName("Add budget")
 
-    await page.getByRole("button", { name: "Open sidebar" }).click()
-    await expect(page.locator("aside")).toBeVisible()
-    await expect(addFab).toHaveCount(0)
-    await page.keyboard.press("Escape")
-    await expect(addFab).toBeVisible()
+    const position = await addAction.evaluate((node) => {
+      const rect = node.getBoundingClientRect()
+      return { center: rect.left + rect.width / 2, viewport: window.innerWidth }
+    })
+    expect(position.center).toBeGreaterThan(position.viewport / 2)
 
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const filtersDialog = page.getByRole("dialog", { name: "Transaction filters" })
-    await expect(filtersDialog).toBeVisible()
-    const searchInput = filtersDialog.getByRole("textbox", { name: "Search" })
-    await searchInput.focus()
-    await expect(addFab).toHaveCount(0)
-    await page.keyboard.press("Escape")
-    await expect(addFab).toBeVisible()
+    await addAction.click()
+    await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
   })
 
   test("recovers from unknown routes back to dashboard", async ({ page }) => {

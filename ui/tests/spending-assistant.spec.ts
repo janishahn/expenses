@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures"
 
 // Browser-side hook installed by installStreamHook to drive a real, chunk-by-chunk
 // streaming Response so tests can prove progressive rendering (route.fulfill sends
@@ -141,6 +141,8 @@ test.describe("Spending Assistant", () => {
 
     await page.goto("/assistant")
     await expect(page.locator("main h1")).toContainText("Assistant")
+    await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
+    await expect(page.getByTestId("spending-assistant-composer")).toBeVisible()
     await expect(page.getByTestId("spending-assistant-prompt").first()).toBeVisible()
 
     await sendQuestion(page, "How much did I spend last month?")
@@ -151,6 +153,7 @@ test.describe("Spending Assistant", () => {
     await expect(assistantMessages(page).last()).toContainText(
       "You spent €1,234.00 last month."
     )
+    await expect(page.getByTestId("spending-assistant-prompt")).toHaveCount(0)
 
     const ticker = page.getByTestId("spending-assistant-tool")
     await expect(ticker).toContainText("Spending overview")

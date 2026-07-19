@@ -22,47 +22,49 @@ The native iOS app is shown near the end of this README, including [iPhone scree
 - A web app for desktop and mobile browsers, plus a native SwiftUI iOS client that points at the same backend.
 - Multi-user with per-user data isolation, so a household can share one instance while keeping separate data.
 - Log spend at the moment you pay through a token-authenticated ingest endpoint, for example an Apple Shortcuts automation that fires on an Apple Wallet card tap.
-- Optional LLM assistance for natural-language search, Uncategorized triage, rule mining, and a read-only spending assistant chat through an OpenAI-compatible endpoint, off by default.
+- Optional LLM assistance for Uncategorized triage, rule mining, and a read-only spending assistant chat through an OpenAI-compatible endpoint, off by default.
 
 ## Features
 
-*Screenshots show the web app in dark mode with `uv run mock-db` sample data.*
+*Screenshots show the web app's financial-switchboard interface in dark mode with `uv run mock-db` sample data. Desktop uses a fully visible grouped sidebar; mobile keeps the current page's primary action in a compact top bar and opens every workspace from a labeled, edge-attached Menu.*
 
 ### Dashboard
 
 ![Dashboard](docs/screenshots/dashboard-dark.png)
 
-The dashboard answers "where do I stand right now". Pick a period (this month, last month, all time, or a custom range) and see your running balance, income, and expenses side by side, each with how it compares to the previous period and how you are tracking against budget pace. Below that, a list of recent transactions and a category breakdown donut show where the money actually went.
+The dashboard answers "where do I stand right now". Pick a period (this month, last month, all time, or a custom range) and see the available balance with actual history and a distinct projected continuation, followed by income, spending, net movement, and relevant budget health. An overall monthly budget shows plan pace; category-only planning shows the aggregate category status plus the category that most needs attention. When no budgets exist, the planning lane disappears instead of prompting for an unused feature: desktop uses three equal metric columns, while mobile keeps income and spending side by side with net movement across the full second row. Hovering the desktop balance path reveals exact actual or likely values. Privacy mode conceals headline and analytical values while keeping budget health and recent transaction amounts readable. Mobile omits that history chart and the transaction-type selector. Recent transactions use the available desktop panel height without clipping a partial row or creating a nested scroller; mobile keeps the four latest rows. An accessible six-month category-band view shows how the composition of spending changed over time. Category donut legends use aligned responsive columns so labels and amounts remain easy to scan without nested scrolling, while segment tooltips show only the hovered percentage.
 
 ### Transactions
 
 ![Transactions ledger](docs/screenshots/transactions-dark.png)
 
-Transactions is the full ledger and the page you will spend the most time in. Filter by type, category, or tag, narrow things down with an advanced search syntax like `tag:Work amount > 20`, and select rows for bulk edits. Every entry supports tags, a category, receipt attachments, and an optional location, and a trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time, or download a self-describing portable archive from Settings when you need a fuller machine-readable export for migrations and agents. When optional LLM assistance is enabled, the "Ask in plain language" box turns a question into a structured search.
+Transactions is the full working ledger and the page you will spend the most time in. Inbox, Trash, Export CSV, and the search reveal are explicit, high-contrast page actions kept separate from filtering. Search grows from its header trigger into an anchored popover without shifting the filter toolbar and uses typo-tolerant matching across titles and descriptions while preserving chronological order. Period, type, category, and tag remain explicit filters rather than search syntax. On desktop those filters stay visible in one URL-backed toolbar; on mobile they open in a focused bottom sheet and active filters remain removable from the page. Transaction checkboxes are always available, and the stable register header changes in place to expose a segmented bulk scope and bulk editing after you select a row instead of requiring a separate selection mode. Every entry supports tags, a category, receipt attachments, and an optional location, and a trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time, or download a self-describing portable archive from Settings when you need a fuller machine-readable export for migrations and agents.
 
 ### Budgets
 
 ![Budgets](docs/screenshots/budgets-dark.png)
 
-Budgets track spending against limits you set per category, for a single month, on a recurring monthly template, or for the whole year. Each budget shows a live pace readout, so instead of just "spent 397 of 600" you see whether you are on track or projected to go over, along with the daily amount left to stay within the limit. Recurring templates apply automatically each month, and any single month can be overridden without changing the template.
+Budgets is a planning board for limits you set per category, for a single month, on a recurring monthly template, or for the whole year. Soft summary lanes keep allocation, spent, remaining, and pace distinct; category plans combine icon identity, actual, limit, remaining, and projection. The page-level Add budget action opens a modal tailored to the selected month, recurring, or year scope, while recurring templates remain in a single vertical list. Recurring templates apply automatically each month, and any single month can be overridden without changing the template. Budget modes and the app's other single-choice button groups share one smoothly sliding selection indicator.
 
 ### Insights
 
 ![Insights](docs/screenshots/insights-dark.png)
 
-Insights is the analytical view. It charts income against expenses over the last twelve months, the trend for any single category, your top categories by spend, and budget versus actual for a chosen month. A separate Flow tab draws a Sankey diagram of how money moves from income into each category, which makes the overall shape of your spending easy to read at a glance.
+Insights is the visual analysis board. It charts income against expenses over the last twelve months, spending composition, the trend for any selected category, top categories, and budget versus actual for a chosen month. A single selected month renders explicit income and expense points instead of an empty-looking axis. A separate Flow tab draws a Sankey diagram of how money moves from income into each category, with category-tiled drill-downs for inspecting the shape of your spending.
 
 ### Recurring income and expenses
 
 ![Recurring rules](docs/screenshots/recurring-dark.png)
 
-Recurring rules model the fixed parts of your finances: salary, rent, subscriptions, and anything else that repeats on a schedule. Each rule can auto-post its transaction when it comes due, and an audit view records what was posted. The summary cards frame recurring income against committed recurring costs as a coverage ratio, so you can see how much of each month is already accounted for before any discretionary spending.
+Recurring rules model the fixed parts of your finances: salary, rent, subscriptions, and anything else that repeats on a schedule. Add rule opens a focused creation modal, and each row's edit action opens the same workflow with that rule loaded. Each rule can auto-post its transaction when it comes due, and an audit view records what was posted. The summary cards frame recurring income against committed recurring costs as a coverage ratio, so you can see how much of each month is already accounted for before any discretionary spending.
+
+Templates, categorization rules, categories, and tags use the same focused editing model: their page-level Add action opens a modal, and compact row actions open updates without keeping a form permanently beside the library. Templates can be reordered directly by their drag handles, with keyboard reordering available from the focused handle. Tags keep creation and merging as two separate modal workflows.
 
 ### Automatic categorization
 
 ![Categorization rules](docs/screenshots/rules-dark.png)
 
-Categorization rules keep the ledger tidy without manual sorting. A rule matches transactions by title text or regex, amount range, and type, then assigns a category and optional tags, with priorities deciding which rule wins when several match. New transactions are categorized as they arrive, and existing ones can be reprocessed. With optional LLM assistance enabled, "Mine rules" suggests rules from your existing transaction history.
+Categorization rules keep the ledger tidy without manual sorting. Add rule opens the shared modal editor; each automation row keeps its enable switch first, followed by compact edit and delete actions. A rule matches transactions by title text or regex, amount range, and type, then assigns a category and optional tags, with priorities deciding which rule wins when several match. New transactions are categorized as they arrive, and existing ones can be reprocessed. With optional LLM assistance enabled, "Mine rules" suggests rules from your existing transaction history.
 
 ### Spending assistant
 
@@ -71,6 +73,8 @@ When optional LLM assistance is enabled, the Assistant page is a read-only chat 
 ### And more
 
 Beyond the pages above, Expenses includes Forecast and What-If scenarios for projecting cash flow forward, a Digest summary of recent activity, and exportable PDF reports. Reconcile imports a bank statement CSV and matches it against your recorded transactions to surface anything missing or duplicated; it is built as a general bank import and reconciliation flow, with Commerzbank CSV the only supported format for now. The native iOS app covers the same core flows, including setup and login, dashboard, transactions, budgets, insights, planning, reports, reconciliation, receipts, and the spending assistant.
+
+Forecast starts from today's balance, applies the expected remainder of the current month, and then projects exact recurring postings alongside robust estimates for variable spending and income. It uses the median of up to 12 complete recent months for noisy cash flow and, once 24 complete months are available, learns shrunken month-of-year patterns such as consistently higher December spending. Full forecasts show a deterministic 80% prediction range derived from historical residuals and flag months whose balance is expected to dip below zero before month-end. These calculations are local, bounded to 36 months of history, and designed for Raspberry Pi-class hardware; they are estimates, not guarantees.
 
 ## Interfaces
 
@@ -297,7 +301,7 @@ These `VITE_*` values are read when the React app is built. Rebuild the UI or Do
 
 ### Optional LLM Assistance
 
-LLM features are disabled by default and are review-first when enabled. The configured endpoint must be OpenAI-compatible. While `EXPENSES_LLM_ENABLED` is off, the feature is cleanly absent rather than visible-but-broken: the web and iOS apps hide every AI surface (the Assistant nav entry and page, rule mining and suggestions, Uncategorized triage, natural-language search, and the admin Assistant-usage panel), and every `/api/ai/*` endpoint returns `503`. Clients learn the flag's state from `/api/auth/bootstrap-status` (web) and `/api/mobile/status` (iOS).
+LLM features are disabled by default and are review-first when enabled. The configured endpoint must be OpenAI-compatible. While `EXPENSES_LLM_ENABLED` is off, the feature is cleanly absent rather than visible-but-broken: the web and iOS apps hide every AI surface (the Assistant nav entry and page, rule mining and suggestions, Uncategorized triage, and the admin Assistant-usage panel), and every existing `/api/ai/*` endpoint returns `503`. Clients learn the flag's state from `/api/auth/bootstrap-status` (web) and `/api/mobile/status` (iOS).
 
 ```env
 EXPENSES_LLM_ENABLED=false
@@ -308,7 +312,7 @@ EXPENSES_LLM_TEMPERATURE=
 EXPENSES_LLM_MAX_OUTPUT_TOKENS=
 ```
 
-`EXPENSES_LLM_BASE_URL` can point to a private Tailnet/MagicDNS endpoint or any hosted OpenAI-compatible API such as OpenRouter. Leave `EXPENSES_LLM_API_KEY` blank for unauthenticated private endpoints. The app sends feature-specific OpenAI/OpenRouter-compatible `reasoning.effort` values and output caps: search translation uses `none` with 512 output tokens, transaction triage uses `low` with 2048 output tokens, rule mining uses `medium` with 4096 output tokens, and spending chat uses `medium` with 4096 output tokens. Reasoning tokens count toward the same output-token cap as the visible JSON response, so lowering `EXPENSES_LLM_MAX_OUTPUT_TOKENS` can truncate reasoning-model responses. Leave `EXPENSES_LLM_TEMPERATURE` and `EXPENSES_LLM_MAX_OUTPUT_TOKENS` blank to use the built-in per-feature defaults; when set, those values replace the defaults for every LLM feature. LLM responses are parsed as structured JSON and validated against the runtime categories, tags, and search syntax before the app accepts them. If validated output cannot be produced after retries, search returns a clarification, while triage and rule mining skip suggestions and leave the failure in the LLM trace logs.
+`EXPENSES_LLM_BASE_URL` can point to a private Tailnet/MagicDNS endpoint or any hosted OpenAI-compatible API such as OpenRouter. Leave `EXPENSES_LLM_API_KEY` blank for unauthenticated private endpoints. The app sends feature-specific OpenAI/OpenRouter-compatible `reasoning.effort` values and output caps: transaction triage uses `low` with 2048 output tokens, while rule mining and spending chat use `medium` with 4096 output tokens. Reasoning tokens count toward the same output-token cap as the visible JSON response, so lowering `EXPENSES_LLM_MAX_OUTPUT_TOKENS` can truncate reasoning-model responses. Leave `EXPENSES_LLM_TEMPERATURE` and `EXPENSES_LLM_MAX_OUTPUT_TOKENS` blank to use the built-in per-feature defaults; when set, those values replace the defaults for every LLM feature. Structured responses are validated against the relevant runtime data before the app accepts them; invalid triage and rule-mining output is skipped and recorded in the LLM trace logs.
 
 The read-only spending chat powers the web Assistant page and the native iOS app's Assistant screen, both exposed through `POST /api/ai/spending-chat/stream`. It requires normal app authentication and streams `application/x-ndjson` events such as `turn_started`, `tool_call_start`, `tool_call_end`, `progress_narration`, `text_chunk`, `text_commit`, `result`, `done`, and `error`. Its tools can read spending overviews, compare periods, break down spending, search and inspect transactions, and read budget progress; they cannot create, update, delete, or reclassify data. Each turn is recorded as one `spending_chat` row in the LLM trace log with status, duration, provider metadata, token counters, cached/reasoning-token counters when available, and provider-reported cost when available. Chat trace rows store output hashes and counts instead of the final assistant text or returned message history. Authenticated clients can read aggregate usage through `GET /api/ai/usage/summary?feature=spending_chat&period=week|month|all`. The web Admin page surfaces this summary as an Assistant usage panel — chat counts, token totals with cached/reasoning counters, provider-reported cost, average tokens per chat, and p95 latency — with a week/month/all-time switch.
 
@@ -357,18 +361,24 @@ uv run dev
 Useful commands:
 
 ```bash
-uv run test                         # ruff + backend tests + frontend lint + Playwright
+uv run fast-tests                   # ruff + backend tests + frontend lint + frontend build
+uv run full-tests                   # fast-tests + complete Playwright browser matrix
 uv run pytest                       # backend tests only
 uv run ruff check --fix .
 uv run ruff format .
 uv run migrations
 uv run mock-db --yes
+uv run forecast-backtest --json       # rolling historical forecast accuracy and interval coverage
 uv run export-openapi
 uv run export-ios-fixtures
 npm audit --prefix ui --audit-level=high
 ```
 
-CI runs Python dependency audit, npm audit, Ruff, backend tests, frontend lint, and Playwright coverage. Playwright e2e tests use temporary data directories and do not reuse local servers.
+`uv run fast-tests` is the normal local and pull-request gate; it runs its four checks concurrently and fans the backend tests out across CPU cores, finishing in well under a minute. `uv run full-tests` is the deliberate large-change gate: it builds the production frontend and runs desktop Chromium, mobile WebKit, route accessibility/overflow checks, visual baselines, and critical Firefox, desktop WebKit, and mobile Chromium journeys in one Playwright invocation. Every Playwright worker boots its own FastAPI server on a fresh temporary database, so browser tests scale with CPU cores and produce a single HTML report; total runtime depends on the host and installed browsers. Install the browser binaries once with `npm --prefix ui run test:e2e:install`.
+
+`uv run forecast-backtest --json` performs a read-only rolling-origin check against the current user's complete transaction months. It reports the model's mean absolute error, the previous three-month expense-only baseline's error, and empirical coverage of the nominal 80% interval. Use `--user-id <id>` to evaluate another local user.
+
+CI runs dependency audits and `uv run fast-tests` on pull requests and default-branch pushes. The complete browser suite is available through the manually dispatched **Full tests** workflow rather than running on every commit. See [`TESTING.md`](TESTING.md) for the testing policy, browser matrix, focused commands, and coverage ledger.
 
 ## Automatic Ingest
 

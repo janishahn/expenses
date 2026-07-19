@@ -651,7 +651,7 @@ def test_report_pdf_rejects_oversized_transaction_count(
     assert response.status_code == 400
 
 
-def test_bulk_edit_advanced_search_and_uncategorized_inbox(
+def test_bulk_edit_fuzzy_search_and_uncategorized_inbox(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
     uncategorized_id = _create_category(
@@ -668,6 +668,7 @@ def test_bulk_edit_advanced_search_and_uncategorized_inbox(
         amount_cents=1_250,
         category_id=uncategorized_id,
         title="Lunch with receipt",
+        description="Offsite documentation attached",
         tags=["Work"],
     )
     txn_without_receipt = _create_transaction(
@@ -698,15 +699,26 @@ def test_bulk_edit_advanced_search_and_uncategorized_inbox(
     )
     assert response.status_code == 200
 
-    response = api_client.get("/api/transactions?period=all&q=has:receipt")
+    response = api_client.get("/api/transactions?period=all&q=documntation")
     assert response.status_code == 200
     receipt_result_ids = {int(item["id"]) for item in response.json()["items"]}
     assert txn_with_receipt in receipt_result_ids
     assert txn_without_receipt not in receipt_result_ids
+    assert response.json()["search"] == {
+        "raw_q": "documntation",
+        "applied_tokens": [],
+        "free_terms": ["documntation"],
+    }
 
-    response = api_client.get("/api/transactions/export.csv?period=all")
+    response = api_client.get("/api/transactions?period=all&q=tag%3AWork")
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+    response = api_client.get("/api/transactions/export.csv?period=all&q=documntation")
     assert response.status_code == 200
     assert "text/csv" in response.headers.get("content-type", "")
+    assert "Lunch with receipt" in response.text
+    assert "Coffee without receipt" not in response.text
 
     response = api_client.get("/api/transactions/uncategorized?period=all")
     assert response.status_code == 200
@@ -717,6 +729,11 @@ def test_bulk_edit_advanced_search_and_uncategorized_inbox(
         txn_without_receipt,
     }
     assert payload["definition"]["matched_category_ids"] == [uncategorized_id]
+    assert payload["search"] == {
+        "raw_q": "",
+        "applied_tokens": [],
+        "free_terms": [],
+    }
 
     bulk_payload = {
         "selection": {

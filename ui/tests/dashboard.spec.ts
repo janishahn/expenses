@@ -1,10 +1,13 @@
-import { test, expect } from "@playwright/test"
+import { expect, request as playwrightRequest, test } from "./fixtures"
 import {
   createTransaction,
   ensureCategory,
   getCsrfToken,
   mockDashboardApi,
 } from "./helpers"
+import { loginWith } from "./auth-helpers"
+
+test.describe.configure({ mode: "parallel" })
 
 const dashboardKpiLayoutPayload = {
   period: { slug: "this_month", start: "2026-03-01", end: "2026-03-05" },
@@ -43,9 +46,376 @@ test.describe("Dashboard Page", () => {
     await mockDashboardApi(page, dashboardKpiLayoutPayload)
     await page.goto("/")
 
-    await expect(page.getByRole("button", { name: "This month" })).toHaveClass(/ptab-active/)
+    await expect(page.getByRole("button", { name: "This month" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
     await expect(page.getByTestId("dashboard-balance-card")).toBeVisible()
     await expect(page.getByTestId("dashboard-secondary-kpi-card")).toHaveCount(2)
+    await expect(page.getByTestId("dashboard-balance-delta")).toHaveCount(0)
+  })
+
+  test("keeps recent activity and donut legends out of nested scroll regions", async ({
+    page,
+  }) => {
+    const categories = Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1,
+      name: `Category ${index + 1}`,
+      type: "expense",
+      icon: null,
+    }))
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      donut: {
+        has_any_transactions: true,
+        mode: "both",
+        expense_breakdown: categories.map((category, index) => ({
+          name: category.name,
+          amount_cents: (index + 1) * 1_000,
+          percent: 100 / categories.length,
+        })),
+        income_breakdown: [
+          { name: "Salary", amount_cents: 430_000, percent: 100 },
+        ],
+      },
+      recent: categories.map((category, index) => ({
+        id: index + 1,
+        date: "2026-03-05",
+        occurred_at: `2026-03-05T12:0${index}:00Z`,
+        type: "expense",
+        amount_cents: (index + 1) * 1_000,
+        net_amount_cents: (index + 1) * 1_000,
+        reimbursed_total_cents: 0,
+        is_reimbursement: false,
+        category,
+        title: `Recent transaction ${index + 1}`,
+        tags: [],
+      })),
+      categories,
+    })
+    await page.goto("/")
+
+    const recentList = page.getByTestId("dashboard-recent-list")
+    const visibleRecentRows = recentList.getByRole("link")
+    await expect.poll(() => visibleRecentRows.count()).toBeGreaterThan(4)
+    const visibleRecentCount = await visibleRecentRows.count()
+    expect(visibleRecentCount).toBeLessThan(categories.length)
+    const listBox = await recentList.boundingBox()
+    const rowBoxes = await visibleRecentRows.evaluateAll((rows) =>
+      rows.map((row) => row.getBoundingClientRect().bottom),
+    )
+    expect(listBox).not.toBeNull()
+    expect(
+      rowBoxes.every((rowBottom) => rowBottom <= (listBox?.y ?? 0) + (listBox?.height ?? 0) + 1),
+    ).toBeTruthy()
+    expect(
+      ["auto", "scroll"],
+    ).not.toContain(
+      await recentList.evaluate((element) => getComputedStyle(element).overflowY),
+    )
+
+    const legend = page.getByTestId("donut-legend").first()
+    await expect(legend.getByRole("button")).toHaveCount(categories.length)
+    expect(
+      await legend.evaluate((element) => getComputedStyle(element).overflowY),
+    ).toBe("visible")
+    const firstLegendItem = await legend.getByRole("button").first().boundingBox()
+    expect(firstLegendItem?.height).toBeGreaterThanOrEqual(44)
+    const secondLegendItem = await legend.getByRole("button").nth(1).boundingBox()
+    const thirdLegendItem = await legend.getByRole("button").nth(2).boundingBox()
+    expect(Math.abs((firstLegendItem?.width ?? 0) - (secondLegendItem?.width ?? 0))).toBeLessThan(1)
+    expect((secondLegendItem?.x ?? 0) > (firstLegendItem?.x ?? 0)).toBeTruthy()
+    expect(Math.abs((firstLegendItem?.x ?? 0) - (thirdLegendItem?.x ?? 0))).toBeLessThan(1)
+
+    const firstAmount = await legend.getByRole("button").nth(0).locator("span").last().boundingBox()
+    const thirdAmount = await legend.getByRole("button").nth(2).locator("span").last().boundingBox()
+    expect(
+      Math.abs(
+        (firstAmount?.x ?? 0) + (firstAmount?.width ?? 0) -
+          ((thirdAmount?.x ?? 0) + (thirdAmount?.width ?? 0)),
+      ),
+    ).toBeLessThan(1)
+  })
+
+  test("reveals exact balance evidence when hovering the history chart", async ({ page }) => {
+    await mockDashboardApi(page, dashboardKpiLayoutPayload)
+    await page.goto("/")
+    const chart = page.getByTestId("dashboard-balance-history").locator("canvas")
+    await expect(chart).toBeVisible()
+    const restingChart = await chart.evaluate((canvas) => canvas.toDataURL())
+    await chart.hover({ position: { x: 180, y: 70 } })
+    await expect
+      .poll(() => chart.evaluate((canvas) => canvas.toDataURL()))
+      .not.toBe(restingChart)
+  })
+
+  test("renders four metric lanes and accessible six-month actual and likely evidence", async ({
+    page,
+  }) => {
+    const months = [
+      ["2026-02", 1_000_000, 120_000],
+      ["2026-03", 1_080_000, 150_000],
+      ["2026-04", 1_040_000, 130_000],
+      ["2026-05", 1_160_000, 180_000],
+      ["2026-06", 1_220_000, 160_000],
+      ["2026-07", 1_300_000, 200_000],
+    ].map(([month, balance, spending], index) => ({
+      month,
+      balance_cents: balance,
+      total_cents: spending,
+      segments: [
+        {
+          category_id: 11,
+          name: "Housing",
+          icon: "house",
+          amount_cents: index === 5 ? Number(spending) - 25_000 : spending,
+        },
+        ...(index === 5
+          ? [{
+              category_id: 12,
+              name: "Restaurants",
+              icon: "fork-knife",
+              amount_cents: 25_000,
+            }]
+          : []),
+      ],
+    }))
+    await page.route("**/api/category-breakdown?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ months }),
+      }),
+    )
+    await page.route("**/api/forecast?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          start_balance_cents: 1_300_000,
+          months: [
+            {
+              month: "2026-08",
+              end_balance_cents: 1_360_000,
+              end_balance_p10_cents: 1_330_000,
+              end_balance_p90_cents: 1_390_000,
+            },
+            {
+              month: "2026-09",
+              end_balance_cents: 1_420_000,
+              end_balance_p10_cents: 1_365_000,
+              end_balance_p90_cents: 1_475_000,
+            },
+          ],
+        }),
+      }),
+    )
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      period: { slug: "this_month", start: "2026-07-01", end: "2026-07-31" },
+      kpis: { income: 450_000, expenses: 200_000, balance: 1_300_000 },
+    })
+
+    await page.goto("/")
+
+    await expect(page.locator("[data-metric-tone]")).toHaveCount(4)
+    await expect(page.getByTestId("dashboard-spending-band-month")).toHaveCount(6)
+    await expect(page.getByTestId("dashboard-spending-band-month").first()).toHaveAttribute(
+      "href",
+      /start=2026-02-01.*end=2026-02-28.*type=expense/,
+    )
+    await page.locator(".spending-band-segment").first().hover()
+    const tooltip = page.getByTestId("spending-band-tooltip")
+    await expect(tooltip).toBeVisible()
+    await expect(tooltip).toContainText("€")
+    await expect(
+      page.getByRole("img", {
+        name: /Actual balance moved from.*Feb.*today.*Sept? likely balance.*80 percent range/,
+      }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("table", { name: "Expense totals by month and category" }),
+    ).toHaveCount(1)
+  })
+
+  test("replaces overall budget pace with category budget health", async ({ page }) => {
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      budget_pace: undefined,
+      category_budget_summary: {
+        total: 4,
+        needs_attention: 2,
+        priority: {
+          scope_category_id: 1,
+          scope_label: "Groceries",
+          amount_cents: 40_000,
+          spent_cents: 42_000,
+          remaining_cents: -2_000,
+          velocity_ratio: 1.4,
+        },
+      },
+    })
+    await page.goto("/")
+
+    const planningCard = page.getByTestId("dashboard-planning-card")
+    await expect(planningCard).toContainText("Category budgets")
+    await expect(planningCard).toContainText("2 at risk")
+    await expect(planningCard).toContainText("Groceries")
+    await expect(planningCard).toContainText("20 € over")
+    await expect(page.getByText("Set an overall budget")).toHaveCount(0)
+  })
+
+  test("keeps one concrete category visible when all category budgets are on track", async ({
+    page,
+  }) => {
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      budget_pace: undefined,
+      category_budget_summary: {
+        total: 3,
+        needs_attention: 0,
+        priority: {
+          scope_category_id: 1,
+          scope_label: "Groceries",
+          amount_cents: 40_000,
+          spent_cents: 20_000,
+          remaining_cents: 20_000,
+          velocity_ratio: 0.91,
+        },
+      },
+    })
+    await page.goto("/")
+
+    const planningCard = page.getByTestId("dashboard-planning-card")
+    await expect(planningCard).toContainText("3 on track")
+    await expect(planningCard).toContainText("Groceries")
+    await expect(planningCard).toContainText("0.91× pace")
+  })
+
+  test("uses three equal metric columns when no budgets exist", async ({ page }) => {
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      budget_pace: undefined,
+    })
+    await page.goto("/")
+
+    await expect(page.getByTestId("dashboard-planning-card")).toHaveCount(0)
+    await expect(page.getByText("Set an overall budget")).toHaveCount(0)
+    await expect(page.locator("[data-metric-tone]")).toHaveCount(3)
+    const gridColumns = await page
+      .getByTestId("dashboard-metric-grid")
+      .evaluate((element) =>
+        getComputedStyle(element).gridTemplateColumns.split(" ").map(Number.parseFloat)
+      )
+    expect(gridColumns).toHaveLength(3)
+    expect(Math.max(...gridColumns.map(Number)) - Math.min(...gridColumns.map(Number))).toBeLessThan(1)
+  })
+
+  test("keeps historical balance evidence honest and suppresses current forecast", async ({
+    page,
+  }) => {
+    let forecastRequests = 0
+    await page.route("**/api/category-breakdown?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          months: [
+            {
+              month: "2026-05",
+              balance_cents: 900_000,
+              total_cents: 80_000,
+              segments: [],
+            },
+            {
+              month: "2026-06",
+              balance_cents: 950_000,
+              total_cents: 90_000,
+              segments: [],
+            },
+          ],
+        }),
+      }),
+    )
+    await page.route("**/api/forecast?*", (route) => {
+      forecastRequests += 1
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          start_balance_cents: 1_300_000,
+          months: [{ month: "2026-08", end_balance_cents: 1_360_000 }],
+        }),
+      })
+    })
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      period: { slug: "last_month", start: "2026-06-01", end: "2026-06-30" },
+      kpis: { income: 200_000, expenses: 150_000, balance: 950_000 },
+    })
+
+    await page.goto("/?period=last_month")
+
+    const chart = page.getByTestId("dashboard-balance-history")
+    await expect(chart.getByText("Historical period")).toBeVisible()
+    await expect(chart.getByText("Likely", { exact: true })).toHaveCount(0)
+    await expect(
+      chart.getByRole("img", { name: /to 9 500,00 euros in Jun/ }),
+    ).toBeVisible()
+    expect(forecastRequests).toBe(0)
+  })
+
+  test("shows an honest empty state for six months without spending", async ({ page }) => {
+    await page.route("**/api/category-breakdown?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          months: Array.from({ length: 6 }, (_, index) => ({
+            month: `2026-0${index + 2}`,
+            balance_cents: 100_000,
+            total_cents: 0,
+            segments: [],
+          })),
+        }),
+      }),
+    )
+    await mockDashboardApi(page, dashboardKpiLayoutPayload)
+
+    await page.goto("/")
+
+    await expect(
+      page.getByText("No spending was recorded in the last six months."),
+    ).toBeVisible()
+  })
+
+  test("distinguishes pending and unavailable current-period evidence", async ({
+    page,
+  }) => {
+    await page.route("**/api/category-breakdown?*", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ months: [] }),
+      })
+    })
+    await page.route("**/api/forecast?*", (route) =>
+      route.fulfill({ status: 503, body: "Unavailable" }),
+    )
+    await mockDashboardApi(page, {
+      ...dashboardKpiLayoutPayload,
+      period: { slug: "this_month", start: "2026-07-01", end: "2026-07-31" },
+    })
+
+    await page.goto("/")
+
+    await expect(page.getByText("Loading six-month spending history…")).toBeVisible()
+    await expect(page.getByText("Forecast unavailable")).toBeVisible()
+    await expect(page.getByText("Historical period")).toHaveCount(0)
+    await expect(
+      page.getByText("No spending was recorded in the last six months."),
+    ).toBeVisible()
   })
 
   test("should have period navigation", async ({ page }) => {
@@ -62,7 +432,7 @@ test.describe("Dashboard Page", () => {
     page,
   }) => {
     await page.goto("/")
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
     await page.mouse.click(10, 10)
@@ -89,7 +459,7 @@ test.describe("Dashboard Page", () => {
     expect(response.ok()).toBeTruthy()
 
     await page.goto("/")
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText("Manage")).toBeVisible()
@@ -121,7 +491,7 @@ test.describe("Dashboard Page", () => {
     }
 
     await page.goto("/")
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
 
@@ -131,6 +501,37 @@ test.describe("Dashboard Page", () => {
     await dialog.getByPlaceholder("Search tags").fill(alphaTag)
     await expect(dialog.getByRole("button", { name: `Add tag ${alphaTag}` })).toBeVisible()
     await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toHaveCount(0)
+  })
+
+  test("refreshes current forecast evidence after adding a transaction", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      `E2E Forecast Refresh ${Date.now()}`,
+    )
+    let forecastRequests = 0
+    await page.route("**/api/forecast?*", async (route) => {
+      forecastRequests += 1
+      await route.continue()
+    })
+
+    await page.goto("/")
+    await expect.poll(() => forecastRequests).toBeGreaterThanOrEqual(1)
+
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add transaction" })
+    await dialog.getByLabel("Amount").fill("12.34")
+    await dialog.getByLabel("Category").selectOption(String(categoryId))
+    await dialog.getByLabel("Title").fill("Forecast refresh evidence")
+    await dialog.getByRole("button", { name: "Add transaction" }).click()
+
+    await expect(dialog).toBeHidden()
+    await expect.poll(() => forecastRequests).toBeGreaterThanOrEqual(2)
   })
 
   test("hides archived categories in add sheet category options", async ({
@@ -175,7 +576,7 @@ test.describe("Dashboard Page", () => {
         response.request().method() === "GET" &&
         response.ok()
     )
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     await categoriesResponse
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
@@ -208,7 +609,7 @@ test.describe("Dashboard Page", () => {
     expect(response.ok()).toBeTruthy()
 
     await page.goto("/")
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
 
@@ -293,6 +694,73 @@ test.describe("Dashboard Page", () => {
     const balanceCard = page.getByTestId("dashboard-balance-card")
     await expect(balanceCard.getByText("Budget pace", { exact: true })).toBeVisible()
     await expect(page.getByTestId("dashboard-balance-budget-pace")).toBeVisible()
+  })
+
+  test("should show category budget health when only category budgets exist", async ({
+    page,
+  }) => {
+    const credentials = {
+      username: `dashboard-budget-${Date.now()}`,
+      password: "hunter22",
+    }
+    const accountRequest = await playwrightRequest.newContext({
+      baseURL: new URL(page.url()).origin,
+      storageState: { cookies: [], origins: [] },
+    })
+    const signupResponse = await accountRequest.post("/api/auth/signup", {
+      data: credentials,
+    })
+    expect(
+      signupResponse.ok(),
+      `${signupResponse.status()}: ${await signupResponse.text()}`
+    ).toBeTruthy()
+    const loginResponse = await accountRequest.post("/api/auth/login", {
+      data: credentials,
+    })
+    expect(loginResponse.ok()).toBeTruthy()
+    await page.context().clearCookies()
+    await loginWith(page, credentials)
+
+    const token = await getCsrfToken(accountRequest)
+    const categoryId = await ensureCategory(
+      accountRequest,
+      token,
+      "expense",
+      `E2E Category Plan ${Date.now()}`
+    )
+    const today = new Date().toISOString().slice(0, 10)
+    const budgetResponse = await accountRequest.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        frequency: "monthly",
+        category_id: categoryId,
+        amount_cents: 10_000,
+        starts_on: `${today.slice(0, 7)}-01`,
+        ends_on: null,
+      },
+    })
+    expect(budgetResponse.ok()).toBeTruthy()
+    await createTransaction(accountRequest, token, {
+      date: today,
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: categoryId,
+      title: `E2E Category Plan Spend ${Date.now()}`,
+      tags: [],
+    })
+    await accountRequest.dispose()
+
+    await page.goto("/")
+
+    const planningCard = page.getByTestId("dashboard-planning-card")
+    await expect(planningCard).toContainText("Category budgets")
+    await expect(planningCard).toContainText("1 at risk")
+    await expect(planningCard).toContainText("20 € over")
+    await expect(page.getByRole("link", { name: "Open category budgets" })).toHaveAttribute(
+      "href",
+      "/budgets"
+    )
   })
 
   test("keeps dashboard-origin detail/edit history coherent and preserves dashboard context", async ({

@@ -320,14 +320,26 @@ private struct ForecastSummarySection: View {
     var body: some View {
         Section("Summary") {
             LabeledContent("Projected balance", value: AppFormatters.euros(forecast.summary.projectedBalanceCents))
+            if let low = forecast.summary.projectedBalanceP10Cents,
+               let high = forecast.summary.projectedBalanceP90Cents {
+                LabeledContent("80% range", value: "\(AppFormatters.euros(low)) – \(AppFormatters.euros(high))")
+            }
             LabeledContent("Average monthly net", value: signedEuros(forecast.summary.averageMonthlyNetCents))
             LabeledContent("Start balance", value: AppFormatters.euros(forecast.startBalanceCents))
-            LabeledContent("Negative in", value: forecast.summary.monthsUntilNegative.map { "\($0) months" } ?? "N/A")
+            if let currentMonthNet = forecast.currentMonthNetCents {
+                LabeledContent("Rest of this month", value: signedEuros(currentMonthNet))
+            }
+            LabeledContent("Negative in", value: negativeTiming(forecast.summary.monthsUntilNegative))
         }
     }
 
     private func signedEuros(_ amount: Int) -> String {
         "\(amount >= 0 ? "+" : "")\(AppFormatters.euros(amount))"
+    }
+
+    private func negativeTiming(_ months: Int?) -> String {
+        guard let months else { return "N/A" }
+        return months == 0 ? "This month" : "\(months) months"
     }
 }
 
@@ -347,6 +359,12 @@ private struct ForecastMonthSection: View {
                             Text("Net \(signedEuros(month.projectedNetCents))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let low = month.endBalanceP10Cents,
+                               let high = month.endBalanceP90Cents {
+                                Text("80% range \(AppFormatters.euros(low)) – \(AppFormatters.euros(high))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         Text(AppFormatters.euros(month.endBalanceCents))
@@ -382,6 +400,15 @@ private struct ForecastBreakdownRows: View {
         VStack(alignment: .leading, spacing: 12) {
             ForecastLine(label: "Income", amount: month.projectedIncomeCents, color: ExpensesTheme.income(for: scheme))
             ForecastLine(label: "Expenses", amount: month.projectedExpensesCents, color: ExpensesTheme.expense(for: scheme))
+            if let minimumBalance = month.minimumBalanceCents {
+                HStack {
+                    Text("Expected low")
+                    Spacer()
+                    Text(AppFormatters.euros(minimumBalance))
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(minimumBalance < 0 ? ExpensesTheme.expense(for: scheme) : .secondary)
+                }
+            }
             if !month.breakdown.recurringRules.isEmpty {
                 Divider()
                 Text("Recurring")
@@ -403,6 +430,16 @@ private struct ForecastBreakdownRows: View {
                     .foregroundStyle(.secondary)
                 ForEach(month.breakdown.variableEstimates) { row in
                     ForecastLine(label: row.name, amount: -row.amountCents, color: ExpensesTheme.expense(for: scheme))
+                }
+            }
+            if let variableIncome = month.breakdown.variableIncomeEstimates,
+               !variableIncome.isEmpty {
+                Divider()
+                Text("Variable income")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(variableIncome) { row in
+                    ForecastLine(label: row.name, amount: row.amountCents, color: ExpensesTheme.income(for: scheme))
                 }
             }
             if !month.breakdown.oneTimeEvents.isEmpty {

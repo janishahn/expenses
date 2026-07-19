@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures"
 
 const STREAM_URL = "**/api/ai/spending-chat/stream"
 const HISTORY_MARKER = "SECRET_HISTORY_DO_NOT_SHOW"
@@ -44,18 +44,28 @@ async function sendQuestion(page: Page, text: string) {
 }
 
 test.describe("Spending Assistant (mobile)", () => {
-  test("hides the add FAB and docks the composer on the assistant route", async ({
+  test("hides mobile Add and docks the composer on the assistant route", async ({
     page,
   }) => {
     await page.goto("/assistant")
     await expect(page.locator("main h1")).toContainText("Assistant")
-    await expect(page.getByTestId("spending-assistant-composer")).toBeVisible()
+    const composer = page.getByTestId("spending-assistant-composer")
+    await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
+    await expect(composer).toBeVisible()
     await expect(page.getByTestId("spending-assistant-input")).toBeVisible()
-    await expect(page.getByTestId("app-shell-mobile-add-fab")).toHaveCount(0)
+    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
 
-    // The FAB is route-specific: it must return on other mobile pages.
+    const composerBounds = await composer.boundingBox()
+    const viewport = page.viewportSize()
+    expect(composerBounds).not.toBeNull()
+    expect(viewport).not.toBeNull()
+    if (composerBounds && viewport) {
+      expect(viewport.height - (composerBounds.y + composerBounds.height)).toBeLessThan(48)
+    }
+
+    // The dock action is route-specific: it must return on other mobile pages.
     await page.goto("/transactions")
-    await expect(page.getByTestId("app-shell-mobile-add-fab")).toBeVisible()
+    await expect(page.getByTestId("app-shell-mobile-add-action")).toBeVisible()
   })
 
   test("streams an answer without horizontal overflow", async ({ page }) => {
@@ -85,5 +95,35 @@ test.describe("Spending Assistant (mobile)", () => {
         document.documentElement.clientWidth
     )
     expect(overflow).toBeLessThanOrEqual(1)
+  })
+
+  test("keeps the newest streamed content visible inside the conversation", async ({
+    page,
+  }) => {
+    const longAnswer = Array.from(
+      { length: 60 },
+      (_, index) => `Spending detail ${index + 1}.`,
+    ).join("\n\n")
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: happyTurn(longAnswer),
+      })
+    })
+
+    await page.goto("/assistant")
+    await sendQuestion(page, "Show me the full breakdown")
+    await expect(page.getByText("Spending detail 60.")).toBeVisible()
+
+    const thread = page.getByTestId("spending-assistant-thread")
+    await expect
+      .poll(() =>
+        thread.evaluate(
+          (element) =>
+            element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(1)
   })
 })

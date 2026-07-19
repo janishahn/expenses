@@ -6,13 +6,11 @@ from sqlalchemy.orm import Session
 
 from expenses.ai.client import (
     LLMOutputError,
-    LLMRunResult,
     _request_model_settings,
 )
 from expenses.ai.schemas import (
     RuleMiningOutput,
     RuleProposalOut,
-    SearchTranslationOutput,
     TransactionTriageOutput,
 )
 from expenses.ai.service import LLMAssistantService
@@ -312,266 +310,6 @@ async def test_uncategorized_triage_output_failure_returns_none() -> None:
 
 
 @pytest.mark.anyio
-async def test_natural_language_search_translation_records_usage() -> None:
-    with make_session() as session:
-        CategoryService(session).create(
-            CategoryIn(name="Restaurants", type=TransactionType.expense, order=0)
-        )
-        runner = FakeLLMRunner(
-            LLMRunResult(
-                output=SearchTranslationOutput(
-                    query=(
-                        "type:expense category:Restaurants amount>30 "
-                        "date>=2026-04-01 date<=2026-04-30 has:receipt"
-                    ),
-                    confidence=0.94,
-                    clarification_needed=False,
-                ),
-                input_tokens=120,
-                output_tokens=24,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "restaurant expenses over 30 euros last month with receipts",
-            reference_date=date(2026, 5, 25),
-        )
-
-        job = session.scalar(select(LLMJob))
-        assert job is not None
-        assert job.usage_input_tokens == 120
-        assert job.usage_output_tokens == 24
-        assert result.query == (
-            "type:expense category:Restaurants amount>30 "
-            "date>=2026-04-01 date<=2026-04-30 has:receipt"
-        )
-        assert result.applied_tokens[0]["key"] == "type"
-        assert runner.calls[0]["payload"]["reference_date"] == "2026-05-25"
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_validates_existing_syntax() -> None:
-    with make_session() as session:
-        CategoryService(session).create(
-            CategoryIn(name="Restaurants", type=TransactionType.expense, order=0)
-        )
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query=(
-                    "type:expense category:Restaurants amount>30 "
-                    "date>=2026-04-01 date<=2026-04-30 has:receipt"
-                ),
-                confidence=0.94,
-                clarification_needed=False,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "restaurant expenses over 30 euros last month with receipts",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == (
-            "type:expense category:Restaurants amount>30 "
-            "date>=2026-04-01 date<=2026-04-30 has:receipt"
-        )
-        assert result.applied_tokens[0]["key"] == "type"
-        assert runner.calls[0]["payload"]["reference_date"] == "2026-05-25"
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_rejects_invalid_category_output() -> (
-    None
-):
-    with make_session() as session:
-        CategoryService(session).create(
-            CategoryIn(name="Food & Groceries", type=TransactionType.expense, order=0)
-        )
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query="type:expense category:Food & Groceries amount>=20",
-                confidence=0.82,
-                clarification_needed=False,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "grocery spending over 20 euros",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == ""
-        assert result.clarification_needed is True
-        assert result.clarification_question == (
-            "I could not translate that into search syntax."
-        )
-        assert result.applied_tokens == []
-        assert result.free_terms == []
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_accepts_case_insensitive_names() -> (
-    None
-):
-    with make_session() as session:
-        groceries = CategoryService(session).create(
-            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
-        )
-        TransactionService(session).create(
-            TransactionIn(
-                date=date(2026, 5, 1),
-                occurred_at=datetime(2026, 5, 1, 12, 0),
-                type=TransactionType.expense,
-                amount_cents=1299,
-                category_id=groceries.id,
-                title="Lidl",
-                tags=["Essential"],
-            )
-        )
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query="category:groceries tag:essential",
-                confidence=0.82,
-                clarification_needed=False,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "essential groceries",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == "category:groceries tag:essential"
-        assert result.clarification_needed is False
-        assert result.free_terms == []
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_requires_clarification_question() -> (
-    None
-):
-    with make_session() as session:
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query="",
-                confidence=0.2,
-                clarification_needed=True,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "not enough context",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == ""
-        assert result.clarification_needed is True
-        assert result.clarification_question == (
-            "I could not translate that into search syntax."
-        )
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_allows_parenthesized_free_text() -> (
-    None
-):
-    with make_session() as session:
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query='"Trader Joe\'s (SF)"',
-                confidence=0.78,
-                clarification_needed=False,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "trader joe's sf",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == '"Trader Joe\'s (SF)"'
-        assert result.clarification_needed is False
-        assert result.free_terms == ["Trader Joe's (SF)"]
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_rejects_boolean_connector_output() -> (
-    None
-):
-    with make_session() as session:
-        CategoryService(session).create(
-            CategoryIn(name="Food & Groceries", type=TransactionType.expense, order=0)
-        )
-        CategoryService(session).create(
-            CategoryIn(name="Restaurants", type=TransactionType.expense, order=1)
-        )
-        runner = FakeLLMRunner(
-            SearchTranslationOutput(
-                query=(
-                    'category:"Food & Groceries" OR category:Restaurants '
-                    "date>=2026-01-01"
-                ),
-                confidence=0.82,
-                clarification_needed=False,
-            )
-        )
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "compare groceries and restaurants this year",
-            reference_date=date(2026, 5, 25),
-        )
-
-        assert result.query == ""
-        assert result.clarification_needed is True
-        assert result.clarification_question == (
-            "I could not translate that into search syntax."
-        )
-        assert result.applied_tokens == []
-        assert result.free_terms == []
-
-
-@pytest.mark.anyio
-async def test_natural_language_search_translation_output_failure_returns_clarification() -> (
-    None
-):
-    with make_session() as session:
-        runner = FailingLLMRunner(LLMOutputError("Exceeded maximum output retries (2)"))
-
-        result = await LLMAssistantService(
-            session, user_id=1, runner=runner
-        ).translate_search_query(
-            "restaurants or travel under 80 euros last month",
-            reference_date=date(2026, 5, 25),
-        )
-
-        job = session.scalar(select(LLMJob))
-        assert result.query == ""
-        assert result.clarification_needed is True
-        assert result.clarification_question == (
-            "I could not translate that into search syntax."
-        )
-        assert result.applied_tokens == []
-        assert result.free_terms == []
-        assert job is not None
-        assert job.status == "failed"
-        assert job.error == "Exceeded maximum output retries (2)"
-
-
-@pytest.mark.anyio
 async def test_rule_mining_uses_confirmed_events_and_stores_previewed_proposals() -> (
     None
 ):
@@ -813,7 +551,7 @@ def test_llm_job_rotation_keeps_recent_trace_rows() -> None:
             session.add(
                 LLMJob(
                     user_id=1,
-                    feature="search_translate",
+                    feature="transaction_triage",
                     status="completed",
                     prompt_version="test",
                     model="qwen",
@@ -843,7 +581,7 @@ def test_llm_job_rotation_removes_rows_past_max_age() -> None:
             session.add(
                 LLMJob(
                     user_id=1,
-                    feature="search_translate",
+                    feature="transaction_triage",
                     status="completed",
                     prompt_version="test",
                     model="qwen",
@@ -854,7 +592,7 @@ def test_llm_job_rotation_removes_rows_past_max_age() -> None:
         session.add(
             LLMJob(
                 user_id=1,
-                feature="search_translate",
+                feature="transaction_triage",
                 status="completed",
                 prompt_version="test",
                 model="qwen",

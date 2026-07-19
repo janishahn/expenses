@@ -1,4 +1,3 @@
-from expenses.core.search import AdvancedSearchFilters, parse_advanced_search
 from expenses.services.rollups import (
     rebuild_monthly_rollups,
     recompute_monthly_rollup,
@@ -6,7 +5,6 @@ from expenses.services.rollups import (
 )
 
 __all__ = [
-    "AdvancedSearchFilters",
     "BalanceAnchorService",
     "BudgetService",
     "CSVService",
@@ -20,7 +18,6 @@ __all__ = [
     "IngestService",
     "InsightsService",
     "MetricsService",
-    "parse_advanced_search",
     "ReceiptAttachmentService",
     "RecurringRuleService",
     "rebuild_monthly_rollups",

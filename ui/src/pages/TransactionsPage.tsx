@@ -3,20 +3,23 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { DotsThreeVerticalIcon } from "@phosphor-icons/react/DotsThreeVertical"
+import { FunnelSimpleIcon } from "@phosphor-icons/react/FunnelSimple"
+import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { TrayIcon } from "@phosphor-icons/react/Tray"
 import { XIcon } from "@phosphor-icons/react/X"
-import { Link, useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom"
-import type { AppShellOutletContext } from "../app/AppShell"
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { useAuth } from "../app/auth"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntroAddButton from "../components/PageIntroAddButton"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
+import { WorkspaceToolbar } from "../components/product/ProductSurfaces"
+import SegmentedControl from "../components/SegmentedControl"
 import TransactionDescription from "../components/TransactionDescription"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
@@ -32,6 +35,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu"
 import {
   Sheet,
   SheetContent,
@@ -83,6 +92,13 @@ type TransactionsResponse = {
   tags: Array<{ id: number; name: string }>
 }
 
+type TransactionSummary = {
+  income_cents: number
+  expense_cents: number
+  net_cents: number
+  count: number
+}
+
 type BulkOperation = {
   set_category_id: number | null
   tag_patch: null | { mode: "add" | "remove" | "replace" | "clear"; tags: string[] }
@@ -120,13 +136,6 @@ type BulkResponse = {
     deleted: number
     restored: number
   }
-}
-
-type SearchTranslationResponse = {
-  query: string
-  confidence: number
-  clarification_needed: boolean
-  clarification_question?: string | null
 }
 
 function parseTagInput(raw: string): string[] {
@@ -282,17 +291,20 @@ function TransactionLocationDialog({
 }
 
 function TransactionsPage() {
-  const { llmEnabled } = useAuth()
-  const { openAddTransaction } = useOutletContext<AppShellOutletContext>()
   const queryClient = useQueryClient()
   const location = useLocation()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const searchQuery = searchParams.get("q") ?? ""
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [mobileType, setMobileType] = useState("")
   const [mobileCategory, setMobileCategory] = useState("")
   const [mobileTag, setMobileTag] = useState("")
-  const [mobileQuery, setMobileQuery] = useState("")
+  const [mobilePeriod, setMobilePeriod] = useState({
+    slug: "all",
+    start: "",
+    end: "",
+  })
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [bulkSelectionMode, setBulkSelectionMode] = useState<"ids" | "query">("ids")
   const [bulkCategoryId, setBulkCategoryId] = useState("")
@@ -301,12 +313,10 @@ function TransactionsPage() {
   const [bulkLifecycle, setBulkLifecycle] = useState<"none" | "soft_delete" | "restore">("none")
   const [bulkPreview, setBulkPreview] = useState<BulkResponse | null>(null)
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [mobileSelectMode, setMobileSelectMode] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const [locationTransaction, setLocationTransaction] = useState<TransactionRow | null>(null)
-  const [naturalQuery, setNaturalQuery] = useState("")
-  const [naturalSearchMessage, setNaturalSearchMessage] = useState("")
-  const [naturalSearchResult, setNaturalSearchResult] = useState<SearchTranslationResponse | null>(null)
   const [isDesktop, setIsDesktop] = useState(() =>
     window.matchMedia("(min-width: 861px)").matches
   )
@@ -320,6 +330,15 @@ function TransactionsPage() {
     if (!params.get("page")) {
       params.set("page", "1")
     }
+    return params.toString()
+  }, [searchParams])
+  const summaryQueryString = useMemo(() => {
+    const params = new URLSearchParams(searchParams)
+    if (!params.get("period")) {
+      params.set("period", "all")
+    }
+    params.delete("page")
+    params.delete("limit")
     return params.toString()
   }, [searchParams])
 
@@ -336,9 +355,43 @@ function TransactionsPage() {
     return () => media.removeEventListener("change", syncDesktop)
   }, [])
 
+  // Desktop keeps the bar open while a query is active (it shows the query inline).
+  // Mobile closes freely; the active-search chip below the toolbar carries the query.
+  const searchVisible = searchOpen || (isDesktop && Boolean(searchQuery))
+
+  useEffect(() => {
+    if (searchVisible) {
+      searchInputRef.current?.focus()
+    }
+  }, [searchVisible])
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      const container = searchContainerRef.current
+      if (container && !container.contains(event.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown)
+    return () => document.removeEventListener("pointerdown", handlePointerDown)
+  }, [searchOpen])
+
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["transactions", queryString],
     queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${queryString}`),
+  })
+  const {
+    data: summary,
+    isError: summaryUnavailable,
+  } = useQuery({
+    queryKey: ["transactions", "summary", summaryQueryString],
+    queryFn: () =>
+      apiFetch<TransactionSummary>(
+        `/api/transactions/summary?${summaryQueryString}`,
+      ),
   })
 
   const deleteMutation = useMutation({
@@ -347,6 +400,8 @@ function TransactionsPage() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       queryClient.invalidateQueries({ queryKey: ["tag"] })
     },
   })
@@ -369,34 +424,15 @@ function TransactionsPage() {
     onSuccess: (result) => {
       setBulkPreview(result)
       setSelectedIds([])
+      setBulkSelectionMode("ids")
+      setBulkActionsOpen(false)
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       queryClient.invalidateQueries({ queryKey: ["tag"] })
-    },
-  })
-
-  const naturalSearchMutation = useMutation({
-    mutationFn: (query: string) =>
-      apiFetch<SearchTranslationResponse>("/api/ai/search/translate", {
-        method: "POST",
-        body: JSON.stringify({ query }),
-      }),
-    onSuccess: (result) => {
-      if (result.clarification_needed || !result.query) {
-        setNaturalSearchMessage(
-          result.clarification_question || "Search could not be translated."
-        )
-        return
-      }
-      setNaturalSearchMessage("")
-      setNaturalSearchResult(result)
-      setQuery(result.query)
-    },
-    onError: (mutationError) => {
-      setNaturalSearchResult(null)
-      setNaturalSearchMessage(String(mutationError))
     },
   })
 
@@ -414,9 +450,6 @@ function TransactionsPage() {
       buildCustomPeriodSearchParams(searchParams, start, end, { page: "1" })
     )
 
-  const setType = (value: string) => updateParam("type", value || null)
-  const setCategory = (value: string) => updateParam("category", value || null)
-  const setTag = (value: string) => updateParam("tag", value || null)
   const setQuery = (value: string) => updateParam("q", value || null)
 
   const changePage = (nextPage: number) => {
@@ -432,32 +465,51 @@ function TransactionsPage() {
 
   const { items, has_more, page, period, filters, categories, tags } = data
   const categoriesById = new Map(categories.map((category) => [category.id, category]))
-  const searchQuery = searchParams.get("q") ?? ""
   const categoryLabel = filters.category_id
     ? categories.find((category) => category.id === filters.category_id)?.name
     : null
   const tagLabel = filters.tag_id ? tags.find((tag) => tag.id === filters.tag_id)?.name : null
+  const periodContext = `${formatEuroDate(period.start)} – ${formatEuroDate(period.end)}`
+  const periodLabel =
+    period.slug === "this_month"
+      ? "This month"
+      : period.slug === "last_month"
+        ? "Last month"
+        : period.slug === "custom"
+          ? periodContext
+          : null
   const activeFilters = [
-    filters.type ? `Type: ${filters.type}` : null,
-    categoryLabel ? `Category: ${categoryLabel}` : null,
-    tagLabel ? `Tag: ${tagLabel}` : null,
-    searchQuery ? `Search: ${searchQuery}` : null,
-  ].filter(Boolean) as string[]
+    periodLabel
+      ? { key: "period", label: `Period: ${periodLabel}` }
+      : null,
+    filters.type ? { key: "type", label: `Type: ${filters.type}` } : null,
+    categoryLabel ? { key: "category", label: `Category: ${categoryLabel}` } : null,
+    tagLabel ? { key: "tag", label: `Tag: ${tagLabel}` } : null,
+    searchQuery ? { key: "q", label: `Search: ${searchQuery}` } : null,
+  ].filter(Boolean) as Array<{ key: string; label: string }>
+  const mobileFilterCount =
+    Number(period.slug !== "all") +
+    Number(Boolean(filters.type)) +
+    Number(Boolean(filters.category_id)) +
+    Number(Boolean(filters.tag_id))
   const exportParams = new URLSearchParams(searchParams)
   exportParams.delete("page")
   exportParams.delete("limit")
   const exportHref = `/api/transactions/export.csv?${exportParams.toString()}`
 
   const openMobileFilters = () => {
+    setMobilePeriod(period)
     setMobileType(filters.type ?? "")
     setMobileCategory(filters.category_id ? String(filters.category_id) : "")
     setMobileTag(filters.tag_id ? String(filters.tag_id) : "")
-    setMobileQuery(searchQuery)
     setMobileFiltersOpen(true)
   }
 
   const clearFilters = () => {
     const params = new URLSearchParams(searchParams)
+    params.set("period", "all")
+    params.delete("start")
+    params.delete("end")
     params.delete("type")
     params.delete("category")
     params.delete("tag")
@@ -466,8 +518,24 @@ function TransactionsPage() {
     setSearchParams(params)
   }
 
+  const clearFilter = (key: string) => {
+    if (key === "period") {
+      setPresetPeriod("all")
+      return
+    }
+    updateParam(key, null)
+  }
+
   const applyMobileFilters = () => {
     const params = new URLSearchParams(searchParams)
+    params.set("period", mobilePeriod.slug)
+    if (mobilePeriod.slug === "custom") {
+      params.set("start", mobilePeriod.start)
+      params.set("end", mobilePeriod.end)
+    } else {
+      params.delete("start")
+      params.delete("end")
+    }
     if (mobileType) {
       params.set("type", mobileType)
     } else {
@@ -483,37 +551,34 @@ function TransactionsPage() {
     } else {
       params.delete("tag")
     }
-    if (mobileQuery.trim()) {
-      params.set("q", mobileQuery.trim())
-    } else {
-      params.delete("q")
-    }
     params.set("page", "1")
     setSearchParams(params)
     setMobileFiltersOpen(false)
-  }
-
-  const runNaturalSearch = () => {
-    const query = naturalQuery.trim()
-    if (!query) {
-      return
-    }
-    naturalSearchMutation.mutate(query)
   }
 
   const allPageSelected =
     items.length > 0 && items.every((txn) => selectedIds.includes(txn.id))
 
   const toggleSelected = (id: number) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
-    )
+    const nextSelectedIds = selectedIds.includes(id)
+      ? selectedIds.filter((value) => value !== id)
+      : [...selectedIds, id]
+    setSelectedIds(nextSelectedIds)
+    if (!nextSelectedIds.length) {
+      setBulkSelectionMode("ids")
+      setBulkActionsOpen(false)
+    }
   }
 
   const toggleSelectAllPage = () => {
     if (allPageSelected) {
       const pageIds = new Set(items.map((txn) => txn.id))
-      setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)))
+      const nextSelectedIds = selectedIds.filter((id) => !pageIds.has(id))
+      setSelectedIds(nextSelectedIds)
+      if (!nextSelectedIds.length) {
+        setBulkSelectionMode("ids")
+        setBulkActionsOpen(false)
+      }
       return
     }
     const merged = new Set(selectedIds)
@@ -543,6 +608,7 @@ function TransactionsPage() {
     bulkLifecycle !== "none" ||
     bulkCategoryId !== "" ||
     bulkTagMode !== "none"
+  const bulkScopeCountReady = bulkSelectionMode === "ids" || summary !== undefined
 
   const buildBulkPayload = (): BulkPayload | null => {
     if (!operationValid) {
@@ -577,6 +643,10 @@ function TransactionsPage() {
         },
         operation,
       }
+    }
+
+    if (!summary) {
+      return null
     }
 
     return {
@@ -620,303 +690,348 @@ function TransactionsPage() {
   }
 
   return (
-    <section className="space-y-5 md:space-y-6 desk:space-y-4">
+    <section className="min-w-0 space-y-3 md:space-y-4">
       <PageIntro
         title="Transactions"
-        titleAccessoryAlign="end"
-        titleAccessory={
-          !isDesktop ? (
-            <div className="relative self-center">
+        inlineActions
+        actions={
+          <>
+            {isFetching ? <span className="loading-hint">Updating…</span> : null}
+            <div className="relative z-20 flex shrink-0 items-center gap-2.5">
+              <div ref={searchContainerRef} className="desk:relative">
+                <AppButton
+                  type="button"
+                  onClick={() => {
+                    if (!searchVisible) {
+                      setSearchOpen(true)
+                    } else if (isDesktop && searchQuery) {
+                      searchInputRef.current?.focus()
+                    } else {
+                      setSearchOpen(false)
+                    }
+                  }}
+                  tone="secondary"
+                  className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0"
+                  aria-label="Search transactions"
+                  aria-controls="transaction-search"
+                  aria-expanded={searchVisible}
+                >
+                  <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+                <div
+                  id="transaction-search"
+                  data-open={searchVisible}
+                  aria-hidden={!searchVisible}
+                  className="transaction-search-popover absolute z-30"
+                >
+                  <div className="flex min-w-0 items-center gap-2 desk:absolute desk:inset-y-0 desk:right-0 desk:w-[var(--search-bar-width)] desk:gap-1.5 desk:pr-12">
+                    <AppInput
+                      ref={searchInputRef}
+                      type="search"
+                      aria-label="Search transactions"
+                      disabled={!searchVisible}
+                      value={searchQuery}
+                      onChange={(event) => setQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault()
+                          if (searchQuery) {
+                            setQuery("")
+                          } else {
+                            setSearchOpen(false)
+                          }
+                        }
+                      }}
+                      placeholder="Search titles and descriptions…"
+                      className="min-w-0 flex-1"
+                    />
+                    {searchQuery ? (
+                      <AppButton
+                        type="button"
+                        onClick={() => {
+                          setSearchOpen(true)
+                          setQuery("")
+                          searchInputRef.current?.focus()
+                        }}
+                        tone="ghost"
+                        className="h-11 w-11 shrink-0 p-0 desk:h-9 desk:min-h-0 desk:w-9"
+                        aria-label="Clear search"
+                      >
+                        <XIcon className="h-4 w-4" aria-hidden="true" />
+                      </AppButton>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
               <AppButton
                 type="button"
-                onClick={() => setMobileMenuOpen((prev) => !prev)}
-                tone="ghost"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted hover:border-border-hi hover:text-text"
-                aria-label="More actions"
+                onClick={openMobileFilters}
+                tone="secondary"
+                className="relative h-11 w-11 shrink-0 p-0 desk:hidden"
+                aria-label={
+                  mobileFilterCount
+                    ? `Filters, ${mobileFilterCount} active`
+                    : "Filters"
+                }
               >
-                <DotsThreeVerticalIcon className="h-4 w-4" />
-              </AppButton>
-              {mobileMenuOpen && (
-                <>
-                  <button
-                    type="button"
-                    className="fixed inset-0 z-[60]"
-                    aria-label="Close menu"
-                    onClick={() => setMobileMenuOpen(false)}
-                  />
-                  <div
-                    data-testid="transactions-mobile-actions-menu"
-                    className="absolute right-0 top-full z-[61] mt-1 w-44 rounded-xl border border-border bg-surface p-1 shadow-lg"
+                <FunnelSimpleIcon className="h-4 w-4" aria-hidden="true" />
+                {mobileFilterCount ? (
+                  <span
+                    className="absolute -right-1 -top-1 grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-accent px-1 font-mono text-[10px] text-white"
+                    aria-hidden="true"
                   >
-                    <Link
-                      to="/transactions/inbox"
-                      className="block rounded-lg px-3 py-2 text-sm text-text hover:bg-faint"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
+                    {mobileFilterCount}
+                  </span>
+                ) : null}
+              </AppButton>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <AppButton
+                    tone="secondary"
+                    className="h-11 w-11 shrink-0 p-0 desk:hidden"
+                    aria-label="More actions"
+                  >
+                    <DotsThreeIcon weight="bold" className="h-5 w-5" aria-hidden="true" />
+                  </AppButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem asChild>
+                    <Link to="/transactions/inbox">
+                      <TrayIcon className="h-4 w-4" aria-hidden="true" />
                       Inbox
                     </Link>
-                    <Link
-                      to="/transactions/deleted"
-                      className="block rounded-lg px-3 py-2 text-sm text-text hover:bg-faint"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/transactions/deleted">
+                      <TrashIcon className="h-4 w-4" aria-hidden="true" />
                       Trash
                     </Link>
-                    <a
-                      href={exportHref}
-                      className="block rounded-lg px-3 py-2 text-sm text-text hover:bg-faint"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <a href={exportHref}>
+                      <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
                       Export CSV
                     </a>
-                    <button
-                      type="button"
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-text hover:bg-faint"
-                      onClick={() => {
-                        setMobileSelectMode(true)
-                        setMobileMenuOpen(false)
-                      }}
-                    >
-                      Select
-                    </button>
-                  </div>
-                </>
-              )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+                <Link to="/transactions/inbox">
+                  <TrayIcon className="h-4 w-4" aria-hidden="true" />
+                  Inbox
+                </Link>
+              </AppButton>
+              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+                <Link to="/transactions/deleted">
+                  <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                  Trash
+                </Link>
+              </AppButton>
+              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+                <a href={exportHref}>
+                  <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
+                  Export CSV
+                </a>
+              </AppButton>
             </div>
-          ) : null
-        }
-        actions={
-          isDesktop || isFetching ? (
-            <>
-              {isFetching ? <span className="loading-hint">Updating…</span> : null}
-              <AppButton asChild tone="inline" className="hidden desk:inline-flex">
-                <Link to="/transactions/inbox">Inbox</Link>
-              </AppButton>
-              <AppButton asChild tone="inline" className="hidden desk:inline-flex">
-                <Link to="/transactions/deleted">Trash</Link>
-              </AppButton>
-              <AppButton asChild tone="inline" className="hidden desk:inline-flex">
-                <a href={exportHref}>Export CSV</a>
-              </AppButton>
-              <PageIntroAddButton onClick={openAddTransaction} />
-            </>
-          ) : null
+          </>
         }
       />
 
-      <PeriodPicker
-        periodSlug={period.slug}
-        start={period.start}
-        end={period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
-      />
-
-      <AppCard className="hidden gap-4 p-4 desk:grid desk:grid-cols-4">
-        <AppFieldLabel>
-          <span>Type</span>
-          <div className="pill-group">
-            {[
-              { value: "", label: "All" },
-              { value: "income", label: "Income" },
-              { value: "expense", label: "Expense" },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => setType(item.value)}
-                className={`pill-button ${(filters.type ?? "") === item.value ? "pill-button-active" : ""}`}
-              >
-                {item.label}
-              </button>
-            ))}
+      <WorkspaceToolbar
+        data-testid="transactions-control-zone"
+        className="hidden gap-3 p-3 desk:flex md:p-4"
+      >
+        <div className="hidden w-full min-w-0 flex-wrap items-end gap-3 desk:flex">
+          <div className="w-96 min-w-0 space-y-1.5">
+            <span className="text-xs font-semibold text-muted">Period</span>
+            <PeriodPicker
+              periodSlug={period.slug}
+              start={period.start}
+              end={period.end}
+              onSetPreset={setPresetPeriod}
+              onApplyCustom={applyCustomPeriod}
+            />
           </div>
-        </AppFieldLabel>
-        <AppFieldLabel>
-          <span>Category</span>
-          <AppNativeSelect
-            value={filters.category_id ?? ""}
-            onChange={(event) => setCategory(event.target.value)}
-          >
-            <option value="">All categories</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name} ({category.type})
-              </option>
-            ))}
-          </AppNativeSelect>
-        </AppFieldLabel>
-        <AppFieldLabel>
-          <span>Tag</span>
-          <AppNativeSelect
-            value={filters.tag_id ?? ""}
-            onChange={(event) => setTag(event.target.value)}
-          >
-            <option value="">All tags</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.name}
-              </option>
-            ))}
-          </AppNativeSelect>
-        </AppFieldLabel>
-        <AppFieldLabel>
-          <span>Search</span>
-          <AppInput
-            type="text"
-            value={searchQuery}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="title text or: tag:Work amount>20 has:receipt"
-          />
-        </AppFieldLabel>
-        {llmEnabled ? (
-          <div className="desk:col-span-4">
-            <div className="flex flex-col gap-2 md:flex-row">
-              <AppInput
-                type="text"
-                value={naturalQuery}
-                onChange={(event) => setNaturalQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault()
-                    runNaturalSearch()
-                  }
-                }}
-                placeholder="Ask in plain language"
-              />
+          <AppFieldLabel className="w-fit min-w-0">
+            <span>Type</span>
+            <SegmentedControl
+              value={filters.type ?? ""}
+              ariaLabel="Transaction type"
+              className="w-fit"
+              items={[
+                { value: "", label: "All" },
+                { value: "income", label: "Income" },
+                { value: "expense", label: "Expense" },
+              ]}
+              onValueChange={(value) => updateParam("type", value || null)}
+            />
+          </AppFieldLabel>
+          <div className="flex flex-1 items-end gap-3">
+            <AppFieldLabel className="min-w-40 max-w-72 flex-1">
+              <span>Category</span>
+              <AppNativeSelect
+                className="h-12"
+                value={filters.category_id ?? ""}
+                onChange={(event) => updateParam("category", event.target.value || null)}
+              >
+                <option value="">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </AppNativeSelect>
+            </AppFieldLabel>
+            <AppFieldLabel className="min-w-40 max-w-72 flex-1">
+              <span>Tag</span>
+              <AppNativeSelect
+                className="h-12"
+                value={filters.tag_id ?? ""}
+                onChange={(event) => updateParam("tag", event.target.value || null)}
+              >
+                <option value="">All tags</option>
+                {tags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.name}
+                  </option>
+                ))}
+              </AppNativeSelect>
+            </AppFieldLabel>
+            {activeFilters.length ? (
               <AppButton
                 type="button"
-                onClick={runNaturalSearch}
-                disabled={naturalSearchMutation.isPending || !naturalQuery.trim()}
-                className="shrink-0"
+                onClick={clearFilters}
+                tone="ghost"
+                className="h-12 w-12 shrink-0 gap-1.5 p-0 xl:w-auto xl:px-3"
+                aria-label="Clear filters"
+                title="Clear filters"
               >
-                {naturalSearchMutation.isPending ? "Translating…" : "Translate"}
+                <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only xl:not-sr-only">Clear filters</span>
               </AppButton>
-            </div>
-            {naturalSearchMessage ? (
-              <p className="mt-2 text-xs text-semantic-red">{naturalSearchMessage}</p>
-            ) : null}
-            {naturalSearchResult && !naturalSearchMessage ? (
-              <p className="mt-2 text-xs text-muted">
-                Applied: <span className="font-mono text-text">{naturalSearchResult.query}</span>
-                {" · "}
-                {Math.round(naturalSearchResult.confidence * 100)}% confidence
-              </p>
             ) : null}
           </div>
-        ) : null}
-      </AppCard>
+        </div>
 
-      <div className="desk:hidden">
-        <div className="flex items-center gap-2">
-          <AppButton
-            type="button"
-            onClick={openMobileFilters}
-            tone="ghost"
-            className="flex-1 text-xs"
-          >
-            Filters {activeFilters.length ? `(${activeFilters.length})` : ""}
-          </AppButton>
-          {activeFilters.length > 0 && (
-            <AppButton
+      </WorkspaceToolbar>
+
+      {activeFilters.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1.5 desk:hidden">
+          {activeFilters.map((filter) => (
+            <button
+              key={filter.key}
               type="button"
-              onClick={clearFilters}
-              tone="ghost"
-              className="text-xs text-muted"
+              onClick={() => clearFilter(filter.key)}
+              className="chip inline-flex max-w-full items-center gap-1.5 text-[11px]"
+              aria-label={`Remove ${filter.label}`}
             >
-              Clear
-            </AppButton>
+              <span className="truncate">{filter.label}</span>
+              <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div
+        data-testid="transactions-register"
+        className="financial-panel financial-panel-ledger min-w-0"
+      >
+        <div
+          data-testid="transactions-selection-controls"
+          className="flex min-h-14 items-center gap-2 border-b border-border bg-faint/70 px-3 py-1.5 md:px-4"
+        >
+          <label className="-ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center">
+            <input
+              type="checkbox"
+              aria-label={allPageSelected ? "Unselect current page" : "Select current page"}
+              checked={allPageSelected}
+              disabled={!items.length}
+              onChange={toggleSelectAllPage}
+              className="control-check disabled:opacity-40"
+            />
+          </label>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted">
+            {selectedIds.length
+              ? `${selectedIds.length} selected`
+              : summary
+                ? `${summary.count} matching transactions`
+                : summaryUnavailable
+                  ? "Matching count unavailable"
+                  : "Counting matching transactions…"}
+          </span>
+
+          {selectedIds.length ? (
+            <>
+              <div className="hidden flex-wrap items-center gap-2 text-xs desk:flex">
+                <SegmentedControl
+                  value={bulkSelectionMode}
+                  ariaLabel="Bulk edit scope"
+                  className="[&_.segmented-control-button]:min-h-9 [&_.segmented-control-button]:px-3"
+                  items={[
+                    { value: "ids", label: "Selected only" },
+                    {
+                      value: "query",
+                      label: summary
+                        ? `All ${summary.count} filtered`
+                        : "Counting filtered…",
+                      disabled: !summary,
+                    },
+                  ]}
+                  onValueChange={setBulkSelectionMode}
+                />
+                <AppButton
+                  type="button"
+                  onClick={() => setBulkActionsOpen((prev) => !prev)}
+                  tone="primary"
+                  aria-expanded={bulkActionsOpen}
+                >
+                  Bulk edit
+                </AppButton>
+                <AppButton
+                  type="button"
+                  onClick={() => {
+                    setSelectedIds([])
+                    setBulkSelectionMode("ids")
+                    setBulkActionsOpen(false)
+                  }}
+                  tone="ghost"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full p-0 text-muted"
+                  aria-label="Clear selection"
+                >
+                  <XIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 desk:hidden">
+                <AppButton
+                  type="button"
+                  onClick={() => setBulkActionsOpen(true)}
+                  tone="primary"
+                >
+                  Bulk edit
+                </AppButton>
+                <AppButton
+                  type="button"
+                  onClick={() => {
+                    setSelectedIds([])
+                    setBulkSelectionMode("ids")
+                    setBulkActionsOpen(false)
+                  }}
+                  tone="ghost"
+                  className="h-11 w-11 p-0"
+                  aria-label="Clear selection"
+                >
+                  <XIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+              </div>
+            </>
+          ) : (
+            <span className="shrink-0 text-xs text-muted">Page {page}</span>
           )}
         </div>
-        {activeFilters.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {activeFilters.map((filter) => (
-              <span key={filter} className="chip text-[11px]">
-                {filter}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
 
-      <div className="hidden flex-wrap items-center gap-2 rounded-xl border border-border bg-faint px-3 py-2 desk:flex">
-        <AppButton
-          type="button"
-          onClick={toggleSelectAllPage}
-          tone="ghost"
-          className="px-3 py-1 text-xs"
-        >
-          {allPageSelected ? "Unselect page" : "Select page"}
-        </AppButton>
-        <span className="text-xs text-muted">{selectedIds.length} selected</span>
-        <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
-          <AppButton
-            type="button"
-            onClick={() => setBulkSelectionMode("ids")}
-            tone="ghost"
-            className={bulkSelectionMode === "ids" ? "border-accent text-accent" : "text-muted"}
-          >
-            Selected only
-          </AppButton>
-          <AppButton
-            type="button"
-            onClick={() => setBulkSelectionMode("query")}
-            tone="ghost"
-            className={bulkSelectionMode === "query" ? "border-accent text-accent" : "text-muted"}
-          >
-            All filtered
-          </AppButton>
-          <AppButton
-            type="button"
-            onClick={() => setBulkActionsOpen((prev) => !prev)}
-            tone="ghost"
-            className={bulkActionsOpen ? "border-accent bg-accent/10 text-accent" : ""}
-          >
-            Bulk edit
-          </AppButton>
-        </div>
-      </div>
-
-      {(mobileSelectMode || selectedIds.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-faint px-3 py-2 desk:hidden">
-          <AppButton
-            type="button"
-            onClick={toggleSelectAllPage}
-            tone="ghost"
-            className="px-3 py-1 text-xs"
-          >
-            {allPageSelected ? "Unselect page" : "Select page"}
-          </AppButton>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted">
-            {selectedIds.length} selected
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <AppButton
-              type="button"
-              onClick={() => setBulkActionsOpen(true)}
-              tone="ghost"
-              className="px-3 py-1 text-xs"
-            >
-              Bulk edit
-            </AppButton>
-            <AppButton
-              type="button"
-              onClick={() => {
-                setMobileSelectMode(false)
-                setSelectedIds([])
-              }}
-              tone="ghost"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full p-0 text-muted"
-              aria-label="Exit selection"
-            >
-              <XIcon className="h-4 w-4" />
-            </AppButton>
-          </div>
-        </div>
-      )}
-
-      {bulkActionsOpen && (
-        <AppCard className="hidden p-4 desk:block">
+        {bulkActionsOpen && selectedIds.length > 0 && (
+          <div className="hidden border-b border-border p-4 desk:block">
           <div className="grid gap-3 desk:grid-cols-4">
             <AppFieldLabel>
               <span>Lifecycle</span>
@@ -977,7 +1092,11 @@ function TransactionsPage() {
             <AppButton
               type="button"
               onClick={runBulkPreview}
-              disabled={bulkPreviewMutation.isPending || !operationValid}
+              disabled={
+                bulkPreviewMutation.isPending ||
+                !operationValid ||
+                !bulkScopeCountReady
+              }
               tone="ghost"
             >
               {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
@@ -985,7 +1104,11 @@ function TransactionsPage() {
             <AppButton
               type="button"
               onClick={runBulkApply}
-              disabled={bulkApplyMutation.isPending || !operationValid}
+              disabled={
+                bulkApplyMutation.isPending ||
+                !operationValid ||
+                !bulkScopeCountReady
+              }
             >
               {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
             </AppButton>
@@ -1010,10 +1133,10 @@ function TransactionsPage() {
               </p>
             </div>
           )}
-        </AppCard>
-      )}
+          </div>
+        )}
 
-      {bulkActionsOpen && !isDesktop ? (
+        {bulkActionsOpen && selectedIds.length > 0 && !isDesktop ? (
         <Sheet open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
           <SheetContent aria-label="Bulk edit" side="bottom" className="max-h-[88vh]">
             <SheetHeader>
@@ -1029,6 +1152,29 @@ function TransactionsPage() {
               </SheetClose>
             </SheetHeader>
             <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
+              <AppFieldLabel>
+                <span>Apply to</span>
+                <SegmentedControl
+                  value={bulkSelectionMode}
+                  ariaLabel="Bulk edit scope"
+                  equalWidth
+                  items={[
+                    { value: "ids", label: `${selectedIds.length} selected` },
+                    {
+                      value: "query",
+                      label: summary
+                        ? `All ${summary.count} matching`
+                        : summaryUnavailable
+                          ? "Count unavailable"
+                          : "Counting matching…",
+                      disabled: !summary,
+                    },
+                  ]}
+                  onValueChange={(value) =>
+                    setBulkSelectionMode(value as "ids" | "query")
+                  }
+                />
+              </AppFieldLabel>
               <AppFieldLabel>
                 <span>Lifecycle</span>
                 <AppNativeSelect
@@ -1108,7 +1254,11 @@ function TransactionsPage() {
               <AppButton
                 type="button"
                 onClick={runBulkPreview}
-                disabled={bulkPreviewMutation.isPending || !operationValid}
+                disabled={
+                  bulkPreviewMutation.isPending ||
+                  !operationValid ||
+                  !bulkScopeCountReady
+                }
                 tone="ghost"
               >
                 {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
@@ -1123,7 +1273,11 @@ function TransactionsPage() {
               <AppButton
                 type="button"
                 onClick={runBulkApply}
-                disabled={bulkApplyMutation.isPending || !operationValid}
+                disabled={
+                  bulkApplyMutation.isPending ||
+                  !operationValid ||
+                  !bulkScopeCountReady
+                }
                 className="flex-1"
               >
                 {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
@@ -1135,9 +1289,13 @@ function TransactionsPage() {
 
       {mobileFiltersOpen && !isDesktop ? (
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-          <SheetContent aria-label="Transaction filters" side="bottom" className="max-h-[88vh]">
+          <SheetContent
+            aria-label="Transaction filters"
+            side="bottom"
+            className="max-h-[88vh]"
+          >
             <SheetHeader>
-              <SheetTitle className="text-sm">Transaction filters</SheetTitle>
+              <SheetTitle className="text-lg">Filter transactions</SheetTitle>
               <SheetClose asChild>
                 <AppButton
                   tone="ghost"
@@ -1148,25 +1306,33 @@ function TransactionsPage() {
                 </AppButton>
               </SheetClose>
             </SheetHeader>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
+            <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-5 py-4">
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted">Period</p>
+                <PeriodPicker
+                  periodSlug={mobilePeriod.slug}
+                  start={mobilePeriod.start}
+                  end={mobilePeriod.end}
+                  onSetPreset={(slug) =>
+                    setMobilePeriod((current) => ({ ...current, slug }))
+                  }
+                  onApplyCustom={(start, end) =>
+                    setMobilePeriod({ slug: "custom", start, end })
+                  }
+                />
+              </div>
               <AppFieldLabel>
                 <span>Type</span>
-                <div className="pill-group">
-                  {[
+                <SegmentedControl
+                  value={mobileType}
+                  ariaLabel="Transaction type"
+                  items={[
                     { value: "", label: "All" },
                     { value: "income", label: "Income" },
                     { value: "expense", label: "Expense" },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => setMobileType(item.value)}
-                      className={`pill-button ${mobileType === item.value ? "pill-button-active" : ""}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+                  ]}
+                  onValueChange={setMobileType}
+                />
               </AppFieldLabel>
               <AppFieldLabel>
                 <span>Category</span>
@@ -1195,15 +1361,6 @@ function TransactionsPage() {
                     </option>
                   ))}
                 </AppNativeSelect>
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Search</span>
-                <AppInput
-                  type="text"
-                  value={mobileQuery}
-                  onChange={(event) => setMobileQuery(event.target.value)}
-                  placeholder="tag:Work amount>20"
-                />
               </AppFieldLabel>
             </div>
             <div className="mt-1 flex shrink-0 gap-2 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
@@ -1243,19 +1400,20 @@ function TransactionsPage() {
         />
       ) : null}
 
-      <div className="space-y-3">
-        {items.length ? (
-          items.map((txn) => {
+        <div className="divide-y divide-border">
+          {items.length ? (
+            items.map((txn) => {
             const isExpense = txn.type === "expense"
             const amount = isExpense ? txn.net_amount_cents : txn.amount_cents
             const category = txn.category
               ? (categoriesById.get(txn.category.id) ?? txn.category)
               : null
             return (
-              <AppCard
-                key={txn.id}
-                role="link"
-                tabIndex={0}
+                <AppCard
+                  key={txn.id}
+                  role="link"
+                  tabIndex={0}
+                  data-testid={`transaction-row-${txn.id}`}
                 onClick={(event) => {
                   if (
                     event.button !== 0 ||
@@ -1276,21 +1434,25 @@ function TransactionsPage() {
                   event.preventDefault()
                   openTransactionDetail(txn.id)
                 }}
-                className={`cursor-pointer flex flex-col gap-3 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 sm:flex-row sm:items-center sm:justify-between ${
-                  isExpense ? "border-l-2 border-l-semantic-red/55" : "border-l-2 border-l-semantic-green/55"
-                }`}
-              >
-                <div className="flex items-start gap-3 md:items-center">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select transaction ${txn.id}`}
-                    checked={selectedIds.includes(txn.id)}
-                    onChange={() => toggleSelected(txn.id)}
-                    className={`control-check self-start md:self-center ${mobileSelectMode || selectedIds.length > 0 ? "" : "hidden desk:block"}`}
-                  />
-                  <CategoryIcon icon={category?.icon ?? null} />
-                  <div>
-                    <p className="font-semibold text-text">
+                  className="group grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 !rounded-none !bg-transparent px-3 py-3 !shadow-none transition-colors hover:bg-surface-hi/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/35 md:px-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                  <label className="-my-2 -ml-2 flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select transaction ${txn.id}`}
+                      checked={selectedIds.includes(txn.id)}
+                      onChange={() => toggleSelected(txn.id)}
+                      className={`control-check transition-opacity ${
+                        selectedIds.includes(txn.id) || selectedIds.length
+                          ? "opacity-100"
+                          : "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100"
+                      }`}
+                    />
+                  </label>
+                  <CategoryIcon icon={category?.icon ?? null} label={category?.name} />
+                    <div className="min-w-0">
+                    <p className="truncate font-semibold text-text">
                       {txn.title || category?.name || "Untitled"}
                     </p>
                     <TransactionDescription
@@ -1299,8 +1461,10 @@ function TransactionsPage() {
                       clamp
                       className="mt-1"
                     />
-                    <p className="text-xs text-muted">
-                      {formatEuroDate(txn.date)} · {category?.name ?? "Uncategorized"}
+                    <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                      <span className="font-mono tabular-nums">{formatEuroDate(txn.date)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="truncate">{category?.name ?? "Uncategorized"}</span>
                     </p>
                     {(txn.latitude !== null && txn.longitude !== null) || txn.has_attachments ? (
                       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -1332,11 +1496,11 @@ function TransactionsPage() {
                         ))}
                       </div>
                     )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
+                  <div className="min-w-[5.75rem] text-right">
                   <p
-                    className={`font-mono text-sm font-semibold tabular-nums ${
+                    className={`amount-text whitespace-nowrap text-sm ${
                       isExpense ? "text-semantic-red" : "text-semantic-green"
                     }`}
                   >
@@ -1348,7 +1512,7 @@ function TransactionsPage() {
                       Reimb {formatCurrency(txn.reimbursed_total_cents)} €
                     </p>
                   )}
-                  <div className="flex items-center gap-2 sm:mt-2 sm:justify-end">
+                  <div className="mt-1 flex items-center justify-end">
                     <AppButton
                       type="button"
                       onClick={() => {
@@ -1359,19 +1523,22 @@ function TransactionsPage() {
                       }}
                       disabled={deleteMutation.isPending}
                       tone="inlineDanger"
-                      className="hidden desk:inline-flex"
+                      className="hidden px-2.5 desk:inline-flex"
                     >
                       <TrashIcon className="h-3.5 w-3.5" />
                       Delete
                     </AppButton>
                   </div>
-                </div>
-              </AppCard>
-            )
-          })
-        ) : (
-          <AppCard className="p-6 text-center text-sm text-muted">No transactions found.</AppCard>
-        )}
+                  </div>
+                </AppCard>
+              )
+            })
+          ) : (
+            <AppCard className="p-6 text-center text-sm text-muted !rounded-none !bg-transparent !shadow-none">
+              No transactions found.
+            </AppCard>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between">

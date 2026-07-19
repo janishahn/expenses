@@ -5,6 +5,8 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from rapidfuzz import fuzz
+
 from expenses.core.config import get_settings
 
 
@@ -20,6 +22,12 @@ def _create_engine() -> Engine:
 
 
 def _enable_sqlite_pragmas(dbapi_conn, _record):
+    dbapi_conn.create_function(
+        "expenses_fuzzy_text_match",
+        3,
+        _fuzzy_text_match,
+        deterministic=True,
+    )
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL;")
     cursor.execute("PRAGMA foreign_keys=ON;")
@@ -29,6 +37,31 @@ def _enable_sqlite_pragmas(dbapi_conn, _record):
     cursor.execute("PRAGMA mmap_size=268435456;")
     cursor.execute("PRAGMA temp_store=MEMORY;")
     cursor.close()
+
+
+def _fuzzy_text_match(query: str, title: str | None, description: str | None) -> int:
+    normalized_query = " ".join(query.casefold().split())
+    normalized_title = " ".join((title or "").casefold().split())
+    normalized_description = " ".join((description or "").casefold().split())
+    if not normalized_query:
+        return 1
+    if (
+        normalized_query in normalized_title
+        or normalized_query in normalized_description
+    ):
+        return 1
+    if len(normalized_query) < 3:
+        return 0
+    return int(
+        (
+            len(normalized_title) >= len(normalized_query)
+            and fuzz.partial_ratio(normalized_query, normalized_title) >= 80
+        )
+        or (
+            len(normalized_description) >= len(normalized_query)
+            and fuzz.partial_ratio(normalized_query, normalized_description) >= 80
+        )
+    )
 
 
 engine = _create_engine()
