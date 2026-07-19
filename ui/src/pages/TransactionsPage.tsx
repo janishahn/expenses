@@ -386,6 +386,7 @@ function TransactionsPage() {
   const {
     data: summary,
     isError: summaryUnavailable,
+    isPlaceholderData: summaryIsStale,
   } = useQuery({
     queryKey: ["transactions", "summary", summaryQueryString],
     queryFn: () =>
@@ -393,6 +394,9 @@ function TransactionsPage() {
         `/api/transactions/summary?${summaryQueryString}`,
       ),
   })
+  // Placeholder data is the previous filter's summary; query-wide bulk edits
+  // must only trust a count fetched for the current filters.
+  const settledSummary = summaryIsStale ? undefined : summary
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/api/transactions/${id}`, { method: "DELETE" }),
@@ -609,7 +613,8 @@ function TransactionsPage() {
     bulkLifecycle !== "none" ||
     bulkCategoryId !== "" ||
     bulkTagMode !== "none"
-  const bulkScopeCountReady = bulkSelectionMode === "ids" || summary !== undefined
+  const bulkScopeCountReady =
+    bulkSelectionMode === "ids" || settledSummary !== undefined
 
   const buildBulkPayload = (): BulkPayload | null => {
     if (!operationValid) {
@@ -646,7 +651,7 @@ function TransactionsPage() {
       }
     }
 
-    if (!summary) {
+    if (!settledSummary) {
       return null
     }
 
@@ -980,10 +985,10 @@ function TransactionsPage() {
                     { value: "ids", label: "Selected only" },
                     {
                       value: "query",
-                      label: summary
-                        ? `All ${summary.count} filtered`
+                      label: settledSummary
+                        ? `All ${settledSummary.count} filtered`
                         : "Counting filtered…",
-                      disabled: !summary,
+                      disabled: !settledSummary,
                     },
                   ]}
                   onValueChange={(value) => {
@@ -1201,12 +1206,12 @@ function TransactionsPage() {
                     { value: "ids", label: `${selectedIds.length} selected` },
                     {
                       value: "query",
-                      label: summary
-                        ? `All ${summary.count} matching`
+                      label: settledSummary
+                        ? `All ${settledSummary.count} matching`
                         : summaryUnavailable
                           ? "Count unavailable"
                           : "Counting matching…",
-                      disabled: !summary,
+                      disabled: !settledSummary,
                     },
                   ]}
                   onValueChange={(value) => {

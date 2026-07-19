@@ -23,6 +23,7 @@ function happyTurn(assistantMessage: string): string {
       tool_call_id: "call-1",
       tool_name: "get_spending_overview",
       result_preview: "display only",
+      result_summary: "€1,234.00 spent · €2,000.00 income",
       success: true,
     },
     { type: "text_chunk", content: assistantMessage },
@@ -48,7 +49,12 @@ test.describe("Spending Assistant (mobile)", () => {
     page,
   }) => {
     await page.goto("/assistant")
-    await expect(page.locator("main h1")).toContainText("Assistant")
+    await expect(
+      page
+        .getByTestId("app-shell-header")
+        .getByRole("heading", { name: "Assistant", level: 1 })
+    ).toBeVisible()
+    await expect(page.locator("main h1")).toHaveCount(0)
     const composer = page.getByTestId("spending-assistant-composer")
     await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
     await expect(composer).toBeVisible()
@@ -87,7 +93,15 @@ test.describe("Spending Assistant (mobile)", () => {
     await expect(page.getByTestId("spending-assistant-tool")).toContainText(
       "Spending overview"
     )
+    // Touch layouts keep the copy affordances persistent instead of hover-revealed.
+    await expect(page.getByTestId("spending-assistant-copy")).toBeVisible()
+    await expect(page.getByTestId("spending-assistant-copy-user")).toBeVisible()
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
+    await expect(
+      page
+        .getByTestId("app-shell-header")
+        .getByRole("button", { name: "New chat" })
+    ).toBeVisible()
 
     const overflow = await page.evaluate(
       () =>
@@ -97,7 +111,7 @@ test.describe("Spending Assistant (mobile)", () => {
     expect(overflow).toBeLessThanOrEqual(1)
   })
 
-  test("keeps the newest streamed content visible inside the conversation", async ({
+  test("pins the sent question to the top and offers a return to the newest content", async ({
     page,
   }) => {
     const longAnswer = Array.from(
@@ -114,16 +128,28 @@ test.describe("Spending Assistant (mobile)", () => {
 
     await page.goto("/assistant")
     await sendQuestion(page, "Show me the full breakdown")
-    await expect(page.getByText("Spending detail 60.")).toBeVisible()
+    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 60.")).toBeAttached()
 
-    const thread = page.getByTestId("spending-assistant-thread")
     await expect
       .poll(() =>
-        thread.evaluate(
-          (element) =>
-            element.scrollHeight - element.clientHeight - element.scrollTop,
-        ),
+        page
+          .locator(
+            '[data-testid="spending-assistant-message"][data-role="user"]',
+          )
+          .last()
+          .evaluate(
+            (element) =>
+              element.getBoundingClientRect().top -
+              element
+                .closest('[data-testid="spending-assistant-thread"]')!
+                .getBoundingClientRect().top,
+          ),
       )
-      .toBeLessThanOrEqual(1)
+      .toBeLessThan(48)
+
+    const scrollToLatest = page.getByTestId("spending-assistant-scroll-bottom")
+    await expect(scrollToLatest).toBeVisible()
+    await scrollToLatest.click()
+    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 60.")).toBeInViewport()
   })
 })

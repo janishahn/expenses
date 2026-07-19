@@ -307,6 +307,69 @@ test.describe("Transactions Page", () => {
     await expect(page.getByRole("button", { name: "Dismiss" })).toHaveCount(0)
   })
 
+  test("disables query-wide bulk edits until the summary matches the changed filters", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Bulk Gate")
+    const marker = `E2E Bulk Gate ${Date.now()}`
+    const transactionIds: number[] = []
+    for (let index = 0; index < 2; index += 1) {
+      transactionIds.push(
+        await createTransaction(request, token, {
+          date: new Date().toISOString().slice(0, 10),
+          occurred_at: new Date().toISOString(),
+          type: "expense",
+          amount_cents: 3_000 + index,
+          category_id: categoryId,
+          title: `${marker} ${index + 1}`,
+          tags: [],
+        })
+      )
+    }
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    for (const transactionId of transactionIds) {
+      await page
+        .getByTestId(`transaction-row-${transactionId}`)
+        .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
+        .check()
+    }
+    const selectionControls = page.getByTestId("transactions-selection-controls")
+    await selectionControls.getByRole("button", { name: "Bulk edit" }).click()
+    await page.getByRole("button", { name: "All 2 filtered" }).click()
+    await page.getByLabel("Set category").selectOption(String(categoryId))
+    const applyButton = page.getByRole("button", { name: "Apply", exact: true })
+    await expect(applyButton).toBeEnabled()
+
+    // Hold the next summary request so the changed filters have no settled count.
+    let releaseSummary = () => {}
+    const summaryGate = new Promise<void>((resolve) => {
+      releaseSummary = resolve
+    })
+    await page.route("**/api/transactions/summary**", async (route) => {
+      await summaryGate
+      await route.continue()
+    })
+
+    await page
+      .getByPlaceholder("Search titles and descriptions…")
+      .fill(`${marker} 1`)
+
+    // The previous query's count must not enable edits against the new filters.
+    await expect(
+      page.getByRole("button", { name: "Counting filtered…" })
+    ).toBeDisabled()
+    await expect(applyButton).toBeDisabled()
+
+    releaseSummary()
+    await expect(
+      page.getByRole("button", { name: /All \d+ filtered/ })
+    ).toBeEnabled()
+    await expect(applyButton).toBeEnabled()
+  })
+
   test("should save and remove durable purchase tracking", async ({
     page,
     request,

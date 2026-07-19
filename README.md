@@ -68,7 +68,7 @@ Categorization rules keep the ledger tidy without manual sorting. Add rule opens
 
 ### Spending assistant
 
-When optional LLM assistance is enabled, the Assistant page is a read-only chat for asking about your spending in plain language, such as "what drove my spending last month" or "compare this month to last". It streams the reply as it is written and shows a compact ticker of the lookups it runs — spending overviews, period comparisons, category and tag breakdowns, transaction search and detail, and budget progress. The assistant can only read your data; it never creates, edits, or reclassifies transactions.
+When optional LLM assistance is enabled, the Assistant page is a read-only chat for asking about your spending in plain language, such as "what drove my spending last month" or "compare this month to last". It streams the reply as it is written and groups the lookups it runs into a compact, expandable activity line — spending overviews, period comparisons, category and tag breakdowns, transaction search and detail, and budget progress. The assistant can only read your data; it never creates, edits, or reclassifies transactions.
 
 ### And more
 

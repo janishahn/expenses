@@ -83,6 +83,8 @@ export type AppShellOutletContext = {
 export type AppShellUtilityAction = {
   label: string
   onClick: () => void
+  icon?: typeof PlusIcon
+  presentation?: "primary" | "quiet"
 }
 
 function AppShell() {
@@ -119,6 +121,7 @@ function AppShell() {
 
   const addTransactionAvailable =
     location.pathname === "/" || location.pathname === "/transactions"
+  const shellTitle = location.pathname === "/assistant" ? "Assistant" : null
   const activeUtilityAction = utilityAction ??
     (addTransactionAvailable
       ? {
@@ -126,6 +129,7 @@ function AppShell() {
           onClick: () => setAddTransactionOpen(true),
         }
       : null)
+  const UtilityActionIcon = activeUtilityAction?.icon ?? PlusIcon
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -238,13 +242,28 @@ function AppShell() {
         className="min-h-app-screen flex min-w-0 flex-1 flex-col desk:ml-sidebar"
       >
         <header data-testid="app-shell-header" className="app-mobile-header desk:hidden">
-          <NavLink
-            to={periodSearch ? `/${periodSearch}` : "/"}
-            className="flex min-w-0 items-center gap-2.5 font-semibold"
-          >
-            <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
-            <span className="truncate">Expenses</span>
-          </NavLink>
+          {shellTitle ? (
+            <>
+              <NavLink
+                to={periodSearch ? `/${periodSearch}` : "/"}
+                aria-label="Expenses"
+                className="flex shrink-0 items-center"
+              >
+                <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
+              </NavLink>
+              <h1 className="truncate font-head text-base font-semibold">
+                {shellTitle}
+              </h1>
+            </>
+          ) : (
+            <NavLink
+              to={periodSearch ? `/${periodSearch}` : "/"}
+              className="flex min-w-0 items-center gap-2.5 font-semibold"
+            >
+              <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
+              <span className="truncate">Expenses</span>
+            </NavLink>
+          )}
           <div className="ml-auto flex items-center gap-1.5">
             {activeUtilityAction ? (
               <button
@@ -252,10 +271,16 @@ function AppShell() {
                 data-testid="app-shell-mobile-add-action"
                 aria-label={activeUtilityAction.label}
                 onClick={activeUtilityAction.onClick}
-              className="app-mobile-header-action"
+                className={
+                  activeUtilityAction.presentation === "quiet"
+                    ? "app-utility-icon transition-[background-color,color,scale] duration-150 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96]"
+                    : "app-mobile-header-action transition-[filter,scale] duration-150 ease-out hover:brightness-105 active:scale-[0.96]"
+                }
               >
-                <PlusIcon aria-hidden="true" />
-                <span>{activeUtilityAction.label}</span>
+                <UtilityActionIcon aria-hidden="true" />
+                {activeUtilityAction.presentation !== "quiet" ? (
+                  <span>{activeUtilityAction.label}</span>
+                ) : null}
               </button>
             ) : null}
             {!location.pathname.startsWith("/admin") ? (
@@ -273,20 +298,33 @@ function AppShell() {
         </header>
 
         <header data-testid="app-shell-utility" className="app-desktop-utility">
-          {!location.pathname.startsWith("/admin") ? (
-            <ShellThemeQuickToggle testId="shell-theme-quick-toggle" />
+          {shellTitle ? (
+            <h1 className="truncate font-head text-base font-semibold">
+              {shellTitle}
+            </h1>
           ) : null}
-          {activeUtilityAction ? (
-            <button
-              type="button"
-              aria-label={activeUtilityAction.label}
-              onClick={activeUtilityAction.onClick}
-              className="app-utility-action"
-            >
-              <PlusIcon aria-hidden="true" />
-              <span>{activeUtilityAction.label}</span>
-            </button>
-          ) : null}
+          <div className="ml-auto flex items-center gap-2.5">
+            {!location.pathname.startsWith("/admin") ? (
+              <ShellThemeQuickToggle testId="shell-theme-quick-toggle" />
+            ) : null}
+            {activeUtilityAction ? (
+              <button
+                type="button"
+                aria-label={activeUtilityAction.label}
+                onClick={activeUtilityAction.onClick}
+                className={
+                  activeUtilityAction.presentation === "quiet"
+                    ? "app-utility-icon transition-[background-color,color,scale] duration-150 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96]"
+                    : "app-utility-action transition-[filter,scale] duration-150 ease-out hover:brightness-105 active:scale-[0.96]"
+                }
+              >
+                <UtilityActionIcon aria-hidden="true" />
+                {activeUtilityAction.presentation !== "quiet" ? (
+                  <span>{activeUtilityAction.label}</span>
+                ) : null}
+              </button>
+            ) : null}
+          </div>
         </header>
 
         <main

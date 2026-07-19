@@ -136,7 +136,9 @@ test.describe("Navigation (mobile)", () => {
       await routeLink.focus()
       await routeLink.press("Enter")
       await expect(page).toHaveURL(route.path)
-      await expect(page.locator("main h1")).toContainText(route.heading)
+      await expect(
+        page.getByRole("heading", { name: route.heading, level: 1 })
+      ).toBeVisible()
     }
   })
 

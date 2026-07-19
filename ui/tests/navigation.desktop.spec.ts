@@ -244,7 +244,9 @@ test.describe("Navigation", () => {
     await page.goto("/")
     await clickSidebarLink(page, "Assistant")
     await expect(page).toHaveURL("/assistant")
-    await expect(page.locator("main h1")).toContainText("Assistant")
+    await expect(
+      page.getByRole("heading", { name: "Assistant", level: 1 })
+    ).toBeVisible()
   })
 
   test("should navigate to recurring rules page", async ({ page }) => {

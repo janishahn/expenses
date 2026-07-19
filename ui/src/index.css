@@ -1337,8 +1337,140 @@
     box-shadow: none;
   }
 
+  .assistant-activity > summary {
+    list-style: none;
+  }
+
+  .assistant-activity > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .assistant-activity-caret {
+    transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .assistant-activity[open] .assistant-activity-caret {
+    transform: rotate(180deg);
+  }
+
+  .assistant-activity[open] .assistant-activity-content {
+    animation: assistant-activity-in 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @keyframes assistant-activity-in {
+    from {
+      opacity: 0;
+      transform: translateY(-0.25rem);
+    }
+  }
+
+  .chat-turn-enter {
+    animation: chat-turn-in 220ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @keyframes chat-turn-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.375rem);
+    }
+  }
+
+  /* Shimmering assistant progress phrase; reverts to static muted text (with a
+     spinner rendered via motion-reduce utilities) under reduced motion. */
+  .progress-phrase {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--muted)) 0%,
+      rgb(var(--muted)) 38%,
+      rgb(var(--text)) 50%,
+      rgb(var(--muted)) 62%,
+      rgb(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation:
+      chat-turn-in 200ms cubic-bezier(0.2, 0, 0, 1),
+      text-shimmer 2.2s linear infinite;
+  }
+
+  @keyframes text-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: 0% 0;
+    }
+  }
+
+  /* Streaming cursor: the "diagswipe" rattle from vyfor/rattles (MIT), ported as
+     discrete content frames (16 × 60ms). Browsers without content animation and
+     reduced-motion users get its static first frame. */
+  .assistant-markdown-streaming > p:last-child::after,
+  .assistant-markdown-streaming > ul:last-child > li:last-child::after,
+  .assistant-markdown-streaming > ol:last-child > li:last-child::after {
+    @apply font-mono;
+    content: "⠁⠀";
+    margin-left: 0.45em;
+    color: rgb(var(--accent));
+    animation: streaming-cursor 0.96s linear infinite;
+  }
+
+  @keyframes streaming-cursor {
+    0% {
+      content: "⠁⠀";
+    }
+    6.25% {
+      content: "⠋⠀";
+    }
+    12.5% {
+      content: "⠟⠁";
+    }
+    18.75% {
+      content: "⡿⠋";
+    }
+    25% {
+      content: "⣿⠟";
+    }
+    31.25% {
+      content: "⣿⡿";
+    }
+    37.5%,
+    43.75% {
+      content: "⣿⣿";
+    }
+    50% {
+      content: "⣾⣿";
+    }
+    56.25% {
+      content: "⣴⣿";
+    }
+    62.5% {
+      content: "⣠⣾";
+    }
+    68.75% {
+      content: "⢀⣴";
+    }
+    75% {
+      content: "⠀⣠";
+    }
+    81.25% {
+      content: "⠀⢀";
+    }
+    87.5%,
+    93.75%,
+    100% {
+      content: "⠀⠀";
+    }
+  }
+
   .transaction-markdown {
     @apply text-sm leading-6 text-text;
+  }
+
+  .assistant-markdown {
+    @apply text-[0.95rem] leading-7;
   }
 
   .transaction-markdown :first-child {
@@ -1512,5 +1644,11 @@
   .drawer-motion,
   .menu-transition {
     animation: none !important;
+  }
+
+  .progress-phrase {
+    animation: none !important;
+    background-image: none;
+    color: rgb(var(--muted));
   }
 }
