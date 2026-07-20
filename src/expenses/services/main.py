@@ -3536,16 +3536,25 @@ class InsightsService:
         }
         result: list[dict[str, object]] = []
         balance_service = BalanceAnchorService(self.session, self.user_id)
+        first_anchor_at = self.session.scalar(
+            select(func.min(BalanceAnchor.as_of_at)).where(
+                BalanceAnchor.user_id == self.user_id
+            )
+        )
         for month in months:
             key = (month.year, month.month)
             segments = monthly_segments[key]
             segments.sort(key=lambda item: category_order[item["category_id"]])
             balance_date = min(end, month_end(month.year, month.month))
+            balance_target = datetime.combine(balance_date, time.max)
             result.append(
                 {
                     "month": f"{month.year:04d}-{month.month:02d}",
-                    "balance_cents": balance_service.balance_as_of(
-                        datetime.combine(balance_date, time.max)
+                    "balance_cents": (
+                        None
+                        if first_anchor_at is not None
+                        and balance_target < first_anchor_at
+                        else balance_service.balance_as_of(balance_target)
                     ),
                     "total_cents": sum(int(item["amount_cents"]) for item in segments),
                     "segments": segments,
@@ -4499,10 +4508,16 @@ class ForecastService:
         active_rules = self.session.scalars(
             select(RecurringRule).where(
                 RecurringRule.user_id == self.user_id,
-                RecurringRule.currency_code == CurrencyCode.eur,
                 or_(RecurringRule.end_date.is_(None), RecurringRule.end_date >= today),
             )
         ).all()
+        usd_quote: FxQuote | None = None
+        if any(rule.currency_code == CurrencyCode.usd for rule in active_rules):
+            usd_quote = FxRateService(self.session).usd_to_eur_quote_for_date(
+                today,
+                allow_stale_cache=True,
+                allow_static_fallback=True,
+            )
         posted_rows = self.session.execute(
             select(
                 Transaction.origin_rule_id.label("rule_id"),
@@ -4522,10 +4537,19 @@ class ForecastService:
             for row in posted_rows
         }
         recurring_by_category: dict[
-            tuple[TransactionType, int], list[tuple[int, int, date, date | None]]
+            tuple[TransactionType, int], list[tuple[int, dict[date, int]]]
         ] = {}
         for rule in active_rules:
             amount = int(rule.amount_cents)
+            if rule.currency_code == CurrencyCode.usd:
+                if usd_quote is None:
+                    raise RuntimeError("USD quote missing for forecast history")
+                amount = int(
+                    (Decimal(amount) * usd_quote.rate).quantize(
+                        Decimal("1"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
             interval_count = int(rule.interval_count)
             if rule.interval_unit == IntervalUnit.day:
                 monthly = int(amount * 30.44 / interval_count)
@@ -4534,15 +4558,35 @@ class ForecastService:
             elif rule.interval_unit == IntervalUnit.month:
                 monthly = int(amount / interval_count)
             else:
+                occurrence = rule.anchor_date
+                amounts_by_month: dict[date, int] = {}
+                while occurrence <= trailing_end:
+                    if rule.end_date is not None and occurrence > rule.end_date:
+                        break
+                    if occurrence >= trailing_start:
+                        bucket = month_start(occurrence.year, occurrence.month)
+                        amounts_by_month[bucket] = (
+                            amounts_by_month.get(bucket, 0) + amount
+                        )
+                    next_occurrence = calculate_next_date(rule, occurrence)
+                    if next_occurrence <= occurrence:
+                        break
+                    occurrence = next_occurrence
+                key = (rule.type, int(rule.category_id))
+                recurring_by_category.setdefault(key, []).append(
+                    (int(rule.id), amounts_by_month)
+                )
                 continue
+            starts_on = month_start(rule.anchor_date.year, rule.anchor_date.month)
+            amounts_by_month = {
+                bucket: monthly
+                for bucket in months
+                if bucket >= starts_on
+                and (rule.end_date is None or bucket <= rule.end_date)
+            }
             key = (rule.type, int(rule.category_id))
             recurring_by_category.setdefault(key, []).append(
-                (
-                    int(rule.id),
-                    monthly,
-                    month_start(rule.anchor_date.year, rule.anchor_date.month),
-                    rule.end_date,
-                )
+                (int(rule.id), amounts_by_month)
             )
 
         for category_id, values in expense_by_category.items():
@@ -4551,11 +4595,9 @@ class ForecastService:
             )
             for bucket in months:
                 recurring = sum(
-                    amount
-                    for rule_id, amount, starts_on, ends_on in adjustments
-                    if bucket >= starts_on
-                    and (ends_on is None or bucket <= ends_on)
-                    and (rule_id, bucket) not in posted_buckets
+                    amounts_by_month.get(bucket, 0)
+                    for rule_id, amounts_by_month in adjustments
+                    if (rule_id, bucket) not in posted_buckets
                 )
                 values[bucket] = max(0, values.get(bucket, 0) - recurring)
         for category_id, values in income_by_category.items():
@@ -4564,11 +4606,9 @@ class ForecastService:
             )
             for bucket in months:
                 recurring = sum(
-                    amount
-                    for rule_id, amount, starts_on, ends_on in adjustments
-                    if bucket >= starts_on
-                    and (ends_on is None or bucket <= ends_on)
-                    and (rule_id, bucket) not in posted_buckets
+                    amounts_by_month.get(bucket, 0)
+                    for rule_id, amounts_by_month in adjustments
+                    if (rule_id, bucket) not in posted_buckets
                 )
                 values[bucket] = max(0, values.get(bucket, 0) - recurring)
 

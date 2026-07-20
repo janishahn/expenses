@@ -16,7 +16,7 @@ export type SpendingBandSegment = {
 
 export type SpendingBandMonth = {
   month: string
-  balance_cents?: number
+  balance_cents?: number | null
   total_cents: number
   segments: SpendingBandSegment[]
 }

@@ -132,3 +132,29 @@ def test_monthly_category_breakdown_returns_six_month_spending_bands(
         f"{previous_month.year:04d}-{previous_month.month:02d}"
     )
     assert bands[-2]["total_cents"] == 8_000
+
+
+def test_monthly_category_breakdown_omits_balances_before_first_snapshot(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    previous_month = today.replace(day=1) - timedelta(days=1)
+    snapshot_at = datetime.combine(previous_month, datetime.min.time()).replace(hour=18)
+    response = api_client.post(
+        "/api/settings/balance-anchors",
+        headers=csrf_headers,
+        json={
+            "as_of_at": snapshot_at.isoformat(),
+            "balance_cents": 50_000,
+            "note": "First known balance",
+        },
+    )
+    assert response.status_code == 200
+
+    response = api_client.get("/api/category-breakdown?view=monthly&period=this_month")
+    assert response.status_code == 200
+    bands = response.json()["months"]
+
+    assert all(month["balance_cents"] is None for month in bands[:-2])
+    assert bands[-2]["balance_cents"] == 50_000
+    assert bands[-1]["balance_cents"] == 50_000
