@@ -62,6 +62,7 @@ from expenses.services.rollups import (
 from expenses.schemas import (
     BalanceAnchorIn,
     BudgetOverrideIn,
+    BudgetTemplateApplyFromIn,
     BudgetTemplateIn,
     CategoryIn,
     CategoryUpdateIn,
@@ -6385,6 +6386,110 @@ class BudgetService:
             operation="create",
         )
         return tmpl
+
+    def apply_template_from(self, data: BudgetTemplateApplyFromIn) -> BudgetTemplate:
+        if data.frequency == BudgetFrequency.monthly and data.starts_on.day != 1:
+            raise ValueError("Monthly budgets must start on the first of a month")
+        if data.frequency == BudgetFrequency.yearly and (
+            data.starts_on.month != 1 or data.starts_on.day != 1
+        ):
+            raise ValueError("Yearly budgets must start on January 1")
+
+        if data.category_id is not None:
+            category = self.session.get(Category, data.category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if category.type != TransactionType.expense:
+                raise ValueError("Budgets can only be set for expense categories")
+
+        category_filter = (
+            BudgetTemplate.category_id.is_(None)
+            if data.category_id is None
+            else BudgetTemplate.category_id == data.category_id
+        )
+        existing = self.session.scalar(
+            select(BudgetTemplate).where(
+                BudgetTemplate.user_id == self.user_id,
+                BudgetTemplate.frequency == data.frequency,
+                BudgetTemplate.starts_on == data.starts_on,
+                category_filter,
+            )
+        )
+        if existing:
+            existing.amount_cents = data.amount_cents
+            template = existing
+            operation = "update"
+        else:
+            active = self.session.scalar(
+                select(BudgetTemplate)
+                .where(
+                    BudgetTemplate.user_id == self.user_id,
+                    BudgetTemplate.frequency == data.frequency,
+                    BudgetTemplate.starts_on < data.starts_on,
+                    (
+                        BudgetTemplate.ends_on.is_(None)
+                        | (BudgetTemplate.ends_on >= data.starts_on)
+                    ),
+                    category_filter,
+                )
+                .order_by(BudgetTemplate.starts_on.desc(), BudgetTemplate.id.desc())
+            )
+            next_template = self.session.scalar(
+                select(BudgetTemplate)
+                .where(
+                    BudgetTemplate.user_id == self.user_id,
+                    BudgetTemplate.frequency == data.frequency,
+                    BudgetTemplate.starts_on > data.starts_on,
+                    category_filter,
+                )
+                .order_by(BudgetTemplate.starts_on.asc(), BudgetTemplate.id.asc())
+            )
+
+            ends_on = active.ends_on if active else None
+            if next_template:
+                next_boundary = next_template.starts_on - timedelta(days=1)
+                if ends_on is None or ends_on > next_boundary:
+                    ends_on = next_boundary
+            if active:
+                active.ends_on = data.starts_on - timedelta(days=1)
+
+            template = BudgetTemplate(
+                user_id=self.user_id,
+                frequency=data.frequency,
+                category_id=data.category_id,
+                amount_cents=data.amount_cents,
+                starts_on=data.starts_on,
+                ends_on=ends_on,
+            )
+            self.session.add(template)
+            operation = "create"
+
+        if data.frequency == BudgetFrequency.monthly:
+            self.session.execute(
+                delete(BudgetOverride).where(
+                    BudgetOverride.user_id == self.user_id,
+                    BudgetOverride.year == data.starts_on.year,
+                    BudgetOverride.month == data.starts_on.month,
+                    BudgetOverride.category_id.is_(None)
+                    if data.category_id is None
+                    else BudgetOverride.category_id == data.category_id,
+                )
+            )
+
+        self.session.commit()
+        self.session.refresh(template)
+        log_event(
+            logger,
+            logging.INFO,
+            "budget_template_applied_from",
+            template_id=template.id,
+            frequency=template.frequency.value,
+            category_id=template.category_id,
+            amount_cents=template.amount_cents,
+            starts_on=template.starts_on.isoformat(),
+            operation=operation,
+        )
+        return template
 
     def delete_template(self, template_id: int) -> None:
         tmpl = self.session.get(BudgetTemplate, template_id)

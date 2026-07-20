@@ -645,6 +645,13 @@ class BudgetTemplateIn(BaseModel):
     ends_on: Optional[date] = None
 
 
+class BudgetTemplateApplyFromIn(BaseModel):
+    frequency: BudgetFrequency
+    category_id: Optional[int] = None
+    amount_cents: int = Field(..., ge=0)
+    starts_on: date
+
+
 class BudgetCategoryOut(BaseModel):
     id: int
     name: str

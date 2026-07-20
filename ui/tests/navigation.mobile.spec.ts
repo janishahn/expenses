@@ -47,6 +47,8 @@ test.describe("Navigation (mobile)", () => {
     await page.goto("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
     await expect(page.getByTestId("app-shell-header")).not.toContainText("Dashboard")
+    await page.getByRole("button", { name: "Open menu" }).click()
+    await expect(page.getByTestId("app-shell-brand")).toHaveText("Expenses")
   })
 
   test("preserves period across mobile sidebar navigation", async ({ page }) => {

@@ -120,6 +120,7 @@ from expenses.schemas import (
     BudgetOverrideIn,
     BudgetOverrideOut,
     BudgetBurndownResponseOut,
+    BudgetTemplateApplyFromIn,
     BudgetTemplateIn,
     BudgetTemplateMutationOut,
     BudgetsResponseOut,
@@ -1838,7 +1839,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     today = date.today()
     view = (request.query_params.get("view") or "month").strip().lower()
-    if view not in {"month", "templates", "year"}:
+    if view not in {"month", "templates", "year", "workspace"}:
         view = "month"
 
     ym = request.query_params.get("month")
@@ -1860,18 +1861,18 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
 
     effective_budgets = []
     progress_map: dict[Optional[int], dict[str, int]] = {}
-    if view == "month":
+    if view in {"month", "workspace"}:
         effective_budgets = svc.effective_budgets_for_month(year, month)
         progress_map = svc.progress_for_month(year, month)
 
     templates = []
-    if view == "templates":
+    if view in {"templates", "workspace"}:
         templates = svc.list_templates()
 
     year_value = int(request.query_params.get("year") or today.year)
     yearly_budgets = []
     yearly_spent_map: dict[Optional[int], int] = {}
-    if view == "year":
+    if view in {"year", "workspace"}:
         yearly_budgets = svc.yearly_budgets_for_year(year_value)
         yearly_spent_map = svc.spent_by_category_for_year(year_value)
 
@@ -2047,6 +2048,31 @@ def api_upsert_budget_template(
     _require_csrf(request, db)
     try:
         tmpl = BudgetService(db, user_id=user_id).upsert_template(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "id": tmpl.id,
+        "frequency": tmpl.frequency.value,
+        "category_id": tmpl.category_id,
+        "amount_cents": tmpl.amount_cents,
+        "starts_on": tmpl.starts_on.isoformat(),
+        "ends_on": tmpl.ends_on.isoformat() if tmpl.ends_on else None,
+    }
+
+
+@router.post(
+    "/api/budgets/templates/apply-from",
+    response_model=BudgetTemplateMutationOut,
+)
+def api_apply_budget_template_from(
+    data: BudgetTemplateApplyFromIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        tmpl = BudgetService(db, user_id=user_id).apply_template_from(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

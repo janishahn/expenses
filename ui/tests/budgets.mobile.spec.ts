@@ -27,7 +27,10 @@ test.describe("Budgets Page Mobile", () => {
     })
   }
 
-  async function assertNoHorizontalOverflow(page: Parameters<typeof test>[0]["page"], label: string) {
+  async function assertNoHorizontalOverflow(
+    page: Parameters<typeof test>[0]["page"],
+    label: string,
+  ) {
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -49,26 +52,37 @@ test.describe("Budgets Page Mobile", () => {
     expect(scrollWidth, message).toBeLessThanOrEqual(clientWidth)
   }
 
-  test("should open the recurring budget modal from the mobile page action", async ({
+  test("opens the unified monthly-first editor from the mobile page action", async ({
     page,
   }) => {
-    await page.goto("/budgets?view=templates")
+    await page.goto("/budgets?view=year&year=2024")
+    await expect(page).not.toHaveURL(/(?:view|year)=/)
+    await expect(page.getByRole("heading", { name: "Monthly budgets" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /Annual budgets/ })).toBeVisible()
+
     const addAction = page.getByTestId("app-shell-mobile-add-action")
     await expect(addAction).toHaveAccessibleName("Add budget")
-    await expect(addAction).toHaveText("Add budget")
     await addAction.click()
 
-    const dialog = page.getByRole("dialog", { name: "Add recurring budget" })
+    const dialog = page.getByRole("dialog", { name: "Add budget" })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole("button", { name: "Save recurring budget" })).toBeVisible()
+    await expect(dialog.getByLabel("Repeats")).toHaveValue("monthly")
+    await expect(dialog.getByRole("button", { name: "Save budget" })).toBeVisible()
+    await assertNoHorizontalOverflow(page, "budgets-editor")
   })
 
-  test("keeps expanded burndown and compare controls contained in the viewport", async ({
+  test("keeps the unified workspace and expanded details within the viewport", async ({
     page,
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Burndown")
+    const categoryName = `E2E Mobile Burndown ${Date.now()}`
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      categoryName,
+    )
     const monthStart = `${new Date().toISOString().slice(0, 7)}-01`
     const templateResponse = await request.post("/api/budgets/templates", {
       headers: { "X-CSRF-Token": token },
@@ -98,30 +112,21 @@ test.describe("Budgets Page Mobile", () => {
     expect(transactionResponse.ok()).toBeTruthy()
     const transactionPayload = (await transactionResponse.json()) as { id: number }
 
-    await page.goto("/budgets?view=month")
-    const showChartButton = page.getByRole("button", { name: "Show chart" }).first()
-    await expect(showChartButton).toBeVisible()
-    await showChartButton.click()
-    await expect(page.getByText("Daily allowance")).toBeVisible()
+    await page.goto("/budgets")
+    const row = page.getByTestId("budget-plan-card").filter({ hasText: categoryName })
+    await row.getByRole("button", { name: "View details" }).click()
+    await expect(row.getByText("Daily allowance")).toBeVisible()
 
-    const compareCheckbox = page.getByLabel("Compare previous month").first()
+    const compareCheckbox = row.getByLabel("Compare previous month")
     await compareCheckbox.check()
     await expect(compareCheckbox).toBeChecked()
-    await expect(page.getByText("Top spending days")).toBeVisible()
-    await expect(page.locator("body")).toContainText("MOBILEBURNDOWNOVERFLOW")
-
-    await expect(page.getByText("Daily allowance").first()).toBeVisible()
-    await expect(page.getByText("Projected finish").first()).toBeVisible()
-    await expect(page.getByText("Top spending days").first()).toBeVisible()
-    await expect(compareCheckbox.locator("xpath=ancestor::label[1]")).toBeVisible()
-
+    await expect(row.getByText("Top spending days")).toBeVisible()
+    await expect(row).toContainText("MOBILEBURNDOWNOVERFLOW")
     await assertNoHorizontalOverflow(page, "budgets-burndown-compare")
 
     const cleanupResponse = await request.delete(
       `/api/transactions/${transactionPayload.id}`,
-      {
-        headers: { "X-CSRF-Token": token },
-      },
+      { headers: { "X-CSRF-Token": token } },
     )
     expect(cleanupResponse.ok()).toBeTruthy()
   })

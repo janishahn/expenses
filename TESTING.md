@@ -11,7 +11,9 @@ uv run full-tests
 
 `fast-tests` is the normal local and pull-request gate. It runs Ruff, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
 
-`full-tests` runs the fast gate and then the complete Playwright suite in a single invocation. Every Playwright worker boots its own backend through the fixtures in `ui/tests/fixtures.ts`: a fresh temporary SQLite data directory, applied migrations, and FastAPI on a free local port serving the built `ui/dist` application and API on one origin. It never reuses a developer server or database.
+For normal feature work, pair `fast-tests` with the focused Playwright specs and materially distinct layouts affected by the change. Do not escalate to the complete matrix because a diff is large or a page was redesigned.
+
+Reserve `full-tests` for release candidates, changes to shared browser/runtime infrastructure whose risk spans most routes (such as authentication bootstrap, Playwright fixtures, migrations/startup, or global navigation), or an explicit request. It runs the fast gate and then the complete Playwright suite in a single invocation. Every Playwright worker boots its own backend through the fixtures in `ui/tests/fixtures.ts`: a fresh temporary SQLite data directory, applied migrations, and FastAPI on a free local port serving the built `ui/dist` application and API on one origin. It never reuses a developer server or database.
 
 Worker count scales with CPU cores, so spec files run concurrently while tests within a file stay serial against their worker's database by default. Long files whose tests are fully self-sufficient (read-only checks, or every test provisions its own data through the API) opt into per-test distribution with `test.describe.configure({ mode: "parallel" })`; a file may only opt in when no test depends on data or state left by an earlier test in that file. Test and assertion timeouts are set above the Playwright defaults because browser startup and paint slow down while many workers share one machine, and `reportSlowTests` flags any file that grows past two minutes so it can be split or opted into parallel mode before it caps the run again. The desktop and mobile auth specs each run first-run setup on a pristine instance; every other project bootstraps its worker's backend once and shares that authenticated storage state. The run produces one HTML report covering all projects.
 
@@ -75,7 +77,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Insights filters, charts, Flow, and drill-through | `insights.spec.ts` | `insights.mobile.spec.ts` | Yes |
 | Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
 | What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| Monthly, recurring, and yearly budgets plus burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |
+| Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |
 | Weekly digest navigation and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
 | Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts` | `categories.mobile.spec.ts` | Yes |
 | Tag create, detail update/delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |

@@ -43,7 +43,6 @@ test.describe("Navigation", () => {
   }) => {
     const selectors = [
       { path: "/", label: "Period" },
-      { path: "/budgets", label: "Budget view" },
       { path: "/forecast", label: "Forecast horizon" },
       { path: "/scenarios", label: "Scenario model" },
       { path: "/insights", label: "Insights view" },
@@ -57,6 +56,10 @@ test.describe("Navigation", () => {
       await expect(group).toBeVisible()
       await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
     }
+
+    await page.goto("/budgets")
+    await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
+    await expect(page.getByLabel("Budget month")).toBeVisible()
 
     await expect(page.getByLabel(/^Period:/)).toHaveCount(0)
   })
@@ -77,6 +80,7 @@ test.describe("Navigation", () => {
       name: "Application navigation",
     })
     await expect(sidebar).toBeVisible()
+    await expect(page.getByTestId("app-shell-brand")).toHaveText("Expenses")
     for (const label of [
       "Dashboard",
       "Transactions",

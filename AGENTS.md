@@ -58,7 +58,7 @@ A release is a deliberate, versioned, deployable checkpoint. It is made up of fo
 - For Python edits, run Ruff fix + format:
   1. `uv run ruff check --fix .`
   2. `uv run ruff format .`
-- Run relevant tests after changes; run the broader test command for significant or cross-cutting changes.
+- Run relevant tests after changes. Do not choose the complete browser matrix from diff size or a redesign label alone; prefer the narrowest tests that exercise the changed behavior.
 - If tests are skipped or cannot run, state that explicitly in the final handoff.
 
 ## Testing Expectations
@@ -66,7 +66,8 @@ A release is a deliberate, versioned, deployable checkpoint. It is made up of fo
 - Bug fixes should include a regression test when practical.
 - Prefer targeted, deterministic tests over broad, brittle integration coverage when validating local logic.
 - `uv run fast-tests` is the default pre-commit and pull-request gate. It runs Ruff, backend tests, frontend lint, and the production frontend build.
-- `uv run full-tests` is the deliberate comprehensive gate for large, cross-cutting, release, migration, or redesign work. It includes `fast-tests` plus the complete Playwright desktop, mobile, accessibility, visual, and critical cross-browser matrix. It is available as a manually dispatched GitHub Actions workflow and does not run automatically for every pull request or push.
+- For normal feature work, run `uv run fast-tests` plus the focused Playwright specs and materially distinct layouts affected by the change.
+- Reserve `uv run full-tests` for release candidates, changes to shared browser/runtime infrastructure whose risk genuinely spans most routes (such as authentication bootstrap, Playwright fixtures, migrations/startup, or global navigation), or an explicit user request. A large diff or page redesign is not sufficient by itself. The command includes `fast-tests` plus the complete Playwright desktop, mobile, accessibility, visual, and critical cross-browser matrix; it is also available as a manually dispatched GitHub Actions workflow.
 - Every user-facing story must have a real full-stack happy path in Playwright for each materially distinct supported web layout. Keep domain permutations and backend-only edge cases in focused API or unit tests, but cover permission, destructive-action, error-recovery, empty, and disabled states in the browser when their interaction is part of the story.
 - Keep `TESTING.md` current when routes, user stories, Playwright projects, test commands, or coverage expectations change. Its coverage ledger is the authoritative testing inventory.
 - For native iOS simulator UI checks, use the local-dev launch path documented in `README.md`: keep the local backend running, preserve the simulator Keychain session, and pass `--skip-local-unlock` as an app launch argument in Debug simulator builds. This flag is only a local-unlock bypass; it does not bypass backend login. If the app stays on login, verify the backend port with `/api/mobile/status`, update the simulator app default `expenses.baseURL` when `uv run dev` bound to a port other than `8000`, then complete one real mobile login such as `test` / `test` for the mock DB. Plain launches are only appropriate when explicitly testing the local unlock gate itself.

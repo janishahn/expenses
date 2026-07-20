@@ -202,7 +202,6 @@ function AppShell() {
             <ProductMark />
             <span>
               <strong>Expenses</strong>
-              <small>Private ledger</small>
             </span>
           </NavLink>
           <button
