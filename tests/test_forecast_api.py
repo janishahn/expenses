@@ -67,6 +67,7 @@ def _create_recurring_rule(
     currency_code: str = "EUR",
     anchor_date: date | None = None,
     interval_unit: str = "month",
+    end_date: date | None = None,
 ) -> int:
     response = client.post(
         "/api/recurring",
@@ -81,7 +82,7 @@ def _create_recurring_rule(
             "interval_unit": interval_unit,
             "interval_count": 1,
             "next_occurrence": next_occurrence.isoformat(),
-            "end_date": None,
+            "end_date": end_date.isoformat() if end_date else None,
             "auto_post": True,
             "skip_weekends": False,
             "month_day_policy": "snap_to_end",
@@ -672,6 +673,67 @@ def test_forecast_removes_yearly_recurring_payments_from_variable_history(
         {
             "category_id": groceries_id,
             "name": "Annual History Groceries",
+            "icon": None,
+            "amount_cents": 10_000,
+        }
+    ]
+
+
+def test_forecast_removes_ended_recurring_payments_from_variable_history(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2027, 1, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    groceries_id = _create_category(
+        api_client, csrf_headers, "Ended History Groceries", "expense"
+    )
+    insurance_id = _create_category(
+        api_client, csrf_headers, "Ended History Insurance", "expense"
+    )
+    _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Ended insurance",
+        txn_type="expense",
+        category_id=insurance_id,
+        amount_cents=120_000,
+        next_occurrence=date(2026, 12, 1),
+        anchor_date=date(2025, 12, 1),
+        interval_unit="year",
+        end_date=date(2025, 12, 31),
+    )
+    for offset in range(24, 0, -1):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=10),
+            txn_type="expense",
+            amount_cents=10_000,
+            category_id=groceries_id,
+            title=f"Groceries {month.isoformat()}",
+        )
+        if month == date(2025, 12, 1):
+            _create_transaction(
+                api_client,
+                csrf_headers,
+                txn_date=month,
+                txn_type="expense",
+                amount_cents=120_000,
+                category_id=insurance_id,
+                title="Ended insurance 2025",
+            )
+
+    response = api_client.get("/api/forecast?horizon=12&mode=full")
+    assert response.status_code == 200
+    december = next(
+        month for month in response.json()["months"] if month["month"] == "2027-12"
+    )
+    assert december["projected_expenses_cents"] == 10_000
+    assert december["breakdown"]["variable_estimates"] == [
+        {
+            "category_id": groceries_id,
+            "name": "Ended History Groceries",
             "icon": None,
             "amount_cents": 10_000,
         }

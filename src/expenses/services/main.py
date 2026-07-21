@@ -4505,14 +4505,18 @@ class ForecastService:
             category_info[category_id] = (str(row.category_name), row.category_icon)
             income_by_category.setdefault(category_id, {})[bucket] = int(row.gross or 0)
 
-        active_rules = self.session.scalars(
+        history_rules = self.session.scalars(
             select(RecurringRule).where(
                 RecurringRule.user_id == self.user_id,
-                or_(RecurringRule.end_date.is_(None), RecurringRule.end_date >= today),
+                RecurringRule.anchor_date <= trailing_end,
+                or_(
+                    RecurringRule.end_date.is_(None),
+                    RecurringRule.end_date >= trailing_start,
+                ),
             )
         ).all()
         usd_quote: FxQuote | None = None
-        if any(rule.currency_code == CurrencyCode.usd for rule in active_rules):
+        if any(rule.currency_code == CurrencyCode.usd for rule in history_rules):
             usd_quote = FxRateService(self.session).usd_to_eur_quote_for_date(
                 today,
                 allow_stale_cache=True,
@@ -4539,7 +4543,7 @@ class ForecastService:
         recurring_by_category: dict[
             tuple[TransactionType, int], list[tuple[int, dict[date, int]]]
         ] = {}
-        for rule in active_rules:
+        for rule in history_rules:
             amount = int(rule.amount_cents)
             if rule.currency_code == CurrencyCode.usd:
                 if usd_quote is None:
