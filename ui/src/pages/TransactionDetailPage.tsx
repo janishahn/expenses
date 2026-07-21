@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { TrashIcon } from "@phosphor-icons/react/Trash"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import markerIcon from "leaflet/dist/images/marker-icon.png"
@@ -22,8 +24,13 @@ import {
   formatEuroDateTime,
   formatFileSize,
 } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import TransactionDescription from "../components/TransactionDescription"
+import {
+  FinancialPanel,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
 
@@ -291,6 +298,10 @@ function TransactionDetailPage() {
     onSuccess: () => {
       setDeleteError("")
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
       queryClient.removeQueries({ queryKey: ["transaction", transactionId] })
       queryClient.removeQueries({
         queryKey: ["transaction", Number(transactionId), "reimbursements"],
@@ -354,21 +365,24 @@ function TransactionDetailPage() {
         titleAccessoryAlign="end"
         titleAccessory={
           <div className="flex shrink-0 items-center gap-2.5">
-            <AppButton asChild tone="ghost">
+            <AppButton asChild tone="ghost" className="h-11 w-11 p-0">
               <Link
                 to={`/transactions/${transaction.id}/edit`}
                 state={{ returnTo, hasOriginContext }}
+                aria-label="Edit transaction"
               >
-                Edit
+                <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
               </Link>
             </AppButton>
             <AppButton
               type="button"
               tone="danger"
+              className="h-11 w-11 p-0"
+              aria-label="Delete transaction"
               disabled={deleteMutation.isPending}
               onClick={handleDelete}
             >
-              {deleteMutation.isPending ? "Deleting…" : "Delete"}
+              <TrashIcon className="h-4 w-4" aria-hidden="true" />
             </AppButton>
           </div>
         }
@@ -376,48 +390,63 @@ function TransactionDetailPage() {
 
       {deleteError ? <AppCard className="p-4 text-xs text-semantic-red">{deleteError}</AppCard> : null}
 
-      <AppCard className="space-y-4 p-5 md:space-y-5 md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Title</p>
-            <h2 className="font-head text-2xl font-bold text-text break-words md:text-[2rem]">
-              {transaction.title}
-            </h2>
+      <FinancialPanel role="hero" className="overflow-hidden">
+        <div className="flex flex-col gap-5 p-5 md:flex-row md:items-start md:justify-between md:p-6">
+          <div className="flex min-w-0 items-start gap-3 md:flex-1">
+            <CategoryIcon
+              icon={transaction.category?.icon ?? null}
+              label={transaction.category?.name ?? "Uncategorized"}
+              className="mt-0.5 h-11 w-11 shrink-0"
+            />
+            <div className="min-w-0 space-y-1.5">
+              <p className="mono-meta uppercase text-muted">Ledger entry</p>
+              <h2 className="break-words font-head text-2xl font-bold text-text md:text-[2rem]">
+                {transaction.title}
+              </h2>
+              <p className="text-sm text-muted">
+                {transaction.category?.name ?? "Uncategorized"} · {whenValue}
+              </p>
+            </div>
           </div>
 
-          <div className="min-w-[9.75rem] space-y-1.5 desk:text-right">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Amount</p>
-            <p className={`font-mono text-[1.45rem] font-semibold tabular-nums ${amountTextTone}`}>
+          <div className="min-w-[9.75rem] self-end space-y-1.5 text-right md:self-auto">
+            <p className="mono-meta uppercase text-muted">Amount</p>
+            <p className={`font-mono text-[1.65rem] font-semibold tabular-nums ${amountTextTone}`}>
               {amountPrefix}
               {formatCurrency(transaction.amount_cents)} €
             </p>
+            <p className="text-xs capitalize text-muted">{transaction.type}</p>
           </div>
         </div>
 
         {transaction.is_reimbursement ? (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 px-5 pb-5 md:px-6 md:pb-6">
             <span className="chip">Reimbursement</span>
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 rounded-xl border border-border bg-surface-hi/55 p-3">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted">{whenLabel}</p>
-            <p className="text-sm text-text">{whenValue}</p>
+        <div className="grid grid-cols-2 border-t border-border">
+          <div className="min-w-0 space-y-1.5 bg-signal-blue-soft p-3 md:p-4">
+            <p className="mono-meta uppercase text-muted">{whenLabel}</p>
+            <p className="break-words text-xs font-semibold text-text md:text-sm">{whenValue}</p>
           </div>
 
-          <div className="space-y-1.5 rounded-xl border border-border bg-surface-hi/55 p-3">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Category</p>
-            <p className="text-sm text-text">{transaction.category?.name ?? "Uncategorized"}</p>
-          </div>
-
-          <div className="space-y-1.5 rounded-xl border border-border bg-surface-hi/55 p-3 sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Type</p>
-            <p className="text-sm capitalize text-text">{transaction.type}</p>
+          <div className="min-w-0 space-y-1.5 border-l border-border bg-signal-purple-soft p-3 md:p-4">
+            <p className="mono-meta uppercase text-muted">Category</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <CategoryIcon
+                icon={transaction.category?.icon ?? null}
+                label={transaction.category?.name ?? "Uncategorized"}
+                className="h-7 w-7 rounded-[0.5rem]"
+              />
+              <p className="min-w-0 break-words text-xs font-semibold text-text md:text-sm">
+                {transaction.category?.name ?? "Uncategorized"}
+              </p>
+            </div>
           </div>
 
           {transaction.durable_purchase ? (
-            <div className="space-y-3 rounded-xl border border-border bg-surface-hi/55 p-3 sm:col-span-2">
+            <div className="col-span-2 space-y-3 border-t border-border bg-signal-yellow-soft p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-muted">
                   Durable purchase
@@ -430,8 +459,7 @@ function TransactionDetailPage() {
             </div>
           ) : null}
         </div>
-
-      </AppCard>
+      </FinancialPanel>
 
       {transaction.tags.length ? (
         <div className="space-y-2 px-1">
@@ -447,15 +475,19 @@ function TransactionDetailPage() {
       ) : null}
 
       {transaction.description?.trim() ? (
-        <AppCard className="space-y-2.5 p-5 md:p-6">
-          <h2 className="font-head text-lg font-bold text-text">Description</h2>
-          <TransactionDescription markdown={transaction.description} />
-        </AppCard>
+        <FinancialPanel role="panel">
+          <SectionHeading>
+            <h2 className="font-head text-lg font-bold text-text">Description</h2>
+          </SectionHeading>
+          <div className="p-5 md:p-6">
+            <TransactionDescription markdown={transaction.description} />
+          </div>
+        </FinancialPanel>
       ) : null}
 
       {hasLocation ? (
-        <AppCard className="space-y-3 p-5 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <FinancialPanel role="panel">
+          <SectionHeading>
             <h2 className="inline-flex items-center gap-2 font-head text-lg font-bold text-text">
               <MapPinIcon className="h-4 w-4" />
               Location
@@ -463,32 +495,32 @@ function TransactionDetailPage() {
             <p className="font-mono text-xs text-muted">
               {formatCoordinate(transaction.latitude!)}, {formatCoordinate(transaction.longitude!)}
             </p>
-          </div>
-          <div className="relative z-0 overflow-hidden rounded-xl border border-border bg-surface-hi/55">
+          </SectionHeading>
+          <div className="relative z-0 overflow-hidden rounded-b-[var(--radius-lg)] bg-surface-hi/55">
             <TransactionLocationMap
               latitude={transaction.latitude!}
               longitude={transaction.longitude!}
               title={transaction.title}
             />
           </div>
-        </AppCard>
+        </FinancialPanel>
       ) : null}
 
       {transaction.attachments.length ? (
-        <AppCard className="space-y-4 p-5 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <FinancialPanel role="panel">
+          <SectionHeading>
             <h2 className="inline-flex items-center gap-2 font-head text-lg font-bold text-text">
               <PaperclipIcon className="h-4 w-4" />
               Attachments
             </h2>
             <span className="chip">{transaction.attachments.length} attached</span>
-          </div>
-          <div className="space-y-3">
+          </SectionHeading>
+          <div className="space-y-3 p-5 md:p-6">
             {transaction.attachments.map((attachment) => (
               <AttachmentPreviewCard key={attachment.id} attachment={attachment} />
             ))}
           </div>
-        </AppCard>
+        </FinancialPanel>
       ) : null}
     </section>
   )

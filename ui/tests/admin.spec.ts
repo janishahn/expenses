@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { getCsrfToken } from "./helpers"
 
@@ -9,13 +9,13 @@ test.describe("Admin Page", () => {
 
   test("shows elevated admin tools and omits personal settings controls", async ({ page }) => {
     await expect(page.locator("main h1")).toContainText("Admin")
-    await expect(page.getByText("Database Backups")).toBeVisible()
-    await expect(page.getByText("Export Transactions")).toBeVisible()
+    await expect(page.getByText("Database backups")).toBeVisible()
+    await expect(page.getByText("Export transactions")).toBeVisible()
     await expect(page.getByRole("heading", { name: "Import" })).toBeVisible()
-    await expect(page.getByText("Danger Zone")).toBeVisible()
-    await expect(page.getByText("Rebuild Rollups")).toBeVisible()
-    await expect(page.getByText("Recurring Catch-Up")).toBeVisible()
-    await expect(page.getByText("Pi Health")).toBeVisible()
+    await expect(page.getByText("Danger zone")).toBeVisible()
+    await expect(page.getByText("Rebuild rollups")).toBeVisible()
+    await expect(page.getByText("Recurring catch-up")).toBeVisible()
+    await expect(page.getByText("Pi health")).toBeVisible()
     await expect(page.getByText("System information")).toBeVisible()
 
     await expect(page.getByText("Appearance")).toHaveCount(0)

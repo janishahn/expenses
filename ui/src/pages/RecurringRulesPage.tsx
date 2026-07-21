@@ -1,16 +1,32 @@
-import { Fragment, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
-import { Link, useSearchParams } from "react-router-dom"
+import { XIcon } from "@phosphor-icons/react/X"
+import { Link, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { AppShellOutletContext } from "../app/AppShell"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { Toggle } from "../components/Toggle"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
+import SegmentedControl from "../components/SegmentedControl"
 import DonutChart from "../components/charts/DonutChart"
 import type { BreakdownItem } from "../components/charts/DonutChart"
+import {
+  FinancialPanel,
+  MetricLane,
+  SectionHeading,
+  WorkspaceToolbar,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import {
   AppFieldLabel,
   AppInput,
@@ -74,9 +90,9 @@ function frequencyLabel(rule: RecurringRuleRow): string {
 
 function RecurringRulesPage() {
   const queryClient = useQueryClient()
-  const formRef = useRef<HTMLFormElement | null>(null)
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [name, setName] = useState("")
   const [type, setType] = useState("expense")
@@ -112,6 +128,7 @@ function RecurringRulesPage() {
       queryClient.invalidateQueries({ queryKey: ["recurring"] })
       setEditingId(null)
       setFormError("")
+      setEditorOpen(false)
     },
   })
 
@@ -125,6 +142,7 @@ function RecurringRulesPage() {
       queryClient.invalidateQueries({ queryKey: ["recurring"] })
       setEditingId(null)
       setFormError("")
+      setEditorOpen(false)
     },
   })
 
@@ -173,6 +191,7 @@ function RecurringRulesPage() {
     setSkipWeekends(rule.skip_weekends)
     setMonthDayPolicy(rule.month_day_policy)
     setNextOccurrence(rule.next_occurrence)
+    setEditorOpen(true)
   }
 
   const showMonthPolicy = useMemo(() => {
@@ -229,7 +248,7 @@ function RecurringRulesPage() {
     : ""
   const preview = previewError ? [] : previewData?.occurrences || []
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     const nextType = "expense"
     const defaultCategory = data?.categories.find((c) => c.type === nextType)
     setEditingId(null)
@@ -247,15 +266,21 @@ function RecurringRulesPage() {
     setMonthDayPolicy("snap_to_end")
     setNextOccurrence("")
     setFormError("")
-  }
+  }, [data?.categories])
 
-  const jumpToForm = () => {
+  const openCreateEditor = useCallback(() => {
     resetForm()
-    requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-      nameInputRef.current?.focus()
-    })
-  }
+    setEditorOpen(true)
+  }, [resetForm])
+
+  useEffect(() => {
+    if (activeView !== "rules") {
+      setUtilityAction(null)
+      return
+    }
+    setUtilityAction({ label: "Add rule", onClick: openCreateEditor })
+    return () => setUtilityAction(null)
+  }, [activeView, openCreateEditor, setUtilityAction])
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -296,6 +321,7 @@ function RecurringRulesPage() {
   }
 
   const setView = (view: "rules" | "audit") => {
+    setEditorOpen(false)
     const next = new URLSearchParams(searchParams)
     if (view === "audit") {
       next.set("view", "audit")
@@ -325,78 +351,60 @@ function RecurringRulesPage() {
     amount_cents: item.amount_cents * 12,
     percent: item.percent,
   }))
-  const iconMap = Object.fromEntries(
-    data.categories
-      .filter((category) => category.type === "expense")
-      .map((category) => [category.name, category.icon])
-  )
-
   return (
     <section className="space-y-6">
-      <PageIntro
-        title="Recurring Rules"
-        actions={
-          activeView === "rules" ? (
-            <AppButton
-              type="button"
-              onClick={jumpToForm}
-              className="desk:hidden"
-            >
-              Add rule
-            </AppButton>
-          ) : null
-        }
-      />
+      <PageIntro title="Recurring Rules" />
 
-      <div className="ptabs">
-        <button
-          type="button"
-          className={`ptab ${activeView === "rules" ? "ptab-active" : ""}`}
-          onClick={() => setView("rules")}
-        >
-          Rules
-        </button>
-        <button
-          type="button"
-          className={`ptab ${activeView === "audit" ? "ptab-active" : ""}`}
-          onClick={() => setView("audit")}
-        >
-          Audit
-        </button>
-      </div>
+      <WorkspaceToolbar className="justify-between" data-testid="recurring-toolbar">
+        <SegmentedControl
+          value={activeView}
+          ariaLabel="Recurring view"
+          items={[
+            { value: "rules", label: "Commitments" },
+            { value: "audit", label: "Audit" },
+          ]}
+          onValueChange={setView}
+        />
+        <p className="hidden text-xs text-muted sm:block">
+          {data.stats.rule_counts.total} scheduled {data.stats.rule_counts.total === 1 ? "rule" : "rules"}
+        </p>
+      </WorkspaceToolbar>
 
       {activeView === "rules" && (
         <>
           {data.stats.rule_counts.total > 0 && (
-            <div className="grid gap-4 md:grid-cols-3">
-              <AppCard className="p-4">
-                <p className="text-xs font-semibold uppercase text-muted">
+            <div
+              data-testid="recurring-summary"
+              className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            >
+              <MetricLane tone="income">
+                <p className="text-xs font-semibold text-muted">
                   Monthly income
                 </p>
-                <p className="font-mono text-2xl font-semibold text-semantic-green">
+                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-semantic-green">
                   {formatCurrency(data.stats.total_monthly_income)} €
                 </p>
-                <p className="text-xs text-muted">
+                <p className="mt-1 text-xs text-muted">
                   {data.stats.rule_counts.income} income rule(s)
                 </p>
-              </AppCard>
-              <AppCard className="p-4">
-                <p className="text-xs font-semibold uppercase text-muted">
+              </MetricLane>
+              <MetricLane tone="expense">
+                <p className="text-xs font-semibold text-muted">
                   Monthly expenses
                 </p>
-                <p className="font-mono text-2xl font-semibold text-semantic-red">
+                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-semantic-red">
                   {formatCurrency(data.stats.total_monthly_expenses)} €
                 </p>
-                <p className="text-xs text-muted">
+                <p className="mt-1 text-xs text-muted">
                   {data.stats.rule_counts.expense} expense rule(s)
                 </p>
-              </AppCard>
-              <AppCard className="p-4">
-                <p className="text-xs font-semibold uppercase text-muted">
+              </MetricLane>
+              <MetricLane tone={data.stats.coverage_ratio >= 100 ? "plan" : "warning"}>
+                <p className="text-xs font-semibold text-muted">
                   Coverage ratio
                 </p>
                 <p
-                  className={`font-mono text-2xl font-semibold ${
+                  className={`mt-3 font-mono text-2xl font-semibold tabular-nums ${
                     data.stats.coverage_ratio >= 100
                       ? "text-semantic-green"
                       : "text-semantic-red"
@@ -404,18 +412,18 @@ function RecurringRulesPage() {
                 >
                   {Math.round(data.stats.coverage_ratio)}%
                 </p>
-                <p className="text-xs text-muted">
+                <p className="mt-1 text-xs text-muted">
                   Net {formatCurrency(data.stats.net_monthly)} € per month
                 </p>
-              </AppCard>
+              </MetricLane>
             </div>
           )}
 
           {(data.stats.expense_breakdown.length > 0 ||
             data.stats.income_breakdown.length > 0) && (
             <div className="grid gap-6 lg:grid-cols-2">
-              <AppCard className="p-5">
-                <h2 className="font-head text-lg font-bold">Expense categories</h2>
+              <FinancialPanel className="p-5">
+                <h2 className="font-head text-lg font-bold">Expense mix</h2>
                 <div className="mt-4 space-y-3">
                   {data.stats.expense_breakdown.length ? (
                     data.stats.expense_breakdown.map((row) => (
@@ -438,9 +446,9 @@ function RecurringRulesPage() {
                     <p className="text-sm text-muted">No expense rules.</p>
                   )}
                 </div>
-              </AppCard>
-              <AppCard className="p-5">
-                <h2 className="font-head text-lg font-bold">Income categories</h2>
+              </FinancialPanel>
+              <FinancialPanel className="p-5">
+                <h2 className="font-head text-lg font-bold">Income mix</h2>
                 <div className="mt-4 space-y-3">
                   {data.stats.income_breakdown.length ? (
                     data.stats.income_breakdown.map((row) => (
@@ -463,15 +471,23 @@ function RecurringRulesPage() {
                     <p className="text-sm text-muted">No income rules.</p>
                   )}
                 </div>
-              </AppCard>
+              </FinancialPanel>
             </div>
           )}
 
-          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-            <AppCard>
-              <div className="surface-section-header">
-                <h2 className="font-head text-lg font-bold">Rules</h2>
-              </div>
+          <div className="grid items-start gap-4">
+            <FinancialPanel role="ledger" data-testid="commitments-board">
+              <SectionHeading>
+                <div>
+                  <h2 className="font-head text-lg font-bold">Commitments</h2>
+                  <p className="mt-0.5 text-xs text-muted">
+                    Upcoming income and expenses with posting state
+                  </p>
+                </div>
+                <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+                  {data.rules.length}
+                </span>
+              </SectionHeading>
               <div className="divide-y divide-border">
                 {data.rules.length ? (
                   data.rules.map((rule) => {
@@ -480,10 +496,14 @@ function RecurringRulesPage() {
                     return (
                       <div
                         key={rule.id}
-                        className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between"
+                        data-testid="recurring-commitment"
+                        className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-faint/60 md:flex-row md:items-center md:justify-between"
                       >
                         <div className="min-w-0 flex items-start gap-2">
-                          <CategoryIcon icon={rule.category?.icon ?? null} />
+                          <CategoryIcon
+                            icon={rule.category?.icon ?? null}
+                            label={rule.category?.name}
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3 md:block">
                               <p className="font-semibold text-text">{label}</p>
@@ -499,10 +519,13 @@ function RecurringRulesPage() {
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-muted">
-                              {rule.category?.name ?? "Uncategorized"} · Every{" "}
-                              {rule.interval_count} {rule.interval_unit}
-                              {rule.interval_count > 1 ? "s" : ""} · Next{" "}
-                              {formatEuroDate(rule.next_occurrence)}
+                              {rule.category?.name ?? "Uncategorized"} · {frequencyLabel(rule)}
+                            </p>
+                            <p className="mt-1 font-mono text-[11px] text-muted">
+                              Next {formatEuroDate(rule.next_occurrence)}
+                              {rule.currency_code !== "EUR"
+                                ? ` · ${formatCurrency(rule.monthly_equivalent_cents)} € monthly equivalent`
+                                : ""}
                             </p>
                           </div>
                         </div>
@@ -517,21 +540,16 @@ function RecurringRulesPage() {
                             {rule.type === "income" ? "+" : "-"}
                             {formatCurrency(rule.amount_cents)} {symbol}
                           </span>
-                          <div className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1">
-                            <span className="text-[11px] font-semibold text-muted">
-                              Auto-post
-                            </span>
-                            <Toggle
-                              on={rule.auto_post}
-                              ariaLabel={`Toggle auto-post for ${label}`}
-                              onChange={(val) =>
-                                toggleMutation.mutate({
-                                  id: rule.id,
-                                  auto_post: val,
-                                })
-                              }
-                            />
-                          </div>
+                          <Toggle
+                            on={rule.auto_post}
+                            ariaLabel={`Toggle auto-post for ${label}`}
+                            onChange={(val) =>
+                              toggleMutation.mutate({
+                                id: rule.id,
+                                auto_post: val,
+                              })
+                            }
+                          />
                           <Link
                             to={`/recurring/${rule.id}/occurrences`}
                             className="btn-inline"
@@ -542,23 +560,22 @@ function RecurringRulesPage() {
                             type="button"
                             onClick={() => handleEditRule(rule)}
                             tone="inline"
+                            className="h-11 w-11 p-0"
+                            aria-label={`Edit ${label}`}
                           >
-                            Edit
+                            <PencilSimpleIcon className="h-4 w-4" />
                           </AppButton>
                           <AppButton
                             type="button"
                             onClick={() => deleteRule(rule)}
                             tone="inlineDanger"
+                            className="h-11 w-11 p-0"
+                            aria-label={`Delete ${label}`}
                           >
                             <TrashIcon className="h-3.5 w-3.5" />
-                            Delete
                           </AppButton>
                         </div>
-                        <div className="space-y-2 md:hidden">
-                          <div className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
-                            <span className="text-xs font-semibold text-muted">
-                              Auto-post
-                            </span>
+                        <div className="flex items-center gap-2 md:hidden">
                             <Toggle
                               on={rule.auto_post}
                               ariaLabel={`Toggle auto-post for ${label}`}
@@ -569,31 +586,29 @@ function RecurringRulesPage() {
                                 })
                               }
                             />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Link
-                              to={`/recurring/${rule.id}/occurrences`}
-                              className="btn-inline w-full"
-                            >
-                              History
-                            </Link>
-                            <AppButton
-                              type="button"
-                              onClick={() => handleEditRule(rule)}
-                              tone="inline"
-                              className="w-full"
-                            >
-                              Edit
-                            </AppButton>
-                          </div>
+                          <Link
+                            to={`/recurring/${rule.id}/occurrences`}
+                            className="btn-inline"
+                          >
+                            History
+                          </Link>
+                          <AppButton
+                            type="button"
+                            onClick={() => handleEditRule(rule)}
+                            tone="inline"
+                            className="h-11 w-11 p-0"
+                            aria-label={`Edit ${label}`}
+                          >
+                            <PencilSimpleIcon className="h-4 w-4" />
+                          </AppButton>
                           <AppButton
                             type="button"
                             onClick={() => deleteRule(rule)}
                             tone="inlineDanger"
-                            className="w-full"
+                            className="h-11 w-11 p-0"
+                            aria-label={`Delete ${label}`}
                           >
                             <TrashIcon className="h-3.5 w-3.5" />
-                            Delete
                           </AppButton>
                         </div>
                       </div>
@@ -605,241 +620,47 @@ function RecurringRulesPage() {
                   </div>
                 )}
               </div>
-            </AppCard>
+            </FinancialPanel>
 
-            <AppCard>
-              <form ref={formRef} onSubmit={handleSubmit} className="editor-rail">
-                <div className="surface-section-header">
-                  <p className="text-xs font-semibold uppercase text-muted">
-                    Editor
-                  </p>
-                  <h2 className="font-head text-lg font-bold">
-                    {editingId ? "Edit rule" : "Add rule"}
-                  </h2>
-                </div>
-                <div className="surface-section-body space-y-4">
-                  <AppFieldLabel>
-                  Name
-                  <AppInput
-                    ref={nameInputRef}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    className="mt-1"
-                    placeholder="e.g. Netflix"
-                  />
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={type}
-                    onChange={(event) => {
-                      const nextType = event.target.value
-                      const defaultCategory = data.categories.find(
-                        (category) => category.type === nextType
-                      )
-                      setType(nextType)
-                      setCategoryId(defaultCategory ? String(defaultCategory.id) : "")
-                    }}
-                    className="mt-1"
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                  Amount
-                  <div className="mt-1 grid grid-cols-[7.25rem_minmax(0,1fr)] gap-2">
-                    <AppNativeSelect
-                      value={currency}
-                      onChange={(event) => setCurrency(event.target.value)}
-                      className="min-w-0"
-                    >
-                      <option value="EUR">EUR (€)</option>
-                      <option value="USD">USD ($)</option>
-                    </AppNativeSelect>
-                    <AppInput
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      inputMode="decimal"
-                      className="min-w-0"
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                  Category
-                  <AppNativeSelect
-                    value={categoryId}
-                    onChange={(event) => setCategoryId(event.target.value)}
-                    className="mt-1"
-                    required
-                  >
-                    <option value="">Select a category</option>
-                    {categoryOptions.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </AppNativeSelect>
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                  Start date
-                  <AppInput
-                    type="date"
-                    value={anchorDate}
-                    onChange={(event) => setAnchorDate(event.target.value)}
-                    className="mt-1"
-                    required
-                  />
-                  </AppFieldLabel>
-                <div className="grid grid-cols-[auto_1fr] items-end gap-2">
-                    <AppFieldLabel>
-                    Every
-                    <AppInput
-                      type="number"
-                      min={1}
-                      value={intervalCount}
-                      onChange={(event) => setIntervalCount(event.target.value)}
-                      className="mt-1 w-20"
-                    />
-                    </AppFieldLabel>
-                    <AppFieldLabel>
-                    Interval
-                    <AppNativeSelect
-                      value={intervalUnit}
-                      onChange={(event) => setIntervalUnit(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="day">Day(s)</option>
-                      <option value="week">Week(s)</option>
-                      <option value="month">Month(s)</option>
-                      <option value="year">Year(s)</option>
-                    </AppNativeSelect>
-                    </AppFieldLabel>
-                </div>
-                  <AppFieldLabel>
-                  End date (optional)
-                  <AppInput
-                    type="date"
-                    value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    className="mt-1"
-                  />
-                  </AppFieldLabel>
-                <div className="flex items-center gap-3 rounded-md border border-border bg-bg px-3 py-2 text-xs text-muted">
-                  <Toggle on={autoPost} onChange={setAutoPost} />
-                  Post automatically
-                </div>
-                <label className="flex items-center gap-3 rounded-md border border-border bg-bg px-3 py-2 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    checked={skipWeekends}
-                    onChange={(event) => setSkipWeekends(event.target.checked)}
-                    className="control-check"
-                  />
-                  Skip weekends
-                </label>
-                {showMonthPolicy && (
-                    <AppFieldLabel>
-                    If day doesn't exist in month
-                    <AppNativeSelect
-                      value={monthDayPolicy}
-                      onChange={(event) => setMonthDayPolicy(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="snap_to_end">Post on last day</option>
-                      <option value="skip">Skip that month</option>
-                      <option value="carry_forward">Use previous month's day</option>
-                    </AppNativeSelect>
-                    </AppFieldLabel>
-                )}
-                <div className="rounded-lg border border-border bg-bg p-3">
-                  <p className="text-xs font-semibold text-muted">Upcoming</p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
-                    {previewLoading && <span className="text-muted">Calculating…</span>}
-                    {previewError && <span>{previewError}</span>}
-                    {!previewLoading && !previewError && preview.length === 0 && (
-                      <span className="text-muted">
-                        {anchorDate ? "No upcoming dates." : "Enter a start date."}
-                      </span>
-                    )}
-                    {!previewError &&
-                      preview.map((occurrence) => (
-                        <span
-                          key={occurrence}
-                          className="rounded-sm bg-surface-hi px-2 py-1"
-                        >
-                          {formatEuroDate(occurrence)}
-                        </span>
-                      ))}
-                  </div>
-                </div>
-                {formError && (
-                  <p className="text-xs text-semantic-red">{formError}</p>
-                )}
-                <div className="flex gap-2">
-                    <AppButton
-                    type="submit"
-                    className="flex-1"
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                  >
-                    {editingId
-                      ? updateMutation.isPending
-                        ? "Saving…"
-                        : "Update rule"
-                      : createMutation.isPending
-                        ? "Saving…"
-                        : "Save rule"}
-                    </AppButton>
-                  {editingId && (
-                      <AppButton type="button" onClick={resetForm} tone="ghost">
-                      Cancel
-                      </AppButton>
-                  )}
-                </div>
-                </div>
-              </form>
-            </AppCard>
           </div>
         </>
       )}
 
       {activeView === "audit" && (
         <>
-          <AppCard className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          <FinancialPanel role="chart" className="p-5" data-testid="subscription-audit">
+            <p className="mono-meta text-muted">
               Subscription Audit
             </p>
-            <p className="mt-1 text-sm text-muted">
+            <p className="mt-2 max-w-3xl text-sm text-muted">
               You are committed to spending {formatCurrency(data.stats.total_monthly_expenses * 12)} € over the next 12 months on recurring expenses.
             </p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-border bg-bg p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <MetricLane tone="expense" className="p-4">
+                <p className="text-xs font-semibold text-muted">
                   Monthly total
                 </p>
-                <p className="font-mono text-2xl font-semibold text-semantic-red">
+                <p className="mt-3 font-mono text-2xl font-semibold text-semantic-red">
                   {formatCurrency(data.stats.total_monthly_expenses)} €
                 </p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              </MetricLane>
+              <MetricLane tone="warning" className="p-4">
+                <p className="text-xs font-semibold text-muted">
                   Annual total
                 </p>
-                <p className="font-mono text-2xl font-semibold text-semantic-red">
+                <p className="mt-3 font-mono text-2xl font-semibold text-text">
                   {formatCurrency(data.stats.total_monthly_expenses * 12)} €
                 </p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              </MetricLane>
+              <MetricLane tone="plan" className="p-4">
+                <p className="text-xs font-semibold text-muted">
                   5-year total
                 </p>
-                <p className="font-mono text-2xl font-semibold text-semantic-red">
+                <p className="mt-3 font-mono text-2xl font-semibold text-text">
                   {formatCurrency(data.stats.total_monthly_expenses * 60)} €
                 </p>
-              </div>
+              </MetricLane>
             </div>
 
             <div className="mt-5">
@@ -847,18 +668,24 @@ function RecurringRulesPage() {
                 title="Annual expense mix"
                 breakdown={annualDonut}
                 emptyMessage="No expense rules"
-                iconMap={iconMap}
               />
             </div>
-          </AppCard>
+          </FinancialPanel>
 
-          <AppCard className="p-5">
-            <h2 className="font-head text-lg font-bold">True cost</h2>
+          <FinancialPanel role="ledger" data-testid="recurring-true-cost">
+            <SectionHeading>
+              <div>
+                <h2 className="font-head text-lg font-bold">True cost</h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Long-term impact of recurring expenses
+                </p>
+              </div>
+            </SectionHeading>
 
             {expenseRules.length === 0 ? (
-              <p className="mt-4 text-sm text-muted">No expense recurring rules.</p>
+              <p className="p-5 text-sm text-muted">No expense recurring rules.</p>
             ) : (
-              <div className="mt-4 overflow-x-auto">
+              <div className="overflow-x-auto px-3 pb-3">
                 <table className="w-full text-sm">
                   <thead className="border-b border-border text-left text-xs uppercase text-muted">
                     <tr>
@@ -883,10 +710,13 @@ function RecurringRulesPage() {
 
                       return (
                         <Fragment key={rule.id}>
-                          <tr>
+                          <tr className="transition-colors hover:bg-faint/60">
                             <td className="px-2 py-3">
                               <div className="flex items-center gap-2">
-                                <CategoryIcon icon={rule.category?.icon ?? null} />
+                                <CategoryIcon
+                                  icon={rule.category?.icon ?? null}
+                                  label={rule.category?.name}
+                                />
                                 <span className="font-semibold text-text">{serviceName}</span>
                               </div>
                             </td>
@@ -919,7 +749,7 @@ function RecurringRulesPage() {
                           {isExpanded && (
                             <tr>
                               <td className="px-2 pb-4" colSpan={7}>
-                                <div className="rounded-lg border border-border bg-bg p-3">
+                                <div className="rounded-lg bg-faint p-3">
                                   <p className="font-semibold text-text">
                                     Canceling {serviceName} saves you {formatCurrency(fiveYears)} € over the next 5 years.
                                   </p>
@@ -968,9 +798,234 @@ function RecurringRulesPage() {
                 </table>
               </div>
             )}
-          </AppCard>
+          </FinancialPanel>
         </>
       )}
+
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          if (!open && !createMutation.isPending && !updateMutation.isPending) {
+            setEditorOpen(false)
+          }
+        }}
+      >
+        <DialogContent
+          aria-label={editingId ? "Edit rule" : "Add rule"}
+          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
+        >
+          <div className="-mr-5 overflow-y-auto pr-5">
+            <DialogHeader>
+              <DialogTitle>
+                {editingId ? "Edit rule" : "Add rule"}
+              </DialogTitle>
+              <DialogClose asChild>
+                <AppButton
+                  tone="ghost"
+                  className="h-9 w-9 rounded-full p-0"
+                  aria-label="Close rule editor"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  <XIcon className="h-4 w-4" />
+                </AppButton>
+              </DialogClose>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <AppFieldLabel>
+                  Name
+                  <AppInput
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="mt-1"
+                    placeholder="e.g. Netflix"
+                    autoFocus
+                  />
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  Type
+                  <AppNativeSelect
+                    value={type}
+                    onChange={(event) => {
+                      const nextType = event.target.value
+                      const defaultCategory = data.categories.find(
+                        (category) => category.type === nextType
+                      )
+                      setType(nextType)
+                      setCategoryId(defaultCategory ? String(defaultCategory.id) : "")
+                    }}
+                    className="mt-1"
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  Amount
+                  <div className="mt-1 grid grid-cols-[7.25rem_minmax(0,1fr)] gap-2">
+                    <AppNativeSelect
+                      value={currency}
+                      onChange={(event) => setCurrency(event.target.value)}
+                      className="min-w-0"
+                    >
+                      <option value="EUR">EUR (€)</option>
+                      <option value="USD">USD ($)</option>
+                    </AppNativeSelect>
+                    <AppInput
+                      value={amount}
+                      onChange={(event) => setAmount(event.target.value)}
+                      inputMode="decimal"
+                      className="min-w-0"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  Category
+                  <AppNativeSelect
+                    value={categoryId}
+                    onChange={(event) => setCategoryId(event.target.value)}
+                    className="mt-1"
+                    required
+                  >
+                    <option value="">Select a category</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  Start date
+                  <AppInput
+                    type="date"
+                    value={anchorDate}
+                    onChange={(event) => setAnchorDate(event.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  End date (optional)
+                  <AppInput
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="mt-1"
+                  />
+                </AppFieldLabel>
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] items-end gap-2">
+                  <AppFieldLabel>
+                    Every
+                    <AppInput
+                      type="number"
+                      min={1}
+                      value={intervalCount}
+                      onChange={(event) => setIntervalCount(event.target.value)}
+                      className="mt-1 w-20"
+                    />
+                  </AppFieldLabel>
+                  <AppFieldLabel>
+                    Interval
+                    <AppNativeSelect
+                      value={intervalUnit}
+                      onChange={(event) => setIntervalUnit(event.target.value)}
+                      className="mt-1"
+                    >
+                      <option value="day">Day(s)</option>
+                      <option value="week">Week(s)</option>
+                      <option value="month">Month(s)</option>
+                      <option value="year">Year(s)</option>
+                    </AppNativeSelect>
+                  </AppFieldLabel>
+                </div>
+                {showMonthPolicy ? (
+                  <AppFieldLabel>
+                    If day doesn't exist in month
+                    <AppNativeSelect
+                      value={monthDayPolicy}
+                      onChange={(event) => setMonthDayPolicy(event.target.value)}
+                      className="mt-1"
+                    >
+                      <option value="snap_to_end">Post on last day</option>
+                      <option value="skip">Skip that month</option>
+                      <option value="carry_forward">Use previous month's day</option>
+                    </AppNativeSelect>
+                  </AppFieldLabel>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-5 border-y border-border py-3 text-xs text-muted">
+                <label className="flex min-h-11 items-center gap-3">
+                  <Toggle
+                    on={autoPost}
+                    onChange={setAutoPost}
+                    ariaLabel="Post automatically"
+                  />
+                  Post automatically
+                </label>
+                <label className="flex min-h-11 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={skipWeekends}
+                    onChange={(event) => setSkipWeekends(event.target.checked)}
+                    className="control-check"
+                  />
+                  Skip weekends
+                </label>
+              </div>
+
+              <div className="rounded-lg bg-faint p-3">
+                <p className="text-xs font-semibold text-muted">Upcoming</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+                  {previewLoading ? <span>Calculating…</span> : null}
+                  {previewError ? <span>{previewError}</span> : null}
+                  {!previewLoading && !previewError && preview.length === 0 ? (
+                    <span>{anchorDate ? "No upcoming dates." : "Enter a start date."}</span>
+                  ) : null}
+                  {!previewError
+                    ? preview.map((occurrence) => (
+                        <span key={occurrence} className="rounded-sm bg-surface-hi px-2 py-1">
+                          {formatEuroDate(occurrence)}
+                        </span>
+                      ))
+                    : null}
+                </div>
+              </div>
+
+              {formError ? (
+                <p className="text-xs text-semantic-red">{formError}</p>
+              ) : null}
+              <div className="flex gap-2 border-t border-border pt-4">
+                <AppButton
+                  type="submit"
+                  className="flex-1"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  {editingId
+                    ? updateMutation.isPending
+                      ? "Saving…"
+                      : "Save changes"
+                    : createMutation.isPending
+                      ? "Saving…"
+                      : "Add rule"}
+                </AppButton>
+                <AppButton
+                  type="button"
+                  onClick={() => setEditorOpen(false)}
+                  tone="ghost"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  Cancel
+                </AppButton>
+              </div>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

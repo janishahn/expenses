@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { XIcon } from "@phosphor-icons/react/X"
-import { Link, useOutletContext, useSearchParams } from "react-router-dom"
-import type { AppShellOutletContext } from "../app/AppShell"
+import { Link, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntroAddButton from "../components/PageIntroAddButton"
 import BarChart from "../components/charts/BarChart"
 import { readThemeColor } from "../components/charts/chartSetup"
 import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
-import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import SankeyChart from "../components/charts/SankeyChart"
+import SegmentedControl from "../components/SegmentedControl"
+import {
+  FinancialPanel,
+  MetricLane,
+  SectionHeading,
+  WorkspaceToolbar,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput, AppNativeSelect } from "../components/ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
@@ -94,7 +97,6 @@ type InsightsFlowResponse = {
 }
 
 function InsightsPage() {
-  const { openAddTransaction } = useOutletContext<AppShellOutletContext>()
   useThemePreference()
   const [searchParams, setSearchParams] = useSearchParams()
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
@@ -200,6 +202,10 @@ function InsightsPage() {
     period.slug === "all"
       ? "Date: All time"
       : `Date: ${formatEuroDate(period.start)} → ${formatEuroDate(period.end)}`
+  const [rangeStartYear, rangeStartMonth] = period.start.split("-").map(Number)
+  const [rangeEndYear, rangeEndMonth] = period.end.split("-").map(Number)
+  const rangeMonthCount =
+    (rangeEndYear - rangeStartYear) * 12 + rangeEndMonth - rangeStartMonth + 1
 
   const expenseIconMap = Object.fromEntries(
     expenseCategories
@@ -301,33 +307,31 @@ function InsightsPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <PageIntro
-        title="Insights"
-        actions={
-          <>
-            {isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null}
-            <PageIntroAddButton onClick={openAddTransaction} />
-          </>
-        }
-      />
+    <section className="space-y-4 md:space-y-5">
+      <header className="flex min-h-11 flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
+            Insights
+          </h1>
+          <p className="mt-1 text-sm text-muted">{summary}</p>
+        </div>
+        {isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null}
+      </header>
 
-      <div className="ptabs">
-        <button
-          type="button"
-          onClick={() => setView("charts")}
-          className={`ptab ${activeView === "charts" ? "ptab-active" : ""}`}
-        >
-          Charts
-        </button>
-        <button
-          type="button"
-          onClick={() => setView("flow")}
-          className={`ptab ${activeView === "flow" ? "ptab-active" : ""}`}
-        >
-          Flow
-        </button>
-      </div>
+      <WorkspaceToolbar className="insights-view-switcher justify-between">
+        <SegmentedControl
+          value={activeView}
+          ariaLabel="Insights view"
+          items={[
+            { value: "charts", label: "Analysis" },
+            { value: "flow", label: "Flow" },
+          ]}
+          onValueChange={setView}
+        />
+        <span className="mono-meta hidden text-muted sm:block">
+          {rangeMonthCount} {rangeMonthCount === 1 ? "month" : "months"} view
+        </span>
+      </WorkspaceToolbar>
 
       <PeriodPicker
         periodSlug={period.slug}
@@ -374,27 +378,20 @@ function InsightsPage() {
         )}
       </div>
 
-      <AppCard className="hidden gap-4 p-4 desk:grid desk:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <WorkspaceToolbar className="hidden gap-4 desk:grid desk:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <AppFieldLabel>
           <span>Type</span>
-          <div className="pill-group self-start">
-            {[
+          <SegmentedControl
+            value={filters.type ?? ""}
+            ariaLabel="Transaction type"
+            className="self-start"
+            items={[
               { value: "", label: "All" },
               { value: "expense", label: "Expense" },
               { value: "income", label: "Income" },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => setType(item.value)}
-                className={`pill-button ${
-                  (filters.type ?? "") === item.value ? "pill-button-active" : ""
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+            ]}
+            onValueChange={setType}
+          />
         </AppFieldLabel>
         <AppFieldLabel>
           <span>Tag filter</span>
@@ -441,7 +438,7 @@ function InsightsPage() {
             onChange={(event) => setBudgetMonth(event.target.value)}
           />
         </AppFieldLabel>
-      </AppCard>
+      </WorkspaceToolbar>
 
       {mobileFiltersOpen && !isDesktop ? (
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
@@ -461,24 +458,17 @@ function InsightsPage() {
             <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
               <AppFieldLabel>
                 <span>Type</span>
-                <div className="pill-group self-start">
-                  {[
+                <SegmentedControl
+                  value={mobileType}
+                  ariaLabel="Transaction type"
+                  className="self-start"
+                  items={[
                     { value: "", label: "All" },
                     { value: "expense", label: "Expense" },
                     { value: "income", label: "Income" },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => setMobileType(item.value)}
-                      className={`pill-button ${
-                        mobileType === item.value ? "pill-button-active" : ""
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+                  ]}
+                  onValueChange={setMobileType}
+                />
               </AppFieldLabel>
               <AppFieldLabel>
                 <span>Tag filter</span>
@@ -554,14 +544,20 @@ function InsightsPage() {
         </Sheet>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Monthly income vs expenses</h2>
-          <p className="text-xs text-muted">
-            Last {series.length} months (net after reimbursements).
-          </p>
-          <div className="mt-4">
+      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+        <FinancialPanel role="chart">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Monthly income vs expenses</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Net after reimbursements · {series.length} months
+              </p>
+            </div>
+            <span className="mono-meta text-muted">Trend</span>
+          </SectionHeading>
+          <div className="p-4 md:p-5">
             <LineChart
+              ariaLabel="Monthly income compared with expenses"
               labels={seriesLabels}
               series={[
                 {
@@ -579,62 +575,88 @@ function InsightsPage() {
               ]}
             />
           </div>
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">
-            {!trendDisabled && selectedTrendCategory
-              ? `Category trend: ${selectedTrendCategory}`
-              : "Category trend"}
-          </h2>
-          <p className="text-xs text-muted">
-            {trendDisabled
-              ? "Category trend is available for expenses only. Switch Type to All or Expense."
-              : selectedTrendCategory
-              ? trendHasSpend
-                ? `Net spend after reimbursements, monthly, last ${trend.length} months ending ${trendWindowEndLabel}.`
-                : `No spending in this category during the last ${trend.length} months ending ${trendWindowEndLabel}.`
-              : "Create an expense category to track net spend."}
-          </p>
-          {!trendDisabled && selectedTrendCategory && trendHasSpend ? (
-            <div className="mt-4">
-              <BarChart
-                labels={trendLabels}
-                series={[
-                  {
-                    label: "Net spend",
-                    data: trend.map((row) => row.amount_cents),
-                    color: trendColor,
-                  },
-                ]}
-                height={220}
-              />
+        <FinancialPanel role="chart">
+          <SectionHeading>
+            <div className="min-w-0">
+              <h2 className="truncate font-head text-lg font-bold">
+                {!trendDisabled && selectedTrendCategory
+                  ? `Category trend: ${selectedTrendCategory}`
+                  : "Category trend"}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted">
+                {trendDisabled
+                  ? "Available for expense activity"
+                  : selectedTrendCategory
+                    ? trendHasSpend
+                      ? `${trend.length} months ending ${trendWindowEndLabel}`
+                      : `No spend ending ${trendWindowEndLabel}`
+                    : "Choose an expense category"}
+              </p>
             </div>
-          ) : null}
-        </AppCard>
+          </SectionHeading>
+          <div className="flex min-h-[16rem] items-center p-4 md:p-5">
+            {!trendDisabled && selectedTrendCategory && trendHasSpend ? (
+              <div className="w-full">
+                <BarChart
+                  ariaLabel={`Monthly net spending for ${selectedTrendCategory}`}
+                  labels={trendLabels}
+                  series={[
+                    {
+                      label: "Net spend",
+                      data: trend.map((row) => row.amount_cents),
+                      color: trendColor,
+                    },
+                  ]}
+                  height={220}
+                />
+              </div>
+            ) : (
+              <p className="mx-auto max-w-xs text-center text-sm text-muted">
+                {trendDisabled
+                  ? "Switch Type to All or Expense to compare category spending."
+                  : selectedTrendCategory
+                    ? "No spending in this category during the selected trend window."
+                    : "Create an expense category to start a category trend."}
+              </p>
+            )}
+          </div>
+        </FinancialPanel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Top categories</h2>
-          <div className="mt-4 space-y-5">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <FinancialPanel>
+          <SectionHeading>
             <div>
-              <p className="text-sm font-semibold text-muted">Expenses</p>
+              <h2 className="font-head text-lg font-bold">Top categories</h2>
+              <p className="mt-0.5 text-xs text-muted">Where money entered and left</p>
+            </div>
+          </SectionHeading>
+          <div className="grid gap-3 p-3 sm:grid-cols-2 md:p-4">
+            <MetricLane tone="expense">
+              <p className="text-sm font-semibold text-text">Expenses</p>
               {expense_breakdown.length ? (
                 <div className="mt-3 space-y-3">
                   {expense_breakdown.map((row, index) => (
-                    <div key={row.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 text-text">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: palette[index % palette.length] }} />
-                          <CategoryIcon icon={expenseIconMap[row.name] ?? null} />
-                          {row.name}
+                    <div key={row.name} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex min-w-0 items-center gap-2 text-text">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: palette[index % palette.length] }}
+                          />
+                          <CategoryIcon
+                            icon={expenseIconMap[row.name] ?? null}
+                            label={row.name}
+                          />
+                          <span className="truncate">{row.name}</span>
                         </span>
-                        <span className="font-mono text-semantic-red">
+                        <span className="amount-text shrink-0 text-semantic-red">
                           {formatCurrency(row.amount_cents)} €
                         </span>
                       </div>
-                      <div className="h-[5px] rounded-full bg-faint">
+                      <div className="h-[5px] rounded-full bg-surface/70">
                         <div
                           className="h-[5px] rounded-full bg-semantic-red"
                           style={{ width: `${row.percent}%` }}
@@ -644,28 +666,32 @@ function InsightsPage() {
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-muted">
-                  No expenses in this period.
-                </p>
+                <p className="mt-3 text-sm text-muted">No expenses in this period.</p>
               )}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-muted">Income</p>
+            </MetricLane>
+            <MetricLane tone="income">
+              <p className="text-sm font-semibold text-text">Income</p>
               {income_breakdown.length ? (
                 <div className="mt-3 space-y-3">
                   {income_breakdown.map((row, index) => (
-                    <div key={row.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 text-text">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: palette[index % palette.length] }} />
-                          <CategoryIcon icon={incomeIconMap[row.name] ?? null} />
-                          {row.name}
+                    <div key={row.name} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex min-w-0 items-center gap-2 text-text">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: palette[index % palette.length] }}
+                          />
+                          <CategoryIcon
+                            icon={incomeIconMap[row.name] ?? null}
+                            label={row.name}
+                          />
+                          <span className="truncate">{row.name}</span>
                         </span>
-                        <span className="font-mono text-semantic-green">
+                        <span className="amount-text shrink-0 text-semantic-green">
                           {formatCurrency(row.amount_cents)} €
                         </span>
                       </div>
-                      <div className="h-[5px] rounded-full bg-faint">
+                      <div className="h-[5px] rounded-full bg-surface/70">
                         <div
                           className="h-[5px] rounded-full bg-semantic-green"
                           style={{ width: `${row.percent}%` }}
@@ -675,18 +701,21 @@ function InsightsPage() {
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-muted">
-                  No income in this period.
-                </p>
+                <p className="mt-3 text-sm text-muted">No income in this period.</p>
               )}
-            </div>
+            </MetricLane>
           </div>
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
-          <p className="text-xs text-muted">Month: {budget_month}</p>
-          <div className="mt-4 space-y-4">
+        <FinancialPanel role="ledger">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
+              <p className="mt-0.5 text-xs text-muted">{budget_month}</p>
+            </div>
+            <span className="mono-meta text-muted">Plan</span>
+          </SectionHeading>
+          <div className="divide-y divide-border px-4">
             {budget_effective.length ? (
               budget_effective.map((row) => {
                 const progress =
@@ -699,26 +728,28 @@ function InsightsPage() {
                 const pct = row.amount_cents
                   ? Math.min(100, (spent / row.amount_cents) * 100)
                   : 0
+                const budgetCategory = expenseCategories.find(
+                  (category) => category.id === row.scope_category_id
+                )
                 return (
-                  <div
-                    key={`${row.scope_label}-${row.source_id}`}
-                    className="surface-card-soft p-4"
-                  >
+                  <div key={`${row.scope_label}-${row.source_id}`} className="py-3.5">
                     <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-text">
-                          {row.scope_label}
-                        </p>
-                        <p className="text-xs text-muted">
-                          {row.source} budget {formatCurrency(row.amount_cents)} €
-                        </p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <CategoryIcon
+                          icon={budgetCategory?.icon ?? null}
+                          label={row.scope_label}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-text">{row.scope_label}</p>
+                          <p className="text-xs text-muted">
+                            {row.source} · {formatCurrency(row.amount_cents)} € planned
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-mono text-xs text-muted">
-                          Spent {formatCurrency(spent)} €
-                        </p>
+                      <div className="shrink-0 text-right">
+                        <p className="mono-meta text-muted">Spent {formatCurrency(spent)} €</p>
                         <p
-                          className={`font-mono text-sm font-semibold ${
+                          className={`amount-text text-sm ${
                             over ? "text-semantic-red" : "text-semantic-green"
                           }`}
                         >
@@ -738,31 +769,29 @@ function InsightsPage() {
                 )
               })
             ) : (
-              <p className="text-sm text-muted">No budgets set.</p>
+              <p className="py-5 text-sm text-muted">No budgets set.</p>
             )}
           </div>
-        </AppCard>
+        </FinancialPanel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Biggest deltas</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <FinancialPanel>
+          <SectionHeading>
             <div>
-              <p className="text-xs font-semibold uppercase text-muted">
-                Increases
-              </p>
+              <h2 className="font-head text-lg font-bold">Biggest deltas</h2>
+              <p className="mt-0.5 text-xs text-muted">Largest changes from the prior period</p>
+            </div>
+          </SectionHeading>
+          <div className="grid gap-3 p-3 sm:grid-cols-2 md:p-4">
+            <MetricLane tone="expense">
+              <p className="text-sm font-semibold text-text">Increases</p>
               <div className="mt-3 space-y-2">
                 {deltas.increases.length ? (
                   deltas.increases.map((item) => (
-                    <div
-                      key={item.category_id}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="text-text">
-                        {item.category_name}
-                      </span>
-                      <span className="font-mono text-semantic-red">
+                    <div key={item.category_id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate text-text">{item.category_name}</span>
+                      <span className="amount-text shrink-0 text-semantic-red">
                         +{formatCurrency(item.delta_cents)} €
                       </span>
                     </div>
@@ -771,22 +800,15 @@ function InsightsPage() {
                   <p className="text-sm text-muted">No increases.</p>
                 )}
               </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase text-muted">
-                Decreases
-              </p>
+            </MetricLane>
+            <MetricLane tone="income">
+              <p className="text-sm font-semibold text-text">Decreases</p>
               <div className="mt-3 space-y-2">
                 {deltas.decreases.length ? (
                   deltas.decreases.map((item) => (
-                    <div
-                      key={item.category_id}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="text-text">
-                        {item.category_name}
-                      </span>
-                      <span className="font-mono text-semantic-green">
+                    <div key={item.category_id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate text-text">{item.category_name}</span>
+                      <span className="amount-text shrink-0 text-semantic-green">
                         {formatCurrency(item.delta_cents)} €
                       </span>
                     </div>
@@ -795,44 +817,45 @@ function InsightsPage() {
                   <p className="text-sm text-muted">No decreases.</p>
                 )}
               </div>
-            </div>
+            </MetricLane>
           </div>
-        </AppCard>
+        </FinancialPanel>
 
-        <AppCard className="p-5">
-          <h2 className="font-head text-lg font-bold">Top tags</h2>
-          <div className="mt-4 space-y-3">
+        <FinancialPanel role="ledger">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Top tags</h2>
+              <p className="mt-0.5 text-xs text-muted">Highest tagged expense totals</p>
+            </div>
+          </SectionHeading>
+          <div className="divide-y divide-border px-4">
             {top_tags.length ? (
               top_tags.map((tag) => (
-                <div
+                <Link
                   key={tag.id}
-                  className="surface-card-soft flex items-center justify-between px-4 py-2"
+                  to={`/tags/${tag.id}`}
+                  className="flex min-h-12 items-center justify-between gap-3 py-3 text-sm transition-colors hover:text-accent"
                 >
-                  <Link
-                    to={`/tags/${tag.id}`}
-                    className="text-sm font-semibold text-text"
-                  >
-                    {tag.name}
-                  </Link>
-                  <span className="font-mono text-sm text-muted">
+                  <span className="font-semibold text-text">{tag.name}</span>
+                  <span className="amount-text text-muted">
                     {formatCurrency(tag.amount_cents)} €
                   </span>
-                </div>
+                </Link>
               ))
             ) : (
-              <p className="text-sm text-muted">No tags to display.</p>
+              <p className="py-5 text-sm text-muted">No tags to display.</p>
             )}
           </div>
-        </AppCard>
+        </FinancialPanel>
       </div>
         </>
       ) : (
-        <div className="space-y-4">
-          <AppCard className="p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+          <FinancialPanel role="chart">
+            <SectionHeading>
               <div>
                 <h2 className="font-head text-lg font-bold">Cash flow</h2>
-                <p className="text-xs text-muted">{summary}</p>
+                <p className="mt-0.5 text-xs text-muted">Income paths into expense categories</p>
               </div>
               <label className="inline-flex items-center gap-2 text-xs font-semibold text-muted">
                 <input
@@ -843,11 +866,11 @@ function InsightsPage() {
                 />
                 Group by Fixed / Variable / Discretionary
               </label>
-            </div>
+            </SectionHeading>
             {flowError ? (
-              <p className="mt-3 text-sm text-semantic-red">Unable to load flow data.</p>
+              <p className="p-5 text-sm text-semantic-red">Unable to load flow data.</p>
             ) : (
-              <div className="mt-4">
+              <div className="p-4 md:p-5">
                 <SankeyChart
                   nodes={flowPayload.nodes}
                   links={flowPayload.links}
@@ -855,11 +878,15 @@ function InsightsPage() {
                 />
               </div>
             )}
-          </AppCard>
-          <AppCard className="p-4">
-            <h3 className="font-head text-base font-bold">Expense nodes</h3>
-            <p className="text-xs text-muted">Click a category to open filtered transactions.</p>
-            <div className="mt-3 flex flex-wrap gap-2">
+          </FinancialPanel>
+          <FinancialPanel role="ledger">
+            <SectionHeading>
+              <div>
+                <h3 className="font-head text-base font-bold">Expense nodes</h3>
+                <p className="mt-0.5 text-xs text-muted">Open the underlying ledger</p>
+              </div>
+            </SectionHeading>
+            <div className="grid gap-2 p-3">
               {flowExpenseNodes.length ? (
                 flowExpenseNodes.map((node) => (
                   <button
@@ -870,16 +897,23 @@ function InsightsPage() {
                         goToCategoryTransactions(node.category_id)
                       }
                     }}
-                    className="btn-ghost px-3 py-1 text-xs"
+                    className="flex min-h-11 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-text transition-colors hover:bg-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   >
-                    {node.label}
+                    <CategoryIcon
+                      icon={
+                        expenseCategories.find((category) => category.id === node.category_id)
+                          ?.icon ?? null
+                      }
+                      label={node.label}
+                    />
+                    <span className="truncate">{node.label}</span>
                   </button>
                 ))
               ) : (
                 <p className="text-sm text-muted">No expense nodes in this period.</p>
               )}
             </div>
-          </AppCard>
+          </FinancialPanel>
         </div>
       )}
     </section>

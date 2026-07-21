@@ -4,8 +4,8 @@ import { DatabaseIcon } from "@phosphor-icons/react/Database"
 import { apiFetch, apiFetchFormData } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import PageIntro from "../components/PageIntro"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppNativeSelect } from "../components/ui/product-fields"
 
 type SqliteCategory = {
@@ -185,15 +185,14 @@ function AdminImportPage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <PageIntro
         title="SQLite Import"
         backHref="/admin"
         backLabel="← Back to admin"
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <AppCard className="p-4">
+      <FinancialPanel role="inspector" className="mx-auto w-full max-w-6xl p-5">
           <h2 className="text-xl font-head font-bold">Legacy SQLite</h2>
           <p className="mt-1 text-sm text-muted">
             Upload an old expense tracker database and map categories into this
@@ -209,15 +208,16 @@ function AdminImportPage() {
               aria-label="SQLite database file"
               onChange={(event) => setSqliteFile(event.target.files?.[0] || null)}
             />
-            <div
+            <button
+              type="button"
               onClick={() => sqliteInputRef.current?.click()}
-              className="cursor-pointer rounded-md border-2 border-dashed border-border px-4 py-8 text-center transition hover:border-accent hover:bg-accent-dim"
+              className="w-full cursor-pointer rounded-md border-2 border-dashed border-border px-4 py-8 text-center transition hover:border-accent hover:bg-accent-dim"
             >
               <DatabaseIcon className="mx-auto h-8 w-8 text-muted" />
               <p className="mt-2 text-sm font-semibold text-text">Upload a .db file</p>
               <p className="text-xs text-muted">Legacy SQLite database</p>
               {sqliteFile && <p className="mt-2 text-xs text-accent">{sqliteFile.name}</p>}
-            </div>
+            </button>
 
             <AppButton
               type="button"
@@ -240,7 +240,7 @@ function AdminImportPage() {
 
             {sqlitePreview ? (
               <div className="space-y-4">
-                <div className="rounded-lg border border-border bg-surface-hi/55 p-3">
+                <div className="rounded-lg bg-surface-hi/65 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-text">Preview</p>
                     <span className="chip text-[11px] text-text">
@@ -249,8 +249,8 @@ function AdminImportPage() {
                     </span>
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-lg border border-border bg-faint p-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <div className="rounded-md bg-surface p-3">
+                      <p className="text-xs font-semibold text-muted">
                         Date range
                       </p>
                       <p className="text-sm font-semibold text-text">
@@ -267,16 +267,16 @@ function AdminImportPage() {
                           : "—"}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-border bg-faint p-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <div className="rounded-md bg-surface p-3">
+                      <p className="text-xs font-semibold text-muted">
                         Category groups
                       </p>
                       <p className="text-sm font-semibold text-text">
                         {sqlitePreview.preview.mapping_rows.length}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-border bg-faint p-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <div className="rounded-md bg-surface p-3">
+                      <p className="text-xs font-semibold text-muted">
                         Non-midnight times
                       </p>
                       <p className="text-sm font-semibold text-text">
@@ -294,10 +294,10 @@ function AdminImportPage() {
                   ) : null}
                 </div>
 
-                <div className="rounded-lg border border-border bg-surface-hi/55 p-3">
+                <div className="rounded-lg bg-surface-hi/65 p-4">
                   <p className="mb-2 text-sm font-semibold text-text">Options</p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex items-center gap-3 rounded-md border border-border bg-faint px-3 py-2 text-xs text-text">
+                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
                       <input
                         type="checkbox"
                         checked={importRecurringRules}
@@ -308,7 +308,7 @@ function AdminImportPage() {
                       />
                       Import recurring rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md border border-border bg-faint px-3 py-2 text-xs text-text">
+                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
                       <input
                         type="checkbox"
                         checked={recurringAutoPost}
@@ -319,7 +319,7 @@ function AdminImportPage() {
                       />
                       Enable auto-post for imported rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md border border-border bg-faint px-3 py-2 text-xs text-text">
+                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
                       <input
                         type="checkbox"
                         checked={linkRecurringTransactions}
@@ -330,7 +330,7 @@ function AdminImportPage() {
                       />
                       Link "(Recurring)" transactions to rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md border border-border bg-faint px-3 py-2 text-xs text-text">
+                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
                       <input
                         type="checkbox"
                         checked={preserveTimeInTitle}
@@ -348,7 +348,7 @@ function AdminImportPage() {
                   </p>
                 </div>
 
-                <div className="rounded-lg border border-border bg-surface-hi/55 p-3">
+                <div className="rounded-lg bg-surface-hi/65 p-4">
                   <p className="mb-1 text-sm font-semibold text-text">
                     Category mapping
                   </p>
@@ -364,7 +364,7 @@ function AdminImportPage() {
                       return (
                         <div
                           key={`${row.legacy_type}-${row.legacy_category}`}
-                          className="rounded-lg border border-border bg-faint p-3"
+                          className="rounded-md bg-surface p-3"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -412,7 +412,7 @@ function AdminImportPage() {
                 </div>
 
                 {sqlitePreview.preview.recurring_rows.length ? (
-                  <div className="rounded-lg border border-border bg-surface-hi/55 p-3">
+                  <div className="rounded-lg bg-surface-hi/65 p-4">
                     <p className="mb-3 text-sm font-semibold text-text">
                       Recurring rules (legacy)
                     </p>
@@ -474,8 +474,7 @@ function AdminImportPage() {
               </div>
             ) : null}
           </div>
-        </AppCard>
-      </div>
+      </FinancialPanel>
     </section>
   )
 }

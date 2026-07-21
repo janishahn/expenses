@@ -7,8 +7,12 @@ import type { AIUsageSummary } from "../app/api-types"
 import { formatEuroDateTime, formatFileSize } from "../app/format"
 import Sparkline from "../components/charts/Sparkline"
 import PageIntro from "../components/PageIntro"
+import SegmentedControl from "../components/SegmentedControl"
+import {
+  FinancialPanel,
+  MetricLane,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppInput } from "../components/ui/product-fields"
 
 type AdminInfo = {
@@ -89,7 +93,7 @@ function toSparklinePoints(values: number[]): string | undefined {
     .map((value, index) => {
       const x = (index / (values.length - 1)) * 100
       const normalized = (value - min) / span
-      const y = 30 - normalized * 30
+      const y = 2 + (1 - normalized) * 26
       return `${x.toFixed(2)},${y.toFixed(2)}`
     })
     .join(" ")
@@ -423,12 +427,12 @@ function AdminPage() {
     : []
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <PageIntro title="Admin" />
 
-      <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
-        <AppCard className="p-5 lg:col-span-2">
-          <h2 className="font-head text-2xl font-bold tracking-tight">Pi Health</h2>
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+        <FinancialPanel role="hero" className="p-5 lg:col-span-2">
+          <h2 className="font-head text-2xl font-bold tracking-tight">Pi health</h2>
 
           <div className="mt-4 space-y-3">
             <span
@@ -437,9 +441,9 @@ function AdminPage() {
               {statusLabel}
             </span>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
-              <div className="rounded-lg border border-border bg-surface-hi p-2.5 md:p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
-                  CPU Temp
+              <MetricLane tone="warning" className="p-3">
+                <p className="text-xs font-semibold text-muted">
+                  CPU temperature
                 </p>
                 <p className={`font-mono text-sm font-semibold md:text-base ${tempTone}`}>
                   {systemHealth?.cpu_temp_celsius === null ||
@@ -448,22 +452,22 @@ function AdminPage() {
                     : `${Math.round(systemHealth.cpu_temp_celsius)}°C`}
                 </p>
                 {sparklinePoints.cpu_temp_celsius && (
-                  <Sparkline points={sparklinePoints.cpu_temp_celsius} className="mt-2 h-5 w-full text-accent" />
+                  <Sparkline points={sparklinePoints.cpu_temp_celsius} className="mt-2 h-6 w-full text-text/55" />
                 )}
-              </div>
-              <div className="rounded-lg border border-border bg-surface-hi p-2.5 md:p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
-                  CPU Load
+              </MetricLane>
+              <MetricLane tone="plan" className="p-3">
+                <p className="text-xs font-semibold text-muted">
+                  CPU load
                 </p>
                 <p className="font-mono text-sm font-semibold text-text md:text-base">
                   {systemHealth ? `${Math.round(systemHealth.cpu_load_percent)}%` : "—"}
                 </p>
                 {sparklinePoints.cpu_load_percent && (
-                  <Sparkline points={sparklinePoints.cpu_load_percent} className="mt-2 h-5 w-full text-accent" />
+                  <Sparkline points={sparklinePoints.cpu_load_percent} className="mt-2 h-6 w-full text-text/55" />
                 )}
-              </div>
-              <div className="min-w-0 rounded-lg border border-border bg-surface-hi p-2.5 md:p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
+              </MetricLane>
+              <MetricLane tone="income" className="min-w-0 p-3">
+                <p className="text-xs font-semibold text-muted">
                   RAM
                 </p>
                 <p className={`truncate font-mono text-sm font-semibold md:text-base ${usageTone(ramUsagePercent)}`}>
@@ -472,11 +476,11 @@ function AdminPage() {
                     : "—"}
                 </p>
                 {sparklinePoints.ram_percent && (
-                  <Sparkline points={sparklinePoints.ram_percent} className="mt-2 h-5 w-full text-accent" />
+                  <Sparkline points={sparklinePoints.ram_percent} className="mt-2 h-6 w-full text-text/55" />
                 )}
-              </div>
-              <div className="min-w-0 rounded-lg border border-border bg-surface-hi p-2.5 md:p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
+              </MetricLane>
+              <MetricLane tone="neutral" className="min-w-0 p-3">
+                <p className="text-xs font-semibold text-muted">
                   Disk
                 </p>
                 <p className={`truncate font-mono text-sm font-semibold md:text-base ${usageTone(diskUsagePercent)}`}>
@@ -485,14 +489,14 @@ function AdminPage() {
                     : "—"}
                 </p>
                 {sparklinePoints.disk_percent && (
-                  <Sparkline points={sparklinePoints.disk_percent} className="mt-2 h-5 w-full text-accent" />
+                  <Sparkline points={sparklinePoints.disk_percent} className="mt-2 h-6 w-full text-text/55" />
                 )}
-              </div>
+              </MetricLane>
             </div>
           </div>
 
           {systemHealth && diskFreePercent < 20 && (
-            <div className="mt-4 rounded-lg border border-semantic-red/40 bg-semantic-red/10 p-3">
+            <div className="mt-4 rounded-lg bg-signal-red-soft p-3">
               <p className="text-sm font-semibold text-semantic-red">
                 Storage is running low. {formatFileSize(systemHealth.disk_free_bytes)} remaining.
               </p>
@@ -506,10 +510,10 @@ function AdminPage() {
               </a>
             </div>
           )}
-        </AppCard>
+        </FinancialPanel>
 
-        <div className="space-y-4 rounded-xl border border-semantic-blue/40 bg-semantic-blue/5 p-4">
-          <h2 className="text-xl font-head font-bold">Database Backups</h2>
+        <MetricLane tone="neutral" className="space-y-4">
+          <h2 className="text-xl font-head font-bold">Database backups</h2>
           <p className="text-sm text-muted">
             Download a complete SQLite dump so you can restore everything if
             something goes sideways.
@@ -517,10 +521,10 @@ function AdminPage() {
           <AppButton asChild className="block text-center">
             <a href="/api/admin/download-db">Download backup</a>
           </AppButton>
-        </div>
+        </MetricLane>
 
-        <div className="space-y-4 rounded-xl border border-semantic-green/40 bg-semantic-green/5 p-4">
-          <h2 className="text-xl font-head font-bold">Export Transactions</h2>
+        <MetricLane tone="neutral" className="space-y-4">
+          <h2 className="text-xl font-head font-bold">Export transactions</h2>
           <p className="text-sm text-muted">
             Grab a CSV of every transaction for auditing or to bring into
             spreadsheets.
@@ -528,9 +532,9 @@ function AdminPage() {
           <AppButton asChild className="block w-full text-center">
             <a href="/api/admin/export-csv">Export CSV</a>
           </AppButton>
-        </div>
+        </MetricLane>
 
-        <div className="space-y-4 rounded-xl border border-semantic-blue/40 bg-semantic-blue/5 p-4">
+        <MetricLane tone="neutral" className="space-y-4">
           <h2 className="text-xl font-head font-bold">Import</h2>
           <p className="text-sm text-muted">
             Import transactions from a legacy SQLite database.
@@ -538,13 +542,14 @@ function AdminPage() {
           <AppButton asChild className="block text-center">
             <Link to="/admin/import">Open importer</Link>
           </AppButton>
-        </div>
+        </MetricLane>
 
-        <div
+        <MetricLane
+          tone="neutral"
           id="danger-zone"
-          className="space-y-4 rounded-xl border border-semantic-red/40 bg-semantic-red/5 p-4"
+          className="space-y-4"
         >
-          <h2 className="text-xl font-head font-bold">Danger Zone</h2>
+          <h2 className="text-xl font-head font-bold">Danger zone</h2>
           <p className="text-sm text-muted">
             Purge soft-deleted transactions older than a safe window to keep the
             database lean.
@@ -569,10 +574,10 @@ function AdminPage() {
               {purgeMutation.isPending ? "Purging…" : "Purge now"}
             </AppButton>
           </div>
-        </div>
+        </MetricLane>
 
-        <div className="space-y-4 rounded-xl border border-accent/40 bg-accent/5 p-4">
-          <h2 className="text-xl font-head font-bold">Rebuild Rollups</h2>
+        <MetricLane tone="neutral" className="space-y-4">
+          <h2 className="text-xl font-head font-bold">Rebuild rollups</h2>
           <p className="text-sm text-muted">
             Recalculate monthly aggregates from the transaction ledger (use after
             imports or large backfills).
@@ -585,10 +590,10 @@ function AdminPage() {
           >
             {rebuildMutation.isPending ? "Rebuilding…" : "Rebuild now"}
           </AppButton>
-        </div>
+        </MetricLane>
 
-        <div className="space-y-4 rounded-xl border border-accent/40 bg-accent/5 p-4">
-          <h2 className="text-xl font-head font-bold">Recurring Catch-Up</h2>
+        <MetricLane tone="neutral" className="space-y-4">
+          <h2 className="text-xl font-head font-bold">Recurring catch-up</h2>
           <p className="text-sm text-muted">
             Run overdue recurring auto-posts now.
           </p>
@@ -611,11 +616,11 @@ function AdminPage() {
               {recurringCatchUpMessage.text}
             </p>
           )}
-        </div>
+        </MetricLane>
 
       </div>
 
-      <AppCard>
+      <FinancialPanel role="inspector" className="overflow-hidden">
         <div className="border-b border-border px-4 py-3">
           <h2 className="font-head text-lg font-bold">System information</h2>
         </div>
@@ -653,10 +658,10 @@ function AdminPage() {
             </div>
           ))}
         </div>
-      </AppCard>
+      </FinancialPanel>
 
       {llmEnabled ? (
-      <AppCard data-testid="admin-ai-usage">
+      <FinancialPanel data-testid="admin-ai-usage" className="overflow-hidden">
         <div className="border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -665,24 +670,16 @@ function AdminPage() {
                 Spending Assistant model usage and cost.
               </p>
             </div>
-            <div className="pill-group">
-              {([
-                ["week", "Week"],
-                ["month", "Month"],
-                ["all", "All time"],
-              ] as Array<[AIUsageSummary["period"], string]>).map(
-                ([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setUsagePeriod(value)}
-                    className={`pill-button ${usagePeriod === value ? "pill-button-active" : ""}`}
-                  >
-                    {label}
-                  </button>
-                )
-              )}
-            </div>
+            <SegmentedControl
+              value={usagePeriod}
+              ariaLabel="Assistant usage period"
+              items={[
+                { value: "week", label: "Week" },
+                { value: "month", label: "Month" },
+                { value: "all", label: "All time" },
+              ] as Array<{ value: AIUsageSummary["period"]; label: string }>}
+              onValueChange={setUsagePeriod}
+            />
           </div>
         </div>
         <div className="px-4 py-4">
@@ -702,7 +699,7 @@ function AdminPage() {
                 {usageTiles.map((tile) => (
                   <div
                     key={tile.label}
-                    className="min-w-0 rounded-lg border border-border bg-surface-hi p-2.5 md:p-3"
+                    className="min-w-0 rounded-md bg-surface-hi/70 p-2.5 md:p-3"
                   >
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
                       {tile.label}
@@ -724,10 +721,10 @@ function AdminPage() {
             </div>
           )}
         </div>
-      </AppCard>
+      </FinancialPanel>
       ) : null}
 
-      <AppCard>
+      <FinancialPanel role="ledger" className="overflow-hidden">
         <div className="border-b border-border px-4 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -747,24 +744,19 @@ function AdminPage() {
               className="md:max-w-sm"
             />
           </div>
-          <div className="mt-3 pill-group">
-            {([
-              ["errors", "Errors"],
-              ["ingest", "Ingest"],
-              ["imports", "Imports"],
-              ["scheduler", "Scheduler"],
-              ["all", "All"],
-            ] as Array<[LogFilter, string]>).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => handleLogFilterChange(value)}
-                className={`pill-button ${logFilter === value ? "pill-button-active" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            value={logFilter}
+            ariaLabel="Log type"
+            className="mt-3"
+            items={[
+              { value: "errors", label: "Errors" },
+              { value: "ingest", label: "Ingest" },
+              { value: "imports", label: "Imports" },
+              { value: "scheduler", label: "Scheduler" },
+              { value: "all", label: "All" },
+            ] as Array<{ value: LogFilter; label: string }>}
+            onValueChange={handleLogFilterChange}
+          />
         </div>
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
           <div className="min-w-0 border-b border-border lg:border-b-0 lg:border-r">
@@ -880,7 +872,7 @@ function AdminPage() {
             )}
           </div>
         </div>
-      </AppCard>
+      </FinancialPanel>
     </section>
   )
 }

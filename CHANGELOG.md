@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Transaction search now accepts untitled records.
+- Filtered transaction summaries now evaluate fuzzy title and description matching once per request instead of repeatedly scanning the ledger for each total.
+- Query-wide bulk actions now wait for the authoritative matching count before they can run, preventing the selection copy from understating how many transactions will be affected; changing search or filters mid-selection re-disables them until the new count arrives instead of trusting the previous filter's count.
+- Mobile transaction periods now remain staged until Apply, long Assistant replies stay scrolled within the conversation, and the Dashboard skips its desktop-only forecast request on mobile and historical periods.
+- Keyboard focus is visible on shell actions and the reconciliation file picker; future budgets no longer show premature pace labels, Insights reports the selected range length, and reopened category/tag dialogs clear prior create errors.
+- The Dashboard planning metric now shows overall pace when configured, otherwise summarizes category-budget health, and disappears without budgets; the no-budget layout uses three equal desktop metrics and a full-width mobile net-movement row instead of leaving a blank slot or permanent setup prompt.
+- The web Dashboard now fills the available desktop recent-transactions panel with complete rows while keeping four rows on mobile, and category donuts use aligned responsive legends plus percentage-only segment tooltips, removing nested scroll regions that previously intercepted normal page scrolling.
+- The Dashboard privacy toggle now keeps budget pace and recent transaction amounts readable while still concealing headline and analytical financial values.
+- Forecasts now include expected cash flow between today and the end of the current month, removing the previous gap before the first projected month.
+- Forecasts and the forecast backtest no longer double-count auto-posted recurring rules: a rule's monthly amount is only subtracted from months where the rule did not post its own transaction, so categories with an auto-posting rule keep their genuine variable spending in the model instead of it being zeroed out.
+- Forecasts no longer learn manually recorded USD, yearly, or already-ended recurring payments as variable spending before projecting the same patterns again, and Dashboard balance history no longer plots unsupported points from before the first balance snapshot.
+- The Dashboard balance chart and six-month category bands now label months correctly in timezones west of UTC; previously every month label rendered one month early there.
+- Applying a bulk transaction change now leaves its outcome summary (resolved, skipped, deleted, and restored counts) visible on both desktop and mobile until dismissed, instead of closing the bulk panel with no confirmation.
+- Accent-colored controls in dark mode now use dark ink text that meets WCAG AA contrast instead of low-contrast white, and the category-band chart assigns colors in stable first-appearance order so different categories no longer collide on the same color.
+
+### Added
+- Spending-chat `tool_call_end` stream events now carry a display-ready `result_summary` (for example "23 matches · €412.80 total") that the web Assistant shows in its expanded tool activity rows.
+- Added an accessible six-month category-band view to the web Dashboard, backed by real monthly category totals and balances, plus filtered transaction summary totals for the working ledger.
+- Added a comprehensive production-built Playwright gate covering desktop Chromium, mobile WebKit, route accessibility and overflow contracts, reviewed visual baselines, and critical Firefox, desktop WebKit, and mobile Chromium journeys.
+- Added `uv run forecast-backtest` for read-only rolling historical accuracy and prediction-interval coverage checks.
+
+### Changed
+- Consolidated the web Budgets route into one monthly-first workspace: usual monthly plans, selected-month adjustments, and annual plans now share one editor and consistent rows instead of separate Month, Recurring, and Year tabs. Existing recurring plans, month overrides, annual budgets, and native iOS budget APIs remain compatible; changing a usual amount from a selected month now preserves prior periods and any already-scheduled future change.
+- Reworked the web Assistant into a native chat-style workspace: its title and new-chat action now live in the top utility bar, the transcript is no longer enclosed in a card, tool lookups group into one expandable activity line, and scrolling up during a streamed reply no longer drags the reader back to the bottom. While a turn works, a shimmering progress line shows the active tool or the model's latest narration (static text plus spinner under reduced motion), sending scrolls the question to the top of the conversation with the reply streaming below in reading position, live answer text ends in an animated braille-sweep cursor, finished answers and sent questions offer copy actions, stopped or failed turns offer Try again without retyping the question, and screen readers get one completion announcement instead of per-chunk updates.
+- Transaction search now uses case-insensitive substring matching plus RapidFuzz typo tolerance across titles and descriptions while retaining chronological ordering; period, type, category, and tag remain explicit filters.
+- Tightened the mobile web Transactions header: Inbox, Trash, and Export CSV moved into an overflow menu, the filter trigger became a compact icon button with an active-filter count badge (replacing the mostly empty filters card), the search, filter, and overflow buttons now sit beside the page title in one row, and search opens as a full-width popover below that row.
+- Reworked the web Transactions controls so higher-contrast page actions are separate from a height-aligned desktop filter bar whose period and type buttons keep comfortable spacing and whose category and tag filters widen into the available space; the desktop page-header search icon stretches sideways into an inline same-row title-and-description search bar with a text-only clear control and Escape/outside-click handling, while the mobile popover carries the same plain search and the filter sheet holds only period/type/category/tag. The redundant date-range readout was dropped from the collapsed mobile filters card to match desktop, page actions right-align on both viewports, and always-available row checkboxes plus an in-place segmented bulk scope replace the old Select mode and inserted bulk-controls row.
+- Forecast now uses robust recent variable cash-flow medians, learns shrunken month-of-year patterns after two years of history, includes variable income, shows a deterministic 80% prediction range, and warns about expected intra-month balance lows. What-If comparisons reuse the same uncertainty paths so their deltas remain attributable to the selected changes.
+- Replaced the old all-in-one `uv run test` command with `uv run fast-tests` for the normal Ruff, backend, frontend lint, and build gate plus `uv run full-tests` for deliberate complete browser verification; automatic CI now runs the fast gate while the full suite is manually dispatched.
+- Reduced test-suite runtime: the fast gate now runs its checks concurrently with backend tests distributed across CPU cores, and the full Playwright suite gives every test worker its own isolated backend and temporary database so browser coverage scales with the machine in a single run with one report.
+- Redesigned the complete web app as a responsive financial switchboard: desktop now exposes every available destination in a grouped sidebar, mobile uses a compact top action bar plus a labeled edge-attached menu, and each workflow now uses purpose-built planning, ledger, evidence, library, report, or conversation surfaces instead of generic card stacks.
+- Dashboard, Transactions, Budgets, Insights, Forecast, What If, Digest, Recurring, Rules, Categories, Tags, Templates, Reconciliation, Reports, Assistant, Settings, Admin, and authentication now share the same warm paper surfaces, semantic signal colors, category icon language, monospaced financial figures, and intentional light/dark themes without changing their routes or supported actions.
+- Refined the redesigned web workflows with flat divided ledger rows, compact dashboard composition charts and interactive category-band tooltips, a space-efficient Transactions filter sheet, page-specific create actions, modal Budget and Recurring editors, clearer transaction detail actions, a visual weekly Digest composition, and a bottom-anchored Assistant composer.
+- Moved Templates, categorization Rules, Categories, and Tags to page-owned modal creation and editing, replaced compact row action labels with accessible icons, added a dedicated Tags merge modal, and made Templates directly reorderable by drag handle.
+- Unified single-choice button groups around one sliding selection indicator, aligned the yearly Budget toolbar and Reconciliation file picker, removed duplicated period and balance-delta copy, and added exact custom hover values to Dashboard and What If balance charts.
+- Reworked the mobile web layout around an unobtrusive top bar and full-height menu drawer, condensed Dashboard metrics and Transactions controls, removed the mobile balance history chart, made one-month Insights data visible, moved Budget and recurring-rule creation into the top-right action, and shortened recurring History controls.
+
+### Removed
+- Removed the legacy `search` metadata block from transaction-list and uncategorized-inbox API responses. No current client reads it; iOS apps older than this release fail to decode transaction lists until updated, so update the iOS app together with the server.
+- Removed technical transaction-search syntax and its token metadata; search-like text such as `tag:Work` is now treated literally and filters are applied through the visible controls.
+- Removed LLM-backed search translation, including its API endpoint and web/iOS client surfaces; natural-language transaction requests remain available through the read-only spending Assistant.
+
+### Dependencies
+- Added axe-core Playwright integration for automated accessibility checks across canonical web routes.
+- Bundled IBM Plex Mono with the web app for privacy-preserving financial typography instead of loading a font from a third-party service at runtime.
+- Added dnd-kit for accessible pointer and keyboard sorting of transaction templates.
+- Updated Click and Pillow to releases that resolve their current published security advisories.
+- Updated frontend transitive dependencies to resolve the current npm audit advisories.
+
 ## [0.3.4] - 2026-07-09
 
 ### Changed

@@ -1,16 +1,30 @@
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { XCircleIcon } from "@phosphor-icons/react/XCircle"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { XIcon } from "@phosphor-icons/react/X"
+import { useOutletContext } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { AppShellOutletContext } from "../app/AppShell"
 import { useAuth } from "../app/auth"
 import { formatCurrency } from "../app/format"
 import { Toggle } from "../components/Toggle"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
+import {
+  FinancialPanel,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import {
   AppFieldLabel,
   AppInput,
@@ -85,8 +99,8 @@ type RuleSuggestion = {
 function RulesPage() {
   const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
-  const formRef = useRef<HTMLFormElement | null>(null)
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
+  const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [name, setName] = useState("")
   const [enabled, setEnabled] = useState(true)
@@ -123,6 +137,7 @@ function RulesPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rules"] })
+      setEditorOpen(false)
       setEditingId(null)
       setFormError("")
     },
@@ -136,6 +151,7 @@ function RulesPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rules"] })
+      setEditorOpen(false)
       setEditingId(null)
       setFormError("")
     },
@@ -238,6 +254,7 @@ function RulesPage() {
     )
     setPreview(null)
     setPreviewError("")
+    setEditorOpen(true)
   }
 
   const parseAmount = (raw: string) => {
@@ -250,7 +267,7 @@ function RulesPage() {
     return Math.round(value * 100)
   }
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setEditingId(null)
     setName("")
     setEnabled(true)
@@ -266,15 +283,17 @@ function RulesPage() {
     setFormError("")
     setPreview(null)
     setPreviewError("")
-  }
+  }, [])
 
-  const jumpToForm = () => {
+  const openCreateEditor = useCallback(() => {
     resetForm()
-    requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-      nameInputRef.current?.focus()
-    })
-  }
+    setEditorOpen(true)
+  }, [resetForm])
+
+  useEffect(() => {
+    setUtilityAction({ label: "Add rule", onClick: openCreateEditor })
+    return () => setUtilityAction(null)
+  }, [openCreateEditor, setUtilityAction])
 
   const buildPayload = () => {
     if (!name.trim()) {
@@ -347,21 +366,10 @@ function RulesPage() {
 
   return (
     <section className="space-y-6">
-      <PageIntro
-        title="Categorization Rules"
-        actions={
-          <AppButton
-            type="button"
-            onClick={jumpToForm}
-            className="desk:hidden"
-          >
-            Create rule
-          </AppButton>
-        }
-      />
+      <PageIntro title="Categorization Rules" />
 
       {llmEnabled ? (
-        <AppCard className="p-4">
+        <FinancialPanel className="p-4" data-testid="rule-suggestion-queue">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <h2 className="font-head text-lg font-bold text-text">Rule suggestions</h2>
@@ -380,7 +388,7 @@ function RulesPage() {
               {mineRulesMutation.isPending ? "Mining…" : "Mine rules"}
             </AppButton>
           </div>
-        </AppCard>
+        </FinancialPanel>
       ) : null}
 
       {llmEnabled && ruleSuggestions.length ? (
@@ -388,7 +396,7 @@ function RulesPage() {
           {ruleSuggestions.map((suggestion) => (
             <div
               key={suggestion.id}
-              className="rounded-lg border border-border bg-surface-hi/40 p-3"
+              className="rounded-lg bg-surface p-3.5 shadow-[var(--shadow-soft)]"
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-2">
@@ -424,118 +432,174 @@ function RulesPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-4">
-          {data.rules.length ? (
-            data.rules.map((rule) => (
-              <AppCard key={rule.id} className="p-4">
-                <div className="mb-3 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-semibold text-text">{rule.name}</p>
-                    <p className="text-xs text-muted">
-                      Priority {rule.priority} ·{" "}
-                      {rule.enabled ? "Enabled" : "Disabled"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <AppButton
-                      type="button"
-                      onClick={() => handleEditRule(rule)}
-                      tone="inline"
-                    >
-                      Edit
-                    </AppButton>
-                    <Toggle on={rule.enabled} onChange={(val) => toggleMutation.mutate({ id: rule.id, enabled: val })} />
-                    <AppButton
-                      type="button"
-                      onClick={() => deleteMutation.mutate(rule.id)}
-                      tone="inlineDanger"
-                    >
-                      <TrashIcon className="h-3.5 w-3.5" />
-                      Delete
-                    </AppButton>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm text-muted">
-                  <p>
-                    <span className="rounded-sm bg-surface-hi px-2 py-0.5 text-xs font-semibold">
-                      IF
-                    </span>{" "}
-                    Title {rule.match_type.replace("_", " ")} "{rule.match_value}"
-                    {rule.transaction_type && ` · Type ${rule.transaction_type}`}
-                    {(rule.min_amount_cents !== null ||
-                      rule.max_amount_cents !== null) && (
-                      <>
-                        {" "}
-                        · Amount
-                        {rule.min_amount_cents !== null &&
-                          ` ≥ ${formatCurrency(rule.min_amount_cents)} €`}
-                        {rule.max_amount_cents !== null &&
-                          ` ≤ ${formatCurrency(rule.max_amount_cents)} €`}
-                      </>
-                    )}
-                  </p>
-                  <p>
-                    <span className="rounded-sm bg-surface-hi px-2 py-0.5 text-xs font-semibold">
-                      THEN
-                    </span>{" "}
-                    {rule.set_category ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        Category → <CategoryIcon icon={rule.set_category?.icon ?? null} /> <strong>{rule.set_category.name}</strong>
-                      </span>
-                    ) : (
-                      "Category unchanged"
-                    )}
-                    {rule.add_tags.length > 0 &&
-                      ` · Add tags: ${rule.add_tags.join(", ")}`}
-                    {rule.budget_exclude_tag && (
-                      <>
-                        {" "}
-                        · Add tag <strong>{rule.budget_exclude_tag.name}</strong>
-                      </>
-                    )}
-                  </p>
-                </div>
-              </AppCard>
-            ))
-          ) : (
-            <AppCard className="p-10 text-center">
-              <p className="font-head text-lg font-bold text-text">No rules yet</p>
-              <p className="text-sm text-muted">
-                Create a rule to auto-categorize expenses like "Rent" or
-                "Netflix".
+      <FinancialPanel role="ledger" data-testid="automation-rules-board">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Automations</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Conditions are evaluated in priority order
               </p>
-            </AppCard>
-          )}
-        </div>
-
-        <AppCard>
-          <form
-            ref={formRef}
-            onSubmit={handleSubmit}
-            className="editor-rail"
-          >
-            <div className="surface-section-header">
-              <p className="text-xs font-semibold uppercase text-muted">
-                Editor
-              </p>
-              <h2 className="font-head text-lg font-bold">
-                {editingId ? "Edit rule" : "Create rule"}
-              </h2>
             </div>
-            <div className="surface-section-body space-y-4">
+            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+              {data.rules.length}
+            </span>
+          </SectionHeading>
+          {data.rules.length ? (
+            <div className="divide-y divide-border">
+              {data.rules.map((rule) => (
+                <article
+                  key={rule.id}
+                  data-testid="automation-rule"
+                  className="p-4 transition-colors hover:bg-faint/35"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-text">{rule.name}</p>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            rule.enabled
+                              ? "bg-signal-green-soft text-semantic-green"
+                              : "bg-faint text-muted"
+                          }`}
+                        >
+                          {rule.enabled ? "Enabled" : "Disabled"}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-[11px] text-muted">
+                        Priority {rule.priority}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Toggle
+                        on={rule.enabled}
+                        ariaLabel={`Toggle ${rule.name}`}
+                        onChange={(val) =>
+                          toggleMutation.mutate({ id: rule.id, enabled: val })
+                        }
+                      />
+                      <AppButton
+                        type="button"
+                        onClick={() => handleEditRule(rule)}
+                        tone="inline"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Edit ${rule.name}`}
+                      >
+                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
+                      </AppButton>
+                      <AppButton
+                        type="button"
+                        onClick={() => deleteMutation.mutate(rule.id)}
+                        tone="inlineDanger"
+                        className="h-9 w-9 p-0"
+                        aria-label={`Delete ${rule.name}`}
+                      >
+                        <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                      </AppButton>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2.5 md:grid-cols-2">
+                    <div className="rounded-lg bg-faint/85 p-3">
+                      <p className="mono-meta text-muted">When</p>
+                      <p className="mt-2 text-sm font-medium text-text">
+                        Title {rule.match_type.replace("_", " ")} “{rule.match_value}”
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {rule.transaction_type
+                          ? `${rule.transaction_type[0].toUpperCase()}${rule.transaction_type.slice(1)}`
+                          : "Any transaction type"}
+                        {rule.min_amount_cents !== null
+                          ? ` · at least ${formatCurrency(rule.min_amount_cents)} €`
+                          : ""}
+                        {rule.max_amount_cents !== null
+                          ? ` · at most ${formatCurrency(rule.max_amount_cents)} €`
+                          : ""}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-signal-blue-soft p-3">
+                      <p className="mono-meta text-muted">Then</p>
+                      <div className="mt-2 flex items-center gap-2 text-sm text-text">
+                        {rule.set_category ? (
+                          <>
+                            <CategoryIcon
+                              icon={rule.set_category.icon}
+                              label={rule.set_category.name}
+                              className="h-8 w-8"
+                            />
+                            <strong>{rule.set_category.name}</strong>
+                          </>
+                        ) : (
+                          <span>Keep the current category</span>
+                        )}
+                      </div>
+                      {(rule.add_tags.length > 0 || rule.budget_exclude_tag) && (
+                        <p className="mt-2 text-xs text-muted">
+                          {rule.add_tags.length > 0
+                            ? `Add ${rule.add_tags.join(", ")}`
+                            : ""}
+                          {rule.add_tags.length > 0 && rule.budget_exclude_tag
+                            ? " · "
+                            : ""}
+                          {rule.budget_exclude_tag
+                            ? `Exclude with ${rule.budget_exclude_tag.name}`
+                            : ""}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="p-10 text-center">
+              <p className="font-head text-lg font-bold text-text">No rules yet</p>
+              <p className="mt-1 text-sm text-muted">
+                Create a condition to categorize new activity automatically.
+              </p>
+            </div>
+          )}
+      </FinancialPanel>
+
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          if (!open && !createMutation.isPending && !updateMutation.isPending) {
+            setEditorOpen(false)
+          }
+        }}
+      >
+        <DialogContent
+          aria-label={editingId ? "Edit rule" : "Add rule"}
+          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
+        >
+          <div className="-mr-5 overflow-y-auto pr-5">
+            <DialogHeader>
+              <DialogTitle>{editingId ? "Edit rule" : "Add rule"}</DialogTitle>
+              <DialogClose asChild>
+                <AppButton
+                  tone="ghost"
+                  className="h-9 w-9 rounded-full p-0"
+                  aria-label="Close rule editor"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  <XIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+              </DialogClose>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
               <AppFieldLabel>
                 Name
                 <AppInput
-                  ref={nameInputRef}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   className="mt-1"
                   placeholder="e.g. Netflix → Subscriptions"
+                  autoFocus
                   required
                 />
               </AppFieldLabel>
-              <label className="flex items-center gap-3 rounded-md border border-border bg-bg px-3 py-2 text-xs text-muted">
+              <label className="flex items-center gap-3 rounded-md bg-faint px-3 py-2 text-xs text-muted">
                 <Toggle on={enabled} onChange={setEnabled} />
                 Apply this rule automatically
               </label>
@@ -562,9 +626,9 @@ function RulesPage() {
                   <option value="expense">Expense</option>
                 </AppNativeSelect>
               </AppFieldLabel>
-              <div className="rounded-lg border border-border bg-bg p-3">
-                <p className="mb-2 text-xs font-semibold text-muted">
-                  Match condition
+              <div className="rounded-lg bg-faint p-3">
+                <p className="mb-2 mono-meta text-muted">
+                  When
                 </p>
                 <div className="space-y-3">
                   <AppFieldLabel>
@@ -614,9 +678,9 @@ function RulesPage() {
                   </div>
                 </div>
               </div>
-              <div className="rounded-lg border border-border bg-bg p-3">
-                <p className="mb-2 text-xs font-semibold text-muted">
-                  Actions
+              <div className="rounded-lg bg-signal-blue-soft p-3">
+                <p className="mb-2 mono-meta text-muted">
+                  Then
                 </p>
                 <div className="space-y-3">
                   <AppFieldLabel>
@@ -687,15 +751,14 @@ function RulesPage() {
                 </AppButton>
 
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  {editingId && (
-                    <AppButton
-                      type="button"
-                      onClick={resetForm}
-                      tone="ghost"
-                    >
-                      Cancel
-                    </AppButton>
-                  )}
+                  <AppButton
+                    type="button"
+                    onClick={() => setEditorOpen(false)}
+                    tone="ghost"
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                  >
+                    Cancel
+                  </AppButton>
                   <AppButton
                     type="submit"
                     disabled={createMutation.isPending || updateMutation.isPending}
@@ -703,10 +766,10 @@ function RulesPage() {
                     {editingId
                       ? updateMutation.isPending
                         ? "Saving…"
-                        : "Update rule"
+                        : "Save changes"
                       : createMutation.isPending
                         ? "Saving…"
-                        : "Save rule"}
+                        : "Add rule"}
                   </AppButton>
                 </div>
               </div>
@@ -716,7 +779,7 @@ function RulesPage() {
             ) : null}
 
             {preview ? (
-              <div className="rounded-lg border border-border bg-bg p-3">
+              <div className="rounded-lg bg-faint p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-text">Preview</p>
                   <span className="chip text-[11px] text-text">
@@ -726,7 +789,7 @@ function RulesPage() {
                 </div>
 
                 {preview.sample.length ? (
-                  <div className="overflow-x-auto rounded-lg border border-border">
+                  <div className="overflow-x-auto rounded-lg bg-surface-hi">
                     <table className="min-w-full text-xs">
                       <thead className="bg-faint text-[11px] font-semibold uppercase tracking-wide text-muted">
                         <tr>
@@ -750,11 +813,11 @@ function RulesPage() {
                             <td className="px-3 py-2">
                               {row.before_category !== row.after_category ? (
                                 <span className="inline-flex flex-wrap items-center gap-1">
-                                  <span className="rounded-full border border-border bg-faint px-2 py-0.5 text-[11px] text-text">
+                                  <span className="rounded-full bg-faint px-2 py-0.5 text-[11px] text-text">
                                     {row.before_category}
                                   </span>
                                   <span className="text-muted">→</span>
-                                  <span className="rounded-full border border-border bg-faint px-2 py-0.5 text-[11px] text-text">
+                                  <span className="rounded-full bg-faint px-2 py-0.5 text-[11px] text-text">
                                     {row.after_category}
                                   </span>
                                 </span>
@@ -777,10 +840,10 @@ function RulesPage() {
                 )}
               </div>
             ) : null}
-            </div>
-          </form>
-        </AppCard>
-      </div>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

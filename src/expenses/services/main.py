@@ -1,15 +1,17 @@
 import json
 import logging
+import random
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from statistics import median
 from typing import Literal, Optional
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, false, func, or_, select, tuple_, update
+from sqlalchemy import and_, case, delete, false, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
@@ -22,7 +24,6 @@ from expenses.core.safe_regex import (
     safe_regex_search,
     validate_regex,
 )
-from expenses.core.search import AdvancedSearchFilters
 from expenses.db.models import (
     BalanceAnchor,
     BudgetFrequency,
@@ -61,6 +62,7 @@ from expenses.services.rollups import (
 from expenses.schemas import (
     BalanceAnchorIn,
     BudgetOverrideIn,
+    BudgetTemplateApplyFromIn,
     BudgetTemplateIn,
     CategoryIn,
     CategoryUpdateIn,
@@ -94,7 +96,6 @@ class TransactionFilters:
     matched_category_ids: Optional[list[int]] = None
     query: Optional[str] = None
     tag_id: Optional[int] = None
-    search: Optional[AdvancedSearchFilters] = None
 
 
 def _tag_names_json(tags: list[Tag]) -> str:
@@ -1908,96 +1909,6 @@ class TransactionService:
             stmt = stmt.where(Transaction.date.between(period.start, period.end))
         return stmt
 
-    def _resolve_name_tokens_to_ids(
-        self, values: list[str], *, target: str
-    ) -> list[int]:
-        ids: set[int] = set()
-        numeric_ids: set[int] = set()
-        names: list[str] = []
-        for value in values:
-            stripped = value.strip()
-            if not stripped:
-                continue
-            if stripped.isdigit():
-                numeric_ids.add(int(stripped))
-            else:
-                names.append(stripped.lower())
-        ids.update(numeric_ids)
-        if target == "category" and names:
-            rows = self.session.execute(
-                select(Category.id).where(
-                    Category.user_id == self.user_id,
-                    func.lower(Category.name).in_(names),
-                )
-            )
-            ids.update(int(row.id) for row in rows)
-        if target == "tag" and names:
-            rows = self.session.execute(
-                select(Tag.id).where(
-                    Tag.user_id == self.user_id,
-                    func.lower(Tag.name).in_(names),
-                )
-            )
-            ids.update(int(row.id) for row in rows)
-        return sorted(ids)
-
-    def _apply_advanced_search(self, stmt, search: AdvancedSearchFilters):
-        if search.token_type:
-            stmt = stmt.where(Transaction.type == search.token_type)
-
-        category_ids = self._resolve_name_tokens_to_ids(
-            search.category_values, target="category"
-        )
-        if search.category_values:
-            if not category_ids:
-                return stmt.where(false())
-            stmt = stmt.where(Transaction.category_id.in_(category_ids))
-
-        tag_ids = self._resolve_name_tokens_to_ids(search.tag_values, target="tag")
-        if search.tag_values:
-            if not tag_ids:
-                return stmt.where(false())
-            stmt = stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
-
-        for operator, cents in search.amount_filters:
-            if operator == "=":
-                stmt = stmt.where(Transaction.amount_cents == cents)
-            if operator == ">":
-                stmt = stmt.where(Transaction.amount_cents > cents)
-            if operator == ">=":
-                stmt = stmt.where(Transaction.amount_cents >= cents)
-            if operator == "<":
-                stmt = stmt.where(Transaction.amount_cents < cents)
-            if operator == "<=":
-                stmt = stmt.where(Transaction.amount_cents <= cents)
-
-        for operator, date_value in search.date_filters:
-            if operator == "=":
-                stmt = stmt.where(Transaction.date == date_value)
-            if operator == ">":
-                stmt = stmt.where(Transaction.date > date_value)
-            if operator == ">=":
-                stmt = stmt.where(Transaction.date >= date_value)
-            if operator == "<":
-                stmt = stmt.where(Transaction.date < date_value)
-            if operator == "<=":
-                stmt = stmt.where(Transaction.date <= date_value)
-
-        if search.is_reimbursement:
-            stmt = stmt.where(
-                Transaction.type == TransactionType.income,
-                Transaction.is_reimbursement.is_(True),
-            )
-        if search.has_receipt:
-            stmt = stmt.where(Transaction.attachments.any())
-
-        for term in search.free_terms:
-            like = f"%{term.lower()}%"
-            stmt = stmt.where(
-                func.lower(func.coalesce(Transaction.title, "")).like(like)
-            )
-        return stmt
-
     def _apply_filters(self, stmt, filters: TransactionFilters):
         if filters.type:
             stmt = stmt.where(Transaction.type == filters.type)
@@ -2009,13 +1920,17 @@ class TransactionService:
             stmt = stmt.where(Transaction.category_id.in_(filters.matched_category_ids))
         if filters.tag_id:
             stmt = stmt.where(Transaction.tags.any(Tag.id == filters.tag_id))
-        if filters.search:
-            stmt = self._apply_advanced_search(stmt, filters.search)
-        elif filters.query:
-            like = f"%{filters.query.lower()}%"
-            stmt = stmt.where(
-                func.lower(func.coalesce(Transaction.title, "")).like(like)
-            )
+        if filters.query:
+            query = " ".join(filters.query.casefold().split())
+            if query:
+                stmt = stmt.where(
+                    func.expenses_fuzzy_text_match(
+                        query,
+                        Transaction.title,
+                        Transaction.description,
+                    )
+                    == 1
+                )
         return stmt
 
     def count_for_period(
@@ -2033,6 +1948,107 @@ class TransactionService:
             stmt = stmt.where(Transaction.date.between(period.start, period.end))
         stmt = self._apply_filters(stmt, filters)
         return int(self.session.execute(stmt).scalar_one() or 0)
+
+    def summary_for_period(
+        self,
+        period: Period,
+        filters: TransactionFilters,
+    ) -> dict[str, int]:
+        period_condition = (
+            Transaction.date >= period.start
+            if period.slug == "all"
+            else Transaction.date.between(period.start, period.end)
+        )
+        ReimbursementTxn = aliased(Transaction)
+        reimbursed_by_expense = (
+            select(
+                ReimbursementAllocation.expense_transaction_id.label("expense_id"),
+                func.sum(ReimbursementAllocation.amount_cents).label(
+                    "reimbursed_cents"
+                ),
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ReimbursementAllocation.expense_transaction_id)
+            .subquery()
+        )
+        summary_stmt = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                and_(
+                                    Transaction.type == TransactionType.income,
+                                    Transaction.is_reimbursement.is_(False),
+                                ),
+                                Transaction.amount_cents,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("income_cents"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                Transaction.type == TransactionType.expense,
+                                Transaction.amount_cents,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("expense_gross_cents"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                Transaction.type == TransactionType.expense,
+                                func.coalesce(
+                                    reimbursed_by_expense.c.reimbursed_cents, 0
+                                ),
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("reimbursed_cents"),
+                func.count(Transaction.id).label("count"),
+            )
+            .outerjoin(
+                reimbursed_by_expense,
+                reimbursed_by_expense.c.expense_id == Transaction.id,
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                period_condition,
+            )
+        )
+        summary_stmt = self._apply_filters(summary_stmt, filters)
+        summary = self.session.execute(summary_stmt).one()
+        income = int(summary.income_cents or 0)
+        expense_gross = int(summary.expense_gross_cents or 0)
+        reimbursed = int(summary.reimbursed_cents or 0)
+        expenses = max(0, expense_gross - reimbursed)
+        return {
+            "income_cents": income,
+            "expense_cents": expenses,
+            "net_cents": income - expenses,
+            "count": int(summary.count or 0),
+        }
 
 
 class ReimbursementService:
@@ -3416,6 +3432,136 @@ class InsightsService:
         self.user_id = user_id or get_current_user_id()
         self.metrics = MetricsService(session, self.user_id)
 
+    def monthly_category_bands(
+        self, *, end: date, months_back: int = 6
+    ) -> list[dict[str, object]]:
+        end_month = month_start(end.year, end.month)
+        months = [
+            add_months(end_month, offset) for offset in range(-(months_back - 1), 1)
+        ]
+        start = months[0]
+
+        gross_rows = self.session.execute(
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                Transaction.category_id.label("category_id"),
+                Category.name.label("category_name"),
+                Category.icon.label("category_icon"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
+            )
+            .outerjoin(Category, Category.id == Transaction.category_id)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+                Transaction.date.between(start, end),
+            )
+            .group_by(
+                "year",
+                "month",
+                Transaction.category_id,
+                Category.name,
+                Category.icon,
+            )
+        ).all()
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimbursed_rows = self.session.execute(
+            select(
+                func.strftime("%Y", ExpenseTxn.date).label("year"),
+                func.strftime("%m", ExpenseTxn.date).label("month"),
+                ExpenseTxn.category_id.label("category_id"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(start, end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by("year", "month", ExpenseTxn.category_id)
+        ).all()
+
+        reimbursed = {
+            (int(row.year), int(row.month), row.category_id): int(row.reimbursed or 0)
+            for row in reimbursed_rows
+        }
+        monthly_segments: dict[tuple[int, int], list[dict[str, object]]] = {
+            (month.year, month.month): [] for month in months
+        }
+        category_totals: dict[int | None, int] = {}
+
+        for row in gross_rows:
+            key = (int(row.year), int(row.month))
+            category_id = row.category_id
+            amount = max(
+                0,
+                int(row.gross or 0) - reimbursed.get((*key, category_id), 0),
+            )
+            if amount == 0:
+                continue
+            monthly_segments[key].append(
+                {
+                    "category_id": category_id,
+                    "name": row.category_name or "Uncategorized",
+                    "icon": row.category_icon,
+                    "amount_cents": amount,
+                }
+            )
+            category_totals[category_id] = category_totals.get(category_id, 0) + amount
+
+        category_order = {
+            category_id: index
+            for index, (category_id, _) in enumerate(
+                sorted(category_totals.items(), key=lambda item: item[1], reverse=True)
+            )
+        }
+        result: list[dict[str, object]] = []
+        balance_service = BalanceAnchorService(self.session, self.user_id)
+        first_anchor_at = self.session.scalar(
+            select(func.min(BalanceAnchor.as_of_at)).where(
+                BalanceAnchor.user_id == self.user_id
+            )
+        )
+        for month in months:
+            key = (month.year, month.month)
+            segments = monthly_segments[key]
+            segments.sort(key=lambda item: category_order[item["category_id"]])
+            balance_date = min(end, month_end(month.year, month.month))
+            balance_target = datetime.combine(balance_date, time.max)
+            result.append(
+                {
+                    "month": f"{month.year:04d}-{month.month:02d}",
+                    "balance_cents": (
+                        None
+                        if first_anchor_at is not None
+                        and balance_target < first_anchor_at
+                        else balance_service.balance_as_of(balance_target)
+                    ),
+                    "total_cents": sum(int(item["amount_cents"]) for item in segments),
+                    "segments": segments,
+                }
+            )
+        return result
+
     def monthly_series(
         self,
         period: Period,
@@ -4123,6 +4269,25 @@ class ForecastService:
         amount_cents: int
 
     @dataclass
+    class VariableHistory:
+        months: list[date]
+        expense_totals: dict[date, int]
+        income_totals: dict[date, int]
+        expense_by_category: dict[int, dict[date, int]]
+        income_by_category: dict[int, dict[date, int]]
+        category_info: dict[int, tuple[str, str | None]]
+
+    @dataclass
+    class VariableModel:
+        expense_estimates: dict[int, "ForecastService.VariableEstimate"]
+        income_estimates: dict[int, "ForecastService.VariableEstimate"]
+        expense_factors: dict[int, float]
+        income_factors: dict[int, float]
+        residuals: list[int]
+        history_months: int
+        seasonality_applied: bool
+
+    @dataclass
     class OneTimeEvent:
         name: str
         type: TransactionType
@@ -4185,31 +4350,53 @@ class ForecastService:
             )
         return out
 
-    def _trailing_variable_estimates(
-        self, *, today: date, projection_start: date
-    ) -> dict[int, "ForecastService.VariableEstimate"]:
+    def _load_variable_history(
+        self, *, today: date, max_months: int = 36
+    ) -> "ForecastService.VariableHistory":
         trailing_end = month_start(today.year, today.month) - date.resolution
-        trailing_start = add_months(month_start(today.year, today.month), -3)
-        if trailing_start > trailing_end:
-            return {}
+        candidate_months = [
+            add_months(month_start(today.year, today.month), -offset)
+            for offset in range(max_months, 0, -1)
+        ]
+        if not candidate_months:
+            return ForecastService.VariableHistory([], {}, {}, {}, {}, {})
+        trailing_start = candidate_months[0]
 
-        covered_category_ids = {
-            int(rule.category_id)
-            for rule in self.session.scalars(
-                select(RecurringRule).where(
-                    RecurringRule.user_id == self.user_id,
-                    RecurringRule.type == TransactionType.expense,
-                    or_(
-                        RecurringRule.end_date.is_(None),
-                        RecurringRule.end_date >= projection_start,
-                    ),
-                )
-            ).all()
-            if rule.category_id is not None
+        activity_rows = self.session.execute(
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                func.count(Transaction.id).label("count"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.date.between(trailing_start, trailing_end),
+            )
+            .group_by("year", "month")
+        ).all()
+        activity = {
+            date(int(row.year), int(row.month), 1): int(row.count)
+            for row in activity_rows
         }
+        start_index = 0
+        for index in range(len(candidate_months) - 1):
+            if (
+                activity.get(candidate_months[index], 0) == 0
+                and activity.get(candidate_months[index + 1], 0) == 0
+            ):
+                start_index = index + 2
+        months = candidate_months[start_index:]
+        while months and activity.get(months[0], 0) == 0:
+            months.pop(0)
+        if not months:
+            return ForecastService.VariableHistory([], {}, {}, {}, {}, {})
+        trailing_start = months[0]
 
         gross_rows = self.session.execute(
             select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
                 Transaction.category_id.label("category_id"),
                 Category.name.label("category_name"),
                 Category.icon.label("category_icon"),
@@ -4220,73 +4407,344 @@ class ForecastService:
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.type == TransactionType.expense,
+                Transaction.origin_rule_id.is_(None),
                 Transaction.date.between(trailing_start, trailing_end),
             )
-            .group_by(Transaction.category_id, Category.name, Category.icon)
+            .group_by(
+                "year",
+                "month",
+                Transaction.category_id,
+                Category.name,
+                Category.icon,
+            )
         ).all()
 
-        gross_by_category: dict[int, tuple[str, str | None, int]] = {
-            int(row.category_id): (
-                str(row.category_name),
-                row.category_icon,
-                int(row.gross or 0),
+        category_info: dict[int, tuple[str, str | None]] = {}
+        expense_by_category: dict[int, dict[date, int]] = {}
+        for row in gross_rows:
+            category_id = int(row.category_id)
+            bucket = date(int(row.year), int(row.month), 1)
+            category_info[category_id] = (str(row.category_name), row.category_icon)
+            expense_by_category.setdefault(category_id, {})[bucket] = int(
+                row.gross or 0
             )
-            for row in gross_rows
-        }
 
         ExpenseTxn = aliased(Transaction)
         ReimbursementTxn = aliased(Transaction)
-        reimb_by_category = {
-            int(row.category_id): int(row.reimbursed or 0)
-            for row in self.session.execute(
-                select(
-                    ExpenseTxn.category_id.label("category_id"),
-                    func.coalesce(
-                        func.sum(ReimbursementAllocation.amount_cents),
-                        0,
-                    ).label("reimbursed"),
-                )
-                .join(
-                    ExpenseTxn,
-                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
-                )
-                .join(
-                    ReimbursementTxn,
-                    ReimbursementAllocation.reimbursement_transaction_id
-                    == ReimbursementTxn.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ExpenseTxn.user_id == self.user_id,
-                    ReimbursementTxn.user_id == self.user_id,
-                    ExpenseTxn.deleted_at.is_(None),
-                    ExpenseTxn.type == TransactionType.expense,
-                    ExpenseTxn.date.between(trailing_start, trailing_end),
-                    ReimbursementTxn.deleted_at.is_(None),
-                    ReimbursementTxn.type == TransactionType.income,
-                    ReimbursementTxn.is_reimbursement.is_(True),
-                )
-                .group_by(ExpenseTxn.category_id)
+        reimbursement_rows = self.session.execute(
+            select(
+                func.strftime("%Y", ExpenseTxn.date).label("year"),
+                func.strftime("%m", ExpenseTxn.date).label("month"),
+                ExpenseTxn.category_id.label("category_id"),
+                func.coalesce(
+                    func.sum(ReimbursementAllocation.amount_cents),
+                    0,
+                ).label("reimbursed"),
             )
-        }
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.origin_rule_id.is_(None),
+                ExpenseTxn.date.between(trailing_start, trailing_end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by("year", "month", ExpenseTxn.category_id)
+        ).all()
+        for row in reimbursement_rows:
+            category_id = int(row.category_id)
+            bucket = date(int(row.year), int(row.month), 1)
+            gross = expense_by_category.get(category_id, {}).get(bucket, 0)
+            expense_by_category.setdefault(category_id, {})[bucket] = max(
+                0, gross - int(row.reimbursed or 0)
+            )
 
-        estimates: dict[int, ForecastService.VariableEstimate] = {}
-        for category_id, row in gross_by_category.items():
-            if category_id in covered_category_ids:
-                continue
-            net = max(0, int(row[2]) - int(reimb_by_category.get(category_id, 0)))
-            if net <= 0:
-                continue
-            monthly = int(round(net / 3))
-            if monthly <= 0:
-                continue
-            estimates[category_id] = ForecastService.VariableEstimate(
-                category_id=category_id,
-                name=row[0],
-                icon=row[1],
-                amount_cents=monthly,
+        income_rows = self.session.execute(
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                Transaction.category_id.label("category_id"),
+                Category.name.label("category_name"),
+                Category.icon.label("category_icon"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
             )
-        return estimates
+            .join(Category, Category.id == Transaction.category_id)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.income,
+                Transaction.is_reimbursement.is_(False),
+                Transaction.origin_rule_id.is_(None),
+                Transaction.date.between(trailing_start, trailing_end),
+            )
+            .group_by(
+                "year",
+                "month",
+                Transaction.category_id,
+                Category.name,
+                Category.icon,
+            )
+        ).all()
+        income_by_category: dict[int, dict[date, int]] = {}
+        for row in income_rows:
+            category_id = int(row.category_id)
+            bucket = date(int(row.year), int(row.month), 1)
+            category_info[category_id] = (str(row.category_name), row.category_icon)
+            income_by_category.setdefault(category_id, {})[bucket] = int(row.gross or 0)
+
+        history_rules = self.session.scalars(
+            select(RecurringRule).where(
+                RecurringRule.user_id == self.user_id,
+                RecurringRule.anchor_date <= trailing_end,
+                or_(
+                    RecurringRule.end_date.is_(None),
+                    RecurringRule.end_date >= trailing_start,
+                ),
+            )
+        ).all()
+        usd_quote: FxQuote | None = None
+        if any(rule.currency_code == CurrencyCode.usd for rule in history_rules):
+            usd_quote = FxRateService(self.session).usd_to_eur_quote_for_date(
+                today,
+                allow_stale_cache=True,
+                allow_static_fallback=True,
+            )
+        posted_rows = self.session.execute(
+            select(
+                Transaction.origin_rule_id.label("rule_id"),
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.origin_rule_id.is_not(None),
+                Transaction.date.between(trailing_start, trailing_end),
+            )
+            .group_by(Transaction.origin_rule_id, "year", "month")
+        ).all()
+        posted_buckets = {
+            (int(row.rule_id), date(int(row.year), int(row.month), 1))
+            for row in posted_rows
+        }
+        recurring_by_category: dict[
+            tuple[TransactionType, int], list[tuple[int, dict[date, int]]]
+        ] = {}
+        for rule in history_rules:
+            amount = int(rule.amount_cents)
+            if rule.currency_code == CurrencyCode.usd:
+                if usd_quote is None:
+                    raise RuntimeError("USD quote missing for forecast history")
+                amount = int(
+                    (Decimal(amount) * usd_quote.rate).quantize(
+                        Decimal("1"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
+            interval_count = int(rule.interval_count)
+            if rule.interval_unit == IntervalUnit.day:
+                monthly = int(amount * 30.44 / interval_count)
+            elif rule.interval_unit == IntervalUnit.week:
+                monthly = int(amount * 4.35 / interval_count)
+            elif rule.interval_unit == IntervalUnit.month:
+                monthly = int(amount / interval_count)
+            else:
+                occurrence = rule.anchor_date
+                amounts_by_month: dict[date, int] = {}
+                while occurrence <= trailing_end:
+                    if rule.end_date is not None and occurrence > rule.end_date:
+                        break
+                    if occurrence >= trailing_start:
+                        bucket = month_start(occurrence.year, occurrence.month)
+                        amounts_by_month[bucket] = (
+                            amounts_by_month.get(bucket, 0) + amount
+                        )
+                    next_occurrence = calculate_next_date(rule, occurrence)
+                    if next_occurrence <= occurrence:
+                        break
+                    occurrence = next_occurrence
+                key = (rule.type, int(rule.category_id))
+                recurring_by_category.setdefault(key, []).append(
+                    (int(rule.id), amounts_by_month)
+                )
+                continue
+            starts_on = month_start(rule.anchor_date.year, rule.anchor_date.month)
+            amounts_by_month = {
+                bucket: monthly
+                for bucket in months
+                if bucket >= starts_on
+                and (rule.end_date is None or bucket <= rule.end_date)
+            }
+            key = (rule.type, int(rule.category_id))
+            recurring_by_category.setdefault(key, []).append(
+                (int(rule.id), amounts_by_month)
+            )
+
+        for category_id, values in expense_by_category.items():
+            adjustments = recurring_by_category.get(
+                (TransactionType.expense, category_id), []
+            )
+            for bucket in months:
+                recurring = sum(
+                    amounts_by_month.get(bucket, 0)
+                    for rule_id, amounts_by_month in adjustments
+                    if (rule_id, bucket) not in posted_buckets
+                )
+                values[bucket] = max(0, values.get(bucket, 0) - recurring)
+        for category_id, values in income_by_category.items():
+            adjustments = recurring_by_category.get(
+                (TransactionType.income, category_id), []
+            )
+            for bucket in months:
+                recurring = sum(
+                    amounts_by_month.get(bucket, 0)
+                    for rule_id, amounts_by_month in adjustments
+                    if (rule_id, bucket) not in posted_buckets
+                )
+                values[bucket] = max(0, values.get(bucket, 0) - recurring)
+
+        expense_totals = {
+            bucket: sum(rows.get(bucket, 0) for rows in expense_by_category.values())
+            for bucket in months
+        }
+        income_totals = {
+            bucket: sum(rows.get(bucket, 0) for rows in income_by_category.values())
+            for bucket in months
+        }
+        return ForecastService.VariableHistory(
+            months=months,
+            expense_totals=expense_totals,
+            income_totals=income_totals,
+            expense_by_category=expense_by_category,
+            income_by_category=income_by_category,
+            category_info=category_info,
+        )
+
+    def _fit_variable_model(
+        self,
+        history: "ForecastService.VariableHistory",
+        *,
+        months: list[date] | None = None,
+    ) -> "ForecastService.VariableModel":
+        months = months if months is not None else history.months
+        history_months = len(months)
+        if not months:
+            neutral_factors = {month: 1.0 for month in range(1, 13)}
+            return ForecastService.VariableModel(
+                {}, {}, neutral_factors, neutral_factors.copy(), [], 0, False
+            )
+
+        recent_months = months[-min(12, history_months) :]
+        expense_base = int(
+            round(
+                median(history.expense_totals.get(month, 0) for month in recent_months)
+            )
+        )
+        income_base = int(
+            round(
+                median(history.income_totals.get(month, 0) for month in recent_months)
+            )
+        )
+
+        def build_estimates(
+            category_months: dict[int, dict[date, int]], total: int
+        ) -> dict[int, ForecastService.VariableEstimate]:
+            category_totals = {
+                category_id: sum(values.get(month, 0) for month in recent_months)
+                for category_id, values in category_months.items()
+            }
+            overall = sum(category_totals.values())
+            if total <= 0 or overall <= 0:
+                return {}
+            estimates = {
+                category_id: ForecastService.VariableEstimate(
+                    category_id=category_id,
+                    name=history.category_info[category_id][0],
+                    icon=history.category_info[category_id][1],
+                    amount_cents=int(round(total * amount / overall)),
+                )
+                for category_id, amount in category_totals.items()
+                if amount > 0
+            }
+            difference = total - sum(row.amount_cents for row in estimates.values())
+            if difference and estimates:
+                largest = max(estimates.values(), key=lambda row: row.amount_cents)
+                largest.amount_cents += difference
+            return estimates
+
+        expense_estimates = build_estimates(history.expense_by_category, expense_base)
+        income_estimates = build_estimates(history.income_by_category, income_base)
+        seasonality_applied = history_months >= 24
+
+        def seasonal_factors(totals: dict[date, int], base: int) -> dict[int, float]:
+            factors = {month: 1.0 for month in range(1, 13)}
+            if not seasonality_applied or base <= 0:
+                return factors
+            overall_median = float(median(totals.get(month, 0) for month in months))
+            for month_number in range(1, 13):
+                values = [
+                    totals.get(month, 0)
+                    for month in months
+                    if month.month == month_number
+                ]
+                if len(values) < 2:
+                    continue
+                weight = len(values) / (len(values) + 1)
+                seasonal_amount = max(
+                    0.0,
+                    base + weight * (float(median(values)) - overall_median),
+                )
+                factors[month_number] = seasonal_amount / base
+            return factors
+
+        expense_factors = seasonal_factors(history.expense_totals, expense_base)
+        income_factors = seasonal_factors(history.income_totals, income_base)
+        residuals = []
+        for month in months:
+            predicted_income = int(round(income_base * income_factors[month.month]))
+            predicted_expense = int(round(expense_base * expense_factors[month.month]))
+            residuals.append(
+                history.income_totals.get(month, 0)
+                - history.expense_totals.get(month, 0)
+                - (predicted_income - predicted_expense)
+            )
+
+        return ForecastService.VariableModel(
+            expense_estimates=expense_estimates,
+            income_estimates=income_estimates,
+            expense_factors=expense_factors,
+            income_factors=income_factors,
+            residuals=residuals,
+            history_months=history_months,
+            seasonality_applied=seasonality_applied,
+        )
+
+    def _prediction_paths(
+        self,
+        *,
+        model: "ForecastService.VariableModel",
+        today: date,
+        horizon: int,
+    ) -> list[list[int]]:
+        if model.history_months < 3 or not model.residuals:
+            return []
+        residual_median = int(round(median(model.residuals)))
+        centered = [value - residual_median for value in model.residuals]
+        rng = random.Random(f"{self.user_id}:{today.isoformat()}:{horizon}")
+        return [[rng.choice(centered) for _ in range(horizon + 1)] for _ in range(300)]
 
     def _clone_rules(
         self, rules: list["ForecastService.ProjectionRule"]
@@ -4311,14 +4769,64 @@ class ForecastService:
             for rule in rules
         ]
 
+    @staticmethod
+    def _percentile(values: list[int], percentile: float) -> int:
+        ordered = sorted(values)
+        index = int(round((len(ordered) - 1) * percentile))
+        return ordered[index]
+
+    @staticmethod
+    def _minimum_balance(
+        *,
+        start_balance_cents: int,
+        start_date: date,
+        end_date: date,
+        recurring_rows: list[dict[str, object]],
+        variable_income_cents: int,
+        variable_expense_cents: int,
+        one_time_rows: list[dict[str, object]],
+    ) -> int:
+        day_count = (end_date - start_date).days + 1
+        if day_count <= 0:
+            return start_balance_cents
+        daily_changes = {
+            start_date + timedelta(days=offset): 0 for offset in range(day_count)
+        }
+        for row in recurring_rows:
+            occurrence = date.fromisoformat(str(row["occurrence_date"]))
+            amount = int(row["amount_cents"])
+            daily_changes[occurrence] += (
+                amount if row["type"] == TransactionType.income.value else -amount
+            )
+        for row in one_time_rows:
+            amount = int(row["amount_cents"])
+            daily_changes[start_date] += (
+                amount if row["type"] == TransactionType.income.value else -amount
+            )
+
+        daily_income, income_remainder = divmod(variable_income_cents, day_count)
+        daily_expense, expense_remainder = divmod(variable_expense_cents, day_count)
+        balance = start_balance_cents
+        minimum = balance
+        for offset, day in enumerate(daily_changes):
+            balance += daily_changes[day]
+            balance += daily_income + (1 if offset < income_remainder else 0)
+            balance -= daily_expense + (1 if offset < expense_remainder else 0)
+            minimum = min(minimum, balance)
+        return minimum
+
     def _project(
         self,
         *,
+        today: date,
         month_starts: list[date],
         start_balance_cents: int,
         mode: str,
         rules: list["ForecastService.ProjectionRule"],
         variable_estimates: dict[int, "ForecastService.VariableEstimate"],
+        variable_income_estimates: dict[int, "ForecastService.VariableEstimate"],
+        variable_model: "ForecastService.VariableModel",
+        prediction_paths: list[list[int]],
         modified_rule_amounts: dict[int, tuple[int, date]] | None = None,
         one_time_events: dict[date, list["ForecastService.OneTimeEvent"]] | None = None,
         summary_only: bool = False,
@@ -4339,7 +4847,7 @@ class ForecastService:
                 while occurrence <= projection_end:
                     if rule.end_date is not None and occurrence > rule.end_date:
                         break
-                    if occurrence >= month_starts[0]:
+                    if occurrence > today:
                         fx_dates.add(occurrence)
                     next_occurrence = calculate_next_date(rule, occurrence)
                     if next_occurrence <= occurrence:
@@ -4357,10 +4865,116 @@ class ForecastService:
         first_negative_index: int | None = None
         total_net = 0
 
+        current_month_start = month_start(today.year, today.month)
+        current_month_end = month_end(today.year, today.month)
+        remaining_start = today + date.resolution
+        remaining_days = max(0, (current_month_end - today).days)
+        current_recurring_rows: list[dict[str, object]] = []
+        current_income = 0
+        current_expenses = 0
+        if remaining_days:
+            for rule in rules:
+                occurrence = rule.next_occurrence
+                while occurrence <= current_month_end:
+                    if rule.end_date is not None and occurrence > rule.end_date:
+                        break
+                    if occurrence > today:
+                        amount = int(rule.amount_cents)
+                        if (
+                            rule.source_rule_id is not None
+                            and rule.source_rule_id in modified_rule_amounts
+                            and occurrence
+                            >= modified_rule_amounts[rule.source_rule_id][1]
+                        ):
+                            amount = int(modified_rule_amounts[rule.source_rule_id][0])
+                        if rule.currency_code == CurrencyCode.usd:
+                            amount = int(
+                                (Decimal(amount) * fx_quotes[occurrence].rate).quantize(
+                                    Decimal("1"),
+                                    rounding=ROUND_HALF_UP,
+                                )
+                            )
+                        current_recurring_rows.append(
+                            {
+                                "rule_id": rule.source_rule_id,
+                                "name": rule.name,
+                                "type": rule.type.value,
+                                "amount_cents": amount,
+                                "occurrence_date": occurrence.isoformat(),
+                                "category_id": rule.category_id,
+                                "category_name": rule.category_name,
+                            }
+                        )
+                        if rule.type == TransactionType.income:
+                            current_income += amount
+                        else:
+                            current_expenses += amount
+                    next_occurrence = calculate_next_date(rule, occurrence)
+                    if next_occurrence <= occurrence:
+                        break
+                    occurrence = next_occurrence
+                rule.next_occurrence = occurrence
+
+        current_variable_income = 0
+        current_variable_expenses = 0
+        if mode == "full" and remaining_days:
+            current_factor_income = variable_model.income_factors[today.month]
+            current_factor_expense = variable_model.expense_factors[today.month]
+            current_variable_income = int(
+                round(
+                    sum(row.amount_cents for row in variable_income_estimates.values())
+                    * current_factor_income
+                    * remaining_days
+                    / monthrange(today.year, today.month)[1]
+                )
+            )
+            current_variable_expenses = int(
+                round(
+                    sum(row.amount_cents for row in variable_estimates.values())
+                    * current_factor_expense
+                    * remaining_days
+                    / monthrange(today.year, today.month)[1]
+                )
+            )
+            current_income += current_variable_income
+            current_expenses += current_variable_expenses
+
+        current_one_time_rows = [
+            {
+                "name": event.name,
+                "type": event.type.value,
+                "amount_cents": event.amount_cents,
+            }
+            for event in one_time_events.get(current_month_start, [])
+        ]
+        for row in current_one_time_rows:
+            if row["type"] == TransactionType.income.value:
+                current_income += int(row["amount_cents"])
+            else:
+                current_expenses += int(row["amount_cents"])
+
+        current_month_net = current_income - current_expenses
+        current_minimum = balance
+        if remaining_days:
+            current_minimum = self._minimum_balance(
+                start_balance_cents=balance,
+                start_date=remaining_start,
+                end_date=current_month_end,
+                recurring_rows=current_recurring_rows,
+                variable_income_cents=current_variable_income,
+                variable_expense_cents=current_variable_expenses,
+                one_time_rows=current_one_time_rows,
+            )
+        if current_minimum < 0:
+            first_negative_index = 0
+        balance += current_month_net
+
         for index, month_bucket in enumerate(month_starts):
+            month_open_balance = balance
             month_end_date = month_end(month_bucket.year, month_bucket.month)
             recurring_rows: list[dict[str, object]] = []
             variable_rows: list[dict[str, object]] = []
+            variable_income_rows: list[dict[str, object]] = []
             one_time_rows: list[dict[str, object]] = []
             income = 0
             expenses = 0
@@ -4411,8 +5025,9 @@ class ForecastService:
                 rule.next_occurrence = occurrence
 
             if mode == "full":
+                expense_factor = variable_model.expense_factors[month_bucket.month]
                 for value in variable_estimates.values():
-                    amount = value.amount_cents
+                    amount = int(round(value.amount_cents * expense_factor))
                     if amount <= 0:
                         continue
                     if not summary_only:
@@ -4425,6 +5040,22 @@ class ForecastService:
                             }
                         )
                     expenses += amount
+
+                income_factor = variable_model.income_factors[month_bucket.month]
+                for value in variable_income_estimates.values():
+                    amount = int(round(value.amount_cents * income_factor))
+                    if amount <= 0:
+                        continue
+                    if not summary_only:
+                        variable_income_rows.append(
+                            {
+                                "category_id": value.category_id,
+                                "name": value.name,
+                                "icon": value.icon,
+                                "amount_cents": amount,
+                            }
+                        )
+                    income += amount
 
             for event in one_time_events.get(month_bucket, []):
                 if not summary_only:
@@ -4443,7 +5074,20 @@ class ForecastService:
             end_balance = balance + income - expenses
             net = income - expenses
             total_net += net
-            if first_negative_index is None and end_balance < 0:
+            minimum_balance = self._minimum_balance(
+                start_balance_cents=month_open_balance,
+                start_date=month_bucket,
+                end_date=month_end_date,
+                recurring_rows=recurring_rows,
+                variable_income_cents=sum(
+                    int(row["amount_cents"]) for row in variable_income_rows
+                ),
+                variable_expense_cents=sum(
+                    int(row["amount_cents"]) for row in variable_rows
+                ),
+                one_time_rows=one_time_rows,
+            )
+            if first_negative_index is None and minimum_balance < 0:
                 first_negative_index = index + 1
 
             if not summary_only:
@@ -4454,26 +5098,91 @@ class ForecastService:
                         "projected_expenses_cents": expenses,
                         "projected_net_cents": net,
                         "end_balance_cents": end_balance,
-                        "crosses_negative": balance >= 0 and end_balance < 0,
+                        "end_balance_p10_cents": None,
+                        "end_balance_p90_cents": None,
+                        "minimum_balance_cents": minimum_balance,
+                        "crosses_negative": balance >= 0 and minimum_balance < 0,
                         "breakdown": {
                             "recurring_rules": recurring_rows,
                             "variable_estimates": variable_rows,
+                            "variable_income_estimates": variable_income_rows,
                             "one_time_events": one_time_rows,
                         },
                     }
                 )
             balance = end_balance
 
+        interval_available = mode == "full" and bool(prediction_paths) and bool(months)
+        if interval_available:
+            current_fraction = remaining_days / monthrange(today.year, today.month)[1]
+            simulated_by_month: list[list[int]] = [[] for _ in months]
+            for path in prediction_paths:
+                cumulative_residual = int(round(path[0] * current_fraction))
+                for index, month in enumerate(months):
+                    cumulative_residual += path[index + 1]
+                    simulated_by_month[index].append(
+                        int(month["end_balance_cents"]) + cumulative_residual
+                    )
+            for month, simulated in zip(months, simulated_by_month):
+                central = int(month["end_balance_cents"])
+                month["end_balance_p10_cents"] = min(
+                    central, self._percentile(simulated, 0.10)
+                )
+                month["end_balance_p90_cents"] = max(
+                    central, self._percentile(simulated, 0.90)
+                )
+
         month_count = len(month_starts)
         avg_monthly_net = int(round(total_net / month_count)) if month_count else 0
+        final_month = months[-1] if months else None
+        risk_months_until_negative = None
+        if current_minimum < 0:
+            risk_months_until_negative = 0
+        elif interval_available:
+            risk_months_until_negative = next(
+                (
+                    index + 1
+                    for index, month in enumerate(months)
+                    if int(month["end_balance_p10_cents"]) < 0
+                ),
+                None,
+            )
         return {
             "mode": mode,
             "start_balance_cents": start_balance_cents,
+            "current_month_net_cents": current_month_net,
             "months": months,
+            "model": {
+                "method": (
+                    "recurring_only"
+                    if mode == "recurring"
+                    else (
+                        "seasonal_median"
+                        if variable_model.seasonality_applied
+                        else "recent_median"
+                    )
+                ),
+                "history_months": variable_model.history_months,
+                "seasonality_applied": (
+                    mode == "full" and variable_model.seasonality_applied
+                ),
+                "prediction_interval_available": interval_available,
+            },
             "summary": {
                 "projected_balance_cents": balance,
+                "projected_balance_p10_cents": (
+                    int(final_month["end_balance_p10_cents"])
+                    if interval_available and final_month
+                    else None
+                ),
+                "projected_balance_p90_cents": (
+                    int(final_month["end_balance_p90_cents"])
+                    if interval_available and final_month
+                    else None
+                ),
                 "average_monthly_net_cents": avg_monthly_net,
                 "months_until_negative": first_negative_index,
+                "risk_months_until_negative": risk_months_until_negative,
             },
         }
 
@@ -4656,22 +5365,101 @@ class ForecastService:
         if not month_starts:
             raise ValueError("Invalid horizon")
         base_rules = self._load_projection_rules()
-        base_variable = self._trailing_variable_estimates(
+        variable_history = (
+            self._load_variable_history(today=today)
+            if mode == "full"
+            else ForecastService.VariableHistory([], {}, {}, {}, {}, {})
+        )
+        variable_model = self._fit_variable_model(variable_history)
+        prediction_paths = self._prediction_paths(
+            model=variable_model,
             today=today,
-            projection_start=month_starts[0],
+            horizon=horizon,
         )
         start_balance = self._starting_balance_cents(today=today)
 
         projection = self._project(
+            today=today,
             month_starts=month_starts,
             start_balance_cents=start_balance,
             mode=mode,
             rules=self._clone_rules(base_rules),
-            variable_estimates=base_variable,
+            variable_estimates=variable_model.expense_estimates,
+            variable_income_estimates=variable_model.income_estimates,
+            variable_model=variable_model,
+            prediction_paths=prediction_paths,
         )
         return {
             "horizon": horizon,
             **projection,
+        }
+
+    def backtest(self, *, today: date | None = None) -> dict[str, int | None]:
+        today = today or local_today()
+        history = self._load_variable_history(today=today)
+        model_errors: list[int] = []
+        baseline_errors: list[int] = []
+        covered = 0
+        interval_tests = 0
+        for index in range(3, len(history.months)):
+            training_months = history.months[:index]
+            target_month = history.months[index]
+            model = self._fit_variable_model(history, months=training_months)
+            predicted_income = int(
+                round(
+                    sum(row.amount_cents for row in model.income_estimates.values())
+                    * model.income_factors[target_month.month]
+                )
+            )
+            predicted_expense = int(
+                round(
+                    sum(row.amount_cents for row in model.expense_estimates.values())
+                    * model.expense_factors[target_month.month]
+                )
+            )
+            predicted_net = predicted_income - predicted_expense
+            actual_net = (
+                history.income_totals[target_month]
+                - history.expense_totals[target_month]
+            )
+            previous_three = training_months[-3:]
+            baseline_net = -int(
+                round(
+                    sum(history.expense_totals[month] for month in previous_three)
+                    / len(previous_three)
+                )
+            )
+            model_errors.append(abs(actual_net - predicted_net))
+            baseline_errors.append(abs(actual_net - baseline_net))
+
+            if model.residuals:
+                residual_median = int(round(median(model.residuals)))
+                interval_values = [
+                    predicted_net + residual - residual_median
+                    for residual in model.residuals
+                ]
+                lower = self._percentile(interval_values, 0.10)
+                upper = self._percentile(interval_values, 0.90)
+                covered += int(lower <= actual_net <= upper)
+                interval_tests += 1
+
+        return {
+            "months_evaluated": len(model_errors),
+            "model_mae_cents": (
+                int(round(sum(model_errors) / len(model_errors)))
+                if model_errors
+                else None
+            ),
+            "baseline_mae_cents": (
+                int(round(sum(baseline_errors) / len(baseline_errors)))
+                if baseline_errors
+                else None
+            ),
+            "interval_coverage_bps": (
+                int(round(covered * 10_000 / interval_tests))
+                if interval_tests
+                else None
+            ),
         }
 
     def scenario(self, *, payload: ForecastScenarioIn, mode: str) -> dict[str, object]:
@@ -4683,18 +5471,30 @@ class ForecastService:
             raise ValueError("Invalid horizon")
 
         base_rules = self._load_projection_rules()
-        base_variable = self._trailing_variable_estimates(
-            today=today,
-            projection_start=month_starts[0],
+        variable_history = (
+            self._load_variable_history(today=today)
+            if mode == "full"
+            else ForecastService.VariableHistory([], {}, {}, {}, {}, {})
         )
+        variable_model = self._fit_variable_model(variable_history)
+        prediction_paths = self._prediction_paths(
+            model=variable_model,
+            today=today,
+            horizon=int(payload.horizon),
+        )
+        base_variable = variable_model.expense_estimates
         start_balance = self._starting_balance_cents(today=today)
 
         baseline = self._project(
+            today=today,
             month_starts=month_starts,
             start_balance_cents=start_balance,
             mode=mode,
             rules=self._clone_rules(base_rules),
             variable_estimates=base_variable,
+            variable_income_estimates=variable_model.income_estimates,
+            variable_model=variable_model,
+            prediction_paths=prediction_paths,
         )
 
         (
@@ -4711,11 +5511,15 @@ class ForecastService:
         )
 
         scenario_projection = self._project(
+            today=today,
             month_starts=month_starts,
             start_balance_cents=start_balance,
             mode=mode,
             rules=scenario_rules,
             variable_estimates=scenario_variable,
+            variable_income_estimates=variable_model.income_estimates,
+            variable_model=variable_model,
+            prediction_paths=prediction_paths,
             modified_rule_amounts=modified_amounts,
             one_time_events=one_time_events,
         )
@@ -4805,11 +5609,15 @@ class ForecastService:
                         projection_start=month_starts[0],
                     )
                     single_projection = self._project(
+                        today=today,
                         month_starts=month_starts,
                         start_balance_cents=start_balance,
                         mode=mode,
                         rules=single_rules,
                         variable_estimates=single_variable,
+                        variable_income_estimates=variable_model.income_estimates,
+                        variable_model=variable_model,
+                        prediction_paths=prediction_paths,
                         modified_rule_amounts=single_modified_amounts,
                         one_time_events=single_one_time,
                     )
@@ -5623,6 +6431,110 @@ class BudgetService:
         )
         return tmpl
 
+    def apply_template_from(self, data: BudgetTemplateApplyFromIn) -> BudgetTemplate:
+        if data.frequency == BudgetFrequency.monthly and data.starts_on.day != 1:
+            raise ValueError("Monthly budgets must start on the first of a month")
+        if data.frequency == BudgetFrequency.yearly and (
+            data.starts_on.month != 1 or data.starts_on.day != 1
+        ):
+            raise ValueError("Yearly budgets must start on January 1")
+
+        if data.category_id is not None:
+            category = self.session.get(Category, data.category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if category.type != TransactionType.expense:
+                raise ValueError("Budgets can only be set for expense categories")
+
+        category_filter = (
+            BudgetTemplate.category_id.is_(None)
+            if data.category_id is None
+            else BudgetTemplate.category_id == data.category_id
+        )
+        existing = self.session.scalar(
+            select(BudgetTemplate).where(
+                BudgetTemplate.user_id == self.user_id,
+                BudgetTemplate.frequency == data.frequency,
+                BudgetTemplate.starts_on == data.starts_on,
+                category_filter,
+            )
+        )
+        if existing:
+            existing.amount_cents = data.amount_cents
+            template = existing
+            operation = "update"
+        else:
+            active = self.session.scalar(
+                select(BudgetTemplate)
+                .where(
+                    BudgetTemplate.user_id == self.user_id,
+                    BudgetTemplate.frequency == data.frequency,
+                    BudgetTemplate.starts_on < data.starts_on,
+                    (
+                        BudgetTemplate.ends_on.is_(None)
+                        | (BudgetTemplate.ends_on >= data.starts_on)
+                    ),
+                    category_filter,
+                )
+                .order_by(BudgetTemplate.starts_on.desc(), BudgetTemplate.id.desc())
+            )
+            next_template = self.session.scalar(
+                select(BudgetTemplate)
+                .where(
+                    BudgetTemplate.user_id == self.user_id,
+                    BudgetTemplate.frequency == data.frequency,
+                    BudgetTemplate.starts_on > data.starts_on,
+                    category_filter,
+                )
+                .order_by(BudgetTemplate.starts_on.asc(), BudgetTemplate.id.asc())
+            )
+
+            ends_on = active.ends_on if active else None
+            if next_template:
+                next_boundary = next_template.starts_on - timedelta(days=1)
+                if ends_on is None or ends_on > next_boundary:
+                    ends_on = next_boundary
+            if active:
+                active.ends_on = data.starts_on - timedelta(days=1)
+
+            template = BudgetTemplate(
+                user_id=self.user_id,
+                frequency=data.frequency,
+                category_id=data.category_id,
+                amount_cents=data.amount_cents,
+                starts_on=data.starts_on,
+                ends_on=ends_on,
+            )
+            self.session.add(template)
+            operation = "create"
+
+        if data.frequency == BudgetFrequency.monthly:
+            self.session.execute(
+                delete(BudgetOverride).where(
+                    BudgetOverride.user_id == self.user_id,
+                    BudgetOverride.year == data.starts_on.year,
+                    BudgetOverride.month == data.starts_on.month,
+                    BudgetOverride.category_id.is_(None)
+                    if data.category_id is None
+                    else BudgetOverride.category_id == data.category_id,
+                )
+            )
+
+        self.session.commit()
+        self.session.refresh(template)
+        log_event(
+            logger,
+            logging.INFO,
+            "budget_template_applied_from",
+            template_id=template.id,
+            frequency=template.frequency.value,
+            category_id=template.category_id,
+            amount_cents=template.amount_cents,
+            starts_on=template.starts_on.isoformat(),
+            operation=operation,
+        )
+        return template
+
     def delete_template(self, template_id: int) -> None:
         tmpl = self.session.get(BudgetTemplate, template_id)
         if not tmpl or tmpl.user_id != self.user_id:
@@ -6090,9 +7002,9 @@ class BudgetService:
             "sparkline": sparkline,
         }
 
-    def dashboard_category_budget_pulse(
+    def dashboard_category_budget_overview(
         self, *, today: Optional[date] = None
-    ) -> list[dict[str, object]]:
+    ) -> dict[str, object]:
         current = today or date.today()
         effective = self.effective_budgets_for_month(current.year, current.month)
         spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
@@ -6127,7 +7039,17 @@ class BudgetService:
             ),
             reverse=True,
         )
-        return rows[:3]
+        if not rows:
+            return {}
+        return {
+            "total": len(rows),
+            "needs_attention": sum(
+                int(row["remaining_cents"]) < 0 or float(row["velocity_ratio"]) > 1.1
+                for row in rows
+            ),
+            "priority": rows[0],
+            "items": rows[:3],
+        }
 
     def yearly_budgets_for_year(
         self, year: int

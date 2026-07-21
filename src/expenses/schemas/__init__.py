@@ -235,12 +235,6 @@ class TransactionFiltersOut(BaseModel):
     query: Optional[str] = None
 
 
-class TransactionSearchOut(BaseModel):
-    raw_q: str
-    applied_tokens: list[dict[str, object]] = Field(default_factory=list)
-    free_terms: list[str] = Field(default_factory=list)
-
-
 class TransactionsResponseOut(BaseModel):
     items: list[TransactionListItemOut]
     page: int
@@ -248,7 +242,6 @@ class TransactionsResponseOut(BaseModel):
     has_more: bool
     period: PeriodOut
     filters: TransactionFiltersOut
-    search: TransactionSearchOut
     categories: list[CategorySummaryOut]
     tags: list[TransactionTagOut]
 
@@ -349,6 +342,12 @@ class DashboardCategoryBudgetPulseOut(BaseModel):
     velocity_ratio: float
 
 
+class DashboardCategoryBudgetSummaryOut(BaseModel):
+    total: int
+    needs_attention: int
+    priority: DashboardCategoryBudgetPulseOut
+
+
 class DashboardResponseOut(BaseModel):
     period: PeriodOut
     filters: DashboardFiltersOut
@@ -362,6 +361,7 @@ class DashboardResponseOut(BaseModel):
     durable_purchases: Optional[list[DashboardDurablePurchaseOut]] = None
     budget_pace: Optional[DashboardBudgetPaceOut] = None
     category_budget_pulse: Optional[list[DashboardCategoryBudgetPulseOut]] = None
+    category_budget_summary: Optional[DashboardCategoryBudgetSummaryOut] = None
 
 
 class InsightsFiltersOut(BaseModel):
@@ -645,6 +645,13 @@ class BudgetTemplateIn(BaseModel):
     ends_on: Optional[date] = None
 
 
+class BudgetTemplateApplyFromIn(BaseModel):
+    frequency: BudgetFrequency
+    category_id: Optional[int] = None
+    amount_cents: int = Field(..., ge=0)
+    starts_on: date
+
+
 class BudgetCategoryOut(BaseModel):
     id: int
     name: str
@@ -921,6 +928,7 @@ class ForecastOneTimeEventOut(BaseModel):
 class ForecastBreakdownOut(BaseModel):
     recurring_rules: list[ForecastRecurringRuleOut]
     variable_estimates: list[ForecastVariableEstimateOut]
+    variable_income_estimates: list[ForecastVariableEstimateOut]
     one_time_events: list[ForecastOneTimeEventOut]
 
 
@@ -930,20 +938,35 @@ class ForecastMonthOut(BaseModel):
     projected_expenses_cents: int
     projected_net_cents: int
     end_balance_cents: int
+    end_balance_p10_cents: Optional[int] = None
+    end_balance_p90_cents: Optional[int] = None
+    minimum_balance_cents: int
     crosses_negative: bool
     breakdown: ForecastBreakdownOut
 
 
 class ForecastSummaryOut(BaseModel):
     projected_balance_cents: int
+    projected_balance_p10_cents: Optional[int] = None
+    projected_balance_p90_cents: Optional[int] = None
     average_monthly_net_cents: int
     months_until_negative: Optional[int] = None
+    risk_months_until_negative: Optional[int] = None
+
+
+class ForecastModelOut(BaseModel):
+    method: Literal["recurring_only", "recent_median", "seasonal_median"]
+    history_months: int
+    seasonality_applied: bool
+    prediction_interval_available: bool
 
 
 class ForecastProjectionOut(BaseModel):
     mode: Literal["recurring", "full"]
     start_balance_cents: int
+    current_month_net_cents: int
     months: list[ForecastMonthOut]
+    model: ForecastModelOut
     summary: ForecastSummaryOut
 
 

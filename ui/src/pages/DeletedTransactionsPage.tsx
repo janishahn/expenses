@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import TransactionDescription from "../components/TransactionDescription"
+import {
+  FinancialPanel,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 
 type DeletedTransaction = {
   id: number
@@ -35,6 +39,10 @@ function DeletedTransactionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
     },
   })
 
@@ -73,48 +81,63 @@ function DeletedTransactionsPage() {
       />
 
       {data.transactions.length === 0 ? (
-        <AppCard className="p-10 text-center">
+        <FinancialPanel role="ledger" className="p-10 text-center">
           <p className="font-head text-lg font-bold text-text">No deleted transactions</p>
           <p className="text-sm text-muted">
             Deleted transactions will appear here for recovery.
           </p>
-        </AppCard>
+        </FinancialPanel>
       ) : (
-        <div className="space-y-3">
+        <FinancialPanel role="ledger">
+          <SectionHeading>
+            <div>
+              <p className="mono-meta uppercase text-muted">Recovery queue</p>
+              <h2 className="mt-1 font-head text-lg font-bold text-text">
+                {data.transactions.length} deleted {data.transactions.length === 1 ? "entry" : "entries"}
+              </h2>
+            </div>
+            <span className="chip">Restore or remove forever</span>
+          </SectionHeading>
           {data.transactions.map((txn) => (
-            <AppCard
+            <article
               key={txn.id}
-              className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+              data-testid={`deleted-transaction-${txn.id}`}
+              className="flex flex-col gap-4 border-b border-border p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between md:p-5"
             >
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      txn.type === "income"
-                        ? "bg-semantic-green/10 text-semantic-green"
-                        : "bg-semantic-red/10 text-semantic-red"
-                    }`}
-                  >
-                    {txn.type}
-                  </span>
-                  <span className="font-mono font-semibold text-text">
-                    {formatCurrency(txn.amount_cents)} €
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-text">
-                  {txn.title || txn.category?.name || "Untitled"}
-                </p>
-                <TransactionDescription
-                  markdown={txn.description}
-                  compact
-                  clamp
-                  className="mt-1"
+              <div className="flex min-w-0 items-start gap-3">
+                <CategoryIcon
+                  icon={null}
+                  label={txn.category?.name ?? "Uncategorized"}
                 />
-                <p className="text-xs text-muted">
-                  {formatEuroDate(txn.date)}
-                  {txn.category && ` · ${txn.category.name}`}
-                  {txn.deleted_at && ` · Deleted ${formatEuroDateTime(txn.deleted_at)}`}
-                </p>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center gap-3">
+                    <span className="mono-meta uppercase text-muted">{txn.type}</span>
+                    <span
+                      className={`font-mono font-semibold ${
+                        txn.type === "income"
+                          ? "text-semantic-green"
+                          : "text-semantic-red"
+                      }`}
+                    >
+                      {txn.type === "expense" ? "−" : "+"}
+                      {formatCurrency(txn.amount_cents)} €
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-text">
+                    {txn.title || txn.category?.name || "Untitled"}
+                  </p>
+                  <TransactionDescription
+                    markdown={txn.description}
+                    compact
+                    clamp
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted">
+                    {formatEuroDate(txn.date)}
+                    {txn.category && ` · ${txn.category.name}`}
+                    {txn.deleted_at && ` · Deleted ${formatEuroDateTime(txn.deleted_at)}`}
+                  </p>
+                </div>
               </div>
               <div className="flex gap-2">
                 <AppButton
@@ -135,9 +158,9 @@ function DeletedTransactionsPage() {
                   Delete forever
                 </AppButton>
               </div>
-            </AppCard>
+            </article>
           ))}
-        </div>
+        </FinancialPanel>
       )}
     </section>
   )

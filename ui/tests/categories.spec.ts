@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test"
+import { test, expect, type APIRequestContext } from "./fixtures"
 import { getCsrfToken } from "./helpers"
 
 async function createCategory(
@@ -43,58 +43,80 @@ test.describe("Categories Page", () => {
     await page.goto("/categories")
   })
 
-  test("should keep the desktop editor sticky", async ({ page }) => {
-    const editorPosition = await page
-      .locator("form", { has: page.getByRole("button", { name: "Create category" }) })
-      .evaluate((node) => getComputedStyle(node).position)
-    expect(editorPosition).toBe("sticky")
+  test("should open the category editor from the page action", async ({ page }) => {
+    await expect(page.getByTestId("category-library")).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Add category" })).toBeHidden()
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    await expect(page.getByRole("dialog", { name: "Add category" })).toBeVisible()
+  })
+
+  test("clears a failed create request when reopening the category editor", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryName = `E2E Duplicate Category ${Date.now()}`
+    await createCategory(request, token, categoryName, "expense")
+
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    let dialog = page.getByRole("dialog", { name: "Add category" })
+    await dialog.getByRole("textbox", { name: "Name" }).fill(categoryName)
+    await dialog.getByRole("button", { name: "Add category" }).click()
+    await expect(dialog.locator(".text-semantic-red")).toBeVisible()
+
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    dialog = page.getByRole("dialog", { name: "Add category" })
+    await expect(dialog.locator(".text-semantic-red")).toHaveCount(0)
   })
 
   test("should create category with icon selected from picker", async ({ page }) => {
     const categoryName = `E2E Icon ${Date.now()}`
-    await page.getByRole("textbox", { name: "Name" }).fill(categoryName)
-    await page.getByLabel("Type").selectOption("expense")
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add category" })
+    await dialog.getByRole("textbox", { name: "Name" }).fill(categoryName)
+    await dialog.getByLabel("Type").selectOption("expense")
 
-    const createForm = page.locator("form", {
-      has: page.getByRole("button", { name: "Create category" }),
-    })
+    const createForm = dialog.locator("form")
     const iconGrid = createForm.locator("text=Icon").locator("..").locator("div.grid")
     await expect(iconGrid).toBeVisible()
     const iconButton = iconGrid.locator("button").first()
     await iconButton.click()
     await expect(iconButton).toHaveClass(/border-accent/)
 
-    await page.getByRole("button", { name: "Create category" }).click()
+    await dialog.getByRole("button", { name: "Add category" }).click()
     await expect(page.locator("body")).toContainText(categoryName)
   })
 
   test("should create category from Search all icon picker mode", async ({ page }) => {
     const categoryName = `E2E Search Icon ${Date.now()}`
-    await page.getByRole("textbox", { name: "Name" }).fill(categoryName)
-    await page.getByLabel("Type").selectOption("expense")
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add category" })
+    await dialog.getByRole("textbox", { name: "Name" }).fill(categoryName)
+    await dialog.getByLabel("Type").selectOption("expense")
 
-    const createForm = page.locator("form", {
-      has: page.getByRole("button", { name: "Create category" }),
-    })
+    const createForm = dialog.locator("form")
     await createForm.getByRole("button", { name: "Search all" }).click()
     await createForm.getByRole("textbox", { name: "Search all icons" }).fill("pizza")
     await createForm.getByRole("button", { name: "Pick icon pizza" }).click()
     await expect(createForm).toContainText("Selected: pizza")
 
-    await page.getByRole("button", { name: "Create category" }).click()
+    await dialog.getByRole("button", { name: "Add category" }).click()
     await expect(page.locator("body")).toContainText(categoryName)
   })
 
   test("should create, archive, and restore a category", async ({ page }) => {
     const categoryName = `E2E Category ${Date.now()}`
-    await page.getByRole("textbox", { name: "Name" }).fill(categoryName)
-    await page.getByLabel("Type").selectOption("expense")
-    await page.getByRole("button", { name: "Create category" }).click()
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add category" })
+    await dialog.getByRole("textbox", { name: "Name" }).fill(categoryName)
+    await dialog.getByLabel("Type").selectOption("expense")
+    await dialog.getByRole("button", { name: "Add category" }).click()
 
     const activeRow = page.locator(".divide-y > div", { hasText: categoryName })
-      .filter({ has: page.getByRole("button", { name: "Archive" }) })
+      .filter({ has: page.getByRole("button", { name: `Archive ${categoryName}` }) })
     await expect(activeRow).toBeVisible()
-    await activeRow.getByRole("button", { name: "Archive" }).dispatchEvent("click")
+    await activeRow.getByRole("button", { name: `Archive ${categoryName}` }).click()
 
     const archivedRow = page.locator(".divide-y > div", { hasText: categoryName })
       .filter({ has: page.getByRole("button", { name: "Restore" }) })
@@ -107,21 +129,21 @@ test.describe("Categories Page", () => {
   test("should edit a category on desktop", async ({ page }) => {
     const categoryName = `E2E Edit ${Date.now()}`
     const updatedName = `${categoryName} Updated`
-    await page.getByRole("textbox", { name: "Name" }).fill(categoryName)
-    await page.getByLabel("Type").selectOption("expense")
-    await page.getByRole("button", { name: "Create category" }).click()
+    await page.getByRole("button", { name: "Add category" }).first().click()
+    const createDialog = page.getByRole("dialog", { name: "Add category" })
+    await createDialog.getByRole("textbox", { name: "Name" }).fill(categoryName)
+    await createDialog.getByLabel("Type").selectOption("expense")
+    await createDialog.getByRole("button", { name: "Add category" }).click()
 
     const activeRow = page.locator(".divide-y > div", { hasText: categoryName })
-      .filter({ has: page.getByRole("button", { name: "Archive" }) })
+      .filter({ has: page.getByRole("button", { name: `Archive ${categoryName}` }) })
     await expect(activeRow).toBeVisible()
-    await activeRow.getByRole("button", { name: "Edit" }).first().click()
+    await activeRow.getByRole("button", { name: `Edit ${categoryName}` }).click()
 
-    const editorCard = page.locator("form", {
-      has: page.getByRole("button", { name: "Save changes" }),
-    })
-    await expect(editorCard).toBeVisible()
-    await editorCard.getByRole("textbox", { name: "Name" }).fill(updatedName)
-    await editorCard.getByRole("button", { name: "Save changes" }).click()
+    const editDialog = page.getByRole("dialog", { name: "Edit category" })
+    await expect(editDialog).toBeVisible()
+    await editDialog.getByRole("textbox", { name: "Name" }).fill(updatedName)
+    await editDialog.getByRole("button", { name: "Save changes" }).click()
 
     await expect(page.locator("body")).toContainText(updatedName)
   })
@@ -141,10 +163,10 @@ test.describe("Categories Page", () => {
     await page.getByRole("combobox", { name: "Source" }).selectOption(String(sourceId))
     await page.getByRole("combobox", { name: "Target" }).selectOption(String(targetId))
 
-    await page.getByRole("button", { name: "Preview" }).click()
+    await page.getByRole("button", { name: "Preview", exact: true }).click()
     await expect(page.getByText("Transactions: 0")).toBeVisible()
 
-    await page.getByRole("button", { name: "Merge" }).click()
+    await page.getByRole("button", { name: "Merge", exact: true }).click()
     await expect(page.getByText("Confirm category merge")).toBeVisible()
     await page.getByRole("button", { name: "Confirm merge" }).click()
 
@@ -187,11 +209,11 @@ test.describe("Categories Page", () => {
     await page.getByRole("combobox", { name: "Source" }).selectOption(String(sourceId))
     await page.getByRole("combobox", { name: "Target" }).selectOption(String(targetId))
 
-    await page.getByRole("button", { name: "Preview" }).click()
+    await page.getByRole("button", { name: "Preview", exact: true }).click()
     await expect(page.getByText("Merge failed")).toBeVisible()
     await expect(page.getByText("Temporary preview failure")).toBeVisible()
 
-    await page.getByRole("button", { name: "Merge" }).click()
+    await page.getByRole("button", { name: "Merge", exact: true }).click()
     await expect(page.getByText("Confirm category merge")).toBeVisible()
     await page.getByRole("button", { name: "Confirm merge" }).click()
 
@@ -219,10 +241,10 @@ test.describe("Categories Page", () => {
     await page.getByRole("combobox", { name: "Source" }).selectOption(String(sourceId))
     await page.getByRole("combobox", { name: "Target" }).selectOption(String(targetId))
 
-    await page.getByRole("button", { name: "Preview" }).click()
+    await page.getByRole("button", { name: "Preview", exact: true }).click()
     await expect(page.getByText("Budget templates: 1")).toBeVisible()
 
-    await page.getByRole("button", { name: "Merge" }).click()
+    await page.getByRole("button", { name: "Merge", exact: true }).click()
     await page.getByRole("button", { name: "Confirm merge" }).click()
 
     await expect(page.getByText("Guarded budget conflict")).toBeVisible()
@@ -230,7 +252,7 @@ test.describe("Categories Page", () => {
 
     const activeRow = page
       .locator(".divide-y > div", { hasText: sourceName })
-      .filter({ has: page.getByRole("button", { name: "Archive" }) })
+      .filter({ has: page.getByRole("button", { name: `Archive ${sourceName}` }) })
     await expect(activeRow).toBeVisible()
   })
 

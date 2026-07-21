@@ -285,8 +285,9 @@ export type SpendingChatToolCallEndEvent = {
   type: "tool_call_end"
   tool_call_id: string
   tool_name: string
-  // Display-only preview, not source data; the UI uses only `success`.
+  // Display-only preview, not source data; the UI uses `success` and `result_summary`.
   result_preview: string
+  result_summary: string | null
   success: boolean
 }
 

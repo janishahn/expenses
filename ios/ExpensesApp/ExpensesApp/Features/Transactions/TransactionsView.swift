@@ -14,10 +14,7 @@ struct TransactionsView: View {
     @State private var draftCategoryID: Int?
     @State private var draftTagID: Int?
     @State private var draftPeriod: TransactionPeriodFilter = .all
-    @State private var searchAlert: TransactionSearchAlert?
-    @State private var isTranslatingSearch = false
     @State private var liveSearchTask: Task<Void, Never>?
-    @State private var lastTranslatedSearchQuery: String?
     @State private var appliedSearchQuery = ""
     @State private var appliedType = ""
     @State private var appliedCategoryID: Int?
@@ -35,16 +32,6 @@ struct TransactionsView: View {
                 if model.identity?.authenticated != true {
                     SignedOutStateSection()
                 } else {
-                    if model.llmEnabled, canAskSearch || isTranslatingSearch {
-                        SearchAskSection(
-                            query: draftSearchQuery,
-                            isLoading: isTranslatingSearch,
-                            onAsk: {
-                                Task { await translateNaturalLanguageSearch() }
-                            }
-                        )
-                    }
-
                     if listMode != .deleted, hasStructuredFilters {
                         FilterSummarySection(
                             labels: activeFilterLabels,
@@ -151,7 +138,7 @@ struct TransactionsView: View {
             .searchable(
                 text: $draftSearchQuery,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search transactions"
+                prompt: "Search titles and descriptions"
             )
             .onSubmit(of: .search, applyFilters)
             .onChange(of: draftSearchQuery) { _, _ in
@@ -228,13 +215,6 @@ struct TransactionsView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
-            .alert(item: $searchAlert) { alert in
-                Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    dismissButton: .default(Text("OK"))
-                )
-            }
             .task(id: listMode) {
                 await loadSelectedMode()
             }
@@ -305,7 +285,7 @@ struct TransactionsView: View {
 
     private func scheduleLiveSearch() {
         liveSearchTask?.cancel()
-        guard listMode != .deleted, !isTranslatingSearch else {
+        guard listMode != .deleted else {
             return
         }
 
@@ -320,39 +300,13 @@ struct TransactionsView: View {
                 return
             }
             await MainActor.run {
-                guard query != appliedSearchQuery, !isTranslatingSearch else {
+                guard query != appliedSearchQuery else {
                     return
                 }
                 appliedSearchQuery = query
                 Task { await loadSelectedMode() }
             }
         }
-    }
-
-    private func translateNaturalLanguageSearch() async {
-        let query = draftSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            return
-        }
-        guard !isTranslatingSearch else {
-            return
-        }
-        liveSearchTask?.cancel()
-        isTranslatingSearch = true
-        defer { isTranslatingSearch = false }
-
-        guard let result = await model.translateSearchQuery(query) else {
-            searchAlert = TransactionSearchAlert(message: model.lastError?.message ?? "Search could not be translated.")
-            return
-        }
-        if result.clarificationNeeded || result.query.isEmpty {
-            searchAlert = TransactionSearchAlert(message: result.clarificationQuestion ?? "Search could not be translated.")
-            return
-        }
-        draftSearchQuery = result.query
-        appliedSearchQuery = result.query
-        lastTranslatedSearchQuery = result.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        await loadSelectedMode()
     }
 
     private func clearFilters() {
@@ -416,11 +370,6 @@ struct TransactionsView: View {
         hasStructuredFilters || !appliedSearchQuery.isEmpty
     }
 
-    private var canAskSearch: Bool {
-        let query = draftSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        return listMode != .deleted && !query.isEmpty && query != lastTranslatedSearchQuery
-    }
-
     private var activeFilterLabels: [String] {
         var labels: [String] = []
         if appliedPeriod != .all {
@@ -438,39 +387,6 @@ struct TransactionsView: View {
             labels.append(tag.name)
         }
         return labels
-    }
-}
-
-private struct TransactionSearchAlert: Identifiable {
-    let id = UUID()
-    let title = "Search"
-    let message: String
-}
-
-private struct SearchAskSection: View {
-    let query: String
-    let isLoading: Bool
-    var onAsk: () -> Void
-
-    var body: some View {
-        Section {
-            Button {
-                onAsk()
-            } label: {
-                HStack(spacing: 10) {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "sparkles")
-                    }
-                    Text(isLoading ? "Asking" : "Ask \"\(query)\"")
-                        .lineLimit(1)
-                    Spacer()
-                }
-            }
-            .disabled(isLoading)
-        }
     }
 }
 

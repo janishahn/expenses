@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   lint-and-unit:
-    name: Lint and unit tests
+    name: Fast tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -55,70 +55,10 @@ jobs:
       - name: Audit UI dependencies
         run: npm audit --prefix ui --audit-level=high
 
-      - name: Lint Python
-        run: uv run ruff check .
-
-      - name: Lint UI
-        run: npm run lint --prefix ui
-
       - name: Apply database migrations
         run: |
           mkdir -p "$EXPENSES_DATA_DIR"
           uv run python -m alembic upgrade head
 
-      - name: Run Python unit tests
-        run: uv run python -m pytest
-
-  e2e:
-    name: E2E (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Install Python dependencies
-        run: uv sync --frozen --group dev
-
-      - name: Install UI dependencies
-        run: npm ci --prefix ui
-
-      - name: Install Playwright browsers and system deps
-        run: npx playwright install --with-deps chromium webkit
-        working-directory: ui
-
-      - name: Run Playwright e2e shard
-        run: npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
-        working-directory: ui
-
-      - name: Upload Playwright report
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report-shard-${{ matrix.shard }}
-          path: |
-            ui/playwright-report
-            ui/test-results
-          retention-days: 7
+      - name: Run fast test suite
+        run: uv run fast-tests

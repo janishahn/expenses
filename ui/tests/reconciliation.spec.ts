@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 
 const emptyReconciliation = {
   summary: {
@@ -35,6 +35,22 @@ const previewPayload = {
 }
 
 test.describe("Reconciliation", () => {
+  test("shows focus on the visible CSV picker", async ({ page }) => {
+    await page.route("**/api/reconciliation", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(emptyReconciliation),
+      })
+    })
+
+    await page.goto("/reconciliation")
+    await page.getByLabel("CSV file").focus()
+    const visiblePicker = page.locator('label.field[for="reconciliation-file"]')
+    await expect(visiblePicker).toHaveCSS("outline-style", "solid")
+    await expect(visiblePicker).toHaveCSS("outline-width", "2px")
+  })
+
   test("clears the import preview when upload inputs change", async ({ page }) => {
     await page.route("**/api/reconciliation", async (route) => {
       await route.fulfill({
@@ -57,6 +73,7 @@ test.describe("Reconciliation", () => {
       mimeType: "text/csv",
       buffer: Buffer.from("first"),
     })
+    await expect(page.getByText("first.csv", { exact: true })).toBeVisible()
     await page.getByRole("button", { name: "Preview CSV" }).click()
     await expect(page.getByRole("button", { name: "Import rows" })).toBeVisible()
 
@@ -71,6 +88,7 @@ test.describe("Reconciliation", () => {
       mimeType: "text/csv",
       buffer: Buffer.from("second"),
     })
+    await expect(page.getByText("second.csv", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Import rows" })).toHaveCount(0)
   })
 })

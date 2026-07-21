@@ -4,22 +4,28 @@ from io import BytesIO
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
 from expenses.api import routes
 from expenses.core.config import get_settings
-from expenses.db.session import Base
+from expenses.core.periods import Period
 from expenses.db.models import Category, Transaction, TransactionType
+from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.schemas import TransactionIn
-from expenses.services import TransactionService
+from expenses.services import (
+    ReimbursementService,
+    TransactionFilters,
+    TransactionService,
+)
 
 
 def make_session():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}
     )
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     return session_local()
@@ -151,6 +157,162 @@ def test_period_all_includes_future_dated_transactions(
     export_response = api_client.get("/api/transactions/export.csv?period=all")
     assert export_response.status_code == 200
     assert "Future lunch" in export_response.text
+
+
+def test_transaction_summary_aggregates_the_filtered_query(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for transaction_type, amount_cents, title in [
+        ("expense", 5_000, "Summary lunch"),
+        ("expense", 2_000, "Different purchase"),
+        ("income", 10_000, "Summary pay"),
+    ]:
+        response = api_client.post(
+            "/api/transactions",
+            json={
+                "date": "2025-01-10",
+                "occurred_at": "2025-01-10T12:00:00",
+                "type": transaction_type,
+                "amount_cents": amount_cents,
+                "title": title,
+            },
+            headers=csrf_headers,
+        )
+        assert response.status_code == 200
+
+    response = api_client.get("/api/transactions/summary?period=all&q=Sumary")
+    assert response.status_code == 200
+    assert response.json() == {
+        "income_cents": 10_000,
+        "expense_cents": 5_000,
+        "net_cents": 5_000,
+        "count": 2,
+    }
+
+
+def test_transaction_summary_evaluates_fuzzy_filter_once() -> None:
+    session = make_session()
+    transactions = TransactionService(session)
+    created: dict[str, Transaction] = {}
+    for transaction_type, amount_cents, title, is_reimbursement in [
+        (TransactionType.expense, 5_000, "Summary lunch", False),
+        (TransactionType.expense, 2_000, "Different purchase", False),
+        (TransactionType.income, 10_000, "Summary pay", False),
+        (TransactionType.income, 1_000, "Payback", True),
+    ]:
+        created[title] = transactions.create(
+            TransactionIn(
+                date=date(2025, 1, 10),
+                occurred_at=datetime(2025, 1, 10, 12, 0),
+                type=transaction_type,
+                is_reimbursement=is_reimbursement,
+                amount_cents=amount_cents,
+                title=title,
+            )
+        )
+    ReimbursementService(session).upsert_allocation(
+        created["Payback"].id, created["Summary lunch"].id, 1_000
+    )
+    select_statements: list[str] = []
+
+    @event.listens_for(session.bind, "before_cursor_execute")
+    def capture_select(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().lower().startswith("select"):
+            select_statements.append(statement.lower())
+
+    summary = transactions.summary_for_period(
+        Period("all", date(1970, 1, 1), date(2025, 1, 31)),
+        TransactionFilters(query="Sumary"),
+    )
+
+    assert summary == {
+        "income_cents": 10_000,
+        "expense_cents": 4_000,
+        "net_cents": 6_000,
+        "count": 2,
+    }
+    assert (
+        sum("expenses_fuzzy_text_match" in statement for statement in select_statements)
+        == 1
+    )
+
+
+def test_fuzzy_text_match_uses_balanced_whole_query_semantics() -> None:
+    assert _fuzzy_text_match("  NETFLX  ", "Netflix", None) == 1
+    assert _fuzzy_text_match("receipt", "Lunch", "Receipt attached") == 1
+    assert _fuzzy_text_match("receipt", None, "Receipt attached") == 1
+    assert _fuzzy_text_match("receipt", None, None) == 0
+    assert _fuzzy_text_match("zx", "ZX marker", None) == 1
+    assert _fuzzy_text_match("zy", "ZX marker", None) == 0
+    assert _fuzzy_text_match("coffee berlin", "Coffee", "Berlin") == 0
+
+
+def test_transaction_search_combines_filters_and_preserves_chronology(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    food_response = api_client.post(
+        "/api/categories",
+        json={"name": "Search food", "type": "expense", "order": 0},
+        headers=csrf_headers,
+    )
+    travel_response = api_client.post(
+        "/api/categories",
+        json={"name": "Search travel", "type": "expense", "order": 1},
+        headers=csrf_headers,
+    )
+    assert food_response.status_code == 200
+    assert travel_response.status_code == 200
+    food_id = int(food_response.json()["id"])
+    travel_id = int(travel_response.json()["id"])
+
+    created_ids: list[int] = []
+    for occurred_at, amount_cents, category_id, title, description in [
+        ("2025-01-10T12:00:00", 1_000, food_id, "Coffee subscription", None),
+        (
+            "2025-01-11T12:00:00",
+            2_000,
+            food_id,
+            "Monthly service",
+            "Coffee subscription renewed",
+        ),
+        (
+            "2025-01-12T12:00:00",
+            3_000,
+            travel_id,
+            "Coffee subscription abroad",
+            None,
+        ),
+    ]:
+        response = api_client.post(
+            "/api/transactions",
+            json={
+                "date": occurred_at[:10],
+                "occurred_at": occurred_at,
+                "type": "expense",
+                "amount_cents": amount_cents,
+                "category_id": category_id,
+                "title": title,
+                "description": description,
+            },
+            headers=csrf_headers,
+        )
+        assert response.status_code == 200
+        created_ids.append(int(response.json()["id"]))
+
+    response = api_client.get("/api/transactions?period=all&q=cofee+subscription")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == list(
+        reversed(created_ids)
+    )
+
+    response = api_client.get(
+        f"/api/transactions?period=all&q=cofee+subscription&category={food_id}"
+    )
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [
+        created_ids[1],
+        created_ids[0],
+    ]
 
 
 def test_api_update_transaction_stores_location(

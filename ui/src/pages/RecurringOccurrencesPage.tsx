@@ -2,8 +2,13 @@ import { useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
-import { AppCard } from "../components/ui/product-card"
+import {
+  FinancialPanel,
+  MetricLane,
+  SectionHeading,
+} from "../components/product/ProductSurfaces"
 
 type OccurrenceRule = {
   id: number
@@ -11,7 +16,7 @@ type OccurrenceRule = {
   type: string
   currency_code: string
   amount_cents: number
-  category: { id: number; name: string; type: string } | null
+  category: { id: number; name: string; type: string; icon?: string | null } | null
   interval_unit: string
   interval_count: number
   anchor_date: string
@@ -65,66 +70,69 @@ function RecurringOccurrencesPage() {
         backLabel="← Back to recurring"
       />
 
-      <AppCard className="p-4">
-        <div className="grid gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <p className="text-xs uppercase text-muted">Type</p>
-            <p className="font-semibold capitalize text-text">{rule.type}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Amount</p>
-            <p className="font-mono font-semibold text-text">
-              {formatCurrency(rule.amount_cents)} {symbol}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Category</p>
-            <p className="font-semibold text-text">
-              {rule.category?.name ?? "-"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Schedule</p>
-            <p className="font-semibold text-text">
-              Every {rule.interval_count} {rule.interval_unit}
-              {rule.interval_count > 1 ? "s" : ""}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Start date</p>
-            <p className="font-semibold text-text">
-              {formatEuroDate(rule.anchor_date)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Next occurrence</p>
-            <p className="font-semibold text-text">
-              {formatEuroDate(rule.next_occurrence)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted">Auto post</p>
-            <p className="font-semibold text-text">
-              {rule.auto_post ? "Yes" : "No"}
-            </p>
-          </div>
-          {rule.end_date && (
-            <div>
-              <p className="text-xs uppercase text-muted">End date</p>
-              <p className="font-semibold text-text">
-                {formatEuroDate(rule.end_date)}
+      <div
+        data-testid="recurring-occurrence-summary"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <MetricLane tone={rule.type === "income" ? "income" : "expense"}>
+          <p className="text-xs font-semibold text-muted">Commitment</p>
+          <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-text">
+            {formatCurrency(rule.amount_cents)} {symbol}
+          </p>
+          <p className="mt-1 capitalize text-xs text-muted">{rule.type}</p>
+        </MetricLane>
+        <MetricLane tone="plan">
+          <div className="flex items-center gap-2.5">
+            <CategoryIcon
+              icon={rule.category?.icon ?? null}
+              label={rule.category?.name}
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-muted">Category</p>
+              <p className="truncate font-semibold text-text">
+                {rule.category?.name ?? "Uncategorized"}
               </p>
             </div>
-          )}
-        </div>
-      </AppCard>
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            Every {rule.interval_count} {rule.interval_unit}
+            {rule.interval_count > 1 ? "s" : ""}
+          </p>
+        </MetricLane>
+        <MetricLane tone="warning">
+          <p className="text-xs font-semibold text-muted">Next occurrence</p>
+          <p className="mt-3 font-mono text-lg font-semibold text-text">
+            {formatEuroDate(rule.next_occurrence)}
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            Started {formatEuroDate(rule.anchor_date)}
+          </p>
+        </MetricLane>
+        <MetricLane tone="neutral">
+          <p className="text-xs font-semibold text-muted">Posting</p>
+          <p className="mt-3 font-semibold text-text">
+            {rule.auto_post ? "Automatic" : "Manual"}
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            {rule.end_date
+              ? `Ends ${formatEuroDate(rule.end_date)}`
+              : "No end date"}
+          </p>
+        </MetricLane>
+      </div>
 
-      <AppCard>
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-head text-lg font-bold">
-            Posted transactions ({occurrences.length})
-          </h2>
-        </div>
+      <FinancialPanel role="ledger" data-testid="recurring-occurrence-ledger">
+        <SectionHeading>
+          <div>
+            <h2 className="font-head text-lg font-bold">Posted transactions</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Audit trail for this recurring commitment
+            </p>
+          </div>
+          <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+            {occurrences.length}
+          </span>
+        </SectionHeading>
         <div className="overflow-x-auto">
           {occurrences.length ? (
             <table className="w-full text-sm">
@@ -139,7 +147,7 @@ function RecurringOccurrencesPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {occurrences.map((txn) => (
-                  <tr key={txn.id}>
+                  <tr key={txn.id} className="transition-colors hover:bg-faint/60">
                     <td className="px-4 py-3 text-text">
                       {txn.occurrence_date
                         ? formatEuroDate(txn.occurrence_date)
@@ -149,7 +157,14 @@ function RecurringOccurrencesPage() {
                       {formatCurrency(txn.amount_cents)} {symbol}
                     </td>
                     <td className="px-4 py-3 text-muted">
-                      {txn.category?.name ?? "-"}
+                      <span className="inline-flex items-center gap-2">
+                        <CategoryIcon
+                          icon={null}
+                          label={txn.category?.name}
+                          className="h-8 w-8"
+                        />
+                        {txn.category?.name ?? "Uncategorized"}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-muted">
                       {txn.title ?? "-"}
@@ -169,7 +184,7 @@ function RecurringOccurrencesPage() {
             </p>
           )}
         </div>
-      </AppCard>
+      </FinancialPanel>
     </section>
   )
 }

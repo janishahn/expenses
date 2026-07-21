@@ -20,6 +20,7 @@ This project is intended for private self-hosting on hardware down to Raspberry 
 - For UI work, keep an eye on recognizable patterns across the app when it is sensible to do so. Similar pages do not need to be identical, but shared affordances, action placement, and page structure should usually feel familiar rather than arbitrary.
 - For frontend work, avoid gradients as a generic visual-polish tool. Prefer calm depth from spacing, layered surfaces, contrast, borders, and shadows; use gradients only when they are genuinely central to the concept and clearly stronger than a flat treatment.
 - Treat repeated page chrome within a viewport as a product convention, not a page-by-page styling choice. If a shared element such as a kicker label, title row, filter bar, summary-card pattern, or action placement is changed because it is not pulling its weight, audit sibling pages in that same viewport and usually make the change there too. Prefer stable cross-page structure on both mobile and desktop over layouts that jump around without a clear product reason.
+- Keep desktop and mobile web in sync for the same feature. Most surfaces render both a desktop layout and a responsive twin (a mobile sheet, popover, bottom bar, action row, or chip strip) from the same component, often gated by a viewport flag such as `isDesktop` or `desk:` utilities. When you change a feature's behavior, semantics, controls, copy, or the data a control shows, treat the mobile twin as part of the same change, not a follow-up: apply the equivalent change there, and re-audit it for the failure modes a desktop-only edit tends to leave behind — a control or field that still shows the old behavior, a now-duplicated affordance (for example the same search or filter offered in two places), an element removed on one layout but stale on the other, an interaction handler still gated to the wrong viewport, and action/alignment placement that no longer matches. Prefer one shared mechanism per capability across viewports over parallel implementations that drift. When a change genuinely applies to only one layout, say why in the change description so the omission reads as deliberate. Verify both layouts in the browser before considering the change done.
 
 ## Documentation Duties (Required)
 - Keep `README.md` current whenever behavior, setup, workflows, or operator-facing commands change.
@@ -57,13 +58,18 @@ A release is a deliberate, versioned, deployable checkpoint. It is made up of fo
 - For Python edits, run Ruff fix + format:
   1. `uv run ruff check --fix .`
   2. `uv run ruff format .`
-- Run relevant tests after changes; run the broader test command for significant or cross-cutting changes.
+- Run relevant tests after changes. Do not choose the complete browser matrix from diff size or a redesign label alone; prefer the narrowest tests that exercise the changed behavior.
 - If tests are skipped or cannot run, state that explicitly in the final handoff.
 
 ## Testing Expectations
 - New behavior should include tests.
 - Bug fixes should include a regression test when practical.
 - Prefer targeted, deterministic tests over broad, brittle integration coverage when validating local logic.
+- `uv run fast-tests` is the default pre-commit and pull-request gate. It runs Ruff, backend tests, frontend lint, and the production frontend build.
+- For normal feature work, run `uv run fast-tests` plus the focused Playwright specs and materially distinct layouts affected by the change.
+- Reserve `uv run full-tests` for release candidates, changes to shared browser/runtime infrastructure whose risk genuinely spans most routes (such as authentication bootstrap, Playwright fixtures, migrations/startup, or global navigation), or an explicit user request. A large diff or page redesign is not sufficient by itself. The command includes `fast-tests` plus the complete Playwright desktop, mobile, accessibility, visual, and critical cross-browser matrix; it is also available as a manually dispatched GitHub Actions workflow.
+- Every user-facing story must have a real full-stack happy path in Playwright for each materially distinct supported web layout. Keep domain permutations and backend-only edge cases in focused API or unit tests, but cover permission, destructive-action, error-recovery, empty, and disabled states in the browser when their interaction is part of the story.
+- Keep `TESTING.md` current when routes, user stories, Playwright projects, test commands, or coverage expectations change. Its coverage ledger is the authoritative testing inventory.
 - For native iOS simulator UI checks, use the local-dev launch path documented in `README.md`: keep the local backend running, preserve the simulator Keychain session, and pass `--skip-local-unlock` as an app launch argument in Debug simulator builds. This flag is only a local-unlock bypass; it does not bypass backend login. If the app stays on login, verify the backend port with `/api/mobile/status`, update the simulator app default `expenses.baseURL` when `uv run dev` bound to a port other than `8000`, then complete one real mobile login such as `test` / `test` for the mock DB. Plain launches are only appropriate when explicitly testing the local unlock gate itself.
 - To build and install the native iOS app onto a connected physical device, use `uv run run-ios-device` rather than ad-hoc `xcodebuild`/`devicectl` invocations. It auto-detects the only paired iPhone (pass `--device <name|UDID>` when several are connected), builds against a generic iOS destination so a momentary device-tunnel drop cannot fail the build, reuses the project's existing automatic code-signing so the developer stays trusted between reinstalls, then installs over the previous build and launches it (`--no-launch` to skip). The device must be unlocked and connected for the install/launch step; macOS with Xcode is required. This command is dev tooling for on-device builds, so it is intentionally untested. See `README.md` for details.
 - Keep test names and file names stable over time:
@@ -73,12 +79,17 @@ A release is a deliberate, versioned, deployable checkpoint. It is made up of fo
 - For Playwright UI layout regressions, attach a screenshot artifact on failure so CI and local reruns preserve visual context.
 - When debugging a failing Playwright test that provides a screenshot artifact, review that artifact first and use it to guide the fix before changing code.
 - Playwright layout matrix is explicit and must stay that way:
+  - `auth-bootstrap-chromium` and `auth-bootstrap-mobile-webkit` run only the auth specs (`auth.spec.ts`, `auth.mobile.spec.ts`) on pristine per-worker instances; the primary desktop and mobile projects ignore those files.
   - `desktop-chromium` runs non-mobile specs (default `*.spec.ts` and `*.desktop.spec.ts`).
   - `mobile-webkit` runs only mobile specs (`*.mobile.spec.ts`) using iPhone emulation.
+  - `critical-desktop-firefox`, `critical-desktop-webkit`, and `critical-mobile-chromium` rerun only `*.critical.spec.ts` or `*.critical.mobile.spec.ts` journeys.
 - Keep layout intent in the test file, not ad-hoc viewport switching in shared specs:
   - Put desktop-only assertions/flows in desktop or shared specs.
   - Put mobile-only assertions/flows in `*.mobile.spec.ts`.
 - For navigation and controls, use layout-correct selectors (desktop sidebar vs mobile bottom-nav/sheet/sidebar) instead of generic selectors that can match hidden elements.
+- Playwright runs against the production frontend build served by FastAPI on the same origin as the API. Do not switch the comprehensive suite back to the Vite development proxy.
+- Use browser request interception only for deterministic failure injection, external resources, and provider streams that cannot safely run in tests. Every primary happy path should cross the real browser, FastAPI route, service, and temporary database boundaries.
+- Route-level surface contracts must check automatically detectable structural accessibility violations, runtime console/page errors, and mobile horizontal overflow. Axe color-contrast checks are excluded because translucent and chart surfaces require design-token and screenshot review. Visual baselines are reviewed artifacts: update them only when the UI change is intentional and inspect the changed images before accepting them.
 
 ## Configuration Guidance
 - Prefer explicit config surfaces (typed settings, CLI args, checked-in config files) over environment-variable sprawl.

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, freshInstanceTest as test } from "./fixtures"
 
 const bootstrapUser = {
   username: "bootstrap-admin",
@@ -21,8 +21,6 @@ async function submitAuthForm(
   await form.getByTestId("auth-password").fill(credentials.password)
   await form.getByTestId("auth-submit").click()
 }
-
-test.use({ storageState: { cookies: [], origins: [] } })
 
 test.describe.serial("Auth bootstrap and route guards", () => {
   test("fresh instance resolves to setup and guards deep links", async ({ page }) => {

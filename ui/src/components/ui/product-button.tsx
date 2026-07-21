@@ -8,6 +8,7 @@ const appButtonVariants = cva("", {
   variants: {
     tone: {
       primary: "btn-primary",
+      secondary: "btn-secondary",
       ghost: "btn-ghost",
       danger: "btn-danger",
       inline: "btn-inline",

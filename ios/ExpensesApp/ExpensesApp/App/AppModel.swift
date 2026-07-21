@@ -515,23 +515,6 @@ final class AppModel {
         }
     }
 
-    func translateSearchQuery(_ query: String) async -> SearchTranslationResult? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            return try await apiClient.translateSearch(query: query, token: token)
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
-    }
-
     func loadTransactionSuggestions() async {
         guard llmEnabled, let token else {
             return

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Report Builder Page", () => {
   test.beforeEach(async ({ page }) => {
@@ -6,7 +6,7 @@ test.describe("Report Builder Page", () => {
   })
 
   test("should show report sections toggles", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Report Sections" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Report sections" })).toBeVisible()
   })
 
   test("should request pdf when generating", async ({ page }) => {

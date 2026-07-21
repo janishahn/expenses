@@ -10,12 +10,7 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 
 from expenses.ai.schemas import (
     RuleMiningOutput,
-    SearchTranslationOutput,
     TransactionTriageOutput,
-)
-from expenses.ai.search_validation import (
-    SearchTranslationValidationError,
-    validate_search_translation_output,
 )
 from expenses.ai.usage import (
     LLMUsageMetadata,
@@ -145,11 +140,6 @@ class PydanticAILLMRunner(LLMRunner):
         async def validate_output(
             ctx: RunContext[dict[str, Any]], output: OutputT
         ) -> OutputT:
-            if isinstance(output, SearchTranslationOutput):
-                try:
-                    validate_search_translation_output(output, ctx.deps)
-                except SearchTranslationValidationError as exc:
-                    raise ModelRetry(str(exc)) from exc
             if isinstance(output, TransactionTriageOutput):
                 if output.clean_title is None:
                     raise ModelRetry(
@@ -303,19 +293,6 @@ def _instructions_for_feature(feature: str) -> str:
         "tags, ids, dates, or amounts. Use only ids and labels present in the payload. "
         "Keep the answer concise."
     )
-    if feature == "search_translate":
-        return (
-            common
-            + " Translate the natural-language request into the allowed transaction "
-            "search syntax. Resolve relative dates against the reference_date in the "
-            "payload. Use exact category and tag names from the payload. Quote category "
-            "or tag values containing spaces or punctuation with double quotes, such "
-            'as category:"Food & Groceries". Do not use boolean operators, '
-            "parentheses, or grouped expressions. If a safe search cannot be represented, "
-            "return an empty query with clarification_needed true and a concise "
-            "clarification_question. Never return an empty query with "
-            "clarification_needed false."
-        )
     if feature == "transaction_triage":
         return (
             common

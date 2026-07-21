@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
 
 async function openImportPage(page: Page): Promise<void> {

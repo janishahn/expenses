@@ -9,11 +9,16 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "playwright install chromium webkit && playwright test",
-    "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed"
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium firefox webkit",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
     "@phosphor-icons/core": "^2.1.1",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.90.20",
@@ -36,6 +41,7 @@
     "tiptap-markdown": "^0.9.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.3.1",

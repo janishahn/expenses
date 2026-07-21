@@ -50,11 +50,6 @@
     "slug": "all",
     "start": "1970-01-01"
   },
-  "search": {
-    "applied_tokens": [],
-    "free_terms": [],
-    "raw_q": ""
-  },
   "tags": [
     {
       "id": 7,

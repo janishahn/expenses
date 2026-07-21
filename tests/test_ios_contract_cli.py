@@ -18,6 +18,7 @@ def test_export_openapi_writes_mobile_contract_schema(tmp_path) -> None:
     assert "/api/transactions" in payload["paths"]
     assert "MobileAuthIdentityOut" in payload["components"]["schemas"]
     assert "DashboardResponseOut" in payload["components"]["schemas"]
+    assert "DashboardCategoryBudgetSummaryOut" in payload["components"]["schemas"]
     assert "TransactionsResponseOut" in payload["components"]["schemas"]
     assert "TransactionDetailOut" in payload["components"]["schemas"]
 
@@ -40,4 +41,6 @@ def test_export_ios_fixtures_writes_curated_foundation_snapshots(tmp_path) -> No
     assert identity["session"]["device_name"] == "iPhone Simulator"
     assert api_error["request_id"] == "fixture-request-id"
     assert dashboard["kpis"]["balance"] == 235450
+    assert dashboard["category_budget_summary"]["total"] == 1
     assert transactions["items"][0]["title"] == "Weekly groceries"
+    assert "search" not in transactions

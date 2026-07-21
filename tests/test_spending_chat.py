@@ -19,6 +19,7 @@ from expenses.ai.spending_chat import (
     SpendingChatRequest,
     SpendingChatService,
     _split_leading_progress_narration,
+    _tool_result_summary,
 )
 from expenses.core.config import get_settings
 from expenses.db.models import (
@@ -26,7 +27,7 @@ from expenses.db.models import (
     LLMJob,
     TransactionType,
 )
-from expenses.db.session import Base
+from expenses.db.session import Base, _enable_sqlite_pragmas
 from expenses.schemas import BudgetTemplateIn, CategoryIn, TransactionIn
 from expenses.services import (
     BudgetService,
@@ -43,6 +44,7 @@ def anyio_backend() -> str:
 
 def make_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
     return Session(engine)
 
@@ -171,6 +173,94 @@ def test_leading_progress_split_uses_sentence_boundary() -> None:
     assert answer == ""
 
 
+def test_tool_result_summary_formats_tool_outputs() -> None:
+    assert (
+        _tool_result_summary(
+            "get_spending_overview",
+            {"totals": {"expense_cents": 123400, "income_cents": 200050}},
+        )
+        == "€1,234.00 spent · €2,000.50 income"
+    )
+    assert (
+        _tool_result_summary(
+            "compare_spending_periods",
+            {
+                "totals": {
+                    "current_expense_cents": 120000,
+                    "baseline_expense_cents": 132000,
+                    "expense_delta_cents": -12000,
+                }
+            },
+        )
+        == "€1,200.00 vs €1,320.00 · -€120.00"
+    )
+    assert (
+        _tool_result_summary(
+            "breakdown_spending",
+            {"group_by": "category", "rows": [{}, {}, {}], "transaction_count": 45},
+        )
+        == "3 categories · 45 transactions"
+    )
+    assert (
+        _tool_result_summary(
+            "breakdown_spending",
+            {"group_by": "month", "rows": [{}], "transaction_count": 1},
+        )
+        == "1 month · 1 transaction"
+    )
+    assert (
+        _tool_result_summary(
+            "search_transactions",
+            {
+                "count": 23,
+                "truncated": False,
+                "transactions": [
+                    {"net_amount_cents": 40000},
+                    {"net_amount_cents": 1280},
+                ],
+            },
+        )
+        == "23 matches · €412.80 total"
+    )
+    assert (
+        _tool_result_summary(
+            "search_transactions",
+            {"count": 60, "truncated": True, "transactions": []},
+        )
+        == "60 matches"
+    )
+    assert (
+        _tool_result_summary(
+            "search_transactions",
+            {"count": 0, "truncated": False, "transactions": []},
+        )
+        == "No matches"
+    )
+    assert (
+        _tool_result_summary(
+            "get_budget_context",
+            {
+                "budgets": [
+                    {"remaining_cents": 5000},
+                    {"remaining_cents": -2500},
+                ]
+            },
+        )
+        == "2 budgets · 1 over limit"
+    )
+    assert _tool_result_summary("get_budget_context", {"budgets": []}) == (
+        "No budgets set"
+    )
+    assert (
+        _tool_result_summary(
+            "get_transaction_detail",
+            {"transaction": {"title": "Rewe", "net_amount_cents": 2345}},
+        )
+        == "Rewe · €23.45"
+    )
+    assert _tool_result_summary("unknown_tool", {"ok": True}) is None
+
+
 def test_spending_analysis_uses_net_amounts_across_tools() -> None:
     with make_session() as session:
         ids = _seed_spending_fixture(session)
@@ -199,6 +289,16 @@ def test_spending_analysis_uses_net_amounts_across_tools() -> None:
         ]
         assert results["transactions"][1]["id"] == ids["concert_id"]
         assert results["transactions"][1]["net_amount_cents"] == 18_000
+
+        fuzzy_results = service.search_transactions(
+            query="grocerry run",
+            start=date(2026, 6, 1),
+            end=date(2026, 6, 30),
+        )
+        assert fuzzy_results["ok"] is True
+        assert [row["title"] for row in fuzzy_results["transactions"]] == [
+            "Big grocery run"
+        ]
 
         detail = service.get_transaction_detail(transaction_id=ids["reimbursement_id"])
         assert detail["transaction"]["net_amount_cents"] == 12_000
@@ -722,7 +822,12 @@ async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
             yield pydantic_message.FunctionToolResultEvent(
                 part=pydantic_message.ToolReturnPart(
                     tool_name="search_transactions",
-                    content={"ok": True},
+                    content={
+                        "ok": True,
+                        "count": 0,
+                        "truncated": False,
+                        "transactions": [],
+                    },
                     tool_call_id="call-1",
                 )
             )
@@ -776,6 +881,7 @@ async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
         "text_chunk",
     ]
     assert events[1]["content"] == "I'll inspect the details."
+    assert events[3]["result_summary"] == "No matches"
     assert [event["content"] for event in events if event["type"] == "text_chunk"] == [
         "Final answer",
         " with detail.",
@@ -812,7 +918,14 @@ async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as
             yield pydantic_message.FunctionToolResultEvent(
                 part=pydantic_message.ToolReturnPart(
                     tool_name="compare_spending_periods",
-                    content={"ok": True},
+                    content={
+                        "ok": True,
+                        "totals": {
+                            "current_expense_cents": 120000,
+                            "baseline_expense_cents": 98000,
+                            "expense_delta_cents": 22000,
+                        },
+                    },
                     tool_call_id="call-1",
                 )
             )
@@ -864,6 +977,7 @@ async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as
         "progress_narration",
         "text_chunk",
     ]
+    assert events[2]["result_summary"] == "€1,200.00 vs €980.00 · +€220.00"
     assert events[3]["content"] == "Let me dig into the biggest changes."
     assert events[4]["content"] == "Here is what changed."
 

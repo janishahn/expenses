@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Recurring Rules Page", () => {
@@ -6,15 +6,15 @@ test.describe("Recurring Rules Page", () => {
     await page.goto("/recurring")
   })
 
-  test("should keep the inline editor as the desktop creation entry", async ({
+  test("should use a modal as the desktop creation entry", async ({
     page,
   }) => {
-    await expect(page.getByRole("button", { name: "Add rule" })).toBeHidden()
-    await expect(page.getByText("Editor")).toBeVisible()
-    const editorPosition = await page
-      .locator("form", { has: page.getByRole("button", { name: "Save rule" }) })
-      .evaluate((node) => getComputedStyle(node).position)
-    expect(editorPosition).toBe("sticky")
+    await expect(page.getByTestId("commitments-board")).toBeVisible()
+    await expect(page.getByTestId("commitment-inspector")).toHaveCount(0)
+    await page.getByRole("button", { name: "Add rule" }).click()
+    const dialog = page.getByRole("dialog", { name: "Add rule" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Add rule" })).toBeVisible()
   })
 
   test("should show stats section when rules exist", async ({ page, request }) => {
@@ -55,7 +55,9 @@ test.describe("Recurring Rules Page", () => {
   })
 
   test("should toggle auto_post via switch in editor form", async ({ page }) => {
+    await page.getByRole("button", { name: "Add rule" }).click()
     const editorToggle = page
+      .getByRole("dialog", { name: "Add rule" })
       .locator("div", { hasText: "Post automatically" })
       .getByRole("switch")
       .first()
@@ -78,15 +80,20 @@ test.describe("Recurring Rules Page", () => {
     const ruleName = `E2E Recurring ${Date.now()}`
     const today = new Date().toISOString().slice(0, 10)
 
-    await page.getByLabel("Name").fill(ruleName)
-    await page.locator('label:has-text("Amount") input').fill("42.00")
-    await page.getByLabel("Category").selectOption(String(categoryId))
-    await page.getByLabel("Start date").fill(today)
-    await page.getByRole("button", { name: "Save rule" }).click()
+    await page.getByRole("button", { name: "Add rule" }).click()
+    const dialog = page.getByRole("dialog", { name: "Add rule" })
+    await dialog.getByLabel("Name").fill(ruleName)
+    await dialog.locator('label:has-text("Amount") input').fill("42.00")
+    await dialog.getByLabel("Category").selectOption(String(categoryId))
+    await dialog.getByLabel("Start date").fill(today)
+    await dialog.getByRole("button", { name: "Add rule" }).click()
 
     await expect(page.locator("body")).toContainText(ruleName)
-    const ruleCard = page.locator("div.surface-card", { hasText: ruleName }).first()
-    const deleteButton = ruleCard.getByRole("button", { name: "Delete" }).first()
+    const ruleCard = page
+      .getByTestId("recurring-commitment")
+      .filter({ hasText: ruleName })
+      .first()
+    const deleteButton = ruleCard.getByRole("button", { name: `Delete ${ruleName}` }).first()
     await expect(deleteButton).toHaveClass(
       /btn-inline-danger/
     )
@@ -133,11 +140,9 @@ test.describe("Recurring Rules Page", () => {
     expect(createResponse.ok()).toBeTruthy()
 
     await page.reload()
-    const rulesPanel = page.locator("div.surface-card").filter({
-      has: page.getByRole("heading", { name: "Rules" }),
-    })
+    const rulesPanel = page.getByTestId("commitments-board")
     const row = rulesPanel.locator("div.divide-y > div").filter({ hasText: ruleName }).first()
-    const deleteButton = row.getByRole("button", { name: "Delete" }).first()
+    const deleteButton = row.getByRole("button", { name: `Delete ${ruleName}` }).first()
     await row.scrollIntoViewIfNeeded()
 
     let firstMessage = ""

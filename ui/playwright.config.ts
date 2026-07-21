@@ -1,31 +1,26 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const authStorageStatePath =
-  process.env.EXPENSES_E2E_AUTH_STATE_PATH ??
-  `test-results/.auth/bootstrap-admin-${Date.now()}-${process.pid}.json`
-process.env.EXPENSES_E2E_AUTH_STATE_PATH = authStorageStatePath
+const desktopViewport = { width: 1280, height: 800 }
+const criticalDesktopMatch = /.*\.critical\.spec\.ts/
+const criticalMobileMatch = /.*\.critical\.mobile\.spec\.ts/
 
-const backendPort = process.env.EXPENSES_E2E_BACKEND_PORT ?? "18180"
-if (
-  !/^\d{1,5}$/.test(backendPort) ||
-  Number(backendPort) < 1 ||
-  Number(backendPort) > 65535
-) {
-  throw new Error("EXPENSES_E2E_BACKEND_PORT must be a TCP port number")
-}
-const backendUrl = `http://127.0.0.1:${backendPort}`
-
+// Backends are per-worker fixtures (see tests/fixtures.ts), so workers scale
+// with CPU cores while each worker keeps serial access to its own database.
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  // All e2e projects share one backend and temp SQLite DB; serial execution avoids cross-spec write contention.
-  workers: 1,
-  reporter: "html",
+  retries: process.env.CI ? 2 : 1,
+  // Browser launch and paint slow down when many workers share the machine;
+  // WebKit especially can spend >20s starting a context under load.
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: [["list"], ["html", { open: "never" }]],
+  // Files are the distribution unit (fullyParallel: false), so a single long
+  // spec file caps the whole run; surface anything that grows past two minutes.
+  reportSlowTests: { max: 10, threshold: 120_000 },
   use: {
-    baseURL: "http://127.0.0.1:4173",
-    trace: "on-first-retry",
+    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
     screenshot: "only-on-failure",
     headless: true,
   },
@@ -35,62 +30,61 @@ export default defineConfig({
       testMatch: /(^|\/)auth\.spec\.ts$/,
       use: {
         browserName: "chromium",
-        viewport: { width: 1280, height: 800 },
-      },
-    },
-    {
-      name: "authenticated-setup",
-      testMatch: /.*authenticated\.setup\.ts/,
-      dependencies: ["auth-bootstrap-chromium"],
-      use: {
-        browserName: "chromium",
-        viewport: { width: 1280, height: 800 },
+        viewport: desktopViewport,
       },
     },
     {
       name: "desktop-chromium",
-      dependencies: ["authenticated-setup"],
-      testIgnore: [/.*\.mobile\.spec\.ts/, /(^|\/)auth\.spec\.ts$/, /.*\.setup\.ts/],
+      testIgnore: [/.*\.mobile\.spec\.ts/, /(^|\/)auth\.spec\.ts$/],
       use: {
         browserName: "chromium",
-        viewport: { width: 1280, height: 800 },
-        storageState: authStorageStatePath,
+        viewport: desktopViewport,
+      },
+    },
+    {
+      name: "auth-bootstrap-mobile-webkit",
+      testMatch: /(^|\/)auth\.mobile\.spec\.ts$/,
+      expect: { timeout: 15_000 },
+      use: {
+        browserName: "webkit",
+        ...devices["iPhone 15"],
       },
     },
     {
       name: "mobile-webkit",
-      dependencies: ["authenticated-setup"],
       testMatch: /.*\.mobile\.spec\.ts/,
+      testIgnore: [/(^|\/)auth\.mobile\.spec\.ts$/],
+      // WebKit paints slowest under parallel load; charts and screenshot
+      // stabilization need a wider assertion budget than the other projects.
+      expect: { timeout: 15_000 },
       use: {
         browserName: "webkit",
         ...devices["iPhone 15"],
-        storageState: authStorageStatePath,
       },
     },
-  ],
-  webServer: [
     {
-      command:
-        `cd .. && EXPENSES_DATA_DIR="$(mktemp -d)" && export EXPENSES_DATA_DIR && trap 'rm -rf "$EXPENSES_DATA_DIR"' EXIT INT TERM && uv run python -m alembic upgrade head && uv run python -m uvicorn expenses.app:app --host 127.0.0.1 --port ${backendPort}`,
-      env: {
-        ...process.env,
-        EXPENSES_AUTH_SIGNUP_ENABLED: "true",
-        EXPENSES_LLM_ENABLED: "true",
-        EXPENSES_LLM_BASE_URL: "http://127.0.0.1:1/v1",
+      name: "critical-desktop-firefox",
+      testMatch: criticalDesktopMatch,
+      use: {
+        browserName: "firefox",
+        viewport: desktopViewport,
       },
-      url: `${backendUrl}/api/csrf`,
-      reuseExistingServer: false,
-      timeout: 120 * 1000,
     },
     {
-      command:
-        `VITE_API_PROXY_TARGET=${backendUrl} npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`,
-      env: {
-        ...process.env,
+      name: "critical-desktop-webkit",
+      testMatch: criticalDesktopMatch,
+      use: {
+        browserName: "webkit",
+        viewport: desktopViewport,
       },
-      url: "http://127.0.0.1:4173",
-      reuseExistingServer: false,
-      timeout: 120 * 1000,
+    },
+    {
+      name: "critical-mobile-chromium",
+      testMatch: criticalMobileMatch,
+      use: {
+        browserName: "chromium",
+        ...devices["Pixel 7"],
+      },
     },
   ],
 })

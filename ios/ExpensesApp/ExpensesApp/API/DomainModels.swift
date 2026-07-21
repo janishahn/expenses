@@ -247,28 +247,6 @@ struct RuleSuggestion: Codable, Equatable, Identifiable {
     }
 }
 
-struct SearchTranslateRequest: Codable, Equatable {
-    let query: String
-}
-
-struct SearchTranslationResult: Codable, Equatable {
-    let query: String
-    let confidence: Double
-    let clarificationNeeded: Bool
-    let clarificationQuestion: String?
-    let appliedTokens: [[String: JSONValue]]
-    let freeTerms: [String]
-
-    enum CodingKeys: String, CodingKey {
-        case query
-        case confidence
-        case clarificationNeeded = "clarification_needed"
-        case clarificationQuestion = "clarification_question"
-        case appliedTokens = "applied_tokens"
-        case freeTerms = "free_terms"
-    }
-}
-
 struct BudgetCategory: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
@@ -648,11 +626,13 @@ struct ForecastOneTimeEvent: Codable, Equatable, Identifiable {
 struct ForecastBreakdown: Codable, Equatable {
     let recurringRules: [ForecastRecurringRule]
     let variableEstimates: [ForecastVariableEstimate]
+    let variableIncomeEstimates: [ForecastVariableEstimate]?
     let oneTimeEvents: [ForecastOneTimeEvent]
 
     enum CodingKeys: String, CodingKey {
         case recurringRules = "recurring_rules"
         case variableEstimates = "variable_estimates"
+        case variableIncomeEstimates = "variable_income_estimates"
         case oneTimeEvents = "one_time_events"
     }
 }
@@ -664,6 +644,9 @@ struct ForecastMonth: Codable, Equatable, Identifiable {
     let projectedExpensesCents: Int
     let projectedNetCents: Int
     let endBalanceCents: Int
+    let endBalanceP10Cents: Int?
+    let endBalanceP90Cents: Int?
+    let minimumBalanceCents: Int?
     let crossesNegative: Bool
     let breakdown: ForecastBreakdown
 
@@ -673,6 +656,9 @@ struct ForecastMonth: Codable, Equatable, Identifiable {
         case projectedExpensesCents = "projected_expenses_cents"
         case projectedNetCents = "projected_net_cents"
         case endBalanceCents = "end_balance_cents"
+        case endBalanceP10Cents = "end_balance_p10_cents"
+        case endBalanceP90Cents = "end_balance_p90_cents"
+        case minimumBalanceCents = "minimum_balance_cents"
         case crossesNegative = "crosses_negative"
         case breakdown
     }
@@ -680,13 +666,33 @@ struct ForecastMonth: Codable, Equatable, Identifiable {
 
 struct ForecastSummary: Codable, Equatable {
     let projectedBalanceCents: Int
+    let projectedBalanceP10Cents: Int?
+    let projectedBalanceP90Cents: Int?
     let averageMonthlyNetCents: Int
     let monthsUntilNegative: Int?
+    let riskMonthsUntilNegative: Int?
 
     enum CodingKeys: String, CodingKey {
         case projectedBalanceCents = "projected_balance_cents"
+        case projectedBalanceP10Cents = "projected_balance_p10_cents"
+        case projectedBalanceP90Cents = "projected_balance_p90_cents"
         case averageMonthlyNetCents = "average_monthly_net_cents"
         case monthsUntilNegative = "months_until_negative"
+        case riskMonthsUntilNegative = "risk_months_until_negative"
+    }
+}
+
+struct ForecastModel: Codable, Equatable {
+    let method: String
+    let historyMonths: Int
+    let seasonalityApplied: Bool
+    let predictionIntervalAvailable: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case method
+        case historyMonths = "history_months"
+        case seasonalityApplied = "seasonality_applied"
+        case predictionIntervalAvailable = "prediction_interval_available"
     }
 }
 
@@ -694,14 +700,18 @@ struct ForecastResponse: Codable, Equatable {
     let horizon: Int
     let mode: String
     let startBalanceCents: Int
+    let currentMonthNetCents: Int?
     let months: [ForecastMonth]
+    let model: ForecastModel?
     let summary: ForecastSummary
 
     enum CodingKeys: String, CodingKey {
         case horizon
         case mode
         case startBalanceCents = "start_balance_cents"
+        case currentMonthNetCents = "current_month_net_cents"
         case months
+        case model
         case summary
     }
 }
@@ -784,13 +794,17 @@ struct ForecastScenarioRequest: Encodable, Equatable {
 struct ForecastProjection: Codable, Equatable {
     let mode: String
     let startBalanceCents: Int
+    let currentMonthNetCents: Int?
     let months: [ForecastMonth]
+    let model: ForecastModel?
     let summary: ForecastSummary
 
     enum CodingKeys: String, CodingKey {
         case mode
         case startBalanceCents = "start_balance_cents"
+        case currentMonthNetCents = "current_month_net_cents"
         case months
+        case model
         case summary
     }
 }
@@ -841,7 +855,9 @@ struct ForecastScenarioResponse: Codable, Equatable {
     let horizon: Int
     let mode: String
     let startBalanceCents: Int
+    let currentMonthNetCents: Int?
     let months: [ForecastMonth]
+    let model: ForecastModel?
     let summary: ForecastSummary
     let baseline: ForecastProjection
     let impact: ForecastScenarioImpact
@@ -850,7 +866,9 @@ struct ForecastScenarioResponse: Codable, Equatable {
         case horizon
         case mode
         case startBalanceCents = "start_balance_cents"
+        case currentMonthNetCents = "current_month_net_cents"
         case months
+        case model
         case summary
         case baseline
         case impact
@@ -1374,7 +1392,6 @@ struct TransactionsResponse: Codable, Equatable {
     let hasMore: Bool
     let period: Period
     let filters: TransactionFilters
-    let search: TransactionSearch
     let categories: [CategorySummary]
     let tags: [TransactionTag]
 
@@ -1385,7 +1402,6 @@ struct TransactionsResponse: Codable, Equatable {
         case hasMore = "has_more"
         case period
         case filters
-        case search
         case categories
         case tags
     }
@@ -1410,7 +1426,6 @@ struct UncategorizedTransactionsResponse: Codable, Equatable {
     let definition: UncategorizedDefinition
     let period: Period
     let filters: TransactionFilters
-    let search: TransactionSearch
     let categories: [CategorySummary]
     let tags: [TransactionTag]
 
@@ -1423,7 +1438,6 @@ struct UncategorizedTransactionsResponse: Codable, Equatable {
         case definition
         case period
         case filters
-        case search
         case categories
         case tags
     }
@@ -1466,16 +1480,6 @@ struct TransactionFilters: Codable, Equatable {
         case categoryID = "category_id"
         case tagID = "tag_id"
         case query
-    }
-}
-
-struct TransactionSearch: Codable, Equatable {
-    let rawQ: String
-    let freeTerms: [String]
-
-    enum CodingKeys: String, CodingKey {
-        case rawQ = "raw_q"
-        case freeTerms = "free_terms"
     }
 }
 
@@ -1614,6 +1618,7 @@ struct DashboardResponse: Codable, Equatable {
     let durablePurchases: [DashboardDurablePurchase]?
     let budgetPace: DashboardBudgetPace?
     let categoryBudgetPulse: [DashboardCategoryBudgetPulse]?
+    let categoryBudgetSummary: DashboardCategoryBudgetSummary?
 
     enum CodingKeys: String, CodingKey {
         case period
@@ -1628,6 +1633,7 @@ struct DashboardResponse: Codable, Equatable {
         case durablePurchases = "durable_purchases"
         case budgetPace = "budget_pace"
         case categoryBudgetPulse = "category_budget_pulse"
+        case categoryBudgetSummary = "category_budget_summary"
     }
 }
 
@@ -2099,6 +2105,18 @@ struct DashboardCategoryBudgetPulse: Codable, Equatable, Identifiable {
         case spentCents = "spent_cents"
         case remainingCents = "remaining_cents"
         case velocityRatio = "velocity_ratio"
+    }
+}
+
+struct DashboardCategoryBudgetSummary: Codable, Equatable {
+    let total: Int
+    let needsAttention: Int
+    let priority: DashboardCategoryBudgetPulse
+
+    enum CodingKeys: String, CodingKey {
+        case total
+        case needsAttention = "needs_attention"
+        case priority
     }
 }
 

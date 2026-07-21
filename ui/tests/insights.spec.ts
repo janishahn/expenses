@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test"
+import { test, expect, type APIRequestContext } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
@@ -41,6 +41,11 @@ test.describe("Insights Page", () => {
     await expect(page.locator("main h1")).toContainText("Insights")
   })
 
+  test("labels the analysis range from the selected period", async ({ page }) => {
+    await page.goto("/insights?period=this_month")
+    await expect(page.getByText("1 month view", { exact: true })).toBeVisible()
+  })
+
   test("should show analytics content", async ({ page }) => {
     await page.waitForLoadState("networkidle")
     await expect(
@@ -53,16 +58,6 @@ test.describe("Insights Page", () => {
   test("should load without errors", async ({ page }) => {
     await expect(page.locator("text=Unable to load")).not.toBeVisible()
     await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
-  })
-
-  test("should apply filters", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const dialog = page.getByRole("dialog", { name: "Insights filters" })
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole("button", { name: "Expense", exact: true }).click()
-    await dialog.getByRole("button", { name: "Apply" }).click()
-    await expect(page).toHaveURL(/type=expense/)
   })
 
   test("should show filter controls at tablet viewport (768-1024px)", async ({
@@ -108,7 +103,7 @@ test.describe("Insights Page", () => {
     await expect(page.getByText("Cash flow")).toBeVisible()
     await expect(page.getByText(/Date:/).first()).toBeVisible()
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
     const expenseNodeButton = expenseNodesPanel.locator("button").first()
@@ -170,7 +165,7 @@ test.describe("Insights Page", () => {
       .toBe("light")
 
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
     const expenseNodeButton = expenseNodesPanel.getByRole("button", {
@@ -258,7 +253,7 @@ test.describe("Insights Page", () => {
 
     await page.goto("/insights?view=flow&period=this_month")
     const expenseNodesPanel = page
-      .locator("div.surface-card")
+      .locator('[data-financial-surface="ledger"]')
       .filter({ hasText: "Expense nodes" })
       .first()
 

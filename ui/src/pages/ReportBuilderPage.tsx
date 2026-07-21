@@ -7,8 +7,8 @@ import { formatEuroDate } from "../app/format"
 import { Toggle } from "../components/Toggle"
 import PageIntro from "../components/PageIntro"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppNativeSelect } from "../components/ui/product-fields"
 
 function toLocalDateInputValue(value: Date): string {
@@ -191,13 +191,13 @@ function ReportBuilderPage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <PageIntro title="PDF Report Builder" />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_0.6fr]">
-        <div className="space-y-6">
-          <AppCard className="p-4">
-            <h2 className="mb-4 font-head text-lg font-bold">Date Range</h2>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <FinancialPanel role="inspector" className="divide-y divide-border overflow-hidden">
+          <section className="p-5">
+            <h2 className="mb-4 font-head text-lg font-bold">Date range</h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TransactionDateTimeField
                 label="Start date"
@@ -215,9 +215,9 @@ function ReportBuilderPage() {
             <p className="mt-2 text-xs text-muted">
               Period: {formatEuroDate(startDate)} - {formatEuroDate(endDate)}
             </p>
-          </AppCard>
+          </section>
 
-          <AppCard className="p-4">
+          <section className="p-5">
             <h2 className="mb-4 font-head text-lg font-bold">Transactions</h2>
             <div className="grid gap-4 md:grid-cols-2">
               <AppFieldLabel>
@@ -250,7 +250,7 @@ function ReportBuilderPage() {
             </div>
 
             <div className="mt-4 grid gap-2 md:grid-cols-2">
-              <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-xs text-muted">
+              <label className="flex items-start gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
                 <Toggle on={showRunningBalance} onChange={setShowRunningBalance} />
                 <span>
                   <span className="font-semibold">Show running balance</span>
@@ -260,7 +260,7 @@ function ReportBuilderPage() {
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-xs text-muted">
+              <label className="flex items-start gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
                 <Toggle on={includeCategorySubtotals} onChange={setIncludeCategorySubtotals} />
                 <span>
                   <span className="font-semibold">Include category subtotals</span>
@@ -270,15 +270,15 @@ function ReportBuilderPage() {
                 </span>
               </label>
             </div>
-          </AppCard>
+          </section>
 
-          <AppCard className="p-4">
-            <h2 className="mb-4 font-head text-lg font-bold">Report Sections</h2>
+          <section className="p-5">
+            <h2 className="mb-4 font-head text-lg font-bold">Report sections</h2>
             <div className="space-y-2">
               {Object.entries(sections).map(([section, enabled]) => (
                 <label
                   key={section}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-sm text-muted"
+                  className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
                 >
                   <input
                     type="checkbox"
@@ -293,10 +293,10 @@ function ReportBuilderPage() {
                 </label>
               ))}
             </div>
-          </AppCard>
+          </section>
 
           {activeCategories.length > 0 ? (
-            <AppCard className="p-4">
+            <section className="p-5">
               <h2 className="mb-4 font-head text-lg font-bold">Categories</h2>
               <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted">
                 <label className="flex items-center gap-2">
@@ -331,7 +331,7 @@ function ReportBuilderPage() {
                       {categoriesByType.income.map((category) => (
                         <label
                           key={category.id}
-                          className="flex items-center gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-sm text-muted"
+                          className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
                         >
                           <input
                             type="checkbox"
@@ -352,7 +352,7 @@ function ReportBuilderPage() {
                       {categoriesByType.expense.map((category) => (
                         <label
                           key={category.id}
-                          className="flex items-center gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-sm text-muted"
+                          className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
                         >
                           <input
                             type="checkbox"
@@ -371,10 +371,10 @@ function ReportBuilderPage() {
                   All categories are included.
                 </p>
               )}
-            </AppCard>
+            </section>
           ) : null}
 
-          <AppCard className="p-4">
+          <section className="p-5">
             <h2 className="mb-4 font-head text-lg font-bold">Notes</h2>
             <textarea
               value={notes}
@@ -382,17 +382,17 @@ function ReportBuilderPage() {
               className="w-full field"
               placeholder="Optional notes to include in the report..."
             />
-          </AppCard>
-        </div>
+          </section>
+        </FinancialPanel>
 
-        <AppCard className="p-4">
+        <FinancialPanel role="inspector" className="self-start p-5 lg:sticky lg:top-20">
           <h2 className="mb-4 font-head text-lg font-bold">Generate</h2>
           <p className="mb-4 text-sm text-muted">
             Click below to generate your PDF report with the selected
             configuration. The report will open in a new tab.
           </p>
 
-          <label className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-xs text-muted">
+          <label className="mb-4 flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
             <Toggle on={includeCents} onChange={setIncludeCents} />
             Include cents in tables
           </label>
@@ -423,7 +423,7 @@ function ReportBuilderPage() {
               </AppButton>
               <p
                 data-testid="report-latest-pdf"
-                className="rounded-lg border border-border bg-surface-hi/55 px-3 py-2 text-xs text-muted"
+                className="rounded-md bg-surface-hi/65 px-3 py-2 text-xs text-muted"
               >
                 Latest PDF ready:{" "}
                 <span className="font-semibold text-text">
@@ -443,7 +443,7 @@ function ReportBuilderPage() {
               transaction details based on your selections.
             </p>
           </div>
-        </AppCard>
+        </FinancialPanel>
       </div>
     </section>
   )

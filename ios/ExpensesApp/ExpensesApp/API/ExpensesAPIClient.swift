@@ -226,15 +226,6 @@ struct ExpensesAPIClient {
         try await request(path: "/api/transactions/deleted", bearerToken: token)
     }
 
-    func translateSearch(query: String, token: String) async throws -> SearchTranslationResult {
-        try await request(
-            path: "/api/ai/search/translate",
-            method: "POST",
-            bearerToken: token,
-            body: SearchTranslateRequest(query: query)
-        )
-    }
-
     func spendingChatStream(
         _ body: AssistantStreamRequest,
         token: String

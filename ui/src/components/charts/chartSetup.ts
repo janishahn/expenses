@@ -48,4 +48,4 @@ export function readThemeAlpha(
 
 ChartJS.defaults.color = readThemeColor("--muted", "145 145 145")
 ChartJS.defaults.borderColor = readThemeColor("--border", "40 40 40")
-ChartJS.defaults.font.family = "Manrope, ui-sans-serif, system-ui"
+ChartJS.defaults.font.family = "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"

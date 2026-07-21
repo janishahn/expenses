@@ -49,20 +49,83 @@ function DynamicCategoryIcon({
   return <Icon className={className} />
 }
 
-export function CategoryIcon({ icon }: { icon: string | null }) {
-  const iconKey = icon && icon.length > 0 ? icon : DEFAULT_CATEGORY_ICON_KEY
+const signalTones = ["blue", "green", "red", "yellow", "purple", "coral"] as const
+
+const categoryIconHints: Array<[RegExp, string]> = [
+  [/uncategorized/, "receipt"],
+  [/restaurant|dining|takeaway|brunch/, "fork-knife"],
+  [/coffee|cafe/, "coffee"],
+  [/housing|rent|home/, "house"],
+  [/grocer|food|supermarket/, "shopping-cart"],
+  [/transport|transit|bus|train/, "bus"],
+  [/travel|flight|holiday|vacation/, "airplane"],
+  [/subscription|streaming|membership/, "credit-card"],
+  [/health|medical|doctor|pharmacy/, "stethoscope"],
+  [/shopping|retail|clothing/, "shopping-cart"],
+  [/entertainment|cinema|movie|film/, "film-strip"],
+  [/utilit|electric|energy/, "lightning"],
+  [/salary|freelance|work/, "briefcase"],
+  [/income|interest|investment/, "trend-up"],
+  [/education|school|tuition/, "graduation-cap"],
+  [/child|baby/, "baby"],
+  [/pet|animal/, "dog"],
+  [/overall|saving|reserve/, "piggy-bank"],
+]
+
+const categoryFallbackIcons = [
+  "package",
+  "gift",
+  "palette",
+  "book",
+  "globe",
+  "receipt",
+] as const
+
+export function CategoryIcon({
+  icon,
+  label,
+  className = "",
+}: {
+  icon: string | null
+  label?: string | null
+  className?: string
+}) {
+  const normalizedLabel = label?.trim().toLowerCase() ?? ""
+  const labelHash = Array.from(normalizedLabel).reduce(
+    (total, character) => total + character.codePointAt(0)!,
+    0
+  )
+  const inferredIcon = normalizedLabel
+    ? categoryIconHints.find(([pattern]) => pattern.test(normalizedLabel))?.[1]
+    : undefined
+  const iconKey = icon && icon.length > 0 && (
+    icon !== DEFAULT_CATEGORY_ICON_KEY || !normalizedLabel
+  )
+    ? icon
+    : inferredIcon ?? (
+      normalizedLabel
+        ? categoryFallbackIcons[labelHash % categoryFallbackIcons.length]
+        : DEFAULT_CATEGORY_ICON_KEY
+    )
   const CuratedIcon = CURATED_CATEGORY_ICONS[iconKey]
+  const toneKey = normalizedLabel ? `${iconKey}:${normalizedLabel}` : iconKey
+  const toneIndex = Array.from(toneKey).reduce(
+    (total, character) => total + character.codePointAt(0)!,
+    0
+  ) % signalTones.length
   return (
     <span
       data-testid="category-icon"
-      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-surface-hi/85 shadow-[inset_0_1px_0_rgb(var(--surface-highlight)_/_0.1),0_12px_24px_-20px_rgb(var(--bg)_/_0.62)] md:h-9 md:w-9"
+      data-category-icon={iconKey}
+      data-signal-tone={signalTones[toneIndex]}
+      className={`category-icon-tile ${className}`.trim()}
     >
       {CuratedIcon ? (
-        <CuratedIcon className="h-4 w-4 text-text/80 md:h-4 md:w-4" />
+        <CuratedIcon className="h-4 w-4" />
       ) : (
         <DynamicCategoryIcon
           iconKey={iconKey}
-          className="h-4 w-4 text-text/80 md:h-4 md:w-4"
+          className="h-4 w-4"
         />
       )}
     </span>

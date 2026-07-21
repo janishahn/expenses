@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
 
@@ -43,6 +43,7 @@ test.describe("Forecast Page", () => {
         horizon: 6,
         mode,
         start_balance_cents: 300000,
+        current_month_net_cents: -20000,
         months: [
           {
             month: "2027-01",
@@ -50,6 +51,9 @@ test.describe("Forecast Page", () => {
             projected_expenses_cents: 210000,
             projected_net_cents: -90000,
             end_balance_cents: -15000,
+            end_balance_p10_cents: -30000,
+            end_balance_p90_cents: 20000,
+            minimum_balance_cents: -25000,
             crosses_negative: true,
             breakdown: {
               recurring_rules: [
@@ -71,6 +75,14 @@ test.describe("Forecast Page", () => {
                   amount_cents: 24000,
                 },
               ],
+              variable_income_estimates: [
+                {
+                  category_id: 10,
+                  name: "Freelance",
+                  icon: null,
+                  amount_cents: 12000,
+                },
+              ],
               one_time_events: [
                 {
                   name: "Tax refund",
@@ -81,10 +93,19 @@ test.describe("Forecast Page", () => {
             },
           },
         ],
+        model: {
+          method: mode === "full" ? "recent_median" : "recurring_only",
+          history_months: mode === "full" ? 8 : 0,
+          seasonality_applied: false,
+          prediction_interval_available: mode === "full",
+        },
         summary: {
           projected_balance_cents: -15000,
+          projected_balance_p10_cents: -30000,
+          projected_balance_p90_cents: 20000,
           average_monthly_net_cents: -90000,
           months_until_negative: 1,
+          risk_months_until_negative: 1,
         },
       }
       await route.fulfill({
@@ -95,11 +116,14 @@ test.describe("Forecast Page", () => {
     })
 
     await page.goto("/forecast")
-    await expect(page.getByText("Balance goes negative")).toBeVisible()
+    await expect(page.getByText("Balance may dip negative")).toBeVisible()
+    await expect(page.getByText(/80% range -300/).first()).toBeVisible()
     await page.getByRole("button", { name: /Jan 2027/i }).click()
     await expect(page.getByText("Recurring postings")).toBeVisible()
     await expect(page.getByText("Rent · Housing")).toBeVisible()
-    await expect(page.getByText("Variable estimates")).toBeVisible()
+    await expect(page.getByText("Variable spending", { exact: true })).toBeVisible()
+    await expect(page.getByText("Variable income", { exact: true })).toBeVisible()
+    await expect(page.getByText(/Expected low -250/)).toBeVisible()
     await expect(page.getByText("One-time events")).toBeVisible()
   })
 

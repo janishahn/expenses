@@ -20,6 +20,7 @@ wheels/
 htmlcov/
 test-results/
 playwright-report/
+output/playwright/*auth*.json
 
 # Implementation plans
 implementation_plan*.md
@@ -48,3 +49,7 @@ xcuserdata/
 .claude/
 .factory/
 .superset/
+
+# Playwright artifacts
+output/playwright/
+.playwright-cli/

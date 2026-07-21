@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Tag Detail Page", () => {

@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react"
+import { ShieldCheckIcon } from "@phosphor-icons/react/ShieldCheck"
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 
 function toSafeAdminRedirect(raw: string | null): string {
@@ -69,12 +70,13 @@ function AdminElevationPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-5 py-6 md:py-8" data-testid="admin-elevation-page">
-      <AppCard className="space-y-5 p-5 md:p-6">
+    <main className="mx-auto grid min-h-[70dvh] w-full max-w-2xl place-items-center px-5 py-6 md:py-8" data-testid="admin-elevation-page">
+      <FinancialPanel role="inspector" className="w-full space-y-5 p-5 md:p-6">
         <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-            Admin access
-          </p>
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-sm bg-signal-yellow-soft text-text">
+            <ShieldCheckIcon className="h-5 w-5" />
+          </span>
+          <p className="text-xs font-semibold text-muted">Protected admin tools</p>
           <h1 className="font-head text-2xl font-bold tracking-[-0.045em] text-text">
             Re-enter your password
           </h1>
@@ -115,7 +117,7 @@ function AdminElevationPage() {
             </AppButton>
           </div>
         </form>
-      </AppCard>
+      </FinancialPanel>
     </main>
   )
 }

@@ -204,6 +204,8 @@ function BudgetBurndownChart({
         data={data}
         options={options}
         plugins={[todayMarkerPlugin]}
+        role="img"
+        aria-label={`Budget spending pace for ${monthValue}`}
       />
     </div>
   )

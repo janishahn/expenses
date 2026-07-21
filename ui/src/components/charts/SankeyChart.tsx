@@ -196,6 +196,8 @@ function SankeyChart({ nodes, links, onCategoryClick }: SankeyChartProps) {
     type: string
     data: unknown
     options: unknown
+    role: string
+    "aria-label": string
   }) => JSX.Element
 
   return (
@@ -205,6 +207,8 @@ function SankeyChart({ nodes, links, onCategoryClick }: SankeyChartProps) {
         type="sankey"
         data={chartData}
         options={options}
+        role="img"
+        aria-label="Income and expense flow"
       />
     </div>
   )

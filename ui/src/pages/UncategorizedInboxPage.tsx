@@ -10,8 +10,12 @@ import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import TransactionDescription from "../components/TransactionDescription"
+import {
+  FinancialPanel,
+  SectionHeading,
+  WorkspaceToolbar,
+} from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import {
   AppFieldLabel,
   AppInput,
@@ -130,6 +134,8 @@ function UncategorizedInboxPage() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
     },
   })
 
@@ -154,6 +160,8 @@ function UncategorizedInboxPage() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       queryClient.invalidateQueries({ queryKey: ["insights"] })
+      queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      queryClient.invalidateQueries({ queryKey: ["forecast"] })
     },
   })
 
@@ -267,7 +275,7 @@ function UncategorizedInboxPage() {
         onApplyCustom={applyCustomPeriod}
       />
 
-      <AppCard className="p-4">
+      <WorkspaceToolbar className="block p-4">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-head text-lg font-bold text-text">Inbox triage</h2>
           <p className="text-sm text-muted">
@@ -355,16 +363,26 @@ function UncategorizedInboxPage() {
             <span className="text-semantic-red">{String(bulkMutation.error)}</span>
           )}
         </div>
-      </AppCard>
+      </WorkspaceToolbar>
 
-      <div className="space-y-3">
+      <FinancialPanel role="ledger">
+        <SectionHeading>
+          <div>
+            <p className="mono-meta uppercase text-muted">Review queue</p>
+            <h2 className="mt-1 font-head text-lg font-bold text-text">
+              {data.total} uncategorized {data.total === 1 ? "entry" : "entries"}
+            </h2>
+          </div>
+          <span className="chip">Suggestions stay staged</span>
+        </SectionHeading>
         {data.items.length ? (
           data.items.map((txn) => {
             const suggestion = suggestionsByTransaction.get(txn.id)
             return (
-              <AppCard
+              <article
                 key={txn.id}
-                className="border-l-2 border-l-semantic-red/55 p-4"
+                data-testid={`uncategorized-row-${txn.id}`}
+                className="border-b border-border p-4 last:border-b-0 md:p-5"
               >
                 <div className="flex items-start gap-3">
                   <input
@@ -379,7 +397,10 @@ function UncategorizedInboxPage() {
                       )
                     }
                   />
-                  <CategoryIcon icon={txn.category?.icon ?? null} />
+                  <CategoryIcon
+                    icon={txn.category?.icon ?? null}
+                    label={txn.category?.name ?? "Uncategorized"}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-text">
                       {txn.title || txn.category?.name || "Untitled"}
@@ -409,7 +430,7 @@ function UncategorizedInboxPage() {
                   </p>
                 </div>
                 {suggestion ? (
-                  <div className="mt-3 rounded-lg border border-semantic-blue/25 bg-semantic-blue/10 p-3 text-sm">
+                  <div className="mt-3 rounded-lg bg-signal-blue-soft p-3 text-sm">
                     <p className="font-semibold text-text">
                       Suggested: {suggestion.category_name ?? "Uncategorized"}
                     </p>
@@ -463,15 +484,15 @@ function UncategorizedInboxPage() {
                     </AppButton>
                   </div>
                 ) : null}
-              </AppCard>
+              </article>
             )
           })
         ) : (
-          <AppCard className="p-6 text-center text-sm text-muted">
+          <div className="p-10 text-center text-sm text-muted">
             Inbox is empty.
-          </AppCard>
+          </div>
         )}
-      </div>
+      </FinancialPanel>
 
       <div className="flex items-center justify-between">
         <AppButton

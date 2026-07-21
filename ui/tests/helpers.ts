@@ -1,4 +1,6 @@
+import { request as playwrightRequest } from "@playwright/test"
 import type { APIRequestContext, Page } from "@playwright/test"
+import { loginWith } from "./auth-helpers"
 
 type DashboardMockPayload = {
   period: { slug: string; start: string; end: string }
@@ -33,12 +35,57 @@ type DashboardMockPayload = {
     budget_cents: number
     sparkline: string
   }
+  category_budget_summary?: {
+    total: number
+    needs_attention: number
+    priority: {
+      scope_category_id: number
+      scope_label: string
+      amount_cents: number
+      spent_cents: number
+      remaining_cents: number
+      velocity_ratio: number
+    }
+  }
 }
 
 export async function getCsrfToken(request: APIRequestContext): Promise<string> {
   const response = await request.get("/api/csrf")
   const payload = (await response.json()) as { token: string }
   return payload.token
+}
+
+// Signs the browser page in as a brand-new account so tests can assert exact
+// dashboard states (budget counts, empty states, exact KPI amounts) without
+// interference from data other tests seeded for the shared worker admin user.
+export async function loginAsIsolatedUser(
+  page: Page
+): Promise<{ request: APIRequestContext; csrfToken: string }> {
+  const credentials = {
+    username: `e2e-isolated-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`,
+    password: "hunter22",
+  }
+  const context = await playwrightRequest.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: { cookies: [], origins: [] },
+  })
+  const signupResponse = await context.post("/api/auth/signup", {
+    data: credentials,
+  })
+  if (!signupResponse.ok()) {
+    throw new Error(
+      `signup failed: ${signupResponse.status()} ${await signupResponse.text()}`
+    )
+  }
+  const loginResponse = await context.post("/api/auth/login", {
+    data: credentials,
+  })
+  if (!loginResponse.ok()) {
+    throw new Error(`login failed: ${loginResponse.status()}`)
+  }
+  await page.context().clearCookies()
+  await loginWith(page, credentials)
+  return { request: context, csrfToken: await getCsrfToken(context) }
 }
 
 export async function ensureCategory(
@@ -190,6 +237,160 @@ export async function mockDashboardApi(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ items: [] }),
+      }),
+    ),
+  ])
+}
+
+export async function mockVisualSupportingApi(page: Page): Promise<void> {
+  await Promise.all([
+    page.route("**/api/category-breakdown?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          months: [
+            {
+              month: "2026-02",
+              balance_cents: 84_500,
+              total_cents: 72_000,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 72_000,
+                },
+              ],
+            },
+            {
+              month: "2026-03",
+              balance_cents: 91_200,
+              total_cents: 96_000,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 72_000,
+                },
+                {
+                  category_id: 1,
+                  name: "Food",
+                  icon: "fork-knife",
+                  amount_cents: 24_000,
+                },
+              ],
+            },
+            {
+              month: "2026-04",
+              balance_cents: 97_600,
+              total_cents: 108_000,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 72_000,
+                },
+                {
+                  category_id: 1,
+                  name: "Food",
+                  icon: "fork-knife",
+                  amount_cents: 36_000,
+                },
+              ],
+            },
+            {
+              month: "2026-05",
+              balance_cents: 103_900,
+              total_cents: 121_000,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 78_000,
+                },
+                {
+                  category_id: 1,
+                  name: "Food",
+                  icon: "fork-knife",
+                  amount_cents: 43_000,
+                },
+              ],
+            },
+            {
+              month: "2026-06",
+              balance_cents: 110_400,
+              total_cents: 134_000,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 84_000,
+                },
+                {
+                  category_id: 1,
+                  name: "Food",
+                  icon: "fork-knife",
+                  amount_cents: 50_000,
+                },
+              ],
+            },
+            {
+              month: "2026-07",
+              balance_cents: 116_700,
+              total_cents: 148_950,
+              segments: [
+                {
+                  category_id: 2,
+                  name: "Housing",
+                  icon: "house",
+                  amount_cents: 90_000,
+                },
+                {
+                  category_id: 1,
+                  name: "Food",
+                  icon: "fork-knife",
+                  amount_cents: 58_950,
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    ),
+    page.route("**/api/forecast?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          start_balance_cents: 116_700,
+          months: [
+            { month: "2026-08", end_balance_cents: 122_000, end_balance_p10_cents: 116_000, end_balance_p90_cents: 128_000 },
+            { month: "2026-09", end_balance_cents: 129_000, end_balance_p10_cents: 118_000, end_balance_p90_cents: 140_000 },
+            { month: "2026-10", end_balance_cents: 136_000, end_balance_p10_cents: 120_000, end_balance_p90_cents: 152_000 },
+            { month: "2026-11", end_balance_cents: 141_000, end_balance_p10_cents: 120_000, end_balance_p90_cents: 162_000 },
+            { month: "2026-12", end_balance_cents: 149_000, end_balance_p10_cents: 123_000, end_balance_p90_cents: 175_000 },
+            { month: "2027-01", end_balance_cents: 158_000, end_balance_p10_cents: 127_000, end_balance_p90_cents: 189_000 },
+          ],
+        }),
+      }),
+    ),
+    page.route("**/api/templates", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ templates: [] }),
+      }),
+    ),
+    page.route("**/api/tags?period=all", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ tags: [] }),
       }),
     ),
   ])

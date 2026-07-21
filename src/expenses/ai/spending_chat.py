@@ -34,7 +34,6 @@ from expenses.ai.usage import (
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.core.periods import Period
-from expenses.core.search import parse_advanced_search
 from expenses.db.models import Category, LLMJob, Transaction, TransactionType
 from expenses.services import (
     BudgetService,
@@ -267,6 +266,72 @@ def _transaction_payload(txn: Transaction) -> dict[str, Any]:
     }
 
 
+def _eur(cents: int) -> str:
+    sign = "-" if cents < 0 else ""
+    return f"{sign}€{abs(cents) / 100:,.2f}"
+
+
+def _tool_result_summary(tool_name: str, content: dict[str, Any]) -> str | None:
+    match tool_name:
+        case "get_spending_overview":
+            totals = content["totals"]
+            return (
+                f"{_eur(int(totals['expense_cents']))} spent · "
+                f"{_eur(int(totals['income_cents']))} income"
+            )
+        case "compare_spending_periods":
+            totals = content["totals"]
+            delta = int(totals["expense_delta_cents"])
+            if delta == 0:
+                delta_text = "unchanged"
+            elif delta > 0:
+                delta_text = f"+{_eur(delta)}"
+            else:
+                delta_text = _eur(delta)
+            return (
+                f"{_eur(int(totals['current_expense_cents']))} vs "
+                f"{_eur(int(totals['baseline_expense_cents']))} · {delta_text}"
+            )
+        case "breakdown_spending":
+            singular, plural = {
+                "category": ("category", "categories"),
+                "tag": ("tag", "tags"),
+                "month": ("month", "months"),
+            }[content["group_by"]]
+            group_count = len(content["rows"])
+            txn_count = int(content["transaction_count"])
+            group_text = f"{group_count} {singular if group_count == 1 else plural}"
+            txn_text = f"{txn_count} transaction{'' if txn_count == 1 else 's'}"
+            return f"{group_text} · {txn_text}"
+        case "search_transactions":
+            count = int(content["count"])
+            if count == 0:
+                return "No matches"
+            label = "1 match" if count == 1 else f"{count} matches"
+            if not content["truncated"]:
+                total = sum(
+                    int(txn["net_amount_cents"]) for txn in content["transactions"]
+                )
+                label += f" · {_eur(total)} total"
+            return label
+        case "get_budget_context":
+            budgets = content["budgets"]
+            if not budgets:
+                return "No budgets set"
+            label = "1 budget" if len(budgets) == 1 else f"{len(budgets)} budgets"
+            over = sum(1 for row in budgets if int(row["remaining_cents"]) < 0)
+            if over:
+                label += f" · {over} over limit"
+            return label
+        case "get_transaction_detail":
+            txn = content["transaction"]
+            return (
+                f"{txn['title'] or 'Untitled'} · {_eur(int(txn['net_amount_cents']))}"
+            )
+        case _:
+            return None
+
+
 class SpendingAnalysisService:
     def __init__(self, session: Session, *, user_id: int, today: date) -> None:
         self.session = session
@@ -477,16 +542,11 @@ class SpendingAnalysisService:
         if isinstance(period, dict):
             return period
 
-        try:
-            search = parse_advanced_search(query) if query else None
-        except ValueError as exc:
-            return {"ok": False, "status": "invalid_query", "message": str(exc)}
-
         filters = TransactionFilters(
             type=TransactionType(transaction_type) if transaction_type else None,
             category_id=category_id,
             tag_id=tag_id,
-            search=search,
+            query=query,
         )
         transaction_service = TransactionService(self.session, self.user_id)
         count = transaction_service.count_for_period(period, filters)
@@ -740,11 +800,17 @@ class PydanticAISpendingRunner:
                                 isinstance(part.content, dict)
                                 and part.content.get("ok") is False
                             )
+                        result_summary = (
+                            _tool_result_summary(tool_name, part.content)
+                            if success and isinstance(part.content, dict)
+                            else None
+                        )
                         yield {
                             "type": "tool_call_end",
                             "tool_call_id": part.tool_call_id,
                             "tool_name": tool_name,
                             "result_preview": result_preview[:500],
+                            "result_summary": result_summary,
                             "success": success,
                         }
                     case pydantic_message.PartStartEvent(

@@ -16,7 +16,6 @@ AI_POST_ENDPOINTS = [
     "/api/ai/transactions/1/triage",
     "/api/ai/transaction-suggestions/1/accept",
     "/api/ai/transaction-suggestions/1/reject",
-    "/api/ai/search/translate",
     "/api/ai/spending-chat/stream",
 ]
 
@@ -49,6 +48,14 @@ def test_mobile_status_exposes_llm_enabled_flag(
     assert api_client.get("/api/mobile/status").json()["llm_enabled"] is False
     _enable_llm(monkeypatch)
     assert api_client.get("/api/mobile/status").json()["llm_enabled"] is True
+
+
+def test_search_translation_endpoint_is_unavailable(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/ai/search/translate",
+        json={"query": "groceries last month"},
+    )
+    assert response.status_code == 405
 
 
 @pytest.mark.parametrize("path", AI_GET_ENDPOINTS)
