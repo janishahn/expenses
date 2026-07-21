@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bundled IBM Plex Mono with the web app for privacy-preserving financial typography instead of loading a font from a third-party service at runtime.
 - Added dnd-kit for accessible pointer and keyboard sorting of transaction templates.
 - Updated Click and Pillow to releases that resolve their current published security advisories.
+- Updated frontend transitive dependencies to resolve the current npm audit advisories.
 
 ## [0.3.4] - 2026-07-09
 
