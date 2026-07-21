@@ -1,6 +1,6 @@
 [project]
 name = "expenses"
-version = "0.3.4"
+version = "0.4.0"
 description = "A lightweight, mobile-first expense tracker"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
