@@ -73,6 +73,10 @@ test.describe.serial("Auth bootstrap and route guards", () => {
     await page.goto("/")
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
+    await expect(page.getByText("Expenses", { exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
+    await expect(page.getByText("Switchboard ledger", { exact: true })).toHaveCount(0)
+    await expect(page.getByText("Welcome back", { exact: true })).toHaveCount(0)
 
     await submitAuthForm(page, "login-form", bootstrapUser)
     await expect(page).toHaveURL(/\/(?:\?|$)/)

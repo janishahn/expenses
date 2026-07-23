@@ -364,7 +364,7 @@ Mobile sheets use safe areas and focused scroll regions. The keyboard may hide t
 - **Composer:** Reports groups configuration, preview/generation state, and follow-up actions without nesting generic form cards.
 - **Utility workspace:** Settings and Admin use grouped sections, stable section navigation, clear status, and the same shapes and type system.
 - **Conversation:** Assistant uses a full-height transcript and persistent composer, not a generic card containing a chatbot.
-- **Identity:** Setup, Login, Signup, and Admin elevation use a quiet product mark, one paper form surface, and explicit security context.
+- **Identity:** Login uses one centered paper form with the quiet product mark, product name, form labels, state messages, and actions. It has no hero, tagline, kicker, or supporting copy. Setup, Signup, and Admin elevation use the same surface language with the context their tasks need.
 
 ## Feature-Specific Patterns
 

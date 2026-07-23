@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-23
+
+### Changed
+- Simplified the web login screen to one centered sign-in form, removed promotional copy, and capitalized the Expenses name consistently.
+
+### Dependencies
+- Updated frontend development dependencies to address high-severity security advisories.
+
 ## [0.4.0] - 2026-07-21
 
 ### Fixed
