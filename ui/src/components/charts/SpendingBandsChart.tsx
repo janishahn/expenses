@@ -100,6 +100,7 @@ function SpendingBandsChart({
     )
   }, [months])
   const visibleCategories = categories.slice(0, 7)
+  const displayedMonths = [...months].reverse()
 
   return (
     <FinancialPanel
@@ -129,7 +130,7 @@ function SpendingBandsChart({
         ) : (
           <>
             <div className="space-y-2" aria-label="Six-month spending bands">
-              {months.map((month) => {
+              {displayedMonths.map((month) => {
                 const search = new URLSearchParams({
                   period: "custom",
                   start: `${month.month}-01`,
@@ -274,7 +275,7 @@ function SpendingBandsChart({
               </tr>
             </thead>
             <tbody>
-              {months.map((month) => (
+              {displayedMonths.map((month) => (
                 <tr key={month.month}>
                   <th scope="row">{monthLabel(month.month)}</th>
                   <td>

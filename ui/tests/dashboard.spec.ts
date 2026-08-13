@@ -205,6 +205,7 @@ test.describe("Dashboard Page", () => {
     }
     expect(bandsPayload.months).toHaveLength(6)
     const firstMonthKey = bandsPayload.months[0].month
+    const latestMonthKey = bandsPayload.months[bandsPayload.months.length - 1].month
     const forecastResponse = await request.get("/api/forecast?horizon=6&mode=full")
     const forecastPayload = (await forecastResponse.json()) as {
       months: Array<{
@@ -224,7 +225,7 @@ test.describe("Dashboard Page", () => {
     await expect(page.getByTestId("dashboard-spending-band-month").first()).toHaveAttribute(
       "href",
       new RegExp(
-        `start=${firstMonthKey}-01.*end=${monthEndDate(firstMonthKey)}.*type=expense`
+        `start=${latestMonthKey}-01.*end=${monthEndDate(latestMonthKey)}.*type=expense`
       ),
     )
     await page.locator(".spending-band-segment").first().hover()
@@ -934,9 +935,10 @@ test.describe("Dashboard month labels in a UTC-negative timezone", () => {
       months: Array<{ month: string }>
     }
     expect(bandsPayload.months).toHaveLength(6)
-    const expectedLabels = bandsPayload.months.map(
+    const expectedLabels = [...bandsPayload.months].reverse().map(
       (month) => SHORT_MONTHS[month.month.slice(5)]
     )
+    const firstHistoryLabel = SHORT_MONTHS[bandsPayload.months[0].month.slice(5)]
 
     await page.goto("/")
 
@@ -949,7 +951,7 @@ test.describe("Dashboard month labels in a UTC-negative timezone", () => {
     }
     await expect(
       page.getByTestId("dashboard-balance-history").getByRole("img", {
-        name: new RegExp(`euros in ${expectedLabels[0]}`),
+        name: new RegExp(`euros in ${firstHistoryLabel}`),
       }),
     ).toBeVisible()
   })
