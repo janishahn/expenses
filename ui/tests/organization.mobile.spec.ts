@@ -18,13 +18,42 @@ test.describe("Organization surfaces (mobile)", () => {
 
     await page.getByRole("link", { name: new RegExp(tagName) }).first().click()
     await expect(page).toHaveURL(/\/tags\/\d+/)
-    await expect(page.getByTestId("tag-settings-inspector")).toBeVisible()
-    await expect(page.getByLabel("Start date")).toHaveValue("2026-08-10")
-    await expect(page.getByLabel("End date")).toHaveValue("2026-08-17")
+    const settings = page.getByTestId("tag-settings-inspector")
+    await expect(settings).toBeVisible()
+    await expect(settings).toContainText("10.08.2026–17.08.2026")
+    await expect(page.getByLabel("Name")).toHaveCount(0)
+
+    await settings.getByRole("button", { name: "Edit" }).click()
+    const editDialog = page.getByRole("dialog", { name: "Edit tag" })
+    await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
+    await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
+    const datePadding = await editDialog.getByLabel("Start date").evaluate((input) => {
+      const style = window.getComputedStyle(input)
+      return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]
+    })
+    expect(datePadding).toEqual(["0px", "0px", "0px", "0px"])
+    const datePanel = editDialog.getByLabel("Start date").locator("xpath=../..")
+    const dateFieldBounds = await datePanel.evaluate((panel) => {
+      const panelBounds = panel.getBoundingClientRect()
+      return Array.from(panel.querySelectorAll('input[type="date"]')).map((input) => {
+        const inputBounds = input.getBoundingClientRect()
+        return {
+          inputLeft: inputBounds.left,
+          inputRight: inputBounds.right,
+          panelLeft: panelBounds.left,
+          panelRight: panelBounds.right,
+        }
+      })
+    })
+    expect(dateFieldBounds).toHaveLength(2)
+    for (const bounds of dateFieldBounds) {
+      expect(bounds.inputLeft).toBeGreaterThanOrEqual(bounds.panelLeft - 1)
+      expect(bounds.inputRight).toBeLessThanOrEqual(bounds.panelRight + 1)
+    }
 
     const updatedName = `${tagName} updated`
-    await page.getByLabel("Name").fill(updatedName)
-    await page.getByRole("button", { name: "Save changes" }).click()
+    await editDialog.getByLabel("Name").fill(updatedName)
+    await editDialog.getByRole("button", { name: "Save" }).click()
     await expect(page.getByRole("heading", { name: updatedName })).toBeVisible()
   })
 

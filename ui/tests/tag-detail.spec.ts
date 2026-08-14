@@ -27,8 +27,16 @@ test.describe("Tag Detail Page", () => {
 
     await page.goto(`/tags/${tagId}?period=all`)
     await expect(page.locator("main h1")).toContainText(originalName)
+    const settings = page.getByTestId("tag-settings-inspector")
+    await expect(settings).toContainText("Included in budgets")
+    await expect(page.getByRole("dialog", { name: "Edit tag" })).toHaveCount(0)
+    await expect(page.getByLabel("Name")).toHaveCount(0)
 
-    const budgetToggle = page
+    await settings.getByRole("button", { name: "Edit" }).click()
+    const editDialog = page.getByRole("dialog", { name: "Edit tag" })
+    await expect(editDialog).toBeVisible()
+
+    const budgetToggle = editDialog
       .locator("label", { hasText: "Exclude from budgets" })
       .getByRole("switch")
     await expect(budgetToggle).toBeVisible()
@@ -39,22 +47,27 @@ test.describe("Tag Detail Page", () => {
       initialBudgetState === "true" ? "false" : "true"
     )
 
-    await page
+    await editDialog
       .locator("label", { hasText: "Automatically add during a date range" })
       .getByRole("switch")
       .click()
-    await page.getByLabel("Start date").fill("2026-08-10")
-    await page.getByLabel("End date").fill("2026-08-17")
+    await editDialog.getByLabel("Start date").fill("2026-08-10")
+    await editDialog.getByLabel("End date").fill("2026-08-17")
 
     const updatedName = `${originalName} Updated`
-    await page.getByLabel("Name").fill(updatedName)
-    await page.getByRole("button", { name: "Save changes" }).click()
+    await editDialog.getByLabel("Name").fill(updatedName)
+    await editDialog.getByRole("button", { name: "Save" }).click()
+    await expect(editDialog).toHaveCount(0)
     await expect(page.locator("main h1")).toContainText(updatedName)
-    await expect(page.getByLabel("Start date")).toHaveValue("2026-08-10")
-    await expect(page.getByLabel("End date")).toHaveValue("2026-08-17")
+    await expect(settings).toContainText("Excluded from budgets")
+    await expect(settings).toContainText("10.08.2026–17.08.2026")
+
+    await settings.getByRole("button", { name: "Edit" }).click()
+    await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
+    await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
 
     page.once("dialog", (dialog) => dialog.accept())
-    await page.getByRole("button", { name: "Delete tag" }).click()
+    await editDialog.getByRole("button", { name: "Delete tag" }).click()
     await expect(page).toHaveURL("/tags")
     await expect(page.locator("body")).not.toContainText(updatedName)
   })

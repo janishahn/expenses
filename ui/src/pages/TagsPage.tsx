@@ -320,7 +320,7 @@ function TagsPage() {
                     type="date"
                     value={autoAttachStart}
                     onChange={(event) => setAutoAttachStart(event.target.value)}
-                    className="mt-1"
+                    className="mt-1 max-md:p-0"
                     required
                   />
                 </AppFieldLabel>
@@ -331,7 +331,7 @@ function TagsPage() {
                     value={autoAttachEnd}
                     min={autoAttachStart || undefined}
                     onChange={(event) => setAutoAttachEnd(event.target.value)}
-                    className="mt-1"
+                    className="mt-1 max-md:p-0"
                     required
                   />
                 </AppFieldLabel>

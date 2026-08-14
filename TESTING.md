@@ -80,7 +80,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |
 | Weekly digest navigation and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
 | Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts` | `categories.mobile.spec.ts` | Yes |
-| Tag create, date-range defaults, detail update/delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |
+| Tag create, date-range defaults, read-only detail and explicit edit flow, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Recurring create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
 | Template create/edit/delete and reorder | `templates.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |

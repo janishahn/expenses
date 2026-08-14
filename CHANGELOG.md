@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reworked the web tag detail page into a balanced summary, activity, settings, and breakdown layout. Tag settings now stay read-only until Edit opens the focused editor, matching the rest of the app instead of leaving a form permanently visible.
+
+### Fixed
+- Automatic start and end date fields now stay within tag modals on iPhone Safari instead of overflowing when WebKit miscalculates padded controls at full width.
+
 ## [0.4.3] - 2026-08-14
 
 ### Dependencies

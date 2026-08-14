@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
+import { FloppyDiskIcon } from "@phosphor-icons/react/FloppyDisk"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
@@ -17,6 +21,13 @@ import {
   SectionHeading,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
@@ -59,7 +70,7 @@ type TagDetailResponse = {
   transactions: TransactionRow[]
 }
 
-type TagSettingsFormProps = {
+type TagSettingsEditorProps = {
   tag: TagDetailResponse["tag"]
   updatePending: boolean
   deletePending: boolean
@@ -71,16 +82,18 @@ type TagSettingsFormProps = {
     auto_attach_period: { start: string; end: string } | null
   }) => void
   onDelete: () => void
+  onClose: () => void
 }
 
-function TagSettingsForm({
+function TagSettingsEditor({
   tag,
   updatePending,
   deletePending,
   updateError,
   onUpdate,
   onDelete,
-}: TagSettingsFormProps) {
+  onClose,
+}: TagSettingsEditorProps) {
   const [name, setName] = useState(tag.name)
   const [hidden, setHidden] = useState(tag.is_hidden_from_budget)
   const [autoAttachEnabled, setAutoAttachEnabled] = useState(
@@ -106,54 +119,67 @@ function TagSettingsForm({
   }
 
   return (
-    <FinancialPanel role="inspector" data-testid="tag-settings-inspector">
-      <form onSubmit={handleSubmit}>
-        <SectionHeading className="flex-col items-stretch md:flex-row md:items-center">
-          <div>
-            <h2 className="font-head text-lg font-bold">Tag settings</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Identity and budget treatment
-            </p>
-          </div>
-          <AppButton
-            type="button"
-            onClick={onDelete}
-            tone="danger"
-            disabled={deletePending}
-          >
-            Delete tag
-          </AppButton>
-        </SectionHeading>
-        <div className="surface-section-body">
-          <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !updatePending && !deletePending) onClose()
+      }}
+    >
+      <DialogContent
+        aria-label="Edit tag"
+        className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
+      >
+        <div className="-mr-5 overflow-y-auto pr-5">
+          <DialogHeader>
+            <div>
+              <DialogTitle>Edit tag</DialogTitle>
+              <p className="mt-1 text-xs text-muted">
+                Update identity, budget treatment, and automatic dates
+              </p>
+            </div>
+            <DialogClose asChild>
+              <AppButton
+                tone="ghost"
+                className="h-9 w-9 rounded-full p-0"
+                aria-label="Close tag editor"
+                disabled={updatePending || deletePending}
+              >
+                <XIcon className="h-4 w-4" aria-hidden="true" />
+              </AppButton>
+            </DialogClose>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <AppFieldLabel>
               Name
               <AppInput
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 className="mt-1"
+                autoFocus
                 required
               />
             </AppFieldLabel>
-            <label className="flex items-center gap-3 rounded-md bg-faint px-3 py-2 text-xs text-muted">
+            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
               <Toggle on={hidden} onChange={setHidden} />
-              Exclude from budgets
+              <span>Exclude from budgets</span>
             </label>
-          </div>
-          <div className="mt-4 space-y-3 rounded-md bg-faint p-3">
-            <label className="flex items-center gap-3 text-xs text-muted">
-              <Toggle on={autoAttachEnabled} onChange={setAutoAttachEnabled} />
-              Automatically add during a date range
+            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
+              <Toggle
+                on={autoAttachEnabled}
+                onChange={setAutoAttachEnabled}
+              />
+              <span>Automatically add during a date range</span>
             </label>
             {autoAttachEnabled ? (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 rounded-md bg-faint p-3 sm:grid-cols-2">
                 <AppFieldLabel>
                   Start date
                   <AppInput
                     type="date"
                     value={autoAttachStart}
                     onChange={(event) => setAutoAttachStart(event.target.value)}
-                    className="mt-1"
+                    className="mt-1 max-md:p-0"
                     required
                   />
                 </AppFieldLabel>
@@ -164,30 +190,47 @@ function TagSettingsForm({
                     value={autoAttachEnd}
                     min={autoAttachStart || undefined}
                     onChange={(event) => setAutoAttachEnd(event.target.value)}
-                    className="mt-1"
+                    className="mt-1 max-md:p-0"
                     required
                   />
                 </AppFieldLabel>
-                <p className="text-xs text-muted sm:col-span-2">
-                  Both boundary dates are included. Manual transaction forms show
-                  this tag before saving.
-                </p>
               </div>
             ) : null}
-          </div>
-          {Boolean(updateError) && (
-            <p className="mt-2 text-xs text-semantic-red">{String(updateError)}</p>
-          )}
-          <AppButton
-            type="submit"
-            className="mt-4"
-            disabled={updatePending}
-          >
-            {updatePending ? "Saving…" : "Save changes"}
-          </AppButton>
+            {Boolean(updateError) && (
+              <p className="text-xs text-semantic-red">{String(updateError)}</p>
+            )}
+            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <AppButton
+                type="button"
+                onClick={onDelete}
+                tone="danger"
+                disabled={updatePending || deletePending}
+              >
+                <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                {deletePending ? "Deleting…" : "Delete tag"}
+              </AppButton>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <AppButton
+                  type="button"
+                  onClick={onClose}
+                  tone="ghost"
+                  disabled={updatePending || deletePending}
+                >
+                  Cancel
+                </AppButton>
+                <AppButton
+                  type="submit"
+                  disabled={updatePending || deletePending}
+                >
+                  <FloppyDiskIcon className="h-4 w-4" aria-hidden="true" />
+                  {updatePending ? "Saving…" : "Save"}
+                </AppButton>
+              </div>
+            </div>
+          </form>
         </div>
-      </form>
-    </FinancialPanel>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -196,6 +239,13 @@ function TagDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [editorOpen, setEditorOpen] = useState(false)
+  const editButtonRef = useRef<HTMLButtonElement>(null)
+
+  const closeEditor = () => {
+    setEditorOpen(false)
+    window.requestAnimationFrame(() => editButtonRef.current?.focus())
+  }
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams(searchParams)
@@ -224,6 +274,7 @@ function TagDetailPage() {
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
+      closeEditor()
       queryClient.invalidateQueries({ queryKey: ["tag", tagId] })
       queryClient.invalidateQueries({ queryKey: ["tags"] })
     },
@@ -246,6 +297,11 @@ function TagDetailPage() {
   const applyCustomPeriod = (start: string, end: string) =>
     setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
 
+  const openEditor = () => {
+    updateMutation.reset()
+    setEditorOpen(true)
+  }
+
   const handleDelete = () => {
     if (!window.confirm("Delete this tag? This will remove it from transactions.")) {
       return
@@ -264,9 +320,21 @@ function TagDetailPage() {
   }
 
   const { tag, period, kpis, sparklines, donut, transactions } = data
+  const now = new Date()
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
+  const today = new Date(now.getTime() - timezoneOffsetMs)
+    .toISOString()
+    .slice(0, 10)
+  const automaticStatus = !tag.auto_attach_period
+    ? "Off"
+    : today < tag.auto_attach_period.start
+      ? "Upcoming"
+      : today > tag.auto_attach_period.end
+        ? "Ended"
+        : "Active"
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4 md:space-y-5">
       <PageIntro
         title={tag.name}
         titleAccessory={
@@ -280,15 +348,16 @@ function TagDetailPage() {
         backLabel="← Tags"
       />
 
-      <PeriodPicker
-        periodSlug={period.slug}
-        start={period.start}
-        end={period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
-      />
-
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+      <FinancialPanel role="hero" className="space-y-5 p-5 md:p-6">
+        <div className="w-full lg:ml-auto lg:max-w-[28rem]">
+          <PeriodPicker
+            periodSlug={period.slug}
+            start={period.start}
+            end={period.end}
+            onSetPreset={setPresetPeriod}
+            onApplyCustom={applyCustomPeriod}
+          />
+        </div>
         <div
           data-testid="tag-detail-metrics"
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"
@@ -338,19 +407,9 @@ function TagDetailPage() {
             </MetricLane>
           ))}
         </div>
+      </FinancialPanel>
 
-        <TagSettingsForm
-          key={`${tag.id}-${tag.name}-${String(tag.is_hidden_from_budget)}-${tag.auto_attach_period?.start ?? "none"}-${tag.auto_attach_period?.end ?? "none"}`}
-          tag={tag}
-          updatePending={updateMutation.isPending}
-          deletePending={deleteMutation.isPending}
-          updateError={updateMutation.error}
-          onUpdate={(payload) => updateMutation.mutate(payload)}
-          onDelete={handleDelete}
-        />
-      </div>
-
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
         <FinancialPanel role="ledger" data-testid="tag-activity-ledger">
           <SectionHeading>
             <div>
@@ -421,7 +480,71 @@ function TagDetailPage() {
           </div>
         </FinancialPanel>
 
-        <div className="space-y-4">
+        <aside className="space-y-4">
+          <FinancialPanel role="inspector" data-testid="tag-settings-inspector">
+            <SectionHeading>
+              <div>
+                <h2 className="font-head text-lg font-bold">Tag settings</h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Identity, budget treatment, and automatic dates
+                </p>
+              </div>
+              <AppButton
+                ref={editButtonRef}
+                type="button"
+                onClick={openEditor}
+                tone="secondary"
+              >
+                <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
+                Edit
+              </AppButton>
+            </SectionHeading>
+            <dl className="divide-y divide-border px-5">
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
+                <dt className="text-xs font-semibold text-muted">Name</dt>
+                <dd className="min-w-0 break-words text-sm font-semibold text-text sm:text-right">
+                  {tag.name}
+                </dd>
+              </div>
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
+                <dt className="text-xs font-semibold text-muted">
+                  Budget treatment
+                </dt>
+                <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
+                  {tag.is_hidden_from_budget
+                    ? "Excluded from budgets"
+                    : "Included in budgets"}
+                  <span className="mt-0.5 block text-xs font-normal text-muted">
+                    {tag.is_hidden_from_budget
+                      ? "Kept outside normal spending plans"
+                      : "Counts toward normal spending plans"}
+                  </span>
+                </dd>
+              </div>
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
+                <dt className="text-xs font-semibold text-muted">
+                  Automatic tagging
+                </dt>
+                <dd
+                  className={`min-w-0 text-sm font-semibold sm:text-right ${
+                    automaticStatus === "Active"
+                      ? "text-semantic-green"
+                      : automaticStatus === "Upcoming"
+                        ? "text-accent"
+                        : "text-text"
+                  }`}
+                >
+                  {automaticStatus}
+                  <span className="mt-0.5 block text-xs font-normal text-muted">
+                    {tag.auto_attach_period
+                      ? `${formatEuroDate(tag.auto_attach_period.start)}–${formatEuroDate(tag.auto_attach_period.end)}`
+                      : "New transactions are not preselected"}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </FinancialPanel>
+
           {donut.has_any_transactions ? (
             <div className="space-y-6">
               <DonutChart
@@ -445,8 +568,20 @@ function TagDetailPage() {
               </p>
             </FinancialPanel>
           )}
-        </div>
+        </aside>
       </div>
+
+      {editorOpen ? (
+        <TagSettingsEditor
+          tag={tag}
+          updatePending={updateMutation.isPending}
+          deletePending={deleteMutation.isPending}
+          updateError={updateMutation.error}
+          onUpdate={(payload) => updateMutation.mutate(payload)}
+          onDelete={handleDelete}
+          onClose={closeEditor}
+        />
+      ) : null}
     </section>
   )
 }
