@@ -45,6 +45,7 @@ type TagDetailResponse = {
     name: string
     color: string | null
     is_hidden_from_budget: boolean
+    auto_attach_period: { start: string; end: string } | null
   }
   period: { slug: string; start: string; end: string }
   kpis: { income: number; expenses: number; balance: number }
@@ -63,7 +64,12 @@ type TagSettingsFormProps = {
   updatePending: boolean
   deletePending: boolean
   updateError: unknown
-  onUpdate: (payload: { name: string; is_hidden_from_budget: boolean }) => void
+  onUpdate: (payload: {
+    name: string
+    color: string | null
+    is_hidden_from_budget: boolean
+    auto_attach_period: { start: string; end: string } | null
+  }) => void
   onDelete: () => void
 }
 
@@ -77,12 +83,25 @@ function TagSettingsForm({
 }: TagSettingsFormProps) {
   const [name, setName] = useState(tag.name)
   const [hidden, setHidden] = useState(tag.is_hidden_from_budget)
+  const [autoAttachEnabled, setAutoAttachEnabled] = useState(
+    tag.auto_attach_period !== null,
+  )
+  const [autoAttachStart, setAutoAttachStart] = useState(
+    tag.auto_attach_period?.start ?? "",
+  )
+  const [autoAttachEnd, setAutoAttachEnd] = useState(
+    tag.auto_attach_period?.end ?? "",
+  )
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onUpdate({
       name: name.trim(),
+      color: tag.color,
       is_hidden_from_budget: hidden,
+      auto_attach_period: autoAttachEnabled
+        ? { start: autoAttachStart, end: autoAttachEnd }
+        : null,
     })
   }
 
@@ -120,6 +139,41 @@ function TagSettingsForm({
               <Toggle on={hidden} onChange={setHidden} />
               Exclude from budgets
             </label>
+          </div>
+          <div className="mt-4 space-y-3 rounded-md bg-faint p-3">
+            <label className="flex items-center gap-3 text-xs text-muted">
+              <Toggle on={autoAttachEnabled} onChange={setAutoAttachEnabled} />
+              Automatically add during a date range
+            </label>
+            {autoAttachEnabled ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <AppFieldLabel>
+                  Start date
+                  <AppInput
+                    type="date"
+                    value={autoAttachStart}
+                    onChange={(event) => setAutoAttachStart(event.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  End date
+                  <AppInput
+                    type="date"
+                    value={autoAttachEnd}
+                    min={autoAttachStart || undefined}
+                    onChange={(event) => setAutoAttachEnd(event.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </AppFieldLabel>
+                <p className="text-xs text-muted sm:col-span-2">
+                  Both boundary dates are included. Manual transaction forms show
+                  this tag before saving.
+                </p>
+              </div>
+            ) : null}
           </div>
           {Boolean(updateError) && (
             <p className="mt-2 text-xs text-semantic-red">{String(updateError)}</p>
@@ -159,7 +213,12 @@ function TagDetailPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (payload: { name: string; is_hidden_from_budget: boolean }) =>
+    mutationFn: (payload: {
+      name: string
+      color: string | null
+      is_hidden_from_budget: boolean
+      auto_attach_period: { start: string; end: string } | null
+    }) =>
       apiFetch(`/api/tags/${tagId}`, {
         method: "PUT",
         body: JSON.stringify(payload),
@@ -281,7 +340,7 @@ function TagDetailPage() {
         </div>
 
         <TagSettingsForm
-          key={`${tag.id}-${tag.name}-${String(tag.is_hidden_from_budget)}`}
+          key={`${tag.id}-${tag.name}-${String(tag.is_hidden_from_budget)}-${tag.auto_attach_period?.start ?? "none"}-${tag.auto_attach_period?.end ?? "none"}`}
           tag={tag}
           updatePending={updateMutation.isPending}
           deletePending={deleteMutation.isPending}

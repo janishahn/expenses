@@ -1435,6 +1435,41 @@
         "title": "BudgetScopeOut",
         "type": "object"
       },
+      "BudgetTemplateApplyFromIn": {
+        "properties": {
+          "amount_cents": {
+            "minimum": 0.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/BudgetFrequency"
+          },
+          "starts_on": {
+            "format": "date",
+            "title": "Starts On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frequency",
+          "amount_cents",
+          "starts_on"
+        ],
+        "title": "BudgetTemplateApplyFromIn",
+        "type": "object"
+      },
       "BudgetTemplateIn": {
         "properties": {
           "amount_cents": {
@@ -6944,8 +6979,38 @@
         "title": "StatusOut",
         "type": "object"
       },
+      "TagAutoAttachPeriod": {
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "TagAutoAttachPeriod",
+        "type": "object"
+      },
       "TagIn": {
         "properties": {
+          "auto_attach_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TagAutoAttachPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "color": {
             "anyOf": [
               {
@@ -7012,6 +7077,16 @@
       },
       "TagMutationOut": {
         "properties": {
+          "auto_attach_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TagAutoAttachPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "color": {
             "anyOf": [
               {
@@ -7046,6 +7121,16 @@
       },
       "TagOut": {
         "properties": {
+          "auto_attach_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TagAutoAttachPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "color": {
             "anyOf": [
               {
@@ -9396,6 +9481,44 @@
           }
         },
         "summary": "Api Upsert Budget Template"
+      }
+    },
+    "/api/budgets/templates/apply-from": {
+      "post": {
+        "operationId": "api_apply_budget_template_from_api_budgets_templates_apply_from_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetTemplateApplyFromIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTemplateMutationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Apply Budget Template From"
       }
     },
     "/api/budgets/templates/{template_id}": {

@@ -8,22 +8,29 @@ import { AppInput } from "./ui/product-fields"
 const RECENT_LIMIT = 3
 const SEARCH_LIMIT = 8
 
-type TagOption = { id: number; name: string }
-type TagsResponse = { tags: TagOption[] }
+export type TagAutoAttachPeriod = { start: string; end: string }
+export type TagOption = {
+  id: number
+  name: string
+  auto_attach_period: TagAutoAttachPeriod | null
+}
+export type TagsResponse = { tags: TagOption[] }
 
 type TagSelectorProps = {
   selected: string[]
   onChange: (next: string[]) => void
+  scheduled?: string[]
 }
 
-function TagSelector({ selected, onChange }: TagSelectorProps) {
+function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
   const [query, setQuery] = useState("")
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["tags", "all"],
     queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
   })
 
   const selectedLower = new Set(selected.map((name) => name.toLowerCase()))
+  const scheduledLower = new Set(scheduled.map((name) => name.toLowerCase()))
 
   // Unselected active tags, newest first, so a freshly created one-off (e.g. a
   // trip) surfaces as a recent chip. Already-selected tags — including any that
@@ -51,16 +58,8 @@ function TagSelector({ selected, onChange }: TagSelectorProps) {
   return (
     <div className="form-label">
       <span>Tags</span>
-      {isLoading ? (
+      {isLoading && !data ? (
         <p className="text-xs font-normal text-muted">Loading tags…</p>
-      ) : data && data.tags.length === 0 && selected.length === 0 ? (
-        <p className="text-xs font-normal text-muted">
-          No tags yet.{" "}
-          <Link to="/tags" className="text-accent underline-offset-2 hover:underline">
-            Create tags
-          </Link>{" "}
-          to organize transactions.
-        </p>
       ) : (
         <div className="space-y-2">
           {selected.length > 0 && (
@@ -74,13 +73,43 @@ function TagSelector({ selected, onChange }: TagSelectorProps) {
                   className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-semibold text-accent transition hover:border-accent/60"
                 >
                   {name}
+                  {scheduledLower.has(name.toLowerCase()) ? (
+                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">
+                      Auto
+                    </span>
+                  ) : null}
                   <XIcon className="h-3 w-3" />
                 </button>
               ))}
             </div>
           )}
 
-          {suggestions.length > 0 && (
+          {isError ? (
+            <p className="text-xs font-normal text-semantic-red">
+              Couldn&apos;t load tags.{" "}
+              <button
+                type="button"
+                className="font-semibold underline underline-offset-2"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                {isFetching ? "Retrying…" : "Retry"}
+              </button>
+            </p>
+          ) : data && data.tags.length === 0 && selected.length === 0 ? (
+            <p className="text-xs font-normal text-muted">
+              No tags yet.{" "}
+              <Link
+                to="/tags"
+                className="text-accent underline-offset-2 hover:underline"
+              >
+                Create tags
+              </Link>{" "}
+              to organize transactions.
+            </p>
+          ) : null}
+
+          {!isError && suggestions.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {suggestions.map((name) => (
                 <button
@@ -96,17 +125,19 @@ function TagSelector({ selected, onChange }: TagSelectorProps) {
             </div>
           )}
 
-          <AppInput
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tags…"
-            className="font-normal"
-          />
+          {!isError && data ? (
+            <AppInput
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search tags…"
+              className="font-normal"
+            />
+          ) : null}
 
-          {trimmed && matches.length === 0 ? (
+          {!isError && trimmed && matches.length === 0 ? (
             <p className="text-xs font-normal text-muted">No tags match “{query}”.</p>
-          ) : moreCount > 0 ? (
+          ) : !isError && moreCount > 0 ? (
             <p className="text-xs font-normal text-muted">
               {trimmed
                 ? "Keep typing to narrow the results."

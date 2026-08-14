@@ -39,10 +39,19 @@ test.describe("Tag Detail Page", () => {
       initialBudgetState === "true" ? "false" : "true"
     )
 
+    await page
+      .locator("label", { hasText: "Automatically add during a date range" })
+      .getByRole("switch")
+      .click()
+    await page.getByLabel("Start date").fill("2026-08-10")
+    await page.getByLabel("End date").fill("2026-08-17")
+
     const updatedName = `${originalName} Updated`
     await page.getByLabel("Name").fill(updatedName)
     await page.getByRole("button", { name: "Save changes" }).click()
     await expect(page.locator("main h1")).toContainText(updatedName)
+    await expect(page.getByLabel("Start date")).toHaveValue("2026-08-10")
+    await expect(page.getByLabel("End date")).toHaveValue("2026-08-17")
 
     page.once("dialog", (dialog) => dialog.accept())
     await page.getByRole("button", { name: "Delete tag" }).click()

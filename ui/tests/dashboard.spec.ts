@@ -544,6 +544,47 @@ test.describe("Dashboard Page", () => {
     await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toHaveCount(0)
   })
 
+  test("shows scheduled tags and saves a manual removal", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const today = localToday()
+    const tagName = `scheduled-${Date.now()}`
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        name: tagName,
+        is_hidden_from_budget: false,
+        auto_attach_period: { start: today, end: today },
+      },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
+
+    await page.goto("/")
+    await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add transaction" })
+    const scheduledChip = dialog.getByRole("button", {
+      name: `Remove tag ${tagName}`,
+    })
+    await expect(scheduledChip).toContainText("Auto")
+    await scheduledChip.click()
+    await expect(scheduledChip).toHaveCount(0)
+
+    await dialog.getByLabel("Amount").fill("9.00")
+    await dialog.getByLabel("Title").fill(`Scheduled removal ${Date.now()}`)
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/transactions") &&
+        response.request().method() === "POST",
+    )
+    await dialog.getByRole("button", { name: "Add transaction" }).click()
+    const createResponse = await createResponsePromise
+    expect(createResponse.ok()).toBeTruthy()
+    const created = (await createResponse.json()) as { id: number }
+    const detailResponse = await request.get(`/api/transactions/${created.id}`)
+    expect(detailResponse.ok()).toBeTruthy()
+    const detail = (await detailResponse.json()) as { tags: string[] }
+    expect(detail.tags).not.toContain(tagName)
+  })
+
   test("refreshes current forecast evidence after adding a transaction", async ({
     page,
     request,

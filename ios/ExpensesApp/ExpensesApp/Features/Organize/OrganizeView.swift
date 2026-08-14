@@ -700,6 +700,11 @@ private struct TagList: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            if let period = tag.autoAttachPeriod {
+                                Text("Auto \(TagAutoAttachDateFormatter.summary(period))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         Text("\(tag.usageCount)")
@@ -1211,6 +1216,9 @@ private struct TagFormView: View {
     @State private var name: String
     @State private var color: String
     @State private var hiddenFromBudget: Bool
+    @State private var autoAttachEnabled: Bool
+    @State private var autoAttachStart: Date
+    @State private var autoAttachEnd: Date
     @State private var formError: String?
 
     init(tag: TagRow?) {
@@ -1218,6 +1226,17 @@ private struct TagFormView: View {
         _name = State(initialValue: tag?.name ?? "")
         _color = State(initialValue: tag?.color ?? "")
         _hiddenFromBudget = State(initialValue: tag?.isHiddenFromBudget ?? false)
+        _autoAttachEnabled = State(initialValue: tag?.autoAttachPeriod != nil)
+        _autoAttachStart = State(
+            initialValue: tag?.autoAttachPeriod.flatMap {
+                TagAutoAttachDateFormatter.date($0.start)
+            } ?? Date()
+        )
+        _autoAttachEnd = State(
+            initialValue: tag?.autoAttachPeriod.flatMap {
+                TagAutoAttachDateFormatter.date($0.end)
+            } ?? Date()
+        )
     }
 
     var body: some View {
@@ -1229,6 +1248,26 @@ private struct TagFormView: View {
                         .textInputAutocapitalization(.never)
                     Toggle("Hidden from budgets", isOn: $hiddenFromBudget)
                         .sensoryFeedback(.selection, trigger: hiddenFromBudget)
+                }
+                Section("Automatic tagging") {
+                    Toggle("Add during a date range", isOn: $autoAttachEnabled)
+                        .sensoryFeedback(.selection, trigger: autoAttachEnabled)
+                    if autoAttachEnabled {
+                        DatePicker(
+                            "Start date",
+                            selection: $autoAttachStart,
+                            displayedComponents: .date
+                        )
+                        DatePicker(
+                            "End date",
+                            selection: $autoAttachEnd,
+                            in: autoAttachStart...,
+                            displayedComponents: .date
+                        )
+                        Text("Both boundary dates are included. Manual transaction forms show this tag before saving.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if let formError {
                     Section {
@@ -1259,16 +1298,50 @@ private struct TagFormView: View {
             return
         }
         let cleanColor = color.trimmingCharacters(in: .whitespacesAndNewlines)
+        if autoAttachEnabled && autoAttachStart > autoAttachEnd {
+            formError = "End date must be on or after start date."
+            return
+        }
         let body = TagMutationRequest(
             name: cleanName,
             color: cleanColor.isEmpty ? nil : cleanColor,
-            isHiddenFromBudget: hiddenFromBudget
+            isHiddenFromBudget: hiddenFromBudget,
+            autoAttachPeriod: autoAttachEnabled
+                ? TagAutoAttachPeriod(
+                    start: TagAutoAttachDateFormatter.string(autoAttachStart),
+                    end: TagAutoAttachDateFormatter.string(autoAttachEnd)
+                )
+                : nil
         )
         if await model.saveTag(id: tag?.id, body: body) {
             dismiss()
         } else {
             formError = model.lastError?.message ?? "Tag could not be saved."
         }
+    }
+}
+
+private enum TagAutoAttachDateFormatter {
+    private static let apiFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    static func date(_ value: String) -> Date? {
+        apiFormatter.date(from: value)
+    }
+
+    static func string(_ value: Date) -> String {
+        apiFormatter.string(from: value)
+    }
+
+    static func summary(_ period: TagAutoAttachPeriod) -> String {
+        guard let start = date(period.start), let end = date(period.end) else {
+            return "\(period.start)–\(period.end)"
+        }
+        return "\(AppFormatters.day(start))–\(AppFormatters.day(end))"
     }
 }
 

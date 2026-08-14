@@ -234,6 +234,12 @@ class Tag(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_tag_user_name"),
         Index("ix_tags_user_archived_at", "user_id", "archived_at"),
+        CheckConstraint(
+            "(auto_attach_start_date IS NULL AND auto_attach_end_date IS NULL) OR "
+            "(auto_attach_start_date IS NOT NULL AND auto_attach_end_date IS NOT NULL "
+            "AND auto_attach_start_date <= auto_attach_end_date)",
+            name="ck_tag_auto_attach_period",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -243,6 +249,8 @@ class Tag(Base, TimestampMixin):
     is_hidden_from_budget: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    auto_attach_start_date: Mapped[Optional[date]] = mapped_column(Date)
+    auto_attach_end_date: Mapped[Optional[date]] = mapped_column(Date)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     transactions: Mapped[list["Transaction"]] = relationship(

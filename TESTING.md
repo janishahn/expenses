@@ -68,7 +68,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 |---|---|---|---|
 | First-run setup, login, logout, signup, protected deep links | `auth.spec.ts`, `settings.spec.ts` | `auth.mobile.spec.ts` | Real setup submission in both layouts |
 | Authenticated shell, navigation, period propagation, theme, unknown routes | `navigation.desktop.spec.ts` | `navigation.mobile.spec.ts` | Yes |
-| Dashboard metrics, periods, charts, privacy, category focus, quick add | `dashboard.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `visual.mobile.spec.ts` | Yes |
+| Dashboard metrics, periods, charts, privacy, category focus, quick add, scheduled-tag defaults and removal | `dashboard.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `visual.mobile.spec.ts` | Yes |
 | Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
 | Transaction actions, filtering, search reveal, selection, detail, edit, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts` | `transactions.mobile.spec.ts` | Yes |
 | Uncategorized Inbox categorization | `transactions.spec.ts` | `transactions.mobile.spec.ts` | Yes |
@@ -80,7 +80,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |
 | Weekly digest navigation and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
 | Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts` | `categories.mobile.spec.ts` | Yes |
-| Tag create, detail update/delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |
+| Tag create, date-range defaults, detail update/delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Recurring create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
 | Template create/edit/delete and reorder | `templates.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |

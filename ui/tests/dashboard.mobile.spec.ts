@@ -83,7 +83,11 @@ test.describe("Dashboard Page (mobile)", () => {
     const tagName = `mobile-fab-${Date.now()}`
     const tagResponse = await request.post("/api/tags", {
       headers: { "X-CSRF-Token": token },
-      data: { name: tagName, is_hidden_from_budget: false },
+      data: {
+        name: tagName,
+        is_hidden_from_budget: false,
+        auto_attach_period: { start: localToday(), end: localToday() },
+      },
     })
     expect(tagResponse.ok()).toBeTruthy()
 
@@ -97,12 +101,26 @@ test.describe("Dashboard Page (mobile)", () => {
     await dialog.getByLabel("Category").selectOption(String(categoryId))
     await dialog.getByLabel("Title").fill(title)
     await dialog.getByPlaceholder("Optional description").fill("Mobile description")
-    await dialog.getByRole("button", { name: `Add tag ${tagName}` }).click()
-    await expect(
-      dialog.getByRole("button", { name: `Remove tag ${tagName}` })
-    ).toBeVisible()
+    const scheduledChip = dialog.getByRole("button", {
+      name: `Remove tag ${tagName}`,
+    })
+    await expect(scheduledChip).toContainText("Auto")
+    await scheduledChip.click()
+    await expect(scheduledChip).toHaveCount(0)
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/transactions") &&
+        response.request().method() === "POST",
+    )
     await dialog.getByRole("button", { name: "Add transaction" }).click()
 
+    const createResponse = await createResponsePromise
+    expect(createResponse.ok()).toBeTruthy()
+    const created = (await createResponse.json()) as { id: number }
+    const detailResponse = await request.get(`/api/transactions/${created.id}`)
+    expect(detailResponse.ok()).toBeTruthy()
+    const detail = (await detailResponse.json()) as { tags: string[] }
+    expect(detail.tags).not.toContain(tagName)
     await expect(dialog).toBeHidden()
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
     await expect(page.locator("body")).toContainText(title)

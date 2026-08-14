@@ -85,6 +85,8 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             name="Client",
             color="#abcdef",
             is_hidden_from_budget=True,
+            auto_attach_start_date=date(2026, 1, 10),
+            auto_attach_end_date=date(2026, 1, 20),
         )
         session.add_all([expense_category, income_category, tag])
         session.flush()
@@ -306,6 +308,22 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             assert expense_export["longitude"] == "13.404954"
             assert expense_export["deleted_at"] is None
             assert expense_export["tag_ids"] == [tag.id]
+
+            tags = _read_ndjson(archive, "data/tags.ndjson")
+            assert tags == [
+                {
+                    "id": tag.id,
+                    "user_id": 1,
+                    "name": "Client",
+                    "color": "#abcdef",
+                    "is_hidden_from_budget": True,
+                    "auto_attach_start_date": "2026-01-10",
+                    "auto_attach_end_date": "2026-01-20",
+                    "archived_at": None,
+                    "created_at": tag.created_at.isoformat(),
+                    "updated_at": tag.updated_at.isoformat(),
+                }
+            ]
 
             attachments = _read_ndjson(archive, "data/receipt_attachments.ndjson")
             assert len(attachments) == 1

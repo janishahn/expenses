@@ -8,11 +8,19 @@ test.describe("Organization surfaces (mobile)", () => {
     await page.getByRole("button", { name: "Add tag" }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add tag" })
     await dialog.getByLabel("Name").fill(tagName)
+    await dialog
+      .locator("label", { hasText: "Automatically add during a date range" })
+      .getByRole("switch")
+      .click()
+    await dialog.getByLabel("Start date").fill("2026-08-10")
+    await dialog.getByLabel("End date").fill("2026-08-17")
     await dialog.getByRole("button", { name: "Add tag" }).click()
 
     await page.getByRole("link", { name: new RegExp(tagName) }).first().click()
     await expect(page).toHaveURL(/\/tags\/\d+/)
     await expect(page.getByTestId("tag-settings-inspector")).toBeVisible()
+    await expect(page.getByLabel("Start date")).toHaveValue("2026-08-10")
+    await expect(page.getByLabel("End date")).toHaveValue("2026-08-17")
 
     const updatedName = `${tagName} updated`
     await page.getByLabel("Name").fill(updatedName)

@@ -13,6 +13,7 @@ from expenses.services import (
     IngestCategoryAmbiguous,
     IngestService,
     RuleService,
+    TagService,
 )
 
 
@@ -154,6 +155,57 @@ def test_ingest_can_be_recategorized_by_rules() -> None:
         )
         txn = result.transaction
         assert txn.category_id == subs.id
+
+
+def test_ingest_applies_only_active_auto_attach_tags() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        tags = TagService(session)
+        tags.create(
+            "Vacation",
+            auto_attach_start_date=date(2026, 8, 10),
+            auto_attach_end_date=date(2026, 8, 17),
+        )
+        tags.create(
+            "Future",
+            auto_attach_start_date=date(2026, 8, 20),
+            auto_attach_end_date=date(2026, 8, 25),
+        )
+        archived = tags.create(
+            "Archived",
+            auto_attach_start_date=date(2026, 8, 10),
+            auto_attach_end_date=date(2026, 8, 17),
+        )
+        tags.archive(archived.id)
+
+        in_range = (
+            IngestService(session)
+            .ingest_expense(
+                IngestTransactionIn(
+                    amount_cents=900,
+                    title="Museum",
+                    date=date(2026, 8, 17),
+                )
+            )
+            .transaction
+        )
+        assert [tag.name for tag in in_range.tags] == ["Vacation"]
+        assert in_range._ingest_log_fields["scheduled_tags_applied"] == 1
+
+        out_of_range = (
+            IngestService(session)
+            .ingest_expense(
+                IngestTransactionIn(
+                    amount_cents=500,
+                    title="Coffee",
+                    date=date(2026, 8, 18),
+                )
+            )
+            .transaction
+        )
+        assert out_of_range.tags == []
 
 
 def test_ingest_stores_location_when_both_coordinates_are_present() -> None:

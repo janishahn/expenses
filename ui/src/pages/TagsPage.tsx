@@ -4,6 +4,7 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import { formatEuroDate } from "../app/format"
 import type { AppShellOutletContext } from "../app/AppShell"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
@@ -36,7 +37,14 @@ type TagRow = {
   name: string
   color: string | null
   is_hidden_from_budget: boolean
+  auto_attach_period: { start: string; end: string } | null
   usage_count: number
+}
+
+type TagMutationPayload = {
+  name: string
+  is_hidden_from_budget: boolean
+  auto_attach_period: { start: string; end: string } | null
 }
 
 type TagsResponse = {
@@ -52,6 +60,9 @@ function TagsPage() {
   const [mergeOpen, setMergeOpen] = useState(false)
   const [name, setName] = useState("")
   const [hidden, setHidden] = useState(false)
+  const [autoAttachEnabled, setAutoAttachEnabled] = useState(false)
+  const [autoAttachStart, setAutoAttachStart] = useState("")
+  const [autoAttachEnd, setAutoAttachEnd] = useState("")
   const [mergeSourceId, setMergeSourceId] = useState("")
   const [mergeTargetId, setMergeTargetId] = useState("")
   const [mergePreview, setMergePreview] = useState<Record<string, number> | null>(null)
@@ -77,7 +88,7 @@ function TagsPage() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (payload: { name: string; is_hidden_from_budget: boolean }) =>
+    mutationFn: (payload: TagMutationPayload) =>
       apiFetch<TagRow>("/api/tags", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -86,6 +97,9 @@ function TagsPage() {
       setCreateOpen(false)
       setName("")
       setHidden(false)
+      setAutoAttachEnabled(false)
+      setAutoAttachStart("")
+      setAutoAttachEnd("")
       queryClient.invalidateQueries({ queryKey: ["tags"] })
     },
   })
@@ -94,6 +108,9 @@ function TagsPage() {
     resetCreateMutation()
     setName("")
     setHidden(false)
+    setAutoAttachEnabled(false)
+    setAutoAttachStart("")
+    setAutoAttachEnd("")
     setCreateOpen(true)
   }, [resetCreateMutation])
 
@@ -141,6 +158,9 @@ function TagsPage() {
     createMutation.mutate({
       name: name.trim(),
       is_hidden_from_budget: hidden,
+      auto_attach_period: autoAttachEnabled
+        ? { start: autoAttachStart, end: autoAttachEnd }
+        : null,
     })
   }
 
@@ -159,6 +179,9 @@ function TagsPage() {
     mergePreviewMutation.reset()
     mergeApplyMutation.reset()
   }
+  const now = new Date()
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
+  const today = new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
 
   return (
     <section className="space-y-6">
@@ -215,13 +238,30 @@ function TagsPage() {
                     <p className="mt-1 font-mono text-[11px] text-muted">
                       {tag.usage_count} uses in period
                     </p>
+                    {tag.auto_attach_period ? (
+                      <p className="mt-1 text-[11px] text-muted">
+                        Auto {formatEuroDate(tag.auto_attach_period.start)}–
+                        {formatEuroDate(tag.auto_attach_period.end)}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-                {tag.is_hidden_from_budget ? (
-                  <span className="shrink-0 rounded-full bg-signal-yellow-soft px-2 py-1 text-[10px] font-semibold text-text">
-                    Excluded
-                  </span>
-                ) : null}
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {tag.auto_attach_period ? (
+                    <span className="rounded-full bg-signal-blue-soft px-2 py-1 text-[10px] font-semibold text-text">
+                      {today < tag.auto_attach_period.start
+                        ? "Upcoming"
+                        : today > tag.auto_attach_period.end
+                          ? "Ended"
+                          : "Active"}
+                    </span>
+                  ) : null}
+                  {tag.is_hidden_from_budget ? (
+                    <span className="rounded-full bg-signal-yellow-soft px-2 py-1 text-[10px] font-semibold text-text">
+                      Excluded
+                    </span>
+                  ) : null}
+                </div>
               </Link>
             ))}
           </div>
@@ -268,6 +308,38 @@ function TagsPage() {
               <Toggle on={hidden} onChange={setHidden} />
               <span>Exclude from budgets</span>
             </label>
+            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
+              <Toggle on={autoAttachEnabled} onChange={setAutoAttachEnabled} />
+              <span>Automatically add during a date range</span>
+            </label>
+            {autoAttachEnabled ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <AppFieldLabel>
+                  Start date
+                  <AppInput
+                    type="date"
+                    value={autoAttachStart}
+                    onChange={(event) => setAutoAttachStart(event.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </AppFieldLabel>
+                <AppFieldLabel>
+                  End date
+                  <AppInput
+                    type="date"
+                    value={autoAttachEnd}
+                    min={autoAttachStart || undefined}
+                    onChange={(event) => setAutoAttachEnd(event.target.value)}
+                    className="mt-1"
+                    required
+                  />
+                </AppFieldLabel>
+                <p className="text-xs text-muted sm:col-span-2">
+                  Both boundary dates are included.
+                </p>
+              </div>
+            ) : null}
             {createMutation.error ? (
               <p className="text-xs text-semantic-red">{String(createMutation.error)}</p>
             ) : null}

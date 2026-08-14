@@ -2,10 +2,54 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 
 from expenses.core.config import get_settings
+
+
+def test_tag_auto_attach_migration_preserves_tags_and_enforces_complete_periods(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "migration.db"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "202606281700")
+
+    now = datetime(2026, 8, 14, 12, 0, 0).isoformat(sep=" ")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO tags (
+                id, user_id, name, color, is_hidden_from_budget, archived_at,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, 1, "Vacation", None, 0, None, now, now),
+        )
+        conn.commit()
+
+    command.upgrade(cfg, "head")
+
+    with sqlite3.connect(db_path) as conn:
+        columns = conn.execute("PRAGMA table_info('tags')").fetchall()
+        row = conn.execute(
+            "SELECT name, auto_attach_start_date, auto_attach_end_date FROM tags"
+        ).fetchone()
+        assert "auto_attach_start_date" in [column[1] for column in columns]
+        assert "auto_attach_end_date" in [column[1] for column in columns]
+        assert row == ("Vacation", None, None)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE tags SET auto_attach_start_date = ? WHERE id = 1",
+                ("2026-08-14",),
+            )
+
+    get_settings.cache_clear()
 
 
 def test_transaction_title_migration_backfills_legacy_null_and_blank_notes(

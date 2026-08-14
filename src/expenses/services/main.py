@@ -117,6 +117,19 @@ class TagService:
             stmt = stmt.where(Tag.archived_at.is_(None))
         return self.session.scalars(stmt).all()
 
+    def active_auto_attach_tags(self, transaction_date: date) -> list[Tag]:
+        stmt = (
+            select(Tag)
+            .where(
+                Tag.user_id == self.user_id,
+                Tag.archived_at.is_(None),
+                Tag.auto_attach_start_date <= transaction_date,
+                Tag.auto_attach_end_date >= transaction_date,
+            )
+            .order_by(Tag.id.asc())
+        )
+        return self.session.scalars(stmt).all()
+
     def get_or_create(self, name: str) -> Tag:
         clean_name = name.strip()
         if not clean_name:
@@ -141,6 +154,8 @@ class TagService:
         name: str,
         is_hidden_from_budget: bool = False,
         color: str | None = None,
+        auto_attach_start_date: date | None = None,
+        auto_attach_end_date: date | None = None,
     ) -> Tag:
         clean_name = name.strip()
         if not clean_name:
@@ -158,6 +173,8 @@ class TagService:
             name=clean_name,
             color=color,
             is_hidden_from_budget=is_hidden_from_budget,
+            auto_attach_start_date=auto_attach_start_date,
+            auto_attach_end_date=auto_attach_end_date,
         )
         self.session.add(tag)
         self.session.commit()
@@ -178,6 +195,9 @@ class TagService:
         name: str,
         is_hidden_from_budget: bool,
         color: str | None = None,
+        auto_attach_period_supplied: bool = False,
+        auto_attach_start_date: date | None = None,
+        auto_attach_end_date: date | None = None,
     ) -> Tag:
         tag = self.session.get(Tag, tag_id)
         if not tag or tag.user_id != self.user_id:
@@ -198,6 +218,9 @@ class TagService:
         tag.name = clean_name
         tag.color = color
         tag.is_hidden_from_budget = is_hidden_from_budget
+        if auto_attach_period_supplied:
+            tag.auto_attach_start_date = auto_attach_start_date
+            tag.auto_attach_end_date = auto_attach_end_date
         self.session.commit()
         self.session.refresh(tag)
         log_event(
@@ -288,6 +311,26 @@ class TagService:
             raise ValueError("Source and target tags must differ")
         if target.archived_at is not None:
             raise ValueError("Target tag is archived")
+        source_period = (
+            source.auto_attach_start_date,
+            source.auto_attach_end_date,
+        )
+        target_period = (
+            target.auto_attach_start_date,
+            target.auto_attach_end_date,
+        )
+        if (
+            source.auto_attach_start_date is not None
+            and target.auto_attach_start_date is not None
+            and source_period != target_period
+        ):
+            raise ValueError(
+                "Cannot merge tags with different auto-attach periods: "
+                f"{source.auto_attach_start_date.isoformat()} to "
+                f"{source.auto_attach_end_date.isoformat()} and "
+                f"{target.auto_attach_start_date.isoformat()} to "
+                f"{target.auto_attach_end_date.isoformat()}"
+            )
 
         transaction_links = int(
             self.session.execute(
@@ -410,6 +453,14 @@ class TagService:
                 rule.add_tags_json = json.dumps(next_tags)
                 rules_add_tags_updated += 1
 
+        if (
+            source.auto_attach_start_date is not None
+            and target.auto_attach_start_date is None
+        ):
+            target.auto_attach_start_date = source.auto_attach_start_date
+            target.auto_attach_end_date = source.auto_attach_end_date
+        source.auto_attach_start_date = None
+        source.auto_attach_end_date = None
         source.archived_at = datetime.now(UTC)
         self.session.commit()
         return {
@@ -2738,6 +2789,9 @@ class IngestService:
         else:
             category_id = None
 
+        scheduled_tags = TagService(self.session, self.user_id).active_auto_attach_tags(
+            txn_date
+        )
         txn_in = TransactionIn(
             date=txn_date,
             occurred_at=now_local,
@@ -2748,7 +2802,7 @@ class IngestService:
             description=None,
             latitude=stored_latitude,
             longitude=stored_longitude,
-            tags=[],
+            tags=[tag.name for tag in scheduled_tags],
         )
         txn = TransactionService(self.session, self.user_id).create(
             txn_in, source="ingest"
@@ -2758,6 +2812,7 @@ class IngestService:
             "category_resolution": category_resolution,
             "fuzzy_distance": fuzzy_distance,
             "location_status": location_status,
+            "scheduled_tags_applied": len(scheduled_tags),
             "rules_matched": txn._rule_result["matched"],
             "rules_applied": txn._rule_result["applied"],
         }

@@ -792,7 +792,14 @@ def test_category_and_tag_merge_endpoints(
     response = api_client.post(
         "/api/tags",
         headers=csrf_headers,
-        json={"name": "LegacyTag", "is_hidden_from_budget": False},
+        json={
+            "name": "LegacyTag",
+            "is_hidden_from_budget": False,
+            "auto_attach_period": {
+                "start": "2026-08-10",
+                "end": "2026-08-17",
+            },
+        },
     )
     assert response.status_code == 200
     source_tag_id = int(response.json()["id"])
@@ -862,6 +869,16 @@ def test_category_and_tag_merge_endpoints(
     assert rule["budget_exclude_tag_id"] == target_tag_id
     assert "ModernTag" in rule["add_tags"]
     assert "LegacyTag" not in rule["add_tags"]
+
+    response = api_client.get("/api/tags?period=all")
+    assert response.status_code == 200
+    merged_tag = next(
+        item for item in response.json()["tags"] if item["id"] == target_tag_id
+    )
+    assert merged_tag["auto_attach_period"] == {
+        "start": "2026-08-10",
+        "end": "2026-08-17",
+    }
 
     response = api_client.post(
         "/api/categories/merge/preview",

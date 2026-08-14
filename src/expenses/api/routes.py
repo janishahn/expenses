@@ -1612,6 +1612,14 @@ def api_tags(request: Request, db: Session = Depends(get_db)):
                 "name": tag.name,
                 "color": tag.color,
                 "is_hidden_from_budget": tag.is_hidden_from_budget,
+                "auto_attach_period": (
+                    {
+                        "start": tag.auto_attach_start_date,
+                        "end": tag.auto_attach_end_date,
+                    }
+                    if tag.auto_attach_start_date is not None
+                    else None
+                ),
                 "usage_count": int(usage_map.get(tag.id, 0)),
             }
             for tag in tags
@@ -1624,8 +1632,13 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
+        period = data.auto_attach_period
         tag = TagService(db, user_id=user_id).create(
-            data.name, data.is_hidden_from_budget, data.color
+            name=data.name,
+            is_hidden_from_budget=data.is_hidden_from_budget,
+            color=data.color,
+            auto_attach_start_date=period.start if period else None,
+            auto_attach_end_date=period.end if period else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1634,6 +1647,14 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
         "name": tag.name,
         "color": tag.color,
         "is_hidden_from_budget": tag.is_hidden_from_budget,
+        "auto_attach_period": (
+            {
+                "start": tag.auto_attach_start_date,
+                "end": tag.auto_attach_end_date,
+            }
+            if tag.auto_attach_start_date is not None
+            else None
+        ),
     }
 
 
@@ -1665,6 +1686,14 @@ def api_tag_detail(tag_id: int, request: Request, db: Session = Depends(get_db))
             "name": tag.name,
             "color": tag.color,
             "is_hidden_from_budget": tag.is_hidden_from_budget,
+            "auto_attach_period": (
+                {
+                    "start": tag.auto_attach_start_date,
+                    "end": tag.auto_attach_end_date,
+                }
+                if tag.auto_attach_start_date is not None
+                else None
+            ),
         },
         "period": {
             "slug": period.slug,
@@ -1715,8 +1744,15 @@ def api_update_tag(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
+        period = data.auto_attach_period
         tag = TagService(db, user_id=user_id).update(
-            tag_id, data.name, data.is_hidden_from_budget, data.color
+            tag_id=tag_id,
+            name=data.name,
+            is_hidden_from_budget=data.is_hidden_from_budget,
+            color=data.color,
+            auto_attach_period_supplied=("auto_attach_period" in data.model_fields_set),
+            auto_attach_start_date=period.start if period else None,
+            auto_attach_end_date=period.end if period else None,
         )
     except ValueError as exc:
         status = 404 if "not found" in str(exc).lower() else 400
@@ -1726,6 +1762,14 @@ def api_update_tag(
         "name": tag.name,
         "color": tag.color,
         "is_hidden_from_budget": tag.is_hidden_from_budget,
+        "auto_attach_period": (
+            {
+                "start": tag.auto_attach_start_date,
+                "end": tag.auto_attach_end_date,
+            }
+            if tag.auto_attach_start_date is not None
+            else None
+        ),
     }
 
 

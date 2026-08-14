@@ -43,11 +43,17 @@ struct TransactionTag: Codable, Equatable, Identifiable {
     let name: String
 }
 
+struct TagAutoAttachPeriod: Codable, Equatable {
+    let start: String
+    let end: String
+}
+
 struct TagRow: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
     let color: String?
     let isHiddenFromBudget: Bool
+    let autoAttachPeriod: TagAutoAttachPeriod?
     let usageCount: Int
 
     enum CodingKeys: String, CodingKey {
@@ -55,6 +61,7 @@ struct TagRow: Codable, Equatable, Identifiable {
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case autoAttachPeriod = "auto_attach_period"
         case usageCount = "usage_count"
     }
 }
@@ -1062,15 +1069,29 @@ struct CategoryUpdateRequest: Codable, Equatable {
     let order: Int
 }
 
-struct TagMutationRequest: Codable, Equatable {
+struct TagMutationRequest: Encodable, Equatable {
     let name: String
     let color: String?
     let isHiddenFromBudget: Bool
+    let autoAttachPeriod: TagAutoAttachPeriod?
 
     enum CodingKeys: String, CodingKey {
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case autoAttachPeriod = "auto_attach_period"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(color, forKey: .color)
+        try container.encode(isHiddenFromBudget, forKey: .isHiddenFromBudget)
+        if let autoAttachPeriod {
+            try container.encode(autoAttachPeriod, forKey: .autoAttachPeriod)
+        } else {
+            try container.encodeNil(forKey: .autoAttachPeriod)
+        }
     }
 }
 

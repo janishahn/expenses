@@ -723,11 +723,12 @@ final class AppModel {
         }
     }
 
-    func loadOrganizeData() async {
+    @discardableResult
+    func loadOrganizeData() async -> Bool {
         guard let token else {
-            return
+            return false
         }
-        await runRequest {
+        return await runRequestReturningSuccess {
             try await reloadOrganizeData(token: token)
         }
     }

@@ -16,11 +16,14 @@ struct TransactionFormView: View {
     @State private var title: String
     @State private var description: String
     @State private var selectedTags: [String]
+    @State private var excludedScheduledTags: Set<String> = []
     @State private var isReimbursement: Bool
     @State private var includeCurrentLocation = false
     @State private var storedCoordinate: CLLocationCoordinate2D?
     @State private var coordinate: CLLocationCoordinate2D?
     @State private var formError: String?
+    @State private var tagSchedulesLoaded: Bool
+    @State private var tagScheduleLoadError: String?
     @State private var saveAttempts = 0
     @State private var lastSaveSucceeded = false
     @State private var locationProvider = LocationProvider()
@@ -41,6 +44,12 @@ struct TransactionFormView: View {
         _isReimbursement = State(initialValue: seed.isReimbursement)
         _storedCoordinate = State(initialValue: seed.coordinate)
         _coordinate = State(initialValue: seed.coordinate)
+        if case .create = mode {
+            _tagSchedulesLoaded = State(initialValue: false)
+        } else {
+            _tagSchedulesLoaded = State(initialValue: true)
+        }
+        _tagScheduleLoadError = State(initialValue: nil)
     }
 
     var body: some View {
@@ -107,11 +116,25 @@ struct TransactionFormView: View {
                     TextField("Description", text: $description, axis: .vertical)
                         .lineLimit(3...8)
                     NavigationLink {
-                        TagSelectionView(available: model.tags?.tags ?? [], selected: $selectedTags)
+                        TagSelectionView(
+                            available: model.tags?.tags ?? [],
+                            selected: resolvedSelectedTags,
+                            scheduled: Set(
+                                activeScheduledTagNames.map { $0.lowercased() }
+                            ),
+                            onToggle: toggleTag
+                        )
                     } label: {
                         LabeledContent("Tags") {
-                            Text(tagsSummary)
-                                .lineLimit(1)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(tagsSummary)
+                                    .lineLimit(1)
+                                if !scheduledSelectedTags.isEmpty {
+                                    Text("Scheduled")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -160,6 +183,16 @@ struct TransactionFormView: View {
                             .foregroundStyle(.red)
                     }
                 }
+
+                if let tagScheduleLoadError {
+                    Section {
+                        Text(tagScheduleLoadError)
+                            .foregroundStyle(.red)
+                        Button("Retry") {
+                            Task { await loadTagSchedules() }
+                        }
+                    }
+                }
             }
             .navigationTitle(mode.title)
             .toolbar {
@@ -172,11 +205,11 @@ struct TransactionFormView: View {
                     Button("Save") {
                         Task { await save() }
                     }
-                    .disabled(model.isLoading)
+                    .disabled(model.isLoading || !tagSchedulesLoaded)
                 }
             }
             .task {
-                await model.loadOrganizeData()
+                await loadTagSchedules()
             }
             .sensoryFeedback(trigger: saveAttempts) { _, _ in
                 lastSaveSucceeded ? .success : .error
@@ -204,11 +237,73 @@ struct TransactionFormView: View {
     }
 
     private var tagsSummary: String {
-        selectedTags.isEmpty ? "None" : selectedTags.joined(separator: ", ")
+        resolvedSelectedTags.isEmpty
+            ? "None"
+            : resolvedSelectedTags.joined(separator: ", ")
+    }
+
+    private var activeScheduledTagNames: [String] {
+        guard case .create = mode else {
+            return []
+        }
+        let transactionDate = TransactionFormDateFormatter.dateOnly(occurredAt)
+        return (model.tags?.tags ?? []).compactMap { tag in
+            guard let period = tag.autoAttachPeriod,
+                  period.start <= transactionDate,
+                  period.end >= transactionDate
+            else {
+                return nil
+            }
+            return tag.name
+        }
+    }
+
+    private var resolvedSelectedTags: [String] {
+        var resolved = selectedTags.filter {
+            !excludedScheduledTags.contains($0.lowercased())
+        }
+        var seen = Set(resolved.map { $0.lowercased() })
+        for name in activeScheduledTagNames {
+            let normalized = name.lowercased()
+            if !excludedScheduledTags.contains(normalized) && seen.insert(normalized).inserted {
+                resolved.append(name)
+            }
+        }
+        return resolved
+    }
+
+    private var scheduledSelectedTags: [String] {
+        let selected = Set(resolvedSelectedTags.map { $0.lowercased() })
+        return activeScheduledTagNames.filter { selected.contains($0.lowercased()) }
+    }
+
+    private func toggleTag(_ name: String) {
+        let normalized = name.lowercased()
+        let isSelected = resolvedSelectedTags.contains {
+            $0.lowercased() == normalized
+        }
+        if isSelected {
+            selectedTags.removeAll { $0.lowercased() == normalized }
+            if activeScheduledTagNames.contains(where: {
+                $0.lowercased() == normalized
+            }) {
+                excludedScheduledTags.insert(normalized)
+            }
+            return
+        }
+
+        if !selectedTags.contains(where: { $0.lowercased() == normalized }) {
+            selectedTags.append(name)
+        }
+        excludedScheduledTags.remove(normalized)
     }
 
     private func save() async {
         formError = nil
+        guard tagSchedulesLoaded else {
+            formError = "Tags must load before this transaction can be saved."
+            return
+        }
         guard let payload = makePayload() else {
             return
         }
@@ -260,7 +355,7 @@ struct TransactionFormView: View {
             description: trimmedDescription.isEmpty ? nil : trimmedDescription,
             latitude: coordinate?.latitude,
             longitude: coordinate?.longitude,
-            tags: selectedTags
+            tags: resolvedSelectedTags
         )
     }
 
@@ -273,6 +368,17 @@ struct TransactionFormView: View {
             coordinate = storedCoordinate
             formError = error.localizedDescription
         }
+    }
+
+    private func loadTagSchedules() async {
+        let loaded = await model.loadOrganizeData()
+        guard case .create = mode else {
+            return
+        }
+        tagSchedulesLoaded = loaded
+        tagScheduleLoadError = loaded
+            ? nil
+            : model.lastError?.message ?? "Tags could not be loaded."
     }
 
     private func coordinateLabel(_ coordinate: CLLocationCoordinate2D) -> String {
@@ -294,7 +400,9 @@ struct TransactionFormView: View {
 
 private struct TagSelectionView: View {
     let available: [TagRow]
-    @Binding var selected: [String]
+    let selected: [String]
+    let scheduled: Set<String>
+    let onToggle: (String) -> Void
     @State private var search = ""
 
     private var allNames: [String] {
@@ -327,17 +435,23 @@ private struct TagSelectionView: View {
             } else {
                 ForEach(displayNames, id: \.self) { name in
                     Button {
-                        toggle(name)
+                        onToggle(name)
                     } label: {
                         HStack {
                             Text(name)
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if scheduled.contains(name.lowercased()) {
+                                Text("Auto")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
                             if isSelected(name) {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.tint)
                             }
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -357,13 +471,6 @@ private struct TagSelectionView: View {
         selected.contains { $0.lowercased() == name.lowercased() }
     }
 
-    private func toggle(_ name: String) {
-        if isSelected(name) {
-            selected.removeAll { $0.lowercased() == name.lowercased() }
-        } else {
-            selected.append(name)
-        }
-    }
 }
 
 enum TransactionFormMode {

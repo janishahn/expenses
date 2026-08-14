@@ -155,15 +155,28 @@ class TransactionTagOut(BaseModel):
     name: str
 
 
+class TagAutoAttachPeriod(BaseModel):
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def validate_date_order(self):
+        if self.start > self.end:
+            raise ValueError("Auto-attach start date must be on or before end date")
+        return self
+
+
 class TagOut(TransactionTagOut):
     color: Optional[str] = None
     is_hidden_from_budget: bool
+    auto_attach_period: Optional[TagAutoAttachPeriod] = None
     usage_count: int = 0
 
 
 class TagMutationOut(TransactionTagOut):
     color: Optional[str] = None
     is_hidden_from_budget: bool
+    auto_attach_period: Optional[TagAutoAttachPeriod] = None
 
 
 class TagsResponseOut(BaseModel):
@@ -1064,6 +1077,7 @@ class TagIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     color: Optional[str] = Field(None, max_length=9)
     is_hidden_from_budget: bool = False
+    auto_attach_period: Optional[TagAutoAttachPeriod] = None
 
 
 class RecurringRuleIn(BaseModel):

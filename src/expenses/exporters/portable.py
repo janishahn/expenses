@@ -106,6 +106,8 @@ class TagExport(ExportModel):
     name: str
     color: str | None
     is_hidden_from_budget: bool
+    auto_attach_start_date: date | None
+    auto_attach_end_date: date | None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -486,6 +488,8 @@ class PortableExportService:
                 name=row.name,
                 color=row.color,
                 is_hidden_from_budget=row.is_hidden_from_budget,
+                auto_attach_start_date=row.auto_attach_start_date,
+                auto_attach_end_date=row.auto_attach_end_date,
                 archived_at=row.archived_at,
                 created_at=row.created_at,
                 updated_at=row.updated_at,

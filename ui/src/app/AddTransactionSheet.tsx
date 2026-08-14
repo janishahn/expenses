@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate } from "react-router-dom"
 import { CategoryIcon } from "../components/CategoryIcon"
-import TagSelector from "../components/TagSelector"
+import TagSelector, { type TagsResponse } from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import SegmentedControl from "../components/SegmentedControl"
 import { AppButton } from "../components/ui/product-button"
@@ -50,7 +50,8 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
   const [categoryId, setCategoryId] = useState("")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [tags, setTags] = useState<string[]>([])
+  const [explicitTags, setExplicitTags] = useState<string[]>([])
+  const [excludedScheduledTags, setExcludedScheduledTags] = useState<string[]>([])
   const [isReimbursement, setIsReimbursement] = useState(false)
   const [formError, setFormError] = useState("")
 
@@ -66,12 +67,48 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
     enabled: open,
   })
 
+  const {
+    data: tagsData,
+    isError: tagsLoadFailed,
+    isFetching: tagsLoading,
+  } = useQuery({
+    queryKey: ["tags", "all"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    enabled: open,
+  })
+
   const categories = (categoriesData?.categories || []).filter(
     (category) => category.archived_at === null
   )
   const filteredCategories = categories.filter((category) => category.type === type)
   const resolvedCategoryId = categoryId
   const templates = templatesData?.templates || []
+  const transactionDate = occurredAt.slice(0, 10)
+  const scheduledTags = (tagsData?.tags ?? [])
+    .filter(
+      (tag) =>
+        tag.auto_attach_period &&
+        tag.auto_attach_period.start <= transactionDate &&
+        tag.auto_attach_period.end >= transactionDate,
+    )
+    .map((tag) => tag.name)
+  const excludedScheduledLower = new Set(
+    excludedScheduledTags.map((name) => name.toLowerCase()),
+  )
+  const tags = explicitTags.filter(
+    (name) => !excludedScheduledLower.has(name.toLowerCase()),
+  )
+  for (const name of scheduledTags) {
+    if (
+      !excludedScheduledLower.has(name.toLowerCase()) &&
+      !tags.some((entry) => entry.toLowerCase() === name.toLowerCase())
+    ) {
+      tags.push(name)
+    }
+  }
+  const scheduledSelectedTags = scheduledTags.filter((name) =>
+    tags.some((entry) => entry.toLowerCase() === name.toLowerCase()),
+  )
 
   const createMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -94,7 +131,8 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
       setAmount("")
       setTitle("")
       setDescription("")
-      setTags([])
+      setExplicitTags([])
+      setExcludedScheduledTags([])
       setType("expense")
       setCategoryId("")
       setIsReimbursement(false)
@@ -117,7 +155,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
     setCategoryId(String(template.category_id))
     setTitle(template.title || "")
     setDescription("")
-    setTags(template.tags)
+    setExplicitTags(template.tags)
     setFormError("")
     if (template.type !== "income") {
       setIsReimbursement(false)
@@ -135,9 +173,46 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
     }, 0)
   }
 
+  const handleTagsChange = (next: string[]) => {
+    const currentLower = new Set(tags.map((name) => name.toLowerCase()))
+    const nextLower = new Set(next.map((name) => name.toLowerCase()))
+    const removed = tags.filter((name) => !nextLower.has(name.toLowerCase()))
+    const added = next.filter((name) => !currentLower.has(name.toLowerCase()))
+    const removedLower = new Set(removed.map((name) => name.toLowerCase()))
+    const activeScheduledLower = new Set(
+      scheduledTags.map((name) => name.toLowerCase()),
+    )
+
+    setExplicitTags((current) => {
+      const updated = current.filter(
+        (name) => !removedLower.has(name.toLowerCase()),
+      )
+      for (const name of added) {
+        if (!updated.some((entry) => entry.toLowerCase() === name.toLowerCase())) {
+          updated.push(name)
+        }
+      }
+      return updated
+    })
+    setExcludedScheduledTags((current) => {
+      const updated = new Set(current.map((name) => name.toLowerCase()))
+      for (const name of added) updated.delete(name.toLowerCase())
+      for (const name of removed) {
+        if (activeScheduledLower.has(name.toLowerCase())) {
+          updated.add(name.toLowerCase())
+        }
+      }
+      return Array.from(updated)
+    })
+  }
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setFormError("")
+    if (!tagsData || tagsLoading || tagsLoadFailed) {
+      setFormError("Wait for tags to load before adding the transaction")
+      return
+    }
     if (!occurredAt) {
       setFormError("Date and time are required")
       return
@@ -315,7 +390,11 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                 />
               </div>
 
-              <TagSelector selected={tags} onChange={setTags} />
+              <TagSelector
+                selected={tags}
+                scheduled={scheduledSelectedTags}
+                onChange={handleTagsChange}
+              />
 
               {type === "income" && (
                 <label className="flex items-center gap-3 rounded-xl border border-border bg-surface-hi/60 px-3.5 py-3 text-xs text-muted">
@@ -328,6 +407,9 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
               )}
 
               {formError && <p className="text-xs text-semantic-red">{formError}</p>}
+              {tagsLoading && (
+                <p className="text-xs text-muted">Checking scheduled tags…</p>
+              )}
               {createMutation.error && (
                 <p className="text-xs text-semantic-red">{String(createMutation.error)}</p>
               )}
@@ -337,7 +419,12 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                   ref={submitButtonRef}
                   type="submit"
                   className="flex-1"
-                  disabled={createMutation.isPending}
+                  disabled={
+                    createMutation.isPending ||
+                    tagsLoading ||
+                    tagsLoadFailed ||
+                    !tagsData
+                  }
                 >
                   {createMutation.isPending ? "Saving..." : "Add transaction"}
                 </AppButton>

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-14
+
+### Added
+- Tags can now define an inclusive automatic date range. Web and iOS transaction forms show matching tags as removable defaults, while token-authenticated ingest attaches them silently; recurring posts, reconciliation, and imports remain unchanged.
+
 ### Changed
 - The Dashboard's six-month spending chart now shows the current month at the top instead of the bottom.
 
