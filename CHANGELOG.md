@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-08-16
+
 ### Changed
 - Replaced the web Sankey and the native iOS source/use lists with a responsive Net view built from recorded income and expense totals. Small categories group under Other without inventing links between income sources and spending; both clients include selection, details, and a full data view, while web keeps expense drill-downs.
 
