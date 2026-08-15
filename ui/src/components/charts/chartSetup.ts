@@ -9,7 +9,6 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js"
-import { Flow, SankeyController } from "chartjs-chart-sankey"
 
 ChartJS.register(
   ArcElement,
@@ -18,8 +17,6 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
-  SankeyController,
-  Flow,
   Filler,
   Tooltip
 )

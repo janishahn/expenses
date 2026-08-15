@@ -9,8 +9,8 @@ import BarChart from "../components/charts/BarChart"
 import { readThemeColor } from "../components/charts/chartSetup"
 import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
+import WaterfallChart, { type FlowNode } from "../components/charts/WaterfallChart"
 import PeriodPicker from "../components/PeriodPicker"
-import SankeyChart from "../components/charts/SankeyChart"
 import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
@@ -35,11 +35,6 @@ import {
   SheetTitle,
 } from "../components/ui/sheet"
 import { useThemePreference } from "../theme/useThemePreference"
-import {
-  buildGroupedFlow,
-  type FlowLink,
-  type FlowNode,
-} from "../components/charts/flowGrouping"
 import RouteLoading from "../components/RouteLoading"
 
 type MonthlySeriesPoint = {
@@ -94,14 +89,13 @@ type InsightsFlowResponse = {
   period: { slug: string; start: string; end: string }
   filters: { type: string | null; tag_id: number | null }
   nodes: FlowNode[]
-  links: FlowLink[]
+  links: Array<{ from: string; to: string; amount_cents: number }>
 }
 
 function InsightsPage() {
   useThemePreference()
   const [searchParams, setSearchParams] = useSearchParams()
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
-  const [groupedFlow, setGroupedFlow] = useState(false)
   const [mobileType, setMobileType] = useState("")
   const [mobileTag, setMobileTag] = useState("")
   const [mobileTrendCategory, setMobileTrendCategory] = useState("")
@@ -109,7 +103,7 @@ function InsightsPage() {
   const [isDesktop, setIsDesktop] = useState(() =>
     window.matchMedia("(min-width: 861px)").matches
   )
-  const activeView = searchParams.get("view") === "flow" ? "flow" : "charts"
+  const activeView = searchParams.get("view") === "net" ? "net" : "charts"
   const queryString = useMemo(() => {
     const params = new URLSearchParams(searchParams)
     if (!params.get("period")) {
@@ -129,18 +123,8 @@ function InsightsPage() {
   } = useQuery({
     queryKey: ["insights", "flow", queryString],
     queryFn: () => apiFetch<InsightsFlowResponse>(`/api/insights/flow?${queryString}`),
-    enabled: activeView === "flow",
+    enabled: activeView === "net",
   })
-
-  const flowPayload = useMemo(
-    () =>
-      flowData
-        ? groupedFlow
-          ? buildGroupedFlow(flowData.nodes, flowData.links)
-          : { nodes: flowData.nodes, links: flowData.links }
-        : { nodes: [], links: [] },
-    [flowData, groupedFlow],
-  )
 
   const updateParam = (key: string, value: string | null) => {
     setSearchParams(buildSearchParams(searchParams, { [key]: value }))
@@ -157,9 +141,9 @@ function InsightsPage() {
     updateParam("trend_category", value || null)
   const setBudgetMonth = (value: string) =>
     updateParam("budget_month", value || null)
-  const setView = (view: "charts" | "flow") =>
+  const setView = (view: "charts" | "net") =>
     setSearchParams(
-      buildSearchParams(searchParams, { view: view === "flow" ? "flow" : null })
+      buildSearchParams(searchParams, { view: view === "net" ? "net" : null })
     )
 
   useEffect(() => {
@@ -245,9 +229,7 @@ function InsightsPage() {
   const incomeColor = readThemeColor("--semantic-green", "98 196 146")
   const expenseColor = readThemeColor("--semantic-red", "224 114 102")
   const trendColor = readThemeColor("--accent", "245 185 85")
-  const flowExpenseNodes = flowPayload.nodes.filter(
-    (node) => node.type === "expense" && node.category_id != null && Number.isFinite(node.category_id)
-  )
+  const flowPeriodLabel = summary.replace(/^Date:\s*/, "")
 
   const openMobileFilters = () => {
     setMobileType(filters.type ?? "")
@@ -325,7 +307,7 @@ function InsightsPage() {
           ariaLabel="Insights view"
           items={[
             { value: "charts", label: "Analysis" },
-            { value: "flow", label: "Flow" },
+            { value: "net", label: "Net" },
           ]}
           onValueChange={setView}
         />
@@ -851,71 +833,16 @@ function InsightsPage() {
       </div>
         </>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-          <FinancialPanel role="chart">
-            <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">Cash flow</h2>
-                <p className="mt-0.5 text-xs text-muted">Income paths into expense categories</p>
-              </div>
-              <label className="inline-flex items-center gap-2 text-xs font-semibold text-muted">
-                <input
-                  type="checkbox"
-                  className="control-check"
-                  checked={groupedFlow}
-                  onChange={(event) => setGroupedFlow(event.target.checked)}
-                />
-                Group by Fixed / Variable / Discretionary
-              </label>
-            </SectionHeading>
-            {flowError ? (
-              <p className="p-5 text-sm text-semantic-red">Unable to load flow data.</p>
-            ) : (
-              <div className="p-4 md:p-5">
-                <SankeyChart
-                  nodes={flowPayload.nodes}
-                  links={flowPayload.links}
-                  onCategoryClick={goToCategoryTransactions}
-                />
-              </div>
-            )}
-          </FinancialPanel>
-          <FinancialPanel role="ledger">
-            <SectionHeading>
-              <div>
-                <h3 className="font-head text-base font-bold">Expense nodes</h3>
-                <p className="mt-0.5 text-xs text-muted">Open the underlying ledger</p>
-              </div>
-            </SectionHeading>
-            <div className="grid gap-2 p-3">
-              {flowExpenseNodes.length ? (
-                flowExpenseNodes.map((node) => (
-                  <button
-                    key={node.id}
-                    type="button"
-                    onClick={() => {
-                      if (node.category_id) {
-                        goToCategoryTransactions(node.category_id)
-                      }
-                    }}
-                    className="flex min-h-11 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-text transition-colors hover:bg-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                  >
-                    <CategoryIcon
-                      icon={
-                        expenseCategories.find((category) => category.id === node.category_id)
-                          ?.icon ?? null
-                      }
-                      label={node.label}
-                    />
-                    <span className="truncate">{node.label}</span>
-                  </button>
-                ))
-              ) : (
-                <p className="text-sm text-muted">No expense nodes in this period.</p>
-              )}
-            </div>
-          </FinancialPanel>
-        </div>
+        flowError ? (
+          <p className="py-5 text-sm text-semantic-red">Unable to load income and spending.</p>
+        ) : (
+          <WaterfallChart
+            key={queryString}
+            nodes={flowData?.nodes ?? []}
+            periodLabel={flowPeriodLabel}
+            onCategoryClick={goToCategoryTransactions}
+          />
+        )
       )}
     </section>
   )

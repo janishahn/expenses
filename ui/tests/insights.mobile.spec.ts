@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures"
+import { createTransaction, getCsrfToken } from "./helpers"
 
 test.describe("Insights Page (mobile)", () => {
   test("applies filters from the mobile filter sheet", async ({ page }) => {
@@ -63,5 +64,68 @@ test.describe("Insights Page (mobile)", () => {
         }),
       )
       .toBeGreaterThan(10)
+  })
+
+  test("renders an interactive net chart without horizontal page scrolling", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const suffix = Date.now()
+    const incomeName = `Mobile Net Income ${suffix}`
+    const expenseName = `Mobile Net Expense ${suffix}`
+    const createCategory = async (name: string, type: "income" | "expense") => {
+      const response = await request.post("/api/categories", {
+        headers: { "X-CSRF-Token": csrfToken },
+        data: { name, type, order: 0 },
+      })
+      expect(response.ok()).toBeTruthy()
+      return ((await response.json()) as { id: number }).id
+    }
+    const incomeCategoryID = await createCategory(incomeName, "income")
+    const expenseCategoryID = await createCategory(expenseName, "expense")
+    const now = new Date()
+
+    await createTransaction(request, csrfToken, {
+      date: now.toISOString().slice(0, 10),
+      occurred_at: now.toISOString(),
+      type: "income",
+      amount_cents: 99_000_000,
+      category_id: incomeCategoryID,
+      title: incomeName,
+      tags: [],
+    })
+    await createTransaction(request, csrfToken, {
+      date: now.toISOString().slice(0, 10),
+      occurred_at: now.toISOString(),
+      type: "expense",
+      amount_cents: 44_000_000,
+      category_id: expenseCategoryID,
+      title: expenseName,
+      tags: [],
+    })
+
+    await page.goto("/insights?view=net&period=this_month")
+    const chart = page.getByRole("group", { name: "Income and spending chart" })
+    await expect(chart).toBeVisible()
+    const expenseStep = chart.locator(
+      `[data-waterfall-step][aria-label^="${expenseName}:"]`
+    )
+    await expect(expenseStep).toBeVisible()
+    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+
+    await expenseStep.click()
+    await expect(expenseStep).toHaveAttribute("data-selected", "")
+    await expect(page.getByTestId("waterfall-details")).toContainText(expenseName)
+
+    await page.getByRole("heading", { name: "Income & spending" }).click()
+    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        )
+      )
+      .toBeLessThanOrEqual(0)
   })
 })

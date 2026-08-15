@@ -59,15 +59,15 @@ struct InsightsView: View {
                         } else {
                             ContentUnavailableView("No insights loaded", systemImage: "chart.xyaxis.line")
                         }
-                    case .flow:
+                    case .net:
                         if let flow = model.insightsFlow {
-                            InsightsFlowSection(flow: flow)
+                            InsightsNetSection(flow: flow)
                         } else if model.isLoading {
-                            LoadingStateSection(title: "Loading flow")
+                            LoadingStateSection(title: "Loading net view")
                         } else if model.showsInsightsFlowLoadFailed {
-                            UnavailableStateSection(title: "Couldn't load the cash flow", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
+                            UnavailableStateSection(title: "Couldn't load income and spending", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
                         } else {
-                            ContentUnavailableView("No flow loaded", systemImage: "point.3.connected.trianglepath.dotted")
+                            ContentUnavailableView("No income or spending loaded", systemImage: "chart.bar.xaxis")
                         }
                     case .durables:
                         if let durablePurchases = model.durablePurchases {
@@ -126,7 +126,7 @@ struct InsightsView: View {
                 tagID: selectedTagID,
                 trendCategoryID: selectedTrendCategoryID
             )
-        case .flow:
+        case .net:
             await model.loadInsightsFlow(period: period, type: apiTypeFilter, tagID: selectedTagID)
         case .durables:
             await model.loadDurablePurchases()
@@ -194,7 +194,7 @@ private struct InsightsSectionPicker: View {
 
 private enum InsightsViewSection: String, CaseIterable, Identifiable {
     case charts
-    case flow
+    case net
     case durables
 
     var id: String { rawValue }
@@ -203,8 +203,8 @@ private enum InsightsViewSection: String, CaseIterable, Identifiable {
         switch self {
         case .charts:
             "Charts"
-        case .flow:
-            "Flow"
+        case .net:
+            "Net"
         case .durables:
             "Durables"
         }
@@ -538,75 +538,620 @@ private struct InsightDeltaRows: View {
     }
 }
 
-private struct InsightsFlowSection: View {
+private struct InsightsNetSection: View {
+    @Environment(\.colorScheme) private var scheme
+
     let flow: InsightsFlowResponse
 
-    private var sourceNodes: [InsightsFlowNode] {
-        flow.nodes.filter { $0.type == "income" || $0.type == "deficit" }
+    @State private var selectedStepID: String?
+    @State private var detailStepID = "result"
+    @State private var presentingData = false
+
+    private let maxIncomeSteps = 3
+    private let maxExpenseSteps = 5
+
+    private var steps: [CashFlowWaterfallStep] {
+        let incomeNodes = flow.nodes.filter { $0.type == "income" && $0.amountCents > 0 }
+        let expenseNodes = flow.nodes.filter { $0.type == "expense" && $0.amountCents > 0 }
+        let changes = collapsedSteps(incomeNodes, kind: .income, maximum: maxIncomeSteps)
+            + collapsedSteps(expenseNodes, kind: .expense, maximum: maxExpenseSteps)
+
+        var runningBalance = 0
+        var result = changes.map { step in
+            let start = runningBalance
+            runningBalance += step.amountCents
+            return CashFlowWaterfallStep(
+                id: step.id,
+                label: step.label,
+                kind: step.kind,
+                amountCents: step.amountCents,
+                startCents: start,
+                endCents: runningBalance,
+                members: step.members
+            )
+        }
+        result.append(
+            CashFlowWaterfallStep(
+                id: "result",
+                label: "Net",
+                kind: .result,
+                amountCents: runningBalance,
+                startCents: 0,
+                endCents: runningBalance,
+                members: []
+            )
+        )
+        return result
     }
 
-    private var sinkNodes: [InsightsFlowNode] {
-        flow.nodes.filter { $0.type == "expense" || $0.type == "savings" }
+    private var totalIncome: Int {
+        flow.nodes.filter { $0.type == "income" }.reduce(0) { $0 + $1.amountCents }
+    }
+
+    private var totalSpending: Int {
+        flow.nodes.filter { $0.type == "expense" }.reduce(0) { $0 + $1.amountCents }
+    }
+
+    private var detailStep: CashFlowWaterfallStep? {
+        steps.first { $0.id == detailStepID } ?? steps.last
+    }
+
+    private var periodLabel: String {
+        if flow.period.slug == "all" {
+            return "All time"
+        }
+        return "\(flow.period.start.formatted(date: .abbreviated, time: .omitted))–\(flow.period.end.formatted(date: .abbreviated, time: .omitted))"
     }
 
     var body: some View {
-        Section("Sources") {
-            FlowNodeRows(nodes: sourceNodes, color: .green)
-        }
-        Section("Uses") {
-            FlowNodeRows(nodes: sinkNodes, color: .red)
-        }
-        Section("Links") {
-            if flow.links.isEmpty {
-                Text("No flow links for this filter.")
-                    .foregroundStyle(.secondary)
+        Group {
+            if steps.count <= 1 {
+                Section {
+                    ContentUnavailableView("No income or spending data", systemImage: "chart.bar.xaxis")
+                }
             } else {
-                ForEach(flow.links) { link in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(label(for: link.from)) -> \(label(for: link.to))")
-                            .font(.body.weight(.medium))
-                        Text(AppFormatters.euros(link.amountCents))
-                            .font(.caption.monospacedDigit())
+                Section {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Income & spending")
+                                    .font(.title3.weight(.bold))
+                                Text("\(periodLabel) · Recorded totals")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Button {
+                                presentingData = true
+                            } label: {
+                                Image(systemName: "tablecells")
+                                    .frame(width: 32, height: 32)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View chart data")
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedStepID = nil
+                        }
+
+                        HStack(spacing: 14) {
+                            CashFlowLegendLabel(title: "Income", color: ExpensesTheme.income(for: scheme))
+                            CashFlowLegendLabel(title: "Spending", color: ExpensesTheme.expense(for: scheme))
+                            CashFlowLegendLabel(title: "Net", color: ExpensesTheme.accent(for: scheme))
+                        }
+
+                        CashFlowWaterfallChart(
+                            steps: steps,
+                            selectedStepID: $selectedStepID
+                        )
+                    }
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+                .onChange(of: selectedStepID) { _, selectedID in
+                    if let selectedID {
+                        detailStepID = selectedID
+                    }
+                }
+
+                if let detailStep {
+                    Section {
+                        CashFlowStepDetails(
+                            step: detailStep,
+                            totalIncome: totalIncome,
+                            totalSpending: totalSpending
+                        )
+                        .onTapGesture {
+                            selectedStepID = nil
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+
+                Text("Expenses are not assigned to specific income sources.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+            }
+        }
+        .sheet(isPresented: $presentingData) {
+            CashFlowDataSheet(steps: steps)
+        }
+        .onChange(of: flow) { _, _ in
+            selectedStepID = nil
+            detailStepID = "result"
+        }
+    }
+
+    private func collapsedSteps(
+        _ nodes: [InsightsFlowNode],
+        kind: CashFlowWaterfallStep.Kind,
+        maximum: Int
+    ) -> [CashFlowWaterfallStep] {
+        let sorted = nodes.sorted {
+            $0.amountCents == $1.amountCents
+                ? $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
+                : $0.amountCents > $1.amountCents
+        }
+        if sorted.count <= maximum {
+            return sorted.map { node in
+                CashFlowWaterfallStep(
+                    id: node.id,
+                    label: node.label,
+                    kind: kind,
+                    amountCents: kind == .expense ? -node.amountCents : node.amountCents,
+                    startCents: 0,
+                    endCents: 0,
+                    members: [node]
+                )
+            }
+        }
+
+        let visible = sorted.prefix(maximum - 1).map { node in
+            CashFlowWaterfallStep(
+                id: node.id,
+                label: node.label,
+                kind: kind,
+                amountCents: kind == .expense ? -node.amountCents : node.amountCents,
+                startCents: 0,
+                endCents: 0,
+                members: [node]
+            )
+        }
+        let remainder = Array(sorted.dropFirst(maximum - 1))
+        let remainderAmount = remainder.reduce(0) { $0 + $1.amountCents }
+        return visible + [
+            CashFlowWaterfallStep(
+                id: "\(kind.rawValue):other",
+                label: kind == .income ? "Other income" : "Other spending",
+                kind: kind,
+                amountCents: kind == .expense ? -remainderAmount : remainderAmount,
+                startCents: 0,
+                endCents: 0,
+                members: remainder
+            )
+        ]
+    }
+}
+
+private struct CashFlowWaterfallStep: Identifiable, Equatable {
+    enum Kind: String {
+        case income
+        case expense
+        case result
+    }
+
+    let id: String
+    let label: String
+    let kind: Kind
+    let amountCents: Int
+    let startCents: Int
+    let endCents: Int
+    let members: [InsightsFlowNode]
+}
+
+private struct CashFlowConnector: Identifiable {
+    var id: String { "\(fromID)-\(toID)" }
+    let fromID: String
+    let toID: String
+    let balanceCents: Int
+}
+
+private struct CashFlowAxis {
+    let minimum: Int
+    let maximum: Int
+    let ticks: [Int]
+}
+
+private struct CashFlowWaterfallChart: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let steps: [CashFlowWaterfallStep]
+    @Binding var selectedStepID: String?
+
+    private var connectors: [CashFlowConnector] {
+        zip(steps, steps.dropFirst()).map { current, next in
+            CashFlowConnector(fromID: current.id, toID: next.id, balanceCents: current.endCents)
+        }
+    }
+
+    private var axis: CashFlowAxis {
+        cashFlowAxis(for: steps)
+    }
+
+    var body: some View {
+        Chart {
+            ForEach(connectors) { connector in
+                RuleMark(
+                    x: .value("Balance", connector.balanceCents),
+                    yStart: .value("From", connector.fromID),
+                    yEnd: .value("To", connector.toID)
+                )
+                .foregroundStyle(Color.secondary.opacity(0.38))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+
+            ForEach(steps) { step in
+                if selectedStepID == step.id {
+                    BarMark(
+                        xStart: .value("Start balance", step.startCents),
+                        xEnd: .value("End balance", step.endCents),
+                        y: .value("Step", step.id),
+                        height: .fixed(20)
+                    )
+                    .foregroundStyle(Color.primary.opacity(0.82))
+                    .cornerRadius(5)
+
+                    PointMark(
+                        x: .value("Balance after", step.endCents),
+                        y: .value("Step", step.id)
+                    )
+                    .symbolSize(54)
+                    .foregroundStyle(Color.primary.opacity(0.82))
+                }
+
+                BarMark(
+                    xStart: .value("Start balance", step.startCents),
+                    xEnd: .value("End balance", step.endCents),
+                    y: .value("Step", step.id),
+                    height: .fixed(14)
+                )
+                .foregroundStyle(color(for: step.kind))
+                .cornerRadius(4)
+                .accessibilityLabel(step.label)
+                .accessibilityValue("\(signedEuros(step.amountCents)); balance after \(signedEuros(step.endCents))")
+
+                PointMark(
+                    x: .value("Balance after", step.endCents),
+                    y: .value("Step", step.id)
+                )
+                .symbolSize(24)
+                .foregroundStyle(color(for: step.kind))
+                .accessibilityHidden(true)
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXScale(domain: axis.minimum ... axis.maximum)
+        .chartYScale(domain: Array(steps.map(\.id).reversed()))
+        .chartXAxis {
+            AxisMarks(position: .top, values: axis.ticks) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Color.secondary.opacity(0.28))
+                AxisValueLabel {
+                    if let cents = value.as(Int.self) {
+                        Text(shortEuros(cents))
+                            .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
             }
         }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: steps.map(\.id)) { value in
+                AxisValueLabel {
+                    if let id = value.as(String.self),
+                       let step = steps.first(where: { $0.id == id }) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.label)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(2)
+                            Text(signedEuros(step.amountCents))
+                                .font(.caption2.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(color(for: step.kind))
+                        }
+                        .frame(width: 94, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .chartYSelection(value: $selectedStepID)
+        .frame(height: CGFloat(steps.count * 58 + 26))
     }
 
-    private func label(for id: String) -> String {
-        flow.nodes.first { $0.id == id }?.label ?? id
+    private func color(for kind: CashFlowWaterfallStep.Kind) -> Color {
+        switch kind {
+        case .income:
+            ExpensesTheme.income(for: scheme)
+        case .expense:
+            ExpensesTheme.expense(for: scheme)
+        case .result:
+            ExpensesTheme.accent(for: scheme)
+        }
     }
 }
 
-private struct FlowNodeRows: View {
-    let nodes: [InsightsFlowNode]
+private struct CashFlowLegendLabel: View {
+    let title: String
     let color: Color
 
-    private var maxValue: Double {
-        Double(nodes.map(\.amountCents).max() ?? 1)
+    var body: some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct CashFlowStepDetails: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let step: CashFlowWaterfallStep
+    let totalIncome: Int
+    let totalSpending: Int
+
+    private var share: Int {
+        let base = step.kind == .income ? totalIncome : totalSpending
+        guard base > 0 else { return 0 }
+        return Int((Double(abs(step.amountCents)) / Double(base) * 100).rounded())
     }
 
     var body: some View {
-        if nodes.isEmpty {
-            Text("No data.")
-                .foregroundStyle(.secondary)
-        } else {
-            ForEach(nodes) { node in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(node.label)
-                            .font(.body.weight(.medium))
-                        Spacer()
-                        Text(AppFormatters.euros(node.amountCents))
-                            .font(.body.monospacedDigit())
+        GlassSurface(padding: 16) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(color)
+                        .frame(width: 36, height: 36)
+                        .background(color.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.label)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(kindLabel.uppercased())
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
                     }
-                    ProgressView(value: Double(node.amountCents), total: maxValue)
-                        .tint(color)
+                }
+
+                Text(signedEuros(step.amountCents))
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
+
+                if step.kind == .result {
+                    VStack(spacing: 0) {
+                        CashFlowDetailRow(title: "Income", value: signedEuros(totalIncome))
+                        Divider()
+                        CashFlowDetailRow(title: "Spending", value: signedEuros(-totalSpending))
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        CashFlowMetric(
+                            title: step.kind == .income ? "Share of income" : "Share of spending",
+                            value: "\(share)%"
+                        )
+                        CashFlowMetric(title: "Balance after", value: signedEuros(step.endCents))
+                    }
+
+                    if step.members.count > 1 {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("BREAKDOWN")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .padding(.bottom, 4)
+                            ForEach(step.members.prefix(5)) { member in
+                                CashFlowDetailRow(
+                                    title: member.label,
+                                    value: signedEuros(step.kind == .expense ? -member.amountCents : member.amountCents)
+                                )
+                                if member.id != step.members.prefix(5).last?.id {
+                                    Divider()
+                                }
+                            }
+                            if step.members.count > 5 {
+                                Text("\(step.members.count - 5) more in the data view")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+
+    private var color: Color {
+        switch step.kind {
+        case .income:
+            ExpensesTheme.income(for: scheme)
+        case .expense:
+            ExpensesTheme.expense(for: scheme)
+        case .result:
+            ExpensesTheme.accent(for: scheme)
+        }
+    }
+
+    private var icon: String {
+        switch step.kind {
+        case .income: "arrow.up.right"
+        case .expense: "basket"
+        case .result: "checkmark.circle"
+        }
+    }
+
+    private var kindLabel: String {
+        switch step.kind {
+        case .income: "Income source"
+        case .expense: "Expense group"
+        case .result: "Period result"
+        }
+    }
+}
+
+private struct CashFlowMetric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct CashFlowDetailRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+        }
+        .frame(minHeight: 40)
+    }
+}
+
+private struct CashFlowDataSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let steps: [CashFlowWaterfallStep]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(steps) { step in
+                    if step.members.count > 1 {
+                        DisclosureGroup {
+                            ForEach(step.members) { member in
+                                LabeledContent(
+                                    member.label,
+                                    value: signedEuros(
+                                        step.kind == .expense ? -member.amountCents : member.amountCents
+                                    )
+                                )
+                                .font(.caption)
+                            }
+                        } label: {
+                            CashFlowDataRow(step: step)
+                        }
+                    } else {
+                        CashFlowDataRow(step: step)
+                    }
+                }
+
+                Section {
+                    Text("Expenses are not assigned to specific income sources.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Chart data")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .themeAccentTint()
+    }
+}
+
+private struct CashFlowDataRow: View {
+    let step: CashFlowWaterfallStep
+
+    var body: some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(signedEuros(step.amountCents))
+                    .font(.body.monospacedDigit().weight(.semibold))
+                Text("Balance \(signedEuros(step.endCents))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Text(step.label)
+                .font(.body.weight(.medium))
+        }
+    }
+}
+
+private func cashFlowAxis(for steps: [CashFlowWaterfallStep]) -> CashFlowAxis {
+    let rawMinimum = min(0, steps.flatMap { [$0.startCents, $0.endCents] }.min() ?? 0)
+    let rawMaximum = max(0, steps.flatMap { [$0.startCents, $0.endCents] }.max() ?? 0)
+    let span = max(100, rawMaximum - rawMinimum)
+    let roughStep = Double(span) / 4
+    let magnitude = pow(10, floor(log10(roughStep)))
+    let normalized = roughStep / magnitude
+    let multiplier = normalized <= 1 ? 1.0 : normalized <= 2 ? 2.0 : normalized <= 5 ? 5.0 : 10.0
+    let tickSize = max(100, Int(multiplier * magnitude))
+    var minimum = Int(floor(Double(rawMinimum) / Double(tickSize))) * tickSize
+    var maximum = Int(ceil(Double(rawMaximum) / Double(tickSize))) * tickSize
+    if minimum == maximum {
+        maximum += tickSize
+    }
+    var ticks = Array(stride(from: minimum, through: maximum, by: tickSize))
+    if ticks.count < 2 {
+        minimum = min(0, minimum - tickSize)
+        maximum = max(tickSize, maximum + tickSize)
+        ticks = [minimum, maximum]
+    }
+    return CashFlowAxis(minimum: minimum, maximum: maximum, ticks: ticks)
+}
+
+private func signedEuros(_ cents: Int) -> String {
+    if cents == 0 {
+        return AppFormatters.euros(0)
+    }
+    return "\(cents > 0 ? "+" : "−")\(AppFormatters.euros(abs(cents)))"
+}
+
+private func shortEuros(_ cents: Int) -> String {
+    let euros = abs(Double(cents) / 100)
+    let sign = cents < 0 ? "−" : ""
+    if euros >= 1000 {
+        let thousands = euros / 1000
+        let formatted = thousands.formatted(.number.precision(.fractionLength(thousands >= 10 ? 0 : 1)))
+        return "\(sign)\(formatted)k €"
+    }
+    return "\(sign)\(euros.formatted(.number.precision(.fractionLength(0)))) €"
 }
 
 private struct DurablePurchasesSection: View {
@@ -638,6 +1183,46 @@ private struct DurablePurchasesSection: View {
             }
         }
     }
+}
+
+#Preview("Net chart") {
+    List {
+        InsightsNetSection(
+            flow: InsightsFlowResponse(
+                period: Period(
+                    slug: "this_month",
+                    start: Date.now.addingTimeInterval(-14 * 86_400),
+                    end: .now
+                ),
+                filters: InsightsFilters(type: nil, tagID: nil),
+                nodes: [
+                    InsightsFlowNode(id: "income:1", label: "Salary", type: "income", amountCents: 325_000, categoryID: 1),
+                    InsightsFlowNode(id: "income:2", label: "Bank transfer", type: "income", amountCents: 145_000, categoryID: 2),
+                    InsightsFlowNode(id: "expense:3", label: "Groceries", type: "expense", amountCents: 121_000, categoryID: 3),
+                    InsightsFlowNode(id: "expense:4", label: "Food and dining", type: "expense", amountCents: 71_000, categoryID: 4),
+                    InsightsFlowNode(id: "expense:5", label: "Travel", type: "expense", amountCents: 61_500, categoryID: 5),
+                    InsightsFlowNode(id: "expense:6", label: "Health", type: "expense", amountCents: 40_500, categoryID: 6),
+                    InsightsFlowNode(id: "savings", label: "Net savings", type: "savings", amountCents: 176_000, categoryID: nil)
+                ],
+                links: []
+            )
+        )
+    }
+    .expensesScreenStyle()
+}
+
+#Preview("Net chart empty") {
+    List {
+        InsightsNetSection(
+            flow: InsightsFlowResponse(
+                period: Period(slug: "all", start: .now, end: .now),
+                filters: InsightsFilters(type: nil, tagID: nil),
+                nodes: [],
+                links: []
+            )
+        )
+    }
+    .expensesScreenStyle()
 }
 
 #Preview {

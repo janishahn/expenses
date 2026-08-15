@@ -1743,6 +1743,49 @@
   }
 }
 
+@keyframes waterfall-grow {
+  from {
+    opacity: 0;
+    transform: scaleY(0.04);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes waterfall-mobile-grow {
+  from {
+    opacity: 0;
+    transform: scaleX(0.04);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.waterfall-bar {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: waterfall-grow var(--motion-content) var(--ease-out-strong) both;
+  animation-delay: calc(var(--waterfall-index) * 30ms + 40ms);
+}
+
+[data-waterfall-step][data-kind="expense"] .waterfall-bar {
+  transform-origin: center top;
+}
+
+.waterfall-mobile-bar {
+  transform-origin: left center;
+  animation: waterfall-mobile-grow var(--motion-content) var(--ease-out-strong) both;
+  animation-delay: calc(var(--waterfall-index) * 30ms + 40ms);
+}
+
+[data-waterfall-step][data-kind="expense"] .waterfall-mobile-bar {
+  transform-origin: right center;
+}
+
 .toast-flash {
   animation: toast-in-out 2s ease-out forwards;
 }

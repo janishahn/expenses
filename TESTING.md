@@ -75,7 +75,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Trash restore and permanent deletion | `transactions-trash.spec.ts` | `transactions.mobile.spec.ts` | Yes |
 | Route loading placeholder (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Covered via the transactions route |
 | Optional read-only spending Assistant and disabled AI surfaces | `spending-assistant.spec.ts`, `llm-disabled.desktop.spec.ts` | `spending-assistant.mobile.spec.ts` | Yes |
-| Insights filters, charts, Flow, and drill-through | `insights.spec.ts` | `insights.mobile.spec.ts` | Yes |
+| Insights filters, charts, Net view selection/data view, and drill-through | `insights.spec.ts` | `insights.mobile.spec.ts` | Yes |
 | Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
 | What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
 | Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |

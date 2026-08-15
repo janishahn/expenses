@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import { createTransaction, getCsrfToken } from "./helpers"
 
 const THEME_STORAGE_KEY = "ew.theme.preference"
 
@@ -73,10 +73,13 @@ test.describe("Insights Page", () => {
     expect(hasMobile || hasDesktop).toBeTruthy()
   })
 
-  test("should render flow tab", async ({ page, request }) => {
+  test("should render net view", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const incomeCategory = await ensureCategory(request, token, "income", "E2E Flow Income")
-    const expenseCategory = await ensureCategory(request, token, "expense", "E2E Flow Expense")
+    const suffix = Date.now()
+    const incomeCategoryName = `E2E Net Income ${suffix}`
+    const expenseCategoryName = `E2E Net Expense ${suffix}`
+    const incomeCategory = await createCategory(request, token, incomeCategoryName, "income")
+    const expenseCategory = await createCategory(request, token, expenseCategoryName, "expense")
 
     await createTransaction(request, token, {
       date: new Date().toISOString().slice(0, 10),
@@ -84,7 +87,7 @@ test.describe("Insights Page", () => {
       type: "income",
       amount_cents: 150_000,
       category_id: incomeCategory,
-      title: `E2E Flow Income ${Date.now()}`,
+      title: `E2E Net Income ${Date.now()}`,
       tags: [],
     })
     await createTransaction(request, token, {
@@ -93,22 +96,43 @@ test.describe("Insights Page", () => {
       type: "expense",
       amount_cents: 90_000,
       category_id: expenseCategory,
-      title: `E2E Flow Expense ${Date.now()}`,
+      title: `E2E Net Expense ${Date.now()}`,
       tags: [],
     })
 
     await page.goto("/insights")
-    await page.getByRole("button", { name: "Flow" }).click()
-    await expect(page).toHaveURL(/view=flow/)
-    await expect(page.getByText("Cash flow")).toBeVisible()
-    await expect(page.getByText(/Date:/).first()).toBeVisible()
-    const expenseNodesPanel = page
-      .locator('[data-financial-surface="ledger"]')
-      .filter({ hasText: "Expense nodes" })
-      .first()
-    const expenseNodeButton = expenseNodesPanel.locator("button").first()
-    await expect(expenseNodeButton).toBeVisible()
-    await expenseNodeButton.click()
+    await page.getByRole("button", { name: "Net" }).click()
+    await expect(page).toHaveURL(/view=net/)
+    await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
+    await expect(page.getByText(/Recorded totals/).first()).toBeVisible()
+    await expect(
+      page.locator('svg[role="img"] title').filter({ hasText: "Income and spending chart" })
+    ).toHaveCount(1)
+
+    const expenseStep = page.locator(
+      `.net-chart-section svg [data-waterfall-step][aria-label^="${expenseCategoryName}:"]`
+    )
+    await expect(expenseStep).toBeVisible()
+    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+
+    const incomeStep = page.locator(
+      `.net-chart-section svg [data-waterfall-step][aria-label^="${incomeCategoryName}:"]`
+    )
+    await expenseStep.hover()
+    await incomeStep.hover()
+    await expenseStep.hover()
+    await expect(page.getByRole("tooltip")).toContainText(expenseCategoryName)
+    await expect(page.getByRole("tooltip")).not.toBeEmpty()
+
+    await expenseStep.click()
+    await expect(expenseStep).toHaveAttribute("data-selected", "")
+    await expect(page.getByTestId("waterfall-details")).toContainText(expenseCategoryName)
+
+    await page.getByRole("heading", { name: "Income & spending" }).click()
+    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+
+    await expenseStep.click()
+    await page.getByTestId("waterfall-details").getByRole("button", { name: "Open transactions" }).click()
     await expect(page).toHaveURL(/\/transactions\?/)
     await expect(page).toHaveURL(/type=expense/)
   })
@@ -159,20 +183,17 @@ test.describe("Insights Page", () => {
       window.localStorage.setItem(storageKey, value)
     }, [THEME_STORAGE_KEY, "light"] as const)
 
-    await page.goto(`/insights?view=flow&period=this_month&tag=${tagId}`)
+    await page.goto(`/insights?view=net&period=this_month&tag=${tagId}`)
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
 
-    const expenseNodesPanel = page
-      .locator('[data-financial-surface="ledger"]')
-      .filter({ hasText: "Expense nodes" })
-      .first()
-    const expenseNodeButton = expenseNodesPanel.getByRole("button", {
-      name: new RegExp(`^${expenseCategoryName}$`),
-    })
-    await expect(expenseNodeButton).toBeVisible()
-    await expenseNodeButton.click()
+    const expenseStep = page.locator(
+      `.net-chart-section svg [data-waterfall-step][aria-label^="${expenseCategoryName}:"]`
+    )
+    await expect(expenseStep).toBeVisible()
+    await expenseStep.click()
+    await page.getByTestId("waterfall-details").getByRole("button", { name: "Open transactions" }).click()
 
     await expect(page).toHaveURL(
       new RegExp(
@@ -205,7 +226,7 @@ test.describe("Insights Page", () => {
       .toBe("light")
   })
 
-  test("shows merged categories in insights flow drill-downs", async ({
+  test("shows merged categories in insights net drill-downs", async ({
     page,
     request,
   }) => {
@@ -251,19 +272,14 @@ test.describe("Insights Page", () => {
     })
     expect(mergeResponse.ok()).toBeTruthy()
 
-    await page.goto("/insights?view=flow&period=this_month")
-    const expenseNodesPanel = page
-      .locator('[data-financial-surface="ledger"]')
-      .filter({ hasText: "Expense nodes" })
-      .first()
-
-    const targetNodeButton = expenseNodesPanel.getByRole("button", {
-      name: new RegExp(`^${targetName}$`),
+    await page.goto("/insights?view=net&period=this_month")
+    await page.getByRole("button", { name: "View chart data" }).click()
+    const dataDialog = page.getByRole("dialog", { name: "Chart data" })
+    const targetNodeButton = dataDialog.getByRole("button", {
+      name: `Open ${targetName} transactions`,
     })
     await expect(targetNodeButton).toBeVisible()
-    await expect(
-      expenseNodesPanel.getByRole("button", { name: new RegExp(`^${sourceName}$`) })
-    ).toHaveCount(0)
+    await expect(dataDialog.getByText(sourceName, { exact: true })).toHaveCount(0)
 
     await targetNodeButton.click()
     await expect(page).toHaveURL(

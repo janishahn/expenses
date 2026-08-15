@@ -50,7 +50,7 @@ Budgets is one period-based planning workspace. Use the month arrows or picker t
 
 ![Insights](docs/screenshots/insights-light.png)
 
-Insights is the visual analysis board. It charts income against expenses over the last twelve months, spending composition, the trend for any selected category, top categories, and budget versus actual for a chosen month. A single selected month renders explicit income and expense points instead of an empty-looking axis. A separate Flow tab draws a Sankey diagram of how money moves from income into each category, with category-tiled drill-downs for inspecting the shape of your spending.
+Insights is the visual analysis board. It charts income against expenses over the last twelve months, spending composition, the trend for any selected category, top categories, and budget versus actual for a chosen month. A single selected month renders explicit income and expense points instead of an empty-looking axis. A separate Net view shows how recorded income raises the balance, spending lowers it, and the last bar reaches the period result. Large categories stay explicit and small categories group under Other. On web, the data view keeps every category available for drill-down. Mobile web and the native iOS app use horizontal chart rows that fit normal vertical page scrolling.
 
 ### Recurring income and expenses
 
