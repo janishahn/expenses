@@ -6,6 +6,7 @@ import { useAuth } from "../app/auth"
 import type { AIUsageSummary } from "../app/api-types"
 import { formatEuroDateTime, formatFileSize } from "../app/format"
 import Sparkline from "../components/charts/Sparkline"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import SegmentedControl from "../components/SegmentedControl"
 import {
@@ -14,6 +15,7 @@ import {
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppInput } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type AdminInfo = {
   app_version: string
@@ -299,15 +301,24 @@ function AdminPage() {
     },
   })
 
-  const handlePurge = () => {
-    if (!confirm(`Purge deleted transactions older than ${purgeDays} days?`)) {
+  const handlePurge = async () => {
+    const confirmed = await confirmDialog({
+      title: `Purge deleted transactions older than ${purgeDays} days?`,
+      confirmLabel: "Purge",
+    })
+    if (!confirmed) {
       return
     }
     purgeMutation.mutate(Number(purgeDays) || 30)
   }
 
-  const handleRebuild = () => {
-    if (!confirm("Rebuild monthly rollups now?")) {
+  const handleRebuild = async () => {
+    const confirmed = await confirmDialog({
+      title: "Rebuild monthly rollups now?",
+      tone: "primary",
+      confirmLabel: "Rebuild",
+    })
+    if (!confirmed) {
       return
     }
     rebuildMutation.mutate()
@@ -333,7 +344,7 @@ function AdminPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading admin info…</div>
+    return <RouteLoading title="Admin" label="Loading admin info…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load admin info.</div>

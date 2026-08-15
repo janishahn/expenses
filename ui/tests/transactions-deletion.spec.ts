@@ -31,13 +31,11 @@ test.describe("Transaction deletion flows", () => {
     const detailDeleteButton = page.locator("button.btn-danger").first()
     await expect(detailDeleteButton).toBeVisible()
 
-    let cancelPromptMessage = ""
-    page.once("dialog", async (dialog) => {
-      cancelPromptMessage = dialog.message()
-      await dialog.dismiss()
-    })
-    await detailDeleteButton.click({ force: true })
-    expect(cancelPromptMessage).toBe("Delete this transaction?")
+    await detailDeleteButton.click()
+    const cancelPrompt = page.getByRole("dialog", { name: "Delete this transaction?" })
+    await expect(cancelPrompt).toBeVisible()
+    await cancelPrompt.getByRole("button", { name: "Cancel" }).click()
+    await expect(cancelPrompt).toBeHidden()
 
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
     await expect(page.locator("body")).toContainText(title)
@@ -48,8 +46,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 200
     )
-    page.once("dialog", (dialog) => dialog.accept())
-    await detailDeleteButton.click({ force: true })
+    await detailDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await deleteResponse
 
     await expect(page).toHaveURL("/transactions")
@@ -91,11 +92,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 200
     )
-    const confirmDialogEvent = page.waitForEvent("dialog")
-    const confirmClick = editDeleteButton.click()
-    const confirmDialog = await confirmDialogEvent
-    await confirmDialog.accept()
-    await confirmClick
+    await editDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await deleteResponse
 
     await expect(page).toHaveURL(listUrl)
@@ -144,11 +145,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 200
     )
-    const confirmDialogEvent = page.waitForEvent("dialog")
-    const confirmClick = editDeleteButton.click()
-    const confirmDialog = await confirmDialogEvent
-    await confirmDialog.accept()
-    await confirmClick
+    await editDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await deleteResponse
 
     await expect(page).toHaveURL("/transactions")
@@ -181,12 +182,11 @@ test.describe("Transaction deletion flows", () => {
     const editDeleteButton = page.locator("form button.btn-danger").first()
     await expect(editDeleteButton).toBeVisible()
 
-    const cancelDialogEvent = page.waitForEvent("dialog")
-    const cancelClick = editDeleteButton.click({ force: true })
-    const cancelDialog = await cancelDialogEvent
-    expect(cancelDialog.message()).toBe("Delete this transaction?")
-    await cancelDialog.dismiss()
-    await cancelClick
+    await editDeleteButton.click()
+    const cancelPrompt = page.getByRole("dialog", { name: "Delete this transaction?" })
+    await expect(cancelPrompt).toBeVisible()
+    await cancelPrompt.getByRole("button", { name: "Cancel" }).click()
+    await expect(cancelPrompt).toBeHidden()
 
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}/edit$`))
     await expect(page.getByLabel("Title")).toHaveValue(title)
@@ -197,11 +197,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 200
     )
-    const confirmDialogEvent = page.waitForEvent("dialog")
-    const confirmClick = editDeleteButton.click({ force: true })
-    const confirmDialog = await confirmDialogEvent
-    await confirmDialog.accept()
-    await confirmClick
+    await editDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await deleteResponse
 
     await expect(page).toHaveURL("/transactions")
@@ -247,11 +247,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 500
     )
-    const detailDialogEvent = page.waitForEvent("dialog")
-    const detailClick = detailDeleteButton.click()
-    const detailDialog = await detailDialogEvent
-    await detailDialog.accept()
-    await detailClick
+    await detailDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await detailDeleteResponse
 
     await expect(page).toHaveURL(new RegExp(`/transactions/${detailTransactionId}$`))
@@ -290,11 +290,11 @@ test.describe("Transaction deletion flows", () => {
         response.request().method() === "DELETE" &&
         response.status() === 500
     )
-    const editDialogEvent = page.waitForEvent("dialog")
-    const editClick = editDeleteButton.click()
-    const editDialog = await editDialogEvent
-    await editDialog.accept()
-    await editClick
+    await editDeleteButton.click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await editDeleteResponse
 
     await expect(page).toHaveURL(new RegExp(`/transactions/${editTransactionId}/edit$`))

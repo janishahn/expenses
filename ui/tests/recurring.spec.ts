@@ -145,21 +145,17 @@ test.describe("Recurring Rules Page", () => {
     const deleteButton = row.getByRole("button", { name: `Delete ${ruleName}` }).first()
     await row.scrollIntoViewIfNeeded()
 
-    let firstMessage = ""
-    page.once("dialog", async (dialog) => {
-      firstMessage = dialog.message()
-      await dialog.dismiss()
+    const confirmDialog = page.getByRole("dialog", {
+      name: `Delete recurring rule "${ruleName}"?`,
     })
     await deleteButton.click()
-    await expect.poll(() => firstMessage).toContain(
-      `Delete recurring rule "${ruleName}"?`
-    )
+    await expect(confirmDialog).toBeVisible()
+    await confirmDialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(confirmDialog).toBeHidden()
     await expect(row).toContainText(ruleName)
 
-    page.once("dialog", async (dialog) => {
-      await dialog.accept()
-    })
     await deleteButton.click()
+    await confirmDialog.getByRole("button", { name: "Delete", exact: true }).click()
     await expect(page.locator("body")).not.toContainText(ruleName)
   })
 

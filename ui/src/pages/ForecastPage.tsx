@@ -19,6 +19,7 @@ import {
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
 import { useThemePreference } from "../theme/useThemePreference"
+import RouteLoading from "../components/RouteLoading"
 
 type ForecastRecurringRow = {
   rule_id: number | null
@@ -122,7 +123,7 @@ function ForecastPage() {
   })
 
   if (isLoading) {
-    return <div className="text-muted">Loading forecast…</div>
+    return <RouteLoading title="Forecast" label="Loading forecast…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load forecast.</div>

@@ -16,6 +16,7 @@ import { apiFetch } from "../app/api"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import { WorkspaceToolbar } from "../components/product/ProductSurfaces"
@@ -57,6 +58,7 @@ import {
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
 import markerIcon from "leaflet/dist/images/marker-icon.png"
 import markerShadow from "leaflet/dist/images/marker-shadow.png"
+import RouteLoading from "../components/RouteLoading"
 
 type TransactionRow = {
   id: number
@@ -460,7 +462,7 @@ function TransactionsPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading transactions…</div>
+    return <RouteLoading title="Transactions" label="Loading transactions…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load transactions.</div>
@@ -684,12 +686,17 @@ function TransactionsPage() {
     bulkPreviewMutation.mutate(payload)
   }
 
-  const runBulkApply = () => {
+  const runBulkApply = async () => {
     const payload = buildBulkPayload()
     if (!payload) {
       return
     }
-    if (!confirm("Apply bulk changes to selected transactions?")) {
+    const confirmed = await confirmDialog({
+      title: "Apply bulk changes to selected transactions?",
+      tone: "primary",
+      confirmLabel: "Apply",
+    })
+    if (!confirmed) {
       return
     }
     bulkApplyMutation.mutate(payload)
@@ -1584,8 +1591,8 @@ function TransactionsPage() {
                   <div className="mt-1 flex items-center justify-end">
                     <AppButton
                       type="button"
-                      onClick={() => {
-                        if (!confirm("Delete this transaction?")) {
+                      onClick={async () => {
+                        if (!(await confirmDialog({ title: "Delete this transaction?" }))) {
                           return
                         }
                         deleteMutation.mutate(txn.id)

@@ -27,6 +27,7 @@ import {
   SectionHeading,
 } from "../components/product/ProductSurfaces"
 import TransactionDescription from "../components/TransactionDescription"
+import RouteLoading from "../components/RouteLoading"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,
@@ -218,11 +219,7 @@ function DashboardPage() {
   }
 
   if (isLoading) {
-    return (
-      <FinancialPanel className="p-5 text-sm text-muted">
-        Loading dashboard…
-      </FinancialPanel>
-    )
+    return <RouteLoading title="Dashboard" label="Loading dashboard…" rows={5} />
   }
   if (error || !data) {
     return (

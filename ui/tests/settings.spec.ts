@@ -65,11 +65,14 @@ test.describe.serial("Settings and ordinary-user import flows", () => {
     await page.getByRole("button", { name: "Update snapshot" }).click()
     await expect(page.getByText(`Updated snapshot ${uniqueTag}`)).toBeVisible()
 
-    page.once("dialog", (dialog) => void dialog.accept())
     await page
       .locator("tr", { hasText: `Updated snapshot ${uniqueTag}` })
       .first()
       .getByRole("button", { name: "Delete" })
+      .click()
+    await page
+      .getByRole("dialog", { name: "Delete this balance snapshot?" })
+      .getByRole("button", { name: "Delete", exact: true })
       .click()
     await expect(page.getByText(`Updated snapshot ${uniqueTag}`)).toHaveCount(0)
 

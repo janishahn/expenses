@@ -66,8 +66,11 @@ test.describe("Tag Detail Page", () => {
     await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
     await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
 
-    page.once("dialog", (dialog) => dialog.accept())
     await editDialog.getByRole("button", { name: "Delete tag" }).click()
+    await page
+      .getByRole("dialog", { name: "Delete this tag?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await expect(page).toHaveURL("/tags")
     await expect(page.locator("body")).not.toContainText(updatedName)
   })

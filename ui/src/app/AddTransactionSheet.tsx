@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate } from "react-router-dom"
@@ -33,18 +33,20 @@ type AddTransactionSheetProps = {
   onClose: () => void
 }
 
+function currentLocalDateTime() {
+  const now = new Date()
+  now.setSeconds(0, 0)
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
+  return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 16)
+}
+
 function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const amountInputRef = useRef<HTMLInputElement | null>(null)
   const submitButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  const [occurredAt, setOccurredAt] = useState(() => {
-    const now = new Date()
-    now.setSeconds(0, 0)
-    const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
-    return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 16)
-  })
+  const [occurredAt, setOccurredAt] = useState(currentLocalDateTime)
   const [type, setType] = useState("expense")
   const [amount, setAmount] = useState("")
   const [categoryId, setCategoryId] = useState("")
@@ -54,6 +56,19 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
   const [excludedScheduledTags, setExcludedScheduledTags] = useState<string[]>([])
   const [isReimbursement, setIsReimbursement] = useState(false)
   const [formError, setFormError] = useState("")
+
+  const resetForm = useCallback(() => {
+    setOccurredAt(currentLocalDateTime())
+    setAmount("")
+    setTitle("")
+    setDescription("")
+    setExplicitTags([])
+    setExcludedScheduledTags([])
+    setType("expense")
+    setCategoryId("")
+    setIsReimbursement(false)
+    setFormError("")
+  }, [])
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", "all"],
@@ -122,24 +137,23 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
       queryClient.invalidateQueries({ queryKey: ["insights"] })
       queryClient.invalidateQueries({ queryKey: ["budgets"] })
       queryClient.invalidateQueries({ queryKey: ["forecast"] })
-      setOccurredAt(() => {
-        const now = new Date()
-        now.setSeconds(0, 0)
-        const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
-        return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 16)
-      })
-      setAmount("")
-      setTitle("")
-      setDescription("")
-      setExplicitTags([])
-      setExcludedScheduledTags([])
-      setType("expense")
-      setCategoryId("")
-      setIsReimbursement(false)
-      setFormError("")
+      resetForm()
       onClose()
     },
   })
+
+  // The sheet stays mounted after its first open (so close can animate), so
+  // each reopen starts from a fresh form instead of a stale draft or a
+  // leftover create error.
+  const { reset: resetCreateMutation } = createMutation
+  const wasOpen = useRef(open)
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      resetForm()
+      resetCreateMutation()
+    }
+    wasOpen.current = open
+  }, [open, resetForm, resetCreateMutation])
 
   const parseAmount = (raw: string) => {
     const normalized = raw.replace(/\s/g, "").replace(",", ".")

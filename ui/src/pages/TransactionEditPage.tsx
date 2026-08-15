@@ -19,6 +19,7 @@ import type {
 } from "../app/api-types"
 import { formatCurrency, formatEuroDate, formatFileSize } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import DescriptionEditor from "../components/DescriptionEditor"
 import TagSelector from "../components/TagSelector"
@@ -32,6 +33,7 @@ import {
   AppInput,
   AppNativeSelect,
 } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type TransactionEditFormProps = {
   transaction: TransactionDetail
@@ -364,8 +366,8 @@ function TransactionAttachmentsCard({
                 </AppButton>
                 <AppButton
                   type="button"
-                  onClick={() => {
-                    if (!confirm("Delete this attachment?")) {
+                  onClick={async () => {
+                    if (!(await confirmDialog({ title: "Delete this attachment?" }))) {
                       return
                     }
                     deleteMutation.mutate(attachment.id)
@@ -782,9 +784,12 @@ function TransactionReimbursementsCard({
                             </p>
                             <AppButton
                               type="button"
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
-                                  confirm("Remove this reimbursement allocation?")
+                                  await confirmDialog({
+                                    title: "Remove this reimbursement allocation?",
+                                    confirmLabel: "Remove",
+                                  })
                                 ) {
                                   removeMutation.mutate(alloc.allocation_id)
                                 }
@@ -1032,9 +1037,12 @@ function TransactionReimbursementsCard({
                         </p>
                         <AppButton
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             if (
-                              confirm("Remove this reimbursement allocation?")
+                              await confirmDialog({
+                                title: "Remove this reimbursement allocation?",
+                                confirmLabel: "Remove",
+                              })
                             ) {
                               removeMutation.mutate(alloc.allocation_id)
                             }
@@ -1147,15 +1155,15 @@ function TransactionEditPage() {
     },
   })
 
-  const handleDelete = () => {
-    if (!confirm("Delete this transaction?")) {
+  const handleDelete = async () => {
+    if (!(await confirmDialog({ title: "Delete this transaction?" }))) {
       return
     }
     deleteMutation.mutate()
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading transaction…</div>
+    return <RouteLoading title="Edit Transaction" label="Loading transaction…" />
   }
   if (error || !transaction) {
     return (

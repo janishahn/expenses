@@ -49,3 +49,9 @@ export function readThemeAlpha(
 ChartJS.defaults.color = readThemeColor("--muted", "145 145 145")
 ChartJS.defaults.borderColor = readThemeColor("--border", "40 40 40")
 ChartJS.defaults.font.family = "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+
+// Charts redraw on every period/filter change; Chart.js's 1000ms default
+// animation makes those frequent updates feel slow and wastes CPU on
+// Pi-class hosts.
+ChartJS.defaults.animation = false
+ChartJS.defaults.plugins.tooltip.animation = false

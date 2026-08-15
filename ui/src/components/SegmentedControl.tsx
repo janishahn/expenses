@@ -69,20 +69,21 @@ function SegmentedControl<Value extends string | number>({
         className
       )}
     >
-      <span
-        aria-hidden="true"
-        className="segmented-control-indicator"
-        style={
-          indicatorFrame
-            ? {
-                width: indicatorFrame.width,
-                height: indicatorFrame.height,
-                transform: `translate3d(${indicatorFrame.x}px, ${indicatorFrame.y}px, 0)`,
-                opacity: 1,
-              }
-            : undefined
-        }
-      />
+      {/* Mounted only once measured: a pre-measured mount at the corner
+          arms the standing transition and the pill slides in from top-left.
+          Freshly inserted elements never transition their initial style. */}
+      {indicatorFrame ? (
+        <span
+          aria-hidden="true"
+          className="segmented-control-indicator"
+          style={{
+            width: indicatorFrame.width,
+            height: indicatorFrame.height,
+            transform: `translate3d(${indicatorFrame.x}px, ${indicatorFrame.y}px, 0)`,
+            opacity: 1,
+          }}
+        />
+      ) : null}
       {items.map((item) => {
         const active = value === item.value
         return (

@@ -8,6 +8,7 @@ import { apiFetch } from "../app/api"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { Toggle } from "../components/Toggle"
+import { confirmDialog } from "../components/confirm"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import SegmentedControl from "../components/SegmentedControl"
@@ -32,6 +33,7 @@ import {
   AppInput,
   AppNativeSelect,
 } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type RuleCategory = {
   id: number
@@ -168,9 +170,9 @@ function RecurringRulesPage() {
     },
   })
 
-  const deleteRule = (rule: RecurringRuleRow) => {
+  const deleteRule = async (rule: RecurringRuleRow) => {
     const label = rule.name || rule.category?.name || "Untitled"
-    if (!confirm(`Delete recurring rule "${label}"?`)) {
+    if (!(await confirmDialog({ title: `Delete recurring rule "${label}"?` }))) {
       return
     }
     deleteMutation.mutate(rule.id)
@@ -332,7 +334,7 @@ function RecurringRulesPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading recurring rules…</div>
+    return <RouteLoading title="Recurring Rules" label="Loading recurring rules…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load recurring rules.</div>

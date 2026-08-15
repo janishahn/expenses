@@ -16,6 +16,7 @@ import {
 } from "../components/product/ProductSurfaces"
 import TransactionDescription from "../components/TransactionDescription"
 import { AppButton } from "../components/ui/product-button"
+import RouteLoading from "../components/RouteLoading"
 
 type DigestCategory = {
   category_id: number
@@ -141,7 +142,7 @@ function DigestPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading digest…</div>
+    return <RouteLoading title="Digest" label="Loading digest…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load digest.</div>

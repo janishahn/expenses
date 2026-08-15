@@ -307,10 +307,11 @@ Product-specific primitives own the visual grammar:
 - **Inspector:** contextual view/edit surface that preserves the direct route and browser-back behavior.
 - **Toolbar:** one coherent control zone for one job, not a stack of unrelated bordered bars. Page actions stay with the page title rather than mixing with filter state. Labels are visible when needed; mobile collapses filters into a compact trigger that carries the active-filter count.
 - **Message surface:** readable, full-height Assistant transcript with quiet tool activity and a composer anchored to the bottom edge. Read-only behavior is a product invariant, not repeated explanatory copy.
+- **Confirmation dialog:** destructive and bulk actions confirm through the shared in-app dialog — a short question title, an optional consequence line, Cancel, and a tone-matched action button. Native browser prompts are not part of the product.
 
 Radix and ShadCN may continue to provide headless behavior, focus management, portals, and keyboard semantics. Their stock visual defaults are not the product. Inputs, buttons, tabs, selects, dialogs, sheets, and cards must resolve to the tokens and domain roles above.
 
-Every component includes selected, hover, focus-visible, active, disabled, loading, empty, error, and destructive states where applicable. Motion uses only opacity, transform, and clipped size reveals, stays under the motion tokens, and becomes an immediate cross-fade under reduced motion.
+Every component includes selected, hover, focus-visible, active, disabled, loading, empty, error, and destructive states where applicable. Motion uses only opacity, transform, and clipped size reveals, stays under the motion tokens, and becomes an immediate cross-fade under reduced motion. The motion tokens are exposed as CSS custom properties (`--motion-feedback`, `--motion-content`, `--ease-out-strong`, `--ease-drawer`); dialog and sheet motion is keyed off `data-state` with keyframe pairs so exits play before unmount, and pressable controls answer with a subtle scale over named transition properties. Initial route loads render nothing for their first 250ms; only loads still pending after that show the page title and a static panel-shaped skeleton, so fast navigations swap straight to content without a skeleton flash.
 Keyboard focus uses a visible two-pixel accent outline that remains independent of component shadows, including shell actions and visible proxies for hidden file inputs.
 
 ## Do's and Don'ts

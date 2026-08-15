@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Destructive and bulk actions across the web app now confirm through a shared in-app dialog instead of the browser's native confirm prompt, and rule deletion plus budget-plan removal now ask for confirmation before deleting.
+- Web dialogs and bottom sheets now animate open and closed; previously they appeared and disappeared instantly because the motion styles never ran.
+- Buttons across the web app share one press response (a subtle scale with fast, named transitions) instead of mixed or missing feedback per button style.
+- Web pages now show their title and a panel-shaped placeholder while route data loads, replacing the bare "Loading …" text line that shifted the whole layout on arrival. The placeholder only appears when a load is still pending after 250ms, so fast page switches swap straight to content without a flash.
+- Analytics charts no longer play Chart.js's default one-second redraw animation when periods or filters change, keeping updates instant and cheap on small hosts.
+
+### Fixed
+- Segmented controls (time range and mode selectors) no longer slide their selection highlight in from the control's corner when a page or sheet first renders; the highlight now appears directly under the active option and animates only on selection changes.
+
 ## [0.4.4] - 2026-08-14
 
 ### Changed

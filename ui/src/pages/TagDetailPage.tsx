@@ -8,6 +8,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import DonutChart from "../components/charts/DonutChart"
 import type { BreakdownItem } from "../components/charts/DonutChart"
 import Sparkline from "../components/charts/Sparkline"
@@ -34,6 +35,7 @@ import {
   buildPresetPeriodSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import RouteLoading from "../components/RouteLoading"
 
 type TransactionRow = {
   id: number
@@ -302,8 +304,12 @@ function TagDetailPage() {
     setEditorOpen(true)
   }
 
-  const handleDelete = () => {
-    if (!window.confirm("Delete this tag? This will remove it from transactions.")) {
+  const handleDelete = async () => {
+    const confirmed = await confirmDialog({
+      title: "Delete this tag?",
+      description: "This will remove it from transactions.",
+    })
+    if (!confirmed) {
       return
     }
     deleteMutation.mutate()
@@ -313,7 +319,7 @@ function TagDetailPage() {
     return <div className="text-semantic-red">Tag not found.</div>
   }
   if (isLoading) {
-    return <div className="text-muted">Loading tag…</div>
+    return <RouteLoading title="Tag" label="Loading tag…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load tag.</div>

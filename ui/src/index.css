@@ -32,6 +32,10 @@
     --sidebar-ink: 24 29 26;
     --sidebar-hover: 43 49 45;
     --sidebar-muted: 171 180 174;
+    --motion-feedback: 120ms;
+    --motion-content: 220ms;
+    --ease-out-strong: cubic-bezier(0.2, 0, 0, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   html[data-theme="dark"] {
@@ -1150,9 +1154,19 @@
       transform 180ms ease;
   }
 
+  /* Radix waits for CSS animations (not transitions) before unmounting, so
+     open/close motion must be keyframe-based and keyed off data-state. */
   .drawer-overlay {
-    @apply absolute inset-0 transition-opacity duration-300 ease-out;
+    @apply absolute inset-0;
     background: var(--overlay-backdrop);
+  }
+
+  .drawer-overlay[data-state="open"] {
+    animation: overlay-in 200ms ease-out both;
+  }
+
+  .drawer-overlay[data-state="closed"] {
+    animation: overlay-out 160ms ease-out both;
   }
 
   .drawer-panel {
@@ -1162,16 +1176,78 @@
     overscroll-behavior: contain;
   }
 
-  .drawer-motion {
-    transition: transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 180ms ease;
+  .drawer-motion[data-state="open"] {
+    animation: drawer-in var(--motion-content) var(--ease-out-strong) both;
+  }
+
+  .drawer-motion[data-state="closed"] {
+    animation: drawer-out 160ms var(--ease-out-strong) both;
+  }
+
+  .sheet-motion[data-side="bottom"] {
+    --sheet-hidden: translateY(1.5rem);
+  }
+
+  .sheet-motion[data-side="top"] {
+    --sheet-hidden: translateY(-1.5rem);
+  }
+
+  .sheet-motion[data-side="left"] {
+    --sheet-hidden: translateX(-1.5rem);
+  }
+
+  .sheet-motion[data-side="right"] {
+    --sheet-hidden: translateX(1.5rem);
+  }
+
+  .sheet-motion[data-state="open"] {
+    animation: sheet-in 260ms var(--ease-drawer) both;
+  }
+
+  .sheet-motion[data-state="closed"] {
+    animation: sheet-out 180ms var(--ease-out-strong) both;
+  }
+
+  /* Shared press feedback for every pressable control: named transition
+     properties only, and a subtle scale so the UI visibly answers the press.
+     The tone classes are listed too because a few raw links and labels use
+     them without the Button base. */
+  .pressable,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-inline,
+  .btn-inline-danger {
+    transition:
+      transform var(--motion-feedback) var(--ease-out-strong),
+      background-color var(--motion-feedback) ease,
+      color var(--motion-feedback) ease,
+      border-color var(--motion-feedback) ease,
+      box-shadow var(--motion-feedback) ease,
+      opacity var(--motion-feedback) ease;
+  }
+
+  .pressable:active:not(:disabled),
+  .btn-primary:active:not(:disabled),
+  .btn-secondary:active:not(:disabled),
+  .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled),
+  .btn-inline:active:not(:disabled),
+  .btn-inline-danger:active:not(:disabled) {
+    transform: scale(0.97);
   }
 
   .btn-primary {
-    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold transition disabled:opacity-60;
+    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold disabled:opacity-60;
     min-height: 2.75rem;
     background: rgb(var(--text));
     color: rgb(var(--surface-hi));
     box-shadow: var(--shadow-soft);
+  }
+
+  .btn-primary:hover {
+    background: rgb(var(--text) / 0.88);
   }
 
   .btn-secondary {
@@ -1181,11 +1257,6 @@
     box-shadow:
       0 0 0 1px rgb(var(--border) / 0.72),
       var(--shadow-soft);
-    transition:
-      transform 120ms ease-out,
-      background-color 120ms ease-out,
-      color 120ms ease-out,
-      box-shadow 120ms ease-out;
   }
 
   .btn-secondary:hover {
@@ -1193,10 +1264,6 @@
     box-shadow:
       0 0 0 1px rgb(var(--border-hi) / 0.82),
       var(--shadow-soft);
-  }
-
-  .btn-secondary:active {
-    transform: scale(0.96);
   }
 
   .btn-secondary[aria-expanded="true"] {
@@ -1208,7 +1275,7 @@
   }
 
   .btn-ghost {
-    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold text-muted transition hover:text-text;
+    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold text-muted hover:text-text;
     min-height: 2.75rem;
     background: rgb(var(--faint) / 0.88);
   }
@@ -1219,7 +1286,7 @@
   }
 
   .btn-danger {
-    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold text-semantic-red transition;
+    @apply rounded-md border border-transparent px-4 py-2 text-sm font-semibold text-semantic-red;
     min-height: 2.75rem;
     background: rgb(var(--signal-red-soft));
   }
@@ -1230,13 +1297,13 @@
   }
 
   .btn-inline {
-    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-transparent px-3.5 py-1.5 text-xs font-semibold text-muted transition hover:text-text disabled:opacity-60;
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-transparent px-3.5 py-1.5 text-xs font-semibold text-muted hover:text-text disabled:opacity-60;
     min-height: 2.25rem;
     background: rgb(var(--faint) / 0.88);
   }
 
   .btn-inline-danger {
-    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-transparent px-3.5 py-1.5 text-xs font-semibold text-semantic-red transition disabled:opacity-60;
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-transparent px-3.5 py-1.5 text-xs font-semibold text-semantic-red disabled:opacity-60;
     min-height: 2.25rem;
     background: rgb(var(--signal-red-soft));
   }
@@ -1591,6 +1658,57 @@
   }
 }
 
+/* Dialog/sheet transforms animate the modern scale/transform values only;
+   the Tailwind centering translate uses the separate translate property and
+   is untouched by these keyframes. */
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes drawer-out {
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: var(--sheet-hidden, translateY(1.5rem));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: var(--sheet-hidden, translateY(1.5rem));
+  }
+}
+
 @keyframes pagein {
   from {
     opacity: 0;
@@ -1642,8 +1760,20 @@
   .page-enter,
   .toast-flash,
   .drawer-motion,
+  .drawer-overlay,
+  .sheet-motion,
   .menu-transition {
     animation: none !important;
+  }
+
+  .pressable:active:not(:disabled),
+  .btn-primary:active:not(:disabled),
+  .btn-secondary:active:not(:disabled),
+  .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled),
+  .btn-inline:active:not(:disabled),
+  .btn-inline-danger:active:not(:disabled) {
+    transform: none;
   }
 
   .progress-phrase {

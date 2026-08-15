@@ -69,7 +69,6 @@ test.describe("Deleted Transactions Page", () => {
     const row = page.getByTestId(`deleted-transaction-${transactionId}`)
     await expect(row).toBeVisible()
 
-    page.once("dialog", (dialog) => dialog.accept())
     const permanentDeleteResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/transactions/${transactionId}/permanent`) &&
@@ -77,6 +76,10 @@ test.describe("Deleted Transactions Page", () => {
         response.status() === 200
     )
     await row.getByRole("button", { name: "Delete forever" }).click()
+    await page
+      .getByRole("dialog", { name: "Permanently delete this transaction?" })
+      .getByRole("button", { name: "Delete forever" })
+      .click()
     await permanentDeleteResponse
 
     await expect(row).toHaveCount(0)

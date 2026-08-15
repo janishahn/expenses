@@ -13,6 +13,7 @@ import { apiFetch } from "../app/api"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import BudgetBurndownChart from "../components/charts/BudgetBurndownChart"
 import PageIntro from "../components/PageIntro"
 import {
@@ -34,6 +35,7 @@ import {
   AppNativeSelect,
 } from "../components/ui/product-fields"
 import { buildSearchParams } from "../lib/searchParams"
+import RouteLoading from "../components/RouteLoading"
 
 type BudgetRow = {
   scope_category_id: number | null
@@ -494,7 +496,7 @@ function BudgetsPage() {
   })
 
   if (isLoading) {
-    return <div className="text-muted">Loading budgets…</div>
+    return <RouteLoading title="Budgets" label="Loading budgets…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load budgets.</div>
@@ -1314,7 +1316,16 @@ function BudgetsPage() {
                   type="button"
                   tone="inlineDanger"
                   className="min-h-11 shrink-0"
-                  onClick={() => deleteTemplateMutation.mutate(template.id)}
+                  onClick={async () => {
+                    if (
+                      await confirmDialog({
+                        title: `Remove the ${template.category?.name ?? "overall"} budget plan?`,
+                        confirmLabel: "Remove",
+                      })
+                    ) {
+                      deleteTemplateMutation.mutate(template.id)
+                    }
+                  }}
                 >
                   <TrashIcon className="h-3.5 w-3.5" />
                   Remove
@@ -1521,7 +1532,16 @@ function BudgetsPage() {
                     tone="inlineDanger"
                     className="min-h-11 sm:mr-auto"
                     disabled={deleteTemplateMutation.isPending}
-                    onClick={() => deleteTemplateMutation.mutate(editingTemplateId)}
+                    onClick={async () => {
+                      if (
+                        await confirmDialog({
+                          title: "Remove this budget plan?",
+                          confirmLabel: "Remove",
+                        })
+                      ) {
+                        deleteTemplateMutation.mutate(editingTemplateId)
+                      }
+                    }}
                   >
                     <TrashIcon className="h-3.5 w-3.5" />
                     Remove budget

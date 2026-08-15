@@ -7,6 +7,7 @@ import { apiFetch } from "../app/api"
 import { useAuth } from "../app/auth"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
 import TransactionDescription from "../components/TransactionDescription"
@@ -27,6 +28,7 @@ import {
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import RouteLoading from "../components/RouteLoading"
 
 type TransactionRow = {
   id: number
@@ -195,7 +197,7 @@ function UncategorizedInboxPage() {
     setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
 
   if (isLoading) {
-    return <div className="text-muted">Loading inbox…</div>
+    return <RouteLoading title="Uncategorized" label="Loading inbox…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load uncategorized inbox.</div>
@@ -211,7 +213,7 @@ function UncategorizedInboxPage() {
       suggestion,
     ])
   )
-  const runBulkRecategorize = () => {
+  const runBulkRecategorize = async () => {
     if (!targetCategoryId) {
       return
     }
@@ -253,7 +255,12 @@ function UncategorizedInboxPage() {
             },
           }
 
-    if (!confirm("Apply bulk changes to selected transactions?")) {
+    const confirmed = await confirmDialog({
+      title: "Apply bulk changes to selected transactions?",
+      tone: "primary",
+      confirmLabel: "Apply",
+    })
+    if (!confirmed) {
       return
     }
     bulkMutation.mutate(payload)

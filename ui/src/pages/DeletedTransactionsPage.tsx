@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import TransactionDescription from "../components/TransactionDescription"
 import {
@@ -9,6 +10,7 @@ import {
   SectionHeading,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
+import RouteLoading from "../components/RouteLoading"
 
 type DeletedTransaction = {
   id: number
@@ -58,15 +60,20 @@ function DeletedTransactionsPage() {
     restoreMutation.mutate(id)
   }
 
-  const handlePermanentDelete = (id: number) => {
-    if (!confirm("Permanently delete this transaction? This cannot be undone.")) {
+  const handlePermanentDelete = async (id: number) => {
+    const confirmed = await confirmDialog({
+      title: "Permanently delete this transaction?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete forever",
+    })
+    if (!confirmed) {
       return
     }
     permanentDeleteMutation.mutate(id)
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading deleted transactions…</div>
+    return <RouteLoading title="Deleted Transactions" label="Loading deleted transactions…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load deleted transactions.</div>

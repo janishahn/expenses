@@ -20,6 +20,7 @@ import { TrendUpIcon } from "@phosphor-icons/react/TrendUp"
 import { WalletIcon } from "@phosphor-icons/react/Wallet"
 import { XIcon } from "@phosphor-icons/react/X"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
+import ConfirmDialogHost from "../components/ConfirmDialogHost"
 import ProductMark from "../components/ProductMark"
 import ShellThemeQuickToggle from "../components/ShellThemeQuickToggle"
 import { useAuth } from "./auth"
@@ -92,6 +93,13 @@ function AppShell() {
   const { user, llmEnabled } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
+  // Stays mounted after the first open so the dialog's exit animation can
+  // play; Radix only animates content that is still in the tree on close.
+  const [addTransactionMounted, setAddTransactionMounted] = useState(false)
+  const openAddTransaction = () => {
+    setAddTransactionMounted(true)
+    setAddTransactionOpen(true)
+  }
   const [utilityAction, setUtilityAction] = useState<AppShellUtilityAction | null>(null)
   const [isDesktop, setIsDesktop] = useState(() =>
     window.matchMedia("(min-width: 861px)").matches
@@ -126,7 +134,7 @@ function AppShell() {
     (addTransactionAvailable
       ? {
           label: "Add transaction",
-          onClick: () => setAddTransactionOpen(true),
+          onClick: openAddTransaction,
         }
       : null)
   const UtilityActionIcon = activeUtilityAction?.icon ?? PlusIcon
@@ -332,7 +340,7 @@ function AppShell() {
           <div className="page-enter mx-auto w-full max-w-[1540px]">
             <Outlet
               context={{
-                openAddTransaction: () => setAddTransactionOpen(true),
+                openAddTransaction,
                 setUtilityAction,
               }}
             />
@@ -340,7 +348,7 @@ function AppShell() {
         </main>
       </div>
 
-      {addTransactionOpen ? (
+      {addTransactionMounted ? (
         <Suspense fallback={null}>
           <AddTransactionSheet
             open={addTransactionOpen}
@@ -348,6 +356,7 @@ function AppShell() {
           />
         </Suspense>
       ) : null}
+      <ConfirmDialogHost />
     </div>
   )
 }

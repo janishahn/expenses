@@ -230,13 +230,11 @@ test.describe("Transactions Page", () => {
     await expect(page).toHaveURL(listUrl)
     await expect(checkbox).toBeChecked()
 
-    let cancelPromptMessage = ""
-    page.once("dialog", async (dialog) => {
-      cancelPromptMessage = dialog.message()
-      await dialog.dismiss()
-    })
     await row.getByRole("button", { name: "Delete" }).click()
-    expect(cancelPromptMessage).toBe("Delete this transaction?")
+    const cancelPrompt = page.getByRole("dialog", { name: "Delete this transaction?" })
+    await expect(cancelPrompt).toBeVisible()
+    await cancelPrompt.getByRole("button", { name: "Cancel" }).click()
+    await expect(cancelPrompt).toBeHidden()
     await expect(page).toHaveURL(listUrl)
     await expect(row).toBeVisible()
   })
@@ -282,7 +280,6 @@ test.describe("Transactions Page", () => {
     await selectionControls.getByRole("button", { name: "Bulk edit" }).click()
 
     await page.getByLabel("Set category").selectOption(String(targetCategory.id))
-    page.once("dialog", (dialog) => dialog.accept())
     const applyResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/transactions/bulk/apply") &&
@@ -290,6 +287,10 @@ test.describe("Transactions Page", () => {
         response.status() === 200
     )
     await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await page
+      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
+      .getByRole("button", { name: "Apply", exact: true })
+      .click()
     await applyResponse
 
     await expect(page.getByText("Resolved 3, skipped 0")).toBeVisible()
@@ -505,7 +506,6 @@ test.describe("Transactions Page", () => {
     await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
 
     await page.getByLabel("Move selected to category").selectOption(String(targetCategory.id))
-    page.once("dialog", (dialog) => dialog.accept())
     const applyResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/transactions/bulk/apply") &&
@@ -513,6 +513,10 @@ test.describe("Transactions Page", () => {
         response.status() === 200
     )
     await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await page
+      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
+      .getByRole("button", { name: "Apply", exact: true })
+      .click()
     await applyResponse
 
     await expect(row).toHaveCount(0)

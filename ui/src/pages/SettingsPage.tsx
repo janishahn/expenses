@@ -6,10 +6,12 @@ import { useAuth } from "../app/auth"
 import { apiFetch, apiFetchFormData } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
 import PageIntro from "../components/PageIntro"
+import { confirmDialog } from "../components/confirm"
 import ThemePreferenceControl from "../components/ThemePreferenceControl"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type BalanceAnchor = {
   id: number
@@ -284,8 +286,13 @@ function SettingsPage() {
     rotateIngestTokenMutation.mutate()
   }
 
-  const handleRevokeIngestToken = () => {
-    if (!confirm("Revoke this ingest token? Existing external clients will stop working.")) {
+  const handleRevokeIngestToken = async () => {
+    const confirmed = await confirmDialog({
+      title: "Revoke this ingest token?",
+      description: "Existing external clients will stop working.",
+      confirmLabel: "Revoke",
+    })
+    if (!confirmed) {
       return
     }
     setIngestTokenError("")
@@ -294,7 +301,7 @@ function SettingsPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading settings…</div>
+    return <RouteLoading title="Settings" label="Loading settings…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load settings.</div>
@@ -499,8 +506,8 @@ function SettingsPage() {
                             </AppButton>
                             <AppButton
                               type="button"
-                              onClick={() => {
-                                if (confirm("Delete this balance snapshot?")) {
+                              onClick={async () => {
+                                if (await confirmDialog({ title: "Delete this balance snapshot?" })) {
                                   deleteAnchorMutation.mutate(anchor.id)
                                 }
                               }}

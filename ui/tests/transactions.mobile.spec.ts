@@ -450,8 +450,11 @@ test.describe("Transactions Page (mobile)", () => {
     const row = page.getByTestId(`uncategorized-row-${transactionId}`)
     await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
     await page.getByLabel("Move selected to category").selectOption(String(targetId))
-    page.once("dialog", (dialog) => dialog.accept())
     await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await page
+      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
+      .getByRole("button", { name: "Apply", exact: true })
+      .click()
     await expect(row).toBeHidden()
   })
 
@@ -487,8 +490,11 @@ test.describe("Transactions Page (mobile)", () => {
     const dialog = page.getByRole("dialog", { name: "Bulk edit" })
     await expect(dialog).toBeVisible()
     await dialog.getByLabel("Set category").selectOption(String(targetId))
-    page.once("dialog", (confirmDialog) => confirmDialog.accept())
     await dialog.getByRole("button", { name: "Apply", exact: true }).click()
+    await page
+      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
+      .getByRole("button", { name: "Apply", exact: true })
+      .click()
 
     await expect(dialog.getByText("Resolved 1, skipped 0")).toBeVisible()
     await expect(dialog.getByRole("group", { name: "Bulk edit scope" })).toHaveCount(0)
@@ -522,8 +528,11 @@ test.describe("Transactions Page (mobile)", () => {
     await row.click()
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
 
-    page.once("dialog", (dialog) => dialog.accept())
     await page.getByRole("button", { name: "Delete transaction" }).click()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
     await expect(page).toHaveURL(/\/transactions\?/)
     await expect(page.getByTestId(`transaction-row-${transactionId}`)).toHaveCount(0)
 
@@ -533,8 +542,11 @@ test.describe("Transactions Page (mobile)", () => {
     const deletedRow = page.getByTestId(`deleted-transaction-${transactionId}`)
     await expect(deletedRow).toBeVisible()
 
-    page.once("dialog", (dialog) => dialog.accept())
     await deletedRow.getByRole("button", { name: "Delete forever" }).click()
+    await page
+      .getByRole("dialog", { name: "Permanently delete this transaction?" })
+      .getByRole("button", { name: "Delete forever" })
+      .click()
     await expect(deletedRow).toHaveCount(0)
   })
 

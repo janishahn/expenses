@@ -37,7 +37,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "drawer-overlay fixed inset-0 z-[70] data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
+      "drawer-overlay fixed inset-0 z-[70]",
       className
     )}
     {...props}
@@ -55,7 +55,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "drawer-panel drawer-motion fixed top-1/2 left-1/2 z-[70] max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 p-4 outline-none data-[state=closed]:scale-95 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100",
+          "drawer-panel drawer-motion fixed top-1/2 left-1/2 z-[70] max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 p-4 outline-none",
           className
         )}
         {...props}

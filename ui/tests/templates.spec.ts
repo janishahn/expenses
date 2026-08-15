@@ -93,8 +93,11 @@ test.describe("Templates Page", () => {
     )
     await expect(deleteButton.locator("svg")).toBeVisible()
 
-    page.once("dialog", (dialog) => dialog.accept())
     await deleteButton.click()
+    await page
+      .getByRole("dialog", { name: `Delete template "${templateName}"?` })
+      .getByRole("button", { name: "Delete", exact: true })
+      .click()
 
     await expect(row).toBeHidden()
   })

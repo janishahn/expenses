@@ -31,6 +31,7 @@ import {
   buildPresetPeriodSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import RouteLoading from "../components/RouteLoading"
 
 type TagRow = {
   id: number
@@ -164,7 +165,7 @@ function TagsPage() {
     })
   }
 
-  if (isLoading) return <div className="text-muted">Loading tags…</div>
+  if (isLoading) return <RouteLoading title="Tags" label="Loading tags…" />
   if (error || !data) return <div className="text-semantic-red">Unable to load tags.</div>
 
   const mergeSource = data.tags.find((tag) => String(tag.id) === mergeSourceId)

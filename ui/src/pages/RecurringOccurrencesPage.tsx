@@ -9,6 +9,7 @@ import {
   MetricLane,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
+import RouteLoading from "../components/RouteLoading"
 
 type OccurrenceRule = {
   id: number
@@ -53,7 +54,7 @@ function RecurringOccurrencesPage() {
     return <div className="text-semantic-red">Rule not found.</div>
   }
   if (isLoading) {
-    return <div className="text-muted">Loading occurrences…</div>
+    return <RouteLoading title="Occurrences" label="Loading occurrences…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load occurrences.</div>

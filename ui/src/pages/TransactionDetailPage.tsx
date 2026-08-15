@@ -25,6 +25,7 @@ import {
   formatFileSize,
 } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import TransactionDescription from "../components/TransactionDescription"
 import {
@@ -33,6 +34,7 @@ import {
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
+import RouteLoading from "../components/RouteLoading"
 
 const transactionLocationMarkerIcon = L.icon({
   iconRetinaUrl: markerIcon2x,
@@ -313,8 +315,8 @@ function TransactionDetailPage() {
     },
   })
 
-  const handleDelete = () => {
-    if (!confirm("Delete this transaction?")) {
+  const handleDelete = async () => {
+    if (!(await confirmDialog({ title: "Delete this transaction?" }))) {
       return
     }
     setDeleteError("")
@@ -322,7 +324,7 @@ function TransactionDetailPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading transaction…</div>
+    return <RouteLoading title="Transaction" label="Loading transaction…" />
   }
 
   if (error || !transaction) {

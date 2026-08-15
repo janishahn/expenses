@@ -33,7 +33,7 @@ const SheetOverlay = React.forwardRef<
     ref={ref}
     data-slot="sheet-overlay"
     className={cn(
-      "drawer-overlay fixed inset-0 z-[65] data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
+      "drawer-overlay fixed inset-0 z-[65]",
       className
     )}
     {...props}
@@ -61,12 +61,7 @@ function SheetContent({
           "data-[side=top]:inset-x-2 data-[side=top]:top-2 data-[side=top]:max-h-[88vh] data-[side=top]:rounded-[1.75rem] data-[side=top]:border",
           "data-[side=left]:inset-y-2 data-[side=left]:left-2 data-[side=left]:w-[calc(100%-1rem)] data-[side=left]:max-w-sm data-[side=left]:rounded-[1.75rem] data-[side=left]:border",
           "data-[side=right]:inset-y-2 data-[side=right]:right-2 data-[side=right]:w-[calc(100%-1rem)] data-[side=right]:max-w-sm data-[side=right]:rounded-[1.75rem] data-[side=right]:border",
-          "data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
-          "data-[side=bottom]:data-[state=closed]:translate-y-6 data-[side=bottom]:data-[state=open]:translate-y-0",
-          "data-[side=top]:data-[state=closed]:-translate-y-6 data-[side=top]:data-[state=open]:translate-y-0",
-          "data-[side=left]:data-[state=closed]:-translate-x-6 data-[side=left]:data-[state=open]:translate-x-0",
-          "data-[side=right]:data-[state=closed]:translate-x-6 data-[side=right]:data-[state=open]:translate-x-0",
-          "drawer-motion border-border",
+          "sheet-motion border-border",
           className
         )}
         {...props}

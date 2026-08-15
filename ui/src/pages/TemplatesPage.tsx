@@ -31,6 +31,7 @@ import type {
 import type { AppShellOutletContext } from "../app/AppShell"
 import { formatCurrency } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import {
   FinancialPanel,
@@ -49,6 +50,7 @@ import {
   AppInput,
   AppNativeSelect,
 } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type SortableTemplateRowProps = {
   template: TemplateRow
@@ -313,8 +315,8 @@ function TemplatesPage() {
     setEditorOpen(true)
   }
 
-  const handleDelete = (template: TemplateRow) => {
-    if (confirm(`Delete template "${template.name}"?`)) {
+  const handleDelete = async (template: TemplateRow) => {
+    if (await confirmDialog({ title: `Delete template "${template.name}"?` })) {
       deleteMutation.mutate(template.id)
     }
   }
@@ -360,7 +362,7 @@ function TemplatesPage() {
     }
   }
 
-  if (isLoading) return <div className="text-muted">Loading templates…</div>
+  if (isLoading) return <RouteLoading title="Templates" label="Loading templates…" />
   if (error) return <div className="text-semantic-red">Unable to load templates.</div>
 
   const busy =

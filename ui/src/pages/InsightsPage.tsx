@@ -40,6 +40,7 @@ import {
   type FlowLink,
   type FlowNode,
 } from "../components/charts/flowGrouping"
+import RouteLoading from "../components/RouteLoading"
 
 type MonthlySeriesPoint = {
   year: number
@@ -175,7 +176,7 @@ function InsightsPage() {
   }, [])
 
   if (isLoading) {
-    return <div className="text-muted">Loading insights…</div>
+    return <RouteLoading title="Insights" label="Loading insights…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load insights.</div>

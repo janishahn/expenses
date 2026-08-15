@@ -34,6 +34,7 @@ import {
   buildPresetPeriodSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import RouteLoading from "../components/RouteLoading"
 
 const IconPicker = lazy(() =>
   import("../components/IconPicker").then((module) => ({
@@ -290,7 +291,7 @@ function CategoriesPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading categories…</div>
+    return <RouteLoading title="Categories" label="Loading categories…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load categories.</div>

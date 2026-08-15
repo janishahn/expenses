@@ -11,6 +11,7 @@ import type { AppShellOutletContext } from "../app/AppShell"
 import { useAuth } from "../app/auth"
 import { formatCurrency } from "../app/format"
 import { Toggle } from "../components/Toggle"
+import { confirmDialog } from "../components/confirm"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import {
@@ -30,6 +31,7 @@ import {
   AppInput,
   AppNativeSelect,
 } from "../components/ui/product-fields"
+import RouteLoading from "../components/RouteLoading"
 
 type RuleCategory = {
   id: number
@@ -355,7 +357,7 @@ function RulesPage() {
   }
 
   if (isLoading) {
-    return <div className="text-muted">Loading rules…</div>
+    return <RouteLoading title="Categorization Rules" label="Loading rules…" />
   }
   if (error || !data) {
     return <div className="text-semantic-red">Unable to load rules.</div>
@@ -489,7 +491,11 @@ function RulesPage() {
                       </AppButton>
                       <AppButton
                         type="button"
-                        onClick={() => deleteMutation.mutate(rule.id)}
+                        onClick={async () => {
+                          if (await confirmDialog({ title: `Delete rule "${rule.name}"?` })) {
+                            deleteMutation.mutate(rule.id)
+                          }
+                        }}
                         tone="inlineDanger"
                         className="h-9 w-9 p-0"
                         aria-label={`Delete ${rule.name}`}

@@ -21,6 +21,7 @@ import {
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
 import { useThemePreference } from "../theme/useThemePreference"
+import RouteLoading from "../components/RouteLoading"
 
 type ForecastMonth = {
   month: string
@@ -380,7 +381,7 @@ function ScenariosPage() {
   }
 
   if (baselineLoading) {
-    return <div className="text-muted">Loading scenarios…</div>
+    return <RouteLoading title="What If" label="Loading scenarios…" />
   }
   if (baselineError || !baselineData) {
     return <div className="text-semantic-red">Unable to load scenario simulator.</div>
