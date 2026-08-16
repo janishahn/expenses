@@ -1,57 +1,77 @@
-import { memo } from "react"
+import { memo, useMemo } from "react"
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from "recharts"
+import {
+  CHART_ANIMATION_DURATION,
+  useChartAnimation,
+} from "./chartTheme"
 
 type SparklineProps = {
   points?: string
   className?: string
 }
 
-function valuesToPolyline(raw: string): string {
-  const values = raw
-    .split(",")
-    .map((part) => Number(part.trim()))
-    .filter((value) => Number.isFinite(value))
-  if (!values.length) {
-    return ""
-  }
-  const series = values.length === 1 ? [values[0], values[0]] : values
-  const min = Math.min(...series)
-  const max = Math.max(...series)
-  const width = 100
-  const height = 30
-  const usableHeight = 26
-  const step = width / (series.length - 1)
-  return series
-    .map((value, index) => {
-      const x = index * step
-      const y =
-        max === min ? height / 2 : 2 + (1 - (value - min) / (max - min)) * usableHeight
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(" ")
-}
-
 function Sparkline({ points, className }: SparklineProps) {
-  if (!points) {
+  const animationActive = useChartAnimation()
+  const data = useMemo(() => {
+    const raw = (points ?? "").trim()
+    const coordinatePairs = raw.split(/\s+/).map((pair) => pair.split(","))
+    const usesCoordinates =
+      coordinatePairs.length > 1 &&
+      coordinatePairs.every(
+        ([x, y, ...rest]) =>
+          rest.length === 0 &&
+          x?.trim() !== "" &&
+          y?.trim() !== "" &&
+          Number.isFinite(Number(x)) &&
+          Number.isFinite(Number(y)),
+      )
+    const values = usesCoordinates
+      ? coordinatePairs.map(([, y]) => -Number(y))
+      : raw
+        ? raw
+            .split(",")
+            .map((part) => Number(part.trim()))
+            .filter((value) => Number.isFinite(value))
+        : []
+    const series = values.length === 1 ? [values[0], values[0]] : values
+    return series.map((value, index) => ({ index, value }))
+  }, [points])
+
+  if (!data.length) {
     return <div className="h-8 w-20 rounded-full border border-border/80 bg-surface-hi/70" />
   }
-  const polylinePoints = points.includes(" ") ? points : valuesToPolyline(points)
 
   return (
-    <svg
-      className={className ?? "h-8 w-20"}
-      viewBox="0 0 100 30"
-      preserveAspectRatio="none"
-    >
-      <polyline
-        points={polylinePoints}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+    <div className={className ?? "h-8 w-20"} aria-hidden="true">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={data}
+          margin={{ top: 2, right: 1, bottom: 2, left: 1 }}
+          accessibilityLayer={false}
+        >
+          <XAxis dataKey="index" hide />
+          <YAxis hide domain={["dataMin", "dataMax"]} />
+          <Line
+            dataKey="value"
+            type="monotone"
+            stroke="currentColor"
+            strokeWidth={1.75}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            dot={false}
+            activeDot={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 

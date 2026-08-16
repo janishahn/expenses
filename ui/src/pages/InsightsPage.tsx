@@ -6,7 +6,6 @@ import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import BarChart from "../components/charts/BarChart"
-import { readThemeColor } from "../components/charts/chartSetup"
 import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
 import WaterfallChart, { type FlowNode } from "../components/charts/WaterfallChart"
@@ -34,7 +33,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../components/ui/sheet"
-import { useThemePreference } from "../theme/useThemePreference"
 import RouteLoading from "../components/RouteLoading"
 
 type MonthlySeriesPoint = {
@@ -93,7 +91,6 @@ type InsightsFlowResponse = {
 }
 
 function InsightsPage() {
-  useThemePreference()
   const [searchParams, setSearchParams] = useSearchParams()
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [mobileType, setMobileType] = useState("")
@@ -226,9 +223,9 @@ function InsightsPage() {
     !trendDisabled && selectedTrendCategory ? `Trend: ${selectedTrendCategory}` : null,
     budget_month ? `Budget month: ${budget_month}` : null,
   ].filter(Boolean) as string[]
-  const incomeColor = readThemeColor("--semantic-green", "98 196 146")
-  const expenseColor = readThemeColor("--semantic-red", "224 114 102")
-  const trendColor = readThemeColor("--accent", "245 185 85")
+  const incomeColor = "rgb(var(--semantic-green))"
+  const expenseColor = "rgb(var(--semantic-red))"
+  const trendColor = "rgb(var(--accent))"
   const flowPeriodLabel = summary.replace(/^Date:\s*/, "")
 
   const openMobileFilters = () => {

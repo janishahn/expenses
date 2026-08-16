@@ -1002,8 +1002,10 @@
 
   .spending-band-segment {
     min-width: 2px;
-    transition: filter 120ms cubic-bezier(0.2, 0, 0, 1),
-      transform 120ms cubic-bezier(0.2, 0, 0, 1);
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: filter 102ms cubic-bezier(0.2, 0, 0, 1),
+      transform 102ms cubic-bezier(0.2, 0, 0, 1);
   }
 
   .spending-band-segment:hover {
@@ -1011,37 +1013,113 @@
     transform: scaleY(1.12);
   }
 
-  .spending-band-tooltip {
-    position: absolute;
-    bottom: calc(100% + 0.45rem);
+  [data-testid="dashboard-spending-bands"]:has(
+      [data-testid="spending-band-tooltip"]
+    ) {
+    position: relative;
     z-index: 20;
-    display: grid;
-    min-width: max-content;
-    transform: translateX(-50%);
-    border-radius: 0.625rem;
-    padding: 0.4rem 0.55rem;
-    color: rgb(var(--surface));
-    background: rgb(var(--text));
-    box-shadow: var(--shadow-raised);
-    font-size: 0.6875rem;
-    line-height: 1.25;
-    pointer-events: none;
-    animation: spending-band-tooltip-in 140ms cubic-bezier(0.2, 0, 0, 1);
+    overflow: visible;
   }
 
-  .spending-band-tooltip strong {
+  .chart-tooltip-light,
+  .chart-tooltip-dark {
+    max-width: min(20rem, calc(100vw - 2rem));
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-raised);
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+    pointer-events: none;
+    animation: chart-tooltip-reveal 68ms ease-out both;
+  }
+
+  .chart-tooltip-light {
+    display: grid;
+    min-width: 11.25rem;
+    gap: 0.5rem;
+    border: 1px solid rgb(var(--border) / 0.8);
+    padding: 0.625rem 0.75rem;
+    color: rgb(var(--text));
+    background: rgb(var(--surface-hi));
+  }
+
+  .chart-tooltip-label {
+    color: rgb(var(--muted));
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .chart-tooltip-items {
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .chart-tooltip-item {
+    display: grid;
+    grid-template-columns: 0.4375rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .chart-tooltip-marker {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 50%;
+  }
+
+  .chart-tooltip-name {
+    overflow: hidden;
+    color: rgb(var(--muted));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chart-tooltip-value,
+  .chart-tooltip-footer {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+
+  .chart-tooltip-value {
+    text-align: right;
+  }
+
+  .chart-tooltip-footer {
+    border-top: 1px solid rgb(var(--border) / 0.72);
+    padding-top: 0.375rem;
+    color: rgb(var(--muted));
+    font-size: 0.6875rem;
+  }
+
+  .chart-tooltip-dark {
+    display: grid;
+    min-width: max-content;
+    gap: 0.125rem;
+    padding: 0.625rem 0.75rem;
+    color: rgb(var(--surface));
+    background: rgb(var(--text));
+  }
+
+  .chart-tooltip-dark > span {
+    opacity: 0.72;
+  }
+
+  .chart-tooltip-dark strong,
+  .chart-tooltip-dark small {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600;
   }
 
-  @keyframes spending-band-tooltip-in {
+  .chart-tooltip-dark small {
+    opacity: 0.65;
+  }
+
+  @keyframes chart-tooltip-reveal {
     from {
       opacity: 0;
-      transform: translate(-50%, 0.25rem);
     }
     to {
       opacity: 1;
-      transform: translate(-50%, 0);
     }
   }
 
@@ -1768,8 +1846,8 @@
 .waterfall-bar {
   transform-box: fill-box;
   transform-origin: center bottom;
-  animation: waterfall-grow var(--motion-content) var(--ease-out-strong) both;
-  animation-delay: calc(var(--waterfall-index) * 30ms + 40ms);
+  animation: waterfall-grow 187ms var(--ease-out-strong) both;
+  animation-delay: calc(var(--waterfall-index) * 26ms + 34ms);
 }
 
 [data-waterfall-step][data-kind="expense"] .waterfall-bar {
@@ -1777,9 +1855,10 @@
 }
 
 .waterfall-mobile-bar {
+  transform-box: fill-box;
   transform-origin: left center;
-  animation: waterfall-mobile-grow var(--motion-content) var(--ease-out-strong) both;
-  animation-delay: calc(var(--waterfall-index) * 30ms + 40ms);
+  animation: waterfall-mobile-grow 187ms var(--ease-out-strong) both;
+  animation-delay: calc(var(--waterfall-index) * 26ms + 34ms);
 }
 
 [data-waterfall-step][data-kind="expense"] .waterfall-mobile-bar {

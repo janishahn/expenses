@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Web charts now use Recharts SVG rendering, rounded chart geometry, roomier mono axes, quieter grid lines, compact theme-aware hover tooltips, and 15%-faster animation across the dashboard, Insights, Forecast, What If, Budgets, Tags, Recurring, and Admin views. Financial meaning, drill-downs, keyboard access, privacy behavior, and the surrounding page design remain unchanged; the native iOS app continues to use Swift Charts.
+
+### Fixed
+- Dashboard spending-band tooltips now render above their chart rows and nearby cards instead of being clipped to the 24px band, while the chart legend stays inside its card.
+- Dashboard, Forecast, What If, and budget range areas now use their intended 16-18% shading instead of Recharts reducing them by another 40%.
+- Dashboard actual and likely balance strokes now animate as one continuous timeline instead of drawing as two separate lines at the same time.
+- Tag detail sparklines now preserve the full backend trend instead of treating coordinate pairs as raw values and plotting the wrong shape.
+
+### Dependencies
+- Replaced Chart.js and react-chartjs-2 with Recharts and react-is in the web frontend.
+
 ## [0.4.6] - 2026-08-16
 
 ### Changed

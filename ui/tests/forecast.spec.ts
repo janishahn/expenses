@@ -16,7 +16,9 @@ test.describe("Forecast Page", () => {
     await expect(
       page.getByRole("button", { name: "Recurring + estimates" })
     ).toBeVisible()
-    await expect(page.locator("canvas").first()).toBeVisible()
+    await expect(
+      page.getByRole("img", { name: "Projected balance by month" }),
+    ).toBeVisible()
   })
 
   test("should update query when changing horizon and mode", async ({ page }) => {
@@ -118,6 +120,11 @@ test.describe("Forecast Page", () => {
     await page.goto("/forecast")
     await expect(page.getByText("Balance may dip negative")).toBeVisible()
     await expect(page.getByText(/80% range -300/).first()).toBeVisible()
+    const forecastRange = page
+      .getByRole("img", { name: "Projected balance by month" })
+      .locator(".recharts-area-area")
+    await expect(forecastRange).toHaveCount(1)
+    await expect(forecastRange).toHaveCSS("fill-opacity", "1")
     await page.getByRole("button", { name: /Jan 2027/i }).click()
     await expect(page.getByText("Recurring postings")).toBeVisible()
     await expect(page.getByText("Rent · Housing")).toBeVisible()

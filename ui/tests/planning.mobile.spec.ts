@@ -61,7 +61,11 @@ test.describe("Planning surfaces (mobile)", () => {
     await page.getByRole("button", { name: "Add adjustment" }).click()
 
     await expect(page.getByText("Mobile vacation")).toBeVisible()
-    await expect(page.locator("canvas").first()).toBeVisible()
+    await expect(
+      page.getByRole("img", {
+        name: "Baseline balance compared with the adjusted scenario",
+      }),
+    ).toBeVisible()
     await page.getByLabel("Delete adjustment").click()
     await expect(
       page.getByText("No adjustments yet. Add one to simulate impact.")

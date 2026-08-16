@@ -1,11 +1,27 @@
-import { memo, useMemo, useState } from "react"
+import { memo, useMemo } from "react"
 import { Link } from "react-router-dom"
+import {
+  Bar,
+  BarChart,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type TooltipContentProps,
+} from "recharts"
 import { formatCurrency } from "../../app/format"
 import {
   FinancialPanel,
   SectionHeading,
 } from "../product/ProductSurfaces"
 import { palette } from "./palette"
+import {
+  CHART_BAR_ANIMATION_DURATION,
+  CHART_TOOLTIP_ANIMATION_DURATION,
+  DarkChartTooltipCard,
+  useChartAnimation,
+} from "./chartTheme"
 
 export type SpendingBandSegment = {
   category_id: number | null
@@ -53,6 +69,27 @@ function segmentKey(segment: SpendingBandSegment): string {
     : `category:${segment.category_id}`
 }
 
+function SpendingBandTooltip({
+  active,
+  payload,
+  incognito,
+}: Partial<TooltipContentProps> & { incognito: boolean }) {
+  if (!active || !payload?.length) return null
+  const item = payload[0]
+  if (typeof item.value !== "number") return null
+  return (
+    <DarkChartTooltipCard
+      title={String(item.name ?? "")}
+      value={
+        <span className={incognito ? "kpi-hidden" : ""}>
+          {formatCurrency(item.value)} €
+        </span>
+      }
+      testId="spending-band-tooltip"
+    />
+  )
+}
+
 function SpendingBandsChart({
   months,
   incognito,
@@ -60,13 +97,7 @@ function SpendingBandsChart({
   loading = false,
   unavailable = false,
 }: SpendingBandsChartProps) {
-  const [tooltip, setTooltip] = useState<{
-    month: string
-    key: string
-    left: number
-    name: string
-    amountCents: number
-  } | null>(null)
+  const animationActive = useChartAnimation()
   const maxTotal = Math.max(0, ...months.map((month) => month.total_cents))
   const segmentColors = useMemo(() => {
     const colors = new Map<string, string>()
@@ -129,7 +160,10 @@ function SpendingBandsChart({
           </div>
         ) : (
           <>
-            <div className="space-y-2" aria-label="Six-month spending bands">
+            <div
+              className="grid min-h-0 flex-1 grid-rows-6 gap-1.5"
+              aria-label="Six-month spending bands"
+            >
               {displayedMonths.map((month) => {
                 const search = new URLSearchParams({
                   period: "custom",
@@ -147,7 +181,12 @@ function SpendingBandsChart({
                   ? `View expense transactions for ${monthLabel(month.month)}`
                   : `View expense transactions for ${monthLabel(month.month)}. Total ${formatCurrency(month.total_cents)} euros${details ? `. ${details}` : ""}`
 
-                let cumulativeCents = 0
+                const chartRow: Record<string, string | number> = {
+                  month: month.month,
+                }
+                month.segments.forEach((segment) => {
+                  chartRow[segmentKey(segment)] = segment.amount_cents
+                })
 
                 return (
                   <div
@@ -172,53 +211,61 @@ function SpendingBandsChart({
                     </Link>
                     <span
                       className="relative block h-6 rounded-[6px] bg-faint/70"
-                      onMouseLeave={() => setTooltip(null)}
                     >
-                      {tooltip?.month === month.month ? (
-                        <span
-                          role="tooltip"
-                          data-testid="spending-band-tooltip"
-                          className="spending-band-tooltip"
-                          style={{ left: `${tooltip.left}%` }}
-                        >
-                          <span>{tooltip.name}</span>
-                          <strong className={incognito ? "kpi-hidden" : ""}>
-                            {formatCurrency(tooltip.amountCents)} €
-                          </strong>
-                        </span>
-                      ) : null}
                       <span
                         aria-hidden="true"
-                        className="absolute inset-y-0 left-0 flex overflow-hidden rounded-[6px]"
-                        style={{
-                          width: `${(month.total_cents / maxTotal) * 100}%`,
-                        }}
+                        className="absolute inset-0"
                       >
-                        {month.segments.map((segment) => {
-                          const start = cumulativeCents
-                          cumulativeCents += segment.amount_cents
-                          const left =
-                            ((start + segment.amount_cents / 2) / maxTotal) * 100
-                          return (
-                            <span
-                              key={segmentKey(segment)}
-                              className="spending-band-segment"
-                              onMouseEnter={() =>
-                                setTooltip({
-                                  month: month.month,
-                                  key: segmentKey(segment),
-                                  left,
-                                  name: segment.name,
-                                  amountCents: segment.amount_cents,
-                                })
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            layout="vertical"
+                            data={[chartRow]}
+                            margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                            accessibilityLayer={false}
+                          >
+                            <XAxis type="number" domain={[0, maxTotal]} hide />
+                            <YAxis type="category" dataKey="month" hide />
+                            {month.segments.map((segment, index) => {
+                              const only = month.segments.length === 1
+                              const first = index === 0
+                              const last = index === month.segments.length - 1
+                              return (
+                                <Bar
+                                  key={segmentKey(segment)}
+                                  dataKey={segmentKey(segment)}
+                                  name={segment.name}
+                                  stackId="spending"
+                                  fill={segmentColors.get(segmentKey(segment))}
+                                  barSize={24}
+                                  radius={
+                                    only
+                                      ? [6, 6, 6, 6]
+                                      : first
+                                        ? [6, 0, 0, 6]
+                                        : last
+                                          ? [0, 6, 6, 0]
+                                          : [0, 0, 0, 0]
+                                  }
+                                  isAnimationActive={animationActive}
+                                  animationDuration={CHART_BAR_ANIMATION_DURATION}
+                                >
+                                  <Cell className="spending-band-segment" />
+                                </Bar>
+                              )
+                            })}
+                            <Tooltip
+                              shared={false}
+                              cursor={false}
+                              isAnimationActive={animationActive}
+                              animationDuration={CHART_TOOLTIP_ANIMATION_DURATION}
+                              allowEscapeViewBox={{ x: true, y: true }}
+                              wrapperStyle={{ zIndex: 20 }}
+                              content={
+                                <SpendingBandTooltip incognito={incognito} />
                               }
-                              style={{
-                                width: `${(segment.amount_cents / month.total_cents) * 100}%`,
-                                backgroundColor: segmentColors.get(segmentKey(segment)),
-                              }}
                             />
-                          )
-                        })}
+                          </BarChart>
+                        </ResponsiveContainer>
                       </span>
                     </span>
                   </div>
@@ -235,7 +282,10 @@ function SpendingBandsChart({
               </span>
             </div>
 
-            <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3">
+            <div
+              data-testid="dashboard-spending-band-legend"
+              className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3"
+            >
               {visibleCategories.map(({ segment }) => (
                 <span
                   key={segmentKey(segment)}

@@ -143,9 +143,7 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(page.locator("[data-metric-tone]")).toHaveCount(4)
     await expect(page.getByTestId("dashboard-balance-budget-pace")).toBeVisible()
     await expect(page.getByRole("group", { name: "Transaction type" })).toHaveCount(0)
-    await expect(
-      page.getByTestId("dashboard-balance-card").locator("canvas"),
-    ).not.toBeVisible()
+    await expect(page.getByTestId("dashboard-balance-history")).not.toBeVisible()
     await expect(
       page.getByTestId("dashboard-spending-bands").getByText(/Six months/),
     ).toHaveCount(0)
