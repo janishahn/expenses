@@ -58,6 +58,7 @@ const visualDashboard = {
 test("Dashboard and add transaction dialog retain their desktop visual contract @visual", async ({
   page,
 }) => {
+  await page.clock.install({ time: new Date("2026-07-16T12:00:00Z") })
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   await mockDashboardApi(page, visualDashboard)
   await mockVisualSupportingApi(page)

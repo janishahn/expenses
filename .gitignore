@@ -53,3 +53,4 @@ xcuserdata/
 # Playwright artifacts
 output/playwright/
 .playwright-cli/
+artifacts/ui-polish-audit/

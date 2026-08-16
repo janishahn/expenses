@@ -6,7 +6,13 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
-import { apiFetch, apiFetchBlob, apiFetchFormData } from "../app/api"
+import {
+  apiFetch,
+  apiFetchBlob,
+  apiFetchFormData,
+  getApiErrorMessage,
+  isApiErrorStatus,
+} from "../app/api"
 import type {
   CategoriesResponse,
   CategoryListItem,
@@ -26,7 +32,6 @@ import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
 import {
   AppCheckbox,
   AppFieldLabel,
@@ -34,6 +39,7 @@ import {
   AppNativeSelect,
 } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type TransactionEditFormProps = {
   transaction: TransactionDetail
@@ -199,10 +205,14 @@ function TransactionEditForm({
 
       {formError && <p className="mt-4 text-xs text-semantic-red">{formError}</p>}
       {Boolean(updateError) && (
-        <p className="mt-4 text-xs text-semantic-red">{String(updateError)}</p>
+        <p className="mt-4 text-xs text-semantic-red">
+          {getApiErrorMessage(updateError, "Unable to update transaction.")}
+        </p>
       )}
       {Boolean(deleteError) && (
-        <p className="mt-4 text-xs text-semantic-red">{String(deleteError)}</p>
+        <p className="mt-4 text-xs text-semantic-red">
+          {getApiErrorMessage(deleteError, "Unable to delete transaction.")}
+        </p>
       )}
 
       <div className="mt-4 flex gap-3">
@@ -258,7 +268,7 @@ function TransactionAttachmentsCard({
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
     },
     onError: (error) => {
-      setUploadError(String(error))
+      setUploadError(getApiErrorMessage(error, "Unable to upload attachment."))
     },
   })
 
@@ -286,7 +296,7 @@ function TransactionAttachmentsCard({
       link.remove()
       URL.revokeObjectURL(objectUrl)
     } catch (error) {
-      setDownloadError(String(error))
+      setDownloadError(getApiErrorMessage(error, "Unable to download attachment."))
     }
   }
 
@@ -333,7 +343,12 @@ function TransactionAttachmentsCard({
         <p className="mt-3 text-xs text-semantic-red">{downloadError}</p>
       ) : null}
       {deleteMutation.error ? (
-        <p className="mt-3 text-xs text-semantic-red">{String(deleteMutation.error)}</p>
+        <p className="mt-3 text-xs text-semantic-red">
+          {getApiErrorMessage(
+            deleteMutation.error,
+            "Unable to delete attachment.",
+          )}
+        </p>
       ) : null}
 
       <div className="mt-4 space-y-2">
@@ -445,7 +460,7 @@ function TransactionDurablePurchaseCard({
       queryClient.invalidateQueries({ queryKey: ["durable-purchases"] })
     },
     onError: (error) => {
-      setFormError(String(error))
+      setFormError(getApiErrorMessage(error, "Unable to update transaction."))
     },
   })
 
@@ -462,7 +477,9 @@ function TransactionDurablePurchaseCard({
       queryClient.invalidateQueries({ queryKey: ["durable-purchases"] })
     },
     onError: (error) => {
-      setFormError(String(error))
+      setFormError(
+        getApiErrorMessage(error, "Unable to stop tracking this durable purchase.")
+      )
     },
   })
 
@@ -631,7 +648,7 @@ function TransactionReimbursementsCard({
     },
     onError: (error) => {
       setSearchResults(null)
-      setSearchError(String(error))
+      setSearchError(getApiErrorMessage(error, "Unable to search expenses."))
     },
   })
 
@@ -657,7 +674,7 @@ function TransactionReimbursementsCard({
       searchMutation.mutate(q)
     },
     onError: (error) => {
-      setAllocationError(String(error))
+      setAllocationError(getApiErrorMessage(error, "Unable to save allocation."))
     },
   })
 
@@ -713,7 +730,16 @@ function TransactionReimbursementsCard({
       {reimbursementsQuery.isLoading ? (
         <p className="text-sm text-muted">Loading reimbursements…</p>
       ) : reimbursementsQuery.error || !reimbursements ? (
-        <p className="text-sm text-semantic-red">Unable to load reimbursements.</p>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-semantic-red">
+          <span>Unable to load reimbursements.</span>
+          <AppButton
+            type="button"
+            tone="inline"
+            onClick={() => void reimbursementsQuery.refetch()}
+          >
+            Retry
+          </AppButton>
+        </div>
       ) : reimbursements.mode === "income" ? (
         <div className="space-y-5">
           {!reimbursements.is_reimbursement ? (
@@ -1165,17 +1191,27 @@ function TransactionEditPage() {
   if (isLoading) {
     return <RouteLoading title="Edit Transaction" label="Loading transaction…" />
   }
+  if (isApiErrorStatus(error, 404) || (!error && !transaction)) {
+    return (
+      <RouteError
+        title="Edit Transaction"
+        message="Transaction not found."
+        returnHref={returnTo}
+        returnLabel="Back to transactions"
+      />
+    )
+  }
   if (error || !transaction) {
     return (
-      <section className="space-y-6">
-        <PageIntro title="Edit Transaction" backHref={returnTo} backLabel="← Back" />
-        <AppCard className="p-5 text-semantic-red">Transaction not found.</AppCard>
-      </section>
+      <RouteError
+        title="Edit Transaction"
+        message="Unable to load transaction."
+      />
     )
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-6">
       <PageIntro
         title="Edit Transaction"
         backHref={detailHref}
@@ -1185,8 +1221,8 @@ function TransactionEditPage() {
         backLabel="← Back"
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-        <div className="space-y-5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <div className="min-w-0 space-y-5">
           <TransactionEditForm
             key={transaction.id}
             transaction={transaction}
@@ -1202,7 +1238,7 @@ function TransactionEditPage() {
           <TransactionReimbursementsCard transaction={transaction} />
         </div>
 
-        <aside className="space-y-5 xl:sticky xl:top-4">
+        <aside className="min-w-0 space-y-5 xl:sticky xl:top-4">
           <FinancialPanel role="inspector" className="overflow-hidden">
             <div className="flex items-start gap-3 p-5">
               <CategoryIcon

@@ -5,8 +5,26 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+const SheetReturnFocusContext = React.createContext<
+  React.MutableRefObject<HTMLElement | null> | undefined
+>(undefined)
+
+function Sheet({
+  open,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  const returnFocusRef = React.useRef<HTMLElement | null>(null)
+  React.useInsertionEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement) {
+      returnFocusRef.current = document.activeElement
+    }
+  }, [open])
+
+  return (
+    <SheetReturnFocusContext.Provider value={returnFocusRef}>
+      <SheetPrimitive.Root data-slot="sheet" open={open} {...props} />
+    </SheetReturnFocusContext.Provider>
+  )
 }
 
 function SheetTrigger({
@@ -45,10 +63,14 @@ function SheetContent({
   className,
   children,
   side = "bottom",
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
 }) {
+  const returnFocusRef = React.useContext(SheetReturnFocusContext)
+
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -64,6 +86,21 @@ function SheetContent({
           "sheet-motion border-border",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          if (returnFocusRef && document.activeElement instanceof HTMLElement) {
+            returnFocusRef.current = document.activeElement
+          }
+          onOpenAutoFocus?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          const returnTarget = returnFocusRef?.current
+          if (returnTarget?.isConnected) {
+            event.preventDefault()
+            returnTarget.focus()
+          }
+        }}
         {...props}
       >
         {children}

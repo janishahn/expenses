@@ -868,7 +868,7 @@ function SpendingAssistantPage() {
         data-testid="spending-assistant-scroll-bottom"
         tabIndex={showScrollToBottom ? 0 : -1}
         onClick={scrollToBottom}
-        className={`absolute bottom-[5.75rem] left-1/2 z-20 inline-flex h-10 w-10 -translate-x-1/2 items-center justify-center rounded-full bg-surface text-muted shadow-[var(--shadow-soft)] transition-[opacity,scale,background-color,color] duration-200 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96] ${
+        className={`absolute bottom-[5.75rem] left-1/2 z-20 inline-flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full bg-surface text-muted shadow-[var(--shadow-soft)] transition-[opacity,scale,background-color,color] duration-200 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96] desk:h-10 desk:w-10 ${
           showScrollToBottom
             ? "pointer-events-auto scale-100 opacity-100"
             : "pointer-events-none scale-[0.85] opacity-0"

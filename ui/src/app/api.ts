@@ -9,6 +9,62 @@ let csrfPromise: Promise<string> | null = null
 let csrfFetchedAt: number | null = null
 const CSRF_TOKEN_MAX_AGE_MS = 110 * 60 * 1000
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+  }
+}
+
+export function isApiErrorStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiError && error.status === status
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  const message =
+    error instanceof Error
+      ? error.message.trim()
+      : typeof error === "string"
+        ? error.trim()
+        : ""
+  if (!message) {
+    return fallback
+  }
+  try {
+    const payload: unknown = JSON.parse(message)
+    if (!payload || typeof payload !== "object" || !("detail" in payload)) {
+      return fallback
+    }
+    const detail = payload.detail
+    if (typeof detail === "string" && detail.trim()) {
+      return detail
+    }
+    if (Array.isArray(detail)) {
+      const details = detail
+        .map((item) => {
+          if (!item || typeof item !== "object" || !("msg" in item)) return null
+          const detailMessage = item.msg
+          return typeof detailMessage === "string" && detailMessage.trim()
+            ? detailMessage.trim()
+            : null
+        })
+        .filter((detail): detail is string => detail !== null)
+      if (details.length) {
+        return details.join(" ")
+      }
+    }
+    return fallback
+  } catch (parseError) {
+    if (!(parseError instanceof SyntaxError)) {
+      throw parseError
+    }
+  }
+  return message
+}
+
 function invalidateCsrfToken(): void {
   csrfToken = null
   csrfFetchedAt = null
@@ -90,7 +146,7 @@ async function apiRequest<T>(
       invalidateCsrfToken()
       continue
     }
-    throw new Error(text || `Request failed (${response.status})`)
+    throw new ApiError(text || `Request failed (${response.status})`, response.status)
   }
   throw new Error("Request failed due to CSRF token validation")
 }

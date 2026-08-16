@@ -5,10 +5,26 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+const DialogReturnFocusContext = React.createContext<
+  React.MutableRefObject<HTMLElement | null> | undefined
+>(undefined)
+
 function Dialog({
+  open,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  const returnFocusRef = React.useRef<HTMLElement | null>(null)
+  React.useInsertionEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement) {
+      returnFocusRef.current = document.activeElement
+    }
+  }, [open])
+
+  return (
+    <DialogReturnFocusContext.Provider value={returnFocusRef}>
+      <DialogPrimitive.Root data-slot="dialog" open={open} {...props} />
+    </DialogReturnFocusContext.Provider>
+  )
 }
 
 function DialogTrigger({
@@ -47,8 +63,12 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
 function DialogContent({
   className,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+  const returnFocusRef = React.useContext(DialogReturnFocusContext)
+
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -58,6 +78,21 @@ function DialogContent({
           "drawer-panel drawer-motion fixed top-1/2 left-1/2 z-[70] max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 p-4 outline-none",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          if (returnFocusRef && document.activeElement instanceof HTMLElement) {
+            returnFocusRef.current = document.activeElement
+          }
+          onOpenAutoFocus?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          const returnTarget = returnFocusRef?.current
+          if (returnTarget?.isConnected) {
+            event.preventDefault()
+            returnTarget.focus()
+          }
+        }}
         {...props}
       />
     </DialogPortal>

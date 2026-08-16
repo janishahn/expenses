@@ -1161,6 +1161,8 @@ def test_ai_usage_summary_average_cost_keeps_division_precision(
         finally:
             session.close()
 
+    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
+    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
     app_main.app.dependency_overrides[app_main.get_db] = override_get_db
     try:
         with TestClient(app_main.app) as client:
@@ -1234,6 +1236,8 @@ def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
         finally:
             session.close()
 
+    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
+    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
     app_main.app.dependency_overrides[app_main.get_db] = override_get_db
     try:
         with TestClient(app_main.app) as client:
@@ -1317,6 +1321,8 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
         finally:
             session.close()
 
+    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
+    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
     app_main.app.dependency_overrides[app_main.get_db] = override_get_db
     try:
         with TestClient(app_main.app) as client:

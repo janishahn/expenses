@@ -1315,6 +1315,18 @@
       min-height: 2.75rem;
     }
 
+    .btn-ghost[aria-label],
+    .btn-inline[aria-label],
+    .btn-inline-danger[aria-label],
+    .page-breadcrumb {
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+    }
+
+    .chip-action {
+      min-height: 2.75rem;
+    }
+
     [data-slot="checkbox"],
     [data-slot="switch"] {
       position: relative;
@@ -1608,6 +1620,29 @@
     overflow: hidden;
   }
 
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .expense-map.leaflet-touch .leaflet-bar a {
+    width: 2.75rem;
+    height: 2.75rem;
+    line-height: 2.75rem;
+  }
+
+  .expense-map .leaflet-control-attribution a {
+    position: relative;
+    display: inline-block;
+    min-width: 2.75rem;
+  }
+
+  .expense-map .leaflet-control-attribution a::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 2.75rem;
+    content: "";
+  }
 }
 
 /* Suppress the browser's native type="search" clear affordance so the styled,

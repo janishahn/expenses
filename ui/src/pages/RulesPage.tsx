@@ -6,7 +6,7 @@ import { XCircleIcon } from "@phosphor-icons/react/XCircle"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useOutletContext } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { useAuth } from "../app/auth"
 import { formatCurrency } from "../app/format"
@@ -32,6 +32,7 @@ import {
   AppNativeSelect,
 } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type RuleCategory = {
   id: number
@@ -189,7 +190,7 @@ function RulesPage() {
     },
     onError: (error) => {
       setPreview(null)
-      setPreviewError(String(error))
+      setPreviewError(getApiErrorMessage(error, "Unable to preview this rule."))
     },
   })
 
@@ -360,7 +361,7 @@ function RulesPage() {
     return <RouteLoading title="Categorization Rules" label="Loading rules…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load rules.</div>
+    return <RouteError title="Categorization Rules" message="Unable to load rules." />
   }
 
   const hiddenTags = data.tags.filter((t) => t.is_hidden_from_budget)

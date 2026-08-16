@@ -10,7 +10,12 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
 import markerShadow from "leaflet/dist/images/marker-shadow.png"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
-import { apiFetch, apiFetchBlob } from "../app/api"
+import {
+  apiFetch,
+  apiFetchBlob,
+  getApiErrorMessage,
+  isApiErrorStatus,
+} from "../app/api"
 import type {
   ReceiptAttachment,
   TransactionDetail,
@@ -35,6 +40,7 @@ import {
 import { AppButton } from "../components/ui/product-button"
 import { AppCard } from "../components/ui/product-card"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 const transactionLocationMarkerIcon = L.icon({
   iconRetinaUrl: markerIcon2x,
@@ -94,7 +100,7 @@ function TransactionLocationMap({
     <div
       ref={containerRef}
       data-testid="transaction-detail-location-map"
-      className="relative z-0 h-full min-h-[18rem] w-full md:min-h-[24rem]"
+      className="expense-map relative z-0 h-full min-h-[18rem] w-full md:min-h-[24rem]"
     />
   )
 }
@@ -133,7 +139,7 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
             load(`/api/attachments/${attachment.id}/download`, false)
             return
           }
-          setPreviewError(String(error))
+          setPreviewError(getApiErrorMessage(error, "Unable to load preview."))
         })
     }
 
@@ -177,7 +183,7 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
       }, 60_000)
     } catch (error) {
       popup?.close()
-      setActionError(String(error))
+      setActionError(getApiErrorMessage(error, "Unable to download attachment."))
     }
   }
 
@@ -196,7 +202,7 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
       link.remove()
       URL.revokeObjectURL(objectUrl)
     } catch (error) {
-      setActionError(String(error))
+      setActionError(getApiErrorMessage(error, "Unable to download attachment."))
     }
   }
 
@@ -311,7 +317,7 @@ function TransactionDetailPage() {
       navigate(returnTo, { replace: true })
     },
     onError: (mutationError) => {
-      setDeleteError(String(mutationError))
+      setDeleteError(getApiErrorMessage(mutationError, "Unable to delete transaction."))
     },
   })
 
@@ -327,13 +333,18 @@ function TransactionDetailPage() {
     return <RouteLoading title="Transaction" label="Loading transaction…" />
   }
 
-  if (error || !transaction) {
+  if (isApiErrorStatus(error, 404) || (!error && !transaction)) {
     return (
-      <section className="space-y-5 md:space-y-6 desk:space-y-4">
-        <PageIntro title="Transaction" backHref={returnTo} backLabel="← Back" />
-        <AppCard className="p-5 text-semantic-red">Transaction not found.</AppCard>
-      </section>
+      <RouteError
+        title="Transaction"
+        message="Transaction not found."
+        returnHref={returnTo}
+        returnLabel="Back to transactions"
+      />
     )
+  }
+  if (error || !transaction) {
+    return <RouteError title="Transaction" message="Unable to load transaction." />
   }
 
   const amountTextTone =

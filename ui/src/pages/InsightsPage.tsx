@@ -36,6 +36,7 @@ import {
 } from "../components/ui/sheet"
 import { useThemePreference } from "../theme/useThemePreference"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type MonthlySeriesPoint = {
   year: number
@@ -120,6 +121,7 @@ function InsightsPage() {
     data: flowData,
     isFetching: flowFetching,
     error: flowError,
+    refetch: refetchFlow,
   } = useQuery({
     queryKey: ["insights", "flow", queryString],
     queryFn: () => apiFetch<InsightsFlowResponse>(`/api/insights/flow?${queryString}`),
@@ -163,7 +165,7 @@ function InsightsPage() {
     return <RouteLoading title="Insights" label="Loading insights…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load insights.</div>
+    return <RouteError title="Insights" message="Unable to load insights." />
   }
 
   const {
@@ -832,17 +834,20 @@ function InsightsPage() {
         </FinancialPanel>
       </div>
         </>
+      ) : flowError ? (
+        <div className="flex flex-wrap items-center gap-2 py-5 text-sm text-semantic-red">
+          <span>Unable to load income and spending.</span>
+          <AppButton type="button" tone="inline" onClick={() => void refetchFlow()}>
+            Retry
+          </AppButton>
+        </div>
       ) : (
-        flowError ? (
-          <p className="py-5 text-sm text-semantic-red">Unable to load income and spending.</p>
-        ) : (
-          <WaterfallChart
-            key={queryString}
-            nodes={flowData?.nodes ?? []}
-            periodLabel={flowPeriodLabel}
-            onCategoryClick={goToCategoryTransactions}
-          />
-        )
+        <WaterfallChart
+          key={queryString}
+          nodes={flowData?.nodes ?? []}
+          periodLabel={flowPeriodLabel}
+          onCategoryClick={goToCategoryTransactions}
+        />
       )}
     </section>
   )

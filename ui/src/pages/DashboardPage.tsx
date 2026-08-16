@@ -28,6 +28,7 @@ import {
 } from "../components/product/ProductSurfaces"
 import TransactionDescription from "../components/TransactionDescription"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,
@@ -222,11 +223,7 @@ function DashboardPage() {
     return <RouteLoading title="Dashboard" label="Loading dashboard…" rows={5} />
   }
   if (error || !data) {
-    return (
-      <FinancialPanel className="p-5 text-sm text-semantic-red">
-        Unable to load dashboard data.
-      </FinancialPanel>
-    )
+    return <RouteError title="Dashboard" message="Unable to load dashboard data." />
   }
 
   const { kpis, deltas, donut, recent, period, filters } = data
@@ -524,7 +521,7 @@ function DashboardPage() {
             <Link
               to={{ pathname: "/transactions", search: queryString }}
               state={{ returnTo }}
-              className="text-xs font-semibold text-primary hover:underline"
+              className="inline-flex min-h-11 items-center text-xs font-semibold text-primary hover:underline desk:min-h-0"
             >
               View all
             </Link>

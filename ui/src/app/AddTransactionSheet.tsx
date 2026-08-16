@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog"
-import { apiFetch } from "./api"
+import { apiFetch, getApiErrorMessage } from "./api"
 import type {
   CategoriesResponse,
   TemplateRow,
@@ -311,7 +311,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                         onClose()
                         navigate("/templates")
                       }}
-                      className="shrink-0 self-center text-xs text-muted underline-offset-2 hover:text-text hover:underline"
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center self-center text-xs text-muted underline-offset-2 hover:text-text hover:underline desk:min-h-0"
                     >
                       Manage
                     </button>
@@ -425,7 +425,12 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                 <p className="text-xs text-muted">Checking scheduled tags…</p>
               )}
               {createMutation.error && (
-                <p className="text-xs text-semantic-red">{String(createMutation.error)}</p>
+                <p className="text-xs text-semantic-red">
+                  {getApiErrorMessage(
+                    createMutation.error,
+                    "Unable to add transaction.",
+                  )}
+                </p>
               )}
 
               <div className="sticky bottom-0 -mx-5 flex gap-2 border-t border-border bg-surface/95 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur">

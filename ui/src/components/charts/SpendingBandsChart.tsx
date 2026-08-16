@@ -159,7 +159,7 @@ function SpendingBandsChart({
                       state={{ returnTo }}
                       data-testid="dashboard-spending-band-month"
                       aria-label={accessibleLabel}
-                      className="min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-11 min-w-0 flex-col justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring desk:min-h-0"
                     >
                       <span className="block text-xs font-semibold text-text">
                         {monthLabel(month.month).split(" ")[0]}

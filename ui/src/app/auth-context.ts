@@ -68,22 +68,3 @@ export function getSafeRedirectTarget(rawTarget: string | null, fallback = "/"):
     return fallback
   }
 }
-
-export function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    try {
-      const payload = JSON.parse(error.message) as { detail?: string }
-      if (typeof payload.detail === "string" && payload.detail.trim()) {
-        return payload.detail
-      }
-    } catch (parseError) {
-      if (!(parseError instanceof SyntaxError)) {
-        throw parseError
-      }
-    }
-    if (error.message.trim()) {
-      return error.message
-    }
-  }
-  return fallback
-}

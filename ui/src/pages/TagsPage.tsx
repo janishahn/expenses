@@ -3,7 +3,7 @@ import { TagIcon } from "@phosphor-icons/react/Tag"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useOutletContext, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import { formatEuroDate } from "../app/format"
 import type { AppShellOutletContext } from "../app/AppShell"
 import PageIntro from "../components/PageIntro"
@@ -32,6 +32,7 @@ import {
   type PresetPeriod,
 } from "../lib/searchParams"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type TagRow = {
   id: number
@@ -166,7 +167,9 @@ function TagsPage() {
   }
 
   if (isLoading) return <RouteLoading title="Tags" label="Loading tags…" />
-  if (error || !data) return <div className="text-semantic-red">Unable to load tags.</div>
+  if (error || !data) {
+    return <RouteError title="Tags" message="Unable to load tags." />
+  }
 
   const mergeSource = data.tags.find((tag) => String(tag.id) === mergeSourceId)
   const mergeTarget = data.tags.find((tag) => String(tag.id) === mergeTargetId)
@@ -342,7 +345,9 @@ function TagsPage() {
               </div>
             ) : null}
             {createMutation.error ? (
-              <p className="text-xs text-semantic-red">{String(createMutation.error)}</p>
+              <p className="text-xs text-semantic-red">
+                {getApiErrorMessage(createMutation.error, "Unable to create tag.")}
+              </p>
             ) : null}
             <div className="flex gap-2 border-t border-border pt-4">
               <AppButton type="submit" className="flex-1" disabled={createMutation.isPending}>
@@ -491,7 +496,10 @@ function TagsPage() {
             ) : null}
             {mergePreviewMutation.error || mergeApplyMutation.error ? (
               <p className="text-xs text-semantic-red">
-                {String(mergePreviewMutation.error || mergeApplyMutation.error)}
+                {getApiErrorMessage(
+                  mergePreviewMutation.error || mergeApplyMutation.error,
+                  "Unable to merge tags.",
+                )}
               </p>
             ) : null}
             {mergePreview ? (
