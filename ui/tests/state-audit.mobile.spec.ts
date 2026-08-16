@@ -300,7 +300,9 @@ test.describe("Mobile state audit evidence", () => {
 
       await page.goto("/insights?period=last_6_months")
       await page.waitForLoadState("networkidle")
-      const analysisChart = page.locator("canvas").first()
+      const analysisChart = page.getByRole("img", {
+        name: "Monthly income compared with expenses",
+      })
       await analysisChart.scrollIntoViewIfNeeded()
       await captureAuditState(page, layout, theme, "insights populated analysis")
       await page.getByRole("button", { name: "Net" }).click()
@@ -323,16 +325,20 @@ test.describe("Mobile state audit evidence", () => {
       await page.getByRole("textbox", { name: "Month", exact: true }).fill(monthKey(1))
       await page.getByLabel("Amount").fill("200.00")
       await page.getByRole("button", { name: "Add adjustment" }).click()
-      const scenarioCanvas = page.locator("canvas").first()
-      await expect(scenarioCanvas).toBeVisible()
-      await scenarioCanvas.scrollIntoViewIfNeeded()
+      const scenarioChart = page.getByRole("img", {
+        name: "Baseline balance compared with the adjusted scenario",
+      })
+      await expect(scenarioChart).toBeVisible()
+      await scenarioChart.scrollIntoViewIfNeeded()
       await captureAuditState(page, layout, theme, "scenario populated chart")
 
       await page.goto("/budgets")
       await expect(page.getByRole("heading", { name: "Budgets", exact: true })).toBeVisible()
       const details = page.getByRole("button", { name: "View details" }).first()
       if (await details.isVisible().catch(() => false)) await details.click()
-      const budgetChart = page.locator("canvas").first()
+      const budgetChart = page.getByRole("img", {
+        name: /Budget spending pace for/,
+      })
       if (await budgetChart.isVisible().catch(() => false)) await budgetChart.scrollIntoViewIfNeeded()
       await captureAuditState(page, layout, theme, "budget populated burndown")
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-08-16
+
 ### Changed
 - Web charts now use Recharts SVG rendering, rounded chart geometry, roomier mono axes, quieter grid lines, compact theme-aware hover tooltips, and 15%-faster animation across the dashboard, Insights, Forecast, What If, Budgets, Tags, Recurring, and Admin views. Financial meaning, drill-downs, keyboard access, privacy behavior, and the surrounding page design remain unchanged; the native iOS app continues to use Swift Charts.
 

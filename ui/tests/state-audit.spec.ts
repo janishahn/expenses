@@ -257,9 +257,11 @@ test.describe("Desktop state and preference audit evidence", () => {
 
       await page.goto("/")
       await page.waitForLoadState("networkidle")
-      const balanceCanvas = page.getByTestId("dashboard-balance-history").locator("canvas")
-      await expect(balanceCanvas).toBeVisible()
-      await balanceCanvas.hover({ position: { x: 180, y: 70 } })
+      const balanceChart = page
+        .getByTestId("dashboard-balance-history")
+        .locator('[role="img"]')
+      await expect(balanceChart).toBeVisible()
+      await balanceChart.locator("svg").hover({ position: { x: 180, y: 70 } })
       await captureAuditState(page, "desktop-chromium", theme, "dashboard populated chart tooltip")
       const legendButton = page.getByTestId("dashboard-donut-legend").getByRole("button").first()
       if (await legendButton.isVisible().catch(() => false)) {
@@ -286,9 +288,11 @@ test.describe("Desktop state and preference audit evidence", () => {
       await page.getByRole("textbox", { name: "Month", exact: true }).fill(monthKey(1))
       await page.getByLabel("Amount").fill("200.00")
       await page.getByRole("button", { name: "Add adjustment" }).click()
-      const scenarioCanvas = page.locator("canvas").first()
-      await expect(scenarioCanvas).toBeVisible()
-      await scenarioCanvas.hover({ position: { x: 180, y: 140 } })
+      const scenarioChart = page.getByRole("img", {
+        name: "Baseline balance compared with the adjusted scenario",
+      })
+      await expect(scenarioChart).toBeVisible()
+      await scenarioChart.locator("svg").hover({ position: { x: 180, y: 140 } })
       await captureAuditState(page, "desktop-chromium", theme, "scenario populated chart tooltip")
 
       await page.goto("/budgets")
