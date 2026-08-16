@@ -77,11 +77,13 @@ test("Dashboard and add transaction dialog retain their desktop visual contract 
     animations: "disabled",
     mask: [page.locator("input[type='datetime-local']")],
     maskColor: "#d8dbd6",
+    maxDiffPixels: 4,
   })
 
   await page.keyboard.press("Escape")
   const expenseDonut = page.getByRole("img", { name: /^Expenses\./ })
   await expenseDonut.hover({ position: { x: 80, y: 56 } })
+  await expect(page.getByRole("tooltip")).toHaveText("60.4%")
   await expect(expenseDonut).toHaveScreenshot("donut-tooltip-percentage-desktop.png", {
     animations: "disabled",
   })

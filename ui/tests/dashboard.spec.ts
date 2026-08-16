@@ -154,14 +154,14 @@ test.describe("Dashboard Page", () => {
     }
 
     await page.goto("/")
-    const chart = page.getByTestId("dashboard-balance-history").locator("canvas")
+    const chart = page
+      .getByTestId("dashboard-balance-history")
+      .locator('[role="img"]')
     await expect(chart).toBeVisible()
     await page.waitForLoadState("networkidle")
-    const restingChart = await chart.evaluate((canvas) => canvas.toDataURL())
-    await chart.hover({ position: { x: 180, y: 70 } })
-    await expect
-      .poll(() => chart.evaluate((canvas) => canvas.toDataURL()))
-      .not.toBe(restingChart)
+    await chart.locator("svg").hover({ position: { x: 180, y: 70 } })
+    await expect(page.getByRole("tooltip")).toContainText("Actual balance")
+    await expect(page.getByRole("tooltip")).toContainText("€")
   })
 
   test("renders four metric lanes and accessible six-month actual and likely evidence", async ({
@@ -222,16 +222,54 @@ test.describe("Dashboard Page", () => {
 
     await expect(page.locator("[data-metric-tone]")).toHaveCount(4)
     await expect(page.getByTestId("dashboard-spending-band-month")).toHaveCount(6)
+    const forecastBand = page
+      .getByTestId("dashboard-balance-history")
+      .locator(".recharts-area-area")
+    await expect(forecastBand).toHaveCount(1)
+    await expect(forecastBand).toHaveCSS("fill-opacity", "1")
+    const spendingPanel = page.getByTestId("dashboard-spending-bands")
+    const spendingLegend = page.getByTestId("dashboard-spending-band-legend")
+    const panelBox = await spendingPanel.boundingBox()
+    const legendBox = await spendingLegend.boundingBox()
+    expect(panelBox).not.toBeNull()
+    expect(legendBox).not.toBeNull()
+    expect(legendBox!.y + legendBox!.height).toBeLessThanOrEqual(
+      panelBox!.y + panelBox!.height + 1,
+    )
     await expect(page.getByTestId("dashboard-spending-band-month").first()).toHaveAttribute(
       "href",
       new RegExp(
         `start=${latestMonthKey}-01.*end=${monthEndDate(latestMonthKey)}.*type=expense`
       ),
     )
-    await page.locator(".spending-band-segment").first().hover()
+    await spendingPanel.scrollIntoViewIfNeeded()
+    await page
+      .getByTestId("dashboard-spending-bands")
+      .locator(".recharts-wrapper")
+      .last()
+      .locator(".spending-band-segment")
+      .first()
+      .hover()
     const tooltip = page.getByTestId("spending-band-tooltip")
     await expect(tooltip).toBeVisible()
     await expect(tooltip).toContainText("€")
+    await expect
+      .poll(() =>
+        tooltip.evaluate((element) => {
+          const wrapper = element.parentElement
+          if (!wrapper) return false
+          const rect = element.getBoundingClientRect()
+          const previousPointerEvents = wrapper.style.pointerEvents
+          wrapper.style.pointerEvents = "auto"
+          const topmost = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.bottom - 2,
+          )
+          wrapper.style.pointerEvents = previousPointerEvents
+          return topmost === wrapper || (topmost !== null && wrapper.contains(topmost))
+        }),
+      )
+      .toBe(true)
     await expect(
       page.getByRole("img", {
         name: new RegExp(

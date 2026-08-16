@@ -72,13 +72,15 @@ test.describe("Scenarios Page", () => {
     await page.getByRole("textbox", { name: "Month", exact: true }).fill(nextMonthValue())
     await page.getByLabel("Amount").fill("200.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
-    const chart = page.locator("canvas").first()
+    const chart = page.getByRole("img", {
+      name: "Baseline balance compared with the adjusted scenario",
+    })
     await expect(chart).toBeVisible()
-    const restingChart = await chart.evaluate((canvas) => canvas.toDataURL())
-    await chart.hover({ position: { x: 180, y: 140 } })
-    await expect
-      .poll(() => chart.evaluate((canvas) => canvas.toDataURL()))
-      .not.toBe(restingChart)
+    await chart.locator("svg").hover({ position: { x: 180, y: 140 } })
+    const tooltip = page.getByRole("tooltip")
+    await expect(tooltip).toContainText("Baseline")
+    await expect(tooltip).toContainText("Scenario")
+    await expect(tooltip).toContainText("Scenario difference")
     await expect(page.locator("text=Average monthly delta")).toBeVisible()
   })
 
@@ -101,7 +103,11 @@ test.describe("Scenarios Page", () => {
     await page.getByLabel("Amount").fill("80.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
 
-    await expect(page.locator("canvas").first()).toBeVisible()
+    await expect(
+      page.getByRole("img", {
+        name: "Baseline balance compared with the adjusted scenario",
+      }),
+    ).toBeVisible()
     await expect(page.locator("text=Average monthly delta")).toBeVisible()
 
     await page.getByLabel("Delete adjustment").click()

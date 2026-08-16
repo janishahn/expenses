@@ -1,9 +1,26 @@
-import { memo } from "react"
-import { Line } from "react-chartjs-2"
-import type { Chart, ChartOptions } from "chart.js"
-import { readThemeAlpha, readThemeColor } from "./chartSetup"
+import { memo, useMemo } from "react"
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type TooltipContentProps,
+} from "recharts"
 import { formatCurrency } from "../../app/format"
-import { useThemePreference } from "../../theme/useThemePreference"
+import {
+  CHART_ANIMATION_DURATION,
+  CHART_GRID_COLOR,
+  CHART_TICK_STYLE,
+  CHART_TOOLTIP_ANIMATION_DURATION,
+  LightChartTooltipCard,
+  type ChartTooltipRow,
+  useChartAnimation,
+} from "./chartTheme"
 
 type DailyPoint = {
   day: number
@@ -19,6 +36,15 @@ type BudgetBurndownChartProps = {
   height?: number
 }
 
+type BurndownRow = {
+  day: string
+  under: [number, number] | null
+  over: [number, number] | null
+  ideal: number
+  actual: number | null
+  previous: number | null
+}
+
 function getCurrentMonthCutoff(monthValue: string, daysInMonth: number): number {
   const [yearRaw, monthRaw] = monthValue.split("-")
   const year = Number(yearRaw)
@@ -30,14 +56,19 @@ function getCurrentMonthCutoff(monthValue: string, daysInMonth: number): number 
   if (now.getFullYear() === year && now.getMonth() + 1 === month) {
     return now.getDate()
   }
-  if (now.getFullYear() < year || (now.getFullYear() === year && now.getMonth() + 1 < month)) {
+  if (
+    now.getFullYear() < year ||
+    (now.getFullYear() === year && now.getMonth() + 1 < month)
+  ) {
     return 0
   }
   return daysInMonth
 }
 
 function seriesByDay(points: DailyPoint[], daysInMonth: number): number[] {
-  const byDay = new Map(points.map((point) => [point.day, point.cumulative_cents]))
+  const byDay = new Map(
+    points.map((point) => [point.day, point.cumulative_cents]),
+  )
   const out: number[] = []
   let last = 0
   for (let day = 1; day <= daysInMonth; day += 1) {
@@ -50,6 +81,34 @@ function seriesByDay(points: DailyPoint[], daysInMonth: number): number[] {
   return out
 }
 
+function BurndownTooltip({ active, payload }: Partial<TooltipContentProps>) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload as BurndownRow | undefined
+  if (!row) return null
+  const rows: ChartTooltipRow[] = [
+    {
+      label: "Ideal",
+      value: `${formatCurrency(row.ideal)} €`,
+      color: "rgb(var(--muted))",
+    },
+  ]
+  if (row.actual !== null) {
+    rows.push({
+      label: "Actual",
+      value: `${formatCurrency(row.actual)} €`,
+      color: "rgb(var(--accent))",
+    })
+  }
+  if (row.previous !== null) {
+    rows.push({
+      label: "Previous month",
+      value: `${formatCurrency(row.previous)} €`,
+      color: "rgb(var(--muted))",
+    })
+  }
+  return <LightChartTooltipCard title={`Day ${row.day}`} rows={rows} />
+}
+
 function BudgetBurndownChart({
   monthValue,
   daysInMonth,
@@ -58,155 +117,143 @@ function BudgetBurndownChart({
   compareDailySeries,
   height = 240,
 }: BudgetBurndownChartProps) {
-  const { effectiveTheme } = useThemePreference()
-  const muted = readThemeColor("--muted", "142 160 170")
-  const border = readThemeColor("--border", "44 60 70")
-  const accent = readThemeColor("--accent", "99 199 214")
-  const labels = Array.from({ length: daysInMonth }, (_, index) => String(index + 1))
+  const animationActive = useChartAnimation()
   const cutoffDay = getCurrentMonthCutoff(monthValue, daysInMonth)
-
-  const ideal = labels.map((_, index) => {
-    const day = index + 1
-    return Math.round((budgetAmountCents * day) / daysInMonth)
-  })
-
-  const actualFull = seriesByDay(dailySeries, daysInMonth)
-  const actual = actualFull.map((value, index) => (index + 1 <= cutoffDay ? value : null))
-
-  const belowArea = actual.map((value, index) => {
-    if (value === null) return null
-    return Math.min(value, ideal[index])
-  })
-  const aboveArea = actual.map((value, index) => {
-    if (value === null) return null
-    return Math.max(value, ideal[index])
-  })
-
-  const compareBase = compareDailySeries?.length
-    ? seriesByDay(compareDailySeries, compareDailySeries.length)
-    : []
-  const compare = labels.map((_, index) => {
-    if (!compareBase.length) return null
-    if (index < compareBase.length) return compareBase[index]
-    return compareBase[compareBase.length - 1]
-  })
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: "Under pace",
-        data: belowArea,
-        borderWidth: 0,
-        pointRadius: 0,
-        fill: { target: 2 },
-        backgroundColor: readThemeAlpha("--semantic-green", 0.18, "98 196 146"),
-      },
-      {
-        label: "Over pace",
-        data: aboveArea,
-        borderWidth: 0,
-        pointRadius: 0,
-        fill: { target: 2 },
-        backgroundColor: readThemeAlpha("--semantic-red", 0.16, "224 114 102"),
-      },
-      {
-        label: "Ideal",
-        data: ideal,
-        borderColor: muted,
-        borderDash: [6, 4],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-      },
-      {
-        label: "Actual",
-        data: actual,
-        borderColor: accent,
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.25,
-        fill: false,
-      },
-      {
-        label: "Previous month",
-        data: compare,
-        borderColor: muted,
-        borderDash: [2, 4],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-      },
-    ],
-  }
-
-  const todayMarkerPlugin = {
-    id: "today-marker",
-    afterDraw: (chart: Chart<"line">) => {
-      if (cutoffDay <= 0 || cutoffDay >= daysInMonth) {
-        return
+  const rows = useMemo<BurndownRow[]>(() => {
+    const actualFull = seriesByDay(dailySeries, daysInMonth)
+    const compareBase = compareDailySeries?.length
+      ? seriesByDay(compareDailySeries, compareDailySeries.length)
+      : []
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1
+      const ideal = Math.round((budgetAmountCents * day) / daysInMonth)
+      const actual = day <= cutoffDay ? actualFull[index] : null
+      const previous = compareBase.length
+        ? compareBase[Math.min(index, compareBase.length - 1)]
+        : null
+      return {
+        day: String(day),
+        under:
+          actual === null ? null : [Math.min(actual, ideal), ideal],
+        over:
+          actual === null ? null : [ideal, Math.max(actual, ideal)],
+        ideal,
+        actual,
+        previous,
       }
-      const xScale = chart.scales.x
-      const yScale = chart.scales.y
-      if (!xScale || !yScale) {
-        return
-      }
-      const x = xScale.getPixelForValue(cutoffDay - 1)
-      const ctx = chart.ctx
-      ctx.save()
-      ctx.setLineDash([4, 4])
-      ctx.strokeStyle = muted
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(x, yScale.top)
-      ctx.lineTo(x, yScale.bottom)
-      ctx.stroke()
-      ctx.restore()
-    },
-  }
-
-  const options: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            const label = context.dataset.label ?? ""
-            const value = context.parsed.y ?? 0
-            return `${label}: ${formatCurrency(value)} €`
-          },
-        },
-      },
-    },
-    scales: {
-      x: {
-        grid: { display: false },
-        ticks: { color: muted, font: { size: 10 }, maxTicksLimit: 8 },
-      },
-      y: {
-        grid: { color: border },
-        ticks: {
-          color: muted,
-          callback: (value) => formatCurrency(Number(value), false),
-        },
-      },
-    },
-  }
+    })
+  }, [budgetAmountCents, compareDailySeries, cutoffDay, dailySeries, daysInMonth])
 
   return (
-    <div className="min-w-0 overflow-hidden" style={{ height }}>
-      <Line
-        key={`burndown-${effectiveTheme}`}
-        className="!h-full !w-full !max-w-full"
-        style={{ width: "100%", height: "100%" }}
-        data={data}
-        options={options}
-        plugins={[todayMarkerPlugin]}
-        role="img"
-        aria-label={`Budget spending pace for ${monthValue}`}
-      />
+    <div
+      className="min-w-0 overflow-hidden"
+      style={{ height }}
+      role="img"
+      aria-label={`Budget spending pace for ${monthValue}`}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart
+          data={rows}
+          margin={{ top: 12, right: 12, bottom: 4, left: 4 }}
+          accessibilityLayer={false}
+        >
+          <CartesianGrid stroke={CHART_GRID_COLOR} vertical={false} />
+          <XAxis
+            dataKey="day"
+            axisLine={false}
+            tickLine={false}
+            tick={CHART_TICK_STYLE}
+            tickMargin={9}
+            height={30}
+            interval="preserveStartEnd"
+            minTickGap={20}
+          />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={CHART_TICK_STYLE}
+            tickMargin={8}
+            tickFormatter={(value: number) => formatCurrency(value, false)}
+            width={58}
+          />
+          <Area
+            dataKey="under"
+            type="monotone"
+            fill="rgb(var(--semantic-green) / 0.18)"
+            fillOpacity={1}
+            stroke="none"
+            activeDot={false}
+            connectNulls={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+          <Area
+            dataKey="over"
+            type="monotone"
+            fill="rgb(var(--semantic-red) / 0.16)"
+            fillOpacity={1}
+            stroke="none"
+            activeDot={false}
+            connectNulls={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+          <Line
+            dataKey="ideal"
+            name="Ideal"
+            type="linear"
+            stroke="rgb(var(--muted))"
+            strokeWidth={1.5}
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+          <Line
+            dataKey="actual"
+            name="Actual"
+            type="monotone"
+            stroke="rgb(var(--accent))"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            dot={false}
+            activeDot={{ r: 4 }}
+            connectNulls={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+          <Line
+            dataKey="previous"
+            name="Previous month"
+            type="linear"
+            stroke="rgb(var(--muted))"
+            strokeWidth={1.5}
+            strokeDasharray="2 4"
+            strokeLinecap="round"
+            dot={false}
+            activeDot={{ r: 4 }}
+            connectNulls={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_ANIMATION_DURATION}
+          />
+          {cutoffDay > 0 && cutoffDay < daysInMonth ? (
+            <ReferenceLine
+              x={String(cutoffDay)}
+              stroke="rgb(var(--muted))"
+              strokeDasharray="4 4"
+            />
+          ) : null}
+          <Tooltip
+            cursor={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_TOOLTIP_ANIMATION_DURATION}
+            content={<BurndownTooltip />}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   )
 }

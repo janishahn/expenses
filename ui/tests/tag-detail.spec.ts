@@ -27,6 +27,22 @@ test.describe("Tag Detail Page", () => {
 
     await page.goto(`/tags/${tagId}?period=all`)
     await expect(page.locator("main h1")).toContainText(originalName)
+    await expect(page.getByTestId("donut-legend").first()).toBeVisible()
+    const sparklines = page.locator("main path.recharts-line-curve")
+    await expect(sparklines).toHaveCount(3)
+    const expenseShape = await sparklines.nth(1).evaluate((path) => {
+      const line = path as SVGPathElement
+      const length = line.getTotalLength()
+      const start = line.getPointAtLength(0)
+      const middle = line.getPointAtLength(length / 2)
+      const end = line.getPointAtLength(length)
+      return {
+        startToMiddle: Math.abs(start.y - middle.y),
+        startToEnd: Math.abs(start.y - end.y),
+      }
+    })
+    expect(expenseShape.startToMiddle).toBeLessThan(1)
+    expect(expenseShape.startToEnd).toBeGreaterThan(10)
     const settings = page.getByTestId("tag-settings-inspector")
     await expect(settings).toContainText("Included in budgets")
     await expect(page.getByRole("dialog", { name: "Edit tag" })).toHaveCount(0)

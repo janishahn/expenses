@@ -1,28 +1,21 @@
 import { memo, useMemo } from "react"
-import type { ChartOptions } from "chart.js"
-import { Doughnut } from "react-chartjs-2"
-import { readThemeColor } from "./chartSetup"
+import {
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  type TooltipContentProps,
+} from "recharts"
 import { formatCurrency } from "../../app/format"
-import { palette } from "./palette"
-import { useThemePreference } from "../../theme/useThemePreference"
 import { AppCard } from "../ui/product-card"
-
-const DONUT_OPTIONS: ChartOptions<"doughnut"> = {
-  responsive: true,
-  maintainAspectRatio: false,
-  cutout: "70%",
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      displayColors: false,
-      callbacks: {
-        title: () => [],
-        label: ({ formattedValue }) => `${formattedValue}%`,
-      },
-    },
-  },
-  animation: false,
-}
+import {
+  CHART_ANIMATION_DURATION,
+  CHART_TOOLTIP_ANIMATION_DURATION,
+  DarkChartTooltipCard,
+  useChartAnimation,
+} from "./chartTheme"
+import { palette } from "./palette"
 
 export type BreakdownItem = {
   name: string
@@ -38,6 +31,12 @@ type DonutChartProps = {
   onToggleCategory?: (categoryName: string) => void
 }
 
+function DonutTooltip({ active, payload }: Partial<TooltipContentProps>) {
+  if (!active || !payload?.length) return null
+  const item = payload[0]?.payload as BreakdownItem | undefined
+  return item ? <DarkChartTooltipCard value={`${item.percent.toFixed(1)}%`} /> : null
+}
+
 function DonutChart({
   title,
   breakdown,
@@ -45,31 +44,25 @@ function DonutChart({
   selectedCategoryName = null,
   onToggleCategory,
 }: DonutChartProps) {
-  const { effectiveTheme } = useThemePreference()
+  const animationActive = useChartAnimation()
   const hasSelection = Boolean(selectedCategoryName)
   const accessibleLabel = `${title}. ${breakdown
     .map((row) => `${row.name} ${row.percent.toFixed(1)} percent`)
     .join(", ")}`
-  const data = useMemo(() => {
-    const surface = readThemeColor("--surface", "12 12 12")
-    return {
-      labels: breakdown.map((row) => row.name),
-      datasets: [
-        {
-          data: breakdown.map((row) => row.percent),
-          backgroundColor: breakdown.map((row, index) => {
-            const baseColor = palette[index % palette.length]
-            if (!hasSelection || row.name === selectedCategoryName) return baseColor
-            return `${baseColor}40`
-          }),
-          borderWidth: 2,
-          borderColor: surface,
-          hoverBorderWidth: 2,
-        },
-      ],
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [breakdown, hasSelection, selectedCategoryName, effectiveTheme])
+  const data = useMemo(
+    () =>
+      breakdown.map((row, index) => {
+        const baseColor = palette[index % palette.length]
+        return {
+          ...row,
+          fill:
+            !hasSelection || row.name === selectedCategoryName
+              ? baseColor
+              : `${baseColor}40`,
+        }
+      }),
+    [breakdown, hasSelection, selectedCategoryName],
+  )
 
   if (!breakdown.length) {
     return (
@@ -86,14 +79,43 @@ function DonutChart({
       <div className="donut-figure-grid">
         <div className="mx-auto w-full max-w-[7rem]">
           <div className="rounded-full bg-surface-hi/60 p-1.5">
-            <div className="relative aspect-square">
-              <Doughnut
-                key={`donut-${effectiveTheme}`}
-                data={data}
-                options={DONUT_OPTIONS}
-                role="img"
-                aria-label={accessibleLabel}
-              />
+            <div
+              className="relative aspect-square"
+              role="img"
+              aria-label={accessibleLabel}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart accessibilityLayer={false}>
+                  <Pie
+                    data={data}
+                    dataKey="percent"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="70%"
+                    outerRadius="100%"
+                    startAngle={90}
+                    endAngle={-270}
+                    cornerRadius={4}
+                    stroke="rgb(var(--surface))"
+                    strokeWidth={2}
+                    isAnimationActive={animationActive}
+                    animationDuration={CHART_ANIMATION_DURATION}
+                  >
+                    {data.map((row) => (
+                      <Cell key={row.name} fill={row.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    cursor={false}
+                    isAnimationActive={animationActive}
+                    animationDuration={CHART_TOOLTIP_ANIMATION_DURATION}
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    position={{ x: 15, y: 42 }}
+                    content={<DonutTooltip />}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>

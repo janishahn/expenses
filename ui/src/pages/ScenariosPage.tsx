@@ -10,7 +10,6 @@ import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency } from "../app/format"
 import LineChart from "../components/charts/LineChart"
-import { readThemeAlpha, readThemeColor } from "../components/charts/chartSetup"
 import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
@@ -20,7 +19,6 @@ import {
 } from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
-import { useThemePreference } from "../theme/useThemePreference"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 
@@ -143,7 +141,6 @@ function nextMonthValue(): string {
 }
 
 function ScenariosPage() {
-  useThemePreference()
   const [searchParams, setSearchParams] = useSearchParams()
   const [modifications, setModifications] = useState<ScenarioModification[]>([])
   const [selectedType, setSelectedType] = useState<
@@ -413,10 +410,12 @@ function ScenariosPage() {
     baseline12?.summary.projected_balance_cents ??
     baseline.summary.projected_balance_cents
   const delta = impact?.final_delta_cents ?? 0
-  const baselineColor = readThemeColor("--semantic-purple", "145 157 224")
-  const scenarioColor = readThemeColor("--accent", "245 185 85")
-  const positiveDeltaFill = readThemeAlpha("--semantic-green", 0.18, "98 196 146")
-  const negativeDeltaFill = readThemeAlpha("--semantic-red", 0.18, "224 114 102")
+  const baselineColor = "rgb(var(--semantic-purple))"
+  const scenarioColor = "rgb(var(--accent))"
+  const deltaFill =
+    delta >= 0
+      ? "rgb(var(--semantic-green) / 0.18)"
+      : "rgb(var(--semantic-red) / 0.18)"
 
   return (
     <section className="space-y-4 md:space-y-5">
@@ -775,11 +774,17 @@ function ScenariosPage() {
                     label: "Scenario",
                     data: scenarioSeries,
                     color: scenarioColor,
-                    fill: 0,
-                    fillColor:
-                      delta >= 0 ? positiveDeltaFill : negativeDeltaFill,
                   },
                 ]}
+                band={{
+                  lower: baselineSeries.map((value, index) =>
+                    Math.min(value, scenarioSeries[index]),
+                  ),
+                  upper: baselineSeries.map((value, index) =>
+                    Math.max(value, scenarioSeries[index]),
+                  ),
+                  fill: deltaFill,
+                }}
                 height={320}
                 tooltipComparisonLabel="Scenario difference"
               />

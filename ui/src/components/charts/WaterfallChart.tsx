@@ -1,7 +1,6 @@
 import {
   Fragment,
   useEffect,
-  useId,
   useMemo,
   useState,
   type CSSProperties,
@@ -12,9 +11,28 @@ import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { FileTextIcon } from "@phosphor-icons/react/FileText"
 import { XIcon } from "@phosphor-icons/react/X"
 import { Popover } from "radix-ui"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type BarShapeProps,
+  type TooltipContentProps,
+} from "recharts"
 import { formatCurrency } from "../../app/format"
 import { FinancialPanel } from "../product/ProductSurfaces"
 import { AppButton } from "../ui/product-button"
+import {
+  CHART_GRID_COLOR,
+  CHART_MONO_TICK_STYLE,
+  CHART_TOOLTIP_ANIMATION_DURATION,
+  DarkChartTooltipCard,
+  useChartAnimation,
+} from "./chartTheme"
 
 export type FlowNode = {
   id: string
@@ -185,6 +203,164 @@ function stepColor(kind: WaterfallKind): string {
   return "rgb(var(--accent))"
 }
 
+type WaterfallRow = WaterfallStep & {
+  range: [number, number]
+}
+
+function WaterfallTooltip({ active, payload }: Partial<TooltipContentProps>) {
+  if (!active || !payload?.length) return null
+  const step = payload[0]?.payload as WaterfallRow | undefined
+  return step ? (
+    <DarkChartTooltipCard
+      title={step.label}
+      value={signedCurrency(step.amountCents)}
+      detail={`Balance ${signedCurrency(step.endCents)}`}
+    />
+  ) : null
+}
+
+function DesktopWaterfallTick({
+  x = 0,
+  y = 0,
+  payload,
+}: {
+  x?: number
+  y?: number
+  payload?: { value: string }
+}) {
+  const lines = labelLines(payload?.value ?? "")
+  return (
+    <text
+      x={x}
+      y={y + 22}
+      textAnchor="middle"
+      fill="rgb(var(--text))"
+      className="text-xs font-medium"
+    >
+      {lines.map((line, index) => (
+        <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 0 : 16}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  )
+}
+
+function DesktopWaterfallShape({
+  selectedId,
+  selectStep,
+  setFocusIndex,
+  stepCount,
+  ...shapeProps
+}: Partial<BarShapeProps> & {
+  selectedId: string | null
+  selectStep: (id: string) => void
+  setFocusIndex: (index: number | null) => void
+  stepCount: number
+}) {
+  const {
+    x = 0,
+    y = 0,
+    width = 0,
+    height = 0,
+    index = 0,
+    payload,
+    background,
+    onMouseEnter,
+    onMouseLeave,
+    onMouseMove,
+  } = shapeProps
+  const step = payload as WaterfallRow | undefined
+  if (!step) return null
+  const barHeight = Math.max(3, height)
+  const selected = selectedId === step.id
+  const endY = step.endCents >= step.startCents ? y : y + barHeight
+  const backgroundX = background?.x ?? x
+  const connectorEnd = x + width / 0.62
+
+  return (
+    <g
+      data-waterfall-step
+      data-kind={step.kind}
+      data-selected={selected ? "" : undefined}
+      className="group cursor-pointer outline-none"
+      tabIndex={0}
+      role="button"
+      aria-pressed={selected}
+      aria-label={`${step.label}: ${signedCurrency(step.amountCents)}. Balance after this step: ${signedCurrency(step.endCents)}.`}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        selectStep(step.id)
+      }}
+      onClick={() => selectStep(step.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          selectStep(step.id)
+        }
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onMouseMove={onMouseMove}
+      onFocus={() => setFocusIndex(index)}
+      onBlur={() => setFocusIndex(null)}
+      style={{ "--waterfall-index": index, outline: "none" } as CSSProperties}
+    >
+      {index < stepCount - 1 ? (
+        <line
+          x1={x + width}
+          x2={connectorEnd}
+          y1={endY}
+          y2={endY}
+          stroke="rgb(var(--border-hi))"
+          strokeWidth={1.25}
+          strokeDasharray="3 3"
+        />
+      ) : null}
+      <rect
+        x={x - 5}
+        y={y - 5}
+        width={width + 10}
+        height={barHeight + 10}
+        rx={11}
+        fill="none"
+        stroke="rgb(var(--text))"
+        strokeWidth={2}
+        className="opacity-0 transition-opacity duration-100 group-data-selected:opacity-80 group-focus-visible:opacity-80"
+      />
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={barHeight}
+        rx={6}
+        fill={stepColor(step.kind)}
+        className="waterfall-bar transition-[filter] duration-100 group-hover:brightness-95"
+      />
+      {background && background.y !== null ? (
+        <rect
+          x={backgroundX}
+          y={background.y}
+          width={background.width}
+          height={background.height}
+          fill="transparent"
+        />
+      ) : null}
+      {step.kind === "result" ? (
+        <text
+          x={x + width / 2}
+          y={Math.max(16, y - 13)}
+          textAnchor="middle"
+          fill="rgb(var(--text))"
+          className="pointer-events-none font-mono text-[11px] font-medium"
+        >
+          {signedCurrency(step.amountCents)}
+        </text>
+      ) : null}
+    </g>
+  )
+}
+
 function DesktopWaterfall({
   steps,
   selectedId,
@@ -194,185 +370,184 @@ function DesktopWaterfall({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const titleId = useId()
-  const descriptionId = useId()
-  const width = 1040
-  const height = 430
-  const margin = { top: 48, right: 18, bottom: 82, left: 72 }
-  const plotWidth = width - margin.left - margin.right
-  const plotHeight = height - margin.top - margin.bottom
+  const animationActive = useChartAnimation()
+  const [focusIndex, setFocusIndex] = useState<number | null>(null)
   const axis = niceAxis(steps)
-  const domain = axis.maximum - axis.minimum
-  const y = (value: number) => margin.top + ((axis.maximum - value) / domain) * plotHeight
-  const slot = plotWidth / steps.length
-  const barWidth = Math.min(66, slot * 0.62)
-  const plotted = steps.map((step, index) => ({
+  const rows = steps.map((step) => ({
     ...step,
-    x: margin.left + index * slot + (slot - barWidth) / 2,
-    top: Math.min(y(step.startCents), y(step.endCents)),
-    bottom: Math.max(y(step.startCents), y(step.endCents)),
+    range: [
+      Math.min(step.startCents, step.endCents),
+      Math.max(step.startCents, step.endCents),
+    ] as [number, number],
   }))
-  const hoveredStep = plotted.find((step) => step.id === hoveredId)
+  const shape = useMemo(
+    () => (
+      <DesktopWaterfallShape
+        selectedId={selectedId}
+        selectStep={onSelect}
+        setFocusIndex={setFocusIndex}
+        stepCount={steps.length}
+      />
+    ),
+    [onSelect, selectedId, steps.length],
+  )
 
   return (
-    <div className="relative hidden min-h-[25.5rem] lg:block">
-      <svg
-        className="block h-auto w-full overflow-visible"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-labelledby={`${titleId} ${descriptionId}`}
-      >
-        <title id={titleId}>Income and spending chart</title>
-        <desc id={descriptionId}>
-          Income raises the running balance, spending lowers it, and the final bar shows the net result.
-        </desc>
-
-        {axis.ticks.map((tick) => (
-          <g key={tick}>
-            <line
-              x1={margin.left}
-              x2={width - margin.right}
-              y1={y(tick)}
-              y2={y(tick)}
-              stroke="rgb(var(--border))"
-              strokeWidth="1"
-            />
-            <text
-              x={margin.left - 14}
-              y={y(tick) + 4}
-              textAnchor="end"
-              fill="rgb(var(--muted))"
-              className="font-mono text-[10px]"
-            >
-              {axisCurrency(tick)}
-            </text>
-          </g>
-        ))}
-
-        {plotted.slice(0, -1).map((step, index) => (
-          <line
-            key={`${step.id}-connector`}
-            x1={step.x + barWidth}
-            x2={plotted[index + 1].x}
-            y1={y(step.endCents)}
-            y2={y(step.endCents)}
-            stroke="rgb(var(--border-hi))"
-            strokeWidth="1.25"
-            strokeDasharray="3 3"
-          />
-        ))}
-
-        {plotted.map((step, index) => {
-          const barHeight = Math.max(3, step.bottom - step.top)
-          const selected = selectedId === step.id
-          return (
-            <g
-              key={step.id}
-              data-waterfall-step
-              data-kind={step.kind}
-              data-selected={selected ? "" : undefined}
-              className="group cursor-pointer outline-none"
-              tabIndex={0}
-              role="button"
-              aria-pressed={selected}
-              aria-label={`${step.label}: ${signedCurrency(step.amountCents)}. Balance after this step: ${signedCurrency(step.endCents)}.`}
-              onClick={() => onSelect(step.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault()
-                  onSelect(step.id)
-                }
-              }}
-              onPointerEnter={(event) => {
-                if (event.pointerType === "mouse") setHoveredId(step.id)
-              }}
-              onPointerLeave={(event) => {
-                if (event.pointerType === "mouse") setHoveredId(null)
-              }}
-              onFocus={(event) => {
-                if (event.currentTarget.matches(":focus-visible")) setHoveredId(step.id)
-              }}
-              onBlur={() => setHoveredId(null)}
-              style={{ "--waterfall-index": index } as CSSProperties}
-            >
-              <rect
-                x={step.x - 5}
-                y={step.top - 5}
-                width={barWidth + 10}
-                height={barHeight + 10}
-                rx="8"
-                fill="none"
-                stroke="rgb(var(--text))"
-                strokeWidth="2"
-                className="opacity-0 transition-opacity duration-100 group-data-selected:opacity-80 group-focus-visible:opacity-80"
-              />
-              <rect
-                className="waterfall-bar transition-[filter] duration-100 group-hover:brightness-95"
-                x={step.x}
-                y={step.top}
-                width={barWidth}
-                height={barHeight}
-                rx="4"
-                fill={stepColor(step.kind)}
-              />
-              <rect
-                x={step.x - 8}
-                y={margin.top - 16}
-                width={barWidth + 16}
-                height={plotHeight + 40}
-                fill="transparent"
-              />
-              {step.kind === "result" ? (
-                <text
-                  x={step.x + barWidth / 2}
-                  y={Math.max(22, step.top - 13)}
-                  textAnchor="middle"
-                  fill="rgb(var(--text))"
-                  className="pointer-events-none font-mono text-[11px] font-medium"
-                >
-                  {signedCurrency(step.amountCents)}
-                </text>
-              ) : null}
-              <text
-                x={step.x + barWidth / 2}
-                y={height - 42}
-                textAnchor="middle"
-                fill="rgb(var(--text))"
-                className="pointer-events-none text-[11px] font-semibold"
-              >
-                {labelLines(step.label).map((line, lineIndex) => (
-                  <tspan
-                    key={`${line}-${lineIndex}`}
-                    x={step.x + barWidth / 2}
-                    dy={lineIndex === 0 ? 0 : 16}
-                  >
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-
-      {hoveredStep ? (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute z-10 grid min-w-32 -translate-x-1/2 -translate-y-full gap-0.5 rounded-md bg-text px-2.5 py-2 text-bg shadow-[var(--shadow-soft)]"
-          style={{
-            left: `${((hoveredStep.x + barWidth / 2) / width) * 100}%`,
-            top: `${(Math.max(36, hoveredStep.top - 4) / height) * 100}%`,
-          }}
+    <div
+      className="relative hidden min-h-[25.5rem] lg:block"
+      role="group"
+      aria-label="Income and spending chart"
+    >
+      <p className="sr-only">
+        Income raises the running balance, spending lowers it, and the final bar shows the net result.
+      </p>
+      <ResponsiveContainer width="100%" aspect={1040 / 430}>
+        <BarChart
+          data={rows}
+          margin={{ top: 48, right: 18, bottom: 82, left: 0 }}
+          barCategoryGap="19%"
+          accessibilityLayer={false}
         >
-          <span className="text-[10px] opacity-70">{hoveredStep.label}</span>
-          <strong className="font-mono text-xs">{signedCurrency(hoveredStep.amountCents)}</strong>
-          <small className="font-mono text-[9px] opacity-65">
-            Balance {signedCurrency(hoveredStep.endCents)}
-          </small>
-        </div>
-      ) : null}
+          <CartesianGrid stroke={CHART_GRID_COLOR} vertical={false} />
+          <XAxis
+            dataKey="label"
+            axisLine={false}
+            tickLine={false}
+            interval={0}
+            height={64}
+            tick={<DesktopWaterfallTick />}
+          />
+          <YAxis
+            type="number"
+            domain={[axis.minimum, axis.maximum]}
+            ticks={axis.ticks}
+            tickFormatter={axisCurrency}
+            axisLine={false}
+            tickLine={false}
+            tick={CHART_MONO_TICK_STYLE}
+            tickMargin={8}
+            width={72}
+          />
+          <Bar
+            dataKey="range"
+            name="Change"
+            shape={shape}
+            isAnimationActive={false}
+          />
+          <Tooltip
+            shared={false}
+            cursor={false}
+            isAnimationActive={animationActive}
+            animationDuration={CHART_TOOLTIP_ANIMATION_DURATION}
+            active={focusIndex === null ? undefined : true}
+            defaultIndex={focusIndex ?? undefined}
+            content={<WaterfallTooltip />}
+          />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
+  )
+}
+
+function MobileWaterfallTick({
+  x = 0,
+  y = 0,
+  payload,
+  steps,
+}: {
+  x?: number
+  y?: number
+  payload?: { value: string }
+  steps: WaterfallStep[]
+}) {
+  const step = steps.find((candidate) => candidate.id === payload?.value)
+  if (!step) return null
+  const lines = labelLines(step.label)
+  return (
+    <text x={x - 8} y={y - 10} textAnchor="end" fill="rgb(var(--text))">
+      {lines.map((line, index) => (
+        <tspan
+          key={`${line}-${index}`}
+          x={x - 8}
+          dy={index === 0 ? 0 : 13}
+          className="text-[10px] font-semibold"
+        >
+          {line}
+        </tspan>
+      ))}
+      <tspan
+        x={x - 8}
+        dy={14}
+        fill={stepColor(step.kind)}
+        className="font-mono text-[9px] font-semibold"
+      >
+        {signedCurrency(step.amountCents)}
+      </tspan>
+    </text>
+  )
+}
+
+function MobileWaterfallShape({
+  selectedId,
+  stepCount,
+  ...shapeProps
+}: Partial<BarShapeProps> & {
+  selectedId: string | null
+  stepCount: number
+}) {
+  const {
+    x = 0,
+    y = 0,
+    width = 0,
+    height = 0,
+    index = 0,
+    payload,
+  } = shapeProps
+  const step = payload as WaterfallRow | undefined
+  if (!step) return null
+  const endX = step.endCents >= step.startCents ? x + width : x
+  const centerY = y + height / 2
+  const selected = selectedId === step.id
+  return (
+    <g style={{ "--waterfall-index": index } as CSSProperties}>
+      {index < stepCount - 1 ? (
+        <line
+          x1={endX}
+          x2={endX}
+          y1={centerY}
+          y2={centerY + 66}
+          stroke="rgb(var(--border-hi))"
+          strokeWidth={1}
+          strokeDasharray="3 3"
+        />
+      ) : null}
+      {selected ? (
+        <rect
+          x={x - 3}
+          y={y - 3}
+          width={Math.max(3, width) + 6}
+          height={height + 6}
+          rx={9}
+          fill="none"
+          stroke="rgb(var(--text))"
+          strokeWidth={2}
+        />
+      ) : null}
+      <rect
+        x={x}
+        y={y}
+        width={Math.max(3, width)}
+        height={height}
+        rx={6}
+        fill={stepColor(step.kind)}
+        className="waterfall-mobile-bar"
+        style={{
+          transformOrigin:
+            step.kind === "expense" ? "right center" : "left center",
+        }}
+      />
+      <circle cx={endX} cy={centerY} r={3} fill={stepColor(step.kind)} />
+    </g>
   )
 }
 
@@ -387,51 +562,86 @@ function MobileWaterfall({
 }) {
   const axis = niceAxis(steps)
   const domain = axis.maximum - axis.minimum
-  const position = (value: number) => ((value - axis.minimum) / domain) * 100
   const ticks = [axis.minimum, axis.minimum + domain / 2, axis.maximum]
+  const rows = steps.map((step) => ({
+    ...step,
+    range: [
+      Math.min(step.startCents, step.endCents),
+      Math.max(step.startCents, step.endCents),
+    ] as [number, number],
+  }))
+  const tick = useMemo(
+    () => <MobileWaterfallTick steps={steps} />,
+    [steps],
+  )
+  const shape = useMemo(
+    () => (
+      <MobileWaterfallShape
+        selectedId={selectedId}
+        stepCount={steps.length}
+      />
+    ),
+    [selectedId, steps.length],
+  )
 
   return (
-    <div className="waterfall-mobile lg:hidden" role="group" aria-label="Income and spending chart">
+    <div
+      className="waterfall-mobile lg:hidden"
+      role="group"
+      aria-label="Income and spending chart"
+    >
       <p className="sr-only">
         Income raises the running balance, spending lowers it, and the final row shows the net result.
       </p>
-      <div className="grid h-8 grid-cols-[6.5rem_minmax(0,1fr)] font-mono text-[9px] font-medium text-muted min-[390px]:grid-cols-[7.25rem_minmax(0,1fr)]">
-        <span className="pt-0.5">Balance</span>
-        <div className="relative h-6" aria-hidden="true">
-          {ticks.map((tick, index) => (
-            <span
-              key={`${tick}-${index}`}
-              className="absolute top-0.5 whitespace-nowrap"
-              style={{
-                left: `${position(tick)}%`,
-                transform:
-                  index === 0 ? "none" : index === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
-              }}
-            >
-              {axisCurrency(tick)}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="relative">
+      <div className="relative" style={{ height: steps.length * 66 }}>
         <div
-          className="pointer-events-none absolute inset-y-0 right-0 left-[6.5rem] overflow-hidden min-[390px]:left-[7.25rem]"
+          className="absolute inset-0"
           aria-hidden="true"
         >
-          {ticks.map((tick, index) => (
-            <i
-              key={`${tick}-${index}`}
-              className="absolute inset-y-0 border-l border-border"
-              style={{ left: `${position(tick)}%` }}
-            />
-          ))}
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              layout="vertical"
+              data={rows}
+              margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+              accessibilityLayer={false}
+            >
+              <CartesianGrid stroke={CHART_GRID_COLOR} horizontal={false} />
+              <XAxis
+                type="number"
+                orientation="top"
+                domain={[axis.minimum, axis.maximum]}
+                ticks={ticks}
+                tickFormatter={axisCurrency}
+                axisLine={false}
+                tickLine={false}
+                tick={{ ...CHART_MONO_TICK_STYLE, fontSize: 9 }}
+                height={28}
+              />
+              <YAxis
+                type="category"
+                dataKey="id"
+                axisLine={false}
+                tickLine={false}
+                width={104}
+                tick={tick}
+              />
+              {ticks.map((value, index) => (
+                <ReferenceLine
+                  key={`${value}-${index}`}
+                  x={value}
+                  stroke="rgb(var(--border))"
+                />
+              ))}
+              <Bar
+                dataKey="range"
+                barSize={14}
+                shape={shape}
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-
         {steps.map((step, index) => {
-          const left = position(Math.min(step.startCents, step.endCents))
-          const barWidth = Math.abs(position(step.endCents) - position(step.startCents))
-          const end = position(step.endCents)
           return (
             <button
               key={step.id}
@@ -442,29 +652,11 @@ function MobileWaterfall({
               aria-pressed={selectedId === step.id}
               aria-label={`${step.label}: ${signedCurrency(step.amountCents)}. Balance after this step: ${signedCurrency(step.endCents)}.`}
               onClick={() => onSelect(step.id)}
-              className="group relative z-[1] grid h-[4.125rem] w-full grid-cols-[6.5rem_minmax(0,1fr)] border-0 bg-transparent p-0 text-left text-text outline-none min-[390px]:grid-cols-[7.25rem_minmax(0,1fr)]"
+              className="absolute left-0 z-[1] h-[4.125rem] w-full border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
               style={{
-                "--bar-left": `${left}%`,
-                "--bar-width": `${barWidth}%`,
-                "--bar-end": `${end}%`,
-                "--waterfall-index": index,
-                "--bar-color": stepColor(step.kind),
-              } as CSSProperties}
-            >
-              <span className="z-[1] grid min-w-0 content-center gap-1 pr-3">
-                <strong className="line-clamp-2 text-xs font-semibold leading-tight">{step.label}</strong>
-                <small className="font-mono text-[10px] font-semibold" style={{ color: stepColor(step.kind) }}>
-                  {signedCurrency(step.amountCents)}
-                </small>
-              </span>
-              <span className="relative block h-full overflow-visible" aria-hidden="true">
-                <i className="waterfall-mobile-bar absolute top-[calc(50%_-_7px)] left-[var(--bar-left)] h-3.5 w-[max(3px,var(--bar-width))] rounded-sm bg-[var(--bar-color)] group-data-selected:ring-2 group-data-selected:ring-text group-focus-visible:ring-2 group-focus-visible:ring-accent" />
-                <i className="absolute top-1/2 left-[var(--bar-end)] z-[2] h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--bar-color)]" />
-                {index < steps.length - 1 ? (
-                  <i className="absolute top-1/2 left-[var(--bar-end)] h-full -translate-x-px border-l border-dashed border-border-hi" />
-                ) : null}
-              </span>
-            </button>
+                top: index * 66,
+              }}
+            />
           )
         })}
       </div>
