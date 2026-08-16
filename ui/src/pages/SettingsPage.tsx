@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../app/auth"
-import { apiFetch, apiFetchFormData } from "../app/api"
+import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
 import PageIntro from "../components/PageIntro"
 import { confirmDialog } from "../components/confirm"
@@ -12,6 +12,7 @@ import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type BalanceAnchor = {
   id: number
@@ -136,7 +137,9 @@ function SettingsPage() {
     },
     onError: (mutationError) => {
       setIngestTokenStatus("")
-      setIngestTokenError(String(mutationError))
+      setIngestTokenError(
+        getApiErrorMessage(mutationError, "Unable to create ingest token.")
+      )
     },
   })
 
@@ -153,7 +156,9 @@ function SettingsPage() {
     },
     onError: (mutationError) => {
       setIngestTokenStatus("")
-      setIngestTokenError(String(mutationError))
+      setIngestTokenError(
+        getApiErrorMessage(mutationError, "Unable to revoke ingest token.")
+      )
     },
   })
 
@@ -174,7 +179,7 @@ function SettingsPage() {
     onError: (mutationError) => {
       setCsvPreview(null)
       setCsvStatus("")
-      setCsvError(String(mutationError))
+      setCsvError(getApiErrorMessage(mutationError, "Unable to preview CSV import."))
     },
   })
 
@@ -195,7 +200,7 @@ function SettingsPage() {
     },
     onError: (mutationError) => {
       setCsvStatus("")
-      setCsvError(String(mutationError))
+      setCsvError(getApiErrorMessage(mutationError, "Unable to import CSV."))
     },
   })
 
@@ -304,7 +309,7 @@ function SettingsPage() {
     return <RouteLoading title="Settings" label="Loading settings…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load settings.</div>
+    return <RouteError title="Settings" message="Unable to load settings." />
   }
 
   return (

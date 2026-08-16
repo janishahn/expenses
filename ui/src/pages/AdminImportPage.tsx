@@ -1,7 +1,7 @@
 import { useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { DatabaseIcon } from "@phosphor-icons/react/Database"
-import { apiFetch, apiFetchFormData } from "../app/api"
+import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import PageIntro from "../components/PageIntro"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
@@ -103,7 +103,7 @@ function AdminImportPage() {
     onError: (error) => {
       setSqlitePreview(null)
       setSqliteStatus("")
-      setSqliteError(String(error))
+      setSqliteError(getApiErrorMessage(error, "Unable to inspect SQLite database."))
     },
   })
 
@@ -164,7 +164,7 @@ function AdminImportPage() {
     },
     onError: (error) => {
       setSqliteStatus("")
-      setSqliteError(String(error))
+      setSqliteError(getApiErrorMessage(error, "Unable to import SQLite database."))
     },
   })
 
@@ -297,7 +297,7 @@ function AdminImportPage() {
                 <div className="rounded-lg bg-surface-hi/65 p-4">
                   <p className="mb-2 text-sm font-semibold text-text">Options</p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
+                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
                       <input
                         type="checkbox"
                         checked={importRecurringRules}
@@ -308,7 +308,7 @@ function AdminImportPage() {
                       />
                       Import recurring rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
+                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
                       <input
                         type="checkbox"
                         checked={recurringAutoPost}
@@ -319,7 +319,7 @@ function AdminImportPage() {
                       />
                       Enable auto-post for imported rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
+                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
                       <input
                         type="checkbox"
                         checked={linkRecurringTransactions}
@@ -330,7 +330,7 @@ function AdminImportPage() {
                       />
                       Link "(Recurring)" transactions to rules
                     </label>
-                    <label className="flex items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text">
+                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
                       <input
                         type="checkbox"
                         checked={preserveTimeInTitle}

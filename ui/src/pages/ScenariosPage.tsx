@@ -20,6 +20,7 @@ import {
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type ForecastMonth = {
   month: string
@@ -381,7 +382,12 @@ function ScenariosPage() {
     return <RouteLoading title="What If" label="Loading scenarios…" />
   }
   if (baselineError || !baselineData) {
-    return <div className="text-semantic-red">Unable to load scenario simulator.</div>
+    return (
+      <RouteError
+        title="What If"
+        message="Unable to load scenario simulator."
+      />
+    )
   }
 
   const hasAdjustments = modifications.length > 0

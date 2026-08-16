@@ -1,2 +1,3 @@
 export { AuthProvider } from "./auth-provider"
-export { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "./auth-context"
+export { getApiErrorMessage } from "./api"
+export { getSafeRedirectTarget, useAuth } from "./auth-context"

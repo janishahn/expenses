@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
-import { apiFetch, apiFetchBlob } from "../app/api"
+import { apiFetch, apiFetchBlob, getApiErrorMessage } from "../app/api"
 import type { CategoriesResponse } from "../app/api-types"
 import { formatEuroDate } from "../app/format"
 import { Toggle } from "../components/Toggle"
@@ -175,7 +175,7 @@ function ReportBuilderPage() {
       }
     } catch (error) {
       popup?.close()
-      setGenerateError(String(error))
+      setGenerateError(getApiErrorMessage(error, "Unable to generate report."))
     } finally {
       setGenerating(false)
     }
@@ -278,7 +278,7 @@ function ReportBuilderPage() {
               {Object.entries(sections).map(([section, enabled]) => (
                 <label
                   key={section}
-                  className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
+                  className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
                 >
                   <input
                     type="checkbox"
@@ -299,7 +299,7 @@ function ReportBuilderPage() {
             <section className="p-5">
               <h2 className="mb-4 font-head text-lg font-bold">Categories</h2>
               <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted">
-                <label className="flex items-center gap-2">
+                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
                   <input
                     type="radio"
                     name="categoryMode"
@@ -309,7 +309,7 @@ function ReportBuilderPage() {
                   />
                   All
                 </label>
-                <label className="flex items-center gap-2">
+                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
                   <input
                     type="radio"
                     name="categoryMode"
@@ -331,7 +331,7 @@ function ReportBuilderPage() {
                       {categoriesByType.income.map((category) => (
                         <label
                           key={category.id}
-                          className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
+                          className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
                         >
                           <input
                             type="checkbox"
@@ -352,7 +352,7 @@ function ReportBuilderPage() {
                       {categoriesByType.expense.map((category) => (
                         <label
                           key={category.id}
-                          className="flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted"
+                          className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
                         >
                           <input
                             type="checkbox"
@@ -392,7 +392,7 @@ function ReportBuilderPage() {
             configuration. The report will open in a new tab.
           </p>
 
-          <label className="mb-4 flex items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
+          <label className="mb-4 flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted desk:min-h-0">
             <Toggle on={includeCents} onChange={setIncludeCents} />
             Include cents in tables
           </label>

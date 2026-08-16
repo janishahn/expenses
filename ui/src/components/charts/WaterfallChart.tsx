@@ -819,7 +819,7 @@ function ChartDataPopover({
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="grid h-10 w-10 place-items-center rounded-md text-muted transition-[color,background-color,transform] duration-100 hover:bg-faint hover:text-text active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="grid h-11 w-11 place-items-center rounded-md text-muted transition-[color,background-color,transform] duration-100 hover:bg-faint hover:text-text active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 desk:h-10 desk:w-10"
           aria-label="View chart data"
         >
           <FileTextIcon className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -842,7 +842,7 @@ function ChartDataPopover({
             <Popover.Close asChild>
               <button
                 type="button"
-                className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-faint hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="grid h-11 w-11 place-items-center rounded-md text-muted hover:bg-faint hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 desk:h-8 desk:w-8"
                 aria-label="Close chart data"
               >
                 <XIcon className="h-4 w-4" aria-hidden="true" />
@@ -854,8 +854,8 @@ function ChartDataPopover({
             <thead>
               <tr className="border-b border-border text-left font-mono text-[9px] uppercase tracking-wider text-muted">
                 <th className="py-2 font-medium">Step</th>
-                <th className="py-2 text-right font-medium">Change</th>
-                <th className="py-2 pl-3 text-right font-medium">Balance</th>
+                <th className="whitespace-nowrap py-2 text-right font-medium">Change</th>
+                <th className="whitespace-nowrap py-2 pl-3 text-right font-medium">Balance</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -869,7 +869,7 @@ function ChartDataPopover({
                       onCategoryClick ? (
                         <button
                           type="button"
-                          className="text-left hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                          className="inline-flex min-h-11 items-center text-left hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 desk:min-h-0"
                           aria-label={`Open ${step.label} transactions`}
                           onClick={() => onCategoryClick(step.members[0].category_id as number)}
                         >
@@ -879,10 +879,10 @@ function ChartDataPopover({
                         step.label
                       )}
                     </td>
-                    <td className="py-2.5 text-right font-mono text-[11px]">
+                    <td className="whitespace-nowrap py-2.5 text-right font-mono text-[11px]">
                       {signedCurrency(step.amountCents)}
                     </td>
-                    <td className="py-2.5 pl-3 text-right font-mono text-[11px]">
+                    <td className="whitespace-nowrap py-2.5 pl-3 text-right font-mono text-[11px]">
                       {signedCurrency(step.endCents)}
                     </td>
                   </tr>
@@ -893,7 +893,7 @@ function ChartDataPopover({
                             {step.kind === "expense" && member.category_id && onCategoryClick ? (
                               <button
                                 type="button"
-                                className="text-left hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                                className="inline-flex min-h-11 items-center text-left hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 desk:min-h-0"
                                 aria-label={`Open ${member.label} transactions`}
                                 onClick={() => onCategoryClick(member.category_id as number)}
                               >
@@ -903,7 +903,7 @@ function ChartDataPopover({
                               member.label
                             )}
                           </td>
-                          <td className="py-2 text-right font-mono text-[11px]">
+                          <td className="whitespace-nowrap py-2 text-right font-mono text-[11px]">
                             {signedCurrency(step.kind === "expense" ? -member.amount_cents : member.amount_cents)}
                           </td>
                           <td className="py-2 pl-3">

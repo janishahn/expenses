@@ -5,7 +5,7 @@ import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
 import { Link } from "react-router-dom"
-import { apiFetch, apiFetchFormData } from "../app/api"
+import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import type {
   BankReconciliationResponse,
   BankStatementPreviewResponse,
@@ -15,6 +15,7 @@ import type {
 } from "../app/api-types"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import PageIntro from "../components/PageIntro"
+import RouteError from "../components/RouteError"
 import {
   FinancialPanel,
   MetricLane,
@@ -86,7 +87,9 @@ function ReconciliationPage() {
     onError: (mutationError) => {
       setPreview(null)
       setMessage("")
-      setErrorMessage(String(mutationError))
+      setErrorMessage(
+        getApiErrorMessage(mutationError, "Unable to preview reconciliation.")
+      )
     },
   })
 
@@ -110,7 +113,9 @@ function ReconciliationPage() {
     },
     onError: (mutationError) => {
       setMessage("")
-      setErrorMessage(String(mutationError))
+      setErrorMessage(
+        getApiErrorMessage(mutationError, "Unable to import reconciliation.")
+      )
     },
   })
 
@@ -129,7 +134,9 @@ function ReconciliationPage() {
     },
     onError: (mutationError) => {
       setMessage("")
-      setErrorMessage(String(mutationError))
+      setErrorMessage(
+        getApiErrorMessage(mutationError, "Unable to update reconciliation row.")
+      )
     },
   })
 
@@ -169,7 +176,12 @@ function ReconciliationPage() {
   }
 
   if (error) {
-    return <div className="text-semantic-red">Unable to load reconciliation.</div>
+    return (
+      <RouteError
+        title="Reconciliation"
+        message="Unable to load reconciliation."
+      />
+    )
   }
 
   return (

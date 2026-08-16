@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, isApiErrorStatus } from "../app/api"
 import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
@@ -10,6 +10,7 @@ import {
   SectionHeading,
 } from "../components/product/ProductSurfaces"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type OccurrenceRule = {
   id: number
@@ -50,14 +51,21 @@ function RecurringOccurrencesPage() {
     enabled: Boolean(ruleId),
   })
 
-  if (!ruleId) {
-    return <div className="text-semantic-red">Rule not found.</div>
+  if (!ruleId || isApiErrorStatus(error, 404)) {
+    return (
+      <RouteError
+        title="Occurrences"
+        message="Rule not found."
+        returnHref="/recurring"
+        returnLabel="Back to recurring"
+      />
+    )
   }
   if (isLoading) {
     return <RouteLoading title="Occurrences" label="Loading occurrences…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load occurrences.</div>
+    return <RouteError title="Occurrences" message="Unable to load occurrences." />
   }
 
   const { rule, occurrences } = data

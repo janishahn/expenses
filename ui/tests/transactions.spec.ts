@@ -314,7 +314,9 @@ test.describe("Transactions Page", () => {
   }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Bulk Gate")
-    const marker = `E2E Bulk Gate ${Date.now()}`
+    // Keep the search token unique as a single fuzzy-search term so parallel
+    // bulk-edit fixtures cannot inflate the settled summary count.
+    const marker = `bulkGate${Date.now()}x`
     const transactionIds: number[] = []
     for (let index = 0; index < 2; index += 1) {
       transactionIds.push(

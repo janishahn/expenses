@@ -67,29 +67,30 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Product story or surface | Desktop | Mobile | Surface contract |
 |---|---|---|---|
 | First-run setup, login, logout, signup, protected deep links | `auth.spec.ts`, `settings.spec.ts` | `auth.mobile.spec.ts` | Real setup submission in both layouts |
-| Authenticated shell, navigation, period propagation, theme, unknown routes | `navigation.desktop.spec.ts` | `navigation.mobile.spec.ts` | Yes |
+| Authenticated shell, navigation, period propagation, theme, unknown routes | `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `navigation.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Dashboard metrics, periods, charts, privacy, category focus, quick add, scheduled-tag defaults and removal | `dashboard.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `visual.mobile.spec.ts` | Yes |
 | Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
-| Transaction actions, filtering, search reveal, selection, detail, edit, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts` | `transactions.mobile.spec.ts` | Yes |
-| Uncategorized Inbox categorization | `transactions.spec.ts` | `transactions.mobile.spec.ts` | Yes |
+| Transaction actions, filtering, search reveal, selection, detail, edit, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `transactions.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Uncategorized Inbox categorization | `transactions.spec.ts` | `transactions.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Trash restore and permanent deletion | `transactions-trash.spec.ts` | `transactions.mobile.spec.ts` | Yes |
-| Route loading placeholder (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Covered via the transactions route |
-| Optional read-only spending Assistant and disabled AI surfaces | `spending-assistant.spec.ts`, `llm-disabled.desktop.spec.ts` | `spending-assistant.mobile.spec.ts` | Yes |
-| Insights filters, charts, Net view selection/data view, and drill-through | `insights.spec.ts` | `insights.mobile.spec.ts` | Yes |
+| Route loading placeholder and data-dependent action readiness (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Transactions skeleton plus Budgets action readiness |
+| Cross-route query and mutation error recovery, readable API detail, and missing-resource return paths | `state-audit.spec.ts`, `transactions-deletion.spec.ts` | `state-audit.mobile.spec.ts` | Desktop and mobile state contracts |
+| Optional read-only spending Assistant and disabled AI surfaces | `spending-assistant.spec.ts`, `llm-disabled.desktop.spec.ts` | `spending-assistant.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Insights filters, charts, Net view selection/data view, and drill-through | `insights.spec.ts` | `insights.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
 | What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts` | Yes |
+| Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Weekly digest navigation and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
-| Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts` | `categories.mobile.spec.ts` | Yes |
-| Tag create, date-range defaults, read-only detail and explicit edit flow, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts` | Yes |
+| Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts`, `focus-management.spec.ts` | `categories.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Tag create, date-range defaults, read-only detail and explicit edit flow, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts` | `organization.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Recurring create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
-| Template create/edit/delete and reorder | `templates.spec.ts` | `organization.mobile.spec.ts` | Yes |
+| Template create/edit/delete and reorder | `templates.spec.ts`, `focus-management.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Commerzbank CSV preview, import, and reconciliation workspace | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
-| PDF report options, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts` | Yes |
+| PDF report options, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Settings, appearance, balance anchors, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
-| Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
-| Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts` | Admin import reached after elevation |
+| Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
+| Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |
 
 Backend tests remain authoritative for lower-level calculation, isolation, migration, import, export, reconciliation-matching, recurrence, LLM-provider, and security edge cases. Browser coverage proves that the supported user journey remains coherent through the rendered application.
 
@@ -101,3 +102,5 @@ Playwright writes the HTML report to `ui/playwright-report` and failures to `ui/
 cd ui
 npx playwright show-trace test-results/<test>/trace.zip
 ```
+
+The audit-oriented browser specs keep their behavioral assertions in normal test runs but do not write bulk screenshots or JSON manifests by default. Set `UI_POLISH_AUDIT_ARTIFACT_DIR` to an explicit repository-relative or absolute directory only when intentionally collecting a review evidence set. Local evidence under `artifacts/ui-polish-audit/` is ignored by Git.

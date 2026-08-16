@@ -12,7 +12,7 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { TrayIcon } from "@phosphor-icons/react/Tray"
 import { XIcon } from "@phosphor-icons/react/X"
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
@@ -59,6 +59,7 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
 import markerIcon from "leaflet/dist/images/marker-icon.png"
 import markerShadow from "leaflet/dist/images/marker-shadow.png"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type TransactionRow = {
   id: number
@@ -212,7 +213,7 @@ function TransactionLocationMap({
     <div
       ref={containerRef}
       data-testid="transaction-location-map"
-      className="h-full min-h-[18rem] w-full md:min-h-[28rem]"
+      className="expense-map h-full min-h-[18rem] w-full md:min-h-[28rem]"
     />
   )
 }
@@ -316,6 +317,7 @@ function TransactionsPage() {
   const [bulkPreview, setBulkPreview] = useState<BulkResponse | null>(null)
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const searchTriggerRef = useRef<HTMLButtonElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const [locationTransaction, setLocationTransaction] = useState<TransactionRow | null>(null)
@@ -362,9 +364,11 @@ function TransactionsPage() {
   const searchVisible = searchOpen || (isDesktop && Boolean(searchQuery))
 
   useEffect(() => {
-    if (searchVisible) {
-      searchInputRef.current?.focus()
-    }
+    if (!searchVisible) return
+    const firstFocusFrame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => searchInputRef.current?.focus())
+    })
+    return () => cancelAnimationFrame(firstFocusFrame)
   }, [searchVisible])
 
   useEffect(() => {
@@ -465,7 +469,7 @@ function TransactionsPage() {
     return <RouteLoading title="Transactions" label="Loading transactions…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load transactions.</div>
+    return <RouteError title="Transactions" message="Unable to load transactions." />
   }
 
   const { items, has_more, page, period, filters, categories, tags } = data
@@ -717,9 +721,10 @@ function TransactionsPage() {
         actions={
           <>
             {isFetching ? <span className="loading-hint">Updating…</span> : null}
-            <div className="relative z-20 flex shrink-0 items-center gap-2.5">
+            <div className="relative z-20 flex shrink-0 items-center gap-2 desk:gap-2.5">
               <div ref={searchContainerRef} className="desk:relative">
                 <AppButton
+                  ref={searchTriggerRef}
                   type="button"
                   onClick={() => {
                     if (!searchVisible) {
@@ -759,6 +764,7 @@ function TransactionsPage() {
                             setQuery("")
                           } else {
                             setSearchOpen(false)
+                            requestAnimationFrame(() => searchTriggerRef.current?.focus())
                           }
                         }
                       }}
@@ -943,11 +949,13 @@ function TransactionsPage() {
               key={filter.key}
               type="button"
               onClick={() => clearFilter(filter.key)}
-              className="chip inline-flex max-w-full items-center gap-1.5 text-[11px]"
+              className="chip-action inline-flex max-w-full items-center rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`Remove ${filter.label}`}
             >
-              <span className="truncate">{filter.label}</span>
-              <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="chip inline-flex max-w-full items-center gap-1.5">
+                <span className="truncate">{filter.label}</span>
+                <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              </span>
             </button>
           ))}
         </div>
@@ -1151,7 +1159,10 @@ function TransactionsPage() {
             </AppButton>
             {(bulkPreviewMutation.error || bulkApplyMutation.error) && (
               <span className="text-xs text-semantic-red">
-                {String(bulkPreviewMutation.error || bulkApplyMutation.error)}
+                {getApiErrorMessage(
+                  bulkPreviewMutation.error || bulkApplyMutation.error,
+                  "Unable to apply the bulk change.",
+                )}
               </span>
             )}
           </div>
@@ -1310,7 +1321,10 @@ function TransactionsPage() {
               )}
               {(bulkPreviewMutation.error || bulkApplyMutation.error) && (
                 <p className="text-xs text-semantic-red">
-                  {String(bulkPreviewMutation.error || bulkApplyMutation.error)}
+                  {getApiErrorMessage(
+                    bulkPreviewMutation.error || bulkApplyMutation.error,
+                    "Unable to apply the bulk change.",
+                  )}
                 </p>
               )}
             </div>
@@ -1513,7 +1527,7 @@ function TransactionsPage() {
                   className="group grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 !rounded-none !bg-transparent px-3 py-3 !shadow-none transition-colors hover:bg-surface-hi/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/35 md:px-4"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                  <label className="-my-2 -ml-2 flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center">
+                  <label className="-my-2 -ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center desk:w-9">
                     <input
                       type="checkbox"
                       aria-label={`Select transaction ${txn.id}`}

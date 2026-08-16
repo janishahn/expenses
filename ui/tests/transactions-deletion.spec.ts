@@ -306,12 +306,12 @@ test.describe("Transaction deletion flows", () => {
   }) => {
     await page.goto("/transactions/999999999")
     await expect(page.locator("body")).toContainText("Transaction not found")
-    await page.getByRole("link", { name: "← Back" }).click()
+    await page.getByRole("link", { name: "Back to transactions" }).click()
     await expect(page).toHaveURL("/transactions")
 
     await page.goto("/transactions/999999999/edit")
     await expect(page.locator("body")).toContainText("Transaction not found")
-    await page.getByRole("link", { name: "← Back" }).click()
+    await page.getByRole("link", { name: "Back to transactions" }).click()
     await expect(page).toHaveURL("/transactions")
   })
 })

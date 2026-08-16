@@ -36,6 +36,7 @@ import {
 } from "../components/ui/product-fields"
 import { buildSearchParams } from "../lib/searchParams"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type BudgetRow = {
   scope_category_id: number | null
@@ -178,7 +179,7 @@ function BudgetBurndownPanel({
     ? `month=${monthValue}&scope=${scope}&compare_month=${compareMonth}`
     : `month=${monthValue}&scope=${scope}`
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["budgets", "burndown", monthValue, scope, compareEnabled],
     queryFn: () => apiFetch<BurndownResponse>(`/api/budgets/burndown?${queryString}`),
   })
@@ -187,7 +188,14 @@ function BudgetBurndownPanel({
     return <p className="text-xs text-muted">Loading chart…</p>
   }
   if (error || !data) {
-    return <p className="text-xs text-semantic-red">Unable to load chart.</p>
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-semantic-red">
+        <span>Unable to load chart.</span>
+        <AppButton type="button" tone="inline" onClick={() => void refetch()}>
+          Retry
+        </AppButton>
+      </div>
+    )
   }
 
   const [yearRaw, monthRaw] = monthValue.split("-")
@@ -393,12 +401,16 @@ function BudgetsPage() {
   )
 
   useEffect(() => {
+    if (!data) {
+      setUtilityAction(null)
+      return
+    }
     setUtilityAction({
       label: "Add budget",
       onClick: () => openCreateEditor("monthly"),
     })
     return () => setUtilityAction(null)
-  }, [openCreateEditor, setUtilityAction])
+  }, [data, openCreateEditor, setUtilityAction])
 
   const invalidateBudgets = () => {
     queryClient.invalidateQueries({ queryKey: ["budgets"] })
@@ -499,7 +511,7 @@ function BudgetsPage() {
     return <RouteLoading title="Budgets" label="Loading budgets…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load budgets.</div>
+    return <RouteError title="Budgets" message="Unable to load budgets." />
   }
 
   const selectedMonthLabel = formatBudgetMonth(data.month_value)

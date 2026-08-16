@@ -70,15 +70,17 @@ function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
                   type="button"
                   onClick={() => remove(name)}
                   aria-label={`Remove tag ${name}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-semibold text-accent transition hover:border-accent/60"
+                  className="chip-action inline-flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {name}
-                  {scheduledLower.has(name.toLowerCase()) ? (
-                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">
-                      Auto
-                    </span>
-                  ) : null}
-                  <XIcon className="h-3 w-3" />
+                  <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-semibold text-accent transition hover:border-accent/60">
+                    {name}
+                    {scheduledLower.has(name.toLowerCase()) ? (
+                      <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">
+                        Auto
+                      </span>
+                    ) : null}
+                    <XIcon className="h-3 w-3" />
+                  </span>
                 </button>
               ))}
             </div>
@@ -117,9 +119,11 @@ function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
                   type="button"
                   onClick={() => add(name)}
                   aria-label={`Add tag ${name}`}
-                  className="inline-flex items-center rounded-full border border-border bg-surface-hi/70 px-3 py-1 text-xs font-semibold text-muted transition hover:border-border-hi hover:text-text"
+                  className="chip-action inline-flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {name}
+                  <span className="inline-flex items-center rounded-full border border-border bg-surface-hi/70 px-3 py-1 text-xs font-semibold text-muted transition hover:border-border-hi hover:text-text">
+                    {name}
+                  </span>
                 </button>
               ))}
             </div>

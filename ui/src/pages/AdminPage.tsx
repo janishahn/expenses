@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { apiFetch, fetchAIUsageSummary } from "../app/api"
+import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
 import { useAuth } from "../app/auth"
 import type { AIUsageSummary } from "../app/api-types"
 import { formatEuroDateTime, formatFileSize } from "../app/format"
@@ -16,6 +16,7 @@ import {
 import { AppButton } from "../components/ui/product-button"
 import { AppInput } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type AdminInfo = {
   app_version: string
@@ -283,7 +284,7 @@ function AdminPage() {
     onError: (error) => {
       setRecurringCatchUpMessage({
         tone: "error",
-        text: error instanceof Error ? error.message : "Catch-up failed.",
+        text: getApiErrorMessage(error, "Catch-up failed."),
       })
     },
   })
@@ -334,7 +335,7 @@ function AdminPage() {
     return <RouteLoading title="Admin" label="Loading admin info…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load admin info.</div>
+    return <RouteError title="Admin" message="Unable to load admin info." />
   }
 
   const ramUsagePercent =
@@ -800,8 +801,25 @@ function AdminPage() {
                           <td className="px-4 py-3 font-mono text-xs text-text">
                             {entry.event}
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-muted">
-                            {entry.path || "—"}
+                          <td className="px-4 py-3 text-xs text-muted">
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <span className="min-w-0 truncate font-mono">
+                                {entry.path || "—"}
+                              </span>
+                              <AppButton
+                                type="button"
+                                tone="inline"
+                                aria-label={`Inspect ${entry.event} log entry from ${formatEuroDateTime(entry.timestamp)}`}
+                                aria-pressed={isSelected}
+                                className="shrink-0"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setSelectedLog(entry)
+                                }}
+                              >
+                                Inspect
+                              </AppButton>
+                            </div>
                           </td>
                         </tr>
                       )

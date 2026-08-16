@@ -4,7 +4,7 @@ import { ArchiveIcon } from "@phosphor-icons/react/Archive"
 import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useOutletContext, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { CategoryListItem } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { formatEuroDate } from "../app/format"
@@ -35,6 +35,7 @@ import {
   type PresetPeriod,
 } from "../lib/searchParams"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 const IconPicker = lazy(() =>
   import("../components/IconPicker").then((module) => ({
@@ -45,27 +46,6 @@ const IconPicker = lazy(() =>
 type CategoriesPageResponse = {
   period: { slug: string; start: string; end: string }
   categories: CategoryListItem[]
-}
-
-const formatMutationError = (error: unknown) => {
-  if (error instanceof Error) {
-    const message = error.message.trim()
-    if (message.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(message) as { detail?: unknown }
-        if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-          return parsed.detail
-        }
-      } catch {
-        return message
-      }
-    }
-    return message
-  }
-  if (typeof error === "string") {
-    return error
-  }
-  return "Request failed."
 }
 
 function CategoriesPage() {
@@ -294,7 +274,7 @@ function CategoriesPage() {
     return <RouteLoading title="Categories" label="Loading categories…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load categories.</div>
+    return <RouteError title="Categories" message="Unable to load categories." />
   }
 
   const activeCategories = data.categories.filter((row) => !row.archived_at)
@@ -375,7 +355,10 @@ function CategoriesPage() {
 
   const mergeError =
     mergeApplyMutation.error || mergePreviewMutation.error
-      ? formatMutationError(mergeApplyMutation.error || mergePreviewMutation.error)
+      ? getApiErrorMessage(
+          mergeApplyMutation.error || mergePreviewMutation.error,
+          "Unable to merge categories.",
+        )
       : null
   const showsGuardedBudgetError = Boolean(
     mergeError?.toLowerCase().includes("overlapping budget scopes")
@@ -787,7 +770,12 @@ function CategoriesPage() {
               </AppFieldLabel>
               {(isEditing ? updateMutation.error : createMutation.error) ? (
                 <p className="text-xs text-semantic-red">
-                  {String(isEditing ? updateMutation.error : createMutation.error)}
+                  {getApiErrorMessage(
+                    isEditing ? updateMutation.error : createMutation.error,
+                    isEditing
+                      ? "Unable to update category."
+                      : "Unable to create category.",
+                  )}
                 </p>
               ) : null}
               <div className="flex gap-2 border-t border-border pt-4">

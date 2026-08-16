@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowsClockwiseIcon } from "@phosphor-icons/react/ArrowsClockwise"
 import { BankIcon } from "@phosphor-icons/react/Bank"
 import { ChartLineIcon } from "@phosphor-icons/react/ChartLine"
@@ -92,6 +92,10 @@ function AppShell() {
   const location = useLocation()
   const { user, llmEnabled } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebarRef = useRef<HTMLElement | null>(null)
+  const shellContentRef = useRef<HTMLDivElement | null>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [sidebarCloseCount, setSidebarCloseCount] = useState(0)
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
   // Stays mounted after the first open so the dialog's exit animation can
   // play; Radix only animates content that is still in the tree on close.
@@ -139,15 +143,67 @@ function AppShell() {
       : null)
   const UtilityActionIcon = activeUtilityAction?.icon ?? PlusIcon
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return
-      setSidebarOpen(false)
-      setAddTransactionOpen(false)
-    }
-    document.addEventListener("keydown", onKeyDown)
-    return () => document.removeEventListener("keydown", onKeyDown)
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false)
+    setSidebarCloseCount((count) => count + 1)
   }, [])
+
+  useEffect(() => {
+    if (sidebarOpen || sidebarCloseCount === 0) return
+    const animationFrame = requestAnimationFrame(() => menuTriggerRef.current?.focus())
+    return () => cancelAnimationFrame(animationFrame)
+  }, [sidebarCloseCount, sidebarOpen])
+
+  useEffect(() => {
+    if (isDesktop || !sidebarOpen) return
+    const sidebar = sidebarRef.current
+    const shellContent = shellContentRef.current
+    if (!sidebar || !shellContent) return
+
+    shellContent.inert = true
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const getFocusable = () =>
+      Array.from(sidebar.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hidden
+      )
+    const focusFirst = () => {
+      if (
+        sidebar.getAttribute("aria-hidden") === "false" &&
+        !sidebar.contains(document.activeElement)
+      ) {
+        getFocusable()[0]?.focus()
+      }
+    }
+    const focusTimer = window.setTimeout(focusFirst, 300)
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closeSidebar()
+        return
+      }
+      if (event.key !== "Tab") return
+      const focusable = getFocusable()
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable.at(-1)
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener("keydown", handleKeyDown)
+      shellContent.inert = false
+    }
+  }, [closeSidebar, isDesktop, sidebarOpen])
 
   useEffect(() => {
     document.body.style.overflow = sidebarOpen || addTransactionOpen ? "hidden" : ""
@@ -196,6 +252,7 @@ function AppShell() {
   return (
     <div data-testid="app-shell-root" className="min-h-app-screen flex bg-bg">
       <aside
+        ref={sidebarRef}
         className={`app-sidebar ${sidebarOpen ? "app-sidebar-open" : ""}`}
         aria-label={isDesktop ? "Application navigation" : "Application menu"}
         aria-hidden={!isDesktop && !sidebarOpen}
@@ -203,7 +260,7 @@ function AppShell() {
         <div className="app-sidebar-brand-row">
           <NavLink
             to={periodSearch ? `/${periodSearch}` : "/"}
-            onClick={() => setSidebarOpen(false)}
+            onClick={closeSidebar}
             data-testid="app-shell-brand"
             className="app-sidebar-brand"
           >
@@ -216,13 +273,13 @@ function AppShell() {
             type="button"
             className="app-sidebar-close desk:hidden"
             aria-label="Close menu"
-            onClick={() => setSidebarOpen(false)}
+            onClick={closeSidebar}
           >
             <XIcon aria-hidden="true" />
           </button>
         </div>
 
-        {renderNavigation(() => setSidebarOpen(false))}
+        {renderNavigation(closeSidebar)}
 
         <div className="app-sidebar-user">
           <span>{user?.username?.slice(0, 1).toUpperCase() ?? "E"}</span>
@@ -240,11 +297,12 @@ function AppShell() {
         }`}
         aria-label="Dismiss menu"
         aria-hidden={!sidebarOpen}
-        tabIndex={sidebarOpen ? 0 : -1}
-        onClick={() => setSidebarOpen(false)}
+        tabIndex={-1}
+        onClick={closeSidebar}
       />
 
       <div
+        ref={shellContentRef}
         data-testid="app-shell-content"
         className="min-h-app-screen flex min-w-0 flex-1 flex-col desk:ml-sidebar"
       >
@@ -254,7 +312,7 @@ function AppShell() {
               <NavLink
                 to={periodSearch ? `/${periodSearch}` : "/"}
                 aria-label="Expenses"
-                className="flex shrink-0 items-center"
+                className="flex h-11 w-11 shrink-0 items-center justify-center"
               >
                 <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
               </NavLink>
@@ -265,7 +323,7 @@ function AppShell() {
           ) : (
             <NavLink
               to={periodSearch ? `/${periodSearch}` : "/"}
-              className="flex min-w-0 items-center gap-2.5 font-semibold"
+              className="flex min-h-11 min-w-0 items-center gap-2.5 font-semibold"
             >
               <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
               <span className="truncate">Expenses</span>
@@ -294,6 +352,7 @@ function AppShell() {
               <ShellThemeQuickToggle testId="shell-theme-quick-toggle" size="mobile" />
             ) : null}
             <button
+              ref={menuTriggerRef}
               type="button"
               onClick={() => setSidebarOpen(true)}
               className="app-utility-icon"

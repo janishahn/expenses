@@ -11,6 +11,7 @@ import {
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type DeletedTransaction = {
   id: number
@@ -76,7 +77,12 @@ function DeletedTransactionsPage() {
     return <RouteLoading title="Deleted Transactions" label="Loading deleted transactions…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load deleted transactions.</div>
+    return (
+      <RouteError
+        title="Deleted Transactions"
+        message="Unable to load deleted transactions."
+      />
+    )
   }
 
   return (

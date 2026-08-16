@@ -18,6 +18,7 @@ import {
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type ForecastRecurringRow = {
   rule_id: number | null
@@ -123,7 +124,7 @@ function ForecastPage() {
     return <RouteLoading title="Forecast" label="Loading forecast…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load forecast.</div>
+    return <RouteError title="Forecast" message="Unable to load forecast." />
   }
 
   const recurringSeriesSource =

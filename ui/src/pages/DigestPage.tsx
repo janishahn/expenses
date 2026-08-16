@@ -17,6 +17,7 @@ import {
 import TransactionDescription from "../components/TransactionDescription"
 import { AppButton } from "../components/ui/product-button"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type DigestCategory = {
   category_id: number
@@ -145,7 +146,7 @@ function DigestPage() {
     return <RouteLoading title="Digest" label="Loading digest…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load digest.</div>
+    return <RouteError title="Digest" message="Unable to load digest." />
   }
 
   const topCategoryTotal = data.top_categories.reduce(

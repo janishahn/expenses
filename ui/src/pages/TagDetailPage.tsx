@@ -5,7 +5,7 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage, isApiErrorStatus } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import { confirmDialog } from "../components/confirm"
@@ -36,6 +36,7 @@ import {
   type PresetPeriod,
 } from "../lib/searchParams"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type TransactionRow = {
   id: number
@@ -199,7 +200,9 @@ function TagSettingsEditor({
               </div>
             ) : null}
             {Boolean(updateError) && (
-              <p className="text-xs text-semantic-red">{String(updateError)}</p>
+              <p className="text-xs text-semantic-red">
+                {getApiErrorMessage(updateError, "Unable to update tag.")}
+              </p>
             )}
             <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
               <AppButton
@@ -315,14 +318,21 @@ function TagDetailPage() {
     deleteMutation.mutate()
   }
 
-  if (!tagId) {
-    return <div className="text-semantic-red">Tag not found.</div>
+  if (!tagId || isApiErrorStatus(error, 404)) {
+    return (
+      <RouteError
+        title="Tag"
+        message="Tag not found."
+        returnHref="/tags"
+        returnLabel="Back to tags"
+      />
+    )
   }
   if (isLoading) {
     return <RouteLoading title="Tag" label="Loading tag…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load tag.</div>
+    return <RouteError title="Tag" message="Unable to load tag." />
   }
 
   const { tag, period, kpis, sparklines, donut, transactions } = data

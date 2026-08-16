@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   closestCenter,
   DndContext,
@@ -22,7 +22,7 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useOutletContext } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import type {
   CategoriesResponse,
   TemplateRow,
@@ -51,6 +51,7 @@ import {
   AppNativeSelect,
 } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type SortableTemplateRowProps = {
   template: TemplateRow
@@ -93,6 +94,7 @@ function SortableTemplateRow({
           tone="ghost"
           className="h-9 w-8 shrink-0 cursor-grab touch-none p-0 active:cursor-grabbing"
           aria-label={`Reorder ${template.name}`}
+          data-template-reorder-id={template.id}
           disabled={busy}
           {...attributes}
           {...listeners}
@@ -165,6 +167,7 @@ function TemplatesPage() {
   const [title, setTitle] = useState("")
   const [tags, setTags] = useState("")
   const [formError, setFormError] = useState("")
+  const reorderFocusIdRef = useRef<number | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["templates"],
@@ -223,7 +226,8 @@ function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ["templates"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     },
-    onError: (mutationError) => setFormError(String(mutationError)),
+    onError: (mutationError) =>
+      setFormError(getApiErrorMessage(mutationError, "Unable to create template.")),
   })
 
   const updateMutation = useMutation({
@@ -238,7 +242,8 @@ function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ["templates"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     },
-    onError: (mutationError) => setFormError(String(mutationError)),
+    onError: (mutationError) =>
+      setFormError(getApiErrorMessage(mutationError, "Unable to update template.")),
   })
 
   const deleteMutation = useMutation({
@@ -283,7 +288,21 @@ function TemplatesPage() {
         queryClient.setQueryData(["templates"], context.previous)
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["templates"] }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["templates"] })
+      const templateId = reorderFocusIdRef.current
+      reorderFocusIdRef.current = null
+      if (templateId === null) return
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLElement>(
+              `[data-template-reorder-id="${templateId}"]`
+            )
+            ?.focus()
+        })
+      })
+    },
   })
 
   const sensors = useSensors(
@@ -327,6 +346,7 @@ function TemplatesPage() {
     const newIndex = orderedTemplates.findIndex((template) => template.id === over.id)
     if (oldIndex === -1 || newIndex === -1) return
     const next = arrayMove(orderedTemplates, oldIndex, newIndex)
+    reorderFocusIdRef.current = Number(active.id)
     reorderMutation.mutate(next.map((template) => template.id))
   }
 
@@ -363,7 +383,9 @@ function TemplatesPage() {
   }
 
   if (isLoading) return <RouteLoading title="Templates" label="Loading templates…" />
-  if (error) return <div className="text-semantic-red">Unable to load templates.</div>
+  if (error) {
+    return <RouteError title="Templates" message="Unable to load templates." />
+  }
 
   const busy =
     createMutation.isPending ||

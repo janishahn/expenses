@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard, Forecast, What If, and budget range areas now use their intended 16-18% shading instead of Recharts reducing them by another 40%.
 - Dashboard actual and likely balance strokes now animate as one continuous timeline instead of drawing as two separate lines at the same time.
 - Tag detail sparklines now preserve the full backend trend instead of treating coordinate pairs as raw values and plotting the wrong shape.
+- Keyboard focus now enters and stays within the responsive navigation drawer without being reset mid-navigation, returns to the invoking control after drawers, dialogs, and sheets close, moves into revealed transaction search, and remains on a template after keyboard reordering; Admin logs also expose explicit keyboard and screen-reader Inspect actions.
+- Mobile controls now keep at least a 44px effective touch target across navigation, filters, tags, selection, reports, imports, switches, chart data, and transaction maps while preserving compact desktop density; Transactions actions also stay beside the page title, and long native-select options no longer widen transaction editors beyond the viewport.
+- Route and subquery failures now retain consistent page context and offer Retry, missing resources provide a direct return path, and failed mutations—including FastAPI validation responses—show accurate, readable detail instead of raw JavaScript or JSON error text.
+- The Budgets Add action now appears only after its route data is ready, preventing a click during loading from being silently discarded.
 
 ### Dependencies
 - Replaced Chart.js and react-chartjs-2 with Recharts and react-is in the web frontend.

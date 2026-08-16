@@ -24,7 +24,11 @@ const AppNativeSelect = React.forwardRef<
   HTMLSelectElement,
   React.ComponentPropsWithoutRef<"select">
 >(({ className, ...props }, ref) => (
-  <select ref={ref} className={cn(inputToneClass, className)} {...props} />
+  <select
+    ref={ref}
+    className={cn(inputToneClass, "min-w-0 max-w-full truncate", className)}
+    {...props}
+  />
 ))
 AppNativeSelect.displayName = "AppNativeSelect"
 

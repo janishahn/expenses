@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { XCircleIcon } from "@phosphor-icons/react/XCircle"
 import { useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
+import { apiFetch, getApiErrorMessage } from "../app/api"
 import { useAuth } from "../app/auth"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
@@ -29,6 +29,7 @@ import {
   type PresetPeriod,
 } from "../lib/searchParams"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type TransactionRow = {
   id: number
@@ -200,7 +201,12 @@ function UncategorizedInboxPage() {
     return <RouteLoading title="Uncategorized" label="Loading inbox…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load uncategorized inbox.</div>
+    return (
+      <RouteError
+        title="Uncategorized"
+        message="Unable to load uncategorized inbox."
+      />
+    )
   }
 
   const allPageSelected =
@@ -367,7 +373,12 @@ function UncategorizedInboxPage() {
           <span>{selectedIds.length} selected</span>
           {isFetching ? <span className="loading-hint">Updating…</span> : null}
           {bulkMutation.error && (
-            <span className="text-semantic-red">{String(bulkMutation.error)}</span>
+            <span className="text-semantic-red">
+              {getApiErrorMessage(
+                bulkMutation.error,
+                "Unable to categorize the selected transactions.",
+              )}
+            </span>
           )}
         </div>
       </WorkspaceToolbar>
@@ -392,18 +403,21 @@ function UncategorizedInboxPage() {
                 className="border-b border-border p-4 last:border-b-0 md:p-5"
               >
                 <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select transaction ${txn.id}`}
-                    checked={selectedIds.includes(txn.id)}
-                    onChange={() =>
-                      setSelectedIds((prev) =>
-                        prev.includes(txn.id)
-                          ? prev.filter((id) => id !== txn.id)
-                          : [...prev, txn.id]
-                      )
-                    }
-                  />
+                  <label className="-my-2 -ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center desk:my-0 desk:ml-0 desk:h-4 desk:w-4">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select transaction ${txn.id}`}
+                      checked={selectedIds.includes(txn.id)}
+                      onChange={() =>
+                        setSelectedIds((prev) =>
+                          prev.includes(txn.id)
+                            ? prev.filter((id) => id !== txn.id)
+                            : [...prev, txn.id]
+                        )
+                      }
+                      className="control-check"
+                    />
+                  </label>
                   <CategoryIcon
                     icon={txn.category?.icon ?? null}
                     label={txn.category?.name ?? "Uncategorized"}

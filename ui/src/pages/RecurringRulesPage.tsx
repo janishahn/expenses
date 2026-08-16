@@ -34,6 +34,7 @@ import {
   AppNativeSelect,
 } from "../components/ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
+import RouteError from "../components/RouteError"
 
 type RuleCategory = {
   id: number
@@ -337,7 +338,12 @@ function RecurringRulesPage() {
     return <RouteLoading title="Recurring Rules" label="Loading recurring rules…" />
   }
   if (error || !data) {
-    return <div className="text-semantic-red">Unable to load recurring rules.</div>
+    return (
+      <RouteError
+        title="Recurring Rules"
+        message="Unable to load recurring rules."
+      />
+    )
   }
 
   const categoryOptions = data.categories.filter((c) => c.type === type)
