@@ -2,36 +2,37 @@
 
 ## Current checkpoint
 
-- Phase: Phase 2 complete; all eight findings fixed and batch-verified. Phase 3 final reconciliation is next.
-- Branch: `ui-cohesion-audit`.
-- Commits: Phase 0 audit state is `e2991c1`; Phase 1 inventory is `47739f8`; legacy cleanup is `c6b8c9c`; shared-pattern consolidation is `e879074`; Admin feedback is `7de98f6`; product baseline remains `b8f294935389d2e3d4ce14791dbbaeaebc3ac4df`.
-- Baseline: `uv run fast-tests` green; desktop Chromium 233 passed plus BF-001 retry-green flake; focused no-retry rerun 5/5; Mobile WebKit 99/99.
+- Phase: Phase 3 complete.
+- Terminal state: `SUCCESS`.
+- Branch: `ui-cohesion-audit`; the terminal audit record is the current `HEAD` commit. The latest product commit is `a6bec4b`; the immutable product baseline is `b8f294935389d2e3d4ce14791dbbaeaebc3ac4df`.
+- Product batches: legacy cleanup `c6b8c9c`; shared-pattern consolidation `e879074`; Admin feedback `7de98f6`; final concision cleanup `a6bec4b`.
+- Baseline: `uv run fast-tests` green; desktop Chromium 233 passed with one retry-green BF-001 flake followed by a 5/5 no-retry focused pass; Mobile WebKit 99/99 passed.
+- Final: `uv run fast-tests` green (Ruff, 311 backend tests, frontend lint/build); desktop Chromium 236/236 passed with no retries; Mobile WebKit 99/99 passed.
 
 ## Exact next action
 
-Commit this audit-state checkpoint, then begin Phase 3: rerun reachability/selector/raw-control scans, review the complete branch diff for scope and cohesion, run the three required final commands, reconcile all audit/docs state, and commit the terminal audit record.
+None. The audit is complete. Any push, merge, tag, or release remains a separate approval-boundary action.
 
 ## Verified progress
 
-- All 176 baseline files under `ui/src` and `ui/tests` were individually reviewed; the inventory has zero pending rows.
-- All frontend root configuration files relevant to build, lint, Tailwind, PostCSS, TypeScript, and Playwright were reviewed.
-- Runtime/test module reachability, exported-symbol references, raw interactive elements, canonical wrapper usage, stylesheet selector reachability, and all twelve visual baselines were audited.
-- F-0001 through F-0004 are fixed by `c6b8c9c`: ten unreachable modules/assets, unused API/components/variants, and ten dead CSS selectors were removed; the switch transition was narrowed.
-- Batch verification is green: frontend lint, production build, 6 focused desktop Chromium tests, and 4 focused Mobile WebKit tests. The first sandboxed Playwright attempt could not read the uv cache; the elevated rerun passed.
-- F-0005 through F-0007 are fixed by `e879074`: ordinary actions, fields, surfaces, and four analytical page headers now use their canonical product components; `DESIGN.md` and the changelog record the user-facing convention.
-- Cohesion-batch verification is green: frontend lint/build, 65 focused desktop Chromium tests, and 23 focused Mobile WebKit tests. The mandated `agent-browser` helper was attempted but is not installed, so rendered-route verification used the repository's production-built Playwright harness.
-- F-0008 is fixed by `7de98f6`: Admin maintenance feedback is inline and accessible for success/error paths, with real-backend happy paths and deterministic failure coverage.
-- Admin-batch verification is green: frontend lint/build, 8 desktop Chromium tests, and 2 Mobile WebKit tests.
-- All eight findings are fixed. Intentional divergences and retained performance/testing boundaries are recorded in `DECISIONS.md`.
+- All 176 baseline files under `ui/src` and `ui/tests` were individually reviewed; every current file is represented and the inventory has zero pending rows.
+- All relevant frontend root configuration, runtime/test module reachability, exported-symbol references, raw interactive elements, canonical wrapper usage, stylesheet selector reachability, and all twelve visual baselines were reviewed.
+- The final graph scan found 87 source modules and 66 test roots with zero unreachable source modules. Targeted legacy, selector, wrapper-bypass, native-alert, and transition scans are clean; surviving raw controls match written decisions.
+- All eight findings are fixed: three `legacy-dead`, one `quality`, and four `cohesion`. There are no open, blocked, rejected, approval-required, or out-of-scope findings.
+- The legacy batch deleted 894 finding-attributable dead/legacy lines (881 net after preserving the reachable foundations) and replaced the switch's broad transition separately. No route, feature, reachable control, dependency, backend, or iOS code changed.
+- Ordinary actions/links use `AppButton`; ordinary fields use the product-field family; general surfaces use `FinancialPanel`/`MetricLane`/`AppCard`; analytical title chrome uses `PageIntro`; Admin maintenance outcomes share inline accessible feedback. Every retained divergence is justified in `DECISIONS.md`.
+- No visual snapshot changed. The twelve baseline images were inspected during Phase 1, and the final desktop/mobile visual specs passed against them.
+- The full-branch scope review found no unrelated source/config churn or generated asset changes. Its two concision findings were fixed in `a6bec4b`; the subsequent lint/build and all mandatory final gates passed.
+- `CHANGELOG.md` records the operator-visible outcome and `DESIGN.md` documents the consolidated page-intro convention. `README.md` and `TESTING.md` did not require changes because commands, setup, routes, and coverage expectations did not change.
 
 ## Open work
 
-- Phase 3 must reconcile documentation/changelog requirements, run final branch review, execute the required final commands, and close every finding.
+None.
 
 ## Blocked items
 
-None.
+None. The requested `agent-browser` executable was not installed; the attempt failed before browser launch. The repository's real production-built Playwright browsers supplied desktop/mobile behavior, accessibility, reflow, theme, and visual verification instead.
 
 ## Preserved uncommitted state
 
-The seven files listed in `BASELINE.md` predate this audit and remain untracked and untouched. The only additional uncommitted files before this checkpoint are the finding-status and handoff updates. No process is intentionally left running.
+The seven untracked files listed in immutable `BASELINE.md` predate this audit and remain untouched. There are no audit-owned uncommitted changes and no process is intentionally left running.

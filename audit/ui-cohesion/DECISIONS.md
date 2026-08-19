@@ -26,6 +26,11 @@ Pattern rulings are added only after the Phase 1 implementation map is complete 
 - `FinancialPanel`, `MetricLane`, and `AppCard` are the canonical general product surfaces. Chart internals, the Assistant transcript/composer, and the application shell may retain specialized surfaces where semantics or performance differ.
 - `PageIntro` is canonical for ordinary and analytical route title chrome. Auth/setup cards, the admin elevation gate, and the Assistant title integrated into shell chrome are intentionally distinct product contexts.
 
+### Confirmation and action feedback
+
+- User-reachable confirmations use the shared in-app confirmation dialog. Native browser confirm/prompt/alert chrome is not a product surface.
+- Mutation outcomes remain beside the action that produced them: success uses a polite `status`, failure uses an `alert`, and both retain the product's semantic text colors. Admin maintenance actions share `AdminActionFeedback`; other workflows may keep their existing local message state when they do not duplicate a rendering mechanism.
+
 ### Intentional implementation boundaries
 
 - `phosphorRuntime.ts` and `phosphorUtils.ts` retain superficially similar icon loading/alias logic: the runtime module keeps common category rendering off the full searchable icon metadata bundle, while the picker utilities load the catalog only where needed.
