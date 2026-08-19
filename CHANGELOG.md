@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reconciliation now processes CSV files into one focused inbox, makes likely transaction matches easier to scan, preserves a reviewed outcome for known discrepancies, and lets users edit a new transaction before creating and linking it to a bank row.
+
 ## [0.4.7] - 2026-08-16
 
 ### Changed

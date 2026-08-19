@@ -217,6 +217,70 @@ def test_missing_bank_row_can_create_uncategorized_transaction(
     assert created["category"]["name"] == "Uncategorized"
 
 
+def test_missing_bank_row_can_create_and_match_edited_transaction(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_response = api_client.post(
+        "/api/categories",
+        json={"name": "Online shopping", "type": "expense", "order": 0},
+        headers=csrf_headers,
+    )
+    assert category_response.status_code == 200
+    category_id = category_response.json()["id"]
+
+    response = _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(
+            ["06.05.2026;06.05.2026;Online-Zahlung;Amazon;-13,95;EUR;ORDER 123"]
+        ),
+    )
+    assert response.status_code == 200
+    row = api_client.get("/api/reconciliation").json()["rows"][0]
+
+    create_response = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/create-transaction",
+        json={
+            "date": "2026-05-04",
+            "category_id": category_id,
+            "title": "USB-C cable",
+            "description": "Travel charger cable",
+        },
+        headers=csrf_headers,
+    )
+
+    assert create_response.status_code == 200
+    reconciliation = api_client.get("/api/reconciliation").json()
+    assert reconciliation["rows"][0]["status"] == "matched"
+    transactions = api_client.get("/api/transactions?period=all").json()["items"]
+    created = next(
+        item
+        for item in transactions
+        if item["id"] == create_response.json()["transaction_id"]
+    )
+    assert created["date"] == "2026-05-04"
+    assert created["title"] == "USB-C cable"
+    assert created["description"] == "Travel charger cable"
+    assert created["category"]["name"] == "Online shopping"
+    assert created["amount_cents"] == 1_395
+
+    repeated_create = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/create-transaction",
+        json={
+            "date": "2026-05-04",
+            "category_id": category_id,
+            "title": "Duplicate cable",
+            "description": None,
+        },
+        headers=csrf_headers,
+    )
+    assert repeated_create.status_code == 409
+    transactions_after_retry = api_client.get("/api/transactions?period=all").json()[
+        "items"
+    ]
+    assert all(item["title"] != "Duplicate cable" for item in transactions_after_retry)
+
+
 def test_partial_cash_withdrawal_can_be_marked_reviewed(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -252,14 +316,14 @@ def test_partial_cash_withdrawal_can_be_marked_reviewed(
 def test_same_amount_candidates_are_ambiguous(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
-    _create_transaction(
+    first_transaction_id = _create_transaction(
         api_client,
         csrf_headers,
         date="2026-05-04",
         amount_cents=1_200,
         title="Cafe one",
     )
-    _create_transaction(
+    second_transaction_id = _create_transaction(
         api_client,
         csrf_headers,
         date="2026-05-05",
@@ -276,6 +340,71 @@ def test_same_amount_candidates_are_ambiguous(
     row = api_client.get("/api/reconciliation").json()["rows"][0]
     assert row["status"] == "ambiguous"
     assert row["candidate_count"] == 2
+    assert [candidate["id"] for candidate in row["candidates"]] == [
+        second_transaction_id,
+        first_transaction_id,
+    ]
+
+    match_response = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/match-transaction",
+        json={"transaction_id": first_transaction_id},
+        headers=csrf_headers,
+    )
+
+    assert match_response.status_code == 200
+    matched_row = api_client.get("/api/reconciliation").json()["rows"][0]
+    assert matched_row["status"] == "matched"
+    assert matched_row["suggested_transaction"]["id"] == first_transaction_id
+
+    stale_match = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/match-transaction",
+        json={"transaction_id": second_transaction_id},
+        headers=csrf_headers,
+    )
+    assert stale_match.status_code == 409
+    unchanged_row = api_client.get("/api/reconciliation").json()["rows"][0]
+    assert unchanged_row["suggested_transaction"]["id"] == first_transaction_id
+
+
+def test_new_reconciliation_actions_distinguish_missing_rows_and_invalid_input(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    missing_match = api_client.post(
+        "/api/reconciliation/bank-rows/999999/match-transaction",
+        json={"transaction_id": 999999},
+        headers=csrf_headers,
+    )
+    missing_create = api_client.post(
+        "/api/reconciliation/bank-rows/999999/create-transaction",
+        json={
+            "date": "2026-05-04",
+            "category_id": None,
+            "title": "Missing row",
+            "description": None,
+        },
+        headers=csrf_headers,
+    )
+    assert missing_match.status_code == 404
+    assert missing_create.status_code == 404
+
+    response = _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(["06.05.2026;06.05.2026;Online-Zahlung;Amazon;-13,95;EUR;"]),
+    )
+    assert response.status_code == 200
+    row = api_client.get("/api/reconciliation").json()["rows"][0]
+    invalid_category = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/create-transaction",
+        json={
+            "date": "2026-05-04",
+            "category_id": 999999,
+            "title": "Invalid category",
+            "description": None,
+        },
+        headers=csrf_headers,
+    )
+    assert invalid_category.status_code == 400
 
 
 def test_accept_suggestion_rejects_transaction_already_matched_to_another_row(

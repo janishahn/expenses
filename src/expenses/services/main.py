@@ -1356,6 +1356,7 @@ class TransactionService:
         data: TransactionIn,
         *,
         source: str = "user",
+        commit: bool = True,
     ) -> Transaction:
         if data.is_reimbursement and data.type != TransactionType.income:
             raise ValueError("Reimbursements must be income transactions")
@@ -1426,8 +1427,9 @@ class TransactionService:
         period = Period("transaction", data.date, data.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
-        self.session.commit()
-        self.session.refresh(txn)
+        if commit:
+            self.session.commit()
+            self.session.refresh(txn)
         txn._rule_result = rule_result
         log_event(
             logger,
