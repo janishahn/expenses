@@ -54,17 +54,6 @@ export type TransactionListItem = {
   has_attachments?: boolean
 }
 
-export type DeletedTransaction = {
-  id: number
-  date: string
-  type: string
-  amount_cents: number
-  category: { id: number; name: string; icon: string | null } | null
-  title: string | null
-  description: string | null
-  deleted_at: string | null
-}
-
 export type TransactionRouteState = {
   returnTo?: string
   hasOriginContext?: boolean

@@ -27,8 +27,6 @@ const AppButton = React.forwardRef<HTMLButtonElement, AppButtonProps>(
   ({ tone = "primary", className, ...props }, ref) => (
     <Button
       ref={ref}
-      variant="unstyled"
-      size="legacy"
       className={cn(appButtonVariants({ tone }), className)}
       {...props}
     />
