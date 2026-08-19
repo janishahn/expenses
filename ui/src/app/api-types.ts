@@ -167,6 +167,7 @@ export type BankReconciliationTransaction = {
   amount_cents: number
   signed_amount_cents: number
   title: string | null
+  description: string | null
   category: string | null
   date_delta_days: number
 }
@@ -192,6 +193,7 @@ export type BankStatementRow = {
   reviewed_at: string | null
   status: BankStatementRowStatus
   candidate_count: number
+  candidates: BankReconciliationTransaction[]
   suggested_transaction: BankReconciliationTransaction | null
 }
 

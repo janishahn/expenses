@@ -113,8 +113,10 @@ from expenses.schemas import (
     AuthCredentialsIn,
     BankReconciliationResponseOut,
     BankRowActionResponseOut,
+    BankRowMatchIn,
     BankStatementImportResponseOut,
     BankStatementPreviewResponseOut,
+    BankTransactionCreateIn,
     BulkEditRequestIn,
     BulkEditResponseOut,
     BudgetOverrideIn,
@@ -3334,18 +3336,42 @@ def api_reopen_bank_row(row_id: int, request: Request, db: Session = Depends(get
 
 
 @router.post(
+    "/api/reconciliation/bank-rows/{row_id:int}/match-transaction",
+    response_model=BankRowActionResponseOut,
+)
+def api_match_bank_row_transaction(
+    row_id: int,
+    payload: BankRowMatchIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        BankReconciliationService(db, user_id=user_id).match_transaction(
+            row_id, payload.transaction_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "transaction_id": payload.transaction_id}
+
+
+@router.post(
     "/api/reconciliation/bank-rows/{row_id:int}/create-transaction",
     response_model=BankRowActionResponseOut,
 )
 def api_create_transaction_from_bank_row(
-    row_id: int, request: Request, db: Session = Depends(get_db)
+    row_id: int,
+    request: Request,
+    payload: Optional[BankTransactionCreateIn] = None,
+    db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
         transaction_id = BankReconciliationService(
             db, user_id=user_id
-        ).create_transaction(row_id)
+        ).create_transaction(row_id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok", "transaction_id": transaction_id}

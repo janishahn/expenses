@@ -86,7 +86,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Recurring create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
 | Template create/edit/delete and reorder | `templates.spec.ts`, `focus-management.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Commerzbank CSV preview, import, and reconciliation workspace | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
+| Commerzbank CSV reconciliation inbox, match selection, and editable create-and-match | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
 | PDF report options, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Settings, appearance, balance anchors, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
 | Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |

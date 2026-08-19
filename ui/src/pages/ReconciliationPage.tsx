@@ -1,99 +1,114 @@
-import { useRef, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { BankIcon } from "@phosphor-icons/react/Bank"
 import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
+import { LinkSimpleIcon } from "@phosphor-icons/react/LinkSimple"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
+import { XIcon } from "@phosphor-icons/react/X"
 import { Link } from "react-router-dom"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import type {
   BankReconciliationResponse,
-  BankStatementPreviewResponse,
-  BankStatementRow,
-  BankStatementRowStatus,
   BankReconciliationTransaction,
+  BankStatementRow,
+  CategoriesResponse,
 } from "../app/api-types"
 import { formatCurrency, formatEuroDate } from "../app/format"
+import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import RouteError from "../components/RouteError"
 import {
   FinancialPanel,
-  MetricLane,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
+import {
+  AppFieldLabel,
+  AppInput,
+  AppNativeSelect,
+  AppTextarea,
+} from "../components/ui/product-fields"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 
-type RowAction = "accept-suggestion" | "review" | "reopen" | "create-transaction"
+type CreateTransactionPayload = {
+  date: string
+  category_id: number | null
+  title: string
+  description: string | null
+}
 
-const statusCopy: Record<BankStatementRowStatus, string> = {
-  matched: "Matched",
-  suggested: "Suggested",
-  ambiguous: "Ambiguous",
-  missing: "Missing",
-  reviewed: "Reviewed",
+type RowMutation =
+  | { kind: "accept"; rowId: number; notice: string }
+  | { kind: "match"; rowId: number; transactionId: number; notice: string }
+  | { kind: "create"; rowId: number; payload: CreateTransactionPayload; notice: string }
+  | { kind: "reopen"; rowId: number }
+
+type ActionNotice = {
+  message: string
+  undoRowId: number | null
 }
 
 function amountTone(amount: number) {
   return amount >= 0 ? "text-semantic-green" : "text-semantic-red"
 }
 
-function statusTone(status: BankStatementRowStatus) {
-  if (status === "matched") return "border-semantic-green/30 bg-semantic-green/10 text-semantic-green"
-  if (status === "suggested") return "border-semantic-blue/30 bg-semantic-blue/10 text-semantic-blue"
-  if (status === "reviewed") return "border-border bg-faint text-muted"
-  return "border-semantic-red/30 bg-semantic-red/10 text-semantic-red"
-}
-
-function transactionLabel(transaction: BankReconciliationTransaction) {
+function transactionDateLabel(transaction: BankReconciliationTransaction) {
   const dateDelta =
     transaction.date_delta_days === 0
       ? "same day"
       : transaction.date_delta_days > 0
-        ? `${transaction.date_delta_days}d earlier in Expenses`
-        : `${Math.abs(transaction.date_delta_days)}d later in Expenses`
+        ? `${transaction.date_delta_days}d before booking`
+        : `${Math.abs(transaction.date_delta_days)}d after booking`
   return `${formatEuroDate(transaction.date)} · ${dateDelta}`
+}
+
+function rowTitle(row: BankStatementRow) {
+  return row.payee || row.booking_text || row.purpose || "Bank transaction"
 }
 
 function ReconciliationPage() {
   const queryClient = useQueryClient()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const removalTimer = useRef<number | null>(null)
+  const noticeTimer = useRef<number | null>(null)
   const [accountLabel, setAccountLabel] = useState("StartKonto")
   const [csvFile, setCsvFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<BankStatementPreviewResponse | null>(null)
-  const [message, setMessage] = useState("")
-  const [errorMessage, setErrorMessage] = useState("")
+  const [importMessage, setImportMessage] = useState("")
+  const [importError, setImportError] = useState("")
+  const [actionError, setActionError] = useState("")
+  const [leavingRowId, setLeavingRowId] = useState<number | null>(null)
+  const [createRow, setCreateRow] = useState<BankStatementRow | null>(null)
+  const [matchRow, setMatchRow] = useState<BankStatementRow | null>(null)
+  const [notice, setNotice] = useState<ActionNotice | null>(null)
+
+  useEffect(
+    () => () => {
+      if (removalTimer.current !== null) window.clearTimeout(removalTimer.current)
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    },
+    []
+  )
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["reconciliation"],
     queryFn: () => apiFetch<BankReconciliationResponse>("/api/reconciliation"),
   })
 
-  const previewMutation = useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append("account_label", accountLabel)
-      form.append("file", file)
-      return apiFetchFormData<BankStatementPreviewResponse>(
-        "/api/reconciliation/commerzbank-csv/preview",
-        { method: "POST", body: form }
-      )
-    },
-    onSuccess: (result) => {
-      setPreview(result)
-      setMessage("")
-      setErrorMessage("")
-    },
-    onError: (mutationError) => {
-      setPreview(null)
-      setMessage("")
-      setErrorMessage(
-        getApiErrorMessage(mutationError, "Unable to preview reconciliation.")
-      )
-    },
+  const { data: categoriesData } = useQuery({
+    queryKey: ["categories", "all"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    enabled: createRow !== null,
   })
 
-  const commitMutation = useMutation({
+  const importMutation = useMutation({
     mutationFn: (file: File) => {
       const form = new FormData()
       form.append("account_label", accountLabel)
@@ -104,472 +119,735 @@ function ReconciliationPage() {
       )
     },
     onSuccess: (result) => {
-      setPreview(null)
-      setMessage(
-        `Imported ${result.imported_count} new row(s), skipped ${result.duplicate_count} duplicate(s).`
+      setImportMessage(
+        `${result.imported_count} imported · ${result.duplicate_count} duplicate${result.duplicate_count === 1 ? "" : "s"} skipped`
       )
-      setErrorMessage("")
+      setImportError("")
       queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
     },
     onError: (mutationError) => {
-      setMessage("")
-      setErrorMessage(
-        getApiErrorMessage(mutationError, "Unable to import reconciliation.")
-      )
+      setImportMessage("")
+      setImportError(getApiErrorMessage(mutationError, "Unable to reconcile this file."))
     },
   })
 
-  const rowActionMutation = useMutation({
-    mutationFn: ({ rowId, action }: { rowId: number; action: RowAction }) =>
-      apiFetch<{ status?: string; transaction_id?: number }>(
-        `/api/reconciliation/bank-rows/${rowId}/${action}`,
-        { method: "POST" }
-      ),
-    onSuccess: () => {
-      setMessage("")
-      setErrorMessage("")
-      queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-    },
-    onError: (mutationError) => {
-      setMessage("")
-      setErrorMessage(
-        getApiErrorMessage(mutationError, "Unable to update reconciliation row.")
-      )
-    },
-  })
-
-  const handlePreview = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!csvFile) {
-      setErrorMessage("Choose a Commerzbank CSV file first.")
-      return
-    }
-    previewMutation.mutate(csvFile)
+  const invalidateReconciliation = () => {
+    queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
+    queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] })
   }
 
-  const handleImport = () => {
+  const rowMutation = useMutation({
+    mutationFn: (mutation: RowMutation) => {
+      if (mutation.kind === "accept") {
+        return apiFetch<{ status: string }>(
+          `/api/reconciliation/bank-rows/${mutation.rowId}/accept-suggestion`,
+          { method: "POST" }
+        )
+      }
+      if (mutation.kind === "match") {
+        return apiFetch<{ status: string; transaction_id: number }>(
+          `/api/reconciliation/bank-rows/${mutation.rowId}/match-transaction`,
+          {
+            method: "POST",
+            body: JSON.stringify({ transaction_id: mutation.transactionId }),
+          }
+        )
+      }
+      if (mutation.kind === "create") {
+        return apiFetch<{ status: string; transaction_id: number }>(
+          `/api/reconciliation/bank-rows/${mutation.rowId}/create-transaction`,
+          { method: "POST", body: JSON.stringify(mutation.payload) }
+        )
+      }
+      return apiFetch<{ status: string }>(
+        `/api/reconciliation/bank-rows/${mutation.rowId}/reopen`,
+        { method: "POST" }
+      )
+    },
+    onSuccess: (_result, mutation) => {
+      setActionError("")
+      if (mutation.kind === "reopen") {
+        setNotice(null)
+        invalidateReconciliation()
+        return
+      }
+
+      setCreateRow(null)
+      setMatchRow(null)
+      setLeavingRowId(mutation.rowId)
+      setNotice({
+        message: mutation.notice,
+        undoRowId: mutation.kind === "create" ? null : mutation.rowId,
+      })
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+      noticeTimer.current = window.setTimeout(() => setNotice(null), 5000)
+      removalTimer.current = window.setTimeout(() => {
+        queryClient.setQueryData<BankReconciliationResponse>(
+          ["reconciliation"],
+          (current) => {
+            if (!current) return current
+            const resolvedRow = current.rows.find((row) => row.id === mutation.rowId)
+            if (!resolvedRow) return current
+            return {
+              ...current,
+              summary: {
+                ...current.summary,
+                unresolved_count:
+                  current.summary.unresolved_count -
+                  (resolvedRow.status === "missing" || resolvedRow.status === "ambiguous"
+                    ? 1
+                    : 0),
+                suggested_count:
+                  current.summary.suggested_count -
+                  (resolvedRow.status === "suggested" ? 1 : 0),
+                matched_count: current.summary.matched_count + 1,
+              },
+              rows: current.rows.filter((row) => row.id !== mutation.rowId),
+            }
+          }
+        )
+        removalTimer.current = null
+        setLeavingRowId(null)
+        invalidateReconciliation()
+      }, 180)
+    },
+    onError: (mutationError) => {
+      setActionError(
+        getApiErrorMessage(mutationError, "Unable to update this reconciliation item.")
+      )
+    },
+  })
+
+  const handleReconcile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!csvFile) {
-      setErrorMessage("Choose a Commerzbank CSV file first.")
+      setImportError("Choose a Commerzbank CSV file first.")
       return
     }
-    commitMutation.mutate(csvFile)
+    setImportError("")
+    importMutation.mutate(csvFile)
   }
 
   const rows = data?.rows ?? []
-  const unresolvedRows = rows.filter(
-    (row) => row.status === "missing" || row.status === "ambiguous"
+  const inboxRows = rows.filter(
+    (row) =>
+      row.status === "suggested" ||
+      row.status === "ambiguous" ||
+      row.status === "missing"
   )
-  const suggestedRows = rows.filter((row) => row.status === "suggested")
+  const matchedCount = data?.summary.matched_count ?? 0
+  const reviewedCount = data?.summary.reviewed_count ?? 0
+  const queueBusy = rowMutation.isPending || leavingRowId !== null
 
   if (isLoading) {
     return (
       <section className="space-y-6" data-testid="reconciliation-page">
         <PageIntro title="Reconciliation" />
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
-          <div className="h-72 animate-pulse rounded-2xl bg-surface-hi/40" />
-          <div className="h-72 animate-pulse rounded-2xl bg-surface-hi/40" />
-        </div>
+        <div className="h-24 animate-pulse rounded-2xl bg-surface-hi/40" />
+        <div className="h-72 animate-pulse rounded-2xl bg-surface-hi/40" />
       </section>
     )
   }
 
   if (error) {
-    return (
-      <RouteError
-        title="Reconciliation"
-        message="Unable to load reconciliation."
-      />
-    )
+    return <RouteError title="Reconciliation" message="Unable to load reconciliation." />
   }
 
   return (
     <section data-testid="reconciliation-page" className="space-y-4">
       <PageIntro title="Reconciliation" />
-      <p className="max-w-3xl text-sm leading-6 text-muted">
-        Import Commerzbank CSV rows as external evidence, then reconcile them against
-        Expenses with a five-day booking window for delayed card postings.
-      </p>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Bank rows" value={`${data?.summary.row_count ?? 0}`} />
-        <Metric label="Needs review" value={`${data?.summary.unresolved_count ?? 0}`} tone="red" />
-        <Metric label="Suggested" value={`${data?.summary.suggested_count ?? 0}`} tone="blue" />
-        <Metric
-          label="Statement delta"
-          value={`${formatCurrency(data?.summary.bank_total_cents ?? 0)} €`}
-          tone={(data?.summary.bank_total_cents ?? 0) >= 0 ? "green" : "red"}
-        />
+      <div
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-xs text-muted"
+        aria-label="Reconciliation summary"
+      >
+        <span><strong className="text-text">{data?.summary.row_count ?? 0}</strong> imported</span>
+        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
+        <span><strong className="text-text">{matchedCount + reviewedCount}</strong> cleared</span>
+        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
+        <span><strong className="text-text">{inboxRows.length}</strong> remaining</span>
+        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
+        <span className={amountTone(data?.summary.bank_total_cents ?? 0)}>
+          <strong>{formatCurrency(data?.summary.bank_total_cents ?? 0)} €</strong> net
+        </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)] [&>*]:min-w-0">
-        <div className="space-y-4">
-          <FinancialPanel role="inspector" className="p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h2 className="font-head text-2xl font-bold tracking-tight">
-                  Commerzbank CSV
-                </h2>
-                <p className="text-sm text-muted">
-                  Export one account at a time from Online Banking, then preview before importing.
-                </p>
-              </div>
-              <BankIcon className="hidden h-8 w-8 text-muted md:block" />
-            </div>
-
-            <form
-              onSubmit={handlePreview}
-              className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-[220px_minmax(0,1fr)_auto] xl:items-end"
+      <FinancialPanel role="inspector" className="p-4">
+        <form
+          onSubmit={handleReconcile}
+          className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end"
+        >
+          <div className="space-y-1.5">
+            <AppFieldLabel htmlFor="reconciliation-account">Account label</AppFieldLabel>
+            <AppInput
+              id="reconciliation-account"
+              value={accountLabel}
+              onChange={(event) => setAccountLabel(event.target.value)}
+              placeholder="StartKonto"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <AppFieldLabel htmlFor="reconciliation-file">CSV file</AppFieldLabel>
+            <input
+              id="reconciliation-file"
+              type="file"
+              accept=".csv,text/csv"
+              className="peer sr-only"
+              onChange={(event) => {
+                setCsvFile(event.target.files?.[0] ?? null)
+                setImportMessage("")
+                setImportError("")
+              }}
+            />
+            <label
+              htmlFor="reconciliation-file"
+              className="field flex min-h-11 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-surface-hi text-sm text-text transition-[border-color,box-shadow] hover:border-border-hi peer-focus-visible:border-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
             >
-              <div className="space-y-1.5">
-                <AppFieldLabel htmlFor="reconciliation-account">Account label</AppFieldLabel>
-                <AppInput
-                  id="reconciliation-account"
-                  value={accountLabel}
-                  onChange={(event) => {
-                    setAccountLabel(event.target.value)
-                    setPreview(null)
-                  }}
-                  placeholder="StartKonto"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <AppFieldLabel htmlFor="reconciliation-file">CSV file</AppFieldLabel>
-                <input
-                  ref={fileInputRef}
-                  id="reconciliation-file"
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="peer sr-only"
-                  onChange={(event) => {
-                    setCsvFile(event.target.files?.[0] ?? null)
-                    setPreview(null)
-                  }}
-                />
-                <label
-                  htmlFor="reconciliation-file"
-                  className="field flex min-h-11 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-surface-hi text-sm text-text transition hover:border-border-hi peer-focus-visible:border-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
-                >
-                  <span className="flex min-h-11 shrink-0 items-center border-r border-border bg-faint px-3 font-semibold">
-                    Choose file
-                  </span>
-                  <span className="min-w-0 truncate px-3 text-muted">
-                    {csvFile?.name ?? "No file selected"}
-                  </span>
-                </label>
-              </div>
-              <AppButton
-                type="submit"
-                disabled={previewMutation.isPending || commitMutation.isPending}
-                className="md:col-span-2 xl:col-span-1"
-              >
-                <UploadSimpleIcon className="h-4 w-4" />
-                {previewMutation.isPending ? "Previewing…" : "Preview CSV"}
-              </AppButton>
-            </form>
+              <span className="flex min-h-11 shrink-0 items-center border-r border-border bg-faint px-3 font-semibold">
+                Choose file
+              </span>
+              <span className="min-w-0 truncate px-3 text-muted">
+                {csvFile?.name ?? "No file selected"}
+              </span>
+            </label>
+          </div>
+          <AppButton type="submit" disabled={importMutation.isPending}>
+            <UploadSimpleIcon data-icon="inline-start" className="h-4 w-4" />
+            {importMutation.isPending ? "Reconciling…" : "Reconcile"}
+          </AppButton>
+        </form>
+        {importMessage ? (
+          <p className="mt-3 text-sm font-semibold text-semantic-green" role="status">
+            {importMessage}
+          </p>
+        ) : null}
+        {importError ? (
+          <p className="mt-3 text-sm text-semantic-red" role="alert">{importError}</p>
+        ) : null}
+      </FinancialPanel>
 
-            {preview ? (
-              <div className="mt-5 rounded-lg bg-surface-hi/65 p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="font-semibold text-text">
-                      {preview.new_count} new row(s), {preview.duplicate_count} duplicate(s)
-                    </p>
-                    <p className="text-xs text-muted">
-                      {preview.rows.length} parsed row(s) for {preview.account_label}.
-                    </p>
-                  </div>
-                  <AppButton
-                    type="button"
-                    onClick={handleImport}
-                    disabled={
-                      preview.new_count === 0 ||
-                      preview.errors.length > 0 ||
-                      commitMutation.isPending
-                    }
-                  >
-                    {commitMutation.isPending ? "Importing…" : "Import rows"}
-                  </AppButton>
-                </div>
+      <FinancialPanel role="ledger">
+        <SectionHeading>
+          <h2 className="font-head text-xl font-bold tracking-tight">
+            {inboxRows.length === 0
+              ? data?.summary.row_count
+                ? "Inbox cleared"
+                : "No bank rows imported"
+              : `${inboxRows.length} item${inboxRows.length === 1 ? "" : "s"} to reconcile`}
+          </h2>
+        </SectionHeading>
 
-                {preview.errors.length > 0 ? (
-                  <div className="mt-3 rounded-lg border border-semantic-red/25 bg-semantic-red/10 p-3 text-xs text-semantic-red">
-                    {preview.errors.map((previewError) => (
-                      <p key={previewError}>{previewError}</p>
-                    ))}
-                  </div>
-                ) : null}
+        {actionError && !createRow && !matchRow ? (
+          <p
+            className="mx-4 mb-2 rounded-lg border border-semantic-red/25 bg-semantic-red/10 px-3 py-2 text-sm text-semantic-red"
+            role="alert"
+          >
+            {actionError}
+          </p>
+        ) : null}
 
-                <div className="mt-4 max-h-64 overflow-auto rounded-lg bg-surface">
-                  {preview.rows.slice(0, 8).map((row, index) => (
-                    <div
-                      key={`${row.booking_date}-${row.amount_cents}-${index}`}
-                      className="grid gap-2 border-b border-border/70 px-3 py-2 text-xs last:border-b-0 md:grid-cols-[90px_1fr_auto]"
-                    >
-                      <span className="font-mono text-muted">
-                        {formatEuroDate(row.booking_date)}
-                      </span>
-                      <span className="truncate text-text">{row.raw_description}</span>
-                      <span className={`font-mono font-semibold ${amountTone(row.amount_cents)}`}>
-                        {formatCurrency(row.amount_cents)} €
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+        {inboxRows.length > 0 ? (
+          <div className="divide-y divide-border">
+            {inboxRows.map((row) => (
+              <InboxRow
+                key={row.id}
+                row={row}
+                leaving={leavingRowId === row.id}
+                pending={rowMutation.isPending && rowMutation.variables?.rowId === row.id}
+                disabled={queueBusy}
+                onAccept={() =>
+                  rowMutation.mutate({
+                    kind: "accept",
+                    rowId: row.id,
+                    notice: `${rowTitle(row)} matched`,
+                  })
+                }
+                onChoose={() => {
+                  setActionError("")
+                  setMatchRow(row)
+                }}
+                onCreate={() => {
+                  setActionError("")
+                  setCreateRow(row)
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="p-10 text-center">
+            <CheckCircleIcon
+              className={`mx-auto h-10 w-10 ${data?.summary.row_count ? "text-semantic-green" : "text-muted"}`}
+              weight={data?.summary.row_count ? "fill" : "regular"}
+            />
+          </div>
+        )}
+      </FinancialPanel>
 
-            {message ? <p className="mt-3 text-sm font-semibold text-semantic-green">{message}</p> : null}
-            {errorMessage ? <p className="mt-3 text-sm text-semantic-red">{errorMessage}</p> : null}
-          </FinancialPanel>
-
-          <FinancialPanel role="ledger">
-            <SectionHeading className="items-end">
-              <div>
-                <h2 className="font-head text-2xl font-bold tracking-tight">Statement rows</h2>
-                <p className="text-sm text-muted">
-                  Conservative matches use amount, type, and date. Vendor text only breaks ties.
-                </p>
-              </div>
-              {suggestedRows.length > 0 ? (
-                <p className="rounded-full border border-semantic-blue/25 bg-semantic-blue/10 px-3 py-1 text-xs font-semibold text-semantic-blue">
-                  {suggestedRows.length} suggestion(s) waiting
-                </p>
-              ) : null}
-            </SectionHeading>
-
-            {rows.length > 0 ? (
-              <div className="divide-y divide-border px-2">
-                {rows.map((row) => (
-                  <BankRowCard
-                    key={row.id}
-                    row={row}
-                    pending={rowActionMutation.isPending}
-                    onAction={(action) => rowActionMutation.mutate({ rowId: row.id, action })}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="p-8 text-center">
-                <CheckCircleIcon className="mx-auto h-9 w-9 text-muted" />
-                <h3 className="mt-3 font-head text-xl font-bold">No bank rows imported</h3>
-                <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-                  Start with a CSV export from Commerzbank Online Banking. The import keeps
-                  bank evidence separate until you accept or create a transaction.
-                </p>
-              </div>
-            )}
-          </FinancialPanel>
+      {notice ? (
+        <div
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[80] flex min-h-11 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-xl border border-border bg-text px-4 py-2 text-sm text-surface shadow-2xl"
+          role="status"
+        >
+          <CheckCircleIcon className="h-5 w-5 shrink-0 text-semantic-green" weight="fill" />
+          <span className="min-w-0 flex-1 truncate font-semibold">{notice.message}</span>
+          {notice.undoRowId !== null ? (
+            <button
+              type="button"
+              className="min-h-11 shrink-0 px-1 font-semibold text-surface underline underline-offset-4 transition-[opacity,transform] hover:opacity-75 active:scale-[0.96] desk:min-h-0"
+              onClick={() => {
+                if (removalTimer.current !== null) {
+                  window.clearTimeout(removalTimer.current)
+                  removalTimer.current = null
+                  setLeavingRowId(null)
+                }
+                rowMutation.mutate({ kind: "reopen", rowId: notice.undoRowId! })
+              }}
+              disabled={rowMutation.isPending}
+            >
+              Undo
+            </button>
+          ) : null}
         </div>
+      ) : null}
 
-        <aside className="space-y-4">
-          <FinancialPanel role="inspector" className="p-5">
-            <h2 className="font-head text-xl font-bold tracking-tight">Review queue</h2>
-            <p className="mt-1 text-sm text-muted">
-              Missing rows are likely untracked spending, cash withdrawals, or imports that
-              need a manual decision.
-            </p>
-            <div className="mt-4 space-y-2">
-              {unresolvedRows.slice(0, 6).map((row) => (
-                <div key={row.id} className="rounded-md bg-surface-hi/65 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-sm font-semibold text-text">
-                      {row.payee || row.booking_text || "Bank row"}
-                    </p>
-                    <span className={`shrink-0 font-mono text-sm font-semibold ${amountTone(row.amount_cents)}`}>
-                      {formatCurrency(row.amount_cents)} €
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">
-                    {formatEuroDate(row.booking_date)} · {statusCopy[row.status]}
-                  </p>
-                </div>
-              ))}
-              {unresolvedRows.length === 0 ? (
-                <p className="rounded-md bg-surface-hi/65 p-3 text-sm text-muted">
-                  No unresolved bank rows right now.
-                </p>
-              ) : null}
-            </div>
-          </FinancialPanel>
+      {createRow ? (
+        <CreateTransactionDialog
+          key={createRow.id}
+          row={createRow}
+          categories={categoriesData?.categories ?? []}
+          pending={rowMutation.isPending}
+          errorMessage={actionError}
+          onClose={() => {
+            if (!rowMutation.isPending) setCreateRow(null)
+          }}
+          onSubmit={(payload) =>
+            rowMutation.mutate({
+              kind: "create",
+              rowId: createRow.id,
+              payload,
+              notice: "Transaction created and matched",
+            })
+          }
+        />
+      ) : null}
 
-          <FinancialPanel className="p-5">
-            <h2 className="font-head text-xl font-bold tracking-tight">Only in Expenses</h2>
-            <p className="mt-1 text-sm text-muted">
-              These nearby app entries did not get a bank match yet. Cash and early manual
-              entries often belong here.
-            </p>
-            <div className="mt-4 space-y-2">
-              {(data?.only_in_expenses ?? []).slice(0, 10).map((transaction) => (
-                <Link
-                  key={transaction.id}
-                  to={`/transactions/${transaction.id}`}
-                  className="block rounded-md bg-surface-hi/65 p-3 transition hover:bg-faint/80 active:scale-[0.99]"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-sm font-semibold text-text">
-                      {transaction.title || "Untitled transaction"}
-                    </p>
-                    <span className={`shrink-0 font-mono text-sm font-semibold ${amountTone(transaction.signed_amount_cents)}`}>
-                      {formatCurrency(transaction.signed_amount_cents)} €
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">
-                    {formatEuroDate(transaction.date)}
-                    {transaction.category ? ` · ${transaction.category}` : ""}
-                  </p>
-                </Link>
-              ))}
-              {(data?.only_in_expenses ?? []).length === 0 ? (
-                <p className="rounded-md bg-surface-hi/65 p-3 text-sm text-muted">
-                  No unmatched Expenses entries in the imported statement window.
-                </p>
-              ) : null}
-            </div>
-          </FinancialPanel>
-        </aside>
-      </div>
+      {matchRow ? (
+        <MatchTransactionDialog
+          key={matchRow.id}
+          row={matchRow}
+          pending={rowMutation.isPending}
+          errorMessage={actionError}
+          onClose={() => {
+            if (!rowMutation.isPending) setMatchRow(null)
+          }}
+          onCreate={() => {
+            setMatchRow(null)
+            setCreateRow(matchRow)
+          }}
+          onSubmit={(transaction) =>
+            rowMutation.mutate({
+              kind: "match",
+              rowId: matchRow.id,
+              transactionId: transaction.id,
+              notice: `${rowTitle(matchRow)} matched`,
+            })
+          }
+        />
+      ) : null}
     </section>
   )
 }
 
-function Metric({
-  label,
-  value,
-  tone = "default",
+function InboxRow({
+  row,
+  leaving,
+  pending,
+  disabled,
+  onAccept,
+  onChoose,
+  onCreate,
 }: {
-  label: string
-  value: string
-  tone?: "default" | "red" | "green" | "blue"
+  row: BankStatementRow
+  leaving: boolean
+  pending: boolean
+  disabled: boolean
+  onAccept: () => void
+  onChoose: () => void
+  onCreate: () => void
 }) {
-  const toneClass =
-    tone === "red"
-      ? "text-semantic-red"
-      : tone === "green"
-        ? "text-semantic-green"
-        : tone === "blue"
-          ? "text-semantic-blue"
-          : "text-text"
+  const suggestion = row.suggested_transaction
   return (
-    <MetricLane
-      tone={
-        tone === "red"
-          ? "expense"
-          : tone === "green"
-            ? "income"
-            : tone === "blue"
-              ? "plan"
-              : "neutral"
-      }
-      className="min-h-[6.75rem]"
+    <article
+      data-testid={`reconciliation-row-${row.id}`}
+      className={`px-4 py-5 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none sm:px-5 ${
+        leaving ? "translate-x-3 opacity-0 motion-reduce:translate-x-0" : "opacity-100"
+      }`}
     >
-      <p className="text-xs font-semibold text-muted">
-        {label}
-      </p>
-      <p className={`mt-2 font-mono text-2xl font-semibold leading-none ${toneClass}`}>
-        {value}
-      </p>
-    </MetricLane>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-muted">
+          <StatusLabel status={row.status} />
+          <span className="whitespace-nowrap">
+            {formatEuroDate(row.booking_date)} booked
+            {row.value_date ? ` · ${formatEuroDate(row.value_date)} value` : ""}
+          </span>
+        </div>
+        <div className="mt-2 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold leading-6 text-text">
+              {rowTitle(row)}
+            </h3>
+            <p className="mt-0.5 line-clamp-2 text-[13px] leading-5 text-muted">
+              {row.raw_description}
+            </p>
+          </div>
+          <strong className={`shrink-0 font-mono text-base font-semibold leading-6 ${amountTone(row.amount_cents)}`}>
+            {formatCurrency(row.amount_cents)} {row.currency}
+          </strong>
+        </div>
+      </div>
+
+      {suggestion ? (
+        <div className="mt-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg bg-semantic-green/10 px-3 py-2">
+            <LinkSimpleIcon className="h-4 w-4 shrink-0 text-semantic-green" weight="bold" />
+            <CandidateSummary transaction={suggestion} />
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <AppButton type="button" tone="ghost" onClick={onCreate} disabled={disabled}>
+              Create new
+            </AppButton>
+            <AppButton type="button" onClick={onAccept} disabled={disabled}>
+              {pending ? "Matching…" : "Match"}
+            </AppButton>
+          </div>
+        </div>
+      ) : row.status === "ambiguous" ? (
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-text">
+            <WarningCircleIcon className="h-4 w-4 text-text" weight="fill" />
+            <span>{row.candidate_count} possible matches</span>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <AppButton type="button" tone="ghost" onClick={onCreate} disabled={disabled}>
+              Create new
+            </AppButton>
+            <AppButton type="button" onClick={onChoose} disabled={disabled}>
+              Choose match
+            </AppButton>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <strong className="text-sm font-semibold">No Expenses transaction found</strong>
+          <div className="flex flex-wrap justify-end gap-2">
+            <AppButton type="button" onClick={onCreate} disabled={disabled}>
+              <PlusIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
+              Create new transaction
+            </AppButton>
+          </div>
+        </div>
+      )}
+    </article>
   )
 }
 
-function BankRowCard({
+function StatusLabel({ status }: { status: BankStatementRow["status"] }) {
+  const copy =
+    status === "suggested"
+      ? "Suggested"
+      : status === "ambiguous"
+        ? "Choose match"
+        : "Not tracked"
+  const tone =
+    status === "suggested"
+      ? "bg-semantic-green/10 text-semantic-green"
+      : status === "ambiguous"
+        ? "bg-signal-yellow-soft text-text"
+        : "bg-semantic-red/10 text-semantic-red"
+  return (
+    <span className={`rounded-full px-2.5 py-1 font-sans text-[11px] font-semibold leading-none ${tone}`}>
+      {copy}
+    </span>
+  )
+}
+
+function CandidateSummary({
+  transaction,
+  showDescription = false,
+  linked = true,
+}: {
+  transaction: BankReconciliationTransaction
+  showDescription?: boolean
+  linked?: boolean
+}) {
+  const title = transaction.title || "Untitled transaction"
+  return (
+    <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
+      <span className="min-w-0">
+        {linked ? (
+          <Link
+            to={`/transactions/${transaction.id}`}
+            className="block truncate text-sm font-semibold text-text underline-offset-2 hover:underline"
+          >
+            {title}
+          </Link>
+        ) : (
+          <span className="block truncate text-sm font-semibold text-text">{title}</span>
+        )}
+        <span className="mt-0.5 block truncate text-xs text-muted">
+          {transactionDateLabel(transaction)}
+          {transaction.category ? ` · ${transaction.category}` : ""}
+        </span>
+        {showDescription && transaction.description ? (
+          <span className="mt-1 block truncate text-xs text-muted">{transaction.description}</span>
+        ) : null}
+      </span>
+      <strong className={`shrink-0 font-mono text-sm font-semibold ${amountTone(transaction.signed_amount_cents)}`}>
+        {formatCurrency(transaction.signed_amount_cents)} €
+      </strong>
+    </div>
+  )
+}
+
+function BankReference({ row }: { row: BankStatementRow }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-y border-border py-3">
+      <span className="min-w-0">
+        <strong className="block truncate text-sm">{rowTitle(row)}</strong>
+        <span className="font-mono text-xs text-muted">{formatEuroDate(row.booking_date)} booked</span>
+      </span>
+      <strong className={`shrink-0 font-mono ${amountTone(row.amount_cents)}`}>
+        {formatCurrency(row.amount_cents)} {row.currency}
+      </strong>
+    </div>
+  )
+}
+
+function CreateTransactionDialog({
+  row,
+  categories,
+  pending,
+  errorMessage,
+  onClose,
+  onSubmit,
+}: {
+  row: BankStatementRow
+  categories: CategoriesResponse["categories"]
+  pending: boolean
+  errorMessage: string
+  onClose: () => void
+  onSubmit: (payload: CreateTransactionPayload) => void
+}) {
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const [title, setTitle] = useState(rowTitle(row))
+  const [date, setDate] = useState(row.value_date ?? row.booking_date)
+  const [categoryId, setCategoryId] = useState("")
+  const [description, setDescription] = useState(row.purpose ?? row.raw_description)
+  const transactionType = row.amount_cents >= 0 ? "income" : "expense"
+  const availableCategories = categories.filter(
+    (category) => category.archived_at === null && category.type === transactionType
+  )
+  const selectedCategory = availableCategories.find(
+    (category) => String(category.id) === categoryId
+  )
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!title.trim()) return
+    onSubmit({
+      date,
+      category_id: categoryId ? Number(categoryId) : null,
+      title: title.trim(),
+      description: description.trim() || null,
+    })
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        aria-label="Create transaction"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          titleInputRef.current?.focus()
+        }}
+      >
+        <DialogHeader>
+          <div>
+            <DialogTitle>Create transaction</DialogTitle>
+            <DialogDescription className="sr-only">
+              Edit the transaction details before creating and matching it.
+            </DialogDescription>
+          </div>
+          <DialogClose asChild>
+            <AppButton
+              type="button"
+              tone="ghost"
+              className="h-10 w-10 rounded-full p-0"
+              aria-label="Close"
+              disabled={pending}
+            >
+              <XIcon className="h-4 w-4" />
+            </AppButton>
+          </DialogClose>
+        </DialogHeader>
+
+        <BankReference row={row} />
+
+        <form onSubmit={submit} className="mt-4 space-y-3">
+          <AppFieldLabel>
+            <span>Title</span>
+            <AppInput
+              ref={titleInputRef}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              required
+            />
+          </AppFieldLabel>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <AppFieldLabel>
+              <span>Transaction date</span>
+              <AppInput
+                type="date"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+                required
+              />
+            </AppFieldLabel>
+            <AppFieldLabel>
+              <span>Category</span>
+              <div className="flex items-center gap-2">
+                <CategoryIcon
+                  icon={selectedCategory?.icon ?? null}
+                  label={selectedCategory?.name ?? "Uncategorized"}
+                />
+                <AppNativeSelect
+                  value={categoryId}
+                  onChange={(event) => setCategoryId(event.target.value)}
+                >
+                  <option value="">Uncategorized</option>
+                  {availableCategories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </AppNativeSelect>
+              </div>
+            </AppFieldLabel>
+          </div>
+
+          <AppFieldLabel>
+            <span>Description (optional)</span>
+            <AppTextarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+            />
+          </AppFieldLabel>
+
+          {errorMessage ? (
+            <p className="text-sm text-semantic-red" role="alert">{errorMessage}</p>
+          ) : null}
+
+          <DialogFooter className="flex-col-reverse justify-end sm:flex-row">
+            <AppButton type="button" tone="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </AppButton>
+            <AppButton type="submit" disabled={pending || !title.trim() || !date}>
+              <PlusIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
+              {pending ? "Creating…" : "Create and match"}
+            </AppButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MatchTransactionDialog({
   row,
   pending,
-  onAction,
+  errorMessage,
+  onClose,
+  onCreate,
+  onSubmit,
 }: {
   row: BankStatementRow
   pending: boolean
-  onAction: (action: RowAction) => void
+  errorMessage: string
+  onClose: () => void
+  onCreate: () => void
+  onSubmit: (transaction: BankReconciliationTransaction) => void
 }) {
+  const [selectedId, setSelectedId] = useState(row.candidates[0]?.id ?? null)
+  const selected = row.candidates.find((candidate) => candidate.id === selectedId)
+
   return (
-    <article className="rounded-sm px-2 py-4 transition hover:bg-surface-hi/55">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(row.status)}`}>
-              {statusCopy[row.status]}
-            </span>
-            <span className="font-mono text-xs text-muted">
-              {formatEuroDate(row.booking_date)}
-              {row.value_date ? ` · value ${formatEuroDate(row.value_date)}` : ""}
-            </span>
-          </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        aria-label="Choose transaction"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5"
+      >
+        <DialogHeader>
           <div>
-            <h3 className="truncate font-head text-lg font-bold tracking-tight">
-              {row.payee || row.booking_text || "Bank transaction"}
-            </h3>
-            <p className="mt-1 line-clamp-2 text-sm text-muted">{row.raw_description}</p>
+            <DialogTitle>Choose transaction</DialogTitle>
+            <DialogDescription className="sr-only">
+              Select an existing transaction to match with this bank row.
+            </DialogDescription>
           </div>
-          {row.suggested_transaction ? (
-            <Link
-              to={`/transactions/${row.suggested_transaction.id}`}
-              className="inline-flex max-w-full items-center gap-2 rounded-md bg-faint/70 px-3 py-2 text-sm transition hover:bg-faint active:scale-[0.99]"
+          <DialogClose asChild>
+            <AppButton
+              type="button"
+              tone="ghost"
+              className="h-10 w-10 rounded-full p-0"
+              aria-label="Close"
+              disabled={pending}
             >
-              <CheckCircleIcon className="h-4 w-4 shrink-0 text-semantic-green" />
-              <span className="truncate">
-                {row.suggested_transaction.title || "Matched transaction"}
-              </span>
-              <span className="shrink-0 text-xs text-muted">
-                {transactionLabel(row.suggested_transaction)}
-              </span>
-            </Link>
-          ) : row.status === "ambiguous" ? (
-            <p className="inline-flex items-center gap-2 text-xs text-semantic-red">
-              <WarningCircleIcon className="h-4 w-4" />
-              {row.candidate_count} same-amount candidates in the booking window.
-            </p>
-          ) : null}
+              <XIcon className="h-4 w-4" />
+            </AppButton>
+          </DialogClose>
+        </DialogHeader>
+
+        <BankReference row={row} />
+
+        <div className="mt-4 space-y-2" role="radiogroup" aria-label="Possible transactions">
+          {row.candidates.map((candidate) => (
+            <button
+              key={candidate.id}
+              type="button"
+              role="radio"
+              aria-checked={selectedId === candidate.id}
+              className={`w-full rounded-xl border p-3.5 text-left transition-[border-color,background-color,transform] active:scale-[0.99] ${
+                selectedId === candidate.id
+                  ? "border-accent bg-accent/10"
+                  : "border-border bg-surface-hi hover:border-border-hi"
+              }`}
+              onClick={() => setSelectedId(candidate.id)}
+            >
+              <CandidateSummary transaction={candidate} showDescription linked={false} />
+            </button>
+          ))}
         </div>
 
-        <div className="flex shrink-0 flex-col gap-3 md:items-end">
-          <p className={`font-mono text-xl font-semibold ${amountTone(row.amount_cents)}`}>
-            {formatCurrency(row.amount_cents)} {row.currency}
-          </p>
-          <div className="flex flex-wrap justify-start gap-2 md:justify-end">
-            {row.status === "suggested" ? (
-              <AppButton
-                type="button"
-                onClick={() => onAction("accept-suggestion")}
-                disabled={pending}
-              >
-                Accept match
-              </AppButton>
-            ) : null}
-            {row.status === "missing" ? (
-              <AppButton
-                type="button"
-                onClick={() => onAction("create-transaction")}
-                disabled={pending}
-              >
-                Create transaction
-              </AppButton>
-            ) : null}
-            {row.status === "missing" || row.status === "ambiguous" ? (
-              <AppButton
-                type="button"
-                tone="ghost"
-                onClick={() => onAction("review")}
-                disabled={pending}
-              >
-                Mark reviewed
-              </AppButton>
-            ) : null}
-            {row.status === "reviewed" || row.status === "matched" ? (
-              <AppButton
-                type="button"
-                tone="ghost"
-                onClick={() => onAction("reopen")}
-                disabled={pending}
-              >
-                Reopen
-              </AppButton>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </article>
+        {errorMessage ? (
+          <p className="mt-3 text-sm text-semantic-red" role="alert">{errorMessage}</p>
+        ) : null}
+
+        <DialogFooter className="flex-col-reverse justify-between sm:flex-row">
+          <AppButton type="button" tone="ghost" onClick={onCreate} disabled={pending}>
+            Create new instead
+          </AppButton>
+          <AppButton
+            type="button"
+            disabled={pending || !selected}
+            onClick={() => selected && onSubmit(selected)}
+          >
+            <LinkSimpleIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
+            {pending ? "Matching…" : "Match selected"}
+          </AppButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

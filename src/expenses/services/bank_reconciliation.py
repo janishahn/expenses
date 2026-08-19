@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from expenses.db.models import BankStatementRow, Transaction, TransactionType
-from expenses.schemas import TransactionIn
+from expenses.schemas import BankTransactionCreateIn, TransactionIn
 from expenses.services.main import TransactionService
 
 
@@ -391,6 +391,24 @@ class BankReconciliationService:
         row.reviewed_at = None
         self.session.commit()
 
+    def match_transaction(self, row_id: int, transaction_id: int) -> None:
+        row = self._get_row(row_id)
+        reserved_transaction_ids = set(
+            self.session.scalars(
+                select(BankStatementRow.matched_transaction_id).where(
+                    BankStatementRow.user_id == self.user_id,
+                    BankStatementRow.id != row.id,
+                    BankStatementRow.matched_transaction_id.is_not(None),
+                )
+            )
+        )
+        candidates = self._candidate_transactions(row, reserved_transaction_ids)
+        if transaction_id not in {candidate.id for candidate in candidates}:
+            raise ValueError("Transaction is not an available match for this bank row")
+        row.matched_transaction_id = transaction_id
+        row.reviewed_at = None
+        self.session.commit()
+
     def mark_reviewed(self, row_id: int) -> None:
         row = self._get_row(row_id)
         row.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -402,26 +420,40 @@ class BankReconciliationService:
         row.matched_transaction_id = None
         self.session.commit()
 
-    def create_transaction(self, row_id: int) -> int:
+    def create_transaction(
+        self, row_id: int, data: BankTransactionCreateIn | None = None
+    ) -> int:
         row = self._get_row(row_id)
-        title = (row.payee or row.booking_text or row.purpose or "Bank transaction")[
-            :200
-        ]
+        title = (
+            data.title
+            if data is not None
+            else (row.payee or row.booking_text or row.purpose or "Bank transaction")[
+                :200
+            ]
+        )
+        transaction_date = data.date if data is not None else row.booking_date
+        category_id = data.category_id if data is not None else None
+        description = (
+            data.description
+            if data is not None
+            else f"Commerzbank CSV: {row.raw_description}"
+        )
         txn_type = (
             TransactionType.income if row.amount_cents > 0 else TransactionType.expense
         )
         txn = TransactionService(self.session, self.user_id).create(
             TransactionIn(
-                date=row.booking_date,
-                occurred_at=datetime.combine(row.booking_date, time(12, 0)),
+                date=transaction_date,
+                occurred_at=datetime.combine(transaction_date, time(12, 0)),
                 type=txn_type,
                 amount_cents=abs(row.amount_cents),
-                category_id=None,
+                category_id=category_id,
                 title=title,
-                description=f"Commerzbank CSV: {row.raw_description}",
+                description=description,
                 tags=[],
             ),
             source="reconciliation",
+            commit=False,
         )
         row.matched_transaction_id = txn.id
         row.reviewed_at = None
@@ -510,6 +542,11 @@ class BankReconciliationService:
                     **self._serialize_bank_row_base(row),
                     "status": "matched",
                     "candidate_count": 1,
+                    "candidates": [
+                        self._serialize_transaction(
+                            row.matched_transaction, row.booking_date
+                        )
+                    ],
                     "suggested_transaction": self._serialize_transaction(
                         row.matched_transaction, row.booking_date
                     ),
@@ -522,6 +559,7 @@ class BankReconciliationService:
                     **self._serialize_bank_row_base(row),
                     "status": "reviewed",
                     "candidate_count": 0,
+                    "candidates": [],
                     "suggested_transaction": None,
                 },
                 None,
@@ -535,6 +573,9 @@ class BankReconciliationService:
                     **self._serialize_bank_row_base(row),
                     "status": "suggested",
                     "candidate_count": 1,
+                    "candidates": [
+                        self._serialize_transaction(candidate, row.booking_date)
+                    ],
                     "suggested_transaction": self._serialize_transaction(
                         candidate, row.booking_date
                     ),
@@ -547,6 +588,10 @@ class BankReconciliationService:
                 **self._serialize_bank_row_base(row),
                 "status": status,
                 "candidate_count": len(candidates),
+                "candidates": [
+                    self._serialize_transaction(candidate, row.booking_date)
+                    for candidate in candidates
+                ],
                 "suggested_transaction": None,
             },
             None,
@@ -579,6 +624,7 @@ class BankReconciliationService:
             if txn.type == TransactionType.income
             else -txn.amount_cents,
             "title": txn.title,
+            "description": txn.description,
             "category": txn.category.name if txn.category else None,
             "date_delta_days": (booking_date - txn.date).days,
         }

@@ -639,6 +639,17 @@
             "title": "Date Delta Days",
             "type": "integer"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -700,6 +711,19 @@
           "status"
         ],
         "title": "BankRowActionResponseOut",
+        "type": "object"
+      },
+      "BankRowMatchIn": {
+        "properties": {
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transaction_id"
+        ],
+        "title": "BankRowMatchIn",
         "type": "object"
       },
       "BankStatementImportResponseOut": {
@@ -868,6 +892,13 @@
             "title": "Candidate Count",
             "type": "integer"
           },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/BankReconciliationTransactionOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
           "currency": {
             "title": "Currency",
             "type": "string"
@@ -956,9 +987,54 @@
           "currency",
           "raw_description",
           "status",
-          "candidate_count"
+          "candidate_count",
+          "candidates"
         ],
         "title": "BankStatementRowOut",
+        "type": "object"
+      },
+      "BankTransactionCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "title"
+        ],
+        "title": "BankTransactionCreateIn",
         "type": "object"
       },
       "Body_api_commit_commerzbank_csv_reconciliation_api_reconciliation_commerzbank_csv_commit_post": {
@@ -10572,6 +10648,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BankTransactionCreateIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -10595,6 +10688,55 @@
           }
         },
         "summary": "Api Create Transaction From Bank Row"
+      }
+    },
+    "/api/reconciliation/bank-rows/{row_id}/match-transaction": {
+      "post": {
+        "operationId": "api_match_bank_row_transaction_api_reconciliation_bank_rows__row_id__match_transaction_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "row_id",
+            "required": true,
+            "schema": {
+              "title": "Row Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankRowMatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankRowActionResponseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Match Bank Row Transaction"
       }
     },
     "/api/reconciliation/bank-rows/{row_id}/reopen": {

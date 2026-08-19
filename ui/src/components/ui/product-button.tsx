@@ -4,21 +4,24 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-const appButtonVariants = cva("", {
-  variants: {
-    tone: {
-      primary: "btn-primary",
-      secondary: "btn-secondary",
-      ghost: "btn-ghost",
-      danger: "btn-danger",
-      inline: "btn-inline",
-      inlineDanger: "btn-inline-danger",
+const appButtonVariants = cva(
+  "has-data-[icon=inline-start]:gap-1.5 has-data-[icon=inline-end]:gap-1.5",
+  {
+    variants: {
+      tone: {
+        primary: "btn-primary",
+        secondary: "btn-secondary",
+        ghost: "btn-ghost",
+        danger: "btn-danger",
+        inline: "btn-inline",
+        inlineDanger: "btn-inline-danger",
+      },
     },
-  },
-  defaultVariants: {
-    tone: "primary",
-  },
-})
+    defaultVariants: {
+      tone: "primary",
+    },
+  }
+)
 
 type AppButtonProps = Omit<React.ComponentProps<typeof Button>, "variant" | "size"> &
   VariantProps<typeof appButtonVariants>
