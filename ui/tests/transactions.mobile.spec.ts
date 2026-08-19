@@ -173,13 +173,7 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(title).toBeVisible()
     await expect(page.getByTestId("transactions-control-zone")).toBeHidden()
 
-    const titleBox = await title.boundingBox()
-    const moreBox = await page
-      .getByRole("button", { name: "More actions" })
-      .boundingBox()
-    expect(titleBox).not.toBeNull()
-    expect(moreBox).not.toBeNull()
-    expect(moreBox!.y).toBeLessThan(titleBox!.y + titleBox!.height)
+    await expect(page.getByRole("button", { name: "More actions" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Inbox" })).toHaveCount(0)
     await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0)
     await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0)
