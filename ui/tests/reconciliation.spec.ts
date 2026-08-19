@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures"
+import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 const emptyReconciliation = {
   summary: {
@@ -205,14 +206,19 @@ test.describe("Reconciliation", () => {
 
     await page.getByTestId("reconciliation-row-2").getByRole("button", { name: "Choose match" }).click()
     const matchDialog = page.getByRole("dialog", { name: "Choose transaction" })
-    await matchDialog.getByRole("radio", { name: /Cafe one/ }).click()
+    const cafeOne = matchDialog.getByRole("radio", { name: /Cafe one/ })
+    await cafeOne.focus()
+    await cafeOne.press("Space")
+    await expect(cafeOne).toBeChecked()
     await matchDialog.getByRole("button", { name: "Match selected" }).click()
     await expect(page.getByTestId("reconciliation-row-2")).toHaveCount(0)
 
-    await page
-      .getByTestId("reconciliation-row-3")
-      .getByRole("button", { name: "Create new transaction" })
-      .click()
+    const missingRow = page.getByTestId("reconciliation-row-3")
+    await missingRow.getByRole("button", { name: "Mark reviewed" }).click()
+    await expect(missingRow).toHaveCount(0)
+    await page.getByRole("button", { name: "Undo" }).click()
+    await expect(missingRow).toBeVisible()
+    await missingRow.getByRole("button", { name: "Create new transaction" }).click()
     const createDialog = page.getByRole("dialog", { name: "Create transaction" })
     await expect(createDialog.getByLabel("Title")).toHaveValue("AMAZON EU")
     await createDialog.getByLabel("Title").fill("USB-C cable")
@@ -267,6 +273,76 @@ test.describe("Reconciliation", () => {
       date: "2026-05-03",
       amount_cents: 9_137,
       description: "Weekend trip",
+    })
+  })
+
+  test("chooses an ambiguous match through the real backend", async ({ page }) => {
+    const suffix = Date.now()
+    const csrfToken = await getCsrfToken(page.request)
+    const categoryId = await ensureCategory(
+      page.request,
+      csrfToken,
+      "expense",
+      "Reconciliation match"
+    )
+    const olderTransactionId = await createTransaction(page.request, csrfToken, {
+      date: "2026-06-03",
+      occurred_at: "2026-06-03T12:00:00",
+      type: "expense",
+      amount_cents: 7_319,
+      category_id: categoryId,
+      title: `Older cafe ${suffix}`,
+      tags: [],
+    })
+    await createTransaction(page.request, csrfToken, {
+      date: "2026-06-04",
+      occurred_at: "2026-06-04T12:00:00",
+      type: "expense",
+      amount_cents: 7_319,
+      category_id: categoryId,
+      title: `Newer cafe ${suffix}`,
+      tags: [],
+    })
+    const payee = `Ambiguous cafe ${suffix}`
+    const content = [
+      "Buchungstag;Wertstellung;Buchungstext;Auftraggeber / Begünstigter;Betrag;Währung;Verwendungszweck",
+      `05.06.2026;05.06.2026;Kartenzahlung;${payee};-73,19;EUR;Coffee`,
+    ].join("\n")
+
+    await page.goto("/reconciliation")
+    await page.getByLabel("CSV file").setInputFiles({
+      name: `desktop-match-${suffix}.csv`,
+      mimeType: "text/csv",
+      buffer: Buffer.from(content, "latin1"),
+    })
+    await page.getByRole("button", { name: "Reconcile", exact: true }).click()
+
+    const row = page.locator("article", { hasText: payee })
+    await expect(row.getByText("2 possible matches")).toBeVisible()
+    await row.getByRole("button", { name: "Mark reviewed" }).click()
+    await expect(row).toHaveCount(0)
+    await page.getByRole("button", { name: "Undo" }).click()
+    await expect(row.getByText("2 possible matches")).toBeVisible()
+    await row.getByRole("button", { name: "Choose match" }).click()
+    const dialog = page.getByRole("dialog", { name: "Choose transaction" })
+    const olderMatch = dialog.getByRole("radio", {
+      name: new RegExp(`Older cafe ${suffix}`),
+    })
+    await olderMatch.focus()
+    await olderMatch.press("Space")
+    await expect(olderMatch).toBeChecked()
+    await dialog.getByRole("button", { name: "Match selected" }).click()
+
+    await expect(dialog).toHaveCount(0)
+    await expect(row).toHaveCount(0)
+    const reconciliation = await page.request.get("/api/reconciliation")
+    expect(reconciliation.ok()).toBeTruthy()
+    const matchedRow = (await reconciliation.json()).rows.find(
+      (item: { payee: string }) => item.payee === payee
+    )
+    expect(matchedRow).toMatchObject({
+      status: "matched",
+      suggested_transaction: { id: olderTransactionId },
     })
   })
 })

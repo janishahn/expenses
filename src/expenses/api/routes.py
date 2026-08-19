@@ -213,7 +213,11 @@ from expenses.services import (
     ReportService,
     rebuild_monthly_rollups,
 )
-from expenses.services.bank_reconciliation import BankReconciliationService
+from expenses.services.bank_reconciliation import (
+    BankReconciliationService,
+    BankRowAlreadyResolvedError,
+    BankRowNotFoundError,
+)
 from expenses.reports.pdf_renderer import render_report_html
 
 router = APIRouter()
@@ -3302,6 +3306,10 @@ def api_accept_bank_row_suggestion(
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).accept_suggestion(row_id)
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -3316,8 +3324,10 @@ def api_review_bank_row(row_id: int, request: Request, db: Session = Depends(get
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).mark_reviewed(row_id)
-    except ValueError as exc:
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -3330,7 +3340,7 @@ def api_reopen_bank_row(row_id: int, request: Request, db: Session = Depends(get
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).reopen(row_id)
-    except ValueError as exc:
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
 
@@ -3351,6 +3361,10 @@ def api_match_bank_row_transaction(
         BankReconciliationService(db, user_id=user_id).match_transaction(
             row_id, payload.transaction_id
         )
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok", "transaction_id": payload.transaction_id}
@@ -3372,8 +3386,12 @@ def api_create_transaction_from_bank_row(
         transaction_id = BankReconciliationService(
             db, user_id=user_id
         ).create_transaction(row_id, payload)
-    except ValueError as exc:
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok", "transaction_id": transaction_id}
 
 

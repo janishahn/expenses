@@ -19,6 +19,14 @@ COMMERZBANK_CSV_SOURCE = "commerzbank_csv"
 MATCH_WINDOW_DAYS = 5
 
 
+class BankRowNotFoundError(ValueError):
+    pass
+
+
+class BankRowAlreadyResolvedError(ValueError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedBankStatementRow:
     booking_date: date
@@ -375,6 +383,7 @@ class BankReconciliationService:
 
     def accept_suggestion(self, row_id: int) -> None:
         row = self._get_row(row_id)
+        self._require_unresolved(row)
         reserved_transaction_ids = set(
             self.session.scalars(
                 select(BankStatementRow.matched_transaction_id).where(
@@ -393,6 +402,7 @@ class BankReconciliationService:
 
     def match_transaction(self, row_id: int, transaction_id: int) -> None:
         row = self._get_row(row_id)
+        self._require_unresolved(row)
         reserved_transaction_ids = set(
             self.session.scalars(
                 select(BankStatementRow.matched_transaction_id).where(
@@ -411,6 +421,7 @@ class BankReconciliationService:
 
     def mark_reviewed(self, row_id: int) -> None:
         row = self._get_row(row_id)
+        self._require_unresolved(row)
         row.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
         self.session.commit()
 
@@ -424,6 +435,7 @@ class BankReconciliationService:
         self, row_id: int, data: BankTransactionCreateIn | None = None
     ) -> int:
         row = self._get_row(row_id)
+        self._require_unresolved(row)
         title = (
             data.title
             if data is not None
@@ -481,8 +493,15 @@ class BankReconciliationService:
             )
         )
         if row is None:
-            raise ValueError("Bank row not found")
+            raise BankRowNotFoundError("Bank row not found")
         return row
+
+    @staticmethod
+    def _require_unresolved(row: BankStatementRow) -> None:
+        if row.matched_transaction_id is not None or row.reviewed_at is not None:
+            raise BankRowAlreadyResolvedError(
+                "Bank row is already resolved; reopen it before choosing another outcome"
+            )
 
     def _candidate_transactions(
         self, row: BankStatementRow, reserved_ids: set[int]

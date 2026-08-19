@@ -50,6 +50,7 @@ type RowMutation =
   | { kind: "accept"; rowId: number; notice: string }
   | { kind: "match"; rowId: number; transactionId: number; notice: string }
   | { kind: "create"; rowId: number; payload: CreateTransactionPayload; notice: string }
+  | { kind: "review"; rowId: number; notice: string }
   | { kind: "reopen"; rowId: number }
 
 type ActionNotice = {
@@ -131,10 +132,14 @@ function ReconciliationPage() {
     },
   })
 
-  const invalidateReconciliation = () => {
+  const invalidateReconciliation = (transactionCreated = false) => {
     queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
+    if (!transactionCreated) return
     queryClient.invalidateQueries({ queryKey: ["transactions"] })
     queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    queryClient.invalidateQueries({ queryKey: ["insights"] })
+    queryClient.invalidateQueries({ queryKey: ["budgets"] })
+    queryClient.invalidateQueries({ queryKey: ["forecast"] })
   }
 
   const rowMutation = useMutation({
@@ -158,6 +163,12 @@ function ReconciliationPage() {
         return apiFetch<{ status: string; transaction_id: number }>(
           `/api/reconciliation/bank-rows/${mutation.rowId}/create-transaction`,
           { method: "POST", body: JSON.stringify(mutation.payload) }
+        )
+      }
+      if (mutation.kind === "review") {
+        return apiFetch<{ status: string }>(
+          `/api/reconciliation/bank-rows/${mutation.rowId}/review`,
+          { method: "POST" }
         )
       }
       return apiFetch<{ status: string }>(
@@ -201,7 +212,10 @@ function ReconciliationPage() {
                 suggested_count:
                   current.summary.suggested_count -
                   (resolvedRow.status === "suggested" ? 1 : 0),
-                matched_count: current.summary.matched_count + 1,
+                matched_count:
+                  current.summary.matched_count + (mutation.kind === "review" ? 0 : 1),
+                reviewed_count:
+                  current.summary.reviewed_count + (mutation.kind === "review" ? 1 : 0),
               },
               rows: current.rows.filter((row) => row.id !== mutation.rowId),
             }
@@ -209,7 +223,7 @@ function ReconciliationPage() {
         )
         removalTimer.current = null
         setLeavingRowId(null)
-        invalidateReconciliation()
+        invalidateReconciliation(mutation.kind === "create")
       }, 180)
     },
     onError: (mutationError) => {
@@ -371,6 +385,13 @@ function ReconciliationPage() {
                   setActionError("")
                   setCreateRow(row)
                 }}
+                onReview={() =>
+                  rowMutation.mutate({
+                    kind: "review",
+                    rowId: row.id,
+                    notice: `${rowTitle(row)} marked reviewed`,
+                  })
+                }
               />
             ))}
           </div>
@@ -467,6 +488,7 @@ function InboxRow({
   onAccept,
   onChoose,
   onCreate,
+  onReview,
 }: {
   row: BankStatementRow
   leaving: boolean
@@ -475,6 +497,7 @@ function InboxRow({
   onAccept: () => void
   onChoose: () => void
   onCreate: () => void
+  onReview: () => void
 }) {
   const suggestion = row.suggested_transaction
   return (
@@ -529,6 +552,9 @@ function InboxRow({
             <span>{row.candidate_count} possible matches</span>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
+            <AppButton type="button" tone="ghost" onClick={onReview} disabled={disabled}>
+              Mark reviewed
+            </AppButton>
             <AppButton type="button" tone="ghost" onClick={onCreate} disabled={disabled}>
               Create new
             </AppButton>
@@ -541,6 +567,9 @@ function InboxRow({
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <strong className="text-sm font-semibold">No Expenses transaction found</strong>
           <div className="flex flex-wrap justify-end gap-2">
+            <AppButton type="button" tone="ghost" onClick={onReview} disabled={disabled}>
+              Mark reviewed
+            </AppButton>
             <AppButton type="button" onClick={onCreate} disabled={disabled}>
               <PlusIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
               Create new transaction
@@ -810,24 +839,30 @@ function MatchTransactionDialog({
 
         <BankReference row={row} />
 
-        <div className="mt-4 space-y-2" role="radiogroup" aria-label="Possible transactions">
+        <fieldset className="mt-4 space-y-2">
+          <legend className="sr-only">Possible transactions</legend>
           {row.candidates.map((candidate) => (
-            <button
+            <label
               key={candidate.id}
-              type="button"
-              role="radio"
-              aria-checked={selectedId === candidate.id}
-              className={`w-full rounded-xl border p-3.5 text-left transition-[border-color,background-color,transform] active:scale-[0.99] ${
+              className={`block w-full cursor-pointer rounded-xl border p-3.5 text-left transition-[border-color,background-color,transform] focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2 active:scale-[0.99] ${
                 selectedId === candidate.id
                   ? "border-accent bg-accent/10"
                   : "border-border bg-surface-hi hover:border-border-hi"
               }`}
-              onClick={() => setSelectedId(candidate.id)}
             >
+              <input
+                type="radio"
+                name={`reconciliation-match-${row.id}`}
+                value={candidate.id}
+                checked={selectedId === candidate.id}
+                onChange={() => setSelectedId(candidate.id)}
+                className="sr-only"
+                disabled={pending}
+              />
               <CandidateSummary transaction={candidate} showDescription linked={false} />
-            </button>
+            </label>
           ))}
-        </div>
+        </fieldset>
 
         {errorMessage ? (
           <p className="mt-3 text-sm text-semantic-red" role="alert">{errorMessage}</p>
