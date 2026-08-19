@@ -31,6 +31,56 @@ test.describe("Admin Page", () => {
     await expect(backupLink).toContainText("Download backup")
   })
 
+  test("reports purge and rebuild outcomes inline without native dialogs", async ({
+    page,
+  }) => {
+    const nativeDialogs: string[] = []
+    page.on("dialog", async (dialog) => {
+      nativeDialogs.push(dialog.message())
+      await dialog.dismiss()
+    })
+
+    await page.getByRole("button", { name: "Purge now" }).click()
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Purge", exact: true })
+      .click()
+    await expect(
+      page.getByRole("status").filter({ hasText: "Deleted transactions purged successfully." })
+    ).toBeVisible()
+
+    await page.getByRole("button", { name: "Rebuild now" }).click()
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Rebuild", exact: true })
+      .click()
+    await expect(
+      page.getByRole("status").filter({ hasText: "Monthly rollups rebuilt successfully." })
+    ).toBeVisible()
+
+    expect(nativeDialogs).toEqual([])
+  })
+
+  test("shows rebuild failures beside the action", async ({ page }) => {
+    await page.route("**/api/admin/rebuild-rollups", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Rollup storage is temporarily unavailable." }),
+      })
+    })
+
+    await page.getByRole("button", { name: "Rebuild now" }).click()
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Rebuild", exact: true })
+      .click()
+
+    await expect(page.getByRole("alert")).toContainText(
+      "Rollup storage is temporarily unavailable."
+    )
+  })
+
   test("requests structured error logs for the Errors tab", async ({ page }) => {
     let logsRequestUrl: URL | null = null
     await page.route("**/api/admin/logs?*", async (route) => {

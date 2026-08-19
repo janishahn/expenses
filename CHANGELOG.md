@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Unified analytical page headers, ordinary form fields, inline actions, and ledger surfaces around the shared web UI patterns so sibling workflows now keep the same hierarchy and control treatment on desktop and mobile.
+- Admin purge, rollup rebuild, and recurring catch-up actions now report accessible inline outcomes instead of interrupting the workflow with native browser alerts.
 
 ### Fixed
 - Keyboard focus now enters and stays within the responsive navigation drawer without being reset mid-navigation, returns to the invoking control after drawers, dialogs, and sheets close, moves into revealed transaction search, and remains on a template after keyboard reordering; Admin logs also expose explicit keyboard and screen-reader Inspect actions.

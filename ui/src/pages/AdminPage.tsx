@@ -135,6 +135,14 @@ function AdminPage() {
     tone: "success" | "error"
     text: string
   } | null>(null)
+  const [purgeMessage, setPurgeMessage] = useState<{
+    tone: "success" | "error"
+    text: string
+  } | null>(null)
+  const [rebuildMessage, setRebuildMessage] = useState<{
+    tone: "success" | "error"
+    text: string
+  } | null>(null)
   const [logFilter, setLogFilter] = useState<LogFilter>("errors")
   const [logSearch, setLogSearch] = useState("")
   const [logCursor, setLogCursor] = useState<string | null>(null)
@@ -251,9 +259,18 @@ function AdminPage() {
       apiFetch("/api/admin/purge-deleted", {
         method: "POST",
         body: JSON.stringify({ days }),
-      }),
+    }),
     onSuccess: () => {
-      alert("Deleted transactions purged successfully")
+      setPurgeMessage({
+        tone: "success",
+        text: "Deleted transactions purged successfully.",
+      })
+    },
+    onError: (error) => {
+      setPurgeMessage({
+        tone: "error",
+        text: getApiErrorMessage(error, "Unable to purge deleted transactions."),
+      })
     },
   })
 
@@ -261,7 +278,16 @@ function AdminPage() {
     mutationFn: () =>
       apiFetch("/api/admin/rebuild-rollups", { method: "POST" }),
     onSuccess: () => {
-      alert("Monthly rollups rebuilt successfully")
+      setRebuildMessage({
+        tone: "success",
+        text: "Monthly rollups rebuilt successfully.",
+      })
+    },
+    onError: (error) => {
+      setRebuildMessage({
+        tone: "error",
+        text: getApiErrorMessage(error, "Unable to rebuild monthly rollups."),
+      })
     },
   })
 
@@ -310,6 +336,7 @@ function AdminPage() {
     if (!confirmed) {
       return
     }
+    setPurgeMessage(null)
     purgeMutation.mutate(Number(purgeDays) || 30)
   }
 
@@ -322,6 +349,7 @@ function AdminPage() {
     if (!confirmed) {
       return
     }
+    setRebuildMessage(null)
     rebuildMutation.mutate()
   }
 
@@ -572,7 +600,10 @@ function AdminPage() {
               min={1}
               max={365}
               value={purgeDays}
-              onChange={(event) => setPurgeDays(event.target.value)}
+              onChange={(event) => {
+                setPurgeDays(event.target.value)
+                setPurgeMessage(null)
+              }}
               className="w-24"
               placeholder="30"
             />
@@ -586,6 +617,18 @@ function AdminPage() {
               {purgeMutation.isPending ? "Purging…" : "Purge now"}
             </AppButton>
           </div>
+          {purgeMessage && (
+            <p
+              role={purgeMessage.tone === "error" ? "alert" : "status"}
+              className={`text-sm ${
+                purgeMessage.tone === "error"
+                  ? "text-semantic-red"
+                  : "text-semantic-green"
+              }`}
+            >
+              {purgeMessage.text}
+            </p>
+          )}
         </MetricLane>
 
         <MetricLane tone="neutral" className="space-y-4">
@@ -602,6 +645,18 @@ function AdminPage() {
           >
             {rebuildMutation.isPending ? "Rebuilding…" : "Rebuild now"}
           </AppButton>
+          {rebuildMessage && (
+            <p
+              role={rebuildMessage.tone === "error" ? "alert" : "status"}
+              className={`text-sm ${
+                rebuildMessage.tone === "error"
+                  ? "text-semantic-red"
+                  : "text-semantic-green"
+              }`}
+            >
+              {rebuildMessage.text}
+            </p>
+          )}
         </MetricLane>
 
         <MetricLane tone="neutral" className="space-y-4">
@@ -619,6 +674,7 @@ function AdminPage() {
           </AppButton>
           {recurringCatchUpMessage && (
             <p
+              role={recurringCatchUpMessage.tone === "error" ? "alert" : "status"}
               className={`text-sm ${
                 recurringCatchUpMessage.tone === "error"
                   ? "text-semantic-red"
