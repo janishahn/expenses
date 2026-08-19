@@ -7,6 +7,7 @@ import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import PageIntro from "../components/PageIntro"
 import { palette } from "../components/charts/palette"
 import {
   FinancialPanel,
@@ -179,12 +180,10 @@ function DigestPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <header className="min-h-11">
-        <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
-          Digest
-        </h1>
-        <p className="mt-1 text-sm text-muted">A weekly pulse on spending, pace, and exceptions</p>
-      </header>
+      <PageIntro
+        title="Digest"
+        description="A weekly pulse on spending, pace, and exceptions"
+      />
 
       <WorkspaceToolbar className="w-fit">
         <AppButton

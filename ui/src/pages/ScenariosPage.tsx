@@ -9,6 +9,7 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency } from "../app/format"
+import PageIntro from "../components/PageIntro"
 import LineChart from "../components/charts/LineChart"
 import { readThemeAlpha, readThemeColor } from "../components/charts/chartSetup"
 import SegmentedControl from "../components/SegmentedControl"
@@ -20,6 +21,11 @@ import {
 } from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
+import {
+  AppFieldLabel,
+  AppInput,
+  AppNativeSelect,
+} from "../components/ui/product-fields"
 import { useThemePreference } from "../theme/useThemePreference"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
@@ -420,17 +426,14 @@ function ScenariosPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <header className="flex min-h-11 flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
-            What If
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            Test changes without modifying your real transactions or commitments
-          </p>
-        </div>
-        {scenarioFetching ? <span className="loading-hint">Updating…</span> : null}
-      </header>
+      <PageIntro
+        title="What If"
+        description="Test changes without modifying your real transactions or commitments"
+        titleAccessory={
+          scenarioFetching ? <span className="loading-hint">Updating…</span> : null
+        }
+        titleAccessoryAlign="end"
+      />
 
       <WorkspaceToolbar>
         <SegmentedControl
@@ -489,10 +492,9 @@ function ScenariosPage() {
             <span className="mono-meta text-muted">{modifications.length} active</span>
           </SectionHeading>
           <div className="space-y-4 px-4 py-4">
-            <label className="form-label">
+            <AppFieldLabel>
               Adjustment type
-              <select
-                className="mt-1 w-full field"
+              <AppNativeSelect
                 value={selectedType}
                 onChange={(event) =>
                   setSelectedType(
@@ -510,14 +512,13 @@ function ScenariosPage() {
                 <option value="modify_rule">Modify existing rule</option>
                 <option value="one_time">One-time event</option>
                 <option value="adjust_category">Adjust category estimate</option>
-              </select>
-            </label>
+              </AppNativeSelect>
+            </AppFieldLabel>
 
             {selectedType === "remove_rule" ? (
-              <label className="form-label">
+              <AppFieldLabel>
                 Rule
-                <select
-                  className="mt-1 w-full field"
+                <AppNativeSelect
                   value={removeRuleId}
                   onChange={(event) => setRemoveRuleId(event.target.value)}
                 >
@@ -527,24 +528,22 @@ function ScenariosPage() {
                       {rule.name || "Recurring rule"} ({formatCurrency(rule.amount_cents)} €)
                     </option>
                   ))}
-                </select>
-              </label>
+                </AppNativeSelect>
+              </AppFieldLabel>
             ) : null}
 
             {selectedType === "add_rule" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="form-label sm:col-span-2">
+                <AppFieldLabel className="sm:col-span-2">
                   Name
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={addName}
                     onChange={(event) => setAddName(event.target.value)}
                   />
-                </label>
-                <label className="form-label">
+                </AppFieldLabel>
+                <AppFieldLabel>
                   Type
-                  <select
-                    className="mt-1 w-full field"
+                  <AppNativeSelect
                     value={addType}
                     onChange={(event) =>
                       setAddType(event.target.value as "income" | "expense")
@@ -552,12 +551,11 @@ function ScenariosPage() {
                   >
                     <option value="expense">Expense</option>
                     <option value="income">Income</option>
-                  </select>
-                </label>
-                <label className="form-label">
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel>
                   Interval
-                  <select
-                    className="mt-1 w-full field"
+                  <AppNativeSelect
                     value={addInterval}
                     onChange={(event) =>
                       setAddInterval(
@@ -568,26 +566,24 @@ function ScenariosPage() {
                     <option value="monthly">Monthly</option>
                     <option value="yearly">Yearly</option>
                     <option value="weekly">Weekly</option>
-                  </select>
-                </label>
-                <label className="form-label sm:col-span-2">
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel className="sm:col-span-2">
                   Amount
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={addAmount}
                     onChange={(event) => setAddAmount(event.target.value)}
                     placeholder="0.00"
                   />
-                </label>
+                </AppFieldLabel>
               </div>
             ) : null}
 
             {selectedType === "modify_rule" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="form-label sm:col-span-2">
+                <AppFieldLabel className="sm:col-span-2">
                   Rule
-                  <select
-                    className="mt-1 w-full field"
+                  <AppNativeSelect
                     value={modifyRuleId}
                     onChange={(event) => setModifyRuleId(event.target.value)}
                   >
@@ -597,43 +593,39 @@ function ScenariosPage() {
                         {rule.name || "Recurring rule"} ({formatCurrency(rule.amount_cents)} €)
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="form-label">
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel>
                   New amount
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={modifyAmount}
                     onChange={(event) => setModifyAmount(event.target.value)}
                     placeholder="0.00"
                   />
-                </label>
-                <label className="form-label">
+                </AppFieldLabel>
+                <AppFieldLabel>
                   Effective month
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     type="month"
                     value={modifyMonth}
                     onChange={(event) => setModifyMonth(event.target.value)}
                   />
-                </label>
+                </AppFieldLabel>
               </div>
             ) : null}
 
             {selectedType === "one_time" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="form-label sm:col-span-2">
+                <AppFieldLabel className="sm:col-span-2">
                   Name
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={oneTimeName}
                     onChange={(event) => setOneTimeName(event.target.value)}
                   />
-                </label>
-                <label className="form-label">
+                </AppFieldLabel>
+                <AppFieldLabel>
                   Type
-                  <select
-                    className="mt-1 w-full field"
+                  <AppNativeSelect
                     value={oneTimeType}
                     onChange={(event) =>
                       setOneTimeType(event.target.value as "income" | "expense")
@@ -641,35 +633,32 @@ function ScenariosPage() {
                   >
                     <option value="expense">Expense</option>
                     <option value="income">Income</option>
-                  </select>
-                </label>
-                <label className="form-label">
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel>
                   Month
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     type="month"
                     value={oneTimeMonth}
                     onChange={(event) => setOneTimeMonth(event.target.value)}
                   />
-                </label>
-                <label className="form-label sm:col-span-2">
+                </AppFieldLabel>
+                <AppFieldLabel className="sm:col-span-2">
                   Amount
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={oneTimeAmount}
                     onChange={(event) => setOneTimeAmount(event.target.value)}
                     placeholder="0.00"
                   />
-                </label>
+                </AppFieldLabel>
               </div>
             ) : null}
 
             {selectedType === "adjust_category" ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="form-label sm:col-span-2">
+                <AppFieldLabel className="sm:col-span-2">
                   Category
-                  <select
-                    className="mt-1 w-full field"
+                  <AppNativeSelect
                     value={adjustCategoryId}
                     onChange={(event) => setAdjustCategoryId(event.target.value)}
                   >
@@ -679,17 +668,16 @@ function ScenariosPage() {
                         {category.name}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="form-label sm:col-span-2">
+                  </AppNativeSelect>
+                </AppFieldLabel>
+                <AppFieldLabel className="sm:col-span-2">
                   New monthly estimate
-                  <input
-                    className="mt-1 w-full field"
+                  <AppInput
                     value={adjustAmount}
                     onChange={(event) => setAdjustAmount(event.target.value)}
                     placeholder="0.00"
                   />
-                </label>
+                </AppFieldLabel>
               </div>
             ) : null}
 

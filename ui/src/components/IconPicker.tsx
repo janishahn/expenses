@@ -13,6 +13,8 @@ import {
   DEFAULT_CATEGORY_ICON_KEY,
 } from "./categoryIconsCatalog"
 import SegmentedControl from "./SegmentedControl"
+import { AppButton } from "./ui/product-button"
+import { AppInput } from "./ui/product-fields"
 
 const RECENT_ICONS_STORAGE_KEY = "ew.recentCategoryIcons.v2"
 const RECENT_ICONS_LIMIT = 12
@@ -230,13 +232,12 @@ export function IconPicker({
         </div>
       ) : (
         <div className="space-y-2">
-          <input
+          <AppInput
             value={query}
             onChange={(event) => {
               setQuery(event.target.value)
               setResultLimit(SEARCH_PAGE_SIZE)
             }}
-            className="w-full field"
             placeholder="Search icons (e.g. groceries, salary, transport)"
             aria-label="Search all icons"
           />
@@ -262,13 +263,13 @@ export function IconPicker({
             ))}
           </div>
           {searchResults.length > resultLimit ? (
-            <button
+            <AppButton
               type="button"
               onClick={() => setResultLimit((prev) => prev + SEARCH_PAGE_SIZE)}
-              className="btn-inline"
+              tone="inline"
             >
               Load more icons
-            </button>
+            </AppButton>
           ) : null}
           {!searchResults.length ? (
             <p className="text-xs text-muted">No icons found for this query.</p>

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Unified analytical page headers, ordinary form fields, inline actions, and ledger surfaces around the shared web UI patterns so sibling workflows now keep the same hierarchy and control treatment on desktop and mobile.
+
 ### Fixed
 - Keyboard focus now enters and stays within the responsive navigation drawer without being reset mid-navigation, returns to the invoking control after drawers, dialogs, and sheets close, moves into revealed transaction search, and remains on a template after keyboard reordering; Admin logs also expose explicit keyboard and screen-reader Inspect actions.
 - Mobile controls now keep at least a 44px effective touch target across navigation, filters, tags, selection, reports, imports, switches, chart data, and transaction maps while preserving compact desktop density; Transactions actions also stay beside the page title, and long native-select options no longer widen transaction editors beyond the viewport.

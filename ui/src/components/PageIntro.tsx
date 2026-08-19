@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 
 type PageIntroProps = {
   title: ReactNode
+  description?: ReactNode
   titleAccessory?: ReactNode
   titleAccessoryAlign?: "inline" | "end"
   actions?: ReactNode
@@ -18,6 +19,7 @@ type PageIntroProps = {
 
 function PageIntro({
   title,
+  description,
   titleAccessory,
   titleAccessoryAlign = "inline",
   actions,
@@ -64,6 +66,7 @@ function PageIntro({
             <h1 className="page-title">{title}</h1>
             {titleAccessory}
           </div>
+          {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
         </div>
 
         {actions ? (
