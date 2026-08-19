@@ -20,7 +20,7 @@ const appButtonVariants = cva("", {
   },
 })
 
-type AppButtonProps = Omit<React.ComponentProps<typeof Button>, "variant" | "size"> &
+type AppButtonProps = React.ComponentProps<typeof Button> &
   VariantProps<typeof appButtonVariants>
 
 const AppButton = React.forwardRef<HTMLButtonElement, AppButtonProps>(
