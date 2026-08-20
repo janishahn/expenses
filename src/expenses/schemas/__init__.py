@@ -521,6 +521,7 @@ class BankReconciliationTransactionOut(BaseModel):
     amount_cents: int
     signed_amount_cents: int
     title: Optional[str] = None
+    description: Optional[str] = None
     category: Optional[str] = None
     date_delta_days: int
 
@@ -539,6 +540,7 @@ class BankStatementRowOut(BaseModel):
     reviewed_at: Optional[datetime] = None
     status: Literal["matched", "suggested", "ambiguous", "missing", "reviewed"]
     candidate_count: int
+    candidates: list[BankReconciliationTransactionOut]
     suggested_transaction: Optional[BankReconciliationTransactionOut] = None
 
 
@@ -550,6 +552,28 @@ class BankReconciliationResponseOut(BaseModel):
 
 class BankRowActionResponseOut(StatusOut):
     transaction_id: Optional[int] = None
+
+
+class BankRowMatchIn(BaseModel):
+    transaction_id: int
+
+
+class BankTransactionCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    category_id: Optional[int] = None
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_text(self):
+        self.title = self.title.strip()
+        if not self.title:
+            raise ValueError("Title cannot be blank")
+        if self.description is not None:
+            self.description = self.description.strip() or None
+        return self
 
 
 class AdminInfoOut(BaseModel):

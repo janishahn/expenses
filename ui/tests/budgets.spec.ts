@@ -278,5 +278,14 @@ test.describe("Budgets Page", () => {
     await row.getByRole("button", { name: "View details" }).click()
     await expect(row.getByText("Top spending days")).toBeVisible()
     await expect(row.getByText("Best / worst day")).toBeVisible()
+    const chart = row.locator('[role="img"][aria-label^="Budget spending pace"]')
+    await expect(chart.locator("svg path.recharts-curve")).not.toHaveCount(0)
+    const paceAreas = chart.locator(".recharts-area-area")
+    await expect(paceAreas).toHaveCount(2)
+    await expect(paceAreas.first()).toHaveCSS("fill-opacity", "1")
+    await expect(paceAreas.nth(1)).toHaveCSS("fill-opacity", "1")
+    await expect(
+      chart.locator("line.recharts-reference-line-line"),
+    ).toHaveCount(1)
   })
 })

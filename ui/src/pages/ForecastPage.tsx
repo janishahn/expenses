@@ -9,7 +9,6 @@ import { formatCurrency } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
 import LineChart from "../components/charts/LineChart"
-import { readThemeAlpha, readThemeColor } from "../components/charts/chartSetup"
 import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
@@ -19,7 +18,6 @@ import {
 } from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
 import { AppButton } from "../components/ui/product-button"
-import { useThemePreference } from "../theme/useThemePreference"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 
@@ -94,7 +92,6 @@ function monthLabel(month: string): string {
 function ForecastPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({})
-  useThemePreference()
 
   const horizonRaw = Number(searchParams.get("horizon") || "6")
   const horizon: 3 | 6 | 12 =
@@ -157,33 +154,14 @@ function ForecastPage() {
     data.start_balance_cents,
     ...data.months.map((row) => row.end_balance_p90_cents ?? row.end_balance_cents),
   ]
-  const recurringColor = readThemeColor("--semantic-blue", "100 180 226")
-  const recurringFill = readThemeAlpha("--semantic-blue", 0.18, "100 180 226")
-  const scenarioColor = readThemeColor("--accent", "245 185 85")
-  const intervalFill = readThemeAlpha("--accent", 0.16, "245 185 85")
-  const transparent = "rgb(0 0 0 / 0)"
+  const recurringColor = "rgb(var(--semantic-blue))"
+  const recurringFill = "rgb(var(--semantic-blue) / 0.18)"
+  const scenarioColor = "rgb(var(--accent))"
+  const intervalFill = "rgb(var(--semantic-blue) / 0.18)"
 
   const chartSeries =
     mode === "full"
       ? [
-          ...(intervalAvailable
-            ? [
-                {
-                  label: "80% range low",
-                  data: lowerSeries,
-                  color: transparent,
-                  lineWidth: 0,
-                },
-                {
-                  label: "80% range high",
-                  data: upperSeries,
-                  color: transparent,
-                  fill: 0,
-                  fillColor: intervalFill,
-                  lineWidth: 0,
-                },
-              ]
-            : []),
           {
             label: "Recurring only",
             data: recurringSeries,
@@ -319,6 +297,17 @@ function ForecastPage() {
             ariaLabel="Projected balance by month"
             labels={labels}
             series={chartSeries}
+            band={
+              intervalAvailable
+                ? {
+                    lower: lowerSeries,
+                    upper: upperSeries,
+                    fill: intervalFill,
+                    labelLow: "80% range low",
+                    labelHigh: "80% range high",
+                  }
+                : undefined
+            }
             height={280}
           />
           <p className="mono-meta mt-3 text-muted">

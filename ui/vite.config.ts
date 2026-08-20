@@ -37,8 +37,19 @@ export default defineConfig({
             return "query"
           }
           if (
-            id.includes("/node_modules/chart.js/") ||
-            id.includes("/node_modules/react-chartjs-2/")
+            id.includes("/node_modules/recharts/") ||
+            id.includes("/node_modules/victory-vendor/") ||
+            id.includes("/node_modules/d3-") ||
+            id.includes("/node_modules/internmap/") ||
+            id.includes("/node_modules/@reduxjs/toolkit/") ||
+            id.includes("/node_modules/react-redux/") ||
+            id.includes("/node_modules/immer/") ||
+            id.includes("/node_modules/reselect/") ||
+            id.includes("/node_modules/use-sync-external-store/") ||
+            id.includes("/node_modules/es-toolkit/") ||
+            id.includes("/node_modules/decimal.js-light/") ||
+            id.includes("/node_modules/eventemitter3/") ||
+            id.includes("/node_modules/tiny-invariant/")
           ) {
             return "charts"
           }

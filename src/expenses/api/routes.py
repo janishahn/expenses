@@ -113,8 +113,10 @@ from expenses.schemas import (
     AuthCredentialsIn,
     BankReconciliationResponseOut,
     BankRowActionResponseOut,
+    BankRowMatchIn,
     BankStatementImportResponseOut,
     BankStatementPreviewResponseOut,
+    BankTransactionCreateIn,
     BulkEditRequestIn,
     BulkEditResponseOut,
     BudgetOverrideIn,
@@ -211,7 +213,11 @@ from expenses.services import (
     ReportService,
     rebuild_monthly_rollups,
 )
-from expenses.services.bank_reconciliation import BankReconciliationService
+from expenses.services.bank_reconciliation import (
+    BankReconciliationService,
+    BankRowAlreadyResolvedError,
+    BankRowNotFoundError,
+)
 from expenses.reports.pdf_renderer import render_report_html
 
 router = APIRouter()
@@ -3300,6 +3306,10 @@ def api_accept_bank_row_suggestion(
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).accept_suggestion(row_id)
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -3314,8 +3324,10 @@ def api_review_bank_row(row_id: int, request: Request, db: Session = Depends(get
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).mark_reviewed(row_id)
-    except ValueError as exc:
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -3328,9 +3340,34 @@ def api_reopen_bank_row(row_id: int, request: Request, db: Session = Depends(get
     _require_csrf(request, db)
     try:
         BankReconciliationService(db, user_id=user_id).reopen(row_id)
-    except ValueError as exc:
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
+
+
+@router.post(
+    "/api/reconciliation/bank-rows/{row_id:int}/match-transaction",
+    response_model=BankRowActionResponseOut,
+)
+def api_match_bank_row_transaction(
+    row_id: int,
+    payload: BankRowMatchIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        BankReconciliationService(db, user_id=user_id).match_transaction(
+            row_id, payload.transaction_id
+        )
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "transaction_id": payload.transaction_id}
 
 
 @router.post(
@@ -3338,16 +3375,23 @@ def api_reopen_bank_row(row_id: int, request: Request, db: Session = Depends(get
     response_model=BankRowActionResponseOut,
 )
 def api_create_transaction_from_bank_row(
-    row_id: int, request: Request, db: Session = Depends(get_db)
+    row_id: int,
+    request: Request,
+    payload: Optional[BankTransactionCreateIn] = None,
+    db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
         transaction_id = BankReconciliationService(
             db, user_id=user_id
-        ).create_transaction(row_id)
-    except ValueError as exc:
+        ).create_transaction(row_id, payload)
+    except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok", "transaction_id": transaction_id}
 
 

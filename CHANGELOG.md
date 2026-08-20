@@ -11,11 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified analytical page headers, ordinary form fields, inline actions, and ledger surfaces around the shared web UI patterns so sibling workflows now keep the same hierarchy and control treatment on desktop and mobile.
 - Admin purge, rollup rebuild, and recurring catch-up actions now report accessible inline outcomes instead of interrupting the workflow with native browser alerts.
 
+## [0.4.8] - 2026-08-19
+
+### Changed
+- Reconciliation now processes CSV files into one focused inbox, makes likely transaction matches easier to scan, preserves a reviewed outcome for known discrepancies, and lets users edit a new transaction before creating and linking it to a bank row.
+
+## [0.4.7] - 2026-08-16
+
+### Changed
+- Web charts now use Recharts SVG rendering, rounded chart geometry, roomier mono axes, quieter grid lines, compact theme-aware hover tooltips, and 15%-faster animation across the dashboard, Insights, Forecast, What If, Budgets, Tags, Recurring, and Admin views. Financial meaning, drill-downs, keyboard access, privacy behavior, and the surrounding page design remain unchanged; the native iOS app continues to use Swift Charts.
+
 ### Fixed
+- Dashboard spending-band tooltips now render above their chart rows and nearby cards instead of being clipped to the 24px band, while the chart legend stays inside its card.
+- Dashboard, Forecast, What If, and budget range areas now use their intended 16-18% shading instead of Recharts reducing them by another 40%.
+- Dashboard actual and likely balance strokes now animate as one continuous timeline instead of drawing as two separate lines at the same time.
+- Tag detail sparklines now preserve the full backend trend instead of treating coordinate pairs as raw values and plotting the wrong shape.
 - Keyboard focus now enters and stays within the responsive navigation drawer without being reset mid-navigation, returns to the invoking control after drawers, dialogs, and sheets close, moves into revealed transaction search, and remains on a template after keyboard reordering; Admin logs also expose explicit keyboard and screen-reader Inspect actions.
 - Mobile controls now keep at least a 44px effective touch target across navigation, filters, tags, selection, reports, imports, switches, chart data, and transaction maps while preserving compact desktop density; Transactions actions also stay beside the page title, and long native-select options no longer widen transaction editors beyond the viewport.
 - Route and subquery failures now retain consistent page context and offer Retry, missing resources provide a direct return path, and failed mutations—including FastAPI validation responses—show accurate, readable detail instead of raw JavaScript or JSON error text.
 - The Budgets Add action now appears only after its route data is ready, preventing a click during loading from being silently discarded.
+
+### Dependencies
+- Replaced Chart.js and react-chartjs-2 with Recharts and react-is in the web frontend.
 
 ## [0.4.6] - 2026-08-16
 

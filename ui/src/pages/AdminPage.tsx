@@ -90,20 +90,7 @@ function toSparklinePoints(values: number[]): string | undefined {
   if (!values.length) {
     return undefined
   }
-  if (values.length === 1) {
-    return "50,15"
-  }
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min || 1
-  return values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * 100
-      const normalized = (value - min) / span
-      const y = 2 + (1 - normalized) * 26
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(" ")
+  return values.join(",")
 }
 
 const INTEGER_FORMAT = new Intl.NumberFormat(undefined, {

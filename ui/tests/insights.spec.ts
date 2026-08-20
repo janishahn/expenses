@@ -106,8 +106,8 @@ test.describe("Insights Page", () => {
     await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
     await expect(page.getByText(/Recorded totals/).first()).toBeVisible()
     await expect(
-      page.locator('svg[role="img"] title').filter({ hasText: "Income and spending chart" })
-    ).toHaveCount(1)
+      page.getByRole("group", { name: "Income and spending chart" }),
+    ).toBeVisible()
 
     const expenseStep = page.locator(
       `.net-chart-section svg [data-waterfall-step][aria-label^="${expenseCategoryName}:"]`
