@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Unified analytical page headers, ordinary form fields, inline actions, and ledger surfaces around the shared web UI patterns so sibling workflows now keep the same hierarchy and control treatment on desktop and mobile.
+- Admin purge, rollup rebuild, and recurring catch-up actions now report accessible inline outcomes instead of interrupting the workflow with native browser alerts.
+
 ## [0.4.8] - 2026-08-19
 
 ### Changed

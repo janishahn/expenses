@@ -9,7 +9,11 @@ import PageIntro from "../components/PageIntro"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppNativeSelect } from "../components/ui/product-fields"
+import {
+  AppFieldLabel,
+  AppNativeSelect,
+  AppTextarea,
+} from "../components/ui/product-fields"
 
 function toLocalDateInputValue(value: Date): string {
   const year = value.getFullYear()
@@ -376,10 +380,9 @@ function ReportBuilderPage() {
 
           <section className="p-5">
             <h2 className="mb-4 font-head text-lg font-bold">Notes</h2>
-            <textarea
+            <AppTextarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              className="w-full field"
               placeholder="Optional notes to include in the report..."
             />
           </section>

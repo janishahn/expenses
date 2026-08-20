@@ -10,6 +10,7 @@ import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
 import WaterfallChart, { type FlowNode } from "../components/charts/WaterfallChart"
 import PeriodPicker from "../components/PeriodPicker"
+import PageIntro from "../components/PageIntro"
 import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
@@ -290,15 +291,14 @@ function InsightsPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <header className="flex min-h-11 flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
-            Insights
-          </h1>
-          <p className="mt-1 text-sm text-muted">{summary}</p>
-        </div>
-        {isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null}
-      </header>
+      <PageIntro
+        title="Insights"
+        description={summary}
+        titleAccessory={
+          isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null
+        }
+        titleAccessoryAlign="end"
+      />
 
       <WorkspaceToolbar className="insights-view-switcher justify-between">
         <SegmentedControl

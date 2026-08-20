@@ -79,6 +79,10 @@ type SparklineMetric =
 
 type SparklineHistory = Record<SparklineMetric, number[]>
 type SparklinePoints = Record<SparklineMetric, string | undefined>
+type AdminActionMessage = {
+  tone: "success" | "error"
+  text: string
+}
 
 const SPARKLINE_HISTORY_LIMIT = 60
 
@@ -114,14 +118,31 @@ function formatCostAmount(decimal: string, unit: string | null): string {
   return unit ? `${value} ${unit}` : value
 }
 
+function AdminActionFeedback({ message }: { message: AdminActionMessage | null }) {
+  if (!message) {
+    return null
+  }
+  return (
+    <p
+      role={message.tone === "error" ? "alert" : "status"}
+      className={`text-sm ${
+        message.tone === "error" ? "text-semantic-red" : "text-semantic-green"
+      }`}
+    >
+      {message.text}
+    </p>
+  )
+}
+
 function AdminPage() {
   const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
   const [purgeDays, setPurgeDays] = useState("30")
-  const [recurringCatchUpMessage, setRecurringCatchUpMessage] = useState<{
-    tone: "success" | "error"
-    text: string
-  } | null>(null)
+  const [recurringCatchUpMessage, setRecurringCatchUpMessage] =
+    useState<AdminActionMessage | null>(null)
+  const [purgeMessage, setPurgeMessage] = useState<AdminActionMessage | null>(null)
+  const [rebuildMessage, setRebuildMessage] =
+    useState<AdminActionMessage | null>(null)
   const [logFilter, setLogFilter] = useState<LogFilter>("errors")
   const [logSearch, setLogSearch] = useState("")
   const [logCursor, setLogCursor] = useState<string | null>(null)
@@ -238,9 +259,18 @@ function AdminPage() {
       apiFetch("/api/admin/purge-deleted", {
         method: "POST",
         body: JSON.stringify({ days }),
-      }),
+    }),
     onSuccess: () => {
-      alert("Deleted transactions purged successfully")
+      setPurgeMessage({
+        tone: "success",
+        text: "Deleted transactions purged successfully.",
+      })
+    },
+    onError: (error) => {
+      setPurgeMessage({
+        tone: "error",
+        text: getApiErrorMessage(error, "Unable to purge deleted transactions."),
+      })
     },
   })
 
@@ -248,7 +278,16 @@ function AdminPage() {
     mutationFn: () =>
       apiFetch("/api/admin/rebuild-rollups", { method: "POST" }),
     onSuccess: () => {
-      alert("Monthly rollups rebuilt successfully")
+      setRebuildMessage({
+        tone: "success",
+        text: "Monthly rollups rebuilt successfully.",
+      })
+    },
+    onError: (error) => {
+      setRebuildMessage({
+        tone: "error",
+        text: getApiErrorMessage(error, "Unable to rebuild monthly rollups."),
+      })
     },
   })
 
@@ -297,6 +336,7 @@ function AdminPage() {
     if (!confirmed) {
       return
     }
+    setPurgeMessage(null)
     purgeMutation.mutate(Number(purgeDays) || 30)
   }
 
@@ -309,6 +349,7 @@ function AdminPage() {
     if (!confirmed) {
       return
     }
+    setRebuildMessage(null)
     rebuildMutation.mutate()
   }
 
@@ -559,7 +600,10 @@ function AdminPage() {
               min={1}
               max={365}
               value={purgeDays}
-              onChange={(event) => setPurgeDays(event.target.value)}
+              onChange={(event) => {
+                setPurgeDays(event.target.value)
+                setPurgeMessage(null)
+              }}
               className="w-24"
               placeholder="30"
             />
@@ -573,6 +617,7 @@ function AdminPage() {
               {purgeMutation.isPending ? "Purging…" : "Purge now"}
             </AppButton>
           </div>
+          <AdminActionFeedback message={purgeMessage} />
         </MetricLane>
 
         <MetricLane tone="neutral" className="space-y-4">
@@ -589,6 +634,7 @@ function AdminPage() {
           >
             {rebuildMutation.isPending ? "Rebuilding…" : "Rebuild now"}
           </AppButton>
+          <AdminActionFeedback message={rebuildMessage} />
         </MetricLane>
 
         <MetricLane tone="neutral" className="space-y-4">
@@ -604,17 +650,7 @@ function AdminPage() {
           >
             {recurringCatchUpMutation.isPending ? "Running…" : "Run catch-up"}
           </AppButton>
-          {recurringCatchUpMessage && (
-            <p
-              className={`text-sm ${
-                recurringCatchUpMessage.tone === "error"
-                  ? "text-semantic-red"
-                  : "text-semantic-green"
-              }`}
-            >
-              {recurringCatchUpMessage.text}
-            </p>
-          )}
+          <AdminActionFeedback message={recurringCatchUpMessage} />
         </MetricLane>
 
       </div>

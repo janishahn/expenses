@@ -7,6 +7,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import PageIntro from "../components/PageIntro"
 import LineChart from "../components/charts/LineChart"
 import SegmentedControl from "../components/SegmentedControl"
 import {
@@ -189,17 +190,12 @@ function ForecastPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <header className="flex min-h-11 flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-head text-2xl font-bold tracking-tight text-text md:text-3xl">
-            Forecast
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            Balance outlook from recurring commitments and recent spending
-          </p>
-        </div>
-        {isFetching ? <span className="loading-hint">Updating…</span> : null}
-      </header>
+      <PageIntro
+        title="Forecast"
+        description="Balance outlook from recurring commitments and recent spending"
+        titleAccessory={isFetching ? <span className="loading-hint">Updating…</span> : null}
+        titleAccessoryAlign="end"
+      />
 
       <WorkspaceToolbar className="justify-between">
         <div className="flex flex-wrap items-center gap-3">

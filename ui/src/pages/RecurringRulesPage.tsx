@@ -558,12 +558,11 @@ function RecurringRulesPage() {
                               })
                             }
                           />
-                          <Link
-                            to={`/recurring/${rule.id}/occurrences`}
-                            className="btn-inline"
-                          >
-                            History
-                          </Link>
+                          <AppButton asChild tone="inline">
+                            <Link to={`/recurring/${rule.id}/occurrences`}>
+                              History
+                            </Link>
+                          </AppButton>
                           <AppButton
                             type="button"
                             onClick={() => handleEditRule(rule)}
@@ -584,22 +583,21 @@ function RecurringRulesPage() {
                           </AppButton>
                         </div>
                         <div className="flex items-center gap-2 md:hidden">
-                            <Toggle
-                              on={rule.auto_post}
-                              ariaLabel={`Toggle auto-post for ${label}`}
-                              onChange={(val) =>
-                                toggleMutation.mutate({
-                                  id: rule.id,
-                                  auto_post: val,
-                                })
-                              }
-                            />
-                          <Link
-                            to={`/recurring/${rule.id}/occurrences`}
-                            className="btn-inline"
-                          >
-                            History
-                          </Link>
+                          <Toggle
+                            on={rule.auto_post}
+                            ariaLabel={`Toggle auto-post for ${label}`}
+                            onChange={(val) =>
+                              toggleMutation.mutate({
+                                id: rule.id,
+                                auto_post: val,
+                              })
+                            }
+                          />
+                          <AppButton asChild tone="inline">
+                            <Link to={`/recurring/${rule.id}/occurrences`}>
+                              History
+                            </Link>
+                          </AppButton>
                           <AppButton
                             type="button"
                             onClick={() => handleEditRule(rule)}

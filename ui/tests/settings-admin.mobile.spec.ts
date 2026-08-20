@@ -21,6 +21,15 @@ test.describe("Settings and administration (mobile)", () => {
     await expect(page.getByText("Database backups")).toBeVisible()
     await expect(page.getByText("System information")).toBeVisible()
 
+    await page.getByRole("button", { name: "Rebuild now" }).click()
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Rebuild", exact: true })
+      .click()
+    await expect(
+      page.getByRole("status").filter({ hasText: "Monthly rollups rebuilt successfully." })
+    ).toBeVisible()
+
     await page.getByRole("link", { name: "Open importer" }).click()
     await expect(page).toHaveURL("/admin/import")
     await expect(page.getByLabel("SQLite database file")).toBeAttached()

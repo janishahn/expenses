@@ -23,15 +23,13 @@ const appButtonVariants = cva(
   }
 )
 
-type AppButtonProps = Omit<React.ComponentProps<typeof Button>, "variant" | "size"> &
+type AppButtonProps = React.ComponentProps<typeof Button> &
   VariantProps<typeof appButtonVariants>
 
 const AppButton = React.forwardRef<HTMLButtonElement, AppButtonProps>(
   ({ tone = "primary", className, ...props }, ref) => (
     <Button
       ref={ref}
-      variant="unstyled"
-      size="legacy"
       className={cn(appButtonVariants({ tone }), className)}
       {...props}
     />

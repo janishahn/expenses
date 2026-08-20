@@ -24,8 +24,6 @@ function ShellThemeQuickToggle({
   return (
     <Button
       type="button"
-      variant="unstyled"
-      size="legacy"
       data-testid={testId}
       data-theme-icon={isDark ? "dark" : "light"}
       aria-label={`Switch to ${nextPreference} theme`}

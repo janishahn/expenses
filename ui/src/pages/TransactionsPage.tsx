@@ -19,7 +19,10 @@ import { CategoryIcon } from "../components/CategoryIcon"
 import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
-import { WorkspaceToolbar } from "../components/product/ProductSurfaces"
+import {
+  FinancialPanel,
+  WorkspaceToolbar,
+} from "../components/product/ProductSurfaces"
 import SegmentedControl from "../components/SegmentedControl"
 import TransactionDescription from "../components/TransactionDescription"
 import { AppButton } from "../components/ui/product-button"
@@ -961,9 +964,10 @@ function TransactionsPage() {
         </div>
       ) : null}
 
-      <div
+      <FinancialPanel
+        role="ledger"
         data-testid="transactions-register"
-        className="financial-panel financial-panel-ledger min-w-0"
+        className="min-w-0"
       >
         <div
           data-testid="transactions-selection-controls"
@@ -1629,7 +1633,7 @@ function TransactionsPage() {
             </AppCard>
           )}
         </div>
-      </div>
+      </FinancialPanel>
 
       <div className="flex items-center justify-between">
         <AppButton

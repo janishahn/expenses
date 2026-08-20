@@ -3,7 +3,7 @@ import { cn } from "../../lib/utils"
 
 type FinancialPanelProps<T extends ElementType> = {
   as?: T
-  role?: "panel" | "hero" | "chart" | "ledger" | "inspector" | "message"
+  role?: "panel" | "hero" | "chart" | "ledger" | "inspector"
   className?: string
   children?: ReactNode
 } & Omit<ComponentProps<T>, "as" | "role" | "className" | "children">

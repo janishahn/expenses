@@ -219,8 +219,7 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
         <div className="flex items-center gap-2">
           <AppButton
             type="button"
-            tone="ghost"
-            className="btn-inline"
+            tone="inline"
             onClick={openAttachment}
             aria-label={`Open ${attachment.original_filename}`}
           >
@@ -228,8 +227,7 @@ function AttachmentPreviewCard({ attachment }: { attachment: ReceiptAttachment }
           </AppButton>
           <AppButton
             type="button"
-            tone="ghost"
-            className="btn-inline"
+            tone="inline"
             onClick={downloadAttachment}
             aria-label={`Download ${attachment.original_filename}`}
           >
