@@ -413,6 +413,8 @@ npm audit --prefix ui --audit-level=high
 
 CI runs dependency audits and `uv run fast-tests` on pull requests and default-branch pushes. The complete browser suite is available through the manually dispatched **Full tests** workflow rather than running on every commit. See [`TESTING.md`](TESTING.md) for the testing policy, browser matrix, focused commands, and coverage ledger.
 
+Releases are manual. See [`releasing.md`](releasing.md) for the version, changelog, lockfile, tag, test, and GitHub Release checklist.
+
 ## Automatic Ingest
 
 `POST /api/ingest` is a small, token-authenticated endpoint for creating an expense from an external automation, such as an Apple Shortcuts personal automation that fires when you tap a card in Apple Wallet. It is the recommended way to capture spend at the moment of payment without opening the app.
