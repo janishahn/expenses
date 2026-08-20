@@ -60,6 +60,7 @@
   },
   "durable_purchases": null,
   "filters": {
+    "excluded_tag_ids": [],
     "type": null
   },
   "kpis": {

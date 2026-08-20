@@ -9,6 +9,7 @@
   ],
   "filters": {
     "category_id": null,
+    "excluded_tag_ids": [],
     "query": null,
     "tag_id": null,
     "type": null

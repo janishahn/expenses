@@ -19,6 +19,22 @@ test.describe("Transactions Page", () => {
     await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
   })
 
+  test("keeps header actions free of an outline-like shadow", async ({ page }) => {
+    const controls = [
+      page.getByRole("button", { name: "Search transactions" }),
+      page.getByRole("link", { name: "Inbox" }),
+      page.getByRole("link", { name: "Trash" }),
+      page.getByRole("link", { name: "Export CSV" }),
+    ]
+
+    for (const control of controls) {
+      await expect(control).toBeVisible()
+      expect(await control.evaluate((element) => getComputedStyle(element).boxShadow)).toBe(
+        "none",
+      )
+    }
+  })
+
   test("fuzzy-searches transaction descriptions", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Fuzzy Search")

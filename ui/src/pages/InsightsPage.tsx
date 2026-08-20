@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
 import BarChart from "../components/charts/BarChart"
 import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
@@ -26,6 +27,7 @@ import {
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import { serializeTagIds } from "../lib/tagFilters"
 import {
   Sheet,
   SheetClose,
@@ -70,7 +72,12 @@ type BudgetEffective = {
 
 type InsightsResponse = {
   period: { slug: string; start: string; end: string }
-  filters: { type: string | null; tag_id: number | null }
+  filters: {
+    type: string | null
+    tag_id: number | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
+  }
   tags: Array<{ id: number; name: string }>
   categories: Array<{ id: number; name: string; type: string; icon: string | null }>
   series: MonthlySeriesPoint[]
@@ -87,7 +94,12 @@ type InsightsResponse = {
 
 type InsightsFlowResponse = {
   period: { slug: string; start: string; end: string }
-  filters: { type: string | null; tag_id: number | null }
+  filters: {
+    type: string | null
+    tag_id: number | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
+  }
   nodes: FlowNode[]
   links: Array<{ from: string; to: string; amount_cents: number }>
 }
@@ -96,7 +108,8 @@ function InsightsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [mobileType, setMobileType] = useState("")
-  const [mobileTag, setMobileTag] = useState("")
+  const [mobileTagMode, setMobileTagMode] = useState<TagFilterMode>("include")
+  const [mobileTagIds, setMobileTagIds] = useState<number[]>([])
   const [mobileTrendCategory, setMobileTrendCategory] = useState("")
   const [mobileBudgetMonth, setMobileBudgetMonth] = useState("")
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -136,7 +149,15 @@ function InsightsPage() {
   const applyCustomPeriod = (start: string, end: string) =>
     setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
   const setType = (value: string) => updateParam("type", value || null)
-  const setTag = (value: string) => updateParam("tag", value || null)
+  const setTagFilter = (mode: TagFilterMode, ids: number[]) => {
+    setSearchParams(
+      buildSearchParams(searchParams, {
+        tag: null,
+        tags: mode === "include" ? serializeTagIds(ids) : null,
+        exclude_tags: mode === "exclude" ? serializeTagIds(ids) : null,
+      })
+    )
+  }
   const setTrendCategory = (value: string) =>
     updateParam("trend_category", value || null)
   const setBudgetMonth = (value: string) =>
@@ -208,9 +229,13 @@ function InsightsPage() {
       `${row.year}-${String(row.month).padStart(2, "0")}-01T00:00:00`
     ).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
   )
-  const selectedTag = filters.tag_id
-    ? tags.find((tag) => tag.id === filters.tag_id)?.name
-    : null
+  const tagMode: TagFilterMode = filters.excluded_tag_ids.length ? "exclude" : "include"
+  const selectedTagIds =
+    tagMode === "exclude" ? filters.excluded_tag_ids : filters.included_tag_ids
+  const selectedTags = selectedTagIds.flatMap((id) => {
+    const tag = tags.find((item) => item.id === id)
+    return tag ? [tag] : []
+  })
   const selectedTrendCategory = trend_category_id
     ? expenseCategories.find((category) => category.id === trend_category_id)?.name
     : null
@@ -221,11 +246,22 @@ function InsightsPage() {
     { month: "short", year: "numeric" }
   )
   const activeFilters = [
-    filters.type ? `Type: ${filters.type}` : null,
-    selectedTag ? `Tag: ${selectedTag}` : null,
-    !trendDisabled && selectedTrendCategory ? `Trend: ${selectedTrendCategory}` : null,
-    budget_month ? `Budget month: ${budget_month}` : null,
-  ].filter(Boolean) as string[]
+    filters.type ? { key: "type", label: `Type: ${filters.type}` } : null,
+    ...selectedTags.map((tag) => ({
+      key: `tag_filter_${tag.id}`,
+      label: `${tagMode === "include" ? "Only: " : "Excluding: "}${tag.name}`,
+    })),
+    ...(activeView === "charts"
+      ? [
+          !trendDisabled && selectedTrendCategory
+            ? { key: "trend_category", label: `Trend: ${selectedTrendCategory}` }
+            : null,
+          budget_month
+            ? { key: "budget_month", label: `Budget month: ${budget_month}` }
+            : null,
+        ]
+      : []),
+  ].filter(Boolean) as Array<{ key: string; label: string }>
   const incomeColor = "rgb(var(--semantic-green))"
   const expenseColor = "rgb(var(--semantic-red))"
   const trendColor = "rgb(var(--accent))"
@@ -233,7 +269,8 @@ function InsightsPage() {
 
   const openMobileFilters = () => {
     setMobileType(filters.type ?? "")
-    setMobileTag(filters.tag_id ? String(filters.tag_id) : "")
+    setMobileTagMode(tagMode)
+    setMobileTagIds(selectedTagIds)
     setMobileTrendCategory(trend_category_id ? String(trend_category_id) : "")
     setMobileBudgetMonth(budget_month)
     setMobileFiltersOpen(true)
@@ -243,9 +280,20 @@ function InsightsPage() {
     const params = new URLSearchParams(searchParams)
     params.delete("type")
     params.delete("tag")
+    params.delete("tags")
+    params.delete("exclude_tags")
     params.delete("trend_category")
     params.delete("budget_month")
     setSearchParams(params)
+  }
+
+  const clearFilter = (key: string) => {
+    if (key.startsWith("tag_filter_")) {
+      const tagId = Number(key.replace("tag_filter_", ""))
+      setTagFilter(tagMode, selectedTagIds.filter((id) => id !== tagId))
+      return
+    }
+    updateParam(key, null)
   }
 
   const applyMobileFilters = () => {
@@ -255,10 +303,12 @@ function InsightsPage() {
     } else {
       params.delete("type")
     }
-    if (mobileTag) {
-      params.set("tag", mobileTag)
-    } else {
-      params.delete("tag")
+    params.delete("tag")
+    params.delete("tags")
+    params.delete("exclude_tags")
+    const serializedTags = serializeTagIds(mobileTagIds)
+    if (serializedTags) {
+      params.set(mobileTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
     }
     if (mobileTrendCategory) {
       params.set("trend_category", mobileTrendCategory)
@@ -283,8 +333,9 @@ function InsightsPage() {
     }
     params.set("type", "expense")
     params.set("category", String(categoryId))
-    if (filters.tag_id) {
-      params.set("tag", String(filters.tag_id))
+    const serializedTags = serializeTagIds(selectedTagIds)
+    if (serializedTags) {
+      params.set(tagMode === "include" ? "tags" : "exclude_tags", serializedTags)
     }
     window.location.assign(`/transactions?${params.toString()}`)
   }
@@ -323,8 +374,6 @@ function InsightsPage() {
         onApplyCustom={applyCustomPeriod}
       />
 
-      {activeView === "charts" ? (
-        <>
       <div className="desk:hidden">
         <div className="flex items-center gap-2">
           <AppButton
@@ -349,18 +398,30 @@ function InsightsPage() {
         {activeFilters.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {activeFilters.map((filter) => (
-              <span
-                key={filter}
-                className="chip text-[11px]"
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => clearFilter(filter.key)}
+                className="chip-action rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`Remove ${filter.label}`}
               >
-                {filter}
-              </span>
+                <span className="chip inline-flex items-center gap-1.5">
+                  {filter.label}
+                  <XIcon className="h-3 w-3" aria-hidden="true" />
+                </span>
+              </button>
             ))}
           </div>
         )}
       </div>
 
-      <WorkspaceToolbar className="hidden gap-4 desk:grid desk:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <WorkspaceToolbar
+        className={`hidden gap-4 desk:grid ${
+          activeView === "charts"
+            ? "desk:grid-cols-[auto_repeat(3,minmax(0,1fr))]"
+            : "desk:grid-cols-[auto_minmax(0,1fr)]"
+        }`}
+      >
         <AppFieldLabel>
           <span>Type</span>
           <SegmentedControl
@@ -375,20 +436,15 @@ function InsightsPage() {
             onValueChange={setType}
           />
         </AppFieldLabel>
-        <AppFieldLabel>
-          <span>Tag filter</span>
-          <AppNativeSelect
-            value={filters.tag_id ?? ""}
-            onChange={(event) => setTag(event.target.value)}
-          >
-            <option value="">All tags</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.name}
-              </option>
-            ))}
-          </AppNativeSelect>
-        </AppFieldLabel>
+        <TagFilterPicker
+          tags={tags}
+          mode={tagMode}
+          selectedIds={selectedTagIds}
+          onModeChange={(mode, ids) => setTagFilter(mode, ids)}
+          onChange={(ids, mode) => setTagFilter(mode, ids)}
+        />
+        {activeView === "charts" ? (
+          <>
         <AppFieldLabel>
           <span>Trend category</span>
           <AppNativeSelect
@@ -420,7 +476,28 @@ function InsightsPage() {
             onChange={(event) => setBudgetMonth(event.target.value)}
           />
         </AppFieldLabel>
+          </>
+        ) : null}
       </WorkspaceToolbar>
+
+      {selectedTags.length ? (
+        <div className="hidden min-w-0 flex-wrap gap-1.5 desk:flex" aria-label="Tag filters">
+          {selectedTags.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => clearFilter(`tag_filter_${tag.id}`)}
+              className="chip-action rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Remove ${tagMode === "include" ? "included" : "excluded"} tag ${tag.name}`}
+            >
+              <span className="chip inline-flex items-center gap-1.5">
+                {tagMode === "include" ? "Only: " : "Excluding: "}{tag.name}
+                <XIcon className="h-3 w-3" aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {mobileFiltersOpen && !isDesktop ? (
         <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
@@ -452,20 +529,16 @@ function InsightsPage() {
                   onValueChange={setMobileType}
                 />
               </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Tag filter</span>
-                <AppNativeSelect
-                  value={mobileTag}
-                  onChange={(event) => setMobileTag(event.target.value)}
-                >
-                  <option value="">All tags</option>
-                  {tags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
+              <TagFilterPicker
+                tags={tags}
+                mode={mobileTagMode}
+                selectedIds={mobileTagIds}
+                onModeChange={setMobileTagMode}
+                onChange={setMobileTagIds}
+                variant="list"
+              />
+              {activeView === "charts" ? (
+                <>
               <AppFieldLabel>
                 <span>Trend category</span>
                 <AppNativeSelect
@@ -497,6 +570,8 @@ function InsightsPage() {
                   onChange={(event) => setMobileBudgetMonth(event.target.value)}
                 />
               </AppFieldLabel>
+                </>
+              ) : null}
             </div>
             <SheetFooter className="mt-0 flex shrink-0 flex-row gap-2 p-5 pt-0">
               <AppButton
@@ -526,6 +601,8 @@ function InsightsPage() {
         </Sheet>
       ) : null}
 
+      {activeView === "charts" ? (
+        <>
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         <FinancialPanel role="chart">
           <SectionHeading>
@@ -693,7 +770,11 @@ function InsightsPage() {
           <SectionHeading>
             <div>
               <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
-              <p className="mt-0.5 text-xs text-muted">{budget_month}</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {selectedTags.length
+                  ? `${budget_month} · budget figures stay based on all activity`
+                  : budget_month}
+              </p>
             </div>
             <span className="mono-meta text-muted">Plan</span>
           </SectionHeading>

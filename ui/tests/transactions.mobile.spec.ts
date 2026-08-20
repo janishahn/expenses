@@ -210,6 +210,23 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(page.getByRole("button", { name: "Bulk edit" })).toBeVisible()
   })
 
+  test("keeps the compact header controls free of an outline-like shadow", async ({ page }) => {
+    await page.goto("/transactions")
+
+    const controls = [
+      page.getByRole("button", { name: "Search transactions" }),
+      page.getByRole("button", { name: /^Filters/ }),
+      page.getByRole("button", { name: "More actions" }),
+    ]
+
+    for (const control of controls) {
+      await expect(control).toBeVisible()
+      expect(await control.evaluate((element) => getComputedStyle(element).boxShadow)).toBe(
+        "none",
+      )
+    }
+  })
+
   test("opens and dismisses the transaction location dialog", async ({
     page,
     request,

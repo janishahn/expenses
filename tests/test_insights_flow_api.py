@@ -23,6 +23,7 @@ def _create_transaction(
     amount_cents: int,
     category_id: int,
     title: str,
+    tags: list[str] | None = None,
 ) -> int:
     txn_date = date.today()
     occurred_at = datetime.combine(txn_date, datetime.min.time()).replace(hour=12)
@@ -36,11 +37,67 @@ def _create_transaction(
             "amount_cents": amount_cents,
             "category_id": category_id,
             "title": title,
-            "tags": [],
+            "tags": tags or [],
         },
     )
     assert response.status_code == 200
     return int(response.json()["id"])
+
+
+def test_insights_flow_excludes_tagged_transactions(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(
+        api_client, csrf_headers, "Flow exclusion", "expense"
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_type="expense",
+        amount_cents=9_000,
+        category_id=category_id,
+        title="Flow vacation spend",
+        tags=["Flow vacation"],
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_type="expense",
+        amount_cents=3_000,
+        category_id=category_id,
+        title="Flow regular spend",
+    )
+    vacation_tag_id = next(
+        int(tag["id"])
+        for tag in api_client.get("/api/tags").json()["tags"]
+        if tag["name"] == "Flow vacation"
+    )
+
+    response = api_client.get(
+        f"/api/insights/flow?period=this_month&exclude_tags={vacation_tag_id}"
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filters"]["excluded_tag_ids"] == [vacation_tag_id]
+    category = next(
+        node
+        for node in payload["nodes"]
+        if node["type"] == "expense" and node["label"] == "Flow exclusion"
+    )
+    assert category["amount_cents"] == 3_000
+
+    included_response = api_client.get(
+        f"/api/insights/flow?period=this_month&tags={vacation_tag_id}"
+    )
+    assert included_response.status_code == 200
+    included_payload = included_response.json()
+    assert included_payload["filters"]["included_tag_ids"] == [vacation_tag_id]
+    included_category = next(
+        node
+        for node in included_payload["nodes"]
+        if node["type"] == "expense" and node["label"] == "Flow exclusion"
+    )
+    assert included_category["amount_cents"] == 9_000
 
 
 def test_insights_flow_returns_nodes_and_links(

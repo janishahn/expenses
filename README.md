@@ -32,13 +32,13 @@ The native iOS app is shown near the end of this README, including [iPhone scree
 
 ![Dashboard](docs/screenshots/dashboard-light.png)
 
-The dashboard answers "where do I stand right now". Pick a period (this month, last month, all time, or a custom range) and see the available balance with actual history and a distinct projected continuation, followed by income, spending, net movement, and relevant budget health. Balance history begins with the first known snapshot instead of inventing an opening balance for earlier months. An overall monthly budget shows plan pace; category-only planning shows the aggregate category status plus the category that most needs attention. When no budgets exist, the planning lane disappears instead of prompting for an unused feature: desktop uses three equal metric columns, while mobile keeps income and spending side by side with net movement across the full second row. Hovering the desktop balance path reveals exact actual or likely values. Privacy mode conceals headline and analytical values while keeping budget health and recent transaction amounts readable. Mobile omits that history chart and the transaction-type selector. Recent transactions use the available desktop panel height without clipping a partial row or creating a nested scroller; mobile keeps the four latest rows. An accessible six-month category-band view shows how the composition of spending changed over time. Category donut legends use aligned responsive columns so labels and amounts remain easy to scan without nested scrolling, while segment tooltips show only the hovered percentage.
+The dashboard answers "where do I stand right now". Pick a period (this month, last month, all time, or a custom range) and see the available balance with actual history and a distinct projected continuation, followed by income, spending, net movement, and relevant budget health. A quiet Tags action can temporarily show only transactions carrying any of several selected tags, or exclude transactions carrying any selected tag; choose the mode first or the tags first, and active choices stay visible and removable without competing with the frequently used period control. Available balance, balance history, and budgets remain based on all activity. Balance history begins with the first known snapshot instead of inventing an opening balance for earlier months. An overall monthly budget shows plan pace; category-only planning shows the aggregate category status plus the category that most needs attention. When no budgets exist, the planning lane disappears instead of prompting for an unused feature: desktop uses three equal metric columns, while mobile keeps income and spending side by side with net movement across the full second row. Hovering the desktop balance path reveals exact actual or likely values. Privacy mode conceals headline and analytical values while keeping budget health and recent transaction amounts readable. Mobile omits that history chart and the transaction-type selector. Recent transactions use the available desktop panel height without clipping a partial row or creating a nested scroller; mobile keeps the four latest rows. An accessible six-month category-band view shows how the composition of spending changed over time. Category donut legends use aligned responsive columns so labels and amounts remain easy to scan without nested scrolling, while segment tooltips show only the hovered percentage.
 
 ### Transactions
 
 ![Transactions ledger](docs/screenshots/transactions-light.png)
 
-Transactions is the full working ledger and the page you will spend the most time in. Inbox, Trash, Export CSV, and the search reveal are explicit, high-contrast page actions kept separate from filtering. Search grows from its header trigger into an anchored popover without shifting the filter toolbar and uses typo-tolerant matching across titles and descriptions while preserving chronological order. Period, type, category, and tag remain explicit filters rather than search syntax. On desktop those filters stay visible in one URL-backed toolbar; on mobile they open in a focused bottom sheet and active filters remain removable from the page. Transaction checkboxes are always available, and the stable register header changes in place to expose a segmented bulk scope and bulk editing after you select a row instead of requiring a separate selection mode. Every entry supports tags, a category, receipt attachments, and an optional location. A tag can also define one inclusive date range: new manual transactions in that range show it as a removable default on web and iOS. A trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time, or download a self-describing portable archive from Settings when you need a fuller machine-readable export for migrations and agents.
+Transactions is the full working ledger and the page you will spend the most time in. Inbox, Trash, Export CSV, and the search reveal are explicit, high-contrast page actions kept separate from filtering. Search grows from its header trigger into an anchored popover without shifting the filter toolbar and uses typo-tolerant matching across titles and descriptions while preserving chronological order. Period, type, category, and tags remain explicit filters rather than search syntax. One Tags control switches between showing transactions carrying any selected tag and excluding transactions carrying any selected tag; both modes support several tags and scope the list, summary, CSV export, and “all filtered” bulk actions together. On desktop those filters stay visible in one URL-backed toolbar; on mobile they open in a focused bottom sheet and active filters remain removable from the page. Transaction checkboxes are always available, and the stable register header changes in place to expose a segmented bulk scope and bulk editing after you select a row instead of requiring a separate selection mode. Every entry supports tags, a category, receipt attachments, and an optional location. A tag can also define one inclusive date range: new manual transactions in that range show it as a removable default on web and iOS. A trash with soft delete keeps a mistaken delete recoverable. You can export the current view to CSV at any time, or download a self-describing portable archive from Settings when you need a fuller machine-readable export for migrations and agents.
 
 ### Budgets
 
@@ -50,7 +50,7 @@ Budgets is one period-based planning workspace. Use the month arrows or picker t
 
 ![Insights](docs/screenshots/insights-light.png)
 
-Insights is the visual analysis board. It charts income against expenses over the last twelve months, spending composition, the trend for any selected category, top categories, and budget versus actual for a chosen month. A single selected month renders explicit income and expense points instead of an empty-looking axis. A separate Net view shows how recorded income raises the balance, spending lowers it, and the last bar reaches the period result. Large categories stay explicit and small categories group under Other. On web, the data view keeps every category available for drill-down. Mobile web and the native iOS app use horizontal chart rows that fit normal vertical page scrolling.
+Insights is the visual analysis board. It charts income against expenses over the last twelve months, spending composition, the trend for any selected category, top categories, and budget versus actual for a chosen month. Its unified Tags filter can either analyze transactions carrying any of several selected tags or exclude transactions carrying any selected tag; the same scope carries into the Net view and transaction drill-downs. Budget figures stay based on full budget activity and say so whenever a tag filter is active. A single selected month renders explicit income and expense points instead of an empty-looking axis. A separate Net view shows how recorded income raises the balance, spending lowers it, and the last bar reaches the period result. Large categories stay explicit and small categories group under Other. On web, the data view keeps every category available for drill-down. Mobile web and the native iOS app use horizontal chart rows that fit normal vertical page scrolling.
 
 ### Recurring income and expenses
 
@@ -357,6 +357,30 @@ uv sync --group dev
 npm ci --prefix ui
 uv run dev
 ```
+
+For a temporary private preview on the current machine's tailnet, let the dev
+launcher configure Tailscale Serve as well:
+
+```bash
+uv run dev --tailnet
+```
+
+The API and Vite remain bound to loopback, while Tailscale terminates HTTPS and
+prints a tailnet-only MagicDNS URL. The launcher starts at HTTPS port `8443` and
+automatically skips ports already used by other Tailscale Serve mappings. Press
+Ctrl+C to stop both dev processes and remove only the temporary mapping it
+created. Pass `--tailnet-port 8448` to request a specific unused HTTPS port.
+
+Use detached mode when the preview should survive the launching terminal or
+agent session, then stop it explicitly from the same checkout:
+
+```bash
+uv run dev --tailnet --detach
+uv run dev --tailnet --stop
+```
+
+Detached startup prints both the URL and its log path. Starting it again is
+idempotent: the existing URL is reported instead of launching a duplicate.
 
 Useful commands:
 

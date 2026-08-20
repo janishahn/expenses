@@ -9,13 +9,16 @@ struct InsightsView: View {
     @State private var period = "all"
     @State private var typeFilter = ""
     @State private var selectedTagID: Int?
+    @State private var excludedTagIDs: Set<Int> = []
     @State private var selectedTrendCategoryID: Int?
     @State private var draftPeriod = "all"
     @State private var draftTypeFilter = ""
     @State private var draftTagID: Int?
+    @State private var draftExcludedTagIDs: Set<Int> = []
 
     private var reloadKey: String {
-        "\(section.rawValue)-\(period)-\(typeFilter)-\(selectedTagID ?? -1)-\(selectedTrendCategoryID ?? -1)"
+        let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
+        return "\(section.rawValue)-\(period)-\(typeFilter)-\(selectedTagID ?? -1)-\(excluded)-\(selectedTrendCategoryID ?? -1)"
     }
 
     var body: some View {
@@ -51,7 +54,10 @@ struct InsightsView: View {
                                 insights: insights,
                                 selectedTrendCategoryID: $selectedTrendCategoryID
                             )
-                            InsightsBudgetSection(insights: insights)
+                            InsightsBudgetSection(
+                                insights: insights,
+                                hasViewExclusions: !excludedTagIDs.isEmpty
+                            )
                         } else if model.showsInsightsInitialLoading {
                             LoadingStateSection(title: "Loading insights")
                         } else if model.showsInsightsLoadFailed {
@@ -101,6 +107,7 @@ struct InsightsView: View {
                     period: $draftPeriod,
                     typeFilter: $draftTypeFilter,
                     selectedTagID: $draftTagID,
+                    excludedTagIDs: $draftExcludedTagIDs,
                     tags: model.insights?.tags ?? [],
                     onApply: applyFilters,
                     onClear: clearFilters
@@ -124,10 +131,16 @@ struct InsightsView: View {
                 period: period,
                 type: apiTypeFilter,
                 tagID: selectedTagID,
+                excludedTagIDs: excludedTagIDs.sorted(),
                 trendCategoryID: selectedTrendCategoryID
             )
         case .net:
-            await model.loadInsightsFlow(period: period, type: apiTypeFilter, tagID: selectedTagID)
+            await model.loadInsightsFlow(
+                period: period,
+                type: apiTypeFilter,
+                tagID: selectedTagID,
+                excludedTagIDs: excludedTagIDs.sorted()
+            )
         case .durables:
             await model.loadDurablePurchases()
         }
@@ -138,7 +151,7 @@ struct InsightsView: View {
     }
 
     private var hasAppliedFilters: Bool {
-        period != "all" || !typeFilter.isEmpty || selectedTagID != nil
+        period != "all" || !typeFilter.isEmpty || selectedTagID != nil || !excludedTagIDs.isEmpty
     }
 
     private var activeFilterLabels: [String] {
@@ -153,6 +166,9 @@ struct InsightsView: View {
            let tag = model.insights?.tags.first(where: { $0.id == selectedTagID }) {
             labels.append(tag.name)
         }
+        labels.append(contentsOf: excludedTagIDs.sorted().compactMap { id in
+            model.insights?.tags.first(where: { $0.id == id }).map { "Excluding: \($0.name)" }
+        })
         return labels
     }
 
@@ -160,21 +176,28 @@ struct InsightsView: View {
         period = draftPeriod
         typeFilter = draftTypeFilter
         selectedTagID = draftTagID
+        if let selectedTagID {
+            draftExcludedTagIDs.remove(selectedTagID)
+        }
+        excludedTagIDs = draftExcludedTagIDs
     }
 
     private func clearFilters() {
         draftPeriod = "all"
         draftTypeFilter = ""
         draftTagID = nil
+        draftExcludedTagIDs = []
         period = "all"
         typeFilter = ""
         selectedTagID = nil
+        excludedTagIDs = []
     }
 
     private func resetDraftFiltersToApplied() {
         draftPeriod = period
         draftTypeFilter = typeFilter
         draftTagID = selectedTagID
+        draftExcludedTagIDs = excludedTagIDs
     }
 }
 
@@ -216,6 +239,7 @@ private struct InsightsFiltersSheet: View {
     @Binding var period: String
     @Binding var typeFilter: String
     @Binding var selectedTagID: Int?
+    @Binding var excludedTagIDs: Set<Int>
     let tags: [TransactionTag]
     var onApply: () -> Void
     var onClear: () -> Void
@@ -240,6 +264,11 @@ private struct InsightsFiltersSheet: View {
                         Text(tag.name).tag(Optional(tag.id))
                     }
                 }
+                TagExclusionSection(
+                    tags: tags,
+                    selectedIDs: $excludedTagIDs,
+                    includedTagID: selectedTagID
+                )
             }
             .pickerStyle(.navigationLink)
             .navigationTitle("Filters")
@@ -250,7 +279,7 @@ private struct InsightsFiltersSheet: View {
                         onClear()
                         dismiss()
                     }
-                    .disabled(period == "all" && typeFilter.isEmpty && selectedTagID == nil)
+                    .disabled(period == "all" && typeFilter.isEmpty && selectedTagID == nil && excludedTagIDs.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -258,6 +287,11 @@ private struct InsightsFiltersSheet: View {
                         dismiss()
                     }
                     .fontWeight(.semibold)
+                }
+            }
+            .onChange(of: selectedTagID) { _, newValue in
+                if let newValue {
+                    excludedTagIDs.remove(newValue)
                 }
             }
         }
@@ -476,9 +510,15 @@ private struct ChartLegendLabel: View {
 
 private struct InsightsBudgetSection: View {
     let insights: InsightsResponse
+    let hasViewExclusions: Bool
 
     var body: some View {
         Section("Budget Pulse") {
+            if hasViewExclusions {
+                Text("Budget figures stay based on your full budget activity.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if insights.budgetEffective.isEmpty {
                 Text("No budgets for \(insights.budgetMonth).")
                     .foregroundStyle(.secondary)
@@ -1194,7 +1234,7 @@ private struct DurablePurchasesSection: View {
                     start: Date.now.addingTimeInterval(-14 * 86_400),
                     end: .now
                 ),
-                filters: InsightsFilters(type: nil, tagID: nil),
+                filters: InsightsFilters(type: nil, tagID: nil, excludedTagIDs: []),
                 nodes: [
                     InsightsFlowNode(id: "income:1", label: "Salary", type: "income", amountCents: 325_000, categoryID: 1),
                     InsightsFlowNode(id: "income:2", label: "Bank transfer", type: "income", amountCents: 145_000, categoryID: 2),
@@ -1216,7 +1256,7 @@ private struct DurablePurchasesSection: View {
         InsightsNetSection(
             flow: InsightsFlowResponse(
                 period: Period(slug: "all", start: .now, end: .now),
-                filters: InsightsFilters(type: nil, tagID: nil),
+                filters: InsightsFilters(type: nil, tagID: nil, excludedTagIDs: []),
                 nodes: [],
                 links: []
             )

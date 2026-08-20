@@ -24,6 +24,7 @@ def _create_transaction(
     category_id: int,
     title: str,
     amount_cents: int = 1_000,
+    tags: list[str] | None = None,
 ) -> int:
     response = client.post(
         "/api/transactions",
@@ -35,11 +36,86 @@ def _create_transaction(
             "amount_cents": amount_cents,
             "category_id": category_id,
             "title": title,
-            "tags": [],
+            "tags": tags or [],
         },
     )
     assert response.status_code == 200
     return int(response.json()["id"])
+
+
+def test_dashboard_tag_exclusions_filter_activity_but_keep_actual_balance(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(
+        api_client, csrf_headers, "Dashboard exclusion", "expense"
+    )
+    today = date.today()
+    occurred_at = datetime.combine(today, datetime.min.time()).replace(hour=12)
+    vacation_id = _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        occurred_at=occurred_at,
+        category_id=category_id,
+        title="Dashboard vacation spend",
+        amount_cents=9_000,
+        tags=["Dashboard vacation"],
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today,
+        occurred_at=occurred_at.replace(hour=13),
+        category_id=category_id,
+        title="Dashboard regular spend",
+        amount_cents=3_000,
+    )
+    tags = api_client.get("/api/tags").json()["tags"]
+    vacation_tag_id = next(
+        int(tag["id"]) for tag in tags if tag["name"] == "Dashboard vacation"
+    )
+
+    unfiltered = api_client.get("/api/dashboard?period=all")
+    filtered = api_client.get(
+        f"/api/dashboard?period=all&exclude_tags={vacation_tag_id}"
+    )
+    assert unfiltered.status_code == 200
+    assert filtered.status_code == 200
+    unfiltered_payload = unfiltered.json()
+    filtered_payload = filtered.json()
+
+    assert filtered_payload["filters"]["excluded_tag_ids"] == [vacation_tag_id]
+    assert (
+        unfiltered_payload["kpis"]["expenses"] - filtered_payload["kpis"]["expenses"]
+        == 9_000
+    )
+    assert filtered_payload["kpis"]["balance"] == unfiltered_payload["kpis"]["balance"]
+    assert vacation_id not in {item["id"] for item in filtered_payload["recent"]}
+
+    unfiltered_bands = api_client.get(
+        "/api/category-breakdown?view=monthly&period=this_month"
+    ).json()["months"]
+    filtered_bands = api_client.get(
+        f"/api/category-breakdown?view=monthly&period=this_month&exclude_tags={vacation_tag_id}"
+    ).json()["months"]
+    assert (
+        unfiltered_bands[-1]["total_cents"] - filtered_bands[-1]["total_cents"] == 9_000
+    )
+    assert filtered_bands[-1]["balance_cents"] == unfiltered_bands[-1]["balance_cents"]
+
+    included = api_client.get(f"/api/dashboard?period=all&tags={vacation_tag_id}")
+    assert included.status_code == 200
+    included_payload = included.json()
+    assert included_payload["filters"]["included_tag_ids"] == [vacation_tag_id]
+    assert included_payload["kpis"]["expenses"] == 9_000
+    assert included_payload["kpis"]["balance"] == unfiltered_payload["kpis"]["balance"]
+    assert {item["id"] for item in included_payload["recent"]} == {vacation_id}
+
+    included_bands = api_client.get(
+        f"/api/category-breakdown?view=monthly&period=this_month&tags={vacation_tag_id}"
+    ).json()["months"]
+    assert included_bands[-1]["total_cents"] == 9_000
+    assert included_bands[-1]["balance_cents"] == unfiltered_bands[-1]["balance_cents"]
 
 
 def test_dashboard_recent_transactions_returns_latest_ten(

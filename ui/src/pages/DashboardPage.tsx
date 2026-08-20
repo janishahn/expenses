@@ -6,12 +6,15 @@ import { CheckIcon } from "@phosphor-icons/react/Check"
 import { EyeIcon } from "@phosphor-icons/react/Eye"
 import { EyeSlashIcon } from "@phosphor-icons/react/EyeSlash"
 import { GaugeIcon } from "@phosphor-icons/react/Gauge"
+import { TagIcon } from "@phosphor-icons/react/Tag"
 import { TrendUpIcon } from "@phosphor-icons/react/TrendUp"
+import { XIcon } from "@phosphor-icons/react/X"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import type { CategorySummary, TransactionListItem } from "../app/api-types"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
 import DashboardBalanceChart from "../components/charts/DashboardBalanceChart"
 import type { DashboardForecast } from "../components/charts/DashboardBalanceChart"
 import DonutChart from "../components/charts/DonutChart"
@@ -29,12 +32,22 @@ import {
 import TransactionDescription from "../components/TransactionDescription"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
+import { AppButton } from "../components/ui/product-button"
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "../components/ui/sheet"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import { serializeTagIds } from "../lib/tagFilters"
 
 const EMPTY_CATEGORIES: CategorySummary[] = []
 
@@ -57,7 +70,11 @@ type DurablePurchaseItem = {
 
 type DashboardResponse = {
   period: { slug: string; start: string; end: string }
-  filters: { type: string | null }
+  filters: {
+    type: string | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
+  }
   kpis: { income: number; expenses: number; balance: number }
   sparklines: { income?: string; expenses?: string; balance?: string }
   deltas: { income: number; expenses: number; balance: number } | null
@@ -69,6 +86,7 @@ type DashboardResponse = {
   }
   recent: TransactionListItem[]
   categories: CategorySummary[]
+  tags: Array<{ id: number; name: string }>
   durable_purchases?: DurablePurchaseItem[]
   budget_pace?: {
     velocity_ratio: number
@@ -103,6 +121,9 @@ function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const recentListRef = useRef<HTMLDivElement>(null)
   const [showFullyAmortized, setShowFullyAmortized] = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+  const [mobileTagMode, setMobileTagMode] = useState<TagFilterMode>("include")
+  const [mobileTagIds, setMobileTagIds] = useState<number[]>([])
   const [isDesktop, setIsDesktop] = useState(() =>
     window.matchMedia("(min-width: 861px)").matches
   )
@@ -127,6 +148,10 @@ function DashboardPage() {
     const end = searchParams.get("end")
     if (start) params.set("start", start)
     if (end) params.set("end", end)
+    const excludedTags = searchParams.get("exclude_tags")
+    if (excludedTags) params.set("exclude_tags", excludedTags)
+    const includedTags = searchParams.get("tags") || searchParams.get("tag")
+    if (includedTags) params.set("tags", includedTags)
     return params.toString()
   }, [searchParams])
   const now = new Date()
@@ -139,9 +164,13 @@ function DashboardPage() {
   useEffect(() => {
     const media = window.matchMedia("(min-width: 861px)")
     const syncDesktop = () => setIsDesktop(media.matches)
-    syncDesktop()
-    media.addEventListener("change", syncDesktop)
-    return () => media.removeEventListener("change", syncDesktop)
+    const syncLayout = () => {
+      syncDesktop()
+      if (media.matches) setMobileFiltersOpen(false)
+    }
+    syncLayout()
+    media.addEventListener("change", syncLayout)
+    return () => media.removeEventListener("change", syncLayout)
   }, [])
 
   const { data, isLoading, isFetching, error } = useQuery({
@@ -211,6 +240,14 @@ function DashboardPage() {
     setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
   const setType = (value: string) =>
     setSearchParams(buildSearchParams(searchParams, { type: value || null }))
+  const setTagFilter = (mode: TagFilterMode, ids: number[]) =>
+    setSearchParams(
+      buildSearchParams(searchParams, {
+        tag: null,
+        tags: mode === "include" ? serializeTagIds(ids) : null,
+        exclude_tags: mode === "exclude" ? serializeTagIds(ids) : null,
+      })
+    )
   const toggleIncognito = () => {
     setIncognito((previous) => {
       const next = !previous
@@ -226,7 +263,23 @@ function DashboardPage() {
     return <RouteError title="Dashboard" message="Unable to load dashboard data." />
   }
 
-  const { kpis, deltas, donut, recent, period, filters } = data
+  const { kpis, deltas, donut, recent, period, filters, tags } = data
+  const tagMode: TagFilterMode = filters.excluded_tag_ids.length ? "exclude" : "include"
+  const selectedTagIds =
+    tagMode === "exclude" ? filters.excluded_tag_ids : filters.included_tag_ids
+  const selectedTags = selectedTagIds.flatMap((id) => {
+    const tag = tags.find((item) => item.id === id)
+    return tag ? [tag] : []
+  })
+  const openMobileFilters = () => {
+    setMobileTagMode(tagMode)
+    setMobileTagIds(selectedTagIds)
+    setMobileFiltersOpen(true)
+  }
+  const applyMobileFilters = () => {
+    setTagFilter(mobileTagMode, mobileTagIds)
+    setMobileFiltersOpen(false)
+  }
   const selectedCategoryParam = searchParams.get("category")
   const selectedCategoryId = selectedCategoryParam
     ? Number(selectedCategoryParam)
@@ -309,7 +362,37 @@ function DashboardPage() {
       <div className="grid gap-2.5 desk:grid-cols-[minmax(0,1fr)_auto] desk:items-start">
         <PageIntro
           title="Dashboard"
-          actions={isFetching ? <span className="loading-hint">Updating…</span> : null}
+          inlineActions
+          actions={
+            <>
+              {isFetching ? <span className="loading-hint">Updating…</span> : null}
+              <div className="hidden desk:block">
+                <TagFilterPicker
+                  tags={tags}
+                  mode={tagMode}
+                  selectedIds={selectedTagIds}
+                  onModeChange={(mode, ids) => setTagFilter(mode, ids)}
+                  onChange={(ids, mode) => setTagFilter(mode, ids)}
+                  variant="compact"
+                />
+              </div>
+              <AppButton
+                type="button"
+                tone="ghost"
+                className="relative w-11 p-0 desk:hidden"
+                onClick={openMobileFilters}
+                aria-label="Filter dashboard by tags"
+                title="Filter dashboard by tags"
+              >
+                <TagIcon className="h-4 w-4" aria-hidden="true" />
+                {selectedTagIds.length ? (
+                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-accent px-1 font-mono text-[9px] leading-none text-[rgb(var(--accent-contrast))]">
+                    {selectedTagIds.length}
+                  </span>
+                ) : null}
+              </AppButton>
+            </>
+          }
         />
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
           <PeriodPicker
@@ -334,6 +417,80 @@ function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {selectedTags.length ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Tag filters">
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {selectedTags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() =>
+                  setTagFilter(tagMode, selectedTagIds.filter((id) => id !== tag.id))
+                }
+                className="chip-action inline-flex max-w-full items-center rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`Remove ${tagMode === "include" ? "included" : "excluded"} tag ${tag.name}`}
+              >
+                <span className="chip inline-flex max-w-full items-center gap-1.5">
+                  <span className="truncate">
+                    {tagMode === "include" ? "Only: " : "Excluding: "}{tag.name}
+                  </span>
+                  <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                </span>
+              </button>
+            ))}
+          </div>
+          <span className="text-[11px] text-muted">Balance and budgets stay actual.</span>
+        </div>
+      ) : null}
+
+      {mobileFiltersOpen && !isDesktop ? (
+        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+          <SheetContent
+            side="bottom"
+            className="max-h-[88vh]"
+            aria-label="Filter dashboard by tags"
+          >
+            <SheetHeader>
+              <SheetTitle className="text-lg">Filter dashboard by tags</SheetTitle>
+              <SheetClose asChild>
+                <AppButton
+                  tone="ghost"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted"
+                  aria-label="Close filters"
+                >
+                  <XIcon className="h-4 w-4" />
+                </AppButton>
+              </SheetClose>
+            </SheetHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <TagFilterPicker
+                tags={tags}
+                mode={mobileTagMode}
+                selectedIds={mobileTagIds}
+                onModeChange={setMobileTagMode}
+                onChange={setMobileTagIds}
+                variant="list"
+              />
+            </div>
+            <SheetFooter className="mt-0 flex shrink-0 flex-row gap-2 p-5 pt-0">
+              <AppButton
+                type="button"
+                tone="ghost"
+                onClick={() => setMobileTagIds([])}
+              >
+                Clear
+              </AppButton>
+              <SheetClose asChild>
+                <AppButton type="button" tone="ghost">Cancel</AppButton>
+              </SheetClose>
+              <AppButton type="button" onClick={applyMobileFilters} className="flex-1">
+                Apply
+              </AppButton>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ) : null}
 
       <FinancialPanel
         role="hero"

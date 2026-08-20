@@ -1048,19 +1048,31 @@ def filters_from_request(request: Request) -> TransactionFilters:
         except ValueError:
             category_id = None
 
-    tag_param = request.query_params.get("tag")
-    tag_id = None
-    if tag_param:
-        try:
-            tag_id = int(tag_param)
-        except ValueError:
-            tag_id = None
+    def parse_tag_ids(param: str) -> list[int]:
+        parsed: list[int] = []
+        for raw_value in request.query_params.getlist(param):
+            for raw_id in raw_value.split(","):
+                try:
+                    parsed_id = int(raw_id.strip())
+                except ValueError:
+                    continue
+                if parsed_id > 0 and parsed_id not in parsed:
+                    parsed.append(parsed_id)
+        return parsed
+
+    included_tag_ids = parse_tag_ids("tags")
+    legacy_tag_ids = parse_tag_ids("tag")
+    included_tag_ids = list(dict.fromkeys([*legacy_tag_ids, *included_tag_ids]))
+    excluded_tag_ids = parse_tag_ids("exclude_tags")
+    tag_id = included_tag_ids[0] if included_tag_ids else None
 
     return TransactionFilters(
         type=txn_type,
         category_id=category_id,
         query=query,
         tag_id=tag_id,
+        tag_ids=tuple(included_tag_ids),
+        excluded_tag_ids=tuple(excluded_tag_ids),
     )
 
 
@@ -1244,6 +1256,8 @@ def _filters_from_bulk_query(
     category_id: int | None,
     matched_category_ids: list[int] | None,
     tag_id: int | None,
+    tag_ids: list[int],
+    excluded_tag_ids: list[int],
     query: str | None,
 ) -> tuple[Period, TransactionFilters]:
     try:
@@ -1256,6 +1270,8 @@ def _filters_from_bulk_query(
         matched_category_ids=matched_category_ids,
         query=query,
         tag_id=tag_id,
+        tag_ids=tuple(dict.fromkeys([*([tag_id] if tag_id else []), *tag_ids])),
+        excluded_tag_ids=tuple(excluded_tag_ids),
     )
 
 
@@ -1303,6 +1319,8 @@ def _resolve_bulk_transactions(
         query.category,
         query.matched_category_ids,
         query.tag,
+        query.tags,
+        query.exclude_tags,
         query.q,
     )
     if include_deleted:
@@ -1415,7 +1433,12 @@ async def api_ingest(
 def api_kpis(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
-    metrics = MetricsService(db, user_id=user_id).kpis(period)
+    filters = filters_from_request(request)
+    metrics = MetricsService(db, user_id=user_id).kpis(
+        period,
+        tag_ids=list(filters.included_tag_ids),
+        excluded_tag_ids=filters.excluded_tag_ids,
+    )
     return metrics
 
 
@@ -1423,13 +1446,21 @@ def api_kpis(request: Request, db: Session = Depends(get_db)):
 def api_category_breakdown(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
+    filters = filters_from_request(request)
     if request.query_params.get("view") == "monthly":
         return {
             "months": InsightsService(db, user_id=user_id).monthly_category_bands(
-                end=period.end, months_back=6
+                end=period.end,
+                months_back=6,
+                tag_ids=list(filters.included_tag_ids),
+                excluded_tag_ids=filters.excluded_tag_ids,
             )
         }
-    data = MetricsService(db, user_id=user_id).category_breakdown(period)
+    data = MetricsService(db, user_id=user_id).category_breakdown(
+        period,
+        tag_ids=list(filters.included_tag_ids),
+        excluded_tag_ids=filters.excluded_tag_ids,
+    )
     return data
 
 
@@ -4675,6 +4706,8 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
             "type": filters.type.value if filters.type else None,
             "category_id": filters.category_id,
             "tag_id": filters.tag_id,
+            "included_tag_ids": list(filters.included_tag_ids),
+            "excluded_tag_ids": list(filters.excluded_tag_ids),
             "query": filters.query,
         },
         "categories": [
@@ -4755,6 +4788,8 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
             "type": filters.type.value if filters.type else None,
             "category_id": filters.category_id,
             "tag_id": filters.tag_id,
+            "included_tag_ids": list(filters.included_tag_ids),
+            "excluded_tag_ids": list(filters.excluded_tag_ids),
             "query": filters.query,
         },
         "categories": [
@@ -4775,21 +4810,39 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    tag_ids = [filters.tag_id] if filters.tag_id else None
+    tag_ids = list(filters.included_tag_ids)
+    excluded_tag_ids = filters.excluded_tag_ids
 
     insights = InsightsService(db, user_id=user_id)
-    series = insights.monthly_series(period, months_back=12, tag_ids=tag_ids)
+    series = insights.monthly_series(
+        period,
+        months_back=12,
+        tag_ids=tag_ids,
+        excluded_tag_ids=excluded_tag_ids,
+    )
     expense_breakdown = MetricsService(db, user_id=user_id).category_breakdown(
-        period, TransactionType.expense, tag_ids=tag_ids
+        period,
+        TransactionType.expense,
+        tag_ids=tag_ids,
+        excluded_tag_ids=excluded_tag_ids,
     )
     income_breakdown = MetricsService(db, user_id=user_id).category_breakdown(
-        period, TransactionType.income, tag_ids=tag_ids
+        period,
+        TransactionType.income,
+        tag_ids=tag_ids,
+        excluded_tag_ids=excluded_tag_ids,
     )
-    deltas = insights.expense_category_deltas(period, tag_ids=tag_ids)
+    deltas = insights.expense_category_deltas(
+        period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+    )
     top_tags = (
         []
         if tag_ids
-        else insights.top_tags(period, transaction_type=TransactionType.expense)
+        else insights.top_tags(
+            period,
+            transaction_type=TransactionType.expense,
+            excluded_tag_ids=excluded_tag_ids,
+        )
     )
 
     all_categories = CategoryService(db, user_id=user_id).list_all()
@@ -4812,7 +4865,11 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         trend_category_id = expense_categories[0].id
     trend = (
         insights.category_trend(
-            trend_category_id, end=period.end, months_back=12, tag_ids=tag_ids
+            trend_category_id,
+            end=period.end,
+            months_back=12,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
         )
         if trend_category_id
         else []
@@ -4848,6 +4905,8 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         "filters": {
             "type": filters.type.value if filters.type else None,
             "tag_id": filters.tag_id,
+            "included_tag_ids": tag_ids,
+            "excluded_tag_ids": list(filters.excluded_tag_ids),
         },
         "tags": [{"id": t.id, "name": t.name} for t in all_tags],
         "categories": [
@@ -4877,9 +4936,12 @@ def api_insights_flow(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    tag_ids = [filters.tag_id] if filters.tag_id else None
+    tag_ids = list(filters.included_tag_ids)
     flow = InsightsService(db, user_id=user_id).flow_data(
-        period, tag_ids=tag_ids, tx_type=filters.type
+        period,
+        tag_ids=tag_ids,
+        excluded_tag_ids=filters.excluded_tag_ids,
+        tx_type=filters.type,
     )
     return {
         "period": {
@@ -4890,6 +4952,8 @@ def api_insights_flow(request: Request, db: Session = Depends(get_db)):
         "filters": {
             "type": filters.type.value if filters.type else None,
             "tag_id": filters.tag_id,
+            "included_tag_ids": tag_ids,
+            "excluded_tag_ids": list(filters.excluded_tag_ids),
         },
         "nodes": flow["nodes"],
         "links": flow["links"],
@@ -4962,6 +5026,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     categories = CategoryService(db, user_id=user_id).list_all()
     tags = TagService(db, user_id=user_id).list_all()
     has_any_transactions = txn_service.has_any()
+    included_tag_ids = list(filters.included_tag_ids)
 
     donut_context: dict[str, object] = {"has_any_transactions": has_any_transactions}
     if has_any_transactions:
@@ -4970,7 +5035,10 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
                 {
                     "mode": "expense-only",
                     "expense_breakdown": metrics_service.category_breakdown(
-                        period, TransactionType.expense
+                        period,
+                        TransactionType.expense,
+                        tag_ids=included_tag_ids,
+                        excluded_tag_ids=filters.excluded_tag_ids,
                     ),
                 }
             )
@@ -4979,7 +5047,10 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
                 {
                     "mode": "income-only",
                     "income_breakdown": metrics_service.category_breakdown(
-                        period, TransactionType.income
+                        period,
+                        TransactionType.income,
+                        tag_ids=included_tag_ids,
+                        excluded_tag_ids=filters.excluded_tag_ids,
                     ),
                 }
             )
@@ -4988,22 +5059,47 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
                 {
                     "mode": "both",
                     "expense_breakdown": metrics_service.category_breakdown(
-                        period, TransactionType.expense
+                        period,
+                        TransactionType.expense,
+                        tag_ids=included_tag_ids,
+                        excluded_tag_ids=filters.excluded_tag_ids,
                     ),
                     "income_breakdown": metrics_service.category_breakdown(
-                        period, TransactionType.income
+                        period,
+                        TransactionType.income,
+                        tag_ids=included_tag_ids,
+                        excluded_tag_ids=filters.excluded_tag_ids,
                     ),
                 }
             )
-    kpis = metrics_service.kpis(period)
-    sparklines = metrics_service.kpi_sparklines(period)
+    kpis = metrics_service.kpis(
+        period,
+        tag_ids=included_tag_ids,
+        excluded_tag_ids=filters.excluded_tag_ids,
+    )
+    sparklines = metrics_service.kpi_sparklines(
+        period,
+        tag_ids=included_tag_ids,
+        excluded_tag_ids=filters.excluded_tag_ids,
+    )
+    if included_tag_ids:
+        actual_kpis = metrics_service.kpis(period)
+        actual_sparklines = metrics_service.kpi_sparklines(period)
+        kpis["balance"] = actual_kpis["balance"]
+        sparklines["balance"] = actual_sparklines["balance"]
     deltas = None
     duration_days = (period.end - period.start).days + 1
     if period.slug != "all" and duration_days <= 370:
         prev_end = period.start - timedelta(days=1)
         prev_start = prev_end - timedelta(days=duration_days - 1)
         prev_period = Period("prev", prev_start, prev_end)
-        prev = metrics_service.kpis(prev_period)
+        prev = metrics_service.kpis(
+            prev_period,
+            tag_ids=included_tag_ids,
+            excluded_tag_ids=filters.excluded_tag_ids,
+        )
+        if included_tag_ids:
+            prev["balance"] = metrics_service.kpis(prev_period)["balance"]
         deltas = {
             "income": kpis["income"] - prev["income"],
             "expenses": kpis["expenses"] - prev["expenses"],
@@ -5031,7 +5127,11 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
             "start": period.start.isoformat(),
             "end": period.end.isoformat(),
         },
-        "filters": {"type": filters.type.value if filters.type else None},
+        "filters": {
+            "type": filters.type.value if filters.type else None,
+            "included_tag_ids": included_tag_ids,
+            "excluded_tag_ids": list(filters.excluded_tag_ids),
+        },
         "kpis": kpis,
         "sparklines": sparklines,
         "deltas": deltas,

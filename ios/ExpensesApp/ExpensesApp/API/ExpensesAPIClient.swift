@@ -133,8 +133,20 @@ struct ExpensesAPIClient {
         )
     }
 
-    func dashboard(period: String = "this_month", token: String) async throws -> DashboardResponse {
-        try await request(path: "/api/dashboard?period=\(period)", bearerToken: token)
+    func dashboard(
+        period: String = "this_month",
+        excludedTagIDs: [Int] = [],
+        token: String
+    ) async throws -> DashboardResponse {
+        var components = URLComponents()
+        components.path = "/api/dashboard"
+        var items = [URLQueryItem(name: "period", value: period)]
+        appendExcludedTags(excludedTagIDs, to: &items)
+        components.queryItems = items
+        try await request(
+            path: components.string ?? "/api/dashboard?period=\(period)",
+            bearerToken: token
+        )
     }
 
     func transactions(
@@ -142,6 +154,7 @@ struct ExpensesAPIClient {
         type: String?,
         categoryID: Int?,
         tagID: Int?,
+        excludedTagIDs: [Int] = [],
         period: String = "all",
         token: String
     ) async throws -> TransactionsResponse {
@@ -152,6 +165,7 @@ struct ExpensesAPIClient {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 period: period
             ),
             bearerToken: token
@@ -163,6 +177,7 @@ struct ExpensesAPIClient {
         type: String?,
         categoryID: Int?,
         tagID: Int?,
+        excludedTagIDs: [Int] = [],
         period: String = "all",
         token: String
     ) async throws -> UncategorizedTransactionsResponse {
@@ -173,6 +188,7 @@ struct ExpensesAPIClient {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 period: period
             ),
             bearerToken: token
@@ -429,6 +445,7 @@ struct ExpensesAPIClient {
         period: String,
         type: String?,
         tagID: Int?,
+        excludedTagIDs: [Int] = [],
         trendCategoryID: Int?,
         token: String
     ) async throws -> InsightsResponse {
@@ -438,14 +455,30 @@ struct ExpensesAPIClient {
                 period: period,
                 type: type,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 trendCategoryID: trendCategoryID
             ),
             bearerToken: token
         )
     }
 
-    func insightsFlow(period: String, type: String?, tagID: Int?, token: String) async throws -> InsightsFlowResponse {
-        try await request(path: insightsPath(base: "/api/insights/flow", period: period, type: type, tagID: tagID), bearerToken: token)
+    func insightsFlow(
+        period: String,
+        type: String?,
+        tagID: Int?,
+        excludedTagIDs: [Int] = [],
+        token: String
+    ) async throws -> InsightsFlowResponse {
+        try await request(
+            path: insightsPath(
+                base: "/api/insights/flow",
+                period: period,
+                type: type,
+                tagID: tagID,
+                excludedTagIDs: excludedTagIDs
+            ),
+            bearerToken: token
+        )
     }
 
     func durablePurchases(token: String) async throws -> DurablePurchasesResponse {
@@ -926,6 +959,7 @@ struct ExpensesAPIClient {
         period: String,
         type: String?,
         tagID: Int?,
+        excludedTagIDs: [Int] = [],
         trendCategoryID: Int? = nil
     ) -> String {
         var components = URLComponents()
@@ -937,6 +971,7 @@ struct ExpensesAPIClient {
         if let tagID {
             items.append(URLQueryItem(name: "tag", value: String(tagID)))
         }
+        appendExcludedTags(excludedTagIDs, to: &items)
         if let trendCategoryID {
             items.append(URLQueryItem(name: "trend_category", value: String(trendCategoryID)))
         }
@@ -950,6 +985,7 @@ struct ExpensesAPIClient {
         type: String?,
         categoryID: Int?,
         tagID: Int?,
+        excludedTagIDs: [Int],
         period: String
     ) -> String {
         var components = URLComponents()
@@ -971,8 +1007,16 @@ struct ExpensesAPIClient {
         if let tagID {
             items.append(URLQueryItem(name: "tag", value: String(tagID)))
         }
+        appendExcludedTags(excludedTagIDs, to: &items)
         components.queryItems = items
         return components.string ?? "\(base)?period=\(period)&limit=50"
+    }
+
+    private func appendExcludedTags(_ tagIDs: [Int], to items: inout [URLQueryItem]) {
+        let value = Array(Set(tagIDs)).sorted().map(String.init).joined(separator: ",")
+        if !value.isEmpty {
+            items.append(URLQueryItem(name: "exclude_tags", value: value))
+        }
     }
 
     private func adminLogsPath(filter: AdminLogFilter, search: String, cursor: String?) -> String {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Dashboard, Insights, and Transactions can temporarily include or exclude several tags through one unified web filter; transaction lists, summaries, exports, bulk scopes, drill-downs, and analysis values share the same scope while actual balances and budgets remain unchanged. The Dashboard keeps this occasional action compact, and iOS retains its multi-tag exclusion filter.
+- `uv run dev --tailnet` now creates a temporary, loopback-backed Tailscale Serve preview with automatic port selection and cleanup; detached previews can be managed with `--detach` and `--stop`.
+
+### Fixed
+- Removed the unintended outline-like ring from the Transactions page's search and header action buttons on desktop and mobile.
+- Tag filter menus now let users choose Include or Exclude before selecting any tags and stay open for the following selection.
+- Aligned the Dashboard Tags trigger with the shared 44px product-button sizing and styling on desktop and mobile.
+
 ## [0.4.9] - 2026-08-20
 
 ### Changed

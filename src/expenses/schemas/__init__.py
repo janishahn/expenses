@@ -245,6 +245,8 @@ class TransactionFiltersOut(BaseModel):
     type: Optional[str] = None
     category_id: Optional[int] = None
     tag_id: Optional[int] = None
+    included_tag_ids: list[int] = Field(default_factory=list)
+    excluded_tag_ids: list[int] = Field(default_factory=list)
     query: Optional[str] = None
 
 
@@ -289,6 +291,8 @@ class PermanentDeleteTransactionOut(StatusOut):
 
 class DashboardFiltersOut(BaseModel):
     type: Optional[str] = None
+    included_tag_ids: list[int] = Field(default_factory=list)
+    excluded_tag_ids: list[int] = Field(default_factory=list)
 
 
 class DashboardKpisOut(BaseModel):
@@ -380,6 +384,8 @@ class DashboardResponseOut(BaseModel):
 class InsightsFiltersOut(BaseModel):
     type: Optional[Literal["income", "expense"]] = None
     tag_id: Optional[int] = None
+    included_tag_ids: list[int] = Field(default_factory=list)
+    excluded_tag_ids: list[int] = Field(default_factory=list)
 
 
 class InsightsCategoryOut(BaseModel):
@@ -1463,6 +1469,8 @@ class BulkSelectionQueryIn(BaseModel):
     category: Optional[int] = None
     matched_category_ids: Optional[list[int]] = None
     tag: Optional[int] = None
+    tags: list[int] = Field(default_factory=list)
+    exclude_tags: list[int] = Field(default_factory=list)
     q: Optional[str] = None
 
 

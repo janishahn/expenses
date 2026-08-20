@@ -190,6 +190,140 @@ def test_transaction_summary_aggregates_the_filtered_query(
     }
 
 
+def test_multi_tag_filters_apply_to_list_summary_export_and_bulk_scope(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    created: dict[str, int] = {}
+    for title, amount_cents, tags in [
+        ("Exclude scope vacation", 9_000, ["Vacation scope"]),
+        ("Exclude scope gifts", 5_000, ["Gift scope"]),
+        ("Exclude scope regular", 3_000, []),
+    ]:
+        response = api_client.post(
+            "/api/transactions",
+            json={
+                "date": "2025-01-10",
+                "occurred_at": "2025-01-10T12:00:00",
+                "type": "expense",
+                "amount_cents": amount_cents,
+                "title": title,
+                "tags": tags,
+            },
+            headers=csrf_headers,
+        )
+        assert response.status_code == 200
+        created[title] = int(response.json()["id"])
+
+    tags_response = api_client.get("/api/tags")
+    assert tags_response.status_code == 200
+    vacation_tag_id = next(
+        int(tag["id"])
+        for tag in tags_response.json()["tags"]
+        if tag["name"] == "Vacation scope"
+    )
+    gift_tag_id = next(
+        int(tag["id"])
+        for tag in tags_response.json()["tags"]
+        if tag["name"] == "Gift scope"
+    )
+    query = f"period=all&q=Exclude+scope&exclude_tags={vacation_tag_id},{gift_tag_id}"
+
+    listing = api_client.get(f"/api/transactions?{query}")
+    assert listing.status_code == 200
+    assert listing.json()["filters"]["excluded_tag_ids"] == [
+        vacation_tag_id,
+        gift_tag_id,
+    ]
+    assert [item["id"] for item in listing.json()["items"]] == [
+        created["Exclude scope regular"]
+    ]
+
+    summary = api_client.get(f"/api/transactions/summary?{query}")
+    assert summary.status_code == 200
+    assert summary.json() == {
+        "income_cents": 0,
+        "expense_cents": 3_000,
+        "net_cents": -3_000,
+        "count": 1,
+    }
+
+    export = api_client.get(f"/api/transactions/export.csv?{query}")
+    assert export.status_code == 200
+    assert "Exclude scope regular" in export.text
+    assert "Exclude scope vacation" not in export.text
+    assert "Exclude scope gifts" not in export.text
+
+    bulk_preview = api_client.post(
+        "/api/transactions/bulk/preview",
+        headers=csrf_headers,
+        json={
+            "selection": {
+                "mode": "query",
+                "query": {
+                    "period": "all",
+                    "exclude_tags": [vacation_tag_id, gift_tag_id],
+                    "q": "Exclude scope",
+                },
+            },
+            "operation": {
+                "tag_patch": {"mode": "add", "tags": ["Reviewed scope"]},
+                "lifecycle": "none",
+            },
+        },
+    )
+    assert bulk_preview.status_code == 200
+    assert bulk_preview.json()["resolved_count"] == 1
+    assert bulk_preview.json()["sample_ids"] == [created["Exclude scope regular"]]
+
+    include_query = f"period=all&q=Exclude+scope&tags={vacation_tag_id},{gift_tag_id}"
+    included_listing = api_client.get(f"/api/transactions?{include_query}")
+    assert included_listing.status_code == 200
+    assert included_listing.json()["filters"]["included_tag_ids"] == [
+        vacation_tag_id,
+        gift_tag_id,
+    ]
+    assert {item["id"] for item in included_listing.json()["items"]} == {
+        created["Exclude scope vacation"],
+        created["Exclude scope gifts"],
+    }
+
+    included_summary = api_client.get(f"/api/transactions/summary?{include_query}")
+    assert included_summary.status_code == 200
+    assert included_summary.json() == {
+        "income_cents": 0,
+        "expense_cents": 14_000,
+        "net_cents": -14_000,
+        "count": 2,
+    }
+
+    included_export = api_client.get(f"/api/transactions/export.csv?{include_query}")
+    assert included_export.status_code == 200
+    assert "Exclude scope vacation" in included_export.text
+    assert "Exclude scope gifts" in included_export.text
+    assert "Exclude scope regular" not in included_export.text
+
+    included_bulk_preview = api_client.post(
+        "/api/transactions/bulk/preview",
+        headers=csrf_headers,
+        json={
+            "selection": {
+                "mode": "query",
+                "query": {
+                    "period": "all",
+                    "tags": [vacation_tag_id, gift_tag_id],
+                    "q": "Exclude scope",
+                },
+            },
+            "operation": {
+                "tag_patch": {"mode": "add", "tags": ["Reviewed scope"]},
+                "lifecycle": "none",
+            },
+        },
+    )
+    assert included_bulk_preview.status_code == 200
+    assert included_bulk_preview.json()["resolved_count"] == 2
+
+
 def test_transaction_summary_evaluates_fuzzy_filter_once() -> None:
     session = make_session()
     transactions = TransactionService(session)

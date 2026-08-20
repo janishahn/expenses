@@ -96,6 +96,26 @@ class TransactionFilters:
     matched_category_ids: Optional[list[int]] = None
     query: Optional[str] = None
     tag_id: Optional[int] = None
+    tag_ids: tuple[int, ...] = ()
+    excluded_tag_ids: tuple[int, ...] = ()
+
+    @property
+    def included_tag_ids(self) -> tuple[int, ...]:
+        return self.tag_ids or ((self.tag_id,) if self.tag_id else ())
+
+
+def _apply_transaction_tag_scope(
+    stmt,
+    transaction_model,
+    *,
+    tag_ids: Optional[list[int]] = None,
+    excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+):
+    if tag_ids:
+        stmt = stmt.where(transaction_model.tags.any(Tag.id.in_(tag_ids)))
+    if excluded_tag_ids:
+        stmt = stmt.where(~transaction_model.tags.any(Tag.id.in_(excluded_tag_ids)))
+    return stmt
 
 
 def _tag_names_json(tags: list[Tag]) -> str:
@@ -1971,8 +1991,12 @@ class TransactionService:
             if not filters.matched_category_ids:
                 return stmt.where(false())
             stmt = stmt.where(Transaction.category_id.in_(filters.matched_category_ids))
-        if filters.tag_id:
-            stmt = stmt.where(Transaction.tags.any(Tag.id == filters.tag_id))
+        stmt = _apply_transaction_tag_scope(
+            stmt,
+            Transaction,
+            tag_ids=list(filters.included_tag_ids),
+            excluded_tag_ids=filters.excluded_tag_ids,
+        )
         if filters.query:
             query = " ".join(filters.query.casefold().split())
             if query:
@@ -2960,7 +2984,11 @@ class MetricsService:
             del self._category_breakdown_cache[old_key]
 
     def kpis(
-        self, period: Period, *, tag_ids: Optional[list[int]] = None
+        self,
+        period: Period,
+        *,
+        tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> dict[str, int]:
         def kpis_from_transactions(start: date, end: date) -> tuple[int, int]:
             income_stmt = select(
@@ -3000,13 +3028,18 @@ class MetricsService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
-            if tag_ids:
-                income_stmt = income_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
-                expense_stmt = expense_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
+            income_stmt = _apply_transaction_tag_scope(
+                income_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
+            expense_stmt = _apply_transaction_tag_scope(
+                expense_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
 
             income = int(self.session.execute(income_stmt).scalar_one() or 0)
             expense_gross = int(self.session.execute(expense_stmt).scalar_one() or 0)
@@ -3036,10 +3069,12 @@ class MetricsService:
                     ReimbursementTxn.is_reimbursement.is_(True),
                 )
             )
-            if tag_ids:
-                reimbursed_stmt = reimbursed_stmt.where(
-                    ExpenseTxn.tags.any(Tag.id.in_(tag_ids))
-                )
+            reimbursed_stmt = _apply_transaction_tag_scope(
+                reimbursed_stmt,
+                ExpenseTxn,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             reimbursed = int(self.session.execute(reimbursed_stmt).scalar_one() or 0)
 
             expenses = max(0, expense_gross - reimbursed)
@@ -3057,7 +3092,7 @@ class MetricsService:
             ).balance_as_of(datetime.combine(period.end, time.max))
 
         # If filtering by tags, we cannot use MonthlyRollup as it doesn't have tag info.
-        if tag_ids:
+        if tag_ids or excluded_tag_ids:
             income, expenses = kpis_from_transactions(period.start, period.end)
             return {
                 "income": income,
@@ -3144,6 +3179,7 @@ class MetricsService:
         *,
         max_points: int = 12,
         tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> dict[str, str]:
         def income_expense_between(start: date, end: date) -> tuple[int, int]:
             income_stmt = select(
@@ -3183,13 +3219,18 @@ class MetricsService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
-            if tag_ids:
-                income_stmt = income_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
-                expense_stmt = expense_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
+            income_stmt = _apply_transaction_tag_scope(
+                income_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
+            expense_stmt = _apply_transaction_tag_scope(
+                expense_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
 
             income = int(self.session.execute(income_stmt).scalar_one() or 0)
             expense_gross = int(self.session.execute(expense_stmt).scalar_one() or 0)
@@ -3219,10 +3260,12 @@ class MetricsService:
                     ReimbursementTxn.is_reimbursement.is_(True),
                 )
             )
-            if tag_ids:
-                reimbursed_stmt = reimbursed_stmt.where(
-                    ExpenseTxn.tags.any(Tag.id.in_(tag_ids))
-                )
+            reimbursed_stmt = _apply_transaction_tag_scope(
+                reimbursed_stmt,
+                ExpenseTxn,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             reimbursed = int(self.session.execute(reimbursed_stmt).scalar_one() or 0)
 
             expenses = max(0, expense_gross - reimbursed)
@@ -3264,7 +3307,7 @@ class MetricsService:
             months = months[-max_points:]
 
         rollup_map = {}
-        if not tag_ids:
+        if not tag_ids and not excluded_tag_ids:
             keys = [(m.year, m.month) for m in months]
             rollups = self.session.scalars(
                 select(MonthlyRollup).where(
@@ -3299,7 +3342,7 @@ class MetricsService:
             income = 0
             expenses = 0
 
-            if full_month and not tag_ids:
+            if full_month and not tag_ids and not excluded_tag_ids:
                 rollup = rollup_map.get((month.year, month.month))
                 if rollup:
                     income = rollup.income_cents
@@ -3335,6 +3378,7 @@ class MetricsService:
         *,
         category_ids: Optional[list[int]] = None,
         tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
         limit: Optional[int] = 8,
     ) -> list[dict[str, object]]:
         if transaction_type is None:
@@ -3351,8 +3395,13 @@ class MetricsService:
             if not tag_ids
             else "tags_" + "_".join(str(i) for i in sorted(set(tag_ids)))
         )
+        excluded_tag_suffix = (
+            "none"
+            if not excluded_tag_ids
+            else "without_" + "_".join(str(i) for i in sorted(set(excluded_tag_ids)))
+        )
         limit_suffix = "all" if limit is None else str(limit)
-        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}_{limit_suffix}"
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}_{excluded_tag_suffix}_{limit_suffix}"
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
@@ -3376,8 +3425,12 @@ class MetricsService:
             )
             if category_ids:
                 stmt = stmt.where(Transaction.category_id.in_(category_ids))
-            if tag_ids:
-                stmt = stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+            stmt = _apply_transaction_tag_scope(
+                stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
 
             rows = self.session.execute(stmt).all()
             total = sum(row.total or 0 for row in rows)
@@ -3413,8 +3466,12 @@ class MetricsService:
         )
         if category_ids:
             gross_stmt = gross_stmt.where(Transaction.category_id.in_(category_ids))
-        if tag_ids:
-            gross_stmt = gross_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+        gross_stmt = _apply_transaction_tag_scope(
+            gross_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
         gross_rows = self.session.execute(gross_stmt).all()
 
         ExpenseTxn = aliased(Transaction)
@@ -3450,8 +3507,12 @@ class MetricsService:
         )
         if category_ids:
             reimb_stmt = reimb_stmt.where(ExpenseTxn.category_id.in_(category_ids))
-        if tag_ids:
-            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+        reimb_stmt = _apply_transaction_tag_scope(
+            reimb_stmt,
+            ExpenseTxn,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
 
         reimb_rows = self.session.execute(reimb_stmt).all()
         reimb_map = {row.category_id: int(row.reimbursed or 0) for row in reimb_rows}
@@ -3490,7 +3551,12 @@ class InsightsService:
         self.metrics = MetricsService(session, self.user_id)
 
     def monthly_category_bands(
-        self, *, end: date, months_back: int = 6
+        self,
+        *,
+        end: date,
+        months_back: int = 6,
+        tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> list[dict[str, object]]:
         end_month = month_start(end.year, end.month)
         months = [
@@ -3498,7 +3564,7 @@ class InsightsService:
         ]
         start = months[0]
 
-        gross_rows = self.session.execute(
+        gross_stmt = (
             select(
                 func.strftime("%Y", Transaction.date).label("year"),
                 func.strftime("%m", Transaction.date).label("month"),
@@ -3521,11 +3587,18 @@ class InsightsService:
                 Category.name,
                 Category.icon,
             )
-        ).all()
+        )
+        gross_stmt = _apply_transaction_tag_scope(
+            gross_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        gross_rows = self.session.execute(gross_stmt).all()
 
         ExpenseTxn = aliased(Transaction)
         ReimbursementTxn = aliased(Transaction)
-        reimbursed_rows = self.session.execute(
+        reimbursed_stmt = (
             select(
                 func.strftime("%Y", ExpenseTxn.date).label("year"),
                 func.strftime("%m", ExpenseTxn.date).label("month"),
@@ -3555,7 +3628,14 @@ class InsightsService:
                 ReimbursementTxn.is_reimbursement.is_(True),
             )
             .group_by("year", "month", ExpenseTxn.category_id)
-        ).all()
+        )
+        reimbursed_stmt = _apply_transaction_tag_scope(
+            reimbursed_stmt,
+            ExpenseTxn,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        reimbursed_rows = self.session.execute(reimbursed_stmt).all()
 
         reimbursed = {
             (int(row.year), int(row.month), row.category_id): int(row.reimbursed or 0)
@@ -3625,6 +3705,7 @@ class InsightsService:
         *,
         months_back: int = 12,
         tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> list[dict[str, object]]:
         start_month = month_start(period.start.year, period.start.month)
         end_month = month_start(period.end.year, period.end.month)
@@ -3668,11 +3749,18 @@ class InsightsService:
             )
             .group_by("year", "month")
         )
-        if tag_ids:
-            income_stmt = income_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
-            expense_gross_stmt = expense_gross_stmt.where(
-                Transaction.tags.any(Tag.id.in_(tag_ids))
-            )
+        income_stmt = _apply_transaction_tag_scope(
+            income_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        expense_gross_stmt = _apply_transaction_tag_scope(
+            expense_gross_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
 
         income_totals: dict[tuple[int, int], int] = {}
         for row in self.session.execute(income_stmt):
@@ -3714,8 +3802,12 @@ class InsightsService:
             )
             .group_by("year", "month")
         )
-        if tag_ids:
-            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+        reimb_stmt = _apply_transaction_tag_scope(
+            reimb_stmt,
+            ExpenseTxn,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
 
         reimb_totals: dict[tuple[int, int], int] = {}
         for row in self.session.execute(reimb_stmt):
@@ -3746,6 +3838,7 @@ class InsightsService:
         *,
         transaction_type: TransactionType = TransactionType.expense,
         limit: int = 12,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> list[dict[str, object]]:
         if transaction_type == TransactionType.income:
             stmt = (
@@ -3767,6 +3860,11 @@ class InsightsService:
                 .order_by(func.sum(Transaction.amount_cents).desc())
                 .limit(limit)
             )
+            stmt = _apply_transaction_tag_scope(
+                stmt,
+                Transaction,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             return [
                 {
                     "id": int(r.tag_id),
@@ -3776,7 +3874,7 @@ class InsightsService:
                 for r in self.session.execute(stmt)
             ]
 
-        gross_rows = self.session.execute(
+        gross_stmt = (
             select(
                 Tag.id.label("tag_id"),
                 Tag.name.label("tag_name"),
@@ -3791,50 +3889,62 @@ class InsightsService:
                 Transaction.date.between(period.start, period.end),
             )
             .group_by(Tag.id, Tag.name)
-        ).all()
+        )
+        gross_stmt = _apply_transaction_tag_scope(
+            gross_stmt,
+            Transaction,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        gross_rows = self.session.execute(gross_stmt).all()
         if not gross_rows:
             return []
 
         ExpenseTxn = aliased(Transaction)
         ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                Tag.id.label("tag_id"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
+            )
+            .select_from(ReimbursementAllocation)
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                transaction_tags,
+                transaction_tags.c.transaction_id == ExpenseTxn.id,
+            )
+            .join(Tag, Tag.id == transaction_tags.c.tag_id)
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(period.start, period.end),
+                Tag.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(Tag.id)
+        )
+        reimb_stmt = _apply_transaction_tag_scope(
+            reimb_stmt,
+            ExpenseTxn,
+            excluded_tag_ids=excluded_tag_ids,
+        )
         reimb_by_tag = {
             int(r.tag_id): int(r.reimbursed or 0)
-            for r in self.session.execute(
-                select(
-                    Tag.id.label("tag_id"),
-                    func.coalesce(
-                        func.sum(ReimbursementAllocation.amount_cents), 0
-                    ).label("reimbursed"),
-                )
-                .select_from(ReimbursementAllocation)
-                .join(
-                    ExpenseTxn,
-                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
-                )
-                .join(
-                    transaction_tags,
-                    transaction_tags.c.transaction_id == ExpenseTxn.id,
-                )
-                .join(Tag, Tag.id == transaction_tags.c.tag_id)
-                .join(
-                    ReimbursementTxn,
-                    ReimbursementAllocation.reimbursement_transaction_id
-                    == ReimbursementTxn.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ExpenseTxn.user_id == self.user_id,
-                    ExpenseTxn.deleted_at.is_(None),
-                    ExpenseTxn.type == TransactionType.expense,
-                    ExpenseTxn.date.between(period.start, period.end),
-                    Tag.user_id == self.user_id,
-                    ReimbursementTxn.user_id == self.user_id,
-                    ReimbursementTxn.deleted_at.is_(None),
-                    ReimbursementTxn.type == TransactionType.income,
-                    ReimbursementTxn.is_reimbursement.is_(True),
-                )
-                .group_by(Tag.id)
-            )
+            for r in self.session.execute(reimb_stmt)
         }
 
         out = []
@@ -3858,6 +3968,7 @@ class InsightsService:
         end: date,
         months_back: int = 12,
         tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> list[dict[str, object]]:
         end_month = month_start(end.year, end.month)
         start_month = add_months(end_month, -(months_back - 1))
@@ -3881,8 +3992,12 @@ class InsightsService:
             )
             .group_by("year", "month")
         )
-        if tag_ids:
-            stmt = stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+        stmt = _apply_transaction_tag_scope(
+            stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
 
         gross_totals = {
             (int(r.year), int(r.month)): int(r.total or 0)
@@ -3922,8 +4037,12 @@ class InsightsService:
             )
             .group_by("year", "month")
         )
-        if tag_ids:
-            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+        reimb_stmt = _apply_transaction_tag_scope(
+            reimb_stmt,
+            ExpenseTxn,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
         reimb_totals = {
             (int(r.year), int(r.month)): int(r.total or 0)
             for r in self.session.execute(reimb_stmt)
@@ -3950,6 +4069,7 @@ class InsightsService:
         period: Period,
         *,
         tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
         tx_type: Optional[TransactionType] = None,
     ) -> dict[str, list[dict[str, object]]]:
         incomes: list[dict[str, object]] = []
@@ -3975,10 +4095,12 @@ class InsightsService:
                     func.sum(Transaction.amount_cents).desc(), Category.name.asc()
                 )
             )
-            if tag_ids:
-                income_stmt = income_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
+            income_stmt = _apply_transaction_tag_scope(
+                income_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             income_rows = self.session.execute(income_stmt).all()
             incomes = [
                 {
@@ -4010,10 +4132,12 @@ class InsightsService:
                 )
                 .group_by(Category.id, Category.name, Category.icon)
             )
-            if tag_ids:
-                expense_gross_stmt = expense_gross_stmt.where(
-                    Transaction.tags.any(Tag.id.in_(tag_ids))
-                )
+            expense_gross_stmt = _apply_transaction_tag_scope(
+                expense_gross_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             gross_rows = self.session.execute(expense_gross_stmt).all()
             gross_by_category = {
                 int(row.category_id): {
@@ -4055,8 +4179,12 @@ class InsightsService:
                 )
                 .group_by(ExpenseTxn.category_id)
             )
-            if tag_ids:
-                reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+            reimb_stmt = _apply_transaction_tag_scope(
+                reimb_stmt,
+                ExpenseTxn,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             reimbursed_by_category = {
                 int(row.category_id): int(row.reimbursed or 0)
                 for row in self.session.execute(reimb_stmt)
@@ -4194,7 +4322,12 @@ class InsightsService:
         return {"nodes": nodes, "links": links}
 
     def expense_category_deltas(
-        self, period: Period, *, tag_ids: Optional[list[int]] = None, limit: int = 8
+        self,
+        period: Period,
+        *,
+        tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+        limit: int = 8,
     ) -> dict[str, list[dict[str, object]]]:
         duration_days = (period.end - period.start).days + 1
         prev_end = period.start - timedelta(days=1)
@@ -4215,8 +4348,12 @@ class InsightsService:
                 )
                 .group_by(Transaction.category_id)
             )
-            if tag_ids:
-                gross_stmt = gross_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+            gross_stmt = _apply_transaction_tag_scope(
+                gross_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             gross = {
                 int(r.category_id): int(r.total or 0)
                 for r in self.session.execute(gross_stmt)
@@ -4253,8 +4390,12 @@ class InsightsService:
                 )
                 .group_by(ExpenseTxn.category_id)
             )
-            if tag_ids:
-                reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+            reimb_stmt = _apply_transaction_tag_scope(
+                reimb_stmt,
+                ExpenseTxn,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
             reimb = {
                 int(r.category_id): int(r.total or 0)
                 for r in self.session.execute(reimb_stmt)

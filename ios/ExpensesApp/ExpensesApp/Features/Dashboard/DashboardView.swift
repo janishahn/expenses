@@ -5,6 +5,14 @@ struct DashboardView: View {
     @Environment(AppModel.self) private var model
     @Binding var path: [Int]
     @State private var selectedPeriod: DashboardPeriod = .thisMonth
+    @State private var excludedTagIDs: Set<Int> = []
+    @State private var draftExcludedTagIDs: Set<Int> = []
+    @State private var presentingFilters = false
+
+    private var reloadKey: String {
+        let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
+        return "\(selectedPeriod.rawValue)-\(excluded)"
+    }
 
     init(path: Binding<[Int]> = .constant([])) {
         _path = path
@@ -20,6 +28,35 @@ struct DashboardView: View {
                         .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
+
+                    if !excludedTagIDs.isEmpty {
+                        Section {
+                            HStack(spacing: 10) {
+                                Button {
+                                    draftExcludedTagIDs = excludedTagIDs
+                                    presentingFilters = true
+                                } label: {
+                                    Label(excludedTagLabels.joined(separator: " · "), systemImage: "line.3.horizontal.decrease.circle.fill")
+                                        .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer(minLength: 8)
+
+                                Button {
+                                    excludedTagIDs = []
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Clear tag exclusions")
+                            }
+                            .font(.callout.weight(.medium))
+                        } footer: {
+                            Text("Available balance and budgets stay based on all activity.")
+                        }
+                    }
 
                     if let dashboard = model.dashboard {
                         Section {
@@ -74,16 +111,104 @@ struct DashboardView: View {
             }
             .navigationTitle("Dashboard")
             .expensesScreenStyle()
-            .refreshable {
-                await model.loadDashboard(period: selectedPeriod.rawValue)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        draftExcludedTagIDs = excludedTagIDs
+                        presentingFilters = true
+                    } label: {
+                        Label(
+                            "Exclude tags",
+                            systemImage: excludedTagIDs.isEmpty
+                                ? "line.3.horizontal.decrease.circle"
+                                : "line.3.horizontal.decrease.circle.fill"
+                        )
+                    }
+                }
             }
-            .task(id: selectedPeriod) {
-                await model.loadDashboard(period: selectedPeriod.rawValue)
+            .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFilters) {
+                DashboardFiltersSheet(
+                    excludedTagIDs: $draftExcludedTagIDs,
+                    tags: currentTags,
+                    onApply: {
+                        excludedTagIDs = draftExcludedTagIDs
+                    },
+                    onClear: {
+                        draftExcludedTagIDs = []
+                        excludedTagIDs = []
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            }
+            .refreshable {
+                await model.loadDashboard(
+                    period: selectedPeriod.rawValue,
+                    excludedTagIDs: excludedTagIDs.sorted()
+                )
+            }
+            .task(id: reloadKey) {
+                await model.loadDashboard(
+                    period: selectedPeriod.rawValue,
+                    excludedTagIDs: excludedTagIDs.sorted()
+                )
             }
             .navigationDestination(for: Int.self) { id in
                 TransactionDetailView(transactionID: id)
             }
             .animation(.easeInOut(duration: 0.18), value: model.showsDashboardInitialLoading)
+        }
+    }
+
+    private var currentTags: [TransactionTag] {
+        model.dashboard?.tags ?? model.tags?.tags.map { TransactionTag(id: $0.id, name: $0.name) } ?? []
+    }
+
+    private var excludedTagLabels: [String] {
+        excludedTagIDs.sorted().compactMap { id in
+            currentTags.first(where: { $0.id == id }).map { "Excluding: \($0.name)" }
+        }
+    }
+
+    private func resetDraftFilters() {
+        draftExcludedTagIDs = excludedTagIDs
+    }
+}
+
+private struct DashboardFiltersSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var excludedTagIDs: Set<Int>
+    let tags: [TransactionTag]
+    var onApply: () -> Void
+    var onClear: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TagExclusionSection(
+                    tags: tags,
+                    selectedIDs: $excludedTagIDs,
+                    includedTagID: nil,
+                    footer: "These exclusions affect transaction-based totals, charts, and recent activity only."
+                )
+            }
+            .navigationTitle("Dashboard filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        onClear()
+                        dismiss()
+                    }
+                    .disabled(excludedTagIDs.isEmpty)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onApply()
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
         }
     }
 }

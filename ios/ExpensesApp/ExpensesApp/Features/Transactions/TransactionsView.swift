@@ -13,12 +13,14 @@ struct TransactionsView: View {
     @State private var draftType = ""
     @State private var draftCategoryID: Int?
     @State private var draftTagID: Int?
+    @State private var draftExcludedTagIDs: Set<Int> = []
     @State private var draftPeriod: TransactionPeriodFilter = .all
     @State private var liveSearchTask: Task<Void, Never>?
     @State private var appliedSearchQuery = ""
     @State private var appliedType = ""
     @State private var appliedCategoryID: Int?
     @State private var appliedTagID: Int?
+    @State private var appliedExcludedTagIDs: Set<Int> = []
     @State private var appliedPeriod: TransactionPeriodFilter = .all
 
     init(path: Binding<[Int]> = .constant([]), selecting: Binding<Bool> = .constant(false)) {
@@ -173,6 +175,7 @@ struct TransactionsView: View {
                     type: $draftType,
                     categoryID: $draftCategoryID,
                     tagID: $draftTagID,
+                    excludedTagIDs: $draftExcludedTagIDs,
                     categories: currentCategories,
                     tags: currentTags,
                     onApply: applyFilters,
@@ -190,6 +193,7 @@ struct TransactionsView: View {
                     type: appliedType,
                     filterCategoryID: appliedCategoryID,
                     filterTagID: appliedTagID,
+                    filterExcludedTagIDs: appliedExcludedTagIDs,
                     period: appliedPeriod.rawValue
                 ) { request in
                     await model.previewBulkEdit(request)
@@ -258,6 +262,7 @@ struct TransactionsView: View {
                 type: appliedType,
                 categoryID: appliedCategoryID,
                 tagID: appliedTagID,
+                excludedTagIDs: appliedExcludedTagIDs.sorted(),
                 period: appliedPeriod.rawValue
             )
         case .uncategorized:
@@ -266,6 +271,7 @@ struct TransactionsView: View {
                 type: appliedType,
                 categoryID: appliedCategoryID,
                 tagID: appliedTagID,
+                excludedTagIDs: appliedExcludedTagIDs.sorted(),
                 period: appliedPeriod.rawValue
             )
         case .deleted:
@@ -279,6 +285,10 @@ struct TransactionsView: View {
         appliedType = draftType
         appliedCategoryID = draftCategoryID
         appliedTagID = draftTagID
+        if let appliedTagID {
+            draftExcludedTagIDs.remove(appliedTagID)
+        }
+        appliedExcludedTagIDs = draftExcludedTagIDs
         appliedPeriod = draftPeriod
         Task { await loadSelectedMode() }
     }
@@ -313,10 +323,12 @@ struct TransactionsView: View {
         draftType = ""
         draftCategoryID = nil
         draftTagID = nil
+        draftExcludedTagIDs = []
         draftPeriod = .all
         appliedType = ""
         appliedCategoryID = nil
         appliedTagID = nil
+        appliedExcludedTagIDs = []
         appliedPeriod = .all
         Task { await loadSelectedMode() }
     }
@@ -326,6 +338,7 @@ struct TransactionsView: View {
         draftType = appliedType
         draftCategoryID = appliedCategoryID
         draftTagID = appliedTagID
+        draftExcludedTagIDs = appliedExcludedTagIDs
         draftPeriod = appliedPeriod
     }
 
@@ -363,7 +376,7 @@ struct TransactionsView: View {
     }
 
     private var hasStructuredFilters: Bool {
-        appliedPeriod != .all || !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil
+        appliedPeriod != .all || !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil || !appliedExcludedTagIDs.isEmpty
     }
 
     private var hasActiveQueryOrFilters: Bool {
@@ -386,6 +399,9 @@ struct TransactionsView: View {
            let tag = currentTags.first(where: { $0.id == appliedTagID }) {
             labels.append(tag.name)
         }
+        labels.append(contentsOf: appliedExcludedTagIDs.sorted().compactMap { id in
+            currentTags.first(where: { $0.id == id }).map { "Excluding: \($0.name)" }
+        })
         return labels
     }
 }
@@ -461,6 +477,7 @@ private struct TransactionFiltersSheet: View {
     @Binding var type: String
     @Binding var categoryID: Int?
     @Binding var tagID: Int?
+    @Binding var excludedTagIDs: Set<Int>
     let categories: [CategorySummary]
     let tags: [TransactionTag]
     var onApply: () -> Void
@@ -495,6 +512,12 @@ private struct TransactionFiltersSheet: View {
                         Text(tag.name).tag(Optional(tag.id))
                     }
                 }
+
+                TagExclusionSection(
+                    tags: tags,
+                    selectedIDs: $excludedTagIDs,
+                    includedTagID: tagID
+                )
             }
             .pickerStyle(.navigationLink)
             .navigationTitle("Filters")
@@ -505,7 +528,7 @@ private struct TransactionFiltersSheet: View {
                         onClear()
                         dismiss()
                     }
-                    .disabled(period == .all && type.isEmpty && categoryID == nil && tagID == nil)
+                    .disabled(period == .all && type.isEmpty && categoryID == nil && tagID == nil && excludedTagIDs.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -513,6 +536,11 @@ private struct TransactionFiltersSheet: View {
                         dismiss()
                     }
                     .fontWeight(.semibold)
+                }
+            }
+            .onChange(of: tagID) { _, newValue in
+                if let newValue {
+                    excludedTagIDs.remove(newValue)
                 }
             }
         }
@@ -807,6 +835,7 @@ private struct BulkEditSheet: View {
     let type: String
     let filterCategoryID: Int?
     let filterTagID: Int?
+    let filterExcludedTagIDs: Set<Int>
     let period: String
     var onPreview: (BulkEditRequest) async -> BulkEditResponse?
     var onApply: (BulkEditRequest) async -> BulkEditResponse?
@@ -829,6 +858,7 @@ private struct BulkEditSheet: View {
         type: String,
         filterCategoryID: Int?,
         filterTagID: Int?,
+        filterExcludedTagIDs: Set<Int>,
         period: String,
         onPreview: @escaping (BulkEditRequest) async -> BulkEditResponse?,
         onApply: @escaping (BulkEditRequest) async -> BulkEditResponse?
@@ -841,6 +871,7 @@ private struct BulkEditSheet: View {
         self.type = type
         self.filterCategoryID = filterCategoryID
         self.filterTagID = filterTagID
+        self.filterExcludedTagIDs = filterExcludedTagIDs
         self.period = period
         self.onPreview = onPreview
         self.onApply = onApply
@@ -995,6 +1026,7 @@ private struct BulkEditSheet: View {
                         ? uncategorizedDefinition?.matchedCategoryIDs
                         : nil,
                     tag: filterTagID,
+                    excludeTags: filterExcludedTagIDs.sorted(),
                     q: query.isEmpty ? nil : query
                 )
             )

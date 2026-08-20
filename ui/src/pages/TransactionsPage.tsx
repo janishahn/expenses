@@ -16,6 +16,7 @@ import { apiFetch, getApiErrorMessage } from "../app/api"
 import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
+import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
 import { confirmDialog } from "../components/confirm"
 import PageIntro from "../components/PageIntro"
 import PeriodPicker from "../components/PeriodPicker"
@@ -58,6 +59,7 @@ import {
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
+import { serializeTagIds } from "../lib/tagFilters"
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
 import markerIcon from "leaflet/dist/images/marker-icon.png"
 import markerShadow from "leaflet/dist/images/marker-shadow.png"
@@ -92,6 +94,8 @@ type TransactionsResponse = {
     type: string | null
     category_id: number | null
     tag_id: number | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
     query: string | null
   }
   categories: Array<{ id: number; name: string; type: string; icon: string | null }>
@@ -123,6 +127,8 @@ type BulkPayload = {
           type: "income" | "expense" | null
           category: number | null
           tag: number | null
+          tags: number[]
+          exclude_tags: number[]
           q: string | null
         }
       }
@@ -305,7 +311,8 @@ function TransactionsPage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [mobileType, setMobileType] = useState("")
   const [mobileCategory, setMobileCategory] = useState("")
-  const [mobileTag, setMobileTag] = useState("")
+  const [mobileTagMode, setMobileTagMode] = useState<TagFilterMode>("include")
+  const [mobileTagIds, setMobileTagIds] = useState<number[]>([])
   const [mobilePeriod, setMobilePeriod] = useState({
     slug: "all",
     start: "",
@@ -464,6 +471,17 @@ function TransactionsPage() {
 
   const setQuery = (value: string) => updateParam("q", value || null)
 
+  const setTagFilter = (mode: TagFilterMode, ids: number[]) => {
+    setSearchParams(
+      buildSearchParams(searchParams, {
+        tag: null,
+        tags: mode === "include" ? serializeTagIds(ids) : null,
+        exclude_tags: mode === "exclude" ? serializeTagIds(ids) : null,
+        page: "1",
+      })
+    )
+  }
+
   const changePage = (nextPage: number) => {
     setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
   }
@@ -480,7 +498,13 @@ function TransactionsPage() {
   const categoryLabel = filters.category_id
     ? categories.find((category) => category.id === filters.category_id)?.name
     : null
-  const tagLabel = filters.tag_id ? tags.find((tag) => tag.id === filters.tag_id)?.name : null
+  const tagMode: TagFilterMode = filters.excluded_tag_ids.length ? "exclude" : "include"
+  const selectedTagIds =
+    tagMode === "exclude" ? filters.excluded_tag_ids : filters.included_tag_ids
+  const selectedTags = selectedTagIds.flatMap((id) => {
+    const tag = tags.find((item) => item.id === id)
+    return tag ? [tag] : []
+  })
   const periodContext = `${formatEuroDate(period.start)} – ${formatEuroDate(period.end)}`
   const periodLabel =
     period.slug === "this_month"
@@ -496,14 +520,17 @@ function TransactionsPage() {
       : null,
     filters.type ? { key: "type", label: `Type: ${filters.type}` } : null,
     categoryLabel ? { key: "category", label: `Category: ${categoryLabel}` } : null,
-    tagLabel ? { key: "tag", label: `Tag: ${tagLabel}` } : null,
+    ...selectedTags.map((tag) => ({
+      key: `tag_filter_${tag.id}`,
+      label: `${tagMode === "include" ? "Only: " : "Excluding: "}${tag.name}`,
+    })),
     searchQuery ? { key: "q", label: `Search: ${searchQuery}` } : null,
   ].filter(Boolean) as Array<{ key: string; label: string }>
   const mobileFilterCount =
     Number(period.slug !== "all") +
     Number(Boolean(filters.type)) +
     Number(Boolean(filters.category_id)) +
-    Number(Boolean(filters.tag_id))
+    Number(selectedTagIds.length > 0)
   const exportParams = new URLSearchParams(searchParams)
   exportParams.delete("page")
   exportParams.delete("limit")
@@ -513,7 +540,8 @@ function TransactionsPage() {
     setMobilePeriod(period)
     setMobileType(filters.type ?? "")
     setMobileCategory(filters.category_id ? String(filters.category_id) : "")
-    setMobileTag(filters.tag_id ? String(filters.tag_id) : "")
+    setMobileTagMode(tagMode)
+    setMobileTagIds(selectedTagIds)
     setMobileFiltersOpen(true)
   }
 
@@ -525,6 +553,8 @@ function TransactionsPage() {
     params.delete("type")
     params.delete("category")
     params.delete("tag")
+    params.delete("tags")
+    params.delete("exclude_tags")
     params.delete("q")
     params.set("page", "1")
     setSearchParams(params)
@@ -533,6 +563,11 @@ function TransactionsPage() {
   const clearFilter = (key: string) => {
     if (key === "period") {
       setPresetPeriod("all")
+      return
+    }
+    if (key.startsWith("tag_filter_")) {
+      const tagId = Number(key.replace("tag_filter_", ""))
+      setTagFilter(tagMode, selectedTagIds.filter((id) => id !== tagId))
       return
     }
     updateParam(key, null)
@@ -558,10 +593,12 @@ function TransactionsPage() {
     } else {
       params.delete("category")
     }
-    if (mobileTag) {
-      params.set("tag", mobileTag)
-    } else {
-      params.delete("tag")
+    params.delete("tag")
+    params.delete("tags")
+    params.delete("exclude_tags")
+    const serializedTags = serializeTagIds(mobileTagIds)
+    if (serializedTags) {
+      params.set(mobileTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
     }
     params.set("page", "1")
     setSearchParams(params)
@@ -676,7 +713,9 @@ function TransactionsPage() {
               ? filters.type
               : null,
           category: filters.category_id,
-          tag: filters.tag_id,
+          tag: null,
+          tags: tagMode === "include" ? selectedTagIds : [],
+          exclude_tags: filters.excluded_tag_ids,
           q: searchQuery || null,
         },
       },
@@ -738,8 +777,8 @@ function TransactionsPage() {
                       setSearchOpen(false)
                     }
                   }}
-                  tone="secondary"
-                  className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0"
+                  tone="ghost"
+                  className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0 text-text"
                   aria-label="Search transactions"
                   aria-controls="transaction-search"
                   aria-expanded={searchVisible}
@@ -795,8 +834,8 @@ function TransactionsPage() {
               <AppButton
                 type="button"
                 onClick={openMobileFilters}
-                tone="secondary"
-                className="relative h-11 w-11 shrink-0 p-0 desk:hidden"
+                tone="ghost"
+                className="relative h-11 w-11 shrink-0 p-0 text-text desk:hidden"
                 aria-label={
                   mobileFilterCount
                     ? `Filters, ${mobileFilterCount} active`
@@ -816,8 +855,8 @@ function TransactionsPage() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <AppButton
-                    tone="secondary"
-                    className="h-11 w-11 shrink-0 p-0 desk:hidden"
+                    tone="ghost"
+                    className="h-11 w-11 shrink-0 p-0 text-text desk:hidden"
                     aria-label="More actions"
                   >
                     <DotsThreeIcon weight="bold" className="h-5 w-5" aria-hidden="true" />
@@ -844,19 +883,19 @@ function TransactionsPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
                 <Link to="/transactions/inbox">
                   <TrayIcon className="h-4 w-4" aria-hidden="true" />
                   Inbox
                 </Link>
               </AppButton>
-              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
                 <Link to="/transactions/deleted">
                   <TrashIcon className="h-4 w-4" aria-hidden="true" />
                   Trash
                 </Link>
               </AppButton>
-              <AppButton asChild tone="secondary" className="hidden desk:inline-flex">
+              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
                 <a href={exportHref}>
                   <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
                   Export CSV
@@ -912,21 +951,14 @@ function TransactionsPage() {
                 ))}
               </AppNativeSelect>
             </AppFieldLabel>
-            <AppFieldLabel className="min-w-40 max-w-72 flex-1">
-              <span>Tag</span>
-              <AppNativeSelect
-                className="h-12"
-                value={filters.tag_id ?? ""}
-                onChange={(event) => updateParam("tag", event.target.value || null)}
-              >
-                <option value="">All tags</option>
-                {tags.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.name}
-                  </option>
-                ))}
-              </AppNativeSelect>
-            </AppFieldLabel>
+            <TagFilterPicker
+              className="min-w-40 max-w-72 flex-1"
+              tags={tags}
+              mode={tagMode}
+              selectedIds={selectedTagIds}
+              onModeChange={(mode, ids) => setTagFilter(mode, ids)}
+              onChange={(ids, mode) => setTagFilter(mode, ids)}
+            />
             {activeFilters.length ? (
               <AppButton
                 type="button"
@@ -957,6 +989,27 @@ function TransactionsPage() {
             >
               <span className="chip inline-flex max-w-full items-center gap-1.5">
                 <span className="truncate">{filter.label}</span>
+                <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {selectedTags.length ? (
+        <div className="hidden min-w-0 flex-wrap gap-1.5 desk:flex" aria-label="Tag filters">
+          {selectedTags.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => clearFilter(`tag_filter_${tag.id}`)}
+              className="chip-action inline-flex max-w-full items-center rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Remove ${tagMode === "include" ? "included" : "excluded"} tag ${tag.name}`}
+            >
+              <span className="chip inline-flex max-w-full items-center gap-1.5">
+                <span className="truncate">
+                  {tagMode === "include" ? "Only: " : "Excluding: "}{tag.name}
+                </span>
                 <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
               </span>
             </button>
@@ -1442,20 +1495,14 @@ function TransactionsPage() {
                   ))}
                 </AppNativeSelect>
               </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Tag</span>
-                <AppNativeSelect
-                  value={mobileTag}
-                  onChange={(event) => setMobileTag(event.target.value)}
-                >
-                  <option value="">All tags</option>
-                  {tags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
+              <TagFilterPicker
+                tags={tags}
+                mode={mobileTagMode}
+                selectedIds={mobileTagIds}
+                onModeChange={setMobileTagMode}
+                onChange={setMobileTagIds}
+                variant="list"
+              />
             </div>
             <div className="mt-1 flex shrink-0 gap-2 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
               <AppButton

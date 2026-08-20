@@ -218,3 +218,53 @@ struct MetricPill: View {
         }
     }
 }
+
+struct TagExclusionSection: View {
+    let tags: [TransactionTag]
+    @Binding var selectedIDs: Set<Int>
+    var includedTagID: Int?
+    var footer: String?
+
+    var body: some View {
+        Section {
+            if tags.isEmpty {
+                Text("No tags available")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(tags) { tag in
+                    Button {
+                        if selectedIDs.contains(tag.id) {
+                            selectedIDs.remove(tag.id)
+                        } else {
+                            selectedIDs.insert(tag.id)
+                        }
+                    } label: {
+                        HStack {
+                            Text(tag.name)
+                                .foregroundStyle(tag.id == includedTagID ? .secondary : .primary)
+                            Spacer()
+                            if tag.id == includedTagID {
+                                Text("Included")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else if selectedIDs.contains(tag.id) {
+                                Image(systemName: "checkmark")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(tag.id == includedTagID)
+                    .accessibilityValue(selectedIDs.contains(tag.id) ? "Excluded" : "Included")
+                }
+            }
+        } header: {
+            Text("Exclude tags")
+        } footer: {
+            if let footer {
+                Text(footer)
+            }
+        }
+    }
+}

@@ -32,6 +32,7 @@ final class AppModel {
     var identity: MobileAuthIdentity?
     var dashboard: DashboardResponse?
     var dashboardPeriod = "this_month"
+    var dashboardExcludedTagIDs: [Int] = []
     var transactions: TransactionsResponse?
     var uncategorizedTransactions: UncategorizedTransactionsResponse?
     var deletedTransactions: DeletedTransactionsResponse?
@@ -379,16 +380,20 @@ final class AppModel {
         }
     }
 
-    func loadDashboard(period: String? = nil) async {
+    func loadDashboard(period: String? = nil, excludedTagIDs: [Int]? = nil) async {
         guard let token else {
             return
         }
         if let period {
             dashboardPeriod = period
         }
+        if let excludedTagIDs {
+            dashboardExcludedTagIDs = Array(Set(excludedTagIDs)).sorted()
+        }
         dashboardLoadID += 1
         let loadID = dashboardLoadID
         let requestPeriod = dashboardPeriod
+        let requestExcludedTagIDs = dashboardExcludedTagIDs
         let hadContent = dashboard != nil
         if !hadContent {
             dashboardLoadState = .loading
@@ -401,7 +406,11 @@ final class AppModel {
             }
         }
         do {
-            let response = try await apiClient.dashboard(period: requestPeriod, token: token)
+            let response = try await apiClient.dashboard(
+                period: requestPeriod,
+                excludedTagIDs: requestExcludedTagIDs,
+                token: token
+            )
             guard loadID == dashboardLoadID else {
                 return
             }
@@ -435,6 +444,7 @@ final class AppModel {
         type: String? = nil,
         categoryID: Int? = nil,
         tagID: Int? = nil,
+        excludedTagIDs: [Int] = [],
         period: String = "all"
     ) async {
         guard let token else {
@@ -459,6 +469,7 @@ final class AppModel {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 period: period,
                 token: token
             )
@@ -495,6 +506,7 @@ final class AppModel {
         type: String? = nil,
         categoryID: Int? = nil,
         tagID: Int? = nil,
+        excludedTagIDs: [Int] = [],
         period: String = "all"
     ) async {
         guard let token else {
@@ -506,6 +518,7 @@ final class AppModel {
                 type: type,
                 categoryID: categoryID,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 period: period,
                 token: token
             )
@@ -930,7 +943,13 @@ final class AppModel {
         }
     }
 
-    func loadInsights(period: String, type: String?, tagID: Int?, trendCategoryID: Int?) async {
+    func loadInsights(
+        period: String,
+        type: String?,
+        tagID: Int?,
+        excludedTagIDs: [Int] = [],
+        trendCategoryID: Int?
+    ) async {
         guard let token else {
             return
         }
@@ -952,6 +971,7 @@ final class AppModel {
                 period: period,
                 type: type,
                 tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
                 trendCategoryID: trendCategoryID,
                 token: token
             )
@@ -983,12 +1003,23 @@ final class AppModel {
         }
     }
 
-    func loadInsightsFlow(period: String, type: String?, tagID: Int?) async {
+    func loadInsightsFlow(
+        period: String,
+        type: String?,
+        tagID: Int?,
+        excludedTagIDs: [Int] = []
+    ) async {
         guard let token else {
             return
         }
         await runRequest {
-            insightsFlow = try await apiClient.insightsFlow(period: period, type: type, tagID: tagID, token: token)
+            insightsFlow = try await apiClient.insightsFlow(
+                period: period,
+                type: type,
+                tagID: tagID,
+                excludedTagIDs: excludedTagIDs,
+                token: token
+            )
         }
         insightsFlowLoadState = insightsFlow != nil ? .loaded : .failed
     }
@@ -1375,7 +1406,7 @@ final class AppModel {
             try await apiClient.saveBudgetOverride(body, token: token)
             budgets = try await apiClient.budgets(view: view, token: token)
             try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         }
     }
 
@@ -1387,7 +1418,7 @@ final class AppModel {
             try await apiClient.deleteBudgetOverride(id: id, token: token)
             budgets = try await apiClient.budgets(view: view, token: token)
             try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         }
     }
 
@@ -1399,7 +1430,7 @@ final class AppModel {
             try await apiClient.saveBudgetTemplate(body, token: token)
             budgets = try await apiClient.budgets(view: view, token: token)
             try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         }
     }
 
@@ -1411,7 +1442,7 @@ final class AppModel {
             try await apiClient.deleteBudgetTemplate(id: id, token: token)
             budgets = try await apiClient.budgets(view: view, token: token)
             try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         }
     }
 
@@ -1426,7 +1457,7 @@ final class AppModel {
                 try await apiClient.createCategory(create, token: token)
             }
             try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
             transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
         }
     }
@@ -1442,7 +1473,7 @@ final class AppModel {
                 try await apiClient.restoreCategory(id: category.id, token: token)
             }
             try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
             transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
         }
     }
@@ -1478,7 +1509,7 @@ final class AppModel {
                 token: token
             )
             try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
             transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
             budgets = try await apiClient.budgets(view: "month", token: token)
         }
@@ -1913,7 +1944,7 @@ final class AppModel {
         guard let token else {
             return
         }
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, token: token)
+        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         dashboardLoadState = .loaded
         transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
         transactionsLoadState = .loaded
@@ -1987,6 +2018,7 @@ final class AppModel {
         digestLoadID += 1
         insightsLoadID += 1
         dashboard = nil
+        dashboardExcludedTagIDs = []
         transactions = nil
         dashboardLoadState = .idle
         transactionsLoadState = .idle

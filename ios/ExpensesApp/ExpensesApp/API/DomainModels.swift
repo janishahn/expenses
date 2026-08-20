@@ -1494,12 +1494,14 @@ struct TransactionFilters: Codable, Equatable {
     let type: String?
     let categoryID: Int?
     let tagID: Int?
+    let excludedTagIDs: [Int]
     let query: String?
 
     enum CodingKeys: String, CodingKey {
         case type
         case categoryID = "category_id"
         case tagID = "tag_id"
+        case excludedTagIDs = "excluded_tag_ids"
         case query
     }
 }
@@ -1540,6 +1542,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
     let category: Int?
     let matchedCategoryIDs: [Int]?
     let tag: Int?
+    let excludeTags: [Int]
     let q: String?
 
     enum CodingKeys: String, CodingKey {
@@ -1550,6 +1553,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
         case category
         case matchedCategoryIDs = "matched_category_ids"
         case tag
+        case excludeTags = "exclude_tags"
         case q
     }
 }
@@ -1660,6 +1664,12 @@ struct DashboardResponse: Codable, Equatable {
 
 struct DashboardFilters: Codable, Equatable {
     let type: String?
+    let excludedTagIDs: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case excludedTagIDs = "excluded_tag_ids"
+    }
 }
 
 struct DashboardKPIs: Codable, Equatable {
@@ -1742,10 +1752,12 @@ struct DurablePurchasesResponse: Codable, Equatable {
 struct InsightsFilters: Codable, Equatable {
     let type: String?
     let tagID: Int?
+    let excludedTagIDs: [Int]
 
     enum CodingKeys: String, CodingKey {
         case type
         case tagID = "tag_id"
+        case excludedTagIDs = "excluded_tag_ids"
     }
 }
 

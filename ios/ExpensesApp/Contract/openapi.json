@@ -1997,6 +1997,13 @@
             ],
             "title": "End"
           },
+          "exclude_tags": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Exclude Tags",
+            "type": "array"
+          },
           "matched_category_ids": {
             "anyOf": [
               {
@@ -2056,6 +2063,13 @@
               }
             ],
             "title": "Tag"
+          },
+          "tags": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Tags",
+            "type": "array"
           },
           "type": {
             "anyOf": [
@@ -2751,6 +2765,20 @@
       },
       "DashboardFiltersOut": {
         "properties": {
+          "excluded_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Excluded Tag Ids",
+            "type": "array"
+          },
+          "included_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Included Tag Ids",
+            "type": "array"
+          },
           "type": {
             "anyOf": [
               {
@@ -4419,6 +4447,20 @@
       },
       "InsightsFiltersOut": {
         "properties": {
+          "excluded_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Excluded Tag Ids",
+            "type": "array"
+          },
+          "included_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Included Tag Ids",
+            "type": "array"
+          },
           "tag_id": {
             "anyOf": [
               {
@@ -7434,6 +7476,20 @@
               }
             ],
             "title": "Category Id"
+          },
+          "excluded_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Excluded Tag Ids",
+            "type": "array"
+          },
+          "included_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Included Tag Ids",
+            "type": "array"
           },
           "query": {
             "anyOf": [
