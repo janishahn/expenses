@@ -8,13 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Dashboard, Insights, and Transactions can temporarily include or exclude several tags through one unified web filter; transaction lists, summaries, exports, bulk scopes, drill-downs, and analysis values share the same scope while actual balances and budgets remain unchanged. The Dashboard keeps this occasional action compact, and iOS retains its multi-tag exclusion filter.
+- Dashboard, Insights, and Transactions can temporarily include or exclude several tags; transaction lists, summaries, exports, bulk scopes, drill-downs, and analysis values share the same scope while actual balances and budgets remain unchanged. iOS retains its multi-tag exclusion filter.
+- PDF reports can include only transactions with any selected tag or exclude transactions with any selected tag across summaries, breakdowns, trends, subtotals, and transaction tables.
 - `uv run dev --tailnet` now creates a temporary, loopback-backed Tailscale Serve preview with automatic port selection and cleanup; detached previews can be managed with `--detach` and `--stop`.
 
+### Changed
+- Reworked mobile web chrome around page-owned Menu/Back title rows and one overlay-aware floating create action shared by Dashboard, Transactions, and the planning, automation, and library pages. Removed the persistent web theme toggle so appearance is configured only in a more compact Settings card.
+- Unified page-level web filtering around a visible quick period switch plus one shared Filters gateway for occasional type, category, and tag scopes. Desktop uses an anchored apply/cancel panel, mobile uses the matching bottom sheet, active badges count filter kinds, and compact chips summarize the applied scope. Insights keeps chart category and budget month beside the sections they configure.
+- Standardized period-based web pages on one responsive scope header, with title-left and quick period/Filters controls-right when space allows. Insights and Recurring now use URL-backed page tabs for their whole-page modes, and Transactions keeps Search directly available while grouping Inbox, Trash, and CSV export in an overflow menu.
+- Tightened the mobile Transactions header by moving its overflow menu beside the page title and moving the four-choice period selector into the staged filter sheet, where non-default periods remain visible in the filter badge and active chips.
+- Removed redundant explanatory sentences from filter panels and active-filter rows so the controls and concise state chips carry the interface.
+
 ### Fixed
+- Kept the desktop page canvas stationary when modal dialogs open and close on browsers with classic scrollbars.
+- Aligned the mobile Transactions search clear control with the search field's trailing edge.
+- Aligned desktop page actions with the centered content canvas on wide displays and kept the page stationary while anchored filter panels open and close.
+- Kept the shared quick-period selector and Filters trigger at the same height across mobile and desktop page-scope headers.
+- Mobile Transactions search now expands into a field inside the control row instead of opening a popover that rendered below the visible viewport, where tapping Search appeared to do nothing in Safari. Filters slides out of the row while search is open and returns when it closes.
+- Kept the desktop page canvas stationary when switching between Insights tabs whose content needs different amounts of vertical space or opening the Transactions overflow menu.
+- Kept desktop filter panels and their Apply/Cancel actions inside short browser viewports while allowing long filter lists to scroll.
 - Removed the unintended outline-like ring from the Transactions page's search and header action buttons on desktop and mobile.
 - Tag filter menus now let users choose Include or Exclude before selecting any tags and stay open for the following selection.
-- Aligned the Dashboard Tags trigger with the shared 44px product-button sizing and styling on desktop and mobile.
+- Tag filter lists now show a distinct checkbox for every choice before it is selected.
 
 ## [0.4.9] - 2026-08-20
 

@@ -6,6 +6,22 @@ test.describe("Recurring Rules Page", () => {
     await page.goto("/recurring")
   })
 
+  test("uses URL-backed page tabs for commitments and audit", async ({ page }) => {
+    const tabs = page.getByRole("tablist", { name: "Recurring views" })
+    await expect(tabs).toBeVisible()
+    await expect(tabs.getByRole("tab", { name: "Commitments" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+
+    await tabs.getByRole("tab", { name: "Audit" }).click()
+    await expect(page).toHaveURL(/view=audit/)
+    await expect(tabs.getByRole("tab", { name: "Audit" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+  })
+
   test("should use a modal as the desktop creation entry", async ({
     page,
   }) => {

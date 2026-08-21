@@ -6188,7 +6188,11 @@ class ReportService:
         wants_overview = "summary" in options.sections or "kpis" in options.sections
         if wants_overview:
             if options.transaction_type is None and options.category_ids is None:
-                kpis = self.metrics_service.kpis(period)
+                kpis = self.metrics_service.kpis(
+                    period,
+                    tag_ids=options.tag_ids,
+                    excluded_tag_ids=options.excluded_tag_ids,
+                )
             else:
                 income = 0
                 expenses = 0
@@ -6210,6 +6214,12 @@ class ReportService:
                         income_stmt = income_stmt.where(
                             Transaction.category_id.in_(options.category_ids)
                         )
+                    income_stmt = _apply_transaction_tag_scope(
+                        income_stmt,
+                        Transaction,
+                        tag_ids=options.tag_ids,
+                        excluded_tag_ids=options.excluded_tag_ids,
+                    )
                     income = int(self.session.execute(income_stmt).scalar_one() or 0)
 
                 if options.transaction_type in (None, TransactionType.expense):
@@ -6228,6 +6238,12 @@ class ReportService:
                         expense_stmt = expense_stmt.where(
                             Transaction.category_id.in_(options.category_ids)
                         )
+                    expense_stmt = _apply_transaction_tag_scope(
+                        expense_stmt,
+                        Transaction,
+                        tag_ids=options.tag_ids,
+                        excluded_tag_ids=options.excluded_tag_ids,
+                    )
                     expense_gross = int(
                         self.session.execute(expense_stmt).scalar_one() or 0
                     )
@@ -6266,6 +6282,12 @@ class ReportService:
                         reimb_stmt = reimb_stmt.where(
                             ExpenseTxn.category_id.in_(options.category_ids)
                         )
+                    reimb_stmt = _apply_transaction_tag_scope(
+                        reimb_stmt,
+                        ExpenseTxn,
+                        tag_ids=options.tag_ids,
+                        excluded_tag_ids=options.excluded_tag_ids,
+                    )
                     reimbursed = int(self.session.execute(reimb_stmt).scalar_one() or 0)
                     expenses = max(0, expense_gross - reimbursed)
 
@@ -6279,7 +6301,10 @@ class ReportService:
             assert kpis is not None
             net_change = int(kpis["income"]) - int(kpis["expenses"])
             has_account_scope = (
-                options.transaction_type is None and options.category_ids is None
+                options.transaction_type is None
+                and options.category_ids is None
+                and not options.tag_ids
+                and not options.excluded_tag_ids
             )
             data["summary"] = {
                 "period": period,
@@ -6298,7 +6323,11 @@ class ReportService:
                 else TransactionType.expense
             )
             breakdown = self.metrics_service.category_breakdown(
-                period, breakdown_type, category_ids=options.category_ids
+                period,
+                breakdown_type,
+                category_ids=options.category_ids,
+                tag_ids=options.tag_ids,
+                excluded_tag_ids=options.excluded_tag_ids,
             )
             data["category_breakdown"] = breakdown
 
@@ -6309,7 +6338,11 @@ class ReportService:
                 else TransactionType.expense
             )
             breakdown = self.metrics_service.category_breakdown(
-                period, breakdown_type, category_ids=options.category_ids
+                period,
+                breakdown_type,
+                category_ids=options.category_ids,
+                tag_ids=options.tag_ids,
+                excluded_tag_ids=options.excluded_tag_ids,
             )
             if not ("category_breakdown" in options.sections and len(breakdown) <= 5):
                 data["top_categories"] = breakdown[:5]
@@ -6335,6 +6368,12 @@ class ReportService:
                 )
                 if options.category_ids:
                     stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
+                stmt = _apply_transaction_tag_scope(
+                    stmt,
+                    Transaction,
+                    tag_ids=options.tag_ids,
+                    excluded_tag_ids=options.excluded_tag_ids,
+                )
                 rows = self.session.execute(stmt).all()
                 data["trend"] = [
                     {"date": row[0], "amount_cents": int(row[1] or 0)} for row in rows
@@ -6358,6 +6397,12 @@ class ReportService:
                     gross_stmt = gross_stmt.where(
                         Transaction.category_id.in_(options.category_ids)
                     )
+                gross_stmt = _apply_transaction_tag_scope(
+                    gross_stmt,
+                    Transaction,
+                    tag_ids=options.tag_ids,
+                    excluded_tag_ids=options.excluded_tag_ids,
+                )
                 gross_rows = self.session.execute(gross_stmt).all()
                 gross_map = {row[0]: int(row.gross or 0) for row in gross_rows}
 
@@ -6396,6 +6441,12 @@ class ReportService:
                     reimb_stmt = reimb_stmt.where(
                         ExpenseTxn.category_id.in_(options.category_ids)
                     )
+                reimb_stmt = _apply_transaction_tag_scope(
+                    reimb_stmt,
+                    ExpenseTxn,
+                    tag_ids=options.tag_ids,
+                    excluded_tag_ids=options.excluded_tag_ids,
+                )
                 reimb_rows = self.session.execute(reimb_stmt).all()
                 reimb_map = {row[0]: int(row.reimbursed or 0) for row in reimb_rows}
 
@@ -6428,6 +6479,12 @@ class ReportService:
                 stmt = stmt.where(Transaction.type == options.transaction_type)
             if options.category_ids:
                 stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
+            stmt = _apply_transaction_tag_scope(
+                stmt,
+                Transaction,
+                tag_ids=options.tag_ids,
+                excluded_tag_ids=options.excluded_tag_ids,
+            )
             if sort_order == "newest":
                 stmt = stmt.order_by(
                     Transaction.occurred_at.desc(), Transaction.id.desc()
@@ -6440,7 +6497,10 @@ class ReportService:
             transactions = self.session.scalars(stmt).all()
             if options.show_running_balance:
                 use_account_balance = (
-                    options.transaction_type is None and not options.category_ids
+                    options.transaction_type is None
+                    and not options.category_ids
+                    and not options.tag_ids
+                    and not options.excluded_tag_ids
                 )
                 if use_account_balance:
                     balance_service = BalanceAnchorService(self.session, self.user_id)
@@ -6499,6 +6559,12 @@ class ReportService:
                         opening_stmt = opening_stmt.where(
                             Transaction.category_id.in_(options.category_ids)
                         )
+                    opening_stmt = _apply_transaction_tag_scope(
+                        opening_stmt,
+                        Transaction,
+                        tag_ids=options.tag_ids,
+                        excluded_tag_ids=options.excluded_tag_ids,
+                    )
 
                     opening_row = self.session.execute(opening_stmt).one()
                     opening_income = int(opening_row.income)

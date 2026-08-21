@@ -12,17 +12,16 @@ test.describe("Insights Page (mobile)", () => {
     await expect(page).toHaveURL(/type=expense/)
   })
 
-  test("keeps the view switch compact and renders single-month chart points", async ({
+  test("uses page tabs and renders single-month chart points", async ({
     page,
   }) => {
     await page.goto("/insights?period=this_month")
 
-    const viewSwitcher = page.locator(".insights-view-switcher")
-    await expect(viewSwitcher).toBeVisible()
-    const switcherWidth = await viewSwitcher.evaluate(
-      (node) => node.getBoundingClientRect().width,
-    )
-    expect(switcherWidth).toBeLessThan(260)
+    const viewTabs = page.getByRole("tablist", { name: "Insights views" })
+    await expect(viewTabs).toBeVisible()
+    await expect(viewTabs.getByRole("tab")).toHaveCount(2)
+    await expect(page.getByText(/^Date:/)).toHaveCount(0)
+    await expect(page.getByText(/months? view$/)).toHaveCount(0)
 
     const chartPanel = page
       .locator('[data-financial-surface="chart"]')

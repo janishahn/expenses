@@ -49,12 +49,7 @@ test.describe("Spending Assistant (mobile)", () => {
     page,
   }) => {
     await page.goto("/assistant")
-    await expect(
-      page
-        .getByTestId("app-shell-header")
-        .getByRole("heading", { name: "Assistant", level: 1 })
-    ).toBeVisible()
-    await expect(page.locator("main h1")).toHaveCount(0)
+    await expect(page.locator("main h1")).toHaveText("Assistant")
     const composer = page.getByTestId("spending-assistant-composer")
     await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
     await expect(composer).toBeVisible()
@@ -97,11 +92,9 @@ test.describe("Spending Assistant (mobile)", () => {
     await expect(page.getByTestId("spending-assistant-copy")).toBeVisible()
     await expect(page.getByTestId("spending-assistant-copy-user")).toBeVisible()
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
-    await expect(
-      page
-        .getByTestId("app-shell-header")
-        .getByRole("button", { name: "New chat" })
-    ).toBeVisible()
+    await expect(page.getByTestId("app-shell-mobile-quiet-action")).toHaveAccessibleName(
+      "New chat",
+    )
 
     const overflow = await page.evaluate(
       () =>

@@ -21,7 +21,7 @@ const samplePdf = Buffer.from(
 )
 
 test.describe("Transactions Page (mobile)", () => {
-  test("collapses filters and applies from the filter sheet", async ({ page }) => {
+  test("stages the period and secondary filters together in the sheet", async ({ page }) => {
     await page.goto("/transactions")
 
     await expect(page.getByRole("button", { name: /Filters/ })).toBeVisible()
@@ -41,7 +41,9 @@ test.describe("Transactions Page (mobile)", () => {
     ).toBeVisible()
 
     await filterDialog.getByRole("button", { name: "This month" }).click()
+    await filterDialog.getByRole("button", { name: "Expense", exact: true }).click()
     await filterDialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(page).not.toHaveURL(/type=expense/)
     await expect(page).not.toHaveURL(/period=this_month/)
 
     await page.getByRole("button", { name: /Filters/ }).click()
@@ -55,6 +57,7 @@ test.describe("Transactions Page (mobile)", () => {
     await reopenedFilterDialog.getByRole("button", { name: "Apply" }).last().click()
     await expect(page).toHaveURL(/type=expense/)
     await expect(page).toHaveURL(/period=this_month/)
+    await expect(page.getByRole("button", { name: "Remove This month" })).toBeVisible()
   })
 
   test("waits for the complete matching count before enabling query bulk edit", async ({
@@ -112,7 +115,7 @@ test.describe("Transactions Page (mobile)", () => {
     ).toBeEnabled()
   })
 
-  test("opens fuzzy search in a full-width popover inside the viewport", async ({
+  test("expands fuzzy search across the control row and displaces Filters", async ({
     page,
     request,
   }) => {
@@ -130,21 +133,76 @@ test.describe("Transactions Page (mobile)", () => {
     })
     await page.goto("/transactions")
 
-    await page.getByRole("button", { name: "Search transactions" }).click()
+    const searchTrigger = page.getByRole("button", { name: "Search transactions" })
+    const searchField = page.locator("#transaction-search")
+    const filters = page.getByRole("button", { name: /^Filters/ })
+    const filtersSlot = page.locator(".transaction-toolbar-actions")
+    await expect(filters).toBeVisible()
+
+    await searchTrigger.tap()
     const searchbox = page.getByRole("searchbox", { name: "Search transactions" })
     await expect(searchbox).toBeVisible()
+    await expect(searchbox).toBeFocused()
 
-    const popoverBox = await page.locator("#transaction-search").boundingBox()
-    expect(popoverBox).not.toBeNull()
-    const viewportWidth = await page.evaluate(() => window.innerWidth)
-    expect(popoverBox!.x).toBeGreaterThanOrEqual(0)
-    expect(popoverBox!.x + popoverBox!.width).toBeLessThanOrEqual(viewportWidth)
-    expect(popoverBox!.width).toBeGreaterThan(viewportWidth * 0.85)
+    // Layout rects come from the DOM rather than boundingBox(), which WebKit
+    // reports in page-scale-adjusted screen pixels.
+    const viewport = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
+    }))
+    // The expansion is animated, so the settled geometry is polled.
+    await expect(async () => {
+      const field = await searchField.evaluate((element) => {
+        const rect = element.getBoundingClientRect()
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+      })
+      const filtersLeft = await filtersSlot.evaluate(
+        (element) => element.getBoundingClientRect().left,
+      )
+      expect(field.left).toBeGreaterThanOrEqual(0)
+      expect(field.top).toBeGreaterThanOrEqual(0)
+      expect(field.right).toBeLessThanOrEqual(viewport.width)
+      expect(field.bottom).toBeLessThanOrEqual(viewport.height)
+      expect(field.right - field.left).toBeGreaterThan(viewport.width * 0.85)
+      expect(filtersLeft).toBeGreaterThanOrEqual(field.right)
+    }).toPass({ timeout: 10_000 })
+    // Hidden here means gone from hit testing and the accessibility tree.
+    await expect(filters).toBeHidden()
+    const layout = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(layout.content).toBeLessThanOrEqual(layout.viewport)
 
     await searchbox.fill("waranty paperwork")
     await expect(page).toHaveURL(/q=waranty(?:\+|%20)paperwork/)
     await expect(page.getByTestId(`transaction-row-${transactionId}`)).toBeVisible()
     await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
+
+    const clearSearch = page.getByRole("button", { name: "Clear search" })
+    const clearAlignment = await page.evaluate(() => {
+      const field = document.querySelector("#transaction-search")!.getBoundingClientRect()
+      const clear = document
+        .querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!
+        .getBoundingClientRect()
+      return {
+        top: clear.top - field.top,
+        right: field.right - clear.right,
+        bottom: field.bottom - clear.bottom,
+      }
+    })
+    await expect(clearSearch).toBeVisible()
+    expect(Math.abs(clearAlignment.top)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(clearAlignment.right)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(clearAlignment.bottom)).toBeLessThanOrEqual(0.5)
+
+    await searchbox.press("Escape")
+    await expect(searchbox).toHaveValue("")
+    await expect(filters).toBeHidden()
+    await searchbox.press("Escape")
+    await expect(filters).toBeVisible()
+    await expect(searchTrigger).toBeFocused()
+    await expect(searchTrigger).toHaveAttribute("aria-expanded", "false")
   })
 
   test("collapses secondary actions into an overflow menu and keeps selection discoverable", async ({
@@ -171,7 +229,7 @@ test.describe("Transactions Page (mobile)", () => {
 
     const title = page.getByRole("heading", { name: "Transactions" })
     await expect(title).toBeVisible()
-    await expect(page.getByTestId("transactions-control-zone")).toBeHidden()
+    await expect(page.getByTestId("transactions-control-zone")).toBeVisible()
 
     await expect(page.getByRole("button", { name: "More actions" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Inbox" })).toHaveCount(0)
@@ -186,7 +244,32 @@ test.describe("Transactions Page (mobile)", () => {
     expect(filtersBox).not.toBeNull()
     expect(filtersBox!.width).toBeLessThanOrEqual(56)
 
-    await page.getByRole("button", { name: "More actions" }).click()
+    const moreActions = page.getByRole("button", { name: "More actions" })
+    const [titleBox, moreActionsBox] = await Promise.all([
+      title.boundingBox(),
+      moreActions.boundingBox(),
+    ])
+    expect(titleBox).not.toBeNull()
+    expect(moreActionsBox).not.toBeNull()
+    expect(
+      Math.abs(
+        titleBox!.y + titleBox!.height / 2
+          - (moreActionsBox!.y + moreActionsBox!.height / 2),
+      ),
+    ).toBeLessThan(4)
+    expect(moreActionsBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width)
+    await expect(
+      page
+        .getByTestId("transactions-control-zone")
+        .getByRole("button", { name: "More actions" }),
+    ).toHaveCount(0)
+    await expect(
+      page
+        .getByTestId("transactions-control-zone")
+        .getByRole("group", { name: "Period" }),
+    ).toHaveCount(0)
+
+    await moreActions.click()
     const menu = page.getByRole("menu")
     await expect(menu.getByRole("menuitem", { name: "Inbox" })).toBeVisible()
     await expect(menu.getByRole("menuitem", { name: "Trash" })).toBeVisible()

@@ -26,6 +26,15 @@ function isIsoDate(value: string | null): value is string {
   return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+type ReportTag = {
+  id: number
+  name: string
+}
+
+type TagsResponse = {
+  tags: ReportTag[]
+}
+
 function ReportBuilderPage() {
   const [searchParams] = useSearchParams()
   const today = new Date()
@@ -61,6 +70,8 @@ function ReportBuilderPage() {
   const [notes, setNotes] = useState("")
   const [categoryMode, setCategoryMode] = useState<"all" | "selected">("all")
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([])
+  const [tagMode, setTagMode] = useState<"all" | "include" | "exclude">("all")
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState("")
   const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null)
@@ -70,6 +81,11 @@ function ReportBuilderPage() {
     queryKey: ["categories"],
     queryFn: () =>
       apiFetch<CategoriesResponse>("/api/categories").then((res) => res.categories),
+  })
+
+  const { data: tagsData } = useQuery({
+    queryKey: ["tags", "report-builder"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
   })
 
   const activeCategories = useMemo(
@@ -93,6 +109,14 @@ function ReportBuilderPage() {
       prev.includes(categoryId)
         ? prev.filter((id) => id !== categoryId)
         : [...prev, categoryId]
+    )
+  }
+
+  const handleTagToggle = (tagId: number) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId].sort((left, right) => left - right)
     )
   }
 
@@ -135,6 +159,8 @@ function ReportBuilderPage() {
       selectedActiveCategoryIds.length < activeCategoryIds.length
         ? selectedActiveCategoryIds
         : null
+    const availableTagIds = (tagsData?.tags || []).map((tag) => tag.id)
+    const activeTagIds = selectedTagIds.filter((id) => availableTagIds.includes(id))
 
     const popup = window.open("about:blank", "_blank")
     if (popup) {
@@ -152,6 +178,8 @@ function ReportBuilderPage() {
           notes: notes.trim() || null,
           transaction_type: transactionType || null,
           category_ids: categoryIds && categoryIds.length ? categoryIds : null,
+          tag_ids: tagMode === "include" ? activeTagIds : [],
+          excluded_tag_ids: tagMode === "exclude" ? activeTagIds : [],
           transactions_sort: sort,
           show_running_balance: showRunningBalance,
           include_category_subtotals: includeCategorySubtotals,
@@ -302,7 +330,11 @@ function ReportBuilderPage() {
           {activeCategories.length > 0 ? (
             <section className="p-5">
               <h2 className="mb-4 font-head text-lg font-bold">Categories</h2>
-              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted">
+              <div
+                role="radiogroup"
+                aria-label="Category scope"
+                className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted"
+              >
                 <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
                   <input
                     type="radio"
@@ -375,6 +407,67 @@ function ReportBuilderPage() {
                   All categories are included.
                 </p>
               )}
+            </section>
+          ) : null}
+
+          {tagsData?.tags.length ? (
+            <section className="p-5">
+              <h2 className="mb-4 font-head text-lg font-bold">Tags</h2>
+              <div
+                role="radiogroup"
+                aria-label="Tag scope"
+                className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted"
+              >
+                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
+                  <input
+                    type="radio"
+                    name="tagMode"
+                    checked={tagMode === "all"}
+                    onChange={() => setTagMode("all")}
+                    className="control-check"
+                  />
+                  All
+                </label>
+                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
+                  <input
+                    type="radio"
+                    name="tagMode"
+                    checked={tagMode === "include"}
+                    onChange={() => setTagMode("include")}
+                    className="control-check"
+                  />
+                  Only include
+                </label>
+                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
+                  <input
+                    type="radio"
+                    name="tagMode"
+                    checked={tagMode === "exclude"}
+                    onChange={() => setTagMode("exclude")}
+                    className="control-check"
+                  />
+                  Exclude
+                </label>
+              </div>
+
+              {tagMode !== "all" ? (
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {tagsData.tags.map((tag) => (
+                    <label
+                      key={tag.id}
+                      className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTagIds.includes(tag.id)}
+                        onChange={() => handleTagToggle(tag.id)}
+                        className="control-check"
+                      />
+                      {tag.name}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
             </section>
           ) : null}
 

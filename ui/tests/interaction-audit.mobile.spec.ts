@@ -211,15 +211,15 @@ test.describe("Mobile interaction audit evidence", () => {
     await page.goto("/transactions")
     controls.push(
       await measurement(
-        "Ordinary mobile home link",
-        page.getByTestId("app-shell-header").getByRole("link", { name: "Expenses" }),
+        "Mobile page menu trigger",
+        page.getByRole("button", { name: "Open menu" }),
       ),
     )
     await page.goto("/assistant")
     controls.push(
       await measurement(
-        "Shell-title mobile home link",
-        page.getByTestId("app-shell-header").getByRole("link", { name: "Expenses" }),
+        "Assistant page menu trigger",
+        page.getByRole("button", { name: "Open menu" }),
       ),
     )
 
@@ -905,7 +905,7 @@ test.describe("Mobile interaction audit evidence", () => {
     await page.keyboard.press("Escape")
 
     await page.goto("/insights")
-    await page.getByRole("button", { name: "Net", exact: true }).click()
+    await page.getByRole("tab", { name: "Net", exact: true }).click()
     const chartData = page.getByRole("button", { name: "View chart data" })
     controls.push(
       await effectiveTargetMeasurement("Insights chart-data action", chartData),

@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "./fixtures"
-import { ensureElevatedAdmin } from "./auth-helpers"
 
 test.describe.configure({ mode: "parallel" })
 
@@ -46,7 +45,10 @@ test.describe("Navigation (mobile)", () => {
   test("loads dashboard as home page", async ({ page }) => {
     await page.goto("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
-    await expect(page.getByTestId("app-shell-header")).not.toContainText("Dashboard")
+    await expect(page.getByTestId("app-shell-header")).toHaveCount(0)
+    await expect(
+      page.locator("[data-page-scope-header]").getByRole("button", { name: "Open menu" }),
+    ).toBeVisible()
     await page.getByRole("button", { name: "Open menu" }).click()
     await expect(page.getByTestId("app-shell-brand")).toHaveText("Expenses")
   })
@@ -58,28 +60,31 @@ test.describe("Navigation (mobile)", () => {
 
     await clickMobileSidebarLink(page, "Transactions")
     await expect(page).toHaveURL(/\/transactions\?period=this_month/)
+    await expect(
+      page
+        .getByTestId("transactions-control-zone")
+        .getByRole("group", { name: "Period" }),
+    ).toHaveCount(0)
+    await page.getByRole("button", { name: /^Filters/ }).click()
+    const filterDialog = page.getByRole("dialog", { name: "Filter transactions" })
+    await expect(
+      filterDialog.getByRole("button", { name: "This month" }),
+    ).toHaveAttribute("aria-pressed", "true")
+    await filterDialog.getByRole("button", { name: "Cancel" }).click()
 
-    await page
-      .getByTestId("app-shell-header")
-      .getByRole("link", { name: "Expenses" })
-      .click()
-    await expect(page).toHaveURL(/\/\?period=this_month/)
-
-    await clickMobileSidebarLink(page, "Transactions")
     await clickMobileSidebarLink(page, "Dashboard")
     await expect(page).toHaveURL(/\/\?period=this_month/)
   })
 
-  test("uses a compact mobile header action without fixed bottom navigation", async ({
+  test("uses a shared floating primary action without fixed bottom navigation", async ({
     page,
   }) => {
     await page.goto("/")
     await expect(page.getByTestId("app-shell-bottom-nav")).toHaveCount(0)
-    const header = page.getByTestId("app-shell-header")
-    const addAction = header.getByTestId("app-shell-mobile-add-action")
+    const addAction = page.getByTestId("app-shell-mobile-add-action")
     await expect(addAction).toBeVisible()
     await expect(addAction).toHaveAccessibleName("Add transaction")
-    await expect(header.getByRole("button", { name: "Open menu" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible()
     await addAction.focus()
     await expect(addAction).toHaveCSS("outline-style", "solid")
     await expect(addAction).toHaveCSS("outline-width", "2px")
@@ -97,6 +102,77 @@ test.describe("Navigation (mobile)", () => {
 
     await addAction.click()
     await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
+  })
+
+  test("keeps the FAB clear of drawers, dialogs, and the mobile keyboard", async ({
+    page,
+  }) => {
+    await page.goto("/transactions")
+    const fab = page.getByTestId("app-shell-mobile-add-action")
+    await expect(fab).toBeVisible()
+    await expect(fab).toHaveCSS("opacity", "1")
+
+    await fab.click()
+    const addDialog = page.getByRole("dialog", { name: "Add transaction" })
+    await expect(addDialog).toBeVisible()
+    await expect(fab).toHaveCSS("opacity", "0")
+    await expect(fab).toHaveCSS("pointer-events", "none")
+    const dialogLayers = await page.evaluate(() => ({
+      fab: Number.parseInt(
+        getComputedStyle(document.querySelector<HTMLElement>(".app-mobile-fab")!).zIndex,
+        10,
+      ),
+      overlay: Number.parseInt(
+        getComputedStyle(document.querySelector<HTMLElement>('[data-slot="dialog-overlay"]')!)
+          .zIndex,
+        10,
+      ),
+    }))
+    expect(dialogLayers.fab).toBeLessThan(dialogLayers.overlay)
+    await addDialog.getByRole("button", { name: "Close" }).click()
+    await expect(addDialog).toBeHidden()
+    await expect(fab).toHaveCSS("opacity", "1")
+    await expect(fab).toBeFocused()
+
+    const menuTrigger = page.getByRole("button", { name: "Open menu" })
+    await menuTrigger.click()
+    await expect(fab).toHaveCSS("opacity", "0")
+    await page.getByRole("button", { name: "Close menu" }).click()
+    await expect(fab).toHaveCSS("opacity", "1")
+    await expect(menuTrigger).toBeFocused()
+
+    await page.getByRole("button", { name: "Search transactions" }).click()
+    const search = page.getByRole("searchbox", { name: "Search transactions" })
+    await expect(search).toBeFocused()
+    await expect(fab).toHaveCSS("opacity", "0")
+    await page.keyboard.press("Escape")
+    await expect(fab).toHaveCSS("opacity", "1")
+  })
+
+  test("uses the shared FAB only for page-level creation actions", async ({ page }) => {
+    test.setTimeout(90_000)
+    const actionPages = [
+      { path: "/", label: "Add transaction" },
+      { path: "/transactions", label: "Add transaction" },
+      { path: "/budgets", label: "Add budget" },
+      { path: "/recurring", label: "Add rule" },
+      { path: "/templates", label: "Add template" },
+      { path: "/rules", label: "Add rule" },
+      { path: "/categories", label: "Add category" },
+      { path: "/tags", label: "Add tag" },
+    ]
+
+    for (const entry of actionPages) {
+      await page.goto(entry.path)
+      await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveAccessibleName(
+        entry.label,
+      )
+    }
+
+    for (const path of ["/insights", "/settings", "/reports/builder"]) {
+      await page.goto(path)
+      await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
+    }
   })
 
   test("navigates non-tab routes through the sidebar", async ({ page }) => {
@@ -212,18 +288,16 @@ test.describe("Navigation (mobile)", () => {
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
   })
 
-  test("exposes a mobile quick theme toggle in the shell header and keeps nav tappable", async ({
+  test("keeps theme selection in Settings and keeps navigation tappable", async ({
     page,
   }) => {
     await page.goto("/")
     await page.evaluate((key) => window.localStorage.setItem(key, "dark"), THEME_STORAGE_KEY)
     await page.reload()
-    const shellThemeToggle = page
-      .getByTestId("app-shell-header")
-      .getByTestId("shell-theme-quick-toggle")
-    await expect(shellThemeToggle).toBeVisible()
-    await expect(shellThemeToggle).toHaveAttribute("data-theme-icon", "dark")
-    await shellThemeToggle.click()
+    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
+    await clickMobileSidebarLink(page, "Settings")
+    const themeControl = page.getByTestId("settings-theme-control")
+    await themeControl.getByRole("button", { name: "Light" }).click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
@@ -246,9 +320,8 @@ test.describe("Navigation (mobile)", () => {
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
 
-    await page.getByRole("button", { name: "Open menu" }).click()
-    await page.keyboard.press("Escape")
-    await expect(page.getByRole("button", { name: "Close menu" })).not.toBeVisible()
+    await page.getByRole("button", { name: "Cancel" }).click()
+    await expect(page).toHaveURL("/")
 
     await clickMobileSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
@@ -256,25 +329,21 @@ test.describe("Navigation (mobile)", () => {
     await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
   })
 
-  test("preserves selected theme across dashboard, transactions, and admin import routes", async ({
+  test("preserves the Settings-selected theme across app routes", async ({
     page,
   }) => {
     await page.goto("/")
     await page.evaluate((key) => window.localStorage.setItem(key, "dark"), THEME_STORAGE_KEY)
     await page.reload()
-    const shellThemeToggle = page
-      .getByTestId("app-shell-header")
-      .getByTestId("shell-theme-quick-toggle")
-    await shellThemeToggle.click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+      .toBe("dark")
 
     await clickMobileSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+      .toBe("dark")
 
     await page.getByRole("button", { name: "Open menu" }).click()
     const sidebar = page.getByRole("complementary", { name: "Application menu" })
@@ -282,35 +351,26 @@ test.describe("Navigation (mobile)", () => {
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+      .toBe("dark")
 
-    await ensureElevatedAdmin(page)
-    await page.getByRole("link", { name: "Open importer" }).click()
-    await expect(page).toHaveURL("/admin/import")
+    await page.getByRole("button", { name: "Cancel" }).click()
+    await expect(page).toHaveURL("/")
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-
-    await page.getByRole("link", { name: "← Back to admin" }).click()
-    await expect(page).toHaveURL("/admin")
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+      .toBe("dark")
 
     await clickMobileSidebarLink(page, "Dashboard")
     await expect(page).toHaveURL("/")
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+      .toBe("dark")
   })
 
-  test("keeps the page-specific Add action in the mobile header", async ({
+  test("keeps page-specific primary actions in the shared mobile FAB", async ({
     page,
   }) => {
     await page.goto("/budgets")
-    const addAction = page
-      .getByTestId("app-shell-header")
-      .getByTestId("app-shell-mobile-add-action")
+    const addAction = page.getByTestId("app-shell-mobile-add-action")
     await expect(addAction).toBeVisible()
     await expect(addAction).toHaveAccessibleName("Add budget")
 

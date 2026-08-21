@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures"
+import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Report Builder Page", () => {
   test.beforeEach(async ({ page }) => {
@@ -138,6 +139,68 @@ test.describe("Report Builder Page", () => {
     expect(payload).not.toBeNull()
     expect(payload?.category_ids).toEqual([22])
     expect(payload?.include_cents).toBe(false)
+  })
+
+  test("generates reports with include or exclude tag scope", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const suffix = Date.now()
+    const tagName = `Report vacation ${suffix}`
+    const categoryId = await ensureCategory(
+      request,
+      csrfToken,
+      "expense",
+      `Report category ${suffix}`
+    )
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: { name: tagName, is_hidden_from_budget: false },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
+    const tagId = ((await tagResponse.json()) as { id: number }).id
+    const today = new Date().toISOString().slice(0, 10)
+    await createTransaction(request, csrfToken, {
+      date: today,
+      occurred_at: `${today}T12:00:00`,
+      type: "expense",
+      amount_cents: 4_200,
+      category_id: categoryId,
+      title: `Report tagged transaction ${suffix}`,
+      tags: [tagName],
+    })
+
+    await page.addInitScript(() => {
+      window.open = () => {
+        const current = window.location.href
+        return {
+          location: { href: current },
+          close() {},
+        } as unknown as Window
+      }
+    })
+    await page.goto("/reports/builder")
+
+    const tagScope = page.getByRole("radiogroup", { name: "Tag scope" })
+    await tagScope.getByRole("radio", { name: "Only include" }).check()
+    await page.getByRole("checkbox", { name: tagName }).check()
+
+    let reportRequestPromise = page.waitForRequest("**/api/reports/pdf")
+    await page.getByRole("button", { name: "Generate PDF Report" }).click()
+    let payload = (await reportRequestPromise).postDataJSON() as Record<string, unknown>
+    expect(payload.tag_ids).toEqual([tagId])
+    expect(payload.excluded_tag_ids).toEqual([])
+    await expect(page.getByRole("link", { name: "Download latest PDF" })).toBeVisible({
+      timeout: 30_000,
+    })
+
+    await tagScope.getByRole("radio", { name: "Exclude" }).check()
+    reportRequestPromise = page.waitForRequest("**/api/reports/pdf")
+    await page.getByRole("button", { name: "Generate PDF Report" }).click()
+    payload = (await reportRequestPromise).postDataJSON() as Record<string, unknown>
+    expect(payload.tag_ids).toEqual([])
+    expect(payload.excluded_tag_ids).toEqual([tagId])
   })
 
   test("shows latest generated PDF follow-up state", async ({ page }) => {

@@ -59,6 +59,21 @@ test("uses the unified multi-tag filter from each mobile sheet", async ({ page }
   await page.goto(`/transactions?period=this_month&q=${encodeURIComponent(marker)}`)
   await page.getByRole("button", { name: /Filters/ }).click()
   let sheet = page.getByRole("dialog", { name: "Filter transactions" })
+  for (const tagName of [vacationName, projectName]) {
+    const checkbox = sheet.getByRole("checkbox", { name: tagName })
+    await expect(checkbox).not.toBeChecked()
+    expect(
+      await checkbox.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return (
+          parseFloat(style.borderTopWidth) > 0 &&
+          style.borderTopStyle !== "none" &&
+          style.borderTopColor !== "transparent" &&
+          style.borderTopColor !== "rgba(0, 0, 0, 0)"
+        )
+      }),
+    ).toBe(true)
+  }
   await sheet.getByRole("button", { name: "Exclude" }).click()
   await sheet.getByRole("checkbox", { name: vacationName }).check()
   await sheet.getByRole("checkbox", { name: projectName }).check()
@@ -69,25 +84,26 @@ test("uses the unified multi-tag filter from each mobile sheet", async ({ page }
   await expect(page.getByTestId(`transaction-row-${regularID}`)).toBeVisible()
 
   await page.goto("/?period=this_month")
-  const dashboardTagTrigger = page.getByRole("button", {
-    name: "Filter dashboard by tags",
+  const dashboardFilterTrigger = page.getByRole("button", {
+    name: "Filters",
+    exact: true,
   })
-  await expect(dashboardTagTrigger).toBeVisible()
-  const [tagTriggerBox, themeTriggerBox] = await Promise.all([
-    dashboardTagTrigger.boundingBox(),
-    page.locator('[data-testid="shell-theme-quick-toggle"]:visible').boundingBox(),
+  await expect(dashboardFilterTrigger).toBeVisible()
+  const [filterTriggerBox, periodBox] = await Promise.all([
+    dashboardFilterTrigger.boundingBox(),
+    page.getByRole("group", { name: "Period" }).boundingBox(),
   ])
-  expect(tagTriggerBox).not.toBeNull()
-  expect(themeTriggerBox).not.toBeNull()
-  expect(Math.abs(tagTriggerBox!.height - themeTriggerBox!.height)).toBeLessThan(0.01)
-  expect(Math.abs(tagTriggerBox!.width - themeTriggerBox!.width)).toBeLessThan(0.01)
+  expect(filterTriggerBox).not.toBeNull()
+  expect(periodBox).not.toBeNull()
+  expect(Math.abs(filterTriggerBox!.height - periodBox!.height)).toBeLessThan(0.01)
+  expect(Math.abs(filterTriggerBox!.width - filterTriggerBox!.height)).toBeLessThan(0.01)
 
-  await dashboardTagTrigger.click()
-  sheet = page.getByRole("dialog", { name: "Filter dashboard by tags" })
+  await dashboardFilterTrigger.click()
+  sheet = page.getByRole("dialog", { name: "Dashboard filters" })
   await sheet.getByRole("button", { name: "Exclude" }).click()
   await sheet.getByRole("checkbox", { name: vacationName }).check()
   await sheet.getByRole("button", { name: "Apply" }).click()
-  await expect(page.getByRole("button", { name: `Remove excluded tag ${vacationName}` })).toBeVisible()
+  await expect(page.getByRole("button", { name: `Remove Excluding: ${vacationName}` })).toBeVisible()
   await expect(page.getByTestId("dashboard-recent-list")).not.toContainText(`${marker} vacation`)
 
   await page.goto("/insights?period=this_month")
@@ -97,8 +113,8 @@ test("uses the unified multi-tag filter from each mobile sheet", async ({ page }
   await sheet.getByRole("checkbox", { name: projectName }).check()
   await sheet.getByRole("button", { name: "Apply" }).click()
   await expect(page).toHaveURL(new RegExp(`tags=${tagIds[0]}%2C${tagIds[1]}`))
-  await expect(page.getByRole("button", { name: `Remove Only: ${vacationName}` })).toBeVisible()
-  await expect(page.getByRole("button", { name: `Remove Only: ${projectName}` })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove Only: 2 tags" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible()
 
   await isolated.request.dispose()
 })

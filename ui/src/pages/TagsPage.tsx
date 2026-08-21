@@ -6,7 +6,8 @@ import { Link, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { formatEuroDate } from "../app/format"
 import type { AppShellOutletContext } from "../app/AppShell"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
 import { Toggle } from "../components/Toggle"
 import {
@@ -189,23 +190,28 @@ function TagsPage() {
 
   return (
     <section className="space-y-6">
-      <PageIntro
+      <PageScopeHeader
         title="Tags"
-        actions={
+        titleActions={
           <div className="flex flex-wrap gap-2">
             <AppButton type="button" onClick={openMergeEditor} tone="ghost">
               Merge tags
             </AppButton>
           </div>
         }
-      />
-
-      <PeriodPicker
-        periodSlug={data.period.slug}
-        start={data.period.start}
-        end={data.period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
+        controls={
+          <PageFilterBar
+            period={
+              <PeriodPicker
+                periodSlug={data.period.slug}
+                start={data.period.start}
+                end={data.period.end}
+                onSetPreset={setPresetPeriod}
+                onApplyCustom={applyCustomPeriod}
+              />
+            }
+          />
+        }
       />
 
       <FinancialPanel role="ledger" data-testid="tag-library">

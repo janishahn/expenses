@@ -37,11 +37,9 @@ test.describe("Recurring Rules Page (mobile)", () => {
 
     await page.goto("/recurring")
 
-    const addAction = page
-      .getByTestId("app-shell-header")
-      .getByTestId("app-shell-mobile-add-action")
+    const addAction = page.getByTestId("app-shell-mobile-add-action")
     await expect(addAction).toHaveAccessibleName("Add rule")
-    await expect(addAction).toHaveText("Add rule")
+    await expect(addAction).toHaveText("")
     await addAction.click()
     await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
     await page.getByRole("button", { name: "Close rule editor" }).click()
@@ -60,7 +58,7 @@ test.describe("Recurring Rules Page (mobile)", () => {
     await history.click()
     await expect(page).toHaveURL(/\/recurring\/\d+\/occurrences/)
     await expect(page.getByTestId("recurring-occurrence-summary")).toBeVisible()
-    await page.getByRole("link", { name: "← Back to recurring" }).click()
+    await page.getByRole("link", { name: "Back to recurring" }).click()
     await expect(page).toHaveURL("/recurring")
   })
 

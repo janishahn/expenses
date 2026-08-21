@@ -9,7 +9,8 @@ import type { CategoryListItem } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
 import { formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
 import { DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
 import {
@@ -366,14 +367,21 @@ function CategoriesPage() {
 
   return (
     <section className="space-y-6">
-      <PageIntro title="Categories" />
-
-      <PeriodPicker
-        periodSlug={data.period.slug}
-        start={data.period.start}
-        end={data.period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
+      <PageScopeHeader
+        title="Categories"
+        controls={
+          <PageFilterBar
+            period={
+              <PeriodPicker
+                periodSlug={data.period.slug}
+                start={data.period.start}
+                end={data.period.end}
+                onSetPreset={setPresetPeriod}
+                onApplyCustom={applyCustomPeriod}
+              />
+            }
+          />
+        }
       />
 
       <div className="grid grid-cols-1 items-start gap-4 desk:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">

@@ -38,15 +38,13 @@ test.describe("Navigation", () => {
     }
   })
 
-  test("uses one animated selector pattern without repeating period context in the shell", async ({
+  test("distinguishes value selectors from page view tabs", async ({
     page,
   }) => {
     const selectors = [
       { path: "/", label: "Period" },
       { path: "/forecast", label: "Forecast horizon" },
       { path: "/scenarios", label: "Scenario model" },
-      { path: "/insights", label: "Insights view" },
-      { path: "/recurring", label: "Recurring view" },
       { path: "/settings", label: "Theme mode" },
     ]
 
@@ -56,6 +54,11 @@ test.describe("Navigation", () => {
       await expect(group).toBeVisible()
       await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
     }
+
+    await page.goto("/insights")
+    await expect(page.getByRole("tablist", { name: "Insights views" })).toBeVisible()
+    await page.goto("/recurring")
+    await expect(page.getByRole("tablist", { name: "Recurring views" })).toBeVisible()
 
     await page.goto("/budgets")
     await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
@@ -106,7 +109,7 @@ test.describe("Navigation", () => {
     await expect(sidebar.getByRole("link", { name: /More/i })).toHaveCount(0)
   })
 
-  test("exposes a desktop quick theme toggle and persists shell-initiated changes", async ({
+  test("keeps theme selection in Settings and removes the shell quick toggle", async ({
     page,
   }) => {
     await page.goto("/")
@@ -117,47 +120,14 @@ test.describe("Navigation", () => {
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
-    const shellThemeQuickToggle = page
-      .getByTestId("app-shell-utility")
-      .getByTestId("shell-theme-quick-toggle")
-    await expect(shellThemeQuickToggle).toBeVisible()
-    await expect(shellThemeQuickToggle).toHaveAttribute("data-theme-icon", "light")
-    await expect
-      .poll(async () =>
-        shellThemeQuickToggle.evaluate((node) => {
-          const rect = node.getBoundingClientRect()
-          return {
-            centerX: rect.left + rect.width / 2,
-            top: rect.top,
-            label: node.textContent?.trim() ?? "",
-          }
-        }),
-      )
-      .toMatchObject({
-        top: expect.any(Number),
-        centerX: expect.any(Number),
-        label: "",
-      })
-    const shellTogglePosition = await shellThemeQuickToggle.evaluate((node) => {
-      const rect = node.getBoundingClientRect()
-      return {
-        centerX: rect.left + rect.width / 2,
-        top: rect.top,
-      }
-    })
-    const viewport = page.viewportSize()
-    expect(viewport).not.toBeNull()
-    if (viewport) {
-      expect(shellTogglePosition.centerX).toBeGreaterThan(viewport.width * 0.7)
-      expect(shellTogglePosition.top).toBeLessThan(120)
-    }
-
-    await shellThemeQuickToggle.click()
+    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
+    await clickSidebarLink(page, "Settings")
+    const themeControl = page.getByTestId("settings-theme-control")
+    await themeControl.getByRole("button", { name: "Dark" }).click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("dark")
     await expect.poll(() => readThemePreference(page)).toBe("dark")
-    await expect(shellThemeQuickToggle).toHaveAttribute("data-theme-icon", "dark")
 
     await clickSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
@@ -332,6 +302,65 @@ test.describe("Navigation", () => {
     await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
   })
 
+  test("keeps the centered page canvas stable while shared modals lock scrolling", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 500 })
+
+    for (const entry of [
+      {
+        path: "/",
+        action: "Add transaction",
+        dialog: "Add transaction",
+      },
+      { path: "/budgets", action: "Add budget", dialog: "Add budget" },
+    ]) {
+      await page.goto(entry.path)
+      const action = page
+        .getByTestId("app-shell-utility")
+        .getByRole("button", { name: entry.action, exact: true })
+      await expect(action).toBeVisible()
+
+      // Emulate a classic 15px desktop scrollbar so Radix's compensation is
+      // exercised even when the test host uses overlay scrollbars.
+      await page.evaluate(() => {
+        Object.defineProperty(document.documentElement, "clientWidth", {
+          configurable: true,
+          value: window.innerWidth - 15,
+        })
+      })
+
+      const canvas = page.locator(".page-enter")
+      const beforeBox = await canvas.boundingBox()
+      expect(beforeBox).not.toBeNull()
+
+      await action.click()
+      const dialog = page.getByRole("dialog", { name: entry.dialog })
+      await expect(dialog).toBeVisible()
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            overflow: getComputedStyle(document.body).overflow,
+            marginRight: getComputedStyle(document.body).marginRight,
+            scrollLocked: document.body.hasAttribute("data-scroll-locked"),
+          })),
+        )
+        .toEqual({ overflow: "hidden", marginRight: "0px", scrollLocked: true })
+
+      const openBox = await canvas.boundingBox()
+      expect(openBox).not.toBeNull()
+      expect(Math.abs(openBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
+      expect(Math.abs(openBox!.width - beforeBox!.width)).toBeLessThanOrEqual(0.5)
+
+      await page.keyboard.press("Escape")
+      await expect(dialog).toBeHidden()
+      const closedBox = await canvas.boundingBox()
+      expect(closedBox).not.toBeNull()
+      expect(Math.abs(closedBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
+      expect(Math.abs(closedBox!.width - beforeBox!.width)).toBeLessThanOrEqual(0.5)
+    }
+  })
+
   test("restores desktop shell interactivity after closing the global add sheet", async ({
     page,
   }) => {
@@ -340,11 +369,25 @@ test.describe("Navigation", () => {
     await addButton.click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
-    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden")
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          overflow: getComputedStyle(document.body).overflow,
+          scrollLocked: document.body.hasAttribute("data-scroll-locked"),
+        })),
+      )
+      .toEqual({ overflow: "hidden", scrollLocked: true })
 
     await dialog.getByRole("button", { name: "Close" }).click()
     await expect(dialog).toBeHidden()
-    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          overflow: getComputedStyle(document.body).overflow,
+          scrollLocked: document.body.hasAttribute("data-scroll-locked"),
+        })),
+      )
+      .toEqual({ overflow: "visible", scrollLocked: false })
 
     await addButton.click()
     await expect(dialog).toBeVisible()
@@ -355,7 +398,14 @@ test.describe("Navigation", () => {
     await expect(dialog).toBeVisible()
     await page.keyboard.press("Escape")
     await expect(dialog).toBeHidden()
-    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          overflow: getComputedStyle(document.body).overflow,
+          scrollLocked: document.body.hasAttribute("data-scroll-locked"),
+        })),
+      )
+      .toEqual({ overflow: "visible", scrollLocked: false })
 
     await clickSidebarLink(page, "Insights")
     await expect(page).toHaveURL("/insights")

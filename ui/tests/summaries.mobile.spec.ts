@@ -37,7 +37,36 @@ test.describe("Summary and report surfaces (mobile)", () => {
     }
   )
 
-  test("generates a real PDF and exposes the latest download", async ({ page }) => {
+  test("generates a tag-scoped real PDF and exposes the latest download", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const suffix = Date.now()
+    const tagName = `Mobile report tag ${suffix}`
+    const categoryId = await ensureCategory(
+      request,
+      csrfToken,
+      "expense",
+      `Mobile report category ${suffix}`
+    )
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: { name: tagName, is_hidden_from_budget: false },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
+    const tagId = ((await tagResponse.json()) as { id: number }).id
+    const today = new Date().toISOString().slice(0, 10)
+    await createTransaction(request, csrfToken, {
+      date: today,
+      occurred_at: `${today}T12:00:00`,
+      type: "expense",
+      amount_cents: 2_500,
+      category_id: categoryId,
+      title: `Mobile report transaction ${suffix}`,
+      tags: [tagName],
+    })
+
     await page.addInitScript(() => {
       window.open = () => {
         const current = window.location.href
@@ -49,7 +78,14 @@ test.describe("Summary and report surfaces (mobile)", () => {
     })
 
     await page.goto("/reports/builder")
+    const tagScope = page.getByRole("radiogroup", { name: "Tag scope" })
+    await tagScope.getByRole("radio", { name: "Only include" }).check()
+    await page.getByRole("checkbox", { name: tagName }).check()
+    const reportRequestPromise = page.waitForRequest("**/api/reports/pdf")
     await page.getByRole("button", { name: "Generate PDF Report" }).click()
+    const payload = (await reportRequestPromise).postDataJSON() as Record<string, unknown>
+    expect(payload.tag_ids).toEqual([tagId])
+    expect(payload.excluded_tag_ids).toEqual([])
     await expect(page.getByRole("link", { name: "Download latest PDF" })).toBeVisible({
       timeout: 30_000,
     })

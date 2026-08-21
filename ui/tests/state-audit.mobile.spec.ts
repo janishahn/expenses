@@ -305,7 +305,7 @@ test.describe("Mobile state audit evidence", () => {
       })
       await analysisChart.scrollIntoViewIfNeeded()
       await captureAuditState(page, layout, theme, "insights populated analysis")
-      await page.getByRole("button", { name: "Net" }).click()
+      await page.getByRole("tab", { name: "Net" }).click()
       const netView = page.getByRole("heading", { name: "Income & spending" })
       await expect(netView).toBeVisible()
       await netView.scrollIntoViewIfNeeded()

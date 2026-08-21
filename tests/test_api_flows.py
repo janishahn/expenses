@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import expenses.app as app_main
+import expenses.api.routes as routes_module
 from expenses.core.config import get_settings
 
 
@@ -649,6 +650,65 @@ def test_report_pdf_rejects_oversized_transaction_count(
     )
 
     assert response.status_code == 400
+
+
+def test_report_pdf_transaction_limit_respects_tag_scope(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setenv("EXPENSES_REPORT_MAX_TRANSACTIONS", "1")
+    get_settings.cache_clear()
+    category_id = _create_category(
+        api_client, csrf_headers, "Scoped reports", "expense"
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date.today(),
+        txn_type="expense",
+        amount_cents=100,
+        category_id=category_id,
+        title="Vacation report item",
+        tags=["Vacation report"],
+    )
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date.today(),
+        txn_type="expense",
+        amount_cents=100,
+        category_id=category_id,
+        title="Regular report item",
+        tags=[],
+    )
+    tag_id = next(
+        int(tag["id"])
+        for tag in api_client.get("/api/tags?period=all").json()["tags"]
+        if tag["name"] == "Vacation report"
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "_generate_report_pdf_bytes",
+        lambda **_kwargs: b"%PDF-scoped",
+    )
+
+    common_payload = {
+        "start": date.today().isoformat(),
+        "end": date.today().isoformat(),
+        "sections": ["summary"],
+    }
+    included = api_client.post(
+        "/api/reports/pdf",
+        headers=csrf_headers,
+        json={**common_payload, "tag_ids": [tag_id]},
+    )
+    excluded = api_client.post(
+        "/api/reports/pdf",
+        headers=csrf_headers,
+        json={**common_payload, "excluded_tag_ids": [tag_id]},
+    )
+
+    assert included.status_code == 200
+    assert excluded.status_code == 200
 
 
 def test_bulk_edit_fuzzy_search_and_uncategorized_inbox(

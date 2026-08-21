@@ -27,6 +27,7 @@ import type {
   SpendingChatStreamEvent,
 } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
+import PageIntro from "../components/PageIntro"
 
 type ToolStatus = "running" | "success" | "failed"
 
@@ -722,8 +723,9 @@ function SpendingAssistantPage() {
     <section
       data-testid="spending-assistant-page"
       aria-label="Assistant conversation"
-      className="relative flex h-[calc(100dvh-5.75rem)] min-h-[32rem] flex-col desk:h-[calc(100dvh-7.75rem)] desk:min-h-[34rem]"
+      className="relative flex h-[calc(100dvh-2rem)] min-h-[32rem] flex-col gap-3 desk:h-[calc(100dvh-7.75rem)] desk:min-h-[34rem]"
     >
+      <PageIntro title="Assistant" />
       <div
         ref={threadRef}
         data-testid="spending-assistant-thread"

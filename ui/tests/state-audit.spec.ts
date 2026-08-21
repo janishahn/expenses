@@ -272,7 +272,7 @@ test.describe("Desktop state and preference audit evidence", () => {
       await page.goto("/insights?period=last_6_months")
       await page.waitForLoadState("networkidle")
       await captureAuditState(page, "desktop-chromium", theme, "insights populated analysis")
-      await page.getByRole("button", { name: "Net" }).click()
+      await page.getByRole("tab", { name: "Net" }).click()
       await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
       await captureAuditState(page, "desktop-chromium", theme, "insights populated net")
 

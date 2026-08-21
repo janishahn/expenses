@@ -10,7 +10,6 @@ import { GearIcon } from "@phosphor-icons/react/Gear"
 import { HouseIcon } from "@phosphor-icons/react/House"
 import { LightningIcon } from "@phosphor-icons/react/Lightning"
 import { ListBulletsIcon } from "@phosphor-icons/react/ListBullets"
-import { ListIcon } from "@phosphor-icons/react/List"
 import { NewspaperIcon } from "@phosphor-icons/react/Newspaper"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
@@ -22,7 +21,6 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
 import ConfirmDialogHost from "../components/ConfirmDialogHost"
 import ProductMark from "../components/ProductMark"
-import ShellThemeQuickToggle from "../components/ShellThemeQuickToggle"
 import { useAuth } from "./auth"
 
 const AddTransactionSheet = lazy(() => import("./AddTransactionSheet"))
@@ -78,7 +76,9 @@ const navigationGroups: Array<{ label: string; items: NavigationItem[] }> = [
 
 export type AppShellOutletContext = {
   openAddTransaction: () => void
+  openMobileNavigation: (trigger: HTMLButtonElement) => void
   setUtilityAction: (action: AppShellUtilityAction | null) => void
+  utilityAction: AppShellUtilityAction | null
 }
 
 export type AppShellUtilityAction = {
@@ -133,7 +133,6 @@ function AppShell() {
 
   const addTransactionAvailable =
     location.pathname === "/" || location.pathname === "/transactions"
-  const shellTitle = location.pathname === "/assistant" ? "Assistant" : null
   const activeUtilityAction = utilityAction ??
     (addTransactionAvailable
       ? {
@@ -142,10 +141,17 @@ function AppShell() {
         }
       : null)
   const UtilityActionIcon = activeUtilityAction?.icon ?? PlusIcon
+  const mobileFabAction =
+    activeUtilityAction?.presentation === "quiet" ? null : activeUtilityAction
 
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false)
     setSidebarCloseCount((count) => count + 1)
+  }, [])
+
+  const openMobileNavigation = useCallback((trigger: HTMLButtonElement) => {
+    menuTriggerRef.current = trigger
+    setSidebarOpen(true)
   }, [])
 
   useEffect(() => {
@@ -206,11 +212,11 @@ function AppShell() {
   }, [closeSidebar, isDesktop, sidebarOpen])
 
   useEffect(() => {
-    document.body.style.overflow = sidebarOpen || addTransactionOpen ? "hidden" : ""
+    document.body.style.overflow = sidebarOpen ? "hidden" : ""
     return () => {
       document.body.style.overflow = ""
     }
-  }, [sidebarOpen, addTransactionOpen])
+  }, [sidebarOpen])
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 861px)")
@@ -250,7 +256,7 @@ function AppShell() {
   )
 
   return (
-    <div data-testid="app-shell-root" className="min-h-app-screen flex bg-bg">
+    <div data-testid="app-shell-root" className="app-shell-root min-h-app-screen flex bg-bg">
       <aside
         ref={sidebarRef}
         className={`app-sidebar ${sidebarOpen ? "app-sidebar-open" : ""}`}
@@ -306,105 +312,60 @@ function AppShell() {
         data-testid="app-shell-content"
         className="min-h-app-screen flex min-w-0 flex-1 flex-col desk:ml-sidebar"
       >
-        <header data-testid="app-shell-header" className="app-mobile-header desk:hidden">
-          {shellTitle ? (
-            <>
-              <NavLink
-                to={periodSearch ? `/${periodSearch}` : "/"}
-                aria-label="Expenses"
-                className="flex h-11 w-11 shrink-0 items-center justify-center"
-              >
-                <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
-              </NavLink>
-              <h1 className="truncate font-head text-base font-semibold">
-                {shellTitle}
-              </h1>
-            </>
-          ) : (
-            <NavLink
-              to={periodSearch ? `/${periodSearch}` : "/"}
-              className="flex min-h-11 min-w-0 items-center gap-2.5 font-semibold"
-            >
-              <ProductMark className="!h-9 !w-9 !rounded-[0.75rem] !p-2" />
-              <span className="truncate">Expenses</span>
-            </NavLink>
-          )}
-          <div className="ml-auto flex items-center gap-1.5">
-            {activeUtilityAction ? (
-              <button
-                type="button"
-                data-testid="app-shell-mobile-add-action"
-                aria-label={activeUtilityAction.label}
-                onClick={activeUtilityAction.onClick}
-                className={
-                  activeUtilityAction.presentation === "quiet"
-                    ? "app-utility-icon transition-[background-color,color,scale] duration-150 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96]"
-                    : "app-mobile-header-action transition-[filter,scale] duration-150 ease-out hover:brightness-105 active:scale-[0.96]"
-                }
-              >
-                <UtilityActionIcon aria-hidden="true" />
-                {activeUtilityAction.presentation !== "quiet" ? (
-                  <span>{activeUtilityAction.label}</span>
-                ) : null}
-              </button>
-            ) : null}
-            {!location.pathname.startsWith("/admin") ? (
-              <ShellThemeQuickToggle testId="shell-theme-quick-toggle" size="mobile" />
-            ) : null}
-            <button
-              ref={menuTriggerRef}
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="app-utility-icon"
-              aria-label="Open menu"
-            >
-              <ListIcon aria-hidden="true" />
-            </button>
-          </div>
-        </header>
-
         <header data-testid="app-shell-utility" className="app-desktop-utility">
-          {shellTitle ? (
-            <h1 className="truncate font-head text-base font-semibold">
-              {shellTitle}
-            </h1>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2.5">
-            {!location.pathname.startsWith("/admin") ? (
-              <ShellThemeQuickToggle testId="shell-theme-quick-toggle" />
-            ) : null}
-            {activeUtilityAction ? (
-              <button
-                type="button"
-                aria-label={activeUtilityAction.label}
-                onClick={activeUtilityAction.onClick}
-                className={
-                  activeUtilityAction.presentation === "quiet"
-                    ? "app-utility-icon transition-[background-color,color,scale] duration-150 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96]"
-                    : "app-utility-action transition-[filter,scale] duration-150 ease-out hover:brightness-105 active:scale-[0.96]"
-                }
-              >
-                <UtilityActionIcon aria-hidden="true" />
-                {activeUtilityAction.presentation !== "quiet" ? (
-                  <span>{activeUtilityAction.label}</span>
-                ) : null}
-              </button>
-            ) : null}
+          <div className="app-content-frame app-desktop-utility-inner">
+            <div className="ml-auto flex items-center gap-2.5">
+              {activeUtilityAction ? (
+                <button
+                  type="button"
+                  aria-label={activeUtilityAction.label}
+                  onClick={activeUtilityAction.onClick}
+                  className={
+                    activeUtilityAction.presentation === "quiet"
+                      ? "app-utility-icon transition-[background-color,color,scale] duration-150 ease-out hover:bg-surface-hi hover:text-text active:scale-[0.96]"
+                      : "app-utility-action transition-[filter,scale] duration-150 ease-out hover:brightness-105 active:scale-[0.96]"
+                  }
+                >
+                  <UtilityActionIcon aria-hidden="true" />
+                  {activeUtilityAction.presentation !== "quiet" ? (
+                    <span>{activeUtilityAction.label}</span>
+                  ) : null}
+                </button>
+              ) : null}
+            </div>
           </div>
         </header>
 
         <main
-          className="min-w-0 flex-1 px-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-4 desk:px-6 desk:pb-10 desk:pt-4"
+          className={`min-w-0 flex-1 px-3 pt-4 desk:px-6 desk:pb-10 desk:pt-4 ${
+            mobileFabAction
+              ? "pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))]"
+              : "pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+          }`}
         >
-          <div className="page-enter mx-auto w-full max-w-[1540px]">
+          <div className="app-content-frame page-enter">
             <Outlet
               context={{
                 openAddTransaction,
+                openMobileNavigation,
                 setUtilityAction,
+                utilityAction: activeUtilityAction,
               }}
             />
           </div>
         </main>
+
+        {mobileFabAction ? (
+          <button
+            type="button"
+            data-testid="app-shell-mobile-add-action"
+            aria-label={mobileFabAction.label}
+            onClick={mobileFabAction.onClick}
+            className="app-mobile-fab desk:hidden"
+          >
+            <UtilityActionIcon aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       {addTransactionMounted ? (

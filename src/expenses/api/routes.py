@@ -545,6 +545,10 @@ def _report_transaction_count(options: ReportOptions, db: Session, user_id: int)
         stmt = stmt.where(Transaction.type == options.transaction_type)
     if options.category_ids:
         stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
+    if options.tag_ids:
+        stmt = stmt.where(Transaction.tags.any(Tag.id.in_(options.tag_ids)))
+    if options.excluded_tag_ids:
+        stmt = stmt.where(~Transaction.tags.any(Tag.id.in_(options.excluded_tag_ids)))
     return int(db.execute(stmt).scalar_one() or 0)
 
 

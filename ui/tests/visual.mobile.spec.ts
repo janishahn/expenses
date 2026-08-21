@@ -3,7 +3,8 @@ import { mockDashboardApi, mockVisualSupportingApi } from "./helpers"
 
 const visualDashboard = {
   period: { slug: "this_month", start: "2026-07-01", end: "2026-07-31" },
-  filters: { type: null },
+  filters: { type: null, included_tag_ids: [], excluded_tag_ids: [] },
+  tags: [],
   kpis: { income: 265_650, expenses: 148_950, balance: 116_700 },
   sparklines: {},
   deltas: { income: 11_100, expenses: -9_900, balance: 21_000 },

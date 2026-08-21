@@ -29,7 +29,12 @@ def render_report_html(data: dict[str, object]) -> str:
 
     title_period = f"{_format_eurodate(period.start)} - {_format_eurodate(period.end)}"
     filtered_suffix = (
-        " · Filtered" if options.transaction_type or options.category_ids else ""
+        " · Filtered"
+        if options.transaction_type
+        or options.category_ids
+        or options.tag_ids
+        or options.excluded_tag_ids
+        else ""
     )
     bar_palette = [
         "#2563eb",

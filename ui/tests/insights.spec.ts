@@ -41,9 +41,51 @@ test.describe("Insights Page", () => {
     await expect(page.locator("main h1")).toContainText("Insights")
   })
 
-  test("labels the analysis range from the selected period", async ({ page }) => {
+  test("uses page tabs without repeating the selected period", async ({ page }) => {
     await page.goto("/insights?period=this_month")
-    await expect(page.getByText("1 month view", { exact: true })).toBeVisible()
+    await expect(page.getByText(/^Date:/)).toHaveCount(0)
+    await expect(page.getByText(/months? view$/)).toHaveCount(0)
+    await expect(page.getByRole("tablist", { name: "Insights views" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "Analysis" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+  })
+
+  test("keeps the page canvas stable when tab content changes document height", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.goto("/insights")
+    await expect(
+      page.getByRole("heading", { name: "Monthly income vs expenses" }),
+    ).toBeVisible()
+
+    const pageCanvas = page.locator(".page-enter")
+    const analysisBox = await pageCanvas.boundingBox()
+    const analysisLayout = await page.evaluate(() => ({
+      clientHeight: document.documentElement.clientHeight,
+      scrollHeight: document.documentElement.scrollHeight,
+    }))
+    expect(analysisBox).not.toBeNull()
+    expect(analysisLayout.scrollHeight).toBeGreaterThan(analysisLayout.clientHeight)
+
+    await page.getByRole("tab", { name: "Net" }).click()
+    await expect(page).toHaveURL(/view=net/)
+    await expect(page.getByRole("tab", { name: "Net" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    const netBox = await pageCanvas.boundingBox()
+    const netLayout = await page.evaluate(() => ({
+      clientHeight: document.documentElement.clientHeight,
+      scrollHeight: document.documentElement.scrollHeight,
+      scrollbarGutter: getComputedStyle(document.documentElement).scrollbarGutter,
+    }))
+    expect(netBox).not.toBeNull()
+    expect(netLayout.scrollHeight).toBeLessThanOrEqual(netLayout.clientHeight)
+    expect(netLayout.scrollbarGutter).toBe("stable")
+    expect(Math.abs(netBox!.x - analysisBox!.x)).toBeLessThanOrEqual(0.5)
   })
 
   test("should show analytics content", async ({ page }) => {
@@ -66,11 +108,7 @@ test.describe("Insights Page", () => {
     await page.setViewportSize({ width: 900, height: 700 })
     await page.goto("/insights")
     await page.waitForLoadState("networkidle")
-    const mobileFilters = page.getByRole("button", { name: /Filters/ })
-    const desktopFilters = page.locator("label", { hasText: "Tag filter" })
-    const hasMobile = await mobileFilters.isVisible().catch(() => false)
-    const hasDesktop = await desktopFilters.isVisible().catch(() => false)
-    expect(hasMobile || hasDesktop).toBeTruthy()
+    await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible()
   })
 
   test("should render net view", async ({ page, request }) => {
@@ -101,7 +139,7 @@ test.describe("Insights Page", () => {
     })
 
     await page.goto("/insights")
-    await page.getByRole("button", { name: "Net" }).click()
+    await page.getByRole("tab", { name: "Net" }).click()
     await expect(page).toHaveURL(/view=net/)
     await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
     await expect(page.getByText(/Recorded totals/).first()).toBeVisible()
@@ -197,7 +235,7 @@ test.describe("Insights Page", () => {
 
     await expect(page).toHaveURL(
       new RegExp(
-        `/transactions\\?(?=.*period=this_month)(?=.*type=expense)(?=.*category=${expenseCategoryId})(?=.*tag=${tagId})`
+        `/transactions\\?(?=.*period=this_month)(?=.*type=expense)(?=.*category=${expenseCategoryId})(?=.*tags=${tagId})`
       )
     )
     const drilldownUrl = page.url()

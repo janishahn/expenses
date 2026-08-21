@@ -12,7 +12,8 @@ import { confirmDialog } from "../components/confirm"
 import DonutChart from "../components/charts/DonutChart"
 import type { BreakdownItem } from "../components/charts/DonutChart"
 import Sparkline from "../components/charts/Sparkline"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
 import TransactionDescription from "../components/TransactionDescription"
 import { Toggle } from "../components/Toggle"
@@ -351,7 +352,7 @@ function TagDetailPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <PageIntro
+      <PageScopeHeader
         title={tag.name}
         titleAccessory={
           tag.is_hidden_from_budget ? (
@@ -362,18 +363,22 @@ function TagDetailPage() {
         }
         backHref="/tags"
         backLabel="← Tags"
+        controls={
+          <PageFilterBar
+            period={
+              <PeriodPicker
+                periodSlug={period.slug}
+                start={period.start}
+                end={period.end}
+                onSetPreset={setPresetPeriod}
+                onApplyCustom={applyCustomPeriod}
+              />
+            }
+          />
+        }
       />
 
       <FinancialPanel role="hero" className="space-y-5 p-5 md:p-6">
-        <div className="w-full lg:ml-auto lg:max-w-[28rem]">
-          <PeriodPicker
-            periodSlug={period.slug}
-            start={period.start}
-            end={period.end}
-            onSetPreset={setPresetPeriod}
-            onApplyCustom={applyCustomPeriod}
-          />
-        </div>
         <div
           data-testid="tag-detail-metrics"
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"

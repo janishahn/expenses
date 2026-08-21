@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { XIcon } from "@phosphor-icons/react/X"
 import { Link, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
+import ActiveFilterChips from "../components/ActiveFilterChips"
 import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
 import BarChart from "../components/charts/BarChart"
 import LineChart from "../components/charts/LineChart"
 import { palette } from "../components/charts/palette"
 import WaterfallChart, { type FlowNode } from "../components/charts/WaterfallChart"
 import PeriodPicker from "../components/PeriodPicker"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageFilterControl from "../components/PageFilterControl"
+import PageScopeHeader from "../components/PageScopeHeader"
+import { PageTabPanel, PageTabs } from "../components/PageTabs"
 import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
   MetricLane,
   SectionHeading,
-  WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import { AppFieldLabel, AppInput, AppNativeSelect } from "../components/ui/product-fields"
@@ -28,14 +30,6 @@ import {
   type PresetPeriod,
 } from "../lib/searchParams"
 import { serializeTagIds } from "../lib/tagFilters"
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "../components/ui/sheet"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 
@@ -106,12 +100,9 @@ type InsightsFlowResponse = {
 
 function InsightsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
-  const [mobileType, setMobileType] = useState("")
-  const [mobileTagMode, setMobileTagMode] = useState<TagFilterMode>("include")
-  const [mobileTagIds, setMobileTagIds] = useState<number[]>([])
-  const [mobileTrendCategory, setMobileTrendCategory] = useState("")
-  const [mobileBudgetMonth, setMobileBudgetMonth] = useState("")
+  const [draftType, setDraftType] = useState("")
+  const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
+  const [draftTagIds, setDraftTagIds] = useState<number[]>([])
   const [isDesktop, setIsDesktop] = useState(() =>
     window.matchMedia("(min-width: 861px)").matches
   )
@@ -169,12 +160,7 @@ function InsightsPage() {
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 861px)")
-    const syncDesktop = () => {
-      setIsDesktop(media.matches)
-      if (media.matches) {
-        setMobileFiltersOpen(false)
-      }
-    }
+    const syncDesktop = () => setIsDesktop(media.matches)
     syncDesktop()
     media.addEventListener("change", syncDesktop)
     return () => media.removeEventListener("change", syncDesktop)
@@ -204,15 +190,6 @@ function InsightsPage() {
     budget_progress,
   } = data
   const expenseCategories = categories.filter((category) => category.type === "expense")
-  const summary =
-    period.slug === "all"
-      ? "Date: All time"
-      : `Date: ${formatEuroDate(period.start)} → ${formatEuroDate(period.end)}`
-  const [rangeStartYear, rangeStartMonth] = period.start.split("-").map(Number)
-  const [rangeEndYear, rangeEndMonth] = period.end.split("-").map(Number)
-  const rangeMonthCount =
-    (rangeEndYear - rangeStartYear) * 12 + rangeEndMonth - rangeStartMonth + 1
-
   const expenseIconMap = Object.fromEntries(
     expenseCategories
       .map((category) => [category.name, category.icon])
@@ -245,35 +222,46 @@ function InsightsPage() {
     "en-GB",
     { month: "short", year: "numeric" }
   )
+  const tagFilterLabel = selectedTagIds.length === 1 && selectedTags[0]
+    ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
+    : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
   const activeFilters = [
-    filters.type ? { key: "type", label: `Type: ${filters.type}` } : null,
-    ...selectedTags.map((tag) => ({
-      key: `tag_filter_${tag.id}`,
-      label: `${tagMode === "include" ? "Only: " : "Excluding: "}${tag.name}`,
-    })),
-    ...(activeView === "charts"
-      ? [
-          !trendDisabled && selectedTrendCategory
-            ? { key: "trend_category", label: `Trend: ${selectedTrendCategory}` }
-            : null,
-          budget_month
-            ? { key: "budget_month", label: `Budget month: ${budget_month}` }
-            : null,
-        ]
-      : []),
-  ].filter(Boolean) as Array<{ key: string; label: string }>
+    filters.type
+      ? {
+          key: "type",
+          label: `Type: ${filters.type === "income" ? "Income" : "Expense"}`,
+          onRemove: () => setType(""),
+        }
+      : null,
+    selectedTagIds.length
+      ? {
+          key: "tags",
+          label: tagFilterLabel,
+          onRemove: () => setTagFilter(tagMode, []),
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    key: string
+    label: string
+    onRemove: () => void
+  }>
   const incomeColor = "rgb(var(--semantic-green))"
   const expenseColor = "rgb(var(--semantic-red))"
   const trendColor = "rgb(var(--accent))"
-  const flowPeriodLabel = summary.replace(/^Date:\s*/, "")
+  const flowPeriodLabel =
+    period.slug === "all"
+      ? "All time"
+      : `${formatEuroDate(period.start)} → ${formatEuroDate(period.end)}`
 
-  const openMobileFilters = () => {
-    setMobileType(filters.type ?? "")
-    setMobileTagMode(tagMode)
-    setMobileTagIds(selectedTagIds)
-    setMobileTrendCategory(trend_category_id ? String(trend_category_id) : "")
-    setMobileBudgetMonth(budget_month)
-    setMobileFiltersOpen(true)
+  const openFilters = () => {
+    setDraftType(filters.type ?? "")
+    setDraftTagMode(tagMode)
+    setDraftTagIds(selectedTagIds)
+  }
+
+  const clearFilterDraft = () => {
+    setDraftType("")
+    setDraftTagIds([])
   }
 
   const clearFilters = () => {
@@ -282,46 +270,24 @@ function InsightsPage() {
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
-    params.delete("trend_category")
-    params.delete("budget_month")
     setSearchParams(params)
   }
 
-  const clearFilter = (key: string) => {
-    if (key.startsWith("tag_filter_")) {
-      const tagId = Number(key.replace("tag_filter_", ""))
-      setTagFilter(tagMode, selectedTagIds.filter((id) => id !== tagId))
-      return
-    }
-    updateParam(key, null)
-  }
-
-  const applyMobileFilters = () => {
+  const applyFilters = () => {
     const params = new URLSearchParams(searchParams)
-    if (mobileType) {
-      params.set("type", mobileType)
+    if (draftType) {
+      params.set("type", draftType)
     } else {
       params.delete("type")
     }
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
-    const serializedTags = serializeTagIds(mobileTagIds)
+    const serializedTags = serializeTagIds(draftTagIds)
     if (serializedTags) {
-      params.set(mobileTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
-    }
-    if (mobileTrendCategory) {
-      params.set("trend_category", mobileTrendCategory)
-    } else {
-      params.delete("trend_category")
-    }
-    if (mobileBudgetMonth) {
-      params.set("budget_month", mobileBudgetMonth)
-    } else {
-      params.delete("budget_month")
+      params.set(draftTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
     }
     setSearchParams(params)
-    setMobileFiltersOpen(false)
   }
 
   const goToCategoryTransactions = (categoryId: number) => {
@@ -340,269 +306,80 @@ function InsightsPage() {
     window.location.assign(`/transactions?${params.toString()}`)
   }
 
+  const filterControl = (
+    <PageFilterControl
+      title="Insights filters"
+      activeCount={activeFilters.length}
+      isDesktop={isDesktop}
+      onOpen={openFilters}
+      onClear={clearFilterDraft}
+      onApply={applyFilters}
+    >
+      <AppFieldLabel>
+        <span>Transaction type</span>
+        <SegmentedControl
+          value={draftType}
+          ariaLabel="Transaction type"
+          equalWidth
+          items={[
+            { value: "", label: "All" },
+            { value: "expense", label: "Expense" },
+            { value: "income", label: "Income" },
+          ]}
+          onValueChange={setDraftType}
+        />
+      </AppFieldLabel>
+      <TagFilterPicker
+        tags={tags}
+        mode={draftTagMode}
+        selectedIds={draftTagIds}
+        onModeChange={setDraftTagMode}
+        onChange={setDraftTagIds}
+        variant="list"
+      />
+    </PageFilterControl>
+  )
+
   return (
     <section className="space-y-4 md:space-y-5">
-      <PageIntro
+      <PageScopeHeader
         title="Insights"
-        description={summary}
         titleAccessory={
           isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null
         }
         titleAccessoryAlign="end"
-      />
-
-      <WorkspaceToolbar className="insights-view-switcher justify-between">
-        <SegmentedControl
-          value={activeView}
-          ariaLabel="Insights view"
-          items={[
-            { value: "charts", label: "Analysis" },
-            { value: "net", label: "Net" },
-          ]}
-          onValueChange={setView}
-        />
-        <span className="mono-meta hidden text-muted sm:block">
-          {rangeMonthCount} {rangeMonthCount === 1 ? "month" : "months"} view
-        </span>
-      </WorkspaceToolbar>
-
-      <PeriodPicker
-        periodSlug={period.slug}
-        start={period.start}
-        end={period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
-      />
-
-      <div className="desk:hidden">
-        <div className="flex items-center gap-2">
-          <AppButton
-            type="button"
-            onClick={openMobileFilters}
-            tone="ghost"
-            className="flex-1 text-xs"
-          >
-            Filters {activeFilters.length ? `(${activeFilters.length})` : ""}
-          </AppButton>
-          {activeFilters.length > 0 && (
-            <AppButton
-              type="button"
-              onClick={clearFilters}
-              tone="ghost"
-              className="text-xs text-muted"
-            >
-              Clear
-            </AppButton>
-          )}
-        </div>
-        {activeFilters.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {activeFilters.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => clearFilter(filter.key)}
-                className="chip-action rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={`Remove ${filter.label}`}
-              >
-                <span className="chip inline-flex items-center gap-1.5">
-                  {filter.label}
-                  <XIcon className="h-3 w-3" aria-hidden="true" />
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <WorkspaceToolbar
-        className={`hidden gap-4 desk:grid ${
-          activeView === "charts"
-            ? "desk:grid-cols-[auto_repeat(3,minmax(0,1fr))]"
-            : "desk:grid-cols-[auto_minmax(0,1fr)]"
-        }`}
-      >
-        <AppFieldLabel>
-          <span>Type</span>
-          <SegmentedControl
-            value={filters.type ?? ""}
-            ariaLabel="Transaction type"
-            className="self-start"
-            items={[
-              { value: "", label: "All" },
-              { value: "expense", label: "Expense" },
-              { value: "income", label: "Income" },
-            ]}
-            onValueChange={setType}
-          />
-        </AppFieldLabel>
-        <TagFilterPicker
-          tags={tags}
-          mode={tagMode}
-          selectedIds={selectedTagIds}
-          onModeChange={(mode, ids) => setTagFilter(mode, ids)}
-          onChange={(ids, mode) => setTagFilter(mode, ids)}
-        />
-        {activeView === "charts" ? (
-          <>
-        <AppFieldLabel>
-          <span>Trend category</span>
-          <AppNativeSelect
-            value={trend_category_id ?? ""}
-            onChange={(event) => setTrendCategory(event.target.value)}
-            disabled={trendDisabled || expenseCategories.length === 0}
-          >
-            {expenseCategories.length ? (
-              expenseCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))
-            ) : (
-              <option value="">No expense categories</option>
-            )}
-          </AppNativeSelect>
-          {trendDisabled ? (
-            <span className="text-[11px] font-medium normal-case tracking-normal text-muted">
-              Expense only
-            </span>
-          ) : null}
-        </AppFieldLabel>
-        <AppFieldLabel>
-          <span>Budget month</span>
-          <AppInput
-            type="month"
-            value={budget_month}
-            onChange={(event) => setBudgetMonth(event.target.value)}
-          />
-        </AppFieldLabel>
-          </>
-        ) : null}
-      </WorkspaceToolbar>
-
-      {selectedTags.length ? (
-        <div className="hidden min-w-0 flex-wrap gap-1.5 desk:flex" aria-label="Tag filters">
-          {selectedTags.map((tag) => (
-            <button
-              key={tag.id}
-              type="button"
-              onClick={() => clearFilter(`tag_filter_${tag.id}`)}
-              className="chip-action rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Remove ${tagMode === "include" ? "included" : "excluded"} tag ${tag.name}`}
-            >
-              <span className="chip inline-flex items-center gap-1.5">
-                {tagMode === "include" ? "Only: " : "Excluding: "}{tag.name}
-                <XIcon className="h-3 w-3" aria-hidden="true" />
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {mobileFiltersOpen && !isDesktop ? (
-        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-          <SheetContent side="bottom" className="max-h-[88vh]" aria-label="Insights filters">
-            <SheetHeader>
-              <SheetTitle className="text-sm">Insights filters</SheetTitle>
-              <SheetClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted hover:border-border-hi hover:text-text"
-                  aria-label="Close filters"
-                >
-                  <XIcon className="h-4 w-4" />
-                </AppButton>
-              </SheetClose>
-            </SheetHeader>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
-              <AppFieldLabel>
-                <span>Type</span>
-                <SegmentedControl
-                  value={mobileType}
-                  ariaLabel="Transaction type"
-                  className="self-start"
-                  items={[
-                    { value: "", label: "All" },
-                    { value: "expense", label: "Expense" },
-                    { value: "income", label: "Income" },
-                  ]}
-                  onValueChange={setMobileType}
-                />
-              </AppFieldLabel>
-              <TagFilterPicker
-                tags={tags}
-                mode={mobileTagMode}
-                selectedIds={mobileTagIds}
-                onModeChange={setMobileTagMode}
-                onChange={setMobileTagIds}
-                variant="list"
+        controls={
+          <PageFilterBar
+            period={
+              <PeriodPicker
+                periodSlug={period.slug}
+                start={period.start}
+                end={period.end}
+                onSetPreset={setPresetPeriod}
+                onApplyCustom={applyCustomPeriod}
               />
-              {activeView === "charts" ? (
-                <>
-              <AppFieldLabel>
-                <span>Trend category</span>
-                <AppNativeSelect
-                  value={mobileTrendCategory}
-                  onChange={(event) => setMobileTrendCategory(event.target.value)}
-                  disabled={mobileType === "income" || expenseCategories.length === 0}
-                >
-                  {expenseCategories.length ? (
-                    expenseCategories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">No expense categories</option>
-                  )}
-                </AppNativeSelect>
-                {mobileType === "income" ? (
-                  <span className="text-[11px] font-medium normal-case tracking-normal text-muted">
-                    Expense only
-                  </span>
-                ) : null}
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Budget month</span>
-                <AppInput
-                  type="month"
-                  value={mobileBudgetMonth}
-                  onChange={(event) => setMobileBudgetMonth(event.target.value)}
-                />
-              </AppFieldLabel>
-                </>
-              ) : null}
-            </div>
-            <SheetFooter className="mt-0 flex shrink-0 flex-row gap-2 p-5 pt-0">
-              <AppButton
-                type="button"
-                onClick={() => {
-                  clearFilters()
-                  setMobileFiltersOpen(false)
-                }}
-                tone="ghost"
-              >
-                Clear
-              </AppButton>
-              <SheetClose asChild>
-                <AppButton type="button" tone="ghost">
-                  Cancel
-                </AppButton>
-              </SheetClose>
-              <AppButton
-                type="button"
-                onClick={applyMobileFilters}
-                className="flex-1"
-              >
-                Apply
-              </AppButton>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-      ) : null}
+            }
+            filters={filterControl}
+          />
+        }
+      />
 
-      {activeView === "charts" ? (
-        <>
+      <PageTabs
+        value={activeView}
+        ariaLabel="Insights views"
+        items={[
+          { value: "charts", label: "Analysis" },
+          { value: "net", label: "Net" },
+        ]}
+        onValueChange={(value) => setView(value as "charts" | "net")}
+        className="space-y-4 md:space-y-5"
+      >
+        <ActiveFilterChips
+          filters={activeFilters}
+          onClear={clearFilters}
+        />
+
+        <PageTabPanel value="charts" className="space-y-4 md:space-y-5">
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         <FinancialPanel role="chart">
           <SectionHeading>
@@ -637,7 +414,7 @@ function InsightsPage() {
         </FinancialPanel>
 
         <FinancialPanel role="chart">
-          <SectionHeading>
+          <SectionHeading className="flex-wrap items-start">
             <div className="min-w-0">
               <h2 className="truncate font-head text-lg font-bold">
                 {!trendDisabled && selectedTrendCategory
@@ -654,6 +431,25 @@ function InsightsPage() {
                     : "Choose an expense category"}
               </p>
             </div>
+            <AppFieldLabel className="w-full shrink-0 sm:w-44">
+              <span>Trend category</span>
+              <AppNativeSelect
+                className="h-10 py-1.5 text-sm"
+                value={trend_category_id ?? ""}
+                onChange={(event) => setTrendCategory(event.target.value)}
+                disabled={trendDisabled || expenseCategories.length === 0}
+              >
+                {expenseCategories.length ? (
+                  expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No expense categories</option>
+                )}
+              </AppNativeSelect>
+            </AppFieldLabel>
           </SectionHeading>
           <div className="flex min-h-[16rem] items-center p-4 md:p-5">
             {!trendDisabled && selectedTrendCategory && trendHasSpend ? (
@@ -767,16 +563,20 @@ function InsightsPage() {
         </FinancialPanel>
 
         <FinancialPanel role="ledger">
-          <SectionHeading>
+          <SectionHeading className="flex-wrap items-start">
             <div>
               <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                {selectedTags.length
-                  ? `${budget_month} · budget figures stay based on all activity`
-                  : budget_month}
-              </p>
+              <p className="mt-0.5 text-xs text-muted">{budget_month}</p>
             </div>
-            <span className="mono-meta text-muted">Plan</span>
+            <AppFieldLabel className="w-full shrink-0 sm:w-40">
+              <span>Budget month</span>
+              <AppInput
+                className="h-10 py-1.5 text-sm"
+                type="month"
+                value={budget_month}
+                onChange={(event) => setBudgetMonth(event.target.value)}
+              />
+            </AppFieldLabel>
           </SectionHeading>
           <div className="divide-y divide-border px-4">
             {budget_effective.length ? (
@@ -911,22 +711,25 @@ function InsightsPage() {
           </div>
         </FinancialPanel>
       </div>
-        </>
-      ) : flowError ? (
-        <div className="flex flex-wrap items-center gap-2 py-5 text-sm text-semantic-red">
-          <span>Unable to load income and spending.</span>
-          <AppButton type="button" tone="inline" onClick={() => void refetchFlow()}>
-            Retry
-          </AppButton>
-        </div>
-      ) : (
-        <WaterfallChart
-          key={queryString}
-          nodes={flowData?.nodes ?? []}
-          periodLabel={flowPeriodLabel}
-          onCategoryClick={goToCategoryTransactions}
-        />
-      )}
+        </PageTabPanel>
+        <PageTabPanel value="net">
+          {flowError ? (
+            <div className="flex flex-wrap items-center gap-2 py-5 text-sm text-semantic-red">
+              <span>Unable to load income and spending.</span>
+              <AppButton type="button" tone="inline" onClick={() => void refetchFlow()}>
+                Retry
+              </AppButton>
+            </div>
+          ) : (
+            <WaterfallChart
+              key={queryString}
+              nodes={flowData?.nodes ?? []}
+              periodLabel={flowPeriodLabel}
+              onCategoryClick={goToCategoryTransactions}
+            />
+          )}
+        </PageTabPanel>
+      </PageTabs>
     </section>
   )
 }

@@ -32,9 +32,19 @@ class ReportOptions(BaseModel):
     notes: Optional[str] = None
     transaction_type: Optional[TransactionType] = None
     category_ids: Optional[list[int]] = None
+    tag_ids: list[int] = Field(default_factory=list)
+    excluded_tag_ids: list[int] = Field(default_factory=list)
     transactions_sort: Literal["newest", "oldest"] = "newest"
     show_running_balance: bool = False
     include_category_subtotals: bool = False
+
+    @model_validator(mode="after")
+    def validate_tag_scope(self):
+        if self.tag_ids and self.excluded_tag_ids:
+            raise ValueError(
+                "A report cannot include and exclude tags at the same time"
+            )
+        return self
 
 
 class AuthCredentialsIn(BaseModel):

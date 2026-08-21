@@ -8,7 +8,8 @@ import { useAuth } from "../app/auth"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import { CategoryIcon } from "../components/CategoryIcon"
 import { confirmDialog } from "../components/confirm"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
 import TransactionDescription from "../components/TransactionDescription"
 import {
@@ -274,18 +275,23 @@ function UncategorizedInboxPage() {
 
   return (
     <section className="space-y-6">
-      <PageIntro
+      <PageScopeHeader
         title="Uncategorized"
         backHref="/transactions"
         backLabel="← Back to transactions"
-      />
-
-      <PeriodPicker
-        periodSlug={data.period.slug}
-        start={data.period.start}
-        end={data.period.end}
-        onSetPreset={setPresetPeriod}
-        onApplyCustom={applyCustomPeriod}
+        controls={
+          <PageFilterBar
+            period={
+              <PeriodPicker
+                periodSlug={data.period.slug}
+                start={data.period.start}
+                end={data.period.end}
+                onSetPreset={setPresetPeriod}
+                onApplyCustom={applyCustomPeriod}
+              />
+            }
+          />
+        }
       />
 
       <WorkspaceToolbar className="block p-4">

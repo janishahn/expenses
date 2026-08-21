@@ -22,9 +22,7 @@ test.describe("Transactions Page", () => {
   test("keeps header actions free of an outline-like shadow", async ({ page }) => {
     const controls = [
       page.getByRole("button", { name: "Search transactions" }),
-      page.getByRole("link", { name: "Inbox" }),
-      page.getByRole("link", { name: "Trash" }),
-      page.getByRole("link", { name: "Export CSV" }),
+      page.getByRole("button", { name: "More actions" }),
     ]
 
     for (const control of controls) {
@@ -33,6 +31,98 @@ test.describe("Transactions Page", () => {
         "none",
       )
     }
+  })
+
+  test("keeps document scrolling and the page canvas stable while actions are open", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 300 })
+    await page.goto("/transactions")
+
+    const pageCanvas = page.locator(".page-enter")
+    const beforeBox = await pageCanvas.boundingBox()
+    expect(beforeBox).not.toBeNull()
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      ),
+    ).toBe(true)
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    await expect(page.getByRole("menu")).toBeVisible()
+
+    expect(
+      await page.evaluate(() => ({
+        bodyOverflow: getComputedStyle(document.body).overflow,
+        scrollLocked: document.body.hasAttribute("data-scroll-locked"),
+      })),
+    ).toEqual({ bodyOverflow: "visible", scrollLocked: false })
+    const afterBox = await pageCanvas.boundingBox()
+    expect(afterBox).not.toBeNull()
+    expect(Math.abs(afterBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
+  })
+
+  test("keeps desktop filter actions visible in a short viewport", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const tagNames = Array.from(
+      { length: 8 },
+      (_, index) => `E2E short filter ${stamp} ${index + 1}`,
+    )
+    for (const name of tagNames) {
+      const response = await request.post("/api/tags", {
+        headers: { "X-CSRF-Token": token },
+        data: { name, is_hidden_from_budget: false },
+      })
+      expect(response.ok()).toBeTruthy()
+    }
+
+    await page.setViewportSize({ width: 1280, height: 520 })
+    await page.goto("/transactions")
+    await page.getByRole("button", { name: "Filters", exact: true }).click()
+
+    const panel = page.getByRole("dialog", { name: "Filter transactions" })
+    const applyButton = panel.getByRole("button", { name: "Apply" })
+    await expect(panel).toBeVisible()
+    await expect(applyButton).toBeInViewport()
+
+    const panelBox = await panel.boundingBox()
+    expect(panelBox).not.toBeNull()
+    expect(panelBox!.y).toBeGreaterThanOrEqual(12)
+    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(508)
+
+    const lastTag = panel.getByRole("checkbox", { name: tagNames.at(-1)! })
+    await lastTag.scrollIntoViewIfNeeded()
+    await expect(lastTag).toBeInViewport()
+    await expect(applyButton).toBeInViewport()
+  })
+
+  test("expands the search trigger into a bar in place", async ({ page }) => {
+    const trigger = page.getByRole("button", { name: "Search transactions" })
+    const field = page.locator("#transaction-search")
+    const filters = page.getByRole("button", { name: /^Filters/ })
+
+    const triggerBox = await trigger.boundingBox()
+    const collapsedBox = await field.boundingBox()
+    expect(triggerBox).not.toBeNull()
+    expect(collapsedBox).not.toBeNull()
+    expect(Math.abs(collapsedBox!.width - triggerBox!.width)).toBeLessThanOrEqual(1)
+
+    await trigger.click()
+    await expect(page.getByRole("searchbox", { name: "Search transactions" })).toBeFocused()
+    // The bar grows leftward out of the trigger, so its right edge must not move.
+    await expect(async () => {
+      const openBox = await field.boundingBox()
+      expect(openBox).not.toBeNull()
+      expect(openBox!.width).toBeGreaterThan(triggerBox!.width * 3)
+      expect(
+        Math.abs(openBox!.x + openBox!.width - (triggerBox!.x + triggerBox!.width)),
+      ).toBeLessThanOrEqual(1)
+    }).toPass({ timeout: 10_000 })
+    await expect(filters).toBeVisible()
   })
 
   test("fuzzy-searches transaction descriptions", async ({ page, request }) => {
@@ -133,27 +223,41 @@ test.describe("Transactions Page", () => {
     const controlZone = page.getByTestId("transactions-control-zone")
     const register = page.getByTestId("transactions-register")
     const row = page.getByTestId(`transaction-row-${transactionId}`)
-    await expect(page.getByRole("link", { name: "Inbox" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Trash" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Export CSV" })).toBeVisible()
-    await expect(controlZone.getByRole("link")).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Inbox" })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0)
+    await page.getByRole("button", { name: "More actions" }).click()
+    const actionMenu = page.getByRole("menu")
+    await expect(actionMenu.getByRole("menuitem", { name: "Inbox" })).toBeVisible()
+    await expect(actionMenu.getByRole("menuitem", { name: "Trash" })).toBeVisible()
+    await expect(actionMenu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
+    await page.keyboard.press("Escape")
     await expect(
-      controlZone.getByRole("group", { name: "Transaction type" }),
+      controlZone.getByRole("group", { name: "Period" }),
     ).toBeVisible()
-    await expect(
-      controlZone.getByRole("combobox", { name: "Category", exact: true }),
-    ).toBeVisible()
-    const tagFilter = controlZone.getByRole("combobox", { name: "Tag", exact: true })
-    const clearFilters = controlZone.getByRole("button", { name: "Clear filters" })
-    const [tagFilterBox, clearFiltersBox] = await Promise.all([
-      tagFilter.boundingBox(),
-      clearFilters.boundingBox(),
+    const filterTrigger = controlZone.getByRole("button", {
+      name: "Filters",
+      exact: true,
+    })
+    const [filterTriggerBox, periodBox, titleBox] = await Promise.all([
+      filterTrigger.boundingBox(),
+      controlZone.getByRole("group", { name: "Period" }).boundingBox(),
+      page.getByRole("heading", { name: "Transactions" }).boundingBox(),
     ])
-    expect(tagFilterBox).not.toBeNull()
-    expect(clearFiltersBox).not.toBeNull()
-    expect(
-      clearFiltersBox!.x - (tagFilterBox!.x + tagFilterBox!.width),
-    ).toBeLessThanOrEqual(16)
+    expect(filterTriggerBox).not.toBeNull()
+    expect(periodBox).not.toBeNull()
+    expect(titleBox).not.toBeNull()
+    expect(Math.abs(filterTriggerBox!.height - periodBox!.height)).toBeLessThanOrEqual(1)
+    expect(Math.abs(titleBox!.y - periodBox!.y)).toBeLessThanOrEqual(2)
+    await filterTrigger.click()
+    const filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+    await expect(filterPanel.getByRole("group", { name: "Transaction type" })).toBeVisible()
+    await expect(
+      filterPanel.getByRole("combobox", { name: "Category", exact: true }),
+    ).toBeVisible()
+    await expect(filterPanel.getByRole("group", { name: "Tags" })).toBeVisible()
+    await filterPanel.getByRole("button", { name: "Cancel" }).click()
+    await expect(filterTrigger).toBeFocused()
     await expect(register).toBeVisible()
     await expect(row).toBeVisible()
     await expect(controlZone.getByTestId("transactions-summary")).toHaveCount(0)
@@ -512,7 +616,8 @@ test.describe("Transactions Page", () => {
       name: "Application navigation",
     })
     await sidebar.getByRole("link", { name: "Transactions", exact: true }).click()
-    await page.getByRole("link", { name: "Inbox", exact: true }).click()
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Inbox", exact: true }).click()
     await expect(
       page.getByRole("heading", { name: "Uncategorized", level: 1 })
     ).toBeVisible()

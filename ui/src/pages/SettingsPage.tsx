@@ -400,13 +400,11 @@ function SettingsPage() {
           </div>
         </FinancialPanel>
 
-        <FinancialPanel className="p-5">
-          <h2 className="font-head text-2xl font-bold tracking-tight">Appearance</h2>
+        <FinancialPanel className="self-start p-4 xl:grid xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center xl:gap-4">
+          <h2 className="font-head text-xl font-bold tracking-tight">Appearance</h2>
           <ThemePreferenceControl
             testId="settings-theme-control"
-            label="Theme"
-            helper="Choose system, light, or dark mode for the whole app."
-            className="mt-4"
+            className="mt-3 xl:mt-0"
           />
         </FinancialPanel>
 

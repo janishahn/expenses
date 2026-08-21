@@ -63,7 +63,7 @@ function PeriodPicker({
       <SegmentedControl
         value={periodSlug}
         ariaLabel="Period"
-        className="w-full sm:w-96"
+        className="page-period-control w-full sm:w-96"
         equalWidth
         items={[
           { value: "this_month", label: "This month" },

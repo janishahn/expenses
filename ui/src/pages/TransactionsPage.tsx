@@ -3,7 +3,6 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FunnelSimpleIcon } from "@phosphor-icons/react/FunnelSimple"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
@@ -17,13 +16,13 @@ import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
 import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
 import { CategoryIcon } from "../components/CategoryIcon"
 import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
+import ActiveFilterChips from "../components/ActiveFilterChips"
 import { confirmDialog } from "../components/confirm"
-import PageIntro from "../components/PageIntro"
+import PageFilterBar from "../components/PageFilterBar"
+import PageFilterControl from "../components/PageFilterControl"
+import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
-import {
-  FinancialPanel,
-  WorkspaceToolbar,
-} from "../components/product/ProductSurfaces"
+import { FinancialPanel } from "../components/product/ProductSurfaces"
 import SegmentedControl from "../components/SegmentedControl"
 import TransactionDescription from "../components/TransactionDescription"
 import { AppButton } from "../components/ui/product-button"
@@ -308,16 +307,13 @@ function TransactionsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const searchQuery = searchParams.get("q") ?? ""
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
-  const [mobileType, setMobileType] = useState("")
-  const [mobileCategory, setMobileCategory] = useState("")
-  const [mobileTagMode, setMobileTagMode] = useState<TagFilterMode>("include")
-  const [mobileTagIds, setMobileTagIds] = useState<number[]>([])
-  const [mobilePeriod, setMobilePeriod] = useState({
-    slug: "all",
-    start: "",
-    end: "",
-  })
+  const [draftPeriodSlug, setDraftPeriodSlug] = useState("all")
+  const [draftPeriodStart, setDraftPeriodStart] = useState("")
+  const [draftPeriodEnd, setDraftPeriodEnd] = useState("")
+  const [draftType, setDraftType] = useState("")
+  const [draftCategory, setDraftCategory] = useState("")
+  const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
+  const [draftTagIds, setDraftTagIds] = useState<number[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [bulkSelectionMode, setBulkSelectionMode] = useState<"ids" | "query">("ids")
   const [bulkCategoryId, setBulkCategoryId] = useState("")
@@ -358,12 +354,7 @@ function TransactionsPage() {
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 861px)")
-    const syncDesktop = () => {
-      setIsDesktop(media.matches)
-      if (media.matches) {
-        setMobileFiltersOpen(false)
-      }
-    }
+    const syncDesktop = () => setIsDesktop(media.matches)
     syncDesktop()
     media.addEventListener("change", syncDesktop)
     return () => media.removeEventListener("change", syncDesktop)
@@ -505,104 +496,126 @@ function TransactionsPage() {
     const tag = tags.find((item) => item.id === id)
     return tag ? [tag] : []
   })
-  const periodContext = `${formatEuroDate(period.start)} – ${formatEuroDate(period.end)}`
-  const periodLabel =
-    period.slug === "this_month"
-      ? "This month"
-      : period.slug === "last_month"
-        ? "Last month"
-        : period.slug === "custom"
-          ? periodContext
-          : null
+  const tagFilterLabel = selectedTagIds.length === 1 && selectedTags[0]
+    ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
+    : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
   const activeFilters = [
-    periodLabel
-      ? { key: "period", label: `Period: ${periodLabel}` }
+    filters.type
+      ? {
+          key: "type",
+          label: `Type: ${filters.type === "income" ? "Income" : "Expense"}`,
+          onRemove: () => updateParam("type", null),
+        }
       : null,
-    filters.type ? { key: "type", label: `Type: ${filters.type}` } : null,
-    categoryLabel ? { key: "category", label: `Category: ${categoryLabel}` } : null,
-    ...selectedTags.map((tag) => ({
-      key: `tag_filter_${tag.id}`,
-      label: `${tagMode === "include" ? "Only: " : "Excluding: "}${tag.name}`,
-    })),
-    searchQuery ? { key: "q", label: `Search: ${searchQuery}` } : null,
-  ].filter(Boolean) as Array<{ key: string; label: string }>
-  const mobileFilterCount =
-    Number(period.slug !== "all") +
-    Number(Boolean(filters.type)) +
-    Number(Boolean(filters.category_id)) +
-    Number(selectedTagIds.length > 0)
+    categoryLabel
+      ? {
+          key: "category",
+          label: `Category: ${categoryLabel}`,
+          onRemove: () => updateParam("category", null),
+        }
+      : null,
+    selectedTagIds.length
+      ? {
+          key: "tags",
+          label: tagFilterLabel,
+          onRemove: () => setTagFilter(tagMode, []),
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    key: string
+    label: string
+    onRemove: () => void
+  }>
+  const mobilePeriodActive = !isDesktop && period.slug !== "all"
+  const mobilePeriodLabel = period.slug === "this_month"
+    ? "This month"
+    : period.slug === "last_month"
+      ? "Last month"
+      : "Custom period"
+  const visibleFilterChips = [
+    ...(mobilePeriodActive
+      ? [{ key: "period", label: mobilePeriodLabel, onRemove: () => setPresetPeriod("all") }]
+      : []),
+    ...activeFilters,
+    ...(!isDesktop && searchQuery
+      ? [{ key: "q", label: `Search: ${searchQuery}`, onRemove: () => setQuery("") }]
+      : []),
+  ]
   const exportParams = new URLSearchParams(searchParams)
   exportParams.delete("page")
   exportParams.delete("limit")
   const exportHref = `/api/transactions/export.csv?${exportParams.toString()}`
 
-  const openMobileFilters = () => {
-    setMobilePeriod(period)
-    setMobileType(filters.type ?? "")
-    setMobileCategory(filters.category_id ? String(filters.category_id) : "")
-    setMobileTagMode(tagMode)
-    setMobileTagIds(selectedTagIds)
-    setMobileFiltersOpen(true)
+  const openFilters = () => {
+    setDraftPeriodSlug(period.slug)
+    setDraftPeriodStart(period.start)
+    setDraftPeriodEnd(period.end)
+    setDraftType(filters.type ?? "")
+    setDraftCategory(filters.category_id ? String(filters.category_id) : "")
+    setDraftTagMode(tagMode)
+    setDraftTagIds(selectedTagIds)
   }
 
-  const clearFilters = () => {
+  const clearFilterDraft = () => {
+    if (!isDesktop) {
+      setDraftPeriodSlug("all")
+      setDraftPeriodStart("")
+      setDraftPeriodEnd("")
+    }
+    setDraftType("")
+    setDraftCategory("")
+    setDraftTagIds([])
+  }
+
+  const clearSecondaryFilters = (clearSearch = false) => {
     const params = new URLSearchParams(searchParams)
-    params.set("period", "all")
-    params.delete("start")
-    params.delete("end")
     params.delete("type")
     params.delete("category")
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
-    params.delete("q")
+    if (!isDesktop) {
+      params.delete("period")
+      params.delete("start")
+      params.delete("end")
+    }
+    if (clearSearch) params.delete("q")
     params.set("page", "1")
     setSearchParams(params)
   }
 
-  const clearFilter = (key: string) => {
-    if (key === "period") {
-      setPresetPeriod("all")
-      return
-    }
-    if (key.startsWith("tag_filter_")) {
-      const tagId = Number(key.replace("tag_filter_", ""))
-      setTagFilter(tagMode, selectedTagIds.filter((id) => id !== tagId))
-      return
-    }
-    updateParam(key, null)
-  }
-
-  const applyMobileFilters = () => {
-    const params = new URLSearchParams(searchParams)
-    params.set("period", mobilePeriod.slug)
-    if (mobilePeriod.slug === "custom") {
-      params.set("start", mobilePeriod.start)
-      params.set("end", mobilePeriod.end)
-    } else {
-      params.delete("start")
-      params.delete("end")
-    }
-    if (mobileType) {
-      params.set("type", mobileType)
+  const applyFilters = () => {
+    const params = !isDesktop && draftPeriodSlug === "custom"
+      ? buildCustomPeriodSearchParams(
+          searchParams,
+          draftPeriodStart,
+          draftPeriodEnd,
+        )
+      : !isDesktop
+        ? buildPresetPeriodSearchParams(
+            searchParams,
+            draftPeriodSlug as PresetPeriod,
+          )
+        : new URLSearchParams(searchParams)
+    if (draftType) {
+      params.set("type", draftType)
     } else {
       params.delete("type")
     }
-    if (mobileCategory) {
-      params.set("category", mobileCategory)
+    if (draftCategory) {
+      params.set("category", draftCategory)
     } else {
       params.delete("category")
     }
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
-    const serializedTags = serializeTagIds(mobileTagIds)
+    const serializedTags = serializeTagIds(draftTagIds)
     if (serializedTags) {
-      params.set(mobileTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
+      params.set(draftTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
     }
     params.set("page", "1")
     setSearchParams(params)
-    setMobileFiltersOpen(false)
   }
 
   const allPageSelected =
@@ -755,267 +768,226 @@ function TransactionsPage() {
     }
   }
 
+  const filterControl = (
+    <PageFilterControl
+      title="Filter transactions"
+      activeCount={activeFilters.length + (mobilePeriodActive ? 1 : 0)}
+      isDesktop={isDesktop}
+      onOpen={openFilters}
+      onClear={clearFilterDraft}
+      onApply={applyFilters}
+    >
+      {!isDesktop ? (
+        <div className="form-label">
+          <span>Date range</span>
+          <PeriodPicker
+            key={`${draftPeriodSlug}:${draftPeriodStart}:${draftPeriodEnd}`}
+            periodSlug={draftPeriodSlug}
+            start={draftPeriodStart}
+            end={draftPeriodEnd}
+            onSetPreset={(value) => {
+              setDraftPeriodSlug(value)
+              setDraftPeriodStart("")
+              setDraftPeriodEnd("")
+            }}
+            onApplyCustom={(start, end) => {
+              setDraftPeriodSlug("custom")
+              setDraftPeriodStart(start)
+              setDraftPeriodEnd(end)
+            }}
+          />
+        </div>
+      ) : null}
+      <AppFieldLabel>
+        <span>Transaction type</span>
+        <SegmentedControl
+          value={draftType}
+          ariaLabel="Transaction type"
+          equalWidth
+          items={[
+            { value: "", label: "All" },
+            { value: "income", label: "Income" },
+            { value: "expense", label: "Expense" },
+          ]}
+          onValueChange={setDraftType}
+        />
+      </AppFieldLabel>
+      <AppFieldLabel>
+        <span>Category</span>
+        <AppNativeSelect
+          value={draftCategory}
+          onChange={(event) => setDraftCategory(event.target.value)}
+        >
+          <option value="">All categories</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name} ({category.type})
+            </option>
+          ))}
+        </AppNativeSelect>
+      </AppFieldLabel>
+      <TagFilterPicker
+        tags={tags}
+        mode={draftTagMode}
+        selectedIds={draftTagIds}
+        onModeChange={setDraftTagMode}
+        onChange={setDraftTagIds}
+        variant="list"
+      />
+    </PageFilterControl>
+  )
+  const periodPicker = (
+    <PeriodPicker
+      periodSlug={period.slug}
+      start={period.start}
+      end={period.end}
+      onSetPreset={setPresetPeriod}
+      onApplyCustom={applyCustomPeriod}
+    />
+  )
+  const searchControl = (
+    <div
+      ref={searchContainerRef}
+      data-open={searchVisible}
+      className="transaction-search"
+    >
+      <AppButton
+        ref={searchTriggerRef}
+        type="button"
+        onClick={() => {
+          if (!searchVisible) {
+            setSearchOpen(true)
+          } else if (isDesktop && searchQuery) {
+            searchInputRef.current?.focus()
+          } else {
+            setSearchOpen(false)
+          }
+        }}
+        tone="ghost"
+        className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0 text-text"
+        aria-label="Search transactions"
+        aria-controls="transaction-search"
+        aria-expanded={searchVisible}
+      >
+        <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
+      </AppButton>
+      <div
+        id="transaction-search"
+        aria-hidden={!searchVisible}
+        className="transaction-search-field absolute z-30"
+      >
+        <div className="transaction-search-row">
+          <AppInput
+            ref={searchInputRef}
+            type="search"
+            aria-label="Search transactions"
+            disabled={!searchVisible}
+            value={searchQuery}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault()
+                if (searchQuery) {
+                  setQuery("")
+                } else {
+                  setSearchOpen(false)
+                  requestAnimationFrame(() => searchTriggerRef.current?.focus())
+                }
+              }
+            }}
+            placeholder="Search titles and descriptions…"
+            className="min-w-0 flex-1"
+          />
+          {searchQuery ? (
+            <AppButton
+              type="button"
+              onClick={() => {
+                setSearchOpen(true)
+                setQuery("")
+                searchInputRef.current?.focus()
+              }}
+              tone="ghost"
+              className="h-11 w-11 shrink-0 p-0 desk:h-9 desk:min-h-0 desk:w-9"
+              aria-label="Clear search"
+            >
+              <XIcon className="h-4 w-4" aria-hidden="true" />
+            </AppButton>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+  const secondaryActions = (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <AppButton
+          tone="ghost"
+          className="h-11 w-11 shrink-0 p-0 text-text"
+          aria-label="More actions"
+        >
+          <DotsThreeIcon weight="bold" className="h-5 w-5" aria-hidden="true" />
+        </AppButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link to="/transactions/inbox">
+            <TrayIcon className="h-4 w-4" aria-hidden="true" />
+            Inbox
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/transactions/deleted">
+            <TrashIcon className="h-4 w-4" aria-hidden="true" />
+            Trash
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={exportHref}>
+            <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
+            Export CSV
+          </a>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   return (
     <section className="min-w-0 space-y-3 md:space-y-4">
-      <PageIntro
+      <PageScopeHeader
         title="Transactions"
-        inlineActions
-        actions={
-          <>
-            {isFetching ? <span className="loading-hint">Updating…</span> : null}
-            <div className="relative z-20 flex shrink-0 items-center gap-2 desk:gap-2.5">
-              <div ref={searchContainerRef} className="desk:relative">
-                <AppButton
-                  ref={searchTriggerRef}
-                  type="button"
-                  onClick={() => {
-                    if (!searchVisible) {
-                      setSearchOpen(true)
-                    } else if (isDesktop && searchQuery) {
-                      searchInputRef.current?.focus()
-                    } else {
-                      setSearchOpen(false)
-                    }
-                  }}
-                  tone="ghost"
-                  className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0 text-text"
-                  aria-label="Search transactions"
-                  aria-controls="transaction-search"
-                  aria-expanded={searchVisible}
-                >
-                  <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-                <div
-                  id="transaction-search"
-                  data-open={searchVisible}
-                  aria-hidden={!searchVisible}
-                  className="transaction-search-popover absolute z-30"
-                >
-                  <div className="flex min-w-0 items-center gap-2 desk:absolute desk:inset-y-0 desk:right-0 desk:w-[var(--search-bar-width)] desk:gap-1.5 desk:pr-12">
-                    <AppInput
-                      ref={searchInputRef}
-                      type="search"
-                      aria-label="Search transactions"
-                      disabled={!searchVisible}
-                      value={searchQuery}
-                      onChange={(event) => setQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault()
-                          if (searchQuery) {
-                            setQuery("")
-                          } else {
-                            setSearchOpen(false)
-                            requestAnimationFrame(() => searchTriggerRef.current?.focus())
-                          }
-                        }
-                      }}
-                      placeholder="Search titles and descriptions…"
-                      className="min-w-0 flex-1"
-                    />
-                    {searchQuery ? (
-                      <AppButton
-                        type="button"
-                        onClick={() => {
-                          setSearchOpen(true)
-                          setQuery("")
-                          searchInputRef.current?.focus()
-                        }}
-                        tone="ghost"
-                        className="h-11 w-11 shrink-0 p-0 desk:h-9 desk:min-h-0 desk:w-9"
-                        aria-label="Clear search"
-                      >
-                        <XIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <AppButton
-                type="button"
-                onClick={openMobileFilters}
-                tone="ghost"
-                className="relative h-11 w-11 shrink-0 p-0 text-text desk:hidden"
-                aria-label={
-                  mobileFilterCount
-                    ? `Filters, ${mobileFilterCount} active`
-                    : "Filters"
-                }
-              >
-                <FunnelSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                {mobileFilterCount ? (
-                  <span
-                    className="absolute -right-1 -top-1 grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full bg-accent px-1 font-mono text-[10px] text-[rgb(var(--accent-contrast))]"
-                    aria-hidden="true"
-                  >
-                    {mobileFilterCount}
-                  </span>
-                ) : null}
-              </AppButton>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <AppButton
-                    tone="ghost"
-                    className="h-11 w-11 shrink-0 p-0 text-text desk:hidden"
-                    aria-label="More actions"
-                  >
-                    <DotsThreeIcon weight="bold" className="h-5 w-5" aria-hidden="true" />
-                  </AppButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem asChild>
-                    <Link to="/transactions/inbox">
-                      <TrayIcon className="h-4 w-4" aria-hidden="true" />
-                      Inbox
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/transactions/deleted">
-                      <TrashIcon className="h-4 w-4" aria-hidden="true" />
-                      Trash
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <a href={exportHref}>
-                      <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                      Export CSV
-                    </a>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
-                <Link to="/transactions/inbox">
-                  <TrayIcon className="h-4 w-4" aria-hidden="true" />
-                  Inbox
-                </Link>
-              </AppButton>
-              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
-                <Link to="/transactions/deleted">
-                  <TrashIcon className="h-4 w-4" aria-hidden="true" />
-                  Trash
-                </Link>
-              </AppButton>
-              <AppButton asChild tone="ghost" className="hidden text-text desk:inline-flex">
-                <a href={exportHref}>
-                  <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                  Export CSV
-                </a>
-              </AppButton>
+        titleAccessory={
+          isDesktop
+            ? isFetching
+              ? <span className="loading-hint">Updating…</span>
+              : null
+            : secondaryActions
+        }
+        titleAccessoryAlign={isDesktop ? "inline" : "end"}
+        controlsTestId="transactions-control-zone"
+        controls={
+          isDesktop ? (
+            <div className="flex min-w-0 flex-wrap justify-end gap-2.5">
+              {searchControl}
+              <PageFilterBar
+                period={periodPicker}
+                filters={filterControl}
+                className="min-w-0 flex-none"
+              />
+              {secondaryActions}
             </div>
-          </>
+          ) : (
+            <div className="transaction-toolbar">
+              {searchControl}
+              <div className="transaction-toolbar-actions">{filterControl}</div>
+            </div>
+          )
         }
       />
 
-      <WorkspaceToolbar
-        data-testid="transactions-control-zone"
-        className="hidden gap-3 p-3 desk:flex md:p-4"
-      >
-        <div className="hidden w-full min-w-0 flex-wrap items-end gap-3 desk:flex">
-          <div className="w-96 min-w-0 space-y-1.5">
-            <span className="text-xs font-semibold text-muted">Period</span>
-            <PeriodPicker
-              periodSlug={period.slug}
-              start={period.start}
-              end={period.end}
-              onSetPreset={setPresetPeriod}
-              onApplyCustom={applyCustomPeriod}
-            />
-          </div>
-          <AppFieldLabel className="w-fit min-w-0">
-            <span>Type</span>
-            <SegmentedControl
-              value={filters.type ?? ""}
-              ariaLabel="Transaction type"
-              className="w-fit"
-              items={[
-                { value: "", label: "All" },
-                { value: "income", label: "Income" },
-                { value: "expense", label: "Expense" },
-              ]}
-              onValueChange={(value) => updateParam("type", value || null)}
-            />
-          </AppFieldLabel>
-          <div className="flex flex-1 items-end gap-3">
-            <AppFieldLabel className="min-w-40 max-w-72 flex-1">
-              <span>Category</span>
-              <AppNativeSelect
-                className="h-12"
-                value={filters.category_id ?? ""}
-                onChange={(event) => updateParam("category", event.target.value || null)}
-              >
-                <option value="">All categories</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <TagFilterPicker
-              className="min-w-40 max-w-72 flex-1"
-              tags={tags}
-              mode={tagMode}
-              selectedIds={selectedTagIds}
-              onModeChange={(mode, ids) => setTagFilter(mode, ids)}
-              onChange={(ids, mode) => setTagFilter(mode, ids)}
-            />
-            {activeFilters.length ? (
-              <AppButton
-                type="button"
-                onClick={clearFilters}
-                tone="ghost"
-                className="h-12 w-12 shrink-0 gap-1.5 p-0 xl:w-auto xl:px-3"
-                aria-label="Clear filters"
-                title="Clear filters"
-              >
-                <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="sr-only xl:not-sr-only">Clear filters</span>
-              </AppButton>
-            ) : null}
-          </div>
-        </div>
-
-      </WorkspaceToolbar>
-
-      {activeFilters.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5 desk:hidden">
-          {activeFilters.map((filter) => (
-            <button
-              key={filter.key}
-              type="button"
-              onClick={() => clearFilter(filter.key)}
-              className="chip-action inline-flex max-w-full items-center rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Remove ${filter.label}`}
-            >
-              <span className="chip inline-flex max-w-full items-center gap-1.5">
-                <span className="truncate">{filter.label}</span>
-                <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {selectedTags.length ? (
-        <div className="hidden min-w-0 flex-wrap gap-1.5 desk:flex" aria-label="Tag filters">
-          {selectedTags.map((tag) => (
-            <button
-              key={tag.id}
-              type="button"
-              onClick={() => clearFilter(`tag_filter_${tag.id}`)}
-              className="chip-action inline-flex max-w-full items-center rounded-full text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Remove ${tagMode === "include" ? "included" : "excluded"} tag ${tag.name}`}
-            >
-              <span className="chip inline-flex max-w-full items-center gap-1.5">
-                <span className="truncate">
-                  {tagMode === "include" ? "Only: " : "Excluding: "}{tag.name}
-                </span>
-                <XIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <ActiveFilterChips
+        filters={visibleFilterChips}
+        onClear={() => clearSecondaryFilters(!isDesktop && Boolean(searchQuery))}
+      />
 
       <FinancialPanel
         role="ledger"
@@ -1429,106 +1401,6 @@ function TransactionsPage() {
                   Done
                 </AppButton>
               )}
-            </div>
-          </SheetContent>
-        </Sheet>
-      ) : null}
-
-      {mobileFiltersOpen && !isDesktop ? (
-        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-          <SheetContent
-            aria-label="Transaction filters"
-            side="bottom"
-            className="max-h-[88vh]"
-          >
-            <SheetHeader>
-              <SheetTitle className="text-lg">Filter transactions</SheetTitle>
-              <SheetClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted hover:border-border-hi hover:text-text"
-                  aria-label="Close filters"
-                >
-                  <XIcon className="h-4 w-4" />
-                </AppButton>
-              </SheetClose>
-            </SheetHeader>
-            <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-5 py-4">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted">Period</p>
-                <PeriodPicker
-                  periodSlug={mobilePeriod.slug}
-                  start={mobilePeriod.start}
-                  end={mobilePeriod.end}
-                  onSetPreset={(slug) =>
-                    setMobilePeriod((current) => ({ ...current, slug }))
-                  }
-                  onApplyCustom={(start, end) =>
-                    setMobilePeriod({ slug: "custom", start, end })
-                  }
-                />
-              </div>
-              <AppFieldLabel>
-                <span>Type</span>
-                <SegmentedControl
-                  value={mobileType}
-                  ariaLabel="Transaction type"
-                  items={[
-                    { value: "", label: "All" },
-                    { value: "income", label: "Income" },
-                    { value: "expense", label: "Expense" },
-                  ]}
-                  onValueChange={setMobileType}
-                />
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Category</span>
-                <AppNativeSelect
-                  value={mobileCategory}
-                  onChange={(event) => setMobileCategory(event.target.value)}
-                >
-                  <option value="">All categories</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.type})
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <TagFilterPicker
-                tags={tags}
-                mode={mobileTagMode}
-                selectedIds={mobileTagIds}
-                onModeChange={setMobileTagMode}
-                onChange={setMobileTagIds}
-                variant="list"
-              />
-            </div>
-            <div className="mt-1 flex shrink-0 gap-2 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
-              <AppButton
-                type="button"
-                onClick={() => {
-                  clearFilters()
-                  setMobileFiltersOpen(false)
-                }}
-                tone="ghost"
-              >
-                Clear
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={() => setMobileFiltersOpen(false)}
-                tone="ghost"
-              >
-                Cancel
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={applyMobileFilters}
-                className="flex-1"
-              >
-                Apply
-              </AppButton>
             </div>
           </SheetContent>
         </Sheet>

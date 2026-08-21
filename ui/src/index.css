@@ -125,6 +125,16 @@
     min-height: 100%;
   }
 
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  html body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+
   body {
     @apply bg-bg font-sans text-text antialiased;
     font-feature-settings: "tnum";
@@ -593,55 +603,81 @@
     gap: 0.1rem;
   }
 
-  .app-mobile-header {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    display: flex;
-    min-height: 3.75rem;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: rgb(var(--bg) / 0.97);
-    border-bottom: 1px solid rgb(var(--border) / 0.7);
-  }
-
   .app-utility-icon {
     color: rgb(var(--muted));
     background: rgb(var(--surface));
     box-shadow: var(--shadow-soft);
   }
 
-  .app-mobile-header-action {
+  .app-mobile-page-nav {
     display: inline-flex;
-    min-height: 2.75rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: center;
     border: 0;
     border-radius: var(--radius-md);
-    padding: 0 0.75rem;
+    color: rgb(var(--text));
+    background: rgb(var(--faint));
+    transition:
+      transform var(--motion-feedback) var(--ease-out-strong),
+      background-color var(--motion-feedback) ease;
+  }
+
+  .app-mobile-page-nav:hover {
+    background: rgb(var(--surface-hi));
+  }
+
+  .app-mobile-page-nav:active {
+    transform: scale(0.96);
+  }
+
+  .app-mobile-page-nav svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .app-mobile-fab {
+    position: fixed;
+    right: 0.75rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 35;
+    display: inline-flex;
+    width: 3.5rem;
+    height: 3.5rem;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-lg);
     color: rgb(var(--accent-contrast));
     background: rgb(var(--accent));
     box-shadow: var(--shadow-accent);
-    font-size: 0.75rem;
-    font-weight: 700;
+    transition:
+      transform 160ms var(--ease-out-strong),
+      opacity 140ms ease-out,
+      filter var(--motion-feedback) ease-out;
   }
 
-  .app-mobile-header-action svg {
-    width: 1rem;
-    height: 1rem;
+  .app-mobile-fab:hover {
+    filter: brightness(1.05);
   }
 
-  @media (max-width: 379px) {
-    .app-mobile-header-action {
-      width: 2.75rem;
-      justify-content: center;
-      padding: 0;
-    }
+  .app-mobile-fab:active {
+    transform: scale(0.96);
+  }
 
-    .app-mobile-header-action span {
-      display: none;
-    }
+  .app-mobile-fab svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .app-shell-root:has(.app-sidebar-open) .app-mobile-fab,
+  body:has([role="dialog"]) .app-mobile-fab,
+  body:has(input:focus, textarea:focus, select:focus, [contenteditable="true"]:focus) .app-mobile-fab {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(0.75rem) scale(0.96);
   }
 
   .app-mobile-menu-backdrop {
@@ -662,6 +698,17 @@
 
   .app-desktop-utility {
     display: none;
+  }
+
+  .app-content-frame {
+    width: 100%;
+    max-width: 96.25rem;
+    margin-inline: auto;
+  }
+
+  .app-desktop-utility-inner {
+    display: flex;
+    align-items: center;
   }
 
   .app-utility-action {
@@ -817,67 +864,119 @@
     box-shadow: var(--shadow-soft);
   }
 
-  /* Anchored to the compact title-row action cluster whose right edge sits on
-     the content gutter; the width extends leftward across the full content. */
-  .transaction-search-popover {
-    right: 0;
-    top: calc(100% + 0.625rem);
-    width: min(34rem, calc(100vw - 1.5rem));
-    padding: 1rem;
-    border-radius: var(--radius-lg);
-    background: rgb(var(--surface));
-    box-shadow: var(--shadow-raised);
+  /* Transactions search morphs its trigger into a field in place: the shell
+     starts button-sized under the trigger and animates its width. Mobile grows
+     rightward across the whole control row and displaces Filters past its edge;
+     desktop grows leftward from the trigger's right edge. */
+  .transaction-toolbar {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+    /* The open field fills the row, so the displaced Filters control must not
+       reach the document as horizontal overflow. Only the inline axis is
+       clipped, which leaves the Filters count badge's vertical bleed intact. */
+    overflow-x: clip;
+  }
+
+  .transaction-search {
+    position: relative;
+    flex: none;
+  }
+
+  /* Only the mobile row animates its own width; desktop keeps the trigger's
+     footprint and lets the shell overflow leftward. */
+  .transaction-toolbar .transaction-search {
+    width: 2.75rem;
+    transition: width var(--motion-content) var(--ease-out-strong);
+  }
+
+  .transaction-toolbar .transaction-search[data-open="true"] {
+    width: 100%;
+  }
+
+  .transaction-toolbar-actions {
+    flex: none;
+    transition:
+      opacity 160ms ease-out,
+      transform var(--motion-content) var(--ease-out-strong),
+      visibility 0s;
+  }
+
+  .transaction-search[data-open="true"] + .transaction-toolbar-actions {
     visibility: hidden;
     pointer-events: none;
     opacity: 0;
-    transform: translateY(-0.5rem) scale(0.92);
-    transform-origin: top right;
+    transform: translateX(0.75rem);
     transition:
-      transform 220ms cubic-bezier(0.2, 0, 0, 1),
       opacity 160ms ease-out,
-      visibility 0s linear 220ms;
+      transform var(--motion-content) var(--ease-out-strong),
+      visibility 0s linear var(--motion-content);
   }
 
-  .transaction-search-popover[data-open="true"] {
+  .transaction-search-field {
+    inset: 0;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: rgb(var(--surface-hi));
+    /* Inset so the row's inline clip cannot shave the ring at the content edge. */
+    box-shadow: inset 0 0 0 1px rgb(var(--border) / 0.72);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      box-shadow var(--motion-feedback) ease-out,
+      visibility 0s linear var(--motion-content);
+  }
+
+  .transaction-search[data-open="true"] .transaction-search-field {
     visibility: visible;
     pointer-events: auto;
-    opacity: 1;
-    transform: translateY(0) scale(1);
     transition-delay: 0s;
   }
 
+  .transaction-search-field:focus-within {
+    box-shadow: inset 0 0 0 1px rgb(var(--border-hi));
+  }
+
+  /* The trigger stays on top of the shell, so the field content starts beside it. */
+  .transaction-search-row {
+    position: absolute;
+    inset: 0 0 0 2.75rem;
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
   @media (min-width: 861px) {
-    /* The trigger button stretches leftward into the search bar: the shell
-       starts button-sized underneath the button and animates its width. */
-    .transaction-search-popover {
+    .transaction-search-field {
       --search-bar-width: min(26rem, calc(100vw - 41rem));
       inset: 0 0 auto auto;
       width: 2.75rem;
       height: 2.75rem;
-      padding: 0;
-      border-radius: var(--radius-md);
-      background: rgb(var(--surface-hi));
       box-shadow:
         0 0 0 1px rgb(var(--border) / 0.72),
         var(--shadow-soft);
-      overflow: hidden;
-      opacity: 1;
-      transform: none;
       transition:
-        width 220ms cubic-bezier(0.2, 0, 0, 1),
-        box-shadow 120ms ease-out,
-        visibility 0s linear 220ms;
+        width var(--motion-content) var(--ease-out-strong),
+        box-shadow var(--motion-feedback) ease-out,
+        visibility 0s linear var(--motion-content);
     }
 
-    .transaction-search-popover[data-open="true"] {
-      width: var(--search-bar-width);
-      transform: none;
-    }
-
-    .transaction-search-popover:focus-within {
+    .transaction-search-field:focus-within {
       box-shadow:
         0 0 0 1px rgb(var(--border-hi)),
         var(--shadow-soft);
+    }
+
+    .transaction-search[data-open="true"] .transaction-search-field {
+      width: var(--search-bar-width);
+    }
+
+    .transaction-search-row {
+      inset: 0 0 0 auto;
+      width: var(--search-bar-width);
+      padding-right: 3rem;
     }
   }
 
@@ -889,6 +988,20 @@
     box-shadow: var(--shadow-raised);
     transform-origin: var(--radix-dropdown-menu-content-transform-origin);
     animation: menu-panel-in 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .filter-popover {
+    max-height: min(40rem, calc(100dvh - 1.5rem));
+    max-height: min(40rem, var(--radix-popover-content-available-height));
+    transform-origin: var(--radix-popover-content-transform-origin);
+  }
+
+  .filter-popover[data-state="open"] {
+    animation: menu-panel-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .filter-popover[data-state="closed"] {
+    animation: menu-panel-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
   }
 
   .app-menu-item {
@@ -908,22 +1021,6 @@
 
   .app-menu-item[data-highlighted] {
     background: rgb(var(--faint));
-  }
-
-  .insights-view-switcher {
-    width: fit-content;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  @media (min-width: 861px) {
-    .insights-view-switcher {
-      width: auto;
-      padding: 0.75rem;
-      background: rgb(var(--surface));
-      box-shadow: var(--shadow-soft);
-    }
   }
 
   .product-section-heading {
@@ -1163,6 +1260,26 @@
     flex: 1 1 0;
   }
 
+  .page-filter-bar {
+    --page-scope-control-height: 3rem;
+  }
+
+  .page-period-control {
+    height: var(--page-scope-control-height, 3rem);
+    flex-wrap: nowrap;
+  }
+
+  .page-filter-trigger {
+    height: var(--page-scope-control-height, 3rem);
+    min-height: var(--page-scope-control-height, 3rem);
+  }
+
+  .page-filter-trigger-compact {
+    width: var(--page-scope-control-height, 2.75rem);
+    height: var(--page-scope-control-height, 2.75rem);
+    min-height: var(--page-scope-control-height, 2.75rem);
+  }
+
   .chip {
     @apply inline-flex items-center rounded-full border border-border bg-faint px-2 py-0.5 text-[10px] font-semibold text-muted;
   }
@@ -1356,6 +1473,10 @@
   }
 
   @media (hover: none) and (pointer: coarse) {
+    .page-period-control {
+      padding-block: 0.125rem;
+    }
+
     .segmented-control-button,
     .btn-inline,
     .btn-inline-danger {
@@ -1681,31 +1802,24 @@
 
 /* Suppress the browser's native type="search" clear affordance so the styled,
    cross-browser "Clear search" button is the only clear control. */
-.transaction-search-popover input::-webkit-search-cancel-button {
+.transaction-search-field input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
 }
 
-/* Unlayered so it wins over the input's utility classes: the search field uses a
-   neutral focus (no accent ring/border) on every viewport, matching the shell. */
-.transaction-search-popover input:focus-visible {
-  border-color: rgb(var(--border-hi));
+/* Unlayered so it wins over the input's utility classes: the input drops its own
+   field chrome and focus ring on every viewport because the morphing shell
+   carries both. */
+.transaction-search-field input {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
-/* On desktop the input drops its own field chrome and the morphing shell carries it. */
-@media (min-width: 861px) {
-  .transaction-search-popover input {
-    height: 100%;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .transaction-search-trigger[aria-expanded="true"] {
-    box-shadow: none;
-  }
+.transaction-search-trigger[aria-expanded="true"] {
+  box-shadow: none;
 }
 
 @layer utilities {
@@ -1724,6 +1838,13 @@
   from {
     opacity: 0;
     transform: translateY(-0.25rem) scale(0.94);
+  }
+}
+
+@keyframes menu-panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(-0.15rem) scale(0.97);
   }
 }
 

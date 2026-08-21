@@ -11,14 +11,13 @@ import { Toggle } from "../components/Toggle"
 import { confirmDialog } from "../components/confirm"
 import { CategoryIcon } from "../components/CategoryIcon"
 import PageIntro from "../components/PageIntro"
-import SegmentedControl from "../components/SegmentedControl"
+import { PageTabPanel, PageTabs } from "../components/PageTabs"
 import DonutChart from "../components/charts/DonutChart"
 import type { BreakdownItem } from "../components/charts/DonutChart"
 import {
   FinancialPanel,
   MetricLane,
   SectionHeading,
-  WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import {
@@ -363,23 +362,18 @@ function RecurringRulesPage() {
     <section className="space-y-6">
       <PageIntro title="Recurring Rules" />
 
-      <WorkspaceToolbar className="justify-between" data-testid="recurring-toolbar">
-        <SegmentedControl
+      <PageTabs
           value={activeView}
-          ariaLabel="Recurring view"
+          ariaLabel="Recurring views"
           items={[
             { value: "rules", label: "Commitments" },
             { value: "audit", label: "Audit" },
           ]}
-          onValueChange={setView}
-        />
-        <p className="hidden text-xs text-muted sm:block">
-          {data.stats.rule_counts.total} scheduled {data.stats.rule_counts.total === 1 ? "rule" : "rules"}
-        </p>
-      </WorkspaceToolbar>
+          onValueChange={(value) => setView(value as "rules" | "audit")}
+          className="space-y-6"
+        >
 
-      {activeView === "rules" && (
-        <>
+        <PageTabPanel value="rules" className="space-y-6">
           {data.stats.rule_counts.total > 0 && (
             <div
               data-testid="recurring-summary"
@@ -629,11 +623,9 @@ function RecurringRulesPage() {
             </FinancialPanel>
 
           </div>
-        </>
-      )}
+        </PageTabPanel>
 
-      {activeView === "audit" && (
-        <>
+        <PageTabPanel value="audit" className="space-y-6">
           <FinancialPanel role="chart" className="p-5" data-testid="subscription-audit">
             <p className="mono-meta text-muted">
               Subscription Audit
@@ -805,8 +797,8 @@ function RecurringRulesPage() {
               </div>
             )}
           </FinancialPanel>
-        </>
-      )}
+        </PageTabPanel>
+      </PageTabs>
 
       <Dialog
         open={editorOpen}
