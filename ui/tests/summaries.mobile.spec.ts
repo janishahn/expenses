@@ -91,4 +91,45 @@ test.describe("Summary and report surfaces (mobile)", () => {
     })
     await expect(page.getByTestId("report-latest-pdf")).toContainText(".pdf")
   })
+
+  test("keeps the dashboard tag scope in spending-band drill-downs", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const suffix = Date.now()
+    const tagName = `Mobile dashboard tag ${suffix}`
+    const categoryId = await ensureCategory(
+      request,
+      csrfToken,
+      "expense",
+      `Mobile dashboard category ${suffix}`,
+    )
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: { name: tagName, is_hidden_from_budget: false },
+    })
+    const tagId = ((await tagResponse.json()) as { id: number }).id
+    const today = new Date().toISOString().slice(0, 10)
+    await createTransaction(request, csrfToken, {
+      date: today,
+      occurred_at: `${today}T12:00:00`,
+      type: "expense",
+      amount_cents: 2_500,
+      category_id: categoryId,
+      title: `Mobile dashboard transaction ${suffix}`,
+      tags: [tagName],
+    })
+
+    await page.goto("/")
+    await page.getByRole("button", { name: "Filters", exact: true }).click()
+    const filters = page.getByRole("dialog", { name: "Dashboard filters" })
+    await filters.getByRole("button", { name: "Exclude" }).click()
+    await filters.getByRole("checkbox", { name: tagName }).check()
+    await filters.getByRole("button", { name: "Apply" }).click()
+
+    await expect(
+      page.getByTestId("dashboard-spending-band-month").first(),
+    ).toHaveAttribute("href", new RegExp(`exclude_tags=${tagId}`))
+  })
 })

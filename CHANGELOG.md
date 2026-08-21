@@ -15,11 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Reworked mobile web chrome around page-owned Menu/Back title rows and one overlay-aware floating create action shared by Dashboard, Transactions, and the planning, automation, and library pages. Removed the persistent web theme toggle so appearance is configured only in a more compact Settings card.
 - Unified page-level web filtering around a visible quick period switch plus one shared Filters gateway for occasional type, category, and tag scopes. Desktop uses an anchored apply/cancel panel, mobile uses the matching bottom sheet, active badges count filter kinds, and compact chips summarize the applied scope. Insights keeps chart category and budget month beside the sections they configure.
+- Kept Dashboard and Insights filtering focused on include-or-exclude tag scopes; transaction type remains a Transactions-ledger and report-builder option.
 - Standardized period-based web pages on one responsive scope header, with title-left and quick period/Filters controls-right when space allows. Insights and Recurring now use URL-backed page tabs for their whole-page modes, and Transactions keeps Search directly available while grouping Inbox, Trash, and CSV export in an overflow menu.
 - Tightened the mobile Transactions header by moving its overflow menu beside the page title and moving the four-choice period selector into the staged filter sheet, where non-default periods remain visible in the filter badge and active chips.
 - Removed redundant explanatory sentences from filter panels and active-filter rows so the controls and concise state chips carry the interface.
+- Hardened temporary Tailnet previews with per-checkout ownership checks, serialized lifecycle operations, private bounded logs, and recoverable cleanup state.
+
+### Removed
+- Removed the unused `/api/kpis` endpoint; Dashboard and report calculations continue to use their purpose-built service paths.
 
 ### Fixed
+- Fixed elevated Admin routes rendering without their shared shell context and restored mobile navigation focus to the current route after drawer navigation.
+- Prevented stale or contradictory transaction bulk scopes from being submitted while changed filters are still loading, and reject requests that try to include and exclude tags simultaneously.
+- Kept Dashboard spending drill-downs, Insights top tags, and tag-scoped PDF running balances and subtotals within the selected tag scope, including reimbursement adjustments.
+- Reduced filtered Dashboard sparkline work to batched monthly calculations suitable for constrained self-hosted hardware.
+- Kept the checked-in iOS API contract and fixtures synchronized with report tag filtering, and fixed the native Dashboard request return path.
+- Report generation now requires at least one selected tag when Only include or Exclude mode is chosen instead of silently generating an unfiltered report.
 - Kept the desktop page canvas stationary when modal dialogs open and close on browsers with classic scrollbars.
 - Aligned the mobile Transactions search clear control with the search field's trailing edge.
 - Aligned desktop page actions with the centered content canvas on wide displays and kept the page stationary while anchored filter panels open and close.

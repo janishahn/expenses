@@ -1663,11 +1663,9 @@ struct DashboardResponse: Codable, Equatable {
 }
 
 struct DashboardFilters: Codable, Equatable {
-    let type: String?
     let excludedTagIDs: [Int]
 
     enum CodingKeys: String, CodingKey {
-        case type
         case excludedTagIDs = "excluded_tag_ids"
     }
 }
@@ -1750,12 +1748,10 @@ struct DurablePurchasesResponse: Codable, Equatable {
 }
 
 struct InsightsFilters: Codable, Equatable {
-    let type: String?
     let tagID: Int?
     let excludedTagIDs: [Int]
 
     enum CodingKeys: String, CodingKey {
-        case type
         case tagID = "tag_id"
         case excludedTagIDs = "excluded_tag_ids"
     }

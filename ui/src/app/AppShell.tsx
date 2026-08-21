@@ -76,7 +76,8 @@ const navigationGroups: Array<{ label: string; items: NavigationItem[] }> = [
 
 export type AppShellOutletContext = {
   openAddTransaction: () => void
-  openMobileNavigation: (trigger: HTMLButtonElement) => void
+  openMobileNavigation: () => void
+  registerMobileNavigationTrigger: (trigger: HTMLButtonElement | null) => void
   setUtilityAction: (action: AppShellUtilityAction | null) => void
   utilityAction: AppShellUtilityAction | null
 }
@@ -149,14 +150,27 @@ function AppShell() {
     setSidebarCloseCount((count) => count + 1)
   }, [])
 
-  const openMobileNavigation = useCallback((trigger: HTMLButtonElement) => {
-    menuTriggerRef.current = trigger
+  const openMobileNavigation = useCallback(() => {
     setSidebarOpen(true)
   }, [])
+  const registerMobileNavigationTrigger = useCallback(
+    (trigger: HTMLButtonElement | null) => {
+      menuTriggerRef.current = trigger
+    },
+    [],
+  )
 
   useEffect(() => {
     if (sidebarOpen || sidebarCloseCount === 0) return
-    const animationFrame = requestAnimationFrame(() => menuTriggerRef.current?.focus())
+    const animationFrame = requestAnimationFrame(() => {
+      if (menuTriggerRef.current?.isConnected) {
+        menuTriggerRef.current.focus()
+        return
+      }
+      shellContentRef.current
+        ?.querySelector<HTMLElement>(".page-title")
+        ?.focus()
+    })
     return () => cancelAnimationFrame(animationFrame)
   }, [sidebarCloseCount, sidebarOpen])
 
@@ -348,6 +362,7 @@ function AppShell() {
               context={{
                 openAddTransaction,
                 openMobileNavigation,
+                registerMobileNavigationTrigger,
                 setUtilityAction,
                 utilityAction: activeUtilityAction,
               }}

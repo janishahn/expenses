@@ -2,14 +2,23 @@ import { expect, test } from "./fixtures"
 import { createTransaction, getCsrfToken } from "./helpers"
 
 test.describe("Insights Page (mobile)", () => {
-  test("applies filters from the mobile filter sheet", async ({ page }) => {
+  test("applies filters from the mobile filter sheet", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const tagName = `Mobile insight filter ${Date.now()}`
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: tagName, is_hidden_from_budget: false },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
     await page.goto("/insights")
     await page.getByRole("button", { name: /Filters/ }).click()
     const dialog = page.getByRole("dialog", { name: "Insights filters" })
     await expect(dialog).toBeVisible()
-    await dialog.getByRole("button", { name: "Expense", exact: true }).click()
+    await expect(dialog.getByRole("group", { name: "Transaction type" })).toHaveCount(0)
+    await dialog.getByRole("button", { name: "Exclude", exact: true }).click()
+    await dialog.getByRole("checkbox", { name: tagName }).check()
     await dialog.getByRole("button", { name: "Apply" }).click()
-    await expect(page).toHaveURL(/type=expense/)
+    await expect(page).toHaveURL(/exclude_tags=/)
   })
 
   test("uses page tabs and renders single-month chart points", async ({

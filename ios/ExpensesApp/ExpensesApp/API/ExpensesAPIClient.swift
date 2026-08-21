@@ -143,7 +143,7 @@ struct ExpensesAPIClient {
         var items = [URLQueryItem(name: "period", value: period)]
         appendExcludedTags(excludedTagIDs, to: &items)
         components.queryItems = items
-        try await request(
+        return try await request(
             path: components.string ?? "/api/dashboard?period=\(period)",
             bearerToken: token
         )
@@ -443,7 +443,6 @@ struct ExpensesAPIClient {
 
     func insights(
         period: String,
-        type: String?,
         tagID: Int?,
         excludedTagIDs: [Int] = [],
         trendCategoryID: Int?,
@@ -453,7 +452,6 @@ struct ExpensesAPIClient {
             path: insightsPath(
                 base: "/api/insights",
                 period: period,
-                type: type,
                 tagID: tagID,
                 excludedTagIDs: excludedTagIDs,
                 trendCategoryID: trendCategoryID
@@ -464,7 +462,6 @@ struct ExpensesAPIClient {
 
     func insightsFlow(
         period: String,
-        type: String?,
         tagID: Int?,
         excludedTagIDs: [Int] = [],
         token: String
@@ -473,7 +470,6 @@ struct ExpensesAPIClient {
             path: insightsPath(
                 base: "/api/insights/flow",
                 period: period,
-                type: type,
                 tagID: tagID,
                 excludedTagIDs: excludedTagIDs
             ),
@@ -957,7 +953,6 @@ struct ExpensesAPIClient {
     private func insightsPath(
         base: String,
         period: String,
-        type: String?,
         tagID: Int?,
         excludedTagIDs: [Int] = [],
         trendCategoryID: Int? = nil
@@ -965,9 +960,6 @@ struct ExpensesAPIClient {
         var components = URLComponents()
         components.path = base
         var items = [URLQueryItem(name: "period", value: period)]
-        if let type, !type.isEmpty {
-            items.append(URLQueryItem(name: "type", value: type))
-        }
         if let tagID {
             items.append(URLQueryItem(name: "tag", value: String(tagID)))
         }

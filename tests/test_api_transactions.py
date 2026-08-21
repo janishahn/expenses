@@ -323,6 +323,28 @@ def test_multi_tag_filters_apply_to_list_summary_export_and_bulk_scope(
     assert included_bulk_preview.status_code == 200
     assert included_bulk_preview.json()["resolved_count"] == 2
 
+    contradictory_listing = api_client.get(
+        f"/api/transactions?period=all&tags={vacation_tag_id}&exclude_tags={gift_tag_id}"
+    )
+    assert contradictory_listing.status_code == 400
+
+    contradictory_bulk = api_client.post(
+        "/api/transactions/bulk/preview",
+        headers=csrf_headers,
+        json={
+            "selection": {
+                "mode": "query",
+                "query": {
+                    "period": "all",
+                    "tags": [vacation_tag_id],
+                    "exclude_tags": [gift_tag_id],
+                },
+            },
+            "operation": {"lifecycle": "soft_delete"},
+        },
+    )
+    assert contradictory_bulk.status_code == 422
+
 
 def test_transaction_summary_evaluates_fuzzy_filter_once() -> None:
     session = make_session()

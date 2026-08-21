@@ -81,10 +81,12 @@ test.describe("Insights Page", () => {
       clientHeight: document.documentElement.clientHeight,
       scrollHeight: document.documentElement.scrollHeight,
       scrollbarGutter: getComputedStyle(document.documentElement).scrollbarGutter,
+      overflowY: getComputedStyle(document.documentElement).overflowY,
     }))
     expect(netBox).not.toBeNull()
     expect(netLayout.scrollHeight).toBeLessThanOrEqual(netLayout.clientHeight)
-    expect(netLayout.scrollbarGutter).toBe("stable")
+    expect(netLayout.scrollbarGutter).toBe("auto")
+    expect(netLayout.overflowY).toBe("scroll")
     expect(Math.abs(netBox!.x - analysisBox!.x)).toBeLessThanOrEqual(0.5)
   })
 

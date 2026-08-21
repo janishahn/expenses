@@ -56,6 +56,17 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
     tags: [],
   })
 
+  await page.goto(
+    `/transactions?period=this_month&tags=${tagIds[0]}&exclude_tags=${tagIds[1]}`,
+  )
+  await expect.poll(() => {
+    const params = new URL(page.url()).searchParams
+    return {
+      excluded: params.get("exclude_tags"),
+      hasIncluded: params.has("tags"),
+    }
+  }).toEqual({ excluded: String(tagIds[1]), hasIncluded: false })
+
   await page.goto(`/transactions?period=this_month&q=${encodeURIComponent(marker)}`)
   await page.getByRole("button", { name: "Filters", exact: true }).click()
   let filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
@@ -128,6 +139,12 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
   await expect(page.getByTestId("dashboard-recent-list")).toContainText(`${marker} regular`)
   await expect(page.getByTestId("dashboard-recent-list")).not.toContainText(`${marker} vacation`)
   await expect(page.getByText(/Balance and budgets stay/)).toHaveCount(0)
+  await expect(
+    page.getByTestId("dashboard-spending-band-month").first(),
+  ).toHaveAttribute(
+    "href",
+    new RegExp(`exclude_tags=${tagIds[0]}%2C${tagIds[1]}`),
+  )
 
   await page.goto(`/insights?period=this_month&tags=${tagIds.join(",")}`)
   await expect(page.getByRole("button", { name: "Remove Only: 2 tags" })).toBeVisible()

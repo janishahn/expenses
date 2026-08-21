@@ -300,7 +300,6 @@ class PermanentDeleteTransactionOut(StatusOut):
 
 
 class DashboardFiltersOut(BaseModel):
-    type: Optional[str] = None
     included_tag_ids: list[int] = Field(default_factory=list)
     excluded_tag_ids: list[int] = Field(default_factory=list)
 
@@ -392,7 +391,6 @@ class DashboardResponseOut(BaseModel):
 
 
 class InsightsFiltersOut(BaseModel):
-    type: Optional[Literal["income", "expense"]] = None
     tag_id: Optional[int] = None
     included_tag_ids: list[int] = Field(default_factory=list)
     excluded_tag_ids: list[int] = Field(default_factory=list)
@@ -1482,6 +1480,15 @@ class BulkSelectionQueryIn(BaseModel):
     tags: list[int] = Field(default_factory=list)
     exclude_tags: list[int] = Field(default_factory=list)
     q: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_tag_scope(self) -> "BulkSelectionQueryIn":
+        included_tag_ids = [*([self.tag] if self.tag else []), *self.tags]
+        if included_tag_ids and self.exclude_tags:
+            raise ValueError(
+                "A bulk query cannot include and exclude tags at the same time"
+            )
+        return self
 
 
 class BulkSelectionIn(BaseModel):

@@ -193,7 +193,7 @@ def test_insights_flow_adds_deficit_source_when_income_missing(
     )
 
 
-def test_insights_flow_respects_type_filter(
+def test_insights_flow_ignores_removed_type_filter(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
     income_id = _create_category(api_client, csrf_headers, "Salary", "income")
@@ -215,16 +215,8 @@ def test_insights_flow_respects_type_filter(
         title="Expense",
     )
 
-    income_response = api_client.get("/api/insights/flow?period=this_month&type=income")
-    assert income_response.status_code == 200
-    income_payload = income_response.json()
-    assert all(node["type"] != "expense" for node in income_payload["nodes"])
-    assert any(node["type"] == "savings" for node in income_payload["nodes"])
-
-    expense_response = api_client.get(
-        "/api/insights/flow?period=this_month&type=expense"
-    )
-    assert expense_response.status_code == 200
-    expense_payload = expense_response.json()
-    assert all(node["type"] != "income" for node in expense_payload["nodes"])
-    assert any(node["type"] == "deficit" for node in expense_payload["nodes"])
+    response = api_client.get("/api/insights/flow?period=this_month&type=income")
+    assert response.status_code == 200
+    node_types = {node["type"] for node in response.json()["nodes"]}
+    assert "income" in node_types
+    assert "expense" in node_types

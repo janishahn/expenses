@@ -468,11 +468,19 @@ test.describe("Transactions Page", () => {
 
     // Hold the next summary request so the changed filters have no settled count.
     let releaseSummary = () => {}
+    let releaseList = () => {}
     const summaryGate = new Promise<void>((resolve) => {
       releaseSummary = resolve
     })
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve
+    })
     await page.route("**/api/transactions/summary**", async (route) => {
       await summaryGate
+      await route.continue()
+    })
+    await page.route("**/api/transactions?*", async (route) => {
+      await listGate
       await route.continue()
     })
 
@@ -487,6 +495,12 @@ test.describe("Transactions Page", () => {
     await expect(applyButton).toBeDisabled()
 
     releaseSummary()
+    await expect(applyButton).toBeDisabled()
+    await expect(
+      page.getByRole("button", { name: "Counting filtered…" })
+    ).toBeDisabled()
+
+    releaseList()
     await expect(
       page.getByRole("button", { name: /All \d+ filtered/ })
     ).toBeEnabled()

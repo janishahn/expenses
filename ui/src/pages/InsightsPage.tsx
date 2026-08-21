@@ -15,7 +15,6 @@ import PageFilterBar from "../components/PageFilterBar"
 import PageFilterControl from "../components/PageFilterControl"
 import PageScopeHeader from "../components/PageScopeHeader"
 import { PageTabPanel, PageTabs } from "../components/PageTabs"
-import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
   MetricLane,
@@ -29,7 +28,7 @@ import {
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
-import { serializeTagIds } from "../lib/tagFilters"
+import { canonicalizeTagScope, serializeTagIds } from "../lib/tagFilters"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 
@@ -67,7 +66,6 @@ type BudgetEffective = {
 type InsightsResponse = {
   period: { slug: string; start: string; end: string }
   filters: {
-    type: string | null
     tag_id: number | null
     included_tag_ids: number[]
     excluded_tag_ids: number[]
@@ -89,7 +87,6 @@ type InsightsResponse = {
 type InsightsFlowResponse = {
   period: { slug: string; start: string; end: string }
   filters: {
-    type: string | null
     tag_id: number | null
     included_tag_ids: number[]
     excluded_tag_ids: number[]
@@ -100,7 +97,6 @@ type InsightsFlowResponse = {
 
 function InsightsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [draftType, setDraftType] = useState("")
   const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
   const [draftTagIds, setDraftTagIds] = useState<number[]>([])
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -108,10 +104,11 @@ function InsightsPage() {
   )
   const activeView = searchParams.get("view") === "net" ? "net" : "charts"
   const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
+    const params = canonicalizeTagScope(searchParams)
     if (!params.get("period")) {
       params.set("period", "all")
     }
+    params.delete("type")
     return params.toString()
   }, [searchParams])
 
@@ -139,7 +136,6 @@ function InsightsPage() {
 
   const applyCustomPeriod = (start: string, end: string) =>
     setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-  const setType = (value: string) => updateParam("type", value || null)
   const setTagFilter = (mode: TagFilterMode, ids: number[]) => {
     setSearchParams(
       buildSearchParams(searchParams, {
@@ -165,6 +161,16 @@ function InsightsPage() {
     media.addEventListener("change", syncDesktop)
     return () => media.removeEventListener("change", syncDesktop)
   }, [])
+
+  useEffect(() => {
+    const hasContradictoryTagScope =
+      searchParams.has("exclude_tags") &&
+      (searchParams.has("tag") || searchParams.has("tags"))
+    if (!searchParams.has("type") && !hasContradictoryTagScope) return
+    const params = canonicalizeTagScope(searchParams)
+    params.delete("type")
+    setSearchParams(params, { replace: true })
+  }, [searchParams, setSearchParams])
 
   if (isLoading) {
     return <RouteLoading title="Insights" label="Loading insights…" />
@@ -216,7 +222,6 @@ function InsightsPage() {
   const selectedTrendCategory = trend_category_id
     ? expenseCategories.find((category) => category.id === trend_category_id)?.name
     : null
-  const trendDisabled = filters.type === "income"
   const trendHasSpend = trend.some((row) => row.amount_cents > 0)
   const trendWindowEndLabel = new Date(`${period.end}T00:00:00`).toLocaleDateString(
     "en-GB",
@@ -226,13 +231,6 @@ function InsightsPage() {
     ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
     : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
   const activeFilters = [
-    filters.type
-      ? {
-          key: "type",
-          label: `Type: ${filters.type === "income" ? "Income" : "Expense"}`,
-          onRemove: () => setType(""),
-        }
-      : null,
     selectedTagIds.length
       ? {
           key: "tags",
@@ -254,19 +252,16 @@ function InsightsPage() {
       : `${formatEuroDate(period.start)} → ${formatEuroDate(period.end)}`
 
   const openFilters = () => {
-    setDraftType(filters.type ?? "")
     setDraftTagMode(tagMode)
     setDraftTagIds(selectedTagIds)
   }
 
   const clearFilterDraft = () => {
-    setDraftType("")
     setDraftTagIds([])
   }
 
   const clearFilters = () => {
     const params = new URLSearchParams(searchParams)
-    params.delete("type")
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
@@ -275,11 +270,6 @@ function InsightsPage() {
 
   const applyFilters = () => {
     const params = new URLSearchParams(searchParams)
-    if (draftType) {
-      params.set("type", draftType)
-    } else {
-      params.delete("type")
-    }
     params.delete("tag")
     params.delete("tags")
     params.delete("exclude_tags")
@@ -315,27 +305,12 @@ function InsightsPage() {
       onClear={clearFilterDraft}
       onApply={applyFilters}
     >
-      <AppFieldLabel>
-        <span>Transaction type</span>
-        <SegmentedControl
-          value={draftType}
-          ariaLabel="Transaction type"
-          equalWidth
-          items={[
-            { value: "", label: "All" },
-            { value: "expense", label: "Expense" },
-            { value: "income", label: "Income" },
-          ]}
-          onValueChange={setDraftType}
-        />
-      </AppFieldLabel>
       <TagFilterPicker
         tags={tags}
         mode={draftTagMode}
         selectedIds={draftTagIds}
         onModeChange={setDraftTagMode}
         onChange={setDraftTagIds}
-        variant="list"
       />
     </PageFilterControl>
   )
@@ -417,18 +392,16 @@ function InsightsPage() {
           <SectionHeading className="flex-wrap items-start">
             <div className="min-w-0">
               <h2 className="truncate font-head text-lg font-bold">
-                {!trendDisabled && selectedTrendCategory
+                {selectedTrendCategory
                   ? `Category trend: ${selectedTrendCategory}`
                   : "Category trend"}
               </h2>
               <p className="mt-0.5 text-xs text-muted">
-                {trendDisabled
-                  ? "Available for expense activity"
-                  : selectedTrendCategory
-                    ? trendHasSpend
-                      ? `${trend.length} months ending ${trendWindowEndLabel}`
-                      : `No spend ending ${trendWindowEndLabel}`
-                    : "Choose an expense category"}
+                {selectedTrendCategory
+                  ? trendHasSpend
+                    ? `${trend.length} months ending ${trendWindowEndLabel}`
+                    : `No spend ending ${trendWindowEndLabel}`
+                  : "Choose an expense category"}
               </p>
             </div>
             <AppFieldLabel className="w-full shrink-0 sm:w-44">
@@ -437,7 +410,7 @@ function InsightsPage() {
                 className="h-10 py-1.5 text-sm"
                 value={trend_category_id ?? ""}
                 onChange={(event) => setTrendCategory(event.target.value)}
-                disabled={trendDisabled || expenseCategories.length === 0}
+                disabled={expenseCategories.length === 0}
               >
                 {expenseCategories.length ? (
                   expenseCategories.map((category) => (
@@ -452,7 +425,7 @@ function InsightsPage() {
             </AppFieldLabel>
           </SectionHeading>
           <div className="flex min-h-[16rem] items-center p-4 md:p-5">
-            {!trendDisabled && selectedTrendCategory && trendHasSpend ? (
+            {selectedTrendCategory && trendHasSpend ? (
               <div className="w-full">
                 <BarChart
                   ariaLabel={`Monthly net spending for ${selectedTrendCategory}`}
@@ -469,11 +442,9 @@ function InsightsPage() {
               </div>
             ) : (
               <p className="mx-auto max-w-xs text-center text-sm text-muted">
-                {trendDisabled
-                  ? "Switch Type to All or Expense to compare category spending."
-                  : selectedTrendCategory
-                    ? "No spending in this category during the selected trend window."
-                    : "Create an expense category to start a category trend."}
+                {selectedTrendCategory
+                  ? "No spending in this category during the selected trend window."
+                  : "Create an expense category to start a category trend."}
               </p>
             )}
           </div>

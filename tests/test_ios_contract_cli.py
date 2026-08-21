@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from expenses.cli.export_ios_fixtures import export_ios_fixtures
 from expenses.cli.export_openapi import export_openapi
@@ -21,6 +22,26 @@ def test_export_openapi_writes_mobile_contract_schema(tmp_path) -> None:
     assert "DashboardCategoryBudgetSummaryOut" in payload["components"]["schemas"]
     assert "TransactionsResponseOut" in payload["components"]["schemas"]
     assert "TransactionDetailOut" in payload["components"]["schemas"]
+    report_options = payload["components"]["schemas"]["ReportOptions"]["properties"]
+    assert "tag_ids" in report_options
+    assert "excluded_tag_ids" in report_options
+    assert "/api/kpis" not in payload["paths"]
+
+
+def test_checked_in_openapi_contract_is_fresh(tmp_path) -> None:
+    output_path = tmp_path / "openapi.json"
+    export_openapi(output_path)
+    checked_in_path = (
+        Path(__file__).resolve().parents[1]
+        / "ios"
+        / "ExpensesApp"
+        / "Contract"
+        / "openapi.json"
+    )
+
+    assert json.loads(output_path.read_text()) == json.loads(
+        checked_in_path.read_text()
+    )
 
 
 def test_export_ios_fixtures_writes_curated_foundation_snapshots(tmp_path) -> None:

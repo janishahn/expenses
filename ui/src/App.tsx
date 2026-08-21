@@ -5,9 +5,10 @@ import {
   Route,
   Routes,
   useLocation,
+  useOutletContext,
   useSearchParams,
 } from "react-router-dom"
-import AppShell from "./app/AppShell"
+import AppShell, { type AppShellOutletContext } from "./app/AppShell"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
 const AdminElevationPage = lazy(() => import("./pages/AdminElevationPage"))
@@ -149,6 +150,7 @@ function ProtectedRoute() {
 function AdminRoute() {
   const { user, ensureAdminElevation } = useAuth()
   const location = useLocation()
+  const outletContext = useOutletContext<AppShellOutletContext>()
   const [checking, setChecking] = useState(true)
   const [requiresElevation, setRequiresElevation] = useState(false)
 
@@ -199,7 +201,7 @@ function AdminRoute() {
     )
   }
 
-  return <Outlet />
+  return <Outlet context={outletContext} />
 }
 
 function AppRoutes() {

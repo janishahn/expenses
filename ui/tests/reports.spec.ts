@@ -184,6 +184,8 @@ test.describe("Report Builder Page", () => {
 
     const tagScope = page.getByRole("radiogroup", { name: "Tag scope" })
     await tagScope.getByRole("radio", { name: "Only include" }).check()
+    await page.getByRole("button", { name: "Generate PDF Report" }).click()
+    await expect(page.getByText("Select at least one tag.")).toBeVisible()
     await page.getByRole("checkbox", { name: tagName }).check()
 
     let reportRequestPromise = page.waitForRequest("**/api/reports/pdf")

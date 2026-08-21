@@ -24,7 +24,6 @@ import PageFilterBar from "../components/PageFilterBar"
 import PageFilterControl from "../components/PageFilterControl"
 import PageScopeHeader from "../components/PageScopeHeader"
 import PeriodPicker from "../components/PeriodPicker"
-import SegmentedControl from "../components/SegmentedControl"
 import {
   FinancialPanel,
   MetricLane,
@@ -33,14 +32,13 @@ import {
 import TransactionDescription from "../components/TransactionDescription"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
-import { AppFieldLabel } from "../components/ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
-import { serializeTagIds } from "../lib/tagFilters"
+import { canonicalizeTagScope, serializeTagIds } from "../lib/tagFilters"
 
 const EMPTY_CATEGORIES: CategorySummary[] = []
 
@@ -64,7 +62,6 @@ type DurablePurchaseItem = {
 type DashboardResponse = {
   period: { slug: string; start: string; end: string }
   filters: {
-    type: string | null
     included_tag_ids: number[]
     excluded_tag_ids: number[]
   }
@@ -114,7 +111,6 @@ function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const recentListRef = useRef<HTMLDivElement>(null)
   const [showFullyAmortized, setShowFullyAmortized] = useState(false)
-  const [draftType, setDraftType] = useState("")
   const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
   const [draftTagIds, setDraftTagIds] = useState<number[]>([])
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -126,10 +122,11 @@ function DashboardPage() {
   const hide = incognito ? "kpi-hidden" : ""
   const returnTo = `${location.pathname}${location.search}`
   const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
+    const params = canonicalizeTagScope(searchParams)
     if (!params.get("period")) {
       params.set("period", "this_month")
     }
+    params.delete("type")
     return params.toString()
   }, [searchParams])
   const spendingBandsQueryString = useMemo(() => {
@@ -144,7 +141,7 @@ function DashboardPage() {
     const excludedTags = searchParams.get("exclude_tags")
     if (excludedTags) params.set("exclude_tags", excludedTags)
     const includedTags = searchParams.get("tags") || searchParams.get("tag")
-    if (includedTags) params.set("tags", includedTags)
+    if (!excludedTags && includedTags) params.set("tags", includedTags)
     return params.toString()
   }, [searchParams])
   const now = new Date()
@@ -161,6 +158,16 @@ function DashboardPage() {
     media.addEventListener("change", syncDesktop)
     return () => media.removeEventListener("change", syncDesktop)
   }, [])
+
+  useEffect(() => {
+    const hasContradictoryTagScope =
+      searchParams.has("exclude_tags") &&
+      (searchParams.has("tag") || searchParams.has("tags"))
+    if (!searchParams.has("type") && !hasContradictoryTagScope) return
+    const params = canonicalizeTagScope(searchParams)
+    params.delete("type")
+    setSearchParams(params, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["dashboard", queryString],
@@ -227,8 +234,6 @@ function DashboardPage() {
     setSearchParams(buildPresetPeriodSearchParams(searchParams, value))
   const applyCustomPeriod = (start: string, end: string) =>
     setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-  const setType = (value: string) =>
-    setSearchParams(buildSearchParams(searchParams, { type: value || null }))
   const setTagFilter = (mode: TagFilterMode, ids: number[]) =>
     setSearchParams(
       buildSearchParams(searchParams, {
@@ -261,18 +266,15 @@ function DashboardPage() {
     return tag ? [tag] : []
   })
   const openFilters = () => {
-    setDraftType(filters.type ?? "")
     setDraftTagMode(tagMode)
     setDraftTagIds(selectedTagIds)
   }
   const clearFilterDraft = () => {
-    setDraftType("")
     setDraftTagIds([])
   }
   const applyFilters = () => {
     setSearchParams(
       buildSearchParams(searchParams, {
-        type: draftType || null,
         tag: null,
         tags: draftTagMode === "include" ? serializeTagIds(draftTagIds) : null,
         exclude_tags:
@@ -283,7 +285,6 @@ function DashboardPage() {
   const clearSecondaryFilters = () => {
     setSearchParams(
       buildSearchParams(searchParams, {
-        type: null,
         tag: null,
         tags: null,
         exclude_tags: null,
@@ -370,13 +371,6 @@ function DashboardPage() {
     ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
     : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
   const activeFilters = [
-    filters.type
-      ? {
-          key: "type",
-          label: `Type: ${filters.type === "income" ? "Income" : "Expense"}`,
-          onRemove: () => setType(""),
-        }
-      : null,
     selectedTagIds.length
       ? {
           key: "tags",
@@ -398,27 +392,12 @@ function DashboardPage() {
       onClear={clearFilterDraft}
       onApply={applyFilters}
     >
-      <AppFieldLabel>
-        <span>Transaction type</span>
-        <SegmentedControl
-          value={draftType}
-          ariaLabel="Transaction type"
-          equalWidth
-          items={[
-            { value: "", label: "All" },
-            { value: "income", label: "Income" },
-            { value: "expense", label: "Expense" },
-          ]}
-          onValueChange={setDraftType}
-        />
-      </AppFieldLabel>
       <TagFilterPicker
         tags={tags}
         mode={draftTagMode}
         selectedIds={draftTagIds}
         onModeChange={setDraftTagMode}
         onChange={setDraftTagIds}
-        variant="list"
       />
     </PageFilterControl>
   )
@@ -703,6 +682,8 @@ function DashboardPage() {
           months={spendingBandMonths}
           incognito={incognito}
           returnTo={returnTo}
+          tagMode={tagMode}
+          tagIds={selectedTagIds}
           loading={spendingBandsLoading}
           unavailable={
             spendingBandsUnavailable ||

@@ -277,6 +277,7 @@ test.describe("Navigation (mobile)", () => {
       /app-sidebar-open/,
     )
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+    await expect(page.getByRole("button", { name: "Open menu" })).toBeFocused()
 
     await page.getByRole("button", { name: "Open menu" }).click()
     const sidebar = page.getByRole("complementary", { name: "Application menu" })
@@ -286,6 +287,7 @@ test.describe("Navigation (mobile)", () => {
       /app-sidebar-open/,
     )
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+    await expect(page.getByRole("button", { name: "Open menu" })).toBeFocused()
   })
 
   test("keeps theme selection in Settings and keeps navigation tappable", async ({

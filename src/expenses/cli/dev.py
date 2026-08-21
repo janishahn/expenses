@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TypedDict
+from typing import Callable, TextIO, TypedDict
 
 from expenses.cli.migrations import upgrade_head
 from expenses.cli.mock_db import db_is_empty, db_path_from_url
@@ -29,6 +30,7 @@ DEV_FRONTEND_PORT = 5173
 DEV_TAILNET_HTTPS_PORT = 8443
 DEV_TAILNET_PORT_SCAN_LIMIT = 100
 DEV_START_TIMEOUT_SECONDS = 15
+DEV_LOG_MAX_BYTES = 1_048_576
 
 
 class TailnetState(TypedDict):
@@ -36,6 +38,48 @@ class TailnetState(TypedDict):
     port: int
     started_at: str
     url: str
+    target: str
+
+
+class _BoundedLog:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.backup_path = path.with_suffix(f"{path.suffix}.1")
+        self.lock = threading.Lock()
+        self.file: TextIO
+        self._open()
+
+    def _open(self) -> None:
+        if self.path.exists() and self.path.stat().st_size >= DEV_LOG_MAX_BYTES:
+            self.backup_path.unlink(missing_ok=True)
+            self.path.replace(self.backup_path)
+        descriptor = os.open(
+            self.path,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        os.chmod(self.path, 0o600)
+        self.file = os.fdopen(descriptor, "a", encoding="utf-8", buffering=1)
+
+    def write(self, value: str) -> int:
+        with self.lock:
+            encoded_size = len(value.encode("utf-8"))
+            if self.file.tell() + encoded_size > DEV_LOG_MAX_BYTES:
+                self.file.close()
+                self.backup_path.unlink(missing_ok=True)
+                self.path.replace(self.backup_path)
+                self._open()
+            return self.file.write(value)
+
+    def flush(self) -> None:
+        with self.lock:
+            self.file.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+
+_detached_log: _BoundedLog | None = None
 
 
 def _preflight_db() -> bool:
@@ -164,7 +208,18 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def _runtime_paths(root_dir: Path) -> tuple[Path, Path]:
     digest = hashlib.sha256(str(root_dir).encode()).hexdigest()[:12]
-    runtime_dir = Path(os.getenv("XDG_RUNTIME_DIR", tempfile.gettempdir()))
+    configured_runtime_dir = os.getenv("XDG_RUNTIME_DIR")
+    runtime_dir = (
+        Path(configured_runtime_dir) / "expenses-dev"
+        if configured_runtime_dir
+        else Path(tempfile.gettempdir()) / f"expenses-dev-{os.getuid()}"
+    )
+    runtime_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if runtime_dir.stat().st_uid != os.getuid():
+        raise RuntimeError(
+            f"Runtime directory is not owned by this user: {runtime_dir}"
+        )
+    os.chmod(runtime_dir, 0o700)
     return (
         runtime_dir / f"expenses-dev-{digest}.json",
         runtime_dir / f"expenses-dev-{digest}.log",
@@ -180,13 +235,44 @@ def _read_tailnet_state(path: Path) -> TailnetState | None:
         port=int(raw["port"]),
         started_at=str(raw["started_at"]),
         url=str(raw["url"]),
+        target=str(raw.get("target", "")),
     )
 
 
 def _write_tailnet_state(path: Path, state: TailnetState) -> None:
     temporary_path = path.with_suffix(".tmp")
-    temporary_path.write_text(json.dumps(state), encoding="utf-8")
+    descriptor = os.open(
+        temporary_path,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as temporary_file:
+        temporary_file.write(json.dumps(state))
+    os.chmod(temporary_path, 0o600)
     temporary_path.replace(path)
+
+
+def _acquire_tailnet_lock(root_dir: Path) -> TextIO:
+    state_path, _ = _runtime_paths(root_dir)
+    lock_path = state_path.with_suffix(".lock")
+    descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o600)
+    os.chmod(lock_path, 0o600)
+    lock_file = os.fdopen(descriptor, "w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        lock_file.close()
+        raise RuntimeError(
+            "Another Tailnet preview operation is already in progress."
+        ) from exc
+    return lock_file
+
+
+def _release_tailnet_lock(lock_file: TextIO) -> None:
+    if lock_file.closed:
+        return
+    fcntl.flock(lock_file, fcntl.LOCK_UN)
+    lock_file.close()
 
 
 def _process_started_at(pid: int) -> str | None:
@@ -265,6 +351,30 @@ def _enable_tailnet_serve(port: int, frontend_port: int) -> None:
     )
 
 
+def _tailnet_serve_target(port: int) -> str | None:
+    raw = _run_tailscale(["tailscale", "serve", "status", "--json"])
+    status = json.loads(raw)
+    targets = {
+        str(handler.get("Proxy"))
+        for address, web in status.get("Web", {}).items()
+        if str(address).endswith(f":{port}")
+        for handler in web.get("Handlers", {}).values()
+        if handler.get("Proxy")
+    }
+    if not targets:
+        if str(port) in status.get("TCP", {}):
+            raise RuntimeError(
+                f"Tailscale Serve port {port} is configured, but its proxy target "
+                "could not be identified."
+            )
+        return None
+    if len(targets) > 1:
+        raise RuntimeError(
+            f"Tailscale Serve port {port} has more than one proxy target."
+        )
+    return targets.pop()
+
+
 def _disable_tailnet_serve(port: int) -> bool:
     try:
         _run_tailscale(["tailscale", "serve", "--yes", f"--https={port}", "off"])
@@ -272,6 +382,27 @@ def _disable_tailnet_serve(port: int) -> bool:
         print(f"Could not remove Tailscale Serve port {port}: {exc}", file=sys.stderr)
         return False
     return True
+
+
+def _disable_owned_tailnet_serve(state: TailnetState) -> bool:
+    try:
+        current_target = _tailnet_serve_target(state["port"])
+    except (RuntimeError, json.JSONDecodeError) as exc:
+        print(
+            f"Could not verify Tailscale Serve port {state['port']}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    if current_target is None:
+        return True
+    if not state["target"] or current_target.rstrip("/") != state["target"].rstrip("/"):
+        print(
+            f"Tailscale Serve port {state['port']} no longer points to this preview; "
+            "leaving it unchanged.",
+            file=sys.stderr,
+        )
+        return False
+    return _disable_tailnet_serve(state["port"])
 
 
 def _wait_for_port(
@@ -296,6 +427,18 @@ def _remove_owned_state(path: Path, pid: int) -> None:
 
 
 def _stop_tailnet_dev(root_dir: Path) -> int:
+    try:
+        lock_file = _acquire_tailnet_lock(root_dir)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    try:
+        return _stop_tailnet_dev_locked(root_dir)
+    finally:
+        _release_tailnet_lock(lock_file)
+
+
+def _stop_tailnet_dev_locked(root_dir: Path) -> int:
     state_path, _ = _runtime_paths(root_dir)
     state = _read_tailnet_state(state_path)
     if state is None:
@@ -320,9 +463,9 @@ def _stop_tailnet_dev(root_dir: Path) -> int:
             print(f"Stopped Tailnet dev server at {state['url']}")
             return 0
 
-    success = _disable_tailnet_serve(state["port"])
-    state_path.unlink(missing_ok=True)
+    success = _disable_owned_tailnet_serve(state)
     if success:
+        state_path.unlink(missing_ok=True)
         print(f"Stopped Tailnet dev server at {state['url']}")
         return 0
     return 1
@@ -335,7 +478,8 @@ def _launch_detached(args: argparse.Namespace, root_dir: Path) -> int:
         print(f"Tailnet dev server is already running at {state['url']}")
         return 0
     if state is not None:
-        _disable_tailnet_serve(state["port"])
+        if not _disable_owned_tailnet_serve(state):
+            return 1
         state_path.unlink(missing_ok=True)
 
     command = [
@@ -354,16 +498,19 @@ def _launch_detached(args: argparse.Namespace, root_dir: Path) -> int:
     env["PYTHONPATH"] = (
         f"{src_dir}{os.pathsep}{python_path}" if python_path else str(src_dir)
     )
-    with log_path.open("a", encoding="utf-8") as log_file:
-        process = subprocess.Popen(
-            command,
-            cwd=root_dir,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+    log = _BoundedLog(log_path)
+    log.flush()
+    log.file.close()
+    env["EXPENSES_DEV_LOG_PATH"] = str(log_path)
+    process = subprocess.Popen(
+        command,
+        cwd=root_dir,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
     deadline = time.monotonic() + DEV_START_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
@@ -386,10 +533,15 @@ def _launch_detached(args: argparse.Namespace, root_dir: Path) -> int:
     return 1
 
 
-def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
+def _run_dev_impl(
+    args: argparse.Namespace,
+    root_dir: Path,
+    release_startup_lock: Callable[[], None],
+) -> int:
     state_path, _ = _runtime_paths(root_dir)
     tailnet_port: int | None = None
     tailnet_url: str | None = None
+    tailnet_state: TailnetState | None = None
     tailnet_enabled = False
     if args.tailnet:
         state = _read_tailnet_state(state_path)
@@ -397,7 +549,8 @@ def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
             print(f"Tailnet dev server is already running at {state['url']}")
             return 1
         if state is not None:
-            _disable_tailnet_serve(state["port"])
+            if not _disable_owned_tailnet_serve(state):
+                return 1
             state_path.unlink(missing_ok=True)
         try:
             dns_name = _tailnet_dns_name()
@@ -546,20 +699,20 @@ def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
                 raise RuntimeError("The frontend did not become ready in time.")
             assert tailnet_port is not None
             assert tailnet_url is not None
-            _enable_tailnet_serve(tailnet_port, frontend_port)
-            tailnet_enabled = True
             started_at = _process_started_at(os.getpid())
             if started_at is None:
                 raise RuntimeError("Could not record the dev server process identity.")
-            _write_tailnet_state(
-                state_path,
-                TailnetState(
-                    pid=os.getpid(),
-                    port=tailnet_port,
-                    started_at=started_at,
-                    url=tailnet_url,
-                ),
+            tailnet_state = TailnetState(
+                pid=os.getpid(),
+                port=tailnet_port,
+                started_at=started_at,
+                url=tailnet_url,
+                target=f"http://127.0.0.1:{frontend_port}",
             )
+            _enable_tailnet_serve(tailnet_port, frontend_port)
+            tailnet_enabled = True
+            _write_tailnet_state(state_path, tailnet_state)
+            release_startup_lock()
             print(f"\nTailnet URL: {tailnet_url}")
             print("Press Ctrl+C to stop the servers and remove this Tailnet URL.\n")
 
@@ -586,8 +739,8 @@ def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
         exit_code = 1
     finally:
         tailnet_cleanup_succeeded = True
-        if tailnet_enabled and tailnet_port is not None:
-            tailnet_cleanup_succeeded = _disable_tailnet_serve(tailnet_port)
+        if tailnet_enabled and tailnet_state is not None:
+            tailnet_cleanup_succeeded = _disable_owned_tailnet_serve(tailnet_state)
             if not tailnet_cleanup_succeeded:
                 exit_code = 1
         if tailnet_cleanup_succeeded:
@@ -609,8 +762,34 @@ def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
     return exit_code
 
 
+def _run_dev(args: argparse.Namespace, root_dir: Path) -> int:
+    if not args.tailnet:
+        return _run_dev_impl(args, root_dir, lambda: None)
+
+    try:
+        lock_file = _acquire_tailnet_lock(root_dir)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    def release_startup_lock() -> None:
+        _release_tailnet_lock(lock_file)
+
+    try:
+        return _run_dev_impl(args, root_dir, release_startup_lock)
+    finally:
+        release_startup_lock()
+
+
 def main(argv: list[str] | None = None) -> int:
+    global _detached_log
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    if args._detached_child:
+        log_path = os.getenv("EXPENSES_DEV_LOG_PATH")
+        if log_path:
+            _detached_log = _BoundedLog(Path(log_path))
+            sys.stdout = _detached_log
+            sys.stderr = _detached_log
     root_dir = Path(__file__).resolve().parents[3]
     if args.stop:
         return _stop_tailnet_dev(root_dir)

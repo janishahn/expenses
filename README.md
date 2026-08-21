@@ -381,6 +381,15 @@ uv run dev --tailnet --stop
 
 Detached startup prints both the URL and its log path. Starting it again is
 idempotent: the existing URL is reported instead of launching a duplicate.
+Lifecycle operations are serialized per checkout, and cleanup removes only the
+Tailscale Serve mapping that the launcher recorded and still owns. If Tailscale
+cannot remove that mapping, the launcher keeps its state so `uv run dev
+--tailnet --stop` can be retried instead of losing the cleanup handle.
+
+Tailnet preview state and logs live in a private per-user runtime directory
+(`$XDG_RUNTIME_DIR/expenses-dev` when available, otherwise a mode-0700 directory
+under `/tmp`). Log files are mode 0600 and rotate once at 1 MiB, retaining one
+bounded previous file beside the active log.
 
 Useful commands:
 

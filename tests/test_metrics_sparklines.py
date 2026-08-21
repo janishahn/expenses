@@ -1,13 +1,13 @@
 from datetime import date, datetime
 
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, event
 from sqlalchemy.orm import sessionmaker
 
 from expenses.core.periods import Period
 from expenses.db.models import Category, MonthlyRollup, TransactionType
 from expenses.db.session import Base
 from expenses.schemas import TransactionIn
-from expenses.services import MetricsService, TransactionService
+from expenses.services import MetricsService, TagService, TransactionService
 
 
 def make_session():
@@ -69,3 +69,44 @@ def test_kpi_sparklines_fall_back_to_transactions_when_rollup_missing() -> None:
 
     assert without_rollups == with_rollups
     assert len(set(y_values)) > 1
+
+
+def test_filtered_kpi_sparklines_group_months_in_bounded_queries() -> None:
+    session = make_session()
+    category = Category(user_id=1, name="Travel", type=TransactionType.expense, order=0)
+    session.add(category)
+    session.commit()
+    tag = TagService(session).create("Vacation")
+    transactions = TransactionService(session)
+    for month in range(1, 13):
+        transactions.create(
+            TransactionIn(
+                date=date(2025, month, 10),
+                occurred_at=datetime(2025, month, 10, 12),
+                type=TransactionType.expense,
+                amount_cents=month * 1_000,
+                category_id=category.id,
+                title=f"Month {month}",
+                tags=[tag.name],
+            )
+        )
+
+    query_count = 0
+
+    def count_query(*_args: object) -> None:
+        nonlocal query_count
+        query_count += 1
+
+    event.listen(session.bind, "before_cursor_execute", count_query)
+    try:
+        points = MetricsService(session).kpi_sparklines(
+            Period("custom", date(2025, 1, 1), date(2025, 12, 31)),
+            tag_ids=[tag.id],
+            include_balance=False,
+        )
+    finally:
+        event.remove(session.bind, "before_cursor_execute", count_query)
+
+    assert points["expenses"]
+    assert points["balance"] == ""
+    assert query_count <= 2

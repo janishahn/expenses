@@ -161,6 +161,10 @@ function ReportBuilderPage() {
         : null
     const availableTagIds = (tagsData?.tags || []).map((tag) => tag.id)
     const activeTagIds = selectedTagIds.filter((id) => availableTagIds.includes(id))
+    if (tagMode !== "all" && activeTagIds.length === 0) {
+      setGenerateError("Select at least one tag.")
+      return
+    }
 
     const popup = window.open("about:blank", "_blank")
     if (popup) {

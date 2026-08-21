@@ -542,8 +542,8 @@ test.describe("Mobile interaction audit evidence", () => {
         page.getByRole("button", { name: `Add tag ${secondSuggestionTagName}` }),
       ),
       await effectiveTargetMeasurement(
-        "Transaction edit breadcrumb",
-        page.locator(".page-breadcrumb"),
+        "Transaction edit back button",
+        page.getByRole("link", { name: "Back", exact: true }),
       ),
     )
     const suggestionChipLayout = await Promise.all(
@@ -624,7 +624,9 @@ test.describe("Mobile interaction audit evidence", () => {
       ),
       await effectiveTargetMeasurement(
         "Report category-mode All radio",
-        page.getByRole("radio", { name: "All" }),
+        page
+          .getByRole("radiogroup", { name: "Category scope" })
+          .getByRole("radio", { name: "All" }),
       ),
       await effectiveTargetMeasurement(
         "Report category-mode Selected radio",
@@ -635,7 +637,10 @@ test.describe("Mobile interaction audit evidence", () => {
         page.getByRole("switch", { name: "Include cents in tables" }),
       ),
     )
-    await page.getByRole("radio", { name: "Selected" }).check()
+    await page
+      .getByRole("radiogroup", { name: "Category scope" })
+      .getByRole("radio", { name: "Selected" })
+      .check()
     controls.push(
       await effectiveTargetMeasurement(
         "Report selected category checkbox",

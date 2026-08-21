@@ -30,7 +30,7 @@ function PageIntro({
   backReplace,
   backOnClick,
 }: PageIntroProps) {
-  const { openMobileNavigation, utilityAction } =
+  const { openMobileNavigation, registerMobileNavigationTrigger, utilityAction } =
     useOutletContext<AppShellOutletContext>()
   const quietAction = utilityAction?.presentation === "quiet" ? utilityAction : null
   const QuietActionIcon = quietAction?.icon ?? PlusIcon
@@ -81,14 +81,15 @@ function PageIntro({
               ) : (
                 <button
                   type="button"
+                  ref={registerMobileNavigationTrigger}
                   className="app-mobile-page-nav desk:hidden"
                   aria-label="Open menu"
-                  onClick={(event) => openMobileNavigation(event.currentTarget)}
+                  onClick={openMobileNavigation}
                 >
                   <ListIcon weight="bold" aria-hidden="true" />
                 </button>
               )}
-              <h1 className="page-title">{title}</h1>
+              <h1 className="page-title" tabIndex={-1}>{title}</h1>
               {titleAccessoryAlign === "inline" ? titleAccessory : null}
             </div>
             {titleAccessoryAlign === "end" ? titleAccessory : null}

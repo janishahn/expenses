@@ -117,6 +117,14 @@ def test_dashboard_tag_exclusions_filter_activity_but_keep_actual_balance(
     assert included_bands[-1]["total_cents"] == 9_000
     assert included_bands[-1]["balance_cents"] == unfiltered_bands[-1]["balance_cents"]
 
+    removed_type_filter = api_client.get("/api/dashboard?period=all&type=income")
+    assert removed_type_filter.status_code == 200
+    removed_type_payload = removed_type_filter.json()
+    assert "type" not in removed_type_payload["filters"]
+    assert removed_type_payload["kpis"] == unfiltered_payload["kpis"]
+    assert removed_type_payload["donut"]["mode"] == "both"
+    assert vacation_id in {item["id"] for item in removed_type_payload["recent"]}
+
 
 def test_dashboard_recent_transactions_returns_latest_ten(
     api_client: TestClient, csrf_headers: dict[str, str]

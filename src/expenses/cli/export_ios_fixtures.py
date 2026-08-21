@@ -86,7 +86,7 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
     }
     dashboard = {
         "period": {"slug": "this_month", "start": "2026-05-01", "end": "2026-05-31"},
-        "filters": {"type": None, "excluded_tag_ids": []},
+        "filters": {"included_tag_ids": [], "excluded_tag_ids": []},
         "kpis": {"income": 320000, "expenses": 84550, "balance": 235450},
         "sparklines": {
             "income": "0,320000",

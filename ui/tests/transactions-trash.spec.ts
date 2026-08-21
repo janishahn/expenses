@@ -41,7 +41,14 @@ test.describe("Deleted Transactions Page", () => {
     await page.goto("/transactions/deleted")
     const row = page.getByTestId(`deleted-transaction-${transactionId}`)
     await expect(row).toBeVisible()
+    const restored = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/transactions/${transactionId}/restore`) &&
+        response.request().method() === "POST" &&
+        response.status() === 200
+    )
     await row.getByRole("button", { name: "Restore" }).click()
+    await restored
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
     await expect(page.locator("body")).toContainText(title)

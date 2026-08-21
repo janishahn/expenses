@@ -881,7 +881,7 @@ test.describe("Dashboard Page", () => {
     await page.addInitScript(() => {
       window.localStorage.setItem("ew.theme.preference", "light")
     })
-    const dashboardUrl = "/?period=custom&start=2026-03-01&end=2026-03-31&type=expense"
+    const dashboardUrl = "/?period=custom&start=2026-03-01&end=2026-03-31"
     await page.goto(dashboardUrl)
 
     const rowLink = page.getByRole("link", { name: new RegExp(title) }).first()

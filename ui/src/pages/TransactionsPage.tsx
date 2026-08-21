@@ -58,7 +58,7 @@ import {
   buildSearchParams,
   type PresetPeriod,
 } from "../lib/searchParams"
-import { serializeTagIds } from "../lib/tagFilters"
+import { canonicalizeTagScope, serializeTagIds } from "../lib/tagFilters"
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
 import markerIcon from "leaflet/dist/images/marker-icon.png"
 import markerShadow from "leaflet/dist/images/marker-shadow.png"
@@ -320,7 +320,8 @@ function TransactionsPage() {
   const [bulkTagMode, setBulkTagMode] = useState<"none" | "add" | "remove" | "replace" | "clear">("none")
   const [bulkTags, setBulkTags] = useState("")
   const [bulkLifecycle, setBulkLifecycle] = useState<"none" | "soft_delete" | "restore">("none")
-  const [bulkPreview, setBulkPreview] = useState<BulkResponse | null>(null)
+  const [storedBulkPreview, setBulkPreview] = useState<BulkResponse | null>(null)
+  const [bulkPreviewScope, setBulkPreviewScope] = useState("")
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const searchTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -333,7 +334,7 @@ function TransactionsPage() {
 
   const returnTo = `${location.pathname}${location.search}`
   const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
+    const params = canonicalizeTagScope(searchParams)
     if (!params.get("period")) {
       params.set("period", "all")
     }
@@ -343,7 +344,7 @@ function TransactionsPage() {
     return params.toString()
   }, [searchParams])
   const summaryQueryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
+    const params = canonicalizeTagScope(searchParams)
     if (!params.get("period")) {
       params.set("period", "all")
     }
@@ -351,6 +352,8 @@ function TransactionsPage() {
     params.delete("limit")
     return params.toString()
   }, [searchParams])
+  const bulkPreview =
+    bulkPreviewScope === queryString ? storedBulkPreview : null
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 861px)")
@@ -373,6 +376,16 @@ function TransactionsPage() {
   }, [searchVisible])
 
   useEffect(() => {
+    if (
+      !searchParams.has("exclude_tags") ||
+      (!searchParams.has("tag") && !searchParams.has("tags"))
+    ) {
+      return
+    }
+    setSearchParams(canonicalizeTagScope(searchParams), { replace: true })
+  }, [searchParams, setSearchParams])
+
+  useEffect(() => {
     if (!searchOpen) {
       return
     }
@@ -386,13 +399,20 @@ function TransactionsPage() {
     return () => document.removeEventListener("pointerdown", handlePointerDown)
   }, [searchOpen])
 
-  const { data, isLoading, isFetching, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isPlaceholderData: dataIsStale,
+    error,
+  } = useQuery({
     queryKey: ["transactions", queryString],
     queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${queryString}`),
   })
   const {
     data: summary,
     isError: summaryUnavailable,
+    isFetching: summaryIsFetching,
     isPlaceholderData: summaryIsStale,
   } = useQuery({
     queryKey: ["transactions", "summary", summaryQueryString],
@@ -403,7 +423,9 @@ function TransactionsPage() {
   })
   // Placeholder data is the previous filter's summary; query-wide bulk edits
   // must only trust a count fetched for the current filters.
-  const settledSummary = summaryIsStale ? undefined : summary
+  const settledSummary =
+    summaryIsStale || summaryIsFetching ? undefined : summary
+  const settledData = dataIsStale || isFetching ? undefined : data
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/api/transactions/${id}`, { method: "DELETE" }),
@@ -423,7 +445,10 @@ function TransactionsPage() {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-    onSuccess: (result) => setBulkPreview(result),
+    onSuccess: (result) => {
+      setBulkPreview(result)
+      setBulkPreviewScope(queryString)
+    },
   })
 
   const bulkApplyMutation = useMutation({
@@ -434,6 +459,7 @@ function TransactionsPage() {
       }),
     onSuccess: (result) => {
       setBulkPreview(result)
+      setBulkPreviewScope(queryString)
       setSelectedIds([])
       setBulkSelectionMode("ids")
       queryClient.invalidateQueries({ queryKey: ["transactions"] })
@@ -673,7 +699,8 @@ function TransactionsPage() {
     bulkCategoryId !== "" ||
     bulkTagMode !== "none"
   const bulkScopeCountReady =
-    bulkSelectionMode === "ids" || settledSummary !== undefined
+    bulkSelectionMode === "ids" ||
+    (settledSummary !== undefined && settledData !== undefined)
 
   const buildBulkPayload = (): BulkPayload | null => {
     if (!operationValid) {
@@ -710,26 +737,36 @@ function TransactionsPage() {
       }
     }
 
-    if (!settledSummary) {
+    if (!settledSummary || !settledData) {
       return null
     }
+
+    const settledFilters = settledData.filters
+    const settledTagMode: TagFilterMode = settledFilters.excluded_tag_ids.length
+      ? "exclude"
+      : "include"
+    const settledTagIds =
+      settledTagMode === "exclude"
+        ? settledFilters.excluded_tag_ids
+        : settledFilters.included_tag_ids
 
     return {
       selection: {
         mode: "query",
         query: {
-          period: period.slug,
-          start: period.slug === "custom" ? period.start : null,
-          end: period.slug === "custom" ? period.end : null,
+          period: settledData.period.slug,
+          start:
+            settledData.period.slug === "custom" ? settledData.period.start : null,
+          end: settledData.period.slug === "custom" ? settledData.period.end : null,
           type:
-            filters.type === "income" || filters.type === "expense"
-              ? filters.type
+            settledFilters.type === "income" || settledFilters.type === "expense"
+              ? settledFilters.type
               : null,
-          category: filters.category_id,
+          category: settledFilters.category_id,
           tag: null,
-          tags: tagMode === "include" ? selectedTagIds : [],
-          exclude_tags: filters.excluded_tag_ids,
-          q: searchQuery || null,
+          tags: settledTagMode === "include" ? settledTagIds : [],
+          exclude_tags: settledFilters.excluded_tag_ids,
+          q: settledFilters.query || null,
         },
       },
       operation,
@@ -832,7 +869,6 @@ function TransactionsPage() {
         selectedIds={draftTagIds}
         onModeChange={setDraftTagMode}
         onChange={setDraftTagIds}
-        variant="list"
       />
     </PageFilterControl>
   )
@@ -1029,10 +1065,10 @@ function TransactionsPage() {
                     { value: "ids", label: "Selected only" },
                     {
                       value: "query",
-                      label: settledSummary
+                      label: bulkScopeCountReady && settledSummary
                         ? `All ${settledSummary.count} filtered`
                         : "Counting filtered…",
-                      disabled: !settledSummary,
+                      disabled: !bulkScopeCountReady,
                     },
                   ]}
                   onValueChange={(value) => {

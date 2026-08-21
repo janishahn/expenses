@@ -7,18 +7,16 @@ struct InsightsView: View {
     @State private var section: InsightsViewSection = .charts
     @State private var presentingFilters = false
     @State private var period = "all"
-    @State private var typeFilter = ""
     @State private var selectedTagID: Int?
     @State private var excludedTagIDs: Set<Int> = []
     @State private var selectedTrendCategoryID: Int?
     @State private var draftPeriod = "all"
-    @State private var draftTypeFilter = ""
     @State private var draftTagID: Int?
     @State private var draftExcludedTagIDs: Set<Int> = []
 
     private var reloadKey: String {
         let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
-        return "\(section.rawValue)-\(period)-\(typeFilter)-\(selectedTagID ?? -1)-\(excluded)-\(selectedTrendCategoryID ?? -1)"
+        return "\(section.rawValue)-\(period)-\(selectedTagID ?? -1)-\(excluded)-\(selectedTrendCategoryID ?? -1)"
     }
 
     var body: some View {
@@ -105,7 +103,6 @@ struct InsightsView: View {
             .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFiltersToApplied) {
                 InsightsFiltersSheet(
                     period: $draftPeriod,
-                    typeFilter: $draftTypeFilter,
                     selectedTagID: $draftTagID,
                     excludedTagIDs: $draftExcludedTagIDs,
                     tags: model.insights?.tags ?? [],
@@ -129,7 +126,6 @@ struct InsightsView: View {
         case .charts:
             await model.loadInsights(
                 period: period,
-                type: apiTypeFilter,
                 tagID: selectedTagID,
                 excludedTagIDs: excludedTagIDs.sorted(),
                 trendCategoryID: selectedTrendCategoryID
@@ -137,7 +133,6 @@ struct InsightsView: View {
         case .net:
             await model.loadInsightsFlow(
                 period: period,
-                type: apiTypeFilter,
                 tagID: selectedTagID,
                 excludedTagIDs: excludedTagIDs.sorted()
             )
@@ -146,21 +141,14 @@ struct InsightsView: View {
         }
     }
 
-    private var apiTypeFilter: String? {
-        typeFilter.isEmpty ? nil : typeFilter
-    }
-
     private var hasAppliedFilters: Bool {
-        period != "all" || !typeFilter.isEmpty || selectedTagID != nil || !excludedTagIDs.isEmpty
+        period != "all" || selectedTagID != nil || !excludedTagIDs.isEmpty
     }
 
     private var activeFilterLabels: [String] {
         var labels: [String] = []
         if period != "all" {
             labels.append(periodTitle(period))
-        }
-        if !typeFilter.isEmpty {
-            labels.append(typeFilter == "income" ? "Income" : "Expenses")
         }
         if let selectedTagID,
            let tag = model.insights?.tags.first(where: { $0.id == selectedTagID }) {
@@ -174,7 +162,6 @@ struct InsightsView: View {
 
     private func applyFilters() {
         period = draftPeriod
-        typeFilter = draftTypeFilter
         selectedTagID = draftTagID
         if let selectedTagID {
             draftExcludedTagIDs.remove(selectedTagID)
@@ -184,18 +171,15 @@ struct InsightsView: View {
 
     private func clearFilters() {
         draftPeriod = "all"
-        draftTypeFilter = ""
         draftTagID = nil
         draftExcludedTagIDs = []
         period = "all"
-        typeFilter = ""
         selectedTagID = nil
         excludedTagIDs = []
     }
 
     private func resetDraftFiltersToApplied() {
         draftPeriod = period
-        draftTypeFilter = typeFilter
         draftTagID = selectedTagID
         draftExcludedTagIDs = excludedTagIDs
     }
@@ -237,7 +221,6 @@ private enum InsightsViewSection: String, CaseIterable, Identifiable {
 private struct InsightsFiltersSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var period: String
-    @Binding var typeFilter: String
     @Binding var selectedTagID: Int?
     @Binding var excludedTagIDs: Set<Int>
     let tags: [TransactionTag]
@@ -252,11 +235,6 @@ private struct InsightsFiltersSheet: View {
                     Text("This month").tag("this_month")
                     Text("Last month").tag("last_month")
                     Text("This year").tag("this_year")
-                }
-                Picker("Type", selection: $typeFilter) {
-                    Text("All").tag("")
-                    Text("Expenses").tag("expense")
-                    Text("Income").tag("income")
                 }
                 Picker("Tag", selection: $selectedTagID) {
                     Text("All tags").tag(Optional<Int>.none)
@@ -279,7 +257,7 @@ private struct InsightsFiltersSheet: View {
                         onClear()
                         dismiss()
                     }
-                    .disabled(period == "all" && typeFilter.isEmpty && selectedTagID == nil && excludedTagIDs.isEmpty)
+                    .disabled(period == "all" && selectedTagID == nil && excludedTagIDs.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -1234,7 +1212,7 @@ private struct DurablePurchasesSection: View {
                     start: Date.now.addingTimeInterval(-14 * 86_400),
                     end: .now
                 ),
-                filters: InsightsFilters(type: nil, tagID: nil, excludedTagIDs: []),
+                filters: InsightsFilters(tagID: nil, excludedTagIDs: []),
                 nodes: [
                     InsightsFlowNode(id: "income:1", label: "Salary", type: "income", amountCents: 325_000, categoryID: 1),
                     InsightsFlowNode(id: "income:2", label: "Bank transfer", type: "income", amountCents: 145_000, categoryID: 2),
@@ -1256,7 +1234,7 @@ private struct DurablePurchasesSection: View {
         InsightsNetSection(
             flow: InsightsFlowResponse(
                 period: Period(slug: "all", start: .now, end: .now),
-                filters: InsightsFilters(type: nil, tagID: nil, excludedTagIDs: []),
+                filters: InsightsFilters(tagID: nil, excludedTagIDs: []),
                 nodes: [],
                 links: []
             )

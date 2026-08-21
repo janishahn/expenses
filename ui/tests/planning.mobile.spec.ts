@@ -60,7 +60,7 @@ test.describe("Planning surfaces (mobile)", () => {
     await page.getByLabel("Amount").fill("300.00")
     await page.getByRole("button", { name: "Add adjustment" }).click()
 
-    await expect(page.getByText("Mobile vacation")).toBeVisible()
+    await expect(page.getByText(/^Mobile vacation in /)).toBeVisible()
     await expect(
       page.getByRole("img", {
         name: "Baseline balance compared with the adjusted scenario",

@@ -253,7 +253,7 @@ def render_report_html(data: dict[str, object]) -> str:
                 else txn.type.value
             )
             type_badge = "pill-income" if is_income else "pill-expense"
-            amount = int(txn.amount_cents)
+            amount = int(txn.report_amount_cents)
             amount_text = f"{'+' if is_income else '-'}{_format_currency(amount, include_cents)} €"
             parts.append("<tr>")
             parts.append(f"<td>{_format_eurodatetime(txn.occurred_at)}</td>")

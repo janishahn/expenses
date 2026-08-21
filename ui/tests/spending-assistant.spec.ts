@@ -142,9 +142,7 @@ test.describe("Spending Assistant", () => {
 
     await page.goto("/assistant")
     await expect(
-      page
-        .getByTestId("app-shell-utility")
-        .getByRole("heading", { name: "Assistant", level: 1 })
+      page.getByRole("heading", { name: "Assistant", level: 1 })
     ).toBeVisible()
     await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
     await expect(page.getByTestId("spending-assistant-composer")).toBeVisible()

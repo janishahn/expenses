@@ -945,7 +945,6 @@ final class AppModel {
 
     func loadInsights(
         period: String,
-        type: String?,
         tagID: Int?,
         excludedTagIDs: [Int] = [],
         trendCategoryID: Int?
@@ -969,7 +968,6 @@ final class AppModel {
         do {
             let response = try await apiClient.insights(
                 period: period,
-                type: type,
                 tagID: tagID,
                 excludedTagIDs: excludedTagIDs,
                 trendCategoryID: trendCategoryID,
@@ -1005,7 +1003,6 @@ final class AppModel {
 
     func loadInsightsFlow(
         period: String,
-        type: String?,
         tagID: Int?,
         excludedTagIDs: [Int] = []
     ) async {
@@ -1015,7 +1012,6 @@ final class AppModel {
         await runRequest {
             insightsFlow = try await apiClient.insightsFlow(
                 period: period,
-                type: type,
                 tagID: tagID,
                 excludedTagIDs: excludedTagIDs,
                 token: token
@@ -1929,7 +1925,7 @@ final class AppModel {
             await loadDigest()
         }
         if insights == nil {
-            await loadInsights(period: "all", type: nil, tagID: nil, trendCategoryID: nil)
+            await loadInsights(period: "all", tagID: nil, trendCategoryID: nil)
         }
     }
 

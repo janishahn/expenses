@@ -61,7 +61,7 @@
   "durable_purchases": null,
   "filters": {
     "excluded_tag_ids": [],
-    "type": null
+    "included_tag_ids": []
   },
   "kpis": {
     "balance": 235450,

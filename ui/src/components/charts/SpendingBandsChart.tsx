@@ -41,6 +41,8 @@ type SpendingBandsChartProps = {
   months: SpendingBandMonth[]
   incognito: boolean
   returnTo: string
+  tagMode: "include" | "exclude"
+  tagIds: number[]
   loading?: boolean
   unavailable?: boolean
 }
@@ -94,6 +96,8 @@ function SpendingBandsChart({
   months,
   incognito,
   returnTo,
+  tagMode,
+  tagIds,
   loading = false,
   unavailable = false,
 }: SpendingBandsChartProps) {
@@ -171,6 +175,12 @@ function SpendingBandsChart({
                   end: monthEnd(month.month),
                   type: "expense",
                 })
+                if (tagIds.length) {
+                  search.set(
+                    tagMode === "exclude" ? "exclude_tags" : "tags",
+                    tagIds.join(","),
+                  )
+                }
                 const details = month.segments
                   .map(
                     (segment) =>

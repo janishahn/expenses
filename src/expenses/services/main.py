@@ -1724,7 +1724,7 @@ class TransactionService:
         )
         return txn
 
-    def _hydrate_reimbursement_totals(self, transactions: list[Transaction]) -> None:
+    def hydrate_reimbursement_totals(self, transactions: list[Transaction]) -> None:
         if not transactions:
             return
         expense_ids = [
@@ -1761,7 +1761,7 @@ class TransactionService:
         stmt = self._apply_filters(stmt, filters)
         stmt = stmt.offset(offset).limit(limit)
         transactions = self.session.scalars(stmt).unique().all()
-        self._hydrate_reimbursement_totals(transactions)
+        self.hydrate_reimbursement_totals(transactions)
         return transactions
 
     def all_for_period(
@@ -1791,7 +1791,7 @@ class TransactionService:
         )
         stmt = self._apply_filters(stmt, filters).offset(offset).limit(limit)
         transactions = self.session.scalars(stmt).unique().all()
-        self._hydrate_reimbursement_totals(transactions)
+        self.hydrate_reimbursement_totals(transactions)
         return transactions
 
     def recent(self, limit: int = 10) -> list[Transaction]:
@@ -1805,7 +1805,7 @@ class TransactionService:
             .limit(limit)
         )
         transactions = self.session.scalars(stmt).unique().all()
-        self._hydrate_reimbursement_totals(transactions)
+        self.hydrate_reimbursement_totals(transactions)
         return transactions
 
     def soft_delete(self, transaction_id: int) -> None:
@@ -2906,63 +2906,101 @@ class BalanceAnchorService:
         log_event(logger, logging.INFO, "balance_anchor_deleted", anchor_id=anchor_id)
 
     def balance_as_of(self, target: datetime) -> int:
-        earliest = datetime(1970, 1, 1, 0, 0, 0)
-        if target < earliest:
-            return 0
+        return self.balances_as_of([target])[0]
 
-        anchor = self.session.scalar(
+    def balances_as_of(self, targets: list[datetime]) -> list[int]:
+        if not targets:
+            return []
+
+        earliest = datetime(1970, 1, 1, 0, 0, 0)
+        anchors = self.session.scalars(
             select(BalanceAnchor)
             .where(
                 BalanceAnchor.user_id == self.user_id,
-                BalanceAnchor.as_of_at <= target,
+                BalanceAnchor.as_of_at <= max(targets),
             )
-            .order_by(BalanceAnchor.as_of_at.desc(), BalanceAnchor.id.desc())
-            .limit(1)
-        )
-        if anchor:
-            baseline = int(anchor.balance_cents)
-            start = anchor.as_of_at
-            if start >= target:
-                return baseline
-        else:
-            baseline = 0
-            start = earliest
+            .order_by(BalanceAnchor.as_of_at.asc(), BalanceAnchor.id.asc())
+        ).all()
 
-        stmt = select(
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.type == TransactionType.income,
-                            Transaction.amount_cents,
+        checkpoints: list[tuple[int, int, datetime, datetime]] = []
+        anchor_index = 0
+        active_anchor: BalanceAnchor | None = None
+        for original_index, target in sorted(
+            enumerate(targets), key=lambda item: item[1]
+        ):
+            if target < earliest:
+                checkpoints.append((original_index, 0, earliest, target))
+                continue
+            while (
+                anchor_index < len(anchors) and anchors[anchor_index].as_of_at <= target
+            ):
+                active_anchor = anchors[anchor_index]
+                anchor_index += 1
+            checkpoints.append(
+                (
+                    original_index,
+                    int(active_anchor.balance_cents) if active_anchor else 0,
+                    active_anchor.as_of_at if active_anchor else earliest,
+                    target,
+                )
+            )
+
+        expressions = []
+        for index, (_, _, start, target) in enumerate(checkpoints):
+            in_window = (Transaction.occurred_at > start) & (
+                Transaction.occurred_at <= target
+            )
+            expressions.extend(
+                [
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    in_window
+                                    & (Transaction.type == TransactionType.income),
+                                    Transaction.amount_cents,
+                                ),
+                                else_=0,
+                            )
                         ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("income"),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.type == TransactionType.expense,
-                            Transaction.amount_cents,
+                        0,
+                    ).label(f"income_{index}"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    in_window
+                                    & (Transaction.type == TransactionType.expense),
+                                    Transaction.amount_cents,
+                                ),
+                                else_=0,
+                            )
                         ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("expenses"),
-        ).where(
-            Transaction.user_id == self.user_id,
-            Transaction.deleted_at.is_(None),
-            Transaction.occurred_at > start,
-            Transaction.occurred_at <= target,
-        )
-        row = self.session.execute(stmt).one()
-        income = int(row.income)
-        expenses = int(row.expenses)
-        return baseline + income - expenses
+                        0,
+                    ).label(f"expenses_{index}"),
+                ]
+            )
+
+        row = self.session.execute(
+            select(*expressions).where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+            )
+        ).one()
+        balances = [0] * len(targets)
+        for expression_index, (
+            original_index,
+            baseline,
+            _,
+            target,
+        ) in enumerate(checkpoints):
+            if target >= earliest:
+                balances[original_index] = (
+                    baseline
+                    + int(row[expression_index * 2])
+                    - int(row[expression_index * 2 + 1])
+                )
+        return balances
 
 
 class MetricsService:
@@ -3180,6 +3218,7 @@ class MetricsService:
         max_points: int = 12,
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+        include_balance: bool = True,
     ) -> dict[str, str]:
         def income_expense_between(start: date, end: date) -> tuple[int, int]:
             income_stmt = select(
@@ -3306,6 +3345,103 @@ class MetricsService:
         if len(months) > max_points:
             months = months[-max_points:]
 
+        filtered_monthly_totals: dict[tuple[int, int], tuple[int, int]] = {}
+        if months and (tag_ids or excluded_tag_ids):
+            grouped_stmt = (
+                select(
+                    func.strftime("%Y", Transaction.date).label("year"),
+                    func.strftime("%m", Transaction.date).label("month"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    (Transaction.type == TransactionType.income)
+                                    & (Transaction.is_reimbursement.is_(False)),
+                                    Transaction.amount_cents,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("income"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    Transaction.type == TransactionType.expense,
+                                    Transaction.amount_cents,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("expenses"),
+                )
+                .where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.date.between(max(period.start, months[0]), period.end),
+                )
+                .group_by("year", "month")
+            )
+            grouped_stmt = _apply_transaction_tag_scope(
+                grouped_stmt,
+                Transaction,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
+            for row in self.session.execute(grouped_stmt):
+                filtered_monthly_totals[(int(row.year), int(row.month))] = (
+                    int(row.income or 0),
+                    int(row.expenses or 0),
+                )
+
+            ExpenseTxn = aliased(Transaction)
+            ReimbursementTxn = aliased(Transaction)
+            reimbursement_stmt = (
+                select(
+                    func.strftime("%Y", ExpenseTxn.date).label("year"),
+                    func.strftime("%m", ExpenseTxn.date).label("month"),
+                    func.coalesce(
+                        func.sum(ReimbursementAllocation.amount_cents), 0
+                    ).label("reimbursed"),
+                )
+                .join(
+                    ExpenseTxn,
+                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                )
+                .join(
+                    ReimbursementTxn,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == ReimbursementTxn.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ExpenseTxn.user_id == self.user_id,
+                    ReimbursementTxn.user_id == self.user_id,
+                    ExpenseTxn.deleted_at.is_(None),
+                    ExpenseTxn.type == TransactionType.expense,
+                    ExpenseTxn.date.between(max(period.start, months[0]), period.end),
+                    ReimbursementTxn.deleted_at.is_(None),
+                    ReimbursementTxn.type == TransactionType.income,
+                    ReimbursementTxn.is_reimbursement.is_(True),
+                )
+                .group_by("year", "month")
+            )
+            reimbursement_stmt = _apply_transaction_tag_scope(
+                reimbursement_stmt,
+                ExpenseTxn,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            )
+            for row in self.session.execute(reimbursement_stmt):
+                key = (int(row.year), int(row.month))
+                income, gross_expenses = filtered_monthly_totals.get(key, (0, 0))
+                filtered_monthly_totals[key] = (
+                    income,
+                    max(0, gross_expenses - int(row.reimbursed or 0)),
+                )
+
         rollup_map = {}
         if not tag_ids and not excluded_tag_ids:
             keys = [(m.year, m.month) for m in months]
@@ -3320,14 +3456,25 @@ class MetricsService:
         income_series: list[int] = []
         expense_series: list[int] = []
         balance_series: list[int] = []
-        balance_service = BalanceAnchorService(self.session, self.user_id)
+        actual_balances: list[int] = []
+        if include_balance and not tag_ids:
+            actual_balances = BalanceAnchorService(
+                self.session, self.user_id
+            ).balances_as_of(
+                [
+                    datetime.combine(
+                        min(month_end(month.year, month.month), period.end), time.max
+                    )
+                    for month in months
+                ]
+            )
 
         current_balance_offset = 0
         if tag_ids:
             # For tags, balance is cumulative net flow
             current_balance_offset = 0
 
-        for month in months:
+        for index, month in enumerate(months):
             bucket_start = month
             bucket_end = month_end(month.year, month.month)
             if bucket_start < period.start:
@@ -3342,7 +3489,11 @@ class MetricsService:
             income = 0
             expenses = 0
 
-            if full_month and not tag_ids and not excluded_tag_ids:
+            if tag_ids or excluded_tag_ids:
+                income, expenses = filtered_monthly_totals.get(
+                    (month.year, month.month), (0, 0)
+                )
+            elif full_month:
                 rollup = rollup_map.get((month.year, month.month))
                 if rollup:
                     income = rollup.income_cents
@@ -3355,15 +3506,13 @@ class MetricsService:
             income_series.append(income)
             expense_series.append(expenses)
 
+            if not include_balance:
+                continue
             if tag_ids:
                 current_balance_offset += income - expenses
                 balance_series.append(current_balance_offset)
             else:
-                balance_series.append(
-                    balance_service.balance_as_of(
-                        datetime.combine(bucket_end, time.max)
-                    )
-                )
+                balance_series.append(actual_balances[index])
 
         return {
             "income": build_points(income_series),
@@ -3838,6 +3987,7 @@ class InsightsService:
         *,
         transaction_type: TransactionType = TransactionType.expense,
         limit: int = 12,
+        tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
     ) -> list[dict[str, object]]:
         if transaction_type == TransactionType.income:
@@ -3863,6 +4013,7 @@ class InsightsService:
             stmt = _apply_transaction_tag_scope(
                 stmt,
                 Transaction,
+                tag_ids=tag_ids,
                 excluded_tag_ids=excluded_tag_ids,
             )
             return [
@@ -3893,6 +4044,7 @@ class InsightsService:
         gross_stmt = _apply_transaction_tag_scope(
             gross_stmt,
             Transaction,
+            tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
         gross_rows = self.session.execute(gross_stmt).all()
@@ -3940,6 +4092,7 @@ class InsightsService:
         reimb_stmt = _apply_transaction_tag_scope(
             reimb_stmt,
             ExpenseTxn,
+            tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
         reimb_by_tag = {
@@ -4070,143 +4223,135 @@ class InsightsService:
         *,
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
-        tx_type: Optional[TransactionType] = None,
     ) -> dict[str, list[dict[str, object]]]:
-        incomes: list[dict[str, object]] = []
-        if tx_type in {None, TransactionType.income}:
-            income_stmt = (
-                select(
-                    Category.id.label("category_id"),
-                    Category.name.label("category_name"),
-                    Category.icon.label("category_icon"),
-                    func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
-                )
-                .select_from(Transaction)
-                .join(Category, Category.id == Transaction.category_id)
-                .where(
-                    Transaction.user_id == self.user_id,
-                    Transaction.deleted_at.is_(None),
-                    Transaction.type == TransactionType.income,
-                    Transaction.is_reimbursement.is_(False),
-                    Transaction.date.between(period.start, period.end),
-                )
-                .group_by(Category.id, Category.name, Category.icon)
-                .order_by(
-                    func.sum(Transaction.amount_cents).desc(), Category.name.asc()
-                )
+        income_stmt = (
+            select(
+                Category.id.label("category_id"),
+                Category.name.label("category_name"),
+                Category.icon.label("category_icon"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
             )
-            income_stmt = _apply_transaction_tag_scope(
-                income_stmt,
-                Transaction,
-                tag_ids=tag_ids,
-                excluded_tag_ids=excluded_tag_ids,
+            .select_from(Transaction)
+            .join(Category, Category.id == Transaction.category_id)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.income,
+                Transaction.is_reimbursement.is_(False),
+                Transaction.date.between(period.start, period.end),
             )
-            income_rows = self.session.execute(income_stmt).all()
-            incomes = [
-                {
-                    "category_id": int(row.category_id),
-                    "label": str(row.category_name),
-                    "icon": row.category_icon,
-                    "amount_cents": int(row.total or 0),
-                }
-                for row in income_rows
-                if int(row.total or 0) > 0
-            ]
-
-        expenses: list[dict[str, object]] = []
-        if tx_type in {None, TransactionType.expense}:
-            expense_gross_stmt = (
-                select(
-                    Category.id.label("category_id"),
-                    Category.name.label("category_name"),
-                    Category.icon.label("category_icon"),
-                    func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
-                )
-                .select_from(Transaction)
-                .join(Category, Category.id == Transaction.category_id)
-                .where(
-                    Transaction.user_id == self.user_id,
-                    Transaction.deleted_at.is_(None),
-                    Transaction.type == TransactionType.expense,
-                    Transaction.date.between(period.start, period.end),
-                )
-                .group_by(Category.id, Category.name, Category.icon)
-            )
-            expense_gross_stmt = _apply_transaction_tag_scope(
-                expense_gross_stmt,
-                Transaction,
-                tag_ids=tag_ids,
-                excluded_tag_ids=excluded_tag_ids,
-            )
-            gross_rows = self.session.execute(expense_gross_stmt).all()
-            gross_by_category = {
-                int(row.category_id): {
-                    "label": str(row.category_name),
-                    "icon": row.category_icon,
-                    "gross_cents": int(row.gross or 0),
-                }
-                for row in gross_rows
+            .group_by(Category.id, Category.name, Category.icon)
+            .order_by(func.sum(Transaction.amount_cents).desc(), Category.name.asc())
+        )
+        income_stmt = _apply_transaction_tag_scope(
+            income_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        incomes = [
+            {
+                "category_id": int(row.category_id),
+                "label": str(row.category_name),
+                "icon": row.category_icon,
+                "amount_cents": int(row.total or 0),
             }
+            for row in self.session.execute(income_stmt)
+            if int(row.total or 0) > 0
+        ]
 
-            ExpenseTxn = aliased(Transaction)
-            ReimbursementTxn = aliased(Transaction)
-            reimb_stmt = (
-                select(
-                    ExpenseTxn.category_id.label("category_id"),
-                    func.coalesce(
-                        func.sum(ReimbursementAllocation.amount_cents), 0
-                    ).label("reimbursed"),
-                )
-                .join(
-                    ExpenseTxn,
-                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
-                )
-                .join(
-                    ReimbursementTxn,
-                    ReimbursementAllocation.reimbursement_transaction_id
-                    == ReimbursementTxn.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ExpenseTxn.user_id == self.user_id,
-                    ReimbursementTxn.user_id == self.user_id,
-                    ExpenseTxn.deleted_at.is_(None),
-                    ExpenseTxn.type == TransactionType.expense,
-                    ExpenseTxn.date.between(period.start, period.end),
-                    ReimbursementTxn.deleted_at.is_(None),
-                    ReimbursementTxn.type == TransactionType.income,
-                    ReimbursementTxn.is_reimbursement.is_(True),
-                )
-                .group_by(ExpenseTxn.category_id)
+        expense_gross_stmt = (
+            select(
+                Category.id.label("category_id"),
+                Category.name.label("category_name"),
+                Category.icon.label("category_icon"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
             )
-            reimb_stmt = _apply_transaction_tag_scope(
-                reimb_stmt,
+            .select_from(Transaction)
+            .join(Category, Category.id == Transaction.category_id)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+                Transaction.date.between(period.start, period.end),
+            )
+            .group_by(Category.id, Category.name, Category.icon)
+        )
+        expense_gross_stmt = _apply_transaction_tag_scope(
+            expense_gross_stmt,
+            Transaction,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        gross_by_category = {
+            int(row.category_id): {
+                "label": str(row.category_name),
+                "icon": row.category_icon,
+                "gross_cents": int(row.gross or 0),
+            }
+            for row in self.session.execute(expense_gross_stmt)
+        }
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                ExpenseTxn.category_id.label("category_id"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
+            )
+            .join(
                 ExpenseTxn,
-                tag_ids=tag_ids,
-                excluded_tag_ids=excluded_tag_ids,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
             )
-            reimbursed_by_category = {
-                int(row.category_id): int(row.reimbursed or 0)
-                for row in self.session.execute(reimb_stmt)
-            }
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(period.start, period.end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ExpenseTxn.category_id)
+        )
+        reimb_stmt = _apply_transaction_tag_scope(
+            reimb_stmt,
+            ExpenseTxn,
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        )
+        reimbursed_by_category = {
+            int(row.category_id): int(row.reimbursed or 0)
+            for row in self.session.execute(reimb_stmt)
+        }
 
-            for category_id, row in gross_by_category.items():
-                net_amount = max(
-                    0,
-                    int(row["gross_cents"])
-                    - int(reimbursed_by_category.get(category_id, 0)),
-                )
-                if net_amount <= 0:
-                    continue
-                expenses.append(
-                    {
-                        "category_id": category_id,
-                        "label": str(row["label"]),
-                        "icon": row["icon"],
-                        "amount_cents": net_amount,
-                    }
-                )
-            expenses.sort(key=lambda item: int(item["amount_cents"]), reverse=True)
+        expenses = []
+        for category_id, row in gross_by_category.items():
+            net_amount = max(
+                0,
+                int(row["gross_cents"])
+                - int(reimbursed_by_category.get(category_id, 0)),
+            )
+            if net_amount <= 0:
+                continue
+            expenses.append(
+                {
+                    "category_id": category_id,
+                    "label": str(row["label"]),
+                    "icon": row["icon"],
+                    "amount_cents": net_amount,
+                }
+            )
+        expenses.sort(key=lambda item: int(item["amount_cents"]), reverse=True)
 
         total_income = sum(int(row["amount_cents"]) for row in incomes)
         total_expense = sum(int(row["amount_cents"]) for row in expenses)
@@ -6495,13 +6640,32 @@ class ReportService:
                 )
 
             transactions = self.session.scalars(stmt).all()
+            use_account_ledger = (
+                options.transaction_type is None
+                and not options.category_ids
+                and not options.tag_ids
+                and not options.excluded_tag_ids
+            )
+            self.txn_service.hydrate_reimbursement_totals(transactions)
+            if not use_account_ledger:
+                transactions = [
+                    txn
+                    for txn in transactions
+                    if not (txn.type == TransactionType.income and txn.is_reimbursement)
+                ]
+                for txn in transactions:
+                    amount = (
+                        txn.net_amount_cents
+                        if txn.type == TransactionType.expense
+                        else txn.amount_cents
+                    )
+                    setattr(txn, "report_amount_cents", int(amount))
+            else:
+                for txn in transactions:
+                    setattr(txn, "report_amount_cents", int(txn.amount_cents))
+
             if options.show_running_balance:
-                use_account_balance = (
-                    options.transaction_type is None
-                    and not options.category_ids
-                    and not options.tag_ids
-                    and not options.excluded_tag_ids
-                )
+                use_account_balance = use_account_ledger
                 if use_account_balance:
                     balance_service = BalanceAnchorService(self.session, self.user_id)
                     start_dt = datetime.combine(options.start, time.min)
@@ -6569,6 +6733,52 @@ class ReportService:
                     opening_row = self.session.execute(opening_stmt).one()
                     opening_income = int(opening_row.income)
                     opening_expenses = int(opening_row.expenses)
+                    if options.transaction_type != TransactionType.income:
+                        ExpenseTxn = aliased(Transaction)
+                        ReimbursementTxn = aliased(Transaction)
+                        opening_reimbursed_stmt = (
+                            select(
+                                func.coalesce(
+                                    func.sum(ReimbursementAllocation.amount_cents), 0
+                                )
+                            )
+                            .join(
+                                ExpenseTxn,
+                                ReimbursementAllocation.expense_transaction_id
+                                == ExpenseTxn.id,
+                            )
+                            .join(
+                                ReimbursementTxn,
+                                ReimbursementAllocation.reimbursement_transaction_id
+                                == ReimbursementTxn.id,
+                            )
+                            .where(
+                                ReimbursementAllocation.user_id == self.user_id,
+                                ExpenseTxn.user_id == self.user_id,
+                                ExpenseTxn.deleted_at.is_(None),
+                                ExpenseTxn.type == TransactionType.expense,
+                                ExpenseTxn.date < options.start,
+                                ReimbursementTxn.user_id == self.user_id,
+                                ReimbursementTxn.deleted_at.is_(None),
+                                ReimbursementTxn.type == TransactionType.income,
+                                ReimbursementTxn.is_reimbursement.is_(True),
+                            )
+                        )
+                        if options.category_ids:
+                            opening_reimbursed_stmt = opening_reimbursed_stmt.where(
+                                ExpenseTxn.category_id.in_(options.category_ids)
+                            )
+                        opening_reimbursed_stmt = _apply_transaction_tag_scope(
+                            opening_reimbursed_stmt,
+                            ExpenseTxn,
+                            tag_ids=options.tag_ids,
+                            excluded_tag_ids=options.excluded_tag_ids,
+                        )
+                        opening_reimbursed = int(
+                            self.session.execute(opening_reimbursed_stmt).scalar_one()
+                            or 0
+                        )
+                        opening_expenses = max(0, opening_expenses - opening_reimbursed)
                     opening_balance = opening_income - opening_expenses
                 data["opening_balance_cents"] = opening_balance
 
@@ -6582,9 +6792,9 @@ class ReportService:
                             running = int(anchors[next_anchor_idx].balance_cents)
                             next_anchor_idx += 1
                     if txn.type == TransactionType.income:
-                        running += txn.amount_cents
+                        running += txn.report_amount_cents
                     else:
-                        running -= txn.amount_cents
+                        running -= txn.report_amount_cents
                     setattr(txn, "running_balance_cents", running)
             data["recent_transactions"] = transactions
             if options.include_category_subtotals and transactions:
@@ -6592,7 +6802,7 @@ class ReportService:
                 for txn in transactions:
                     name = txn.category.name if txn.category else "Uncategorized"
                     key = (name, txn.type)
-                    totals[key] = totals.get(key, 0) + txn.amount_cents
+                    totals[key] = totals.get(key, 0) + txn.report_amount_cents
                 subtotals = [
                     {
                         "name": name,

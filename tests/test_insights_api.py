@@ -121,6 +121,32 @@ def test_insights_tag_exclusions_apply_to_analysis_values(
     )
     assert included_category["amount_cents"] == 9_000
     assert sum(row["amount_cents"] for row in included_payload["trend"]) == 9_000
+    assert included_payload["top_tags"] == [
+        {
+            "id": vacation_tag_id,
+            "name": "Insight vacation",
+            "amount_cents": 9_000,
+        }
+    ]
+
+
+def test_insights_ignores_removed_page_wide_type_filter(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Type scope", "expense")
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        category_id=category_id,
+        amount_cents=2_000,
+        title="Type scope expense",
+    )
+
+    response = api_client.get("/api/insights?period=this_month&type=income")
+
+    assert response.status_code == 200
+    assert "type" not in response.json()["filters"]
+    assert sum(row["expense_cents"] for row in response.json()["series"]) == 2_000
 
 
 def test_insights_normalizes_income_trend_category_to_expense(

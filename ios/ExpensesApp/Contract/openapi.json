@@ -2778,17 +2778,6 @@
             },
             "title": "Included Tag Ids",
             "type": "array"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Type"
           }
         },
         "title": "DashboardFiltersOut",
@@ -4471,21 +4460,6 @@
               }
             ],
             "title": "Tag Id"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "enum": [
-                  "income",
-                  "expense"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Type"
           }
         },
         "title": "InsightsFiltersOut",
@@ -6276,6 +6250,13 @@
             "title": "End",
             "type": "string"
           },
+          "excluded_tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Excluded Tag Ids",
+            "type": "array"
+          },
           "include_category_subtotals": {
             "default": false,
             "title": "Include Category Subtotals",
@@ -6313,6 +6294,13 @@
             "format": "date",
             "title": "Start",
             "type": "string"
+          },
+          "tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Tag Ids",
+            "type": "array"
           },
           "transaction_type": {
             "anyOf": [
@@ -10348,22 +10336,6 @@
           }
         },
         "summary": "Api Insights Flow"
-      }
-    },
-    "/api/kpis": {
-      "get": {
-        "operationId": "api_kpis_api_kpis_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Api Kpis"
       }
     },
     "/api/mobile/auth/admin-elevation": {

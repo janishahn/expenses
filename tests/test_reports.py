@@ -8,7 +8,12 @@ from sqlalchemy.orm import sessionmaker
 from expenses.db.models import Category, TransactionType
 from expenses.db.session import Base, _enable_sqlite_pragmas
 from expenses.schemas import ReportOptions, TransactionIn
-from expenses.services import ReportService, TagService, TransactionService
+from expenses.services import (
+    ReimbursementService,
+    ReportService,
+    TagService,
+    TransactionService,
+)
 
 
 def make_session():
@@ -89,3 +94,59 @@ def test_report_rejects_simultaneous_include_and_exclude_tag_scopes() -> None:
             tag_ids=[1],
             excluded_tag_ids=[2],
         )
+
+
+def test_tag_scoped_report_uses_net_reimbursed_amount_everywhere() -> None:
+    session = make_session()
+    expense_category = Category(
+        user_id=1, name="Travel", type=TransactionType.expense, order=0
+    )
+    income_category = Category(
+        user_id=1, name="Income", type=TransactionType.income, order=0
+    )
+    session.add_all([expense_category, income_category])
+    session.commit()
+    tag = TagService(session).create("Vacation")
+    transactions = TransactionService(session)
+    expense = transactions.create(
+        TransactionIn(
+            date=date(2026, 8, 10),
+            occurred_at=datetime(2026, 8, 10, 12),
+            type=TransactionType.expense,
+            amount_cents=10_000,
+            category_id=expense_category.id,
+            title="Vacation hotel",
+            tags=[tag.name],
+        )
+    )
+    reimbursement = transactions.create(
+        TransactionIn(
+            date=date(2026, 8, 11),
+            occurred_at=datetime(2026, 8, 11, 12),
+            type=TransactionType.income,
+            is_reimbursement=True,
+            amount_cents=4_000,
+            category_id=income_category.id,
+            title="Hotel share",
+        )
+    )
+    ReimbursementService(session).upsert_allocation(reimbursement.id, expense.id, 4_000)
+
+    data = ReportService(session).gather_data(
+        ReportOptions(
+            start=date(2026, 8, 1),
+            end=date(2026, 8, 31),
+            sections=["summary", "recent_transactions", "category_breakdown"],
+            tag_ids=[tag.id],
+            show_running_balance=True,
+            include_category_subtotals=True,
+        )
+    )
+
+    rows = data["recent_transactions"]
+    assert data["summary"]["total_expenses"] == 6_000
+    assert data["category_breakdown"][0]["amount_cents"] == 6_000
+    assert [row.title for row in rows] == ["Vacation hotel"]
+    assert rows[0].report_amount_cents == 6_000
+    assert rows[0].running_balance_cents == -6_000
+    assert data["category_subtotals"][0]["amount_cents"] == 6_000
