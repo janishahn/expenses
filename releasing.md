@@ -17,7 +17,9 @@ instances that track the latest tagged release.
    version.
 5. Move the Unreleased entries into a dated `## [X.Y.Z] - YYYY-MM-DD` section and
    leave a new empty `## [Unreleased]` section above it. Do not edit past release
-   sections.
+   sections. Update the reference links at the end of the file so `[Unreleased]`
+   compares `vX.Y.Z...HEAD` and `[X.Y.Z]` compares
+   `<previous-tag>...vX.Y.Z`.
 6. Run `uv run full-tests`. Resolve any product failure before tagging; report an
    infrastructure failure separately.
 
