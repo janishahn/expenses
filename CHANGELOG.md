@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-08-21
+
 ### Added
 - Dashboard, Insights, and Transactions can temporarily include or exclude several tags; transaction lists, summaries, exports, bulk scopes, drill-downs, and analysis values share the same scope while actual balances and budgets remain unchanged. iOS retains its multi-tag exclusion filter.
 - PDF reports can include only transactions with any selected tag or exclude transactions with any selected tag across summaries, breakdowns, trends, subtotals, and transaction tables.
@@ -324,7 +326,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/janishahn/expenses/compare/v0.4.9...v0.4.10
 [0.2.1]: https://github.com/janishahn/expenses/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/janishahn/expenses/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/janishahn/expenses/compare/v0.1.0...v0.1.1
