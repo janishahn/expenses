@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-22
+
 ### Added
 - Tags can be archived and restored without losing their settings or existing transaction associations; archived tags leave future assignment pickers while remaining editable and hard-deletable.
 - Each tag can be hidden independently from analytical and transaction filter menus.
@@ -15,10 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical filter menus continue to offer archived tags unless they are explicitly hidden, and applied hidden tag scopes remain named and removable.
 - Editing transactions or applying name-based rules, templates, and bulk changes no longer silently restores archived tags.
 - Removed redundant narration, repeated helper text, decorative sublines, and obvious-control copy across the web interface while retaining decision-critical consequences, exact values, states, errors, and accessibility text.
+- Clarified that the Admin recurring catch-up action posts all overdue transactions.
 
 ### Fixed
 - Kept the desktop sidebar's scroll gutter stable while hiding its scrollbar thumb until the navigation is hovered or keyboard-focused.
 - Docker Compose now forwards `EXPENSES_AUTH_SIGNUP_ENABLED`, so setting it to `false` in `.env` disables self-service signup as documented.
+
+### Dependencies
+- Updated the locked pip tool from 26.1.2 to 26.2.1.
 
 ## [0.4.10] - 2026-08-21
 
@@ -339,7 +345,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.4.10...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/janishahn/expenses/compare/v0.4.10...v0.5.0
 [0.4.10]: https://github.com/janishahn/expenses/compare/v0.4.9...v0.4.10
 [0.2.1]: https://github.com/janishahn/expenses/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/janishahn/expenses/compare/v0.1.1...v0.2.0
