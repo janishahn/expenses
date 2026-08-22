@@ -8,6 +8,13 @@ test.describe("Digest Page", () => {
 
   test("should navigate weeks", async ({ page }) => {
     await page.waitForLoadState("networkidle")
+    const navigationWidths = await page
+      .getByTestId("digest-period-navigation")
+      .evaluate((navigation) => ({
+        navigation: navigation.getBoundingClientRect().width,
+        workspace: navigation.parentElement?.getBoundingClientRect().width ?? 0,
+      }))
+    expect(navigationWidths.navigation).toBeLessThan(navigationWidths.workspace)
     const before = page.url()
     await page.getByRole("button", { name: "Previous week" }).click()
     await expect(page).not.toHaveURL(before)

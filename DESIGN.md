@@ -59,6 +59,9 @@ semantic hierarchy. Both themes are authored states, not simple inversions.
 - **Ledger row:** a scannable record with concise evidence and an aligned amount.
 - **Category tile:** a stable local icon with a deterministic semantic color.
 - **Toolbar:** one control area for one job, without stacked framing.
+- **Period navigator:** a compact toolbar for stepping through adjacent periods;
+  it spans the mobile viewport while retaining the workflow's contextual width
+  on desktop.
 - **Inspector:** a focused view or edit surface that preserves direct navigation
   and browser-back behavior.
 - **Recovery panel:** a clear error with a useful next action while retaining page

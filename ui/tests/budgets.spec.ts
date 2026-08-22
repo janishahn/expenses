@@ -24,7 +24,29 @@ test.describe("Budgets Page", () => {
     page,
   }) => {
     await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
-    await expect(page.getByLabel("Budget month")).toBeVisible()
+    const month = page.getByRole("button", { name: /Budget month/ })
+    await expect(month).toBeVisible()
+    const toolbarWidths = await page
+      .getByTestId("budget-workspace-toolbar")
+      .evaluate((toolbar) => ({
+        toolbar: toolbar.getBoundingClientRect().width,
+        workspace: toolbar.parentElement?.getBoundingClientRect().width ?? 0,
+    }))
+    expect(toolbarWidths.toolbar).toBeCloseTo(toolbarWidths.workspace)
+    await month.click()
+    const monthPicker = page.getByRole("dialog", {
+      name: "Choose budget month",
+    })
+    await expect(monthPicker).toBeVisible()
+    const [monthBox, pickerBox] = await Promise.all([
+      month.boundingBox(),
+      monthPicker.boundingBox(),
+    ])
+    expect(monthBox).not.toBeNull()
+    expect(pickerBox).not.toBeNull()
+    expect(pickerBox!.y - (monthBox!.y + monthBox!.height)).toBeCloseTo(8, 0)
+    await page.keyboard.press("Escape")
+    await expect(monthPicker).toBeHidden()
     await expect(page.getByRole("heading", { name: "Monthly budgets" })).toBeVisible()
     await expect(page.getByRole("heading", { name: /Annual budgets/ })).toBeVisible()
     await expect(

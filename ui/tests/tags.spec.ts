@@ -9,7 +9,9 @@ test.describe("Tags Page", () => {
   test("should show tags list or empty state", async ({ page }) => {
     await page.waitForLoadState("networkidle")
     await expect(page.getByTestId("tag-library")).toBeVisible()
-    await expect(page.locator("main")).toContainText(/uses in period|No tags yet/)
+    await expect(page.locator("main")).toContainText(
+      /uses in period|No active tags/,
+    )
     await expect(page.getByRole("button", { name: "Add tag" }).first()).toBeVisible()
     await expect(page.getByRole("button", { name: "Merge tags" })).toBeVisible()
   })

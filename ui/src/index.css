@@ -889,6 +889,71 @@
     box-shadow: var(--shadow-soft);
   }
 
+  .period-navigator {
+    width: calc(100% + 1.5rem);
+    margin-inline: -0.75rem;
+    flex-wrap: nowrap;
+    border-radius: 0;
+  }
+
+  .period-navigator-controls {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .period-navigator-label {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 2.75rem;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    appearance: none;
+    border: 0;
+    border-radius: var(--radius-md);
+    padding: 0;
+    cursor: pointer;
+    background: transparent;
+    color: rgb(var(--text));
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .period-navigator-label > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .period-navigator-label:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  @media (min-width: 861px) {
+    .period-navigator {
+      width: fit-content;
+      margin-inline: 0;
+      border-radius: var(--radius-lg);
+    }
+
+    .period-navigator-controls {
+      flex: 0 0 auto;
+    }
+
+    .period-navigator-label {
+      width: 11.5rem;
+      flex: none;
+    }
+  }
+
   /* Transactions search morphs its trigger into a field in place: the shell
      starts button-sized under the trigger and animates its width. Mobile grows
      rightward across the whole control row and displaces Filters past its edge;

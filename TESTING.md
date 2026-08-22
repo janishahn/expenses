@@ -80,8 +80,8 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Insights page tabs and stable desktop canvas, quick periods, tag-only secondary-filter panel including top-tag scope, chart-local controls, Net view selection/data view, and drill-through | `insights.spec.ts`, `tag-filters.spec.ts` | `insights.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
 | What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| Unified monthly and annual budgets, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Weekly digest navigation and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
+| Unified monthly and annual budgets, full-bleed mobile month navigation with an anchored picker, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Weekly digest navigation, full-bleed mobile period navigation, and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
 | Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts`, `focus-management.spec.ts` | `categories.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Tag create, date-range defaults, read-only detail and explicit edit flow, archive, restore, independent filter visibility, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts`, `tag-filters.spec.ts` | `organization.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Recurring page tabs, create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |

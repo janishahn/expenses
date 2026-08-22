@@ -36,7 +36,7 @@ test.describe("Transactions Page", () => {
   test("keeps document scrolling and the page canvas stable while actions are open", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1920, height: 300 })
+    await page.setViewportSize({ width: 1920, height: 240 })
     await page.goto("/transactions")
 
     const pageCanvas = page.locator(".page-enter")

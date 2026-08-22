@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
-import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ArrowLeftIcon } from "@phosphor-icons/react/ArrowLeft"
+import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
 import { GaugeIcon } from "@phosphor-icons/react/Gauge"
 import { PiggyBankIcon } from "@phosphor-icons/react/PiggyBank"
 import { ReceiptIcon } from "@phosphor-icons/react/Receipt"
@@ -8,6 +8,7 @@ import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Popover as PopoverPrimitive } from "radix-ui"
 import { useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import type { AppShellOutletContext } from "../app/AppShell"
@@ -20,6 +21,7 @@ import {
   FinancialPanel,
   MetricLane,
   SectionHeading,
+  WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import { AppButton } from "../components/ui/product-button"
 import {
@@ -139,6 +141,131 @@ function shiftBudgetMonth(monthValue: string, offset: number): string {
   const [yearRaw, monthRaw] = monthValue.split("-")
   const value = new Date(Number(yearRaw), Number(monthRaw) - 1 + offset, 1)
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`
+}
+
+const BUDGET_MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+]
+
+function BudgetMonthPicker({
+  monthValue,
+  monthLabel,
+  onChange,
+}: {
+  monthValue: string
+  monthLabel: string
+  onChange: (monthValue: string) => void
+}) {
+  const [selectedYearRaw, selectedMonthRaw] = monthValue.split("-")
+  const selectedYear = Number(selectedYearRaw)
+  const selectedMonth = Number(selectedMonthRaw) - 1
+  const [open, setOpen] = useState(false)
+  const [pickerYear, setPickerYear] = useState(selectedYear)
+  const selectedMonthRef = useRef<HTMLButtonElement>(null)
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setPickerYear(selectedYear)
+    }
+    setOpen(nextOpen)
+  }
+
+  return (
+    <PopoverPrimitive.Root
+      modal={false}
+      open={open}
+      onOpenChange={handleOpenChange}
+    >
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          className="period-navigator-label"
+          aria-label={`Budget month, ${monthLabel}`}
+        >
+          <span aria-hidden="true">{monthLabel}</span>
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          role="dialog"
+          aria-label="Choose budget month"
+          data-testid="budget-month-picker"
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          collisionPadding={12}
+          className="z-[70] w-[min(19rem,calc(100vw-1.5rem))] rounded-xl bg-surface p-2 text-text shadow-[var(--shadow-raised)] outline-none"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            selectedMonthRef.current?.focus()
+          }}
+        >
+          <div className="mb-1 grid grid-cols-[2.75rem_1fr_2.75rem] items-center gap-1">
+            <AppButton
+              type="button"
+              tone="ghost"
+              className="h-11 w-11 p-0 text-muted"
+              aria-label="Previous year"
+              onClick={() => setPickerYear((year) => year - 1)}
+            >
+              <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
+            </AppButton>
+            <div
+              className="text-center font-mono text-sm font-semibold tabular-nums"
+              aria-live="polite"
+            >
+              {pickerYear}
+            </div>
+            <AppButton
+              type="button"
+              tone="ghost"
+              className="h-11 w-11 p-0 text-muted"
+              aria-label="Next year"
+              onClick={() => setPickerYear((year) => year + 1)}
+            >
+              <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
+            </AppButton>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {BUDGET_MONTH_LABELS.map((label, index) => {
+              const selected =
+                pickerYear === selectedYear && index === selectedMonth
+              return (
+                <AppButton
+                  key={label}
+                  ref={selected ? selectedMonthRef : undefined}
+                  type="button"
+                  tone={selected ? "primary" : "ghost"}
+                  className="h-11 min-w-0 rounded-md px-1 py-0 text-xs"
+                  aria-label={`${label} ${pickerYear}`}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    onChange(
+                      `${pickerYear}-${String(index + 1).padStart(2, "0")}`,
+                    )
+                    setOpen(false)
+                  }}
+                >
+                  {label}
+                </AppButton>
+              )
+            })}
+          </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  )
 }
 
 function paceLabel(progress: BudgetProgressRow, amountCents: number): {
@@ -787,54 +914,49 @@ function BudgetsPage() {
     <section className="space-y-4 md:space-y-5">
       <PageIntro title="Budgets" />
 
-      <FinancialPanel
-        role="panel"
+      <WorkspaceToolbar
         data-testid="budget-workspace-toolbar"
-        className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
+        className="period-navigator desk:w-full desk:justify-between"
       >
-        <div className="grid min-w-0 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-1.5 sm:flex">
+        <div className="period-navigator-controls">
           <AppButton
             type="button"
             tone="ghost"
-            className="h-11 w-11 p-0"
+            className="h-11 w-11 px-0 py-0 text-muted"
             aria-label="Previous month"
             onClick={() => setMonthFilter(shiftBudgetMonth(data.month_value, -1))}
           >
-            <CaretLeftIcon className="h-4 w-4" />
+            <ArrowLeftIcon className="h-4 w-4" />
           </AppButton>
-          <AppInput
-            type="month"
-            value={data.month_value}
-            onChange={(event) => setMonthFilter(event.target.value)}
-            className="min-h-11 min-w-0 sm:w-[11rem]"
-            aria-label="Budget month"
+          <BudgetMonthPicker
+            monthValue={data.month_value}
+            monthLabel={selectedMonthLabel}
+            onChange={setMonthFilter}
           />
           <AppButton
             type="button"
             tone="ghost"
-            className="h-11 w-11 p-0"
+            className="h-11 w-11 px-0 py-0 text-muted"
             aria-label="Next month"
             onClick={() => setMonthFilter(shiftBudgetMonth(data.month_value, 1))}
           >
-            <CaretRightIcon className="h-4 w-4" />
+            <ArrowRightIcon className="h-4 w-4" />
           </AppButton>
         </div>
-        <div className="flex min-w-0 items-center justify-between gap-3 sm:justify-end">
-          <AppButton
-            type="button"
-            tone="inline"
-            className="min-h-11 shrink-0"
-            onClick={() => {
-              const today = new Date()
-              setMonthFilter(
-                `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-              )
-            }}
-          >
-            Today
-          </AppButton>
-        </div>
-      </FinancialPanel>
+        <AppButton
+          type="button"
+          tone="inline"
+          className="min-h-11 shrink-0"
+          onClick={() => {
+            const today = new Date()
+            setMonthFilter(
+              `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
+            )
+          }}
+        >
+          Today
+        </AppButton>
+      </WorkspaceToolbar>
 
       {data.budgets.length ? (
         <FinancialPanel role="panel" className="overflow-hidden p-3.5 sm:p-5">

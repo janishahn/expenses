@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-22
+
+### Fixed
+- Aligned the Budgets and Digest period navigators, replaced the misplaced native iOS budget month picker with an anchored picker, and let both toolbars span the mobile viewport without changing their desktop widths.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added
@@ -345,7 +350,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/janishahn/expenses/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/janishahn/expenses/compare/v0.4.10...v0.5.0
 [0.4.10]: https://github.com/janishahn/expenses/compare/v0.4.9...v0.4.10
 [0.2.1]: https://github.com/janishahn/expenses/compare/v0.2.0...v0.2.1

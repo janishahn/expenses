@@ -182,28 +182,33 @@ function DigestPage() {
     <section className="space-y-4 md:space-y-5">
       <PageIntro title="Digest" />
 
-      <WorkspaceToolbar className="w-fit">
-        <AppButton
-          type="button"
-          onClick={() => setWeekOf(data.week_start, "prev")}
-          tone="ghost"
-          className="h-11 w-11 px-0 py-0 text-muted"
-          aria-label="Previous week"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-        </AppButton>
-        <p className="amount-text min-w-[11.5rem] text-center text-sm text-text">
-          {formatWeekRange(data.week_start, data.week_end)}
-        </p>
-        <AppButton
-          type="button"
-          onClick={() => setWeekOf(data.week_start, "next")}
-          tone="ghost"
-          className="h-11 w-11 px-0 py-0 text-muted"
-          aria-label="Next week"
-        >
-          <ArrowRightIcon className="h-4 w-4" />
-        </AppButton>
+      <WorkspaceToolbar
+        className="period-navigator"
+        data-testid="digest-period-navigation"
+      >
+        <div className="period-navigator-controls">
+          <AppButton
+            type="button"
+            onClick={() => setWeekOf(data.week_start, "prev")}
+            tone="ghost"
+            className="h-11 w-11 px-0 py-0 text-muted"
+            aria-label="Previous week"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+          </AppButton>
+          <p className="period-navigator-label">
+            {formatWeekRange(data.week_start, data.week_end)}
+          </p>
+          <AppButton
+            type="button"
+            onClick={() => setWeekOf(data.week_start, "next")}
+            tone="ghost"
+            className="h-11 w-11 px-0 py-0 text-muted"
+            aria-label="Next week"
+          >
+            <ArrowRightIcon className="h-4 w-4" />
+          </AppButton>
+        </div>
       </WorkspaceToolbar>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

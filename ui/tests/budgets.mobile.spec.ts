@@ -71,6 +71,45 @@ test.describe("Budgets Page Mobile", () => {
     await assertNoHorizontalOverflow(page, "budgets-editor")
   })
 
+  test("keeps month navigation full bleed without overlapping its controls", async ({
+    page,
+  }) => {
+    await page.goto("/budgets")
+    const toolbar = page.getByTestId("budget-workspace-toolbar")
+    const month = page.getByRole("button", { name: /Budget month/ })
+    await expect(toolbar).toBeVisible()
+    await expect(month).toBeVisible()
+
+    const [toolbarBox, labelBox, nextBox] = await Promise.all([
+      toolbar.boundingBox(),
+      toolbar.locator(".period-navigator-label").boundingBox(),
+      page.getByRole("button", { name: "Next month" }).boundingBox(),
+    ])
+    const viewport = page.viewportSize()
+    expect(toolbarBox).not.toBeNull()
+    expect(labelBox).not.toBeNull()
+    expect(nextBox).not.toBeNull()
+    expect(viewport).not.toBeNull()
+    expect(toolbarBox!.x).toBeCloseTo(0)
+    expect(toolbarBox!.width).toBeCloseTo(viewport!.width)
+    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(nextBox!.x)
+
+    await month.click()
+    const monthPicker = page.getByRole("dialog", {
+      name: "Choose budget month",
+    })
+    await expect(monthPicker).toBeVisible()
+    const pickerBox = await monthPicker.boundingBox()
+    expect(pickerBox).not.toBeNull()
+    expect(pickerBox!.y - (labelBox!.y + labelBox!.height)).toBeCloseTo(8, 0)
+    await page.keyboard.press("Escape")
+
+    const initialMonth = await month.getAttribute("aria-label")
+    await page.getByRole("button", { name: "Next month" }).click()
+    await expect(month).not.toHaveAttribute("aria-label", initialMonth ?? "")
+    await assertNoHorizontalOverflow(page, "budget-period-navigation")
+  })
+
   test("keeps the unified workspace and expanded details within the viewport", async ({
     page,
     request,

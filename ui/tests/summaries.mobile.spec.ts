@@ -30,6 +30,13 @@ test.describe("Summary and report surfaces (mobile)", () => {
 
       await page.goto("/digest")
       await expect(page.getByText("Total spent")).toBeVisible()
+      const navigation = page.getByTestId("digest-period-navigation")
+      const navigationBox = await navigation.boundingBox()
+      const viewport = page.viewportSize()
+      expect(navigationBox).not.toBeNull()
+      expect(viewport).not.toBeNull()
+      expect(navigationBox!.x).toBeCloseTo(0)
+      expect(navigationBox!.width).toBeCloseTo(viewport!.width)
       const composition = page.getByTestId("digest-weekly-composition")
       await expect(composition).toBeVisible()
       await expect(
