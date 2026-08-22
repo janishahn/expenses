@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Kept the desktop sidebar's scroll gutter stable while hiding its scrollbar thumb until the navigation is hovered or keyboard-focused.
+- Docker Compose now forwards `EXPENSES_AUTH_SIGNUP_ENABLED`, so setting it to `false` in `.env` disables self-service signup as documented.
 
 ## [0.4.10] - 2026-08-21
 
