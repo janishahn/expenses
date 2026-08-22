@@ -1,407 +1,118 @@
----
+# Expenses Web Design
 
+This document defines the stable visual language for the web app. It does not
+specify page contents, feature behavior, control placement, or current
+implementation details. Use the code and tests for those facts.
 
+The CSS tokens and shared components in `ui/src` are the source of truth for
+exact values. Update this document only when the design language itself changes.
 
-version: alpha
-name: Switchboard Ledger
-description: A warm, tactile household-finance control board with precise data and playful signal color.
-colors:
-  primary: "#3B4EE8"
-  on-primary: "#FFFFFF"
-  ink: "#181D1A"
-  ink-soft: "#2B312D"
-  canvas: "#EEEFE9"
-  surface: "#FBFCF8"
-  surface-strong: "#FFFFFF"
-  surface-muted: "#E8EBE5"
-  muted: "#656D68"
-  line: "#D9DCD6"
-  success: "#15936D"
-  success-soft: "#DAF3E8"
-  danger: "#F25F48"
-  danger-soft: "#FFE4DD"
-  warning: "#EDBD35"
-  warning-ink: "#87620A"
-  warning-soft: "#FFF0B9"
-  info-soft: "#E5E8FF"
-  purple: "#7855D8"
-  purple-soft: "#EEE8FF"
-  dark-primary: "#7E8DFF"
-  dark-on-primary: "#111511"
-  dark-canvas: "#111511"
-  dark-surface: "#1A201C"
-  dark-surface-strong: "#222A25"
-  dark-surface-muted: "#2D3630"
-  dark-line: "#3C463F"
-  dark-muted: "#A7B0A9"
-  dark-ink: "#F3F5F0"
-  dark-info-soft: "#252B52"
-  dark-success-soft: "#173A2F"
-  dark-danger-soft: "#452821"
-  dark-warning-soft: "#493D1E"
-  dark-purple-soft: "#302747"
-typography:
-  display-balance:
-    fontFamily: "IBM Plex Mono"
-    fontSize: 52px
-    fontWeight: 500
-    lineHeight: 1
-    letterSpacing: -0.05em
-  headline-lg:
-    fontFamily: "system-ui"
-    fontSize: 32px
-    fontWeight: 700
-    lineHeight: 1.1
-    letterSpacing: -0.03em
-  headline-md:
-    fontFamily: "system-ui"
-    fontSize: 22px
-    fontWeight: 700
-    lineHeight: 1.2
-    letterSpacing: -0.02em
-  body-md:
-    fontFamily: "system-ui"
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.5
-  body-sm:
-    fontFamily: "system-ui"
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 1.45
-  label:
-    fontFamily: "system-ui"
-    fontSize: 12px
-    fontWeight: 650
-    lineHeight: 1.2
-  metadata:
-    fontFamily: "IBM Plex Mono"
-    fontSize: 11px
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: 0.04em
-  amount:
-    fontFamily: "IBM Plex Mono"
-    fontSize: 14px
-    fontWeight: 600
-    lineHeight: 1.2
-rounded:
-  sm: 10px
-  md: 12px
-  lg: 16px
-  xl: 20px
-  2xl: 24px
-  full: 9999px
-spacing:
-  base: 4px
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  2xl: 32px
-  3xl: 48px
-  gutter: 20px
-  page: 24px
-elevation:
-  panel: "0 8px 24px rgba(31, 38, 34, 0.045)"
-  hero: "0 12px 34px rgba(31, 38, 34, 0.065)"
-  floating: "0 22px 64px rgba(22, 28, 24, 0.18)"
-motion:
-  feedback: 120ms
-  content: 220ms
-  easing: "cubic-bezier(0.2, 0, 0, 1)"
-components:
-  canvas:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-  canvas-dark:
-    backgroundColor: "{colors.dark-canvas}"
-    textColor: "{colors.dark-ink}"
-  sidebar:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.surface}"
-    width: 224px
-    padding: 12px
-  sidebar-hover:
-    backgroundColor: "{colors.ink-soft}"
-    rounded: "{rounded.md}"
-  nav-item:
-    backgroundColor: "transparent"
-    textColor: "{colors.muted}"
-    rounded: "{rounded.md}"
-    height: 36px
-    padding: 10px
-  nav-item-active:
-    backgroundColor: "{colors.surface-strong}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-  panel:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-    padding: 20px
-  panel-dark:
-    backgroundColor: "{colors.dark-surface}"
-    textColor: "{colors.dark-ink}"
-    rounded: "{rounded.lg}"
-    padding: 20px
-  strong-surface-dark:
-    backgroundColor: "{colors.dark-surface-strong}"
-    rounded: "{rounded.md}"
-  muted-surface:
-    backgroundColor: "{colors.surface-muted}"
-    rounded: "{rounded.md}"
-  muted-surface-dark:
-    backgroundColor: "{colors.dark-surface-muted}"
-    rounded: "{rounded.md}"
-  hero-panel:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.xl}"
-    padding: 24px
-  metric-tile:
-    backgroundColor: "{colors.info-soft}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-    padding: 18px
-  metric-tile-dark:
-    backgroundColor: "{colors.dark-info-soft}"
-    rounded: "{rounded.lg}"
-    padding: 18px
-  metric-success:
-    backgroundColor: "{colors.success-soft}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-  metric-success-dark:
-    backgroundColor: "{colors.dark-success-soft}"
-    rounded: "{rounded.lg}"
-  metric-danger:
-    backgroundColor: "{colors.danger-soft}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-  metric-danger-dark:
-    backgroundColor: "{colors.dark-danger-soft}"
-    rounded: "{rounded.lg}"
-  metric-warning:
-    backgroundColor: "{colors.warning-soft}"
-    textColor: "{colors.warning-ink}"
-    rounded: "{rounded.lg}"
-  metric-warning-dark:
-    backgroundColor: "{colors.dark-warning-soft}"
-    rounded: "{rounded.lg}"
-  metric-purple:
-    backgroundColor: "{colors.purple-soft}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-  metric-purple-dark:
-    backgroundColor: "{colors.dark-purple-soft}"
-    rounded: "{rounded.lg}"
-  button-primary:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.surface-strong}"
-    rounded: "{rounded.md}"
-    height: 44px
-    padding: 16px
-  button-accent:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-primary}"
-    rounded: "{rounded.md}"
-    height: 44px
-    padding: 16px
-  input:
-    backgroundColor: "{colors.surface-strong}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    height: 44px
-    padding: 12px
-  category-icon:
-    backgroundColor: "{colors.info-soft}"
-    textColor: "{colors.primary}"
-    rounded: "{rounded.sm}"
-    size: 36px
-  divider:
-    backgroundColor: "{colors.line}"
-    height: 1px
-  divider-dark:
-    backgroundColor: "{colors.dark-line}"
-    height: 1px
-  signal-success:
-    backgroundColor: "{colors.success}"
-    size: 8px
-  signal-danger:
-    backgroundColor: "{colors.danger}"
-    size: 8px
-  signal-warning:
-    backgroundColor: "{colors.warning}"
-    size: 8px
-  signal-purple:
-    backgroundColor: "{colors.purple}"
-    size: 8px
-  muted-text-dark:
-    backgroundColor: "{colors.dark-muted}"
-    size: 1px
----
+## Product Character
 
-# Switchboard Ledger
+Expenses is a private household-finance tool. It should feel calm, clear, and
+tactile while remaining dense enough for daily work. It is not a generic SaaS
+dashboard, an editorial site, or a decorative component gallery.
 
-## Overview
+Light mode uses a warm stone canvas, paper-like surfaces, dark ink, and cobalt
+for interaction. Mint, coral, butter, and violet carry compact financial meaning.
+Dark mode uses deep green-black and charcoal surfaces while preserving the same
+semantic hierarchy. Both themes are authored states, not simple inversions.
 
-Expenses is a private household-finance switchboard laid out on a warm paper desk. It should feel trustworthy without becoming institutional, playful without becoming childish, and dense enough for real daily work without turning into a spreadsheet. The visual signature is the combination of a dark instrument sidebar, softly lifted paper modules, compact category icon tiles, and precisely typeset financial figures.
+## Type and Numbers
 
-The product is an operational money console. It is not a SaaS admin template, editorial portfolio, futuristic command center, or component-library demo. Pages share a stable shell and surface language, but each workflow has its own useful anatomy: a ledger behaves like a ledger, a planning board like a planning board, and an evidence-matching desk like an evidence-matching desk.
+- Use the system font for headings, navigation, forms, and prose.
+- Use the bundled IBM Plex Mono for amounts, dates, axes, and short metadata.
+- Use tabular figures for financial values.
+- Keep labels in sentence case. Reserve uppercase mono for terse metadata; do not
+  use it as a decorative kicker.
+- Do not load fonts or other visual assets from outside the self-hosted app.
 
-Light mode is the primary visual reference. Dark mode is a first-class authored counterpart with deep green-black canvas, lifted charcoal-paper surfaces, warmer foregrounds, and the same semantic signal hierarchy. It is never a mechanical inversion.
+## Surfaces and Spacing
 
-## Colors
+- Build depth with the warm canvas, layered paper surfaces, spacing, and restrained
+  shadows.
+- Use borders as dividers or state indicators, not around every group.
+- Use the existing spacing, radius, elevation, and motion tokens. Do not create
+  page-local substitutes without a clear need.
+- Keep primary content compact and legible. Avoid oversized introductions and
+  empty hero space.
+- Use gradients, glow, glass, and ornamental blur only when the concept requires
+  them; they are not default polish.
+- Use pills only for chips, compact status, and controls whose shape has meaning.
 
-The light palette begins with warm stone `canvas` (`#EEEFE9`), paper `surface` (`#FBFCF8`), and strong white `surface-strong` (`#FFFFFF`). `ink` (`#181D1A`) carries core text, the sidebar, and primary actions. `muted` and `line` support hierarchy; lines are internal separators, not outlines around every possible group.
+## Composition
 
-Cobalt `primary` is the interaction accent for links, focus, selection, and the single accent action. It must not cover most of a page. Mint, coral, butter, and violet are compact financial signals used for income, expenses, warnings, planning lanes, category tiles, and charts. Their soft companions create distinct semantic fields while keeping text in ink for readability.
+- Let each workflow choose a suitable structure: ledgers for records, planning
+  surfaces for budgets and forecasts, and focused workspaces for review tasks.
+- Keep page actions with the page context they affect. Keep filters and other
+  temporary state in one coherent control area.
+- Prefer flat rows with useful dividers over a separate rounded card for every
+  item.
+- Keep similar controls recognizable across routes without forcing every page
+  into the same layout.
+- Use existing shared components and visual roles before adding a new pattern.
 
-Dark mode maps the same roles onto the explicit `dark-*` tokens. Cobalt becomes lighter (`dark-primary`), while semantic colors remain recognizable. A dark screen still needs visible canvas, panel, and strong-surface levels; flattening everything into black is a failure.
+## Core Visual Roles
 
-Text on cobalt surfaces uses the per-theme `--accent-contrast` token: `on-primary` white in light mode and `dark-on-primary` near-black ink in dark mode, keeping AA contrast on the lighter dark cobalt. Butter `warning` is available as the `--warning` token in both themes for the forecast stroke and related chart accents.
+- **Financial panel:** a paper surface for one coherent group of information.
+- **Metric lane:** a compact semantic field for a financial value and its context.
+- **Ledger row:** a scannable record with concise evidence and an aligned amount.
+- **Category tile:** a stable local icon with a deterministic semantic color.
+- **Toolbar:** one control area for one job, without stacked framing.
+- **Inspector:** a focused view or edit surface that preserves direct navigation
+  and browser-back behavior.
+- **Recovery panel:** a clear error with a useful next action while retaining page
+  context.
+- **Confirmation dialog:** the shared in-app confirmation for destructive actions;
+  do not use native browser prompts.
 
-Color never carries meaning alone. Icons, labels, signs, amounts, patterns, and accessible names reinforce every state. Normal text and interactive states meet WCAG AA; focus indicators remain obvious in both themes and forced-color environments.
-
-## Typography
-
-System UI is the voice for headings, navigation, forms, and prose. It keeps the dense interface familiar, fast, and privacy preserving. IBM Plex Mono is bundled locally and reserved for balances, amounts, chart axes, dates, short metadata, and compact comparisons. No runtime font request may leave the self-hosted app.
-
-The balance display uses `display-balance`; normal page headings use `headline-lg`; panel titles use `headline-md`; supporting text uses the body tokens. Financial numbers use tabular figures and the `amount` token. Do not shrink production UI to mimic a static reference: body text remains at least 14px and supporting text at least 12px.
-
-Use sentence case for labels and actions. Uppercase mono is reserved for terse metadata such as `Last 60 days` or a chart axis label. It is not a decorative kicker and must not repeat information already expressed by a heading.
-
-## Layout
-
-Desktop uses a persistent 224px sidebar and a compact 56–60px utility bar. The content area uses 24px outer padding, 12–16px module gaps, and a wide but bounded reading canvas. The shell is stable across routes; page-local controls sit with the workflow they affect rather than creating another navigation strip.
-
-Dashboard density follows three beats: a full-width balance/history hero, a compact semantic metric grid, then a lower board where recent activity and the six-month spending composition are simultaneously useful. The grid uses four lanes when an overall or category budget adds planning evidence and three equal desktop lanes when it does not. Transaction rows, category libraries, automation lists, and admin tables are dense internally but separated from neighboring concerns by meaningful whitespace.
-
-Mobile uses 11–12px gutters at 390px and safe-area-aware padding. The content canvas owns the first row: top-level routes place a leading Menu control immediately beside the page title, while detail routes use Back in the same position. Product identity lives in the navigation drawer rather than a persistent app bar. Menu opens a full-height drawer attached to the left edge, with its navigation independently scrollable above the account footer. A page's primary create action uses the shared lower-right floating action button; detail and edit tasks become focused pages or sheets, and controls reflow continuously without horizontal overflow. One-column mobile form grids and their controls use shrinkable tracks so long native-select options truncate inside the field instead of widening the document.
-
-Spacing follows the 4px base scale. Containers own their gaps. Avoid oversized introductions, empty hero bands, and arbitrary per-page margins. Touch targets are at least 44px. Compact actionable chips on coarse pointers keep their pill treatment inside a 44px control; switches and terse links may use non-overlapping generated or enclosing targets. Embedded-map attribution may expand its target upward while its visible credit line stays compact. Dense desktop rows may be visually shorter only when their full interactive target remains comfortably usable.
-
-## Elevation & Depth
-
-Depth comes from the warm canvas, paper surfaces, strong inner surfaces, soft signal fields, restrained shadows, overlap, and spacing. The three elevation tokens define the available range: panel for normal modules, hero for prominent financial surfaces, and floating for menus, sheets, inspectors, and temporary overlays.
-
-Do not draw a border around every group. Use a line for internal register dividers, form boundaries, and states that need an edge. A panel should usually be recognizable from tone and shadow before its border. Avoid glow, glass, specular highlights, ornamental blur, and gradients.
-
-## Shapes
-
-Structural cards, chart frames, workspaces, sheets, and inspectors use 16–22px radii. Controls use 10–12px. Category icon tiles use 10px. The 24px token is reserved for larger floating or mobile structures. Full pills are appropriate only for chips, compact status, and binary selectors whose shape has semantic value.
-
-Tiny 4–8px radii belong to micro-indicators, progress fills, and chart segments, never primary containers. Do not mix rigid 4px cards with soft 20px modules on the same page.
-
-## Components
-
-Product-specific primitives own the visual grammar:
-
-- **Financial panel:** a paper module with structural radius, restrained lift, and optional domain role such as hero, register, planner, or evidence desk.
-- **Metric lane:** a compact semantic field for income, spending, allocation, pace, warning, or forecast context. Its color must correspond to the financial role.
-- **Ledger row:** a flat list item with one purposeful horizontal divider, category-specific leading tile, concise evidence, and a right-aligned mono amount. Do not wrap each row in its own rounded, shadowed card. Selection uses a stable checkbox affordance; bulk actions replace quiet register context only after selection exists instead of inserting another control row.
-- **Category tile:** a stable Phosphor icon in a deterministic soft signal color. Generic money glyphs are only the uncategorized fallback.
-- **Chart frame:** a titled analytical surface with a concrete financial question, direct drill-down, visible units, accessible labels, and a nonvisual data equivalent. Responsive chart labels remain legible at supported widths, while tooltips, accessible names, and the adjacent data view retain complete names and values.
-- **Recovery panel:** a route-level failure keeps the page title and presents a readable problem with an immediate Retry action. Missing resources provide a direct return path. A failed subquery keeps the surrounding workspace and offers inline Retry; failed mutations preserve entered state and show the API's human-readable detail without JavaScript or JSON serialization.
-- **Inspector:** contextual view/edit surface that preserves the direct route and browser-back behavior.
-- **Page intro:** normal product routes use one shared title row with optional concise description, updating status, back context, and page-owned actions. On mobile, a leading Menu control opens top-level routes and Back replaces it for detail routes; secondary page controls sit beneath the title instead of recreating an app bar. Pages with the shared quick period switch use the page-scope header: title context stays on the left and the period plus Filters cluster sits on the right in viewports at least 1200px wide; constrained layouts stack the scope cluster beneath the title. A page may move a width-heavy quick control into the mobile filter sheet when keeping it visible would compromise label legibility. Period labels are not repeated as title descriptions or metadata.
-- **Floating create action:** mobile routes with one clear create flow register that action with the shared 56px lower-right button. It uses the page action's accessible name and icon, reserves enough trailing page space to avoid covering content, and disappears while a modal dialog, sheet, navigation drawer, or text-entry keyboard is active. Detail routes and pages without a primary create flow do not show it. Desktop keeps the labeled page action in the utility bar.
-- **Page tabs:** true subordinate modes that replace the route body use one quiet, full-width underline tab row directly beneath the page-scope header. Tabs retain URL-backed state, expose tablist/tab/tabpanel semantics and keyboard navigation, and use the cobalt underline for the active view. Segmented controls remain value pickers and never stand in for route-local navigation.
-- **Filter bar and panel:** pages with frequent time scoping keep the shared period switch visible when the supported labels fit without compression and place less-frequent page-wide dimensions behind one quiet Filters trigger. One shared page-scope sizing contract keeps the period surface and Filters trigger exactly 48px high wherever they appear together; coarse-pointer period options retain 44px touch targets inside that surface. The trigger stays visually quieter, counts active dimensions rather than selected values, and opens an anchored Apply/Cancel panel on desktop or the same focused bottom sheet on mobile. When period moves into a mobile sheet, it participates in that sheet's staged Clear/Cancel/Apply flow and a non-default choice appears in the active count and chips. Desktop panels fit the actual collision-bounded viewport space, keep their header and actions visible, and scroll only the filter body when content is taller. Applied dimensions remain legible as compact removable chips; several selected tags form one summarized tag chip. Multi-select lists show a distinct checkbox outline on every row, including unchecked choices. Search, sorting, view modes, workspace navigation, and controls that configure only one chart are not presented as page filters.
-- **Toolbar:** one coherent control zone for one job, not a stack of unrelated bordered bars. Page actions and scope controls can share the wide page-scope header while remaining distinct groups; constrained layouts stack the scope cluster as one unit. Labels are visible when needed; mobile collapses secondary filters into a compact trigger beside the page title.
-- **Message surface:** readable, full-height Assistant transcript with quiet tool activity and a composer anchored to the bottom edge. Read-only behavior is a product invariant, not repeated explanatory copy.
-- **Confirmation dialog:** destructive and bulk actions confirm through the shared in-app dialog — a short question title, an optional consequence line, Cancel, and a tone-matched action button. Native browser prompts are not part of the product.
-
-Radix and ShadCN may continue to provide headless behavior, focus management, portals, and keyboard semantics. Their stock visual defaults are not the product. Inputs, buttons, tabs, selects, dialogs, sheets, and cards must resolve to the tokens and domain roles above.
-
-Every component includes selected, hover, focus-visible, active, disabled, loading, empty, error, and destructive states where applicable. Motion uses only opacity, transform, and clipped size reveals, stays under the motion tokens, and becomes an immediate cross-fade under reduced motion. The motion tokens are exposed as CSS custom properties (`--motion-feedback`, `--motion-content`, `--ease-out-strong`, `--ease-drawer`); dialog and sheet motion is keyed off `data-state` with keyframe pairs so exits play before unmount, and pressable controls answer with a subtle scale over named transition properties. Initial route loads render nothing for their first 250ms; only loads still pending after that show the page title and a static panel-shaped skeleton, so fast navigations swap straight to content without a skeleton flash. Page-owned actions that depend on route data remain unavailable until that data is ready, so loading chrome never exposes a control that silently does nothing.
-Keyboard focus uses a visible two-pixel accent outline that remains independent of component shadows, including shell actions and visible proxies for hidden file inputs.
-Modal dialogs, filter popovers, sheets, and the responsive navigation drawer move focus inside only after their entry state is ready, keep background controls out of the tab sequence when modal, and return focus to the exact invoking control after every close path. Controlled overlays follow the same contract even when their opener lives in shared page chrome. Reveal controls such as transaction search focus the revealed field and restore the trigger when dismissed; iterative keyboard actions such as template reordering retain focus on the item that moved.
-
-## Do's and Don'ts
-
-- Do keep every normal desktop destination visible with icon and label.
-- Do use paper, semantic fields, category icons, and spatial grouping before adding borders.
-- Do keep core numbers dominant and supporting copy brief.
-- Do make light and dark modes equally deliberate.
-- Do preserve URLs, filters, back behavior, route guards, and permission gates.
-- Do use one cobalt interaction accent and several controlled semantic signals.
-- Don't hide ordinary desktop routes behind `More`, overflow, or icon-only navigation.
-- Don't use giant black or cobalt slabs as a substitute for hierarchy.
-- Don't build pages from `Page intro + generic card + form` when the workflow needs a ledger, planner, library, desk, or conversation.
-- Don't use gradients, glass, glow, ornamental blur, or permanent attention sidebars.
-- Don't stack more than two levels of bordered rectangles.
-- Don't use explanatory microcopy or uppercase metadata as filler.
-- Don't silently collapse loading, empty, failed, unavailable, and disabled states.
-
-## Iconography
-
-Use the existing local Phosphor icon system. Navigation icons are 18px with consistent bold weight. Category icons are 16–18px inside 36px soft tiles. Labeled product buttons keep a small, consistent gap between an inline icon and its text. The icon catalog remains user-editable and is the source of category identity across transactions, budgets, insights, recurring rules, and charts.
-
-A deterministic category-to-signal mapping keeps the same category visually stable across pages without storing presentation-only color in the database. Uncategorized may use the generic currency mark; known categories must not all fall back to it. Icon-only actions require accessible names and 44px touch targets on mobile.
-
-## Data Visualization
-
-Every chart answers a specific question and exposes a drill-down. Mono axes show units at a compact 11px with clear tick spacing and quiet grid lines; legends use both color and labels; values remain available to assistive technology. Bars and chart segments use subtle 4–6px end radii, while theme-aware tooltips use the same 10px control radius as the rest of the app. Donut legends use equal responsive columns with right-aligned amounts rather than content-sized wrapping entries or nested scrolling regions; hovering a donut segment shows only its percentage of the whole. Hovering meaningful line-chart points reveals an exact financial tooltip; comparison charts include the difference between series. Charts use flat fills and strokes only. Recharts lines, areas, and donuts animate for 1,275ms, while bars and tooltips use 340ms (15% faster than each library default); custom chart motion follows the same 15%-faster rule, and all motion stops when the user requests reduced motion.
-
-The dashboard's six-month spending chart is an absolute-value horizontal band chart. Each row is a month, ordered newest first. Total band length represents total monthly spend on one shared scale; each segment represents a category amount. Category order and color stay stable between months. The chart shows six months, useful currency guides, compact legend labels, keyboard-focusable month rows, an accessible summary for each row, and a nonvisual table. It is not normalized to 100%.
-
-Actual balance history uses a solid cobalt stroke. Projected continuation uses a visually distinct dashed butter stroke and begins at the final actual point. On the dashboard, those two strokes share one 1,275ms draw: the projected stroke starts when the actual stroke reaches their shared point, so the path reads as one continuous balance timeline. A forecast's prediction interval is a quiet translucent band behind the expected path, with no visible boundary strokes; it is labeled as an 80% range and never as certainty. Monthly forecast rows show the expected end balance separately from the range and use the expected intra-month low for negative-balance warnings. Forecast styling never implies that likely values are observed facts.
-
-Insights prioritizes monthly income versus expense, category composition, selected-category trend, budget versus actual, and the period's net result. A one-period comparison renders visible data points rather than an apparently empty axis. The Net view uses a running-balance chart built from recorded income and expense totals; it must not draw invented links between income sources and expense categories. The largest income and expense groups stay explicit while the small tail groups under Other, with every grouped category retained in the data view. Desktop uses vertical bars and mobile web and iOS use horizontal rows in the page's normal vertical scroll. No chart-wide wrapper card is used: only the selected-step details form a card. Bars show a selection outline only after direct selection, and a background tap clears it. Empty charts explain the missing data and provide the next useful action; they do not render decorative zero shapes.
+Radix and ShadCN may supply behavior, focus management, and keyboard semantics.
+Their stock appearance is not the product.
 
 ## Responsive Behavior
 
-At desktop widths, the labeled sidebar remains fixed and independently scrollable on short displays. Its navigation reserves a stable scrollbar gutter so labels never shift, while the scrollbar thumb stays hidden at rest and appears when the navigation is hovered or keyboard-focused. Its brand stays to one product-name line without a tagline. The document keeps a real vertical scrollbar track present at the root so routes, tabs, and modal scroll locks cannot change the shared shell or centered page-canvas width; overlay-library width compensation stays disabled because the root track remains present. Lightweight dropdown menus and anchored filter panels leave document scrolling available instead of taking modal control of the page. The top utility bar stays compact, shares the page canvas's centered maximum-width frame, and carries only one page-specific action when the page owns a clear creation flow. Routes without an action retain the empty utility-bar height so page titles do not jump vertically during navigation. Theme selection lives only in Settings, and period context belongs to the page's own selector. Add transaction appears only on Dashboard and Transactions; planning, automation, and library pages expose their own Add budget, rule, template, category, or tag action. Search belongs to the Transactions ledger rather than the global shell. Route-local tabs are limited to true subordinate modes.
+- Preserve the same capability and meaning on desktop and mobile, while using a
+  layout suited to each viewport.
+- Keep controls and content inside the viewport at supported widths and at 200%
+  zoom.
+- Use safe-area-aware mobile surfaces and focused scroll regions.
+- Keep touch targets at least 44 by 44 CSS pixels. A compact visible control may
+  use a larger non-overlapping hit area.
+- Keep important actions visible or in a clearly named menu; do not leave stale
+  duplicate controls in one layout.
 
-At 390px, Dashboard keeps the balance hero but omits the desktop history chart. Four metric lanes form a compact 2×2 grid. Without a planning lane, income and spending remain side by side while net movement spans the full second row, avoiding a blank fourth slot. There is no persistent mobile top bar: Menu and the page title lead the canvas, scope controls follow, and the shared create button floats above the lower-right safe area without covering final content.
+## Accessibility and State
 
-Mobile sheets use safe areas and focused scroll regions. The shared create button yields to overlays and hides while a text field is focused so it never competes with a modal, drawer, or software keyboard. At 200% zoom, content reflows without clipped actions or horizontal page scroll. Reduced motion, increased contrast, forced colors, and system theme preferences remain first-class branches.
+- Normal text and interactive states meet WCAG AA contrast.
+- Color never carries meaning alone. Pair it with text, signs, patterns, icons,
+  or accessible names.
+- Keep a visible focus indicator and restore focus after dialogs, sheets, and
+  temporary controls close.
+- Support keyboard use, screen readers, reduced motion, increased contrast, and
+  forced colors.
+- Keep loading, empty, failed, unavailable, disabled, selected, and destructive
+  states distinct.
+- Preserve entered data after failed mutations and show readable server errors.
+- Keep visible copy brief, but retain accessible names and text that prevents a
+  likely mistake.
 
-## Page Archetypes
+## Data Visualization
 
-- **Board:** Dashboard, Digest, and high-level admin health use metric lanes plus compact evidence lists.
-- **Ledger:** Transactions, Inbox, Trash, tag activity, and recurring occurrences use one lifted register with contextual controls.
-- **Planning canvas:** Budgets, Forecast, and What If emphasize allocations, projections, and comparisons. Budget creation and editing use focused modals instead of persistent editor rails.
-- **Automation board:** Recurring, Templates, and Rules show condition/action or commitment anatomy, state, next occurrence, and audit evidence. Creation and editing happen in focused modals; Templates use a dedicated drag handle to make their persisted order explicit.
-- **Library:** Categories and Tags use compact identity tiles with modal create/edit or merge workflows plus contextual archive and restore actions.
-- **Evidence desk:** Reconciliation pairs statement evidence with matched or missing records and makes state transitions explicit.
-- **Composer:** Reports groups configuration, preview/generation state, and follow-up actions without nesting generic form cards.
-- **Utility workspace:** Settings and Admin use grouped sections, stable section navigation, clear status, and the same shapes and type system. Appearance is a compact Settings control rather than persistent shell chrome. When an Admin data table drives a detail inspector, each row exposes an explicit named action instead of relying on clickable-row semantics alone.
-- **Conversation:** Assistant uses a full-height transcript and persistent composer, not a generic card containing a chatbot.
-- **Identity:** Login uses one centered paper form with the quiet product mark, product name, form labels, state messages, and actions. It has no hero, tagline, kicker, or supporting copy. Setup, Signup, and Admin elevation use the same surface language with the context their tasks need.
+- Every chart must answer a financial question, show units, and retain exact
+  values through labels, tooltips, or an adjacent data view.
+- Provide a nonvisual equivalent and a clear empty state.
+- Use flat semantic fills and strokes. Do not rely on color alone.
+- Preserve recorded relationships. Never imply flows, causation, or certainty
+  that the data does not contain.
+- Keep privacy controls effective without collapsing layout or exposing values in
+  tooltips and accessible names.
+- Use motion only to clarify a change, and disable it when reduced motion is on.
 
-## Feature-Specific Patterns
+## Avoid
 
-Dashboard keeps This month, Last month, All time, and Custom obvious. The first viewport contains balance/current position, income, spending, comparison, recent activity, and the six-month spending bands. One shared Filters trigger holds the occasional include-or-exclude tag scope beside the period switch on both layouts; Dashboard does not filter by transaction type. Active scopes appear as removable summary chips such as `Only: Vacation` or `Excluding: 3 tags`, while the badge counts the tag scope as one dimension. Available balance, balance history, forecasts, and budgets remain actual. Recent activity fills the available desktop panel with complete rows only and never creates a nested scrolling region; mobile caps the list at four rows. The balance hero does not repeat net movement already shown in its dedicated lane; its desktop history chart exposes exact actual and likely values on hover and is omitted on mobile where the current balance and metric grid carry the same decision value more efficiently. The planning metric reflects the planning model the user actually uses: an overall monthly budget shows plan pace, category-only budgets show their aggregate at-risk count and single highest-risk category, and no budgets means no planning metric or setup prompt. Incognito mode conceals headline and analytical values and disables value tooltips without collapsing layout, while budget health and recent transaction amounts remain readable. Durable purchases and attention items appear only when data exists.
-
-Transactions keeps its page actions distinct from filtering inside the shared page-scope header. Search remains directly available, while Inbox, Trash, and Export CSV share one overflow menu. On desktop, Search precedes the visible period and Filters cluster and the overflow follows it; the search trigger morphs into a search bar in place. On mobile, the overflow occupies the familiar top-right position beside the page title, while the second row contains only compact Search and Filters controls. Search morphs in place there too: the field expands rightward out of the trigger across the row's full width, and Filters is displaced past the row's edge and made non-interactive until search closes, with the row clipping that displacement instead of letting it overflow the page. Search updates the URL-backed ledger directly, matches the whole query against transaction titles and descriptions with typo tolerance, and always preserves chronological order. A trailing clear control appears only when there is text, meets the search shell's top, trailing, and bottom edges, Escape clears or collapses the bar, and an active mobile search persists as a removable chip after the field closes. The four-choice period switch stays directly visible on desktop and moves into the mobile filter sheet, where period, type, category, and one unified tag section share the same staged Clear/Cancel/Apply flow. A non-default mobile period appears in the filter badge and active chips. The tag section places an `Only include` / `Exclude` mode choice directly above one multi-select checklist, lets the mode be chosen before any tag, uses match-any semantics within the selected set, and never represents both modes simultaneously. Active secondary dimensions remain visible as removable summary chips. The resulting scope applies consistently to the list, summary, pagination, CSV export, and query-wide bulk edit. Search never interprets filter syntax: users apply period, type, category, and tags through the visible controls. Transaction checkboxes remain discoverable, while the permanent register header changes in place from result context to a segmented bulk scope and bulk-edit action after selection. Direct detail/edit URLs and return context remain canonical.
-
-Insights presents Analysis and Net as URL-backed page tabs beneath the shared page-scope header. The header keeps the quick period switch directly available and uses the same secondary Filters gateway as Dashboard for include-or-exclude multi-tag scope; Insights does not filter by transaction type. It does not repeat the chosen period or month count as title metadata. The shared scope applies to transaction-derived charts, category trends, deltas, top tags, Net values, and transaction drill-throughs. The selected trend category and budget month configure individual sections, so each stays beside its own chart instead of appearing in the page filter panel. Active tag scopes use the same summarized, removable language on both layouts. Budget plans and their progress are not reinterpreted by this temporary view filter.
-
-Budgets is one period-based planning workspace, not a set of scope tabs. The month toolbar supplies context for a summary of allocation, spent, remaining, and pace; category rows then surface the usual monthly amount, any selected-month adjustment, actual, remaining, projection, and contextual burn-down evidence. Monthly plans repeat by default. Editing a row explicitly chooses between the selected month and the selected month onward, and a visible adjustment can be reset to its usual amount. Annual plans use the same row and editor grammar in a compact section on the same page. Overall caps remain a separate parent constraint and are never presented as additive to category limits. Advanced start and end dates stay subordinate in the shared editor rather than becoming navigation modes.
-
-Recurring presents Commitments and Audit as URL-backed page tabs rather than a value-picker control. Amounts retain their native currency while monthly summary equivalents remain euros. Add rule and row edit actions open focused modals; compact rows keep the auto-post toggle self-explanatory, History content-sized, and destructive actions icon-only with accessible names. Templates use the same modal editor and a pointer- and keyboard-operable drag handle for their quick-add order. Rules read from conditions into actions, keep the enable switch first in each action cluster, and use the shared modal editor. Categories create and edit in one responsive modal; Tags expose separate Add and Merge modal flows. Compact edit, delete, and archive actions remain icon-only with accessible names. Reconciliation uses one unresolved inbox rather than parallel summary queues. Each decision follows its bank entry in the same vertical reading flow and stays on the same surface, using alignment and a state icon instead of another band or card. A single register divider separates complete review items, so the only lines on the inbox surface are the boundaries between items and every decision reads as part of the entry above it. The bank title and amount lead each row, while a compact soft tint may emphasize the proposed Expenses transaction without spanning the item as a separate row; raw statement text stays quiet. Ambiguous matches open a focused chooser. Rows that should not create or match a one-to-one transaction retain a quiet reviewed outcome. Creating a transaction opens a prefilled editor while keeping the bank amount fixed as evidence; saving creates and links it in one action. Resolved rows leave the inbox with brief motion and lead to a clear done state. Reconciliation states remain explicit rather than relying on green/red alone, while labels name only a state or action that the layout cannot already explain. Reports keep configuration inline on the builder surface: tag scope follows the same All / Only include / Exclude plus revealed checklist flow as its category scope, and applies to every transaction-derived section of the PDF. Reports retain generation state and the last successful PDF. Admin elevation never leaks behind visual polish.
-
-Tags with an automatic date range show a compact Active, Upcoming, or Ended status in the tag library and their inclusive dates in the row evidence. Archiving moves a tag into a separate archived library section without removing its transaction history or settings; tag detail shows a neutral Archived status and keeps Edit, Restore, and hard delete available. In the tag settings header, Archive is an uncontained red icon action while Edit and Restore are neutral contained icon buttons; all keep 44px hit areas and accessible names without visible labels. Archive and restore are reversible contextual actions and do not require destructive confirmation. Tag detail uses one balanced summary followed by an activity ledger and a compact read-only settings inspector; Edit opens the focused settings modal instead of leaving form controls visible during normal review. Filter visibility is an independent tag setting: archived tags remain available in historical filter checklists by default, active choices precede archived choices, and archived rows carry a quiet text annotation. A tag hidden from filter menus stays available for assignment while active, and any hidden tag already applied through a URL remains named and removable. In manual transaction creation, an active automatic tag uses the normal selected chip with a small `Auto` label and the same visible remove action as any other tag. The label explains the source without creating a second tag control or hiding the final saved selection. Transaction editing never introduces an automatic default.
-
-Assistant is read-only without repeating that invariant beside the composer. Its title lives in the normal page intro, with New chat as a quiet adjacent action rather than a primary create button; the route itself is one continuous conversation surface rather than a chat card inside a page. Suggested prompts appear only when empty. While a turn works, a single shimmering progress line above the answer follows the same precedence as the native app — a freshly started tool's verb phrase for a bounded window, then the model's latest narration, then "Thinking…" — and reverts to static text with a spinner under reduced motion; once answer text streams, a small accent-colored braille sweep cursor (the terminal "diagswipe" spinner ported to CSS content frames) marks the live end instead. Sending scrolls the question to the top of the conversation and reserves just enough space below it for the reply to stream in reading position, with the reserve consumed as the answer grows; streaming never drags the reader, and the scroll-to-latest control appears only while the newest content extends below the viewport. Consecutive tool calls collapse into one expandable activity line whose expanded rows pair each tool's inputs with a compact server-formatted result summary, never raw payloads. Finished answers and sent questions offer copy actions (hover-revealed on desktop, persistent on touch), stopped or failed turns read as quiet status lines with a Try again action that reruns the turn without duplicating the question, and screen readers receive one completion announcement rather than per-chunk updates. Streaming, stop, cancellation, tool activity, failure, disabled, and history states remain distinct. The composer sits at the bottom of the available page without competing with persistent bottom chrome.
-
-## Native iOS App
-
-The SwiftUI app should share the web app's product tone while using native iOS structure and interactions.
-
-- Use grouped lists and forms for dense tracker workflows, with a shared adaptive background and restrained glass surfaces for hierarchy.
-- Apply Liquid Glass to grouped controls, metric cards, empty states, and bottom action bars; avoid turning every row into a decorative glass card.
-- Prefer native interactions where they fit the workflow: pull-to-refresh for data screens, navigation search for transaction search, segmented pickers for primary modes, swipe actions for existing row operations, and system sheets/dialogs for confirmation.
-- Dashboard, Transactions, and Insights on native iOS use a screen-local multi-tag exclusion checklist with `Excluding: <tag>` summary language. It preserves the same actual-balance and budget boundaries as web while retaining the native client's current exclusion-only scope.
-- Use icon-only toolbar refresh actions with accessibility labels so navigation bars stay quiet.
-- Keep colors aligned with the web app: warm gold accent in dark mode, teal in light mode, semantic green/red for income and expenses, and neutral surfaces for dense data.
-- Use monospaced digits for metric-heavy surfaces and keep spacing compact enough for one-handed iPhone use.
-- Assistant progress: while a turn streams, show a single shimmering progress line above the answer (not inside a bubble), and only render the answer bubble once final user-visible content exists. The one line carries, in precedence order, the active tool's verb phrase (a freshly started tool shows for a bounded ~2s window so a slow tool can't pin the line), then the model's latest intermediate reasoning, then a default "Thinking…"; each new tool resets the window so bursts roll smoothly rather than flickering. Keep tool verb phrases for this line separate from the shorter noun labels used in the collapsed Activity disclosure. Under Reduce Motion, drop the shimmer for a small `ProgressView` plus static text. A turn that ends with no answer reads as a quiet status line, not an empty bubble.
-- Assistant scrolling: when a message is sent, scroll the new question to the top of the viewport (not the bottom) so the reply renders in a natural reading position with earlier turns still scrollable above. Reserve just enough space below the newest exchange for the question to reach the top, shrinking that reserve as the answer grows so completed conversations don't carry a large trailing gap. Only user turns collapse: extremely long questions truncate to a few lines with a "See more"/"See less" chevron toggle; assistant answers are never truncated this way.
-- Keep haptics tight, subtle, and reserved for committed actions and discrete state changes — never for navigation, scrolling, or per-keystroke streaming. Use the declarative `.sensoryFeedback` modifier driven off the relevant state (no UIKit feedback generators): `.selection` for every toggle and segmented picker so like controls feel uniform across the app, `.impact(weight: .light)` for primary commit actions (the floating Quick Add button, sending an Assistant message), `.impact(flexibility: .rigid)` for interrupting an in-flight action (stopping a streaming response) so it reads as distinct from sending, and `.success`/`.error` for the outcome of a data mutation such as saving a transaction. When a control is swapped out at the moment it is tapped (for example the Send/Stop button toggling on streaming state), attach the feedback to a stable parent driven by a tap counter so the modifier is not torn down before it fires. The system haptic setting is honored automatically, so no separate enable/disable control is needed.
-
----
+- Generic page recipes that ignore the workflow.
+- Giant dark or cobalt blocks used only to create hierarchy.
+- Repeated nested cards and permanent attention sidebars.
+- Filler copy, repeated headings, and decorative metadata.
+- Hidden actions, silent failures, and controls that appear ready before they can
+  work.
