@@ -20,6 +20,9 @@ test.describe("Settings and administration (mobile)", () => {
     await ensureElevatedAdmin(page)
     await expect(page.getByText("Database backups")).toBeVisible()
     await expect(page.getByText("System information")).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Post all overdue transactions" })
+    ).toBeVisible()
 
     await page.getByRole("button", { name: "Rebuild now" }).click()
     await page

@@ -639,7 +639,9 @@ function AdminPage() {
             disabled={recurringCatchUpMutation.isPending}
             className="w-full"
           >
-            {recurringCatchUpMutation.isPending ? "Running…" : "Run catch-up"}
+            {recurringCatchUpMutation.isPending
+              ? "Posting…"
+              : "Post all overdue transactions"}
           </AppButton>
           <AdminActionFeedback message={recurringCatchUpMessage} />
         </MetricLane>
