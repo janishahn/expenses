@@ -28,6 +28,8 @@ test.describe("Tag Detail Page", () => {
     await page.goto(`/tags/${tagId}?period=all`)
     await expect(page.locator("main h1")).toContainText(originalName)
     await expect(page.getByTestId("donut-legend").first()).toBeVisible()
+    await expect(page.getByText("No income in this period")).toBeVisible()
+    await expect(page.getByText("Add transactions with this tag.")).toBeVisible()
     const sparklines = page.locator("main path.recharts-line-curve")
     await expect(sparklines).toHaveCount(3)
     const expenseShape = await sparklines.nth(1).evaluate((path) => {

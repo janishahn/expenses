@@ -552,11 +552,13 @@ function TagDetailPage() {
                 title="Expenses"
                 breakdown={donut.expense_breakdown}
                 emptyMessage="No expenses in this period"
+                emptyGuidance="Add transactions with this tag."
               />
               <DonutChart
                 title="Income"
                 breakdown={donut.income_breakdown}
                 emptyMessage="No income in this period"
+                emptyGuidance="Add transactions with this tag."
               />
             </div>
           ) : (
