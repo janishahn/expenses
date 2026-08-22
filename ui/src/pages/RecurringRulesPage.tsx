@@ -480,12 +480,7 @@ function RecurringRulesPage() {
           <div className="grid items-start gap-4">
             <FinancialPanel role="ledger" data-testid="commitments-board">
               <SectionHeading>
-                <div>
-                  <h2 className="font-head text-lg font-bold">Commitments</h2>
-                  <p className="mt-0.5 text-xs text-muted">
-                    Upcoming income and expenses with posting state
-                  </p>
-                </div>
+                <h2 className="font-head text-lg font-bold">Commitments</h2>
                 <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
                   {data.rules.length}
                 </span>
@@ -630,9 +625,6 @@ function RecurringRulesPage() {
             <p className="mono-meta text-muted">
               Subscription Audit
             </p>
-            <p className="mt-2 max-w-3xl text-sm text-muted">
-              You are committed to spending {formatCurrency(data.stats.total_monthly_expenses * 12)} € over the next 12 months on recurring expenses.
-            </p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <MetricLane tone="expense" className="p-4">
@@ -672,12 +664,7 @@ function RecurringRulesPage() {
 
           <FinancialPanel role="ledger" data-testid="recurring-true-cost">
             <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">True cost</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  Long-term impact of recurring expenses
-                </p>
-              </div>
+              <h2 className="font-head text-lg font-bold">True cost</h2>
             </SectionHeading>
 
             {expenseRules.length === 0 ? (
@@ -837,7 +824,6 @@ function RecurringRulesPage() {
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     className="mt-1"
-                    placeholder="e.g. Netflix"
                     autoFocus
                   />
                 </AppFieldLabel>
@@ -982,7 +968,7 @@ function RecurringRulesPage() {
                   {previewLoading ? <span>Calculating…</span> : null}
                   {previewError ? <span>{previewError}</span> : null}
                   {!previewLoading && !previewError && preview.length === 0 ? (
-                    <span>{anchorDate ? "No upcoming dates." : "Enter a start date."}</span>
+                    anchorDate ? <span>No upcoming dates.</span> : null
                   ) : null}
                   {!previewError
                     ? preview.map((occurrence) => (

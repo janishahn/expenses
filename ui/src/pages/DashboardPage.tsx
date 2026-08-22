@@ -725,9 +725,6 @@ function DashboardPage() {
       ) : (
         <FinancialPanel className="p-6 text-center">
           <p className="font-head text-lg font-bold text-text">No transactions yet</p>
-          <p className="mt-1 text-sm text-muted">
-            Add transactions to see category breakdowns.
-          </p>
         </FinancialPanel>
       )}
 

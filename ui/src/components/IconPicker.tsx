@@ -238,7 +238,6 @@ export function IconPicker({
               setQuery(event.target.value)
               setResultLimit(SEARCH_PAGE_SIZE)
             }}
-            placeholder="Search icons (e.g. groceries, salary, transport)"
             aria-label="Search all icons"
           />
           <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-6 md:grid-cols-8">

@@ -132,12 +132,7 @@ function RecurringOccurrencesPage() {
 
       <FinancialPanel role="ledger" data-testid="recurring-occurrence-ledger">
         <SectionHeading>
-          <div>
-            <h2 className="font-head text-lg font-bold">Posted transactions</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Audit trail for this recurring commitment
-            </p>
-          </div>
+          <h2 className="font-head text-lg font-bold">Posted transactions</h2>
           <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
             {occurrences.length}
           </span>

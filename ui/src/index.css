@@ -1539,14 +1539,6 @@
     outline: none;
     min-height: inherit;
   }
-  .description-editor .is-placeholder::before {
-    content: attr(data-placeholder);
-    @apply text-muted;
-    float: left;
-    height: 0;
-    pointer-events: none;
-  }
-
   .composer-surface {
     border-color: rgb(var(--border));
     background: rgb(var(--surface-hi));

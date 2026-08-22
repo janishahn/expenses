@@ -537,9 +537,6 @@ function SettingsPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-head font-bold">CSV import</h2>
-              <p className="mt-1 text-sm text-muted">
-                Preview and import transactions from a CSV export into your own account.
-              </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <AppButton asChild tone="ghost">

@@ -167,7 +167,9 @@ test.describe("Categories Page", () => {
     await expect(page.getByText("Transactions: 0")).toBeVisible()
 
     await page.getByRole("button", { name: "Merge", exact: true }).click()
-    await expect(page.getByText("Confirm category merge")).toBeVisible()
+    await expect(
+      page.getByText(/source category will be archived after merge/i),
+    ).toBeVisible()
     await page.getByRole("button", { name: "Confirm merge" }).click()
 
     await expect(
@@ -214,7 +216,9 @@ test.describe("Categories Page", () => {
     await expect(page.getByText("Temporary preview failure")).toBeVisible()
 
     await page.getByRole("button", { name: "Merge", exact: true }).click()
-    await expect(page.getByText("Confirm category merge")).toBeVisible()
+    await expect(
+      page.getByText(/source category will be archived after merge/i),
+    ).toBeVisible()
     await page.getByRole("button", { name: "Confirm merge" }).click()
 
     await expect(

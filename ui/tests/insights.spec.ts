@@ -144,7 +144,7 @@ test.describe("Insights Page", () => {
     await page.getByRole("tab", { name: "Net" }).click()
     await expect(page).toHaveURL(/view=net/)
     await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
-    await expect(page.getByText(/Recorded totals/).first()).toBeVisible()
+    await expect(page.getByRole("button", { name: "View chart data" })).toBeVisible()
     await expect(
       page.getByRole("group", { name: "Income and spending chart" }),
     ).toBeVisible()

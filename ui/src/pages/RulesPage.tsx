@@ -561,9 +561,6 @@ function RulesPage() {
           ) : (
             <div className="p-10 text-center">
               <p className="font-head text-lg font-bold text-text">No rules yet</p>
-              <p className="mt-1 text-sm text-muted">
-                Create a condition to categorize new activity automatically.
-              </p>
             </div>
           )}
       </FinancialPanel>
@@ -601,7 +598,6 @@ function RulesPage() {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   className="mt-1"
-                  placeholder="e.g. Netflix → Subscriptions"
                   autoFocus
                   required
                 />
@@ -657,7 +653,6 @@ function RulesPage() {
                       value={matchValue}
                       onChange={(event) => setMatchValue(event.target.value)}
                       className="mt-1"
-                      placeholder="e.g. netflix"
                       required
                     />
                   </AppFieldLabel>
@@ -718,7 +713,6 @@ function RulesPage() {
                         )
                       }
                       className="mt-1"
-                      placeholder="e.g. subscription, streaming"
                     />
                   </AppFieldLabel>
                   <AppFieldLabel>

@@ -835,10 +835,7 @@ function ChartDataPopover({
           aria-label="Chart data"
         >
           <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-head text-sm font-bold">Chart data</h3>
-              <p className="mt-0.5 text-[11px] text-muted">Recorded totals</p>
-            </div>
+            <h3 className="font-head text-sm font-bold">Chart data</h3>
             <Popover.Close asChild>
               <button
                 type="button"
@@ -974,7 +971,7 @@ export default function WaterfallChart({
       <header className="mb-3 flex min-h-12 flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-head text-xl font-bold tracking-tight">Income &amp; spending</h2>
-          <p className="mt-0.5 font-mono text-[10px] text-muted">{periodLabel} · Recorded totals</p>
+          <p className="mt-0.5 font-mono text-[10px] text-muted">{periodLabel}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="hidden items-center gap-3 text-[11px] text-muted sm:flex" aria-label="Chart legend">

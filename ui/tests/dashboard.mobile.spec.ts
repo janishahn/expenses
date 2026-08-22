@@ -100,7 +100,7 @@ test.describe("Dashboard Page (mobile)", () => {
     await dialog.getByLabel("Amount").fill("12.34")
     await dialog.getByLabel("Category").selectOption(String(categoryId))
     await dialog.getByLabel("Title").fill(title)
-    await dialog.getByPlaceholder("Optional description").fill("Mobile description")
+    await dialog.getByLabel("Description").fill("Mobile description")
     const scheduledChip = dialog.getByRole("button", {
       name: `Remove tag ${tagName}`,
     })

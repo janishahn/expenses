@@ -45,16 +45,9 @@ function SignupPage() {
         <aside className="flex min-h-[13rem] flex-col justify-between bg-[#181d1a] p-6 text-[#fbfcf8] sm:p-8 lg:p-10">
           <div className="flex items-center gap-3">
             <ProductMark />
-            <div>
-              <p className="font-head text-sm font-bold tracking-[-0.02em]">expenses</p>
-              <p className="mono-meta text-[#a7b0a9]">household ledger</p>
-            </div>
+            <p className="font-head text-sm font-bold tracking-[-0.02em]">expenses</p>
           </div>
           <div className="mt-8 max-w-sm lg:mt-0">
-            <p className="mono-meta uppercase text-[#a7b0a9]">A ledger of your own</p>
-            <h2 className="mt-3 font-head text-2xl font-bold tracking-[-0.035em] sm:text-3xl">
-              Start with signal, not spreadsheet noise.
-            </h2>
             <div className="mt-6 grid grid-cols-3 gap-2" aria-hidden="true">
               <span className="h-2 rounded-full bg-[#3b4ee8]" />
               <span className="h-2 rounded-full bg-[#f25f48]" />
@@ -69,7 +62,6 @@ function SignupPage() {
         <div className="flex items-center justify-center p-5 sm:p-8 lg:p-12">
           <div className="w-full max-w-md space-y-6">
             <div className="space-y-2">
-              <p className="mono-meta uppercase text-muted">New account</p>
               <h1 className="font-head text-3xl font-bold tracking-[-0.045em] text-text">
                 Sign up
               </h1>

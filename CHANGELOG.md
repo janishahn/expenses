@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed redundant narration, repeated helper text, decorative sublines, and obvious-control copy across the web interface while retaining decision-critical consequences, exact values, states, errors, and accessibility text.
+
 ## [0.4.10] - 2026-08-21
 
 ### Added

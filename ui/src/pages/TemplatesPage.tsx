@@ -435,7 +435,7 @@ function TemplatesPage() {
           </DndContext>
         ) : (
           <div className="px-4 py-6 text-sm text-muted">
-            No templates yet. Create one to speed up daily logging.
+            No templates yet.
           </div>
         )}
       </FinancialPanel>
@@ -528,7 +528,6 @@ function TemplatesPage() {
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
                     className="mt-1"
-                    placeholder="Short title"
                   />
                 </AppFieldLabel>
                 <AppFieldLabel>
@@ -537,7 +536,6 @@ function TemplatesPage() {
                     value={tags}
                     onChange={(event) => setTags(event.target.value)}
                     className="mt-1"
-                    placeholder="e.g. work, weekly"
                   />
                 </AppFieldLabel>
               </div>

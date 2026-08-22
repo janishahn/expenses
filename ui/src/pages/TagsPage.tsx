@@ -216,12 +216,7 @@ function TagsPage() {
 
       <FinancialPanel role="ledger" data-testid="tag-library">
         <SectionHeading>
-          <div>
-            <h2 className="font-head text-lg font-bold">Context library</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Cross-cutting labels for activity and budget treatment
-            </p>
-          </div>
+          <h2 className="font-head text-lg font-bold">Context library</h2>
           <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
             {data.tags.length}
           </span>
@@ -277,7 +272,7 @@ function TagsPage() {
           </div>
         ) : (
           <div className="p-6 text-sm text-muted">
-            No tags yet. Create one to organize transactions.
+            No tags yet.
           </div>
         )}
       </FinancialPanel>
@@ -309,7 +304,6 @@ function TagsPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 className="mt-1"
-                placeholder="e.g. Vacation 2024"
                 autoFocus
                 required
               />
@@ -469,8 +463,7 @@ function TagsPage() {
             </div>
             {mergeConfirmOpen ? (
               <div className="rounded-lg bg-signal-blue-soft p-3 text-xs">
-                <p className="font-semibold text-text">Confirm tag merge</p>
-                <p className="mt-1 text-muted">
+                <p className="text-muted">
                   Merge <strong className="text-text">{mergeSource?.name}</strong> into{" "}
                   <strong className="text-text">{mergeTarget?.name}</strong>?
                 </p>

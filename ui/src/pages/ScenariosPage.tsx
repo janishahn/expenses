@@ -486,7 +486,6 @@ function ScenariosPage() {
           <SectionHeading>
             <div>
               <h2 className="font-head text-lg font-bold">Scenario adjustments</h2>
-              <p className="mt-0.5 text-xs text-muted">Build a temporary planning stack</p>
             </div>
             <span className="mono-meta text-muted">{modifications.length} active</span>
           </SectionHeading>
@@ -730,9 +729,7 @@ function ScenariosPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-xs text-muted">
-                  No adjustments yet. Add one to simulate impact.
-                </p>
+                <p className="text-xs text-muted">No adjustments yet.</p>
               )}
             </div>
           </div>
@@ -743,7 +740,6 @@ function ScenariosPage() {
             <SectionHeading>
               <div>
                 <h2 className="font-head text-lg font-bold">Baseline vs scenario</h2>
-                <p className="mt-0.5 text-xs text-muted">How the balance path changes</p>
               </div>
               <span className="mono-meta text-muted">{horizon} months</span>
             </SectionHeading>
@@ -778,21 +774,7 @@ function ScenariosPage() {
               />
             </div>
           </FinancialPanel>
-        ) : (
-          <FinancialPanel role="chart">
-            <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">Baseline vs scenario</h2>
-                <p className="mt-0.5 text-xs text-muted">How the balance path changes</p>
-              </div>
-            </SectionHeading>
-            <div className="flex min-h-[22rem] items-center justify-center p-5">
-              <p className="max-w-xs text-center text-sm text-muted">
-                Add an adjustment to render scenario comparison and impact.
-              </p>
-            </div>
-          </FinancialPanel>
-        )}
+        ) : null}
       </div>
 
       {hasAdjustments ? (
@@ -800,7 +782,6 @@ function ScenariosPage() {
           <SectionHeading>
             <div>
               <h2 className="font-head text-lg font-bold">Impact attribution</h2>
-              <p className="mt-0.5 text-xs text-muted">Each adjustment’s contribution by month</p>
             </div>
             <span className="amount-text text-sm text-muted">
               Average monthly delta: {(impact?.average_monthly_delta_cents ?? 0) >= 0 ? "+" : ""}
@@ -883,11 +864,7 @@ function ScenariosPage() {
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <p className="py-2 text-sm text-muted">
-                Add adjustments to see impact breakdown.
-              </p>
-            )}
+            ) : null}
           </div>
         </FinancialPanel>
       ) : null}

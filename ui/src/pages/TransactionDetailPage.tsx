@@ -410,7 +410,6 @@ function TransactionDetailPage() {
               className="mt-0.5 h-11 w-11 shrink-0"
             />
             <div className="min-w-0 space-y-1.5">
-              <p className="mono-meta uppercase text-muted">Ledger entry</p>
               <h2 className="break-words font-head text-2xl font-bold text-text md:text-[2rem]">
                 {transaction.title}
               </h2>

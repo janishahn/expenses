@@ -195,8 +195,7 @@ function AdminImportPage() {
       <FinancialPanel role="inspector" className="mx-auto w-full max-w-6xl p-5">
           <h2 className="text-xl font-head font-bold">Legacy SQLite</h2>
           <p className="mt-1 text-sm text-muted">
-            Upload an old expense tracker database and map categories into this
-            tracker. CSV import is available in Settings.
+            CSV import is available in Settings.
           </p>
 
           <div className="mt-4 space-y-3">
@@ -215,7 +214,6 @@ function AdminImportPage() {
             >
               <DatabaseIcon className="mx-auto h-8 w-8 text-muted" />
               <p className="mt-2 text-sm font-semibold text-text">Upload a .db file</p>
-              <p className="text-xs text-muted">Legacy SQLite database</p>
               {sqliteFile && <p className="mt-2 text-xs text-accent">{sqliteFile.name}</p>}
             </button>
 
@@ -351,9 +349,6 @@ function AdminImportPage() {
                 <div className="rounded-lg bg-surface-hi/65 p-4">
                   <p className="mb-1 text-sm font-semibold text-text">
                     Category mapping
-                  </p>
-                  <p className="mb-3 text-xs text-muted">
-                    Map each legacy category per transaction type (income/expense).
                   </p>
 
                   <div className="space-y-2">

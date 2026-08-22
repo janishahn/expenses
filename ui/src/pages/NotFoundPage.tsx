@@ -8,8 +8,7 @@ function NotFoundPage() {
     <section className="space-y-4">
       <PageIntro title="Page not found" />
       <AppCard className="max-w-md p-4">
-        <p className="text-sm text-muted">Try heading back to your dashboard.</p>
-        <AppButton asChild className="mt-3 inline-flex">
+        <AppButton asChild className="inline-flex">
           <Link to="/">Back to dashboard</Link>
         </AppButton>
       </AppCard>

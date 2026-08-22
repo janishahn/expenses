@@ -180,10 +180,7 @@ function DigestPage() {
 
   return (
     <section className="space-y-4 md:space-y-5">
-      <PageIntro
-        title="Digest"
-        description="A weekly pulse on spending, pace, and exceptions"
-      />
+      <PageIntro title="Digest" />
 
       <WorkspaceToolbar className="w-fit">
         <AppButton
@@ -215,7 +212,6 @@ function DigestPage() {
           <p className="amount-text mt-2 text-2xl text-semantic-red">
             {formatCurrency(data.headline.total_spent_cents)} €
           </p>
-          <p className="mono-meta mt-1 text-muted">This week</p>
         </MetricLane>
         <MetricLane tone={deltaTone(data.headline.vs_last_week_cents)}>
           <p className="text-sm font-semibold text-text">vs. last week</p>
@@ -223,7 +219,6 @@ function DigestPage() {
             {data.headline.vs_last_week_cents > 0 ? "+" : ""}
             {formatCurrency(data.headline.vs_last_week_cents)} €
           </p>
-          <p className="mono-meta mt-1 text-muted">Weekly change</p>
         </MetricLane>
         <MetricLane tone={deltaTone(data.headline.vs_four_week_avg_cents)}>
           <p className="text-sm font-semibold text-text">vs. 4-week avg</p>
@@ -231,26 +226,19 @@ function DigestPage() {
             {data.headline.vs_four_week_avg_cents > 0 ? "+" : ""}
             {formatCurrency(data.headline.vs_four_week_avg_cents)} €
           </p>
-          <p className="mono-meta mt-1 text-muted">Rolling comparison</p>
         </MetricLane>
         <MetricLane tone="neutral">
           <p className="text-sm font-semibold text-text">Transactions</p>
           <p className="amount-text mt-2 text-2xl text-text">
             {data.headline.transaction_count}
           </p>
-          <p className="mono-meta mt-1 text-muted">Posted this week</p>
         </MetricLane>
       </div>
 
       {compositionTotal > 0 ? (
         <FinancialPanel role="chart" data-testid="digest-weekly-composition">
           <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">This week at a glance</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                Category share of total spending
-              </p>
-            </div>
+            <h2 className="font-head text-lg font-bold">This week at a glance</h2>
             <span className="amount-text text-sm text-semantic-red">
               {formatCurrency(compositionTotal)} €
             </span>
@@ -362,10 +350,7 @@ function DigestPage() {
 
         <FinancialPanel role="ledger">
           <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Budget status as of this week</h2>
-              <p className="mt-0.5 text-xs text-muted">Pace against active monthly plans</p>
-            </div>
+            <h2 className="font-head text-lg font-bold">Budget status as of this week</h2>
           </SectionHeading>
           <div className="divide-y divide-border px-4">
             {data.budget_pulse.length ? (

@@ -24,11 +24,6 @@ function RouteError({
       <FinancialPanel className="p-5 md:p-6">
         <div className="max-w-xl">
           <h2 className="font-head text-lg font-bold text-text">{message}</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">
-            {returnHref
-              ? "Return to the previous workspace and choose another item."
-              : "Check the connection and try loading this page again."}
-          </p>
           <div className="mt-4">
             {returnHref ? (
               <AppButton asChild>

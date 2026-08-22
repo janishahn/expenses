@@ -68,7 +68,6 @@ function DonutChart({
     return (
       <AppCard className="p-6 text-center">
         <p className="font-head text-lg font-bold text-text">{emptyMessage}</p>
-        <p className="text-sm text-muted">Add transactions to see insights.</p>
       </AppCard>
     )
   }

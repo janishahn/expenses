@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch, apiFetchBlob, getApiErrorMessage } from "../app/api"
 import type { CategoriesResponse } from "../app/api-types"
-import { formatEuroDate } from "../app/format"
 import { Toggle } from "../components/Toggle"
 import PageIntro from "../components/PageIntro"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
@@ -248,9 +247,6 @@ function ReportBuilderPage() {
                 onChange={setEndDate}
               />
             </div>
-            <p className="mt-2 text-xs text-muted">
-              Period: {formatEuroDate(startDate)} - {formatEuroDate(endDate)}
-            </p>
           </section>
 
           <section className="p-5">
@@ -406,11 +402,7 @@ function ReportBuilderPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
-                <p className="mt-3 text-xs text-muted">
-                  All categories are included.
-                </p>
-              )}
+              ) : null}
             </section>
           ) : null}
 
@@ -480,7 +472,7 @@ function ReportBuilderPage() {
             <AppTextarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Optional notes to include in the report..."
+              aria-label="Notes"
             />
           </section>
         </FinancialPanel>
@@ -488,8 +480,7 @@ function ReportBuilderPage() {
         <FinancialPanel role="inspector" className="self-start p-5 lg:sticky lg:top-20">
           <h2 className="mb-4 font-head text-lg font-bold">Generate</h2>
           <p className="mb-4 text-sm text-muted">
-            Click below to generate your PDF report with the selected
-            configuration. The report will open in a new tab.
+            The report will open in a new tab.
           </p>
 
           <label className="mb-4 flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted desk:min-h-0">
@@ -533,16 +524,6 @@ function ReportBuilderPage() {
             </div>
           ) : null}
 
-          <div className="mt-6 space-y-2 border-t border-border pt-4 text-xs text-muted">
-            <p>
-              <strong>Note:</strong> PDF generation may take a few seconds
-              depending on the date range and number of transactions.
-            </p>
-            <p>
-              Reports include KPIs, category breakdowns, trends, and
-              transaction details based on your selections.
-            </p>
-          </div>
         </FinancialPanel>
       </div>
     </section>

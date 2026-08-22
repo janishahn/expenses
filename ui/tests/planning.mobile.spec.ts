@@ -67,8 +67,9 @@ test.describe("Planning surfaces (mobile)", () => {
       }),
     ).toBeVisible()
     await page.getByLabel("Delete adjustment").click()
+    await expect(page.getByText("No adjustments yet.")).toBeVisible()
     await expect(
-      page.getByText("No adjustments yet. Add one to simulate impact.")
-    ).toBeVisible()
+      page.getByRole("heading", { name: "Baseline vs scenario" })
+    ).toHaveCount(0)
   })
 })

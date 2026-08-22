@@ -173,7 +173,6 @@ function TransactionEditForm({
         <AppInput
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder="Short title"
           required
         />
       </AppFieldLabel>
@@ -183,7 +182,6 @@ function TransactionEditForm({
         <DescriptionEditor
           value={description}
           onChange={setDescription}
-          placeholder="Optional description"
           className="mt-1"
           minHeight="8rem"
         />
@@ -1247,8 +1245,7 @@ function TransactionEditPage() {
                 className="h-11 w-11 shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <p className="mono-meta uppercase text-muted">Editing ledger entry</p>
-                <h2 className="mt-1 truncate font-head text-lg font-bold text-text">
+                <h2 className="truncate font-head text-lg font-bold text-text">
                   {transaction.title}
                 </h2>
                 <p className="mt-1 text-xs text-muted">

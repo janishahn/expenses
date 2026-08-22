@@ -364,7 +364,6 @@ function InsightsPage() {
                 Net after reimbursements · {series.length} months
               </p>
             </div>
-            <span className="mono-meta text-muted">Trend</span>
           </SectionHeading>
           <div className="p-4 md:p-5">
             <LineChart
@@ -396,13 +395,13 @@ function InsightsPage() {
                   ? `Category trend: ${selectedTrendCategory}`
                   : "Category trend"}
               </h2>
-              <p className="mt-0.5 text-xs text-muted">
-                {selectedTrendCategory
-                  ? trendHasSpend
+              {selectedTrendCategory ? (
+                <p className="mt-0.5 text-xs text-muted">
+                  {trendHasSpend
                     ? `${trend.length} months ending ${trendWindowEndLabel}`
-                    : `No spend ending ${trendWindowEndLabel}`
-                  : "Choose an expense category"}
-              </p>
+                    : `No spend ending ${trendWindowEndLabel}`}
+                </p>
+              ) : null}
             </div>
             <AppFieldLabel className="w-full shrink-0 sm:w-44">
               <span>Trend category</span>
@@ -454,10 +453,7 @@ function InsightsPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <FinancialPanel>
           <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Top categories</h2>
-              <p className="mt-0.5 text-xs text-muted">Where money entered and left</p>
-            </div>
+            <h2 className="font-head text-lg font-bold">Top categories</h2>
           </SectionHeading>
           <div className="grid gap-3 p-3 sm:grid-cols-2 md:p-4">
             <MetricLane tone="expense">
@@ -537,7 +533,6 @@ function InsightsPage() {
           <SectionHeading className="flex-wrap items-start">
             <div>
               <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
-              <p className="mt-0.5 text-xs text-muted">{budget_month}</p>
             </div>
             <AppFieldLabel className="w-full shrink-0 sm:w-40">
               <span>Budget month</span>
