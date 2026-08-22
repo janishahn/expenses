@@ -291,7 +291,7 @@ test.describe("Mobile state audit evidence", () => {
       await page.waitForLoadState("networkidle")
       await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible()
       await captureAuditState(page, layout, theme, "dashboard populated balance hero")
-      const legendButton = page.getByTestId("dashboard-donut-legend").getByRole("button").first()
+      const legendButton = page.getByTestId("donut-legend").getByRole("button").first()
       if (await legendButton.isVisible().catch(() => false)) {
         await legendButton.scrollIntoViewIfNeeded()
         await legendButton.click()
