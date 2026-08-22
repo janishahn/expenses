@@ -45,6 +45,9 @@ npm run test:e2e:headed
 - Stable high-risk page and dialog archetypes have reviewed screenshot baselines. Update snapshots only for intentional UI changes and inspect the image diff before accepting it.
 - The three compatibility projects run only the critical create-and-read ledger journey. Broad feature behavior stays in the primary desktop/mobile projects to keep the cross-browser cost bounded.
 - New or changed user stories update the coverage ledger and the corresponding browser tests in the same change.
+- Do not add a test that only makes sure that a removed feature is not in the application. Write such a test only when the application keeps a live route or code path that blocks the removed feature.
+- Each browser test must check the behavior that its title tells, and the check must occur in a standard run. Code that only writes optional audit artifacts is not coverage.
+- An audit spec must not do a journey again when a feature spec owns that journey. An audit spec adds only checks that apply across features, for example theme, overflow, or accessibility.
 
 ## Browser matrix
 

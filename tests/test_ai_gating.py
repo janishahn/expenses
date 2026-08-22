@@ -50,14 +50,6 @@ def test_mobile_status_exposes_llm_enabled_flag(
     assert api_client.get("/api/mobile/status").json()["llm_enabled"] is True
 
 
-def test_search_translation_endpoint_is_unavailable(api_client: TestClient) -> None:
-    response = api_client.post(
-        "/api/ai/search/translate",
-        json={"query": "groceries last month"},
-    )
-    assert response.status_code == 405
-
-
 @pytest.mark.parametrize("path", AI_GET_ENDPOINTS)
 def test_ai_get_endpoints_blocked_when_llm_disabled(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch, path: str
