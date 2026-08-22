@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Tag Detail Page", () => {
-  test("should update and delete a tag", async ({ page, request }) => {
+  test("updates, archives, restores, and deletes a tag", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Tag Detail")
     const originalName = `E2E Tag Detail ${Date.now()}`
@@ -50,7 +50,25 @@ test.describe("Tag Detail Page", () => {
     await expect(page.getByRole("dialog", { name: "Edit tag" })).toHaveCount(0)
     await expect(page.getByLabel("Name")).toHaveCount(0)
 
-    await settings.getByRole("button", { name: "Edit" }).click()
+    const archiveAction = settings.getByRole("button", { name: "Archive" })
+    const editAction = settings.getByRole("button", { name: "Edit tag" })
+    await expect(archiveAction).toHaveText("")
+    await expect(editAction).toHaveText("")
+    const [archiveBox, editBox] = await Promise.all([
+      archiveAction.boundingBox(),
+      editAction.boundingBox(),
+    ])
+    expect(archiveBox).not.toBeNull()
+    expect(editBox).not.toBeNull()
+    expect(Math.abs(archiveBox!.y - editBox!.y)).toBeLessThanOrEqual(1)
+    expect(
+      await archiveAction.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgba(0, 0, 0, 0)")
+    expect(
+      await editAction.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).not.toBe("rgba(0, 0, 0, 0)")
+
+    await editAction.click()
     const editDialog = page.getByRole("dialog", { name: "Edit tag" })
     await expect(editDialog).toBeVisible()
 
@@ -65,6 +83,13 @@ test.describe("Tag Detail Page", () => {
       initialBudgetState === "true" ? "false" : "true"
     )
 
+    const filterToggle = editDialog
+      .locator("label", { hasText: "Hide from filter menus" })
+      .getByRole("switch")
+    await expect(filterToggle).toHaveAttribute("aria-checked", "false")
+    await filterToggle.click()
+    await expect(filterToggle).toHaveAttribute("aria-checked", "true")
+
     await editDialog
       .locator("label", { hasText: "Automatically add during a date range" })
       .getByRole("switch")
@@ -78,7 +103,24 @@ test.describe("Tag Detail Page", () => {
     await expect(editDialog).toHaveCount(0)
     await expect(page.locator("main h1")).toContainText(updatedName)
     await expect(settings).toContainText("Excluded from budgets")
+    await expect(settings).toContainText("Hidden from filter menus")
     await expect(settings).toContainText("10.08.2026–17.08.2026")
+
+    await archiveAction.click()
+    await expect(page.locator("main")).toContainText("Archived")
+    await expect(settings).toContainText("Lifecycle")
+    await expect(settings).toContainText(/Archived \d{2}\.\d{2}\.\d{4}/)
+
+    await page.goto("/tags?period=all")
+    const archivedLibrary = page.getByTestId("archived-tag-library")
+    await expect(archivedLibrary).toContainText(updatedName)
+    await archivedLibrary.getByRole("link", { name: new RegExp(updatedName) }).click()
+    await settings.getByRole("button", { name: "Restore" }).click()
+    await expect(settings.getByRole("button", { name: "Archive" })).toBeVisible()
+    await expect(settings).not.toContainText("Lifecycle")
+
+    await settings.getByRole("button", { name: "Archive" }).click()
+    await expect(settings.getByRole("button", { name: "Restore" })).toBeVisible()
 
     await settings.getByRole("button", { name: "Edit" }).click()
     await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")

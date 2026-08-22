@@ -137,6 +137,18 @@ class TagService:
             stmt = stmt.where(Tag.archived_at.is_(None))
         return self.session.scalars(stmt).all()
 
+    def list_filter_options(self, selected_ids: tuple[int, ...] = ()) -> list[Tag]:
+        selected = tuple(sorted(set(selected_ids)))
+        visibility = Tag.is_hidden_from_filters.is_(False)
+        if selected:
+            visibility = or_(visibility, Tag.id.in_(selected))
+        stmt = (
+            select(Tag)
+            .where(Tag.user_id == self.user_id, visibility)
+            .order_by(Tag.archived_at.is_not(None), Tag.name)
+        )
+        return self.session.scalars(stmt).all()
+
     def active_auto_attach_tags(self, transaction_date: date) -> list[Tag]:
         stmt = (
             select(Tag)
@@ -160,8 +172,6 @@ class TagService:
         )
         existing = self.session.scalar(stmt)
         if existing:
-            if existing.archived_at is not None:
-                existing.archived_at = None
             return existing
 
         tag = Tag(user_id=self.user_id, name=clean_name)
@@ -173,6 +183,7 @@ class TagService:
         self,
         name: str,
         is_hidden_from_budget: bool = False,
+        is_hidden_from_filters: bool = False,
         color: str | None = None,
         auto_attach_start_date: date | None = None,
         auto_attach_end_date: date | None = None,
@@ -186,6 +197,10 @@ class TagService:
         )
         existing = self.session.scalar(stmt)
         if existing:
+            if existing.archived_at is not None:
+                raise ValueError(
+                    "A tag with this name is archived — restore it instead"
+                )
             raise ValueError("Tag already exists")
 
         tag = Tag(
@@ -193,6 +208,7 @@ class TagService:
             name=clean_name,
             color=color,
             is_hidden_from_budget=is_hidden_from_budget,
+            is_hidden_from_filters=is_hidden_from_filters,
             auto_attach_start_date=auto_attach_start_date,
             auto_attach_end_date=auto_attach_end_date,
         )
@@ -206,6 +222,7 @@ class TagService:
             tag_id=tag.id,
             name=tag.name,
             hidden_from_budget=tag.is_hidden_from_budget,
+            hidden_from_filters=tag.is_hidden_from_filters,
         )
         return tag
 
@@ -214,6 +231,7 @@ class TagService:
         tag_id: int,
         name: str,
         is_hidden_from_budget: bool,
+        is_hidden_from_filters: bool | None = None,
         color: str | None = None,
         auto_attach_period_supplied: bool = False,
         auto_attach_start_date: date | None = None,
@@ -238,6 +256,8 @@ class TagService:
         tag.name = clean_name
         tag.color = color
         tag.is_hidden_from_budget = is_hidden_from_budget
+        if is_hidden_from_filters is not None:
+            tag.is_hidden_from_filters = is_hidden_from_filters
         if auto_attach_period_supplied:
             tag.auto_attach_start_date = auto_attach_start_date
             tag.auto_attach_end_date = auto_attach_end_date
@@ -250,6 +270,7 @@ class TagService:
             tag_id=tag.id,
             name=tag.name,
             hidden_from_budget=tag.is_hidden_from_budget,
+            hidden_from_filters=tag.is_hidden_from_filters,
         )
         return tag
 
@@ -260,6 +281,14 @@ class TagService:
         tag.archived_at = datetime.now(UTC)
         self.session.commit()
         log_event(logger, logging.INFO, "tag_archived", tag_id=tag.id, name=tag.name)
+
+    def restore(self, tag_id: int) -> None:
+        tag = self.session.get(Tag, tag_id)
+        if not tag or tag.user_id != self.user_id:
+            raise ValueError("Tag not found")
+        tag.archived_at = None
+        self.session.commit()
+        log_event(logger, logging.INFO, "tag_restored", tag_id=tag.id, name=tag.name)
 
     def delete(self, tag_id: int) -> None:
         tag = self.session.get(Tag, tag_id)

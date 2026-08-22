@@ -28,6 +28,8 @@ function isIsoDate(value: string | null): value is string {
 type ReportTag = {
   id: number
   name: string
+  is_hidden_from_filters: boolean
+  archived_at: string | null
 }
 
 type TagsResponse = {
@@ -84,8 +86,22 @@ function ReportBuilderPage() {
 
   const { data: tagsData } = useQuery({
     queryKey: ["tags", "report-builder"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryFn: () =>
+      apiFetch<TagsResponse>("/api/tags?period=all&include_archived=1"),
   })
+
+  const filterTags = useMemo(
+    () =>
+      (tagsData?.tags ?? [])
+        .filter((tag) => !tag.is_hidden_from_filters)
+        .sort((left, right) => {
+          const leftArchived = Boolean(left.archived_at)
+          const rightArchived = Boolean(right.archived_at)
+          if (leftArchived !== rightArchived) return leftArchived ? 1 : -1
+          return left.name.localeCompare(right.name)
+        }),
+    [tagsData],
+  )
 
   const activeCategories = useMemo(
     () => (categoriesData || []).filter((category) => category.archived_at === null),
@@ -448,7 +464,7 @@ function ReportBuilderPage() {
 
               {tagMode !== "all" ? (
                 <div className="mt-4 grid gap-2 md:grid-cols-2">
-                  {tagsData.tags.map((tag) => (
+                  {filterTags.map((tag) => (
                     <label
                       key={tag.id}
                       className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
@@ -459,7 +475,10 @@ function ReportBuilderPage() {
                         onChange={() => handleTagToggle(tag.id)}
                         className="control-check"
                       />
-                      {tag.name}
+                      <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+                      {tag.archived_at ? (
+                        <span className="shrink-0 text-xs text-muted">Archived</span>
+                      ) : null}
                     </label>
                   ))}
                 </div>

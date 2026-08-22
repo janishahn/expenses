@@ -205,6 +205,44 @@ test.describe("Report Builder Page", () => {
     expect(payload.excluded_tag_ids).toEqual([tagId])
   })
 
+  test("offers archived tags but omits tags hidden from filter menus", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const stamp = Date.now()
+    const archivedName = `Report archived vacation ${stamp}`
+    const hiddenName = `Report hidden tag ${stamp}`
+    const archivedResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: { name: archivedName, is_hidden_from_budget: false },
+    })
+    const archivedId = ((await archivedResponse.json()) as { id: number }).id
+    await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: {
+        name: hiddenName,
+        is_hidden_from_budget: false,
+        is_hidden_from_filters: true,
+      },
+    })
+    const archiveResponse = await request.post(`/api/tags/${archivedId}/archive`, {
+      headers: { "X-CSRF-Token": csrfToken },
+    })
+    expect(archiveResponse.ok()).toBeTruthy()
+
+    await page.goto("/reports/builder")
+    await page
+      .getByRole("radiogroup", { name: "Tag scope" })
+      .getByRole("radio", { name: "Only include" })
+      .check()
+    await expect(
+      page.getByRole("checkbox", { name: new RegExp(archivedName) }),
+    ).toBeVisible()
+    await expect(page.getByText("Archived", { exact: true })).toBeVisible()
+    await expect(page.getByText(hiddenName, { exact: true })).toHaveCount(0)
+  })
+
   test("shows latest generated PDF follow-up state", async ({ page }) => {
     await page.addInitScript(() => {
       window.open = () => {

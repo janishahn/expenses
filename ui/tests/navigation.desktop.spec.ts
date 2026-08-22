@@ -109,6 +109,49 @@ test.describe("Navigation", () => {
     await expect(sidebar.getByRole("link", { name: /More/i })).toHaveCount(0)
   })
 
+  test("reserves the sidebar scroll gutter while hiding its idle thumb", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 720 })
+    await page.goto("/")
+
+    const navigation = page.getByRole("navigation", { name: "Primary" })
+    await expect(navigation).toBeVisible()
+    await expect
+      .poll(() =>
+        navigation.evaluate((element) => {
+          const style = getComputedStyle(element)
+          return {
+            gutter: style.scrollbarGutter,
+            thumb: style.getPropertyValue("--sidebar-scrollbar-thumb").trim(),
+          }
+        })
+      )
+      .toEqual({ gutter: "stable", thumb: "transparent" })
+
+    await navigation.hover()
+    await expect
+      .poll(() =>
+        navigation.evaluate((element) =>
+          getComputedStyle(element)
+            .getPropertyValue("--sidebar-scrollbar-thumb")
+            .trim()
+        )
+      )
+      .not.toBe("transparent")
+
+    await page.locator("main h1").hover()
+    await expect
+      .poll(() =>
+        navigation.evaluate((element) =>
+          getComputedStyle(element)
+            .getPropertyValue("--sidebar-scrollbar-thumb")
+            .trim()
+        )
+      )
+      .toBe("transparent")
+  })
+
   test("keeps theme selection in Settings and removes the shell quick toggle", async ({
     page,
   }) => {

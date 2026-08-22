@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Tags can be archived and restored without losing their settings or existing transaction associations; archived tags leave future assignment pickers while remaining editable and hard-deletable.
+- Each tag can be hidden independently from analytical and transaction filter menus.
+
 ### Changed
+- Historical filter menus continue to offer archived tags unless they are explicitly hidden, and applied hidden tag scopes remain named and removable.
+- Editing transactions or applying name-based rules, templates, and bulk changes no longer silently restores archived tags.
 - Removed redundant narration, repeated helper text, decorative sublines, and obvious-control copy across the web interface while retaining decision-critical consequences, exact values, states, errors, and accessibility text.
+
+### Fixed
+- Kept the desktop sidebar's scroll gutter stable while hiding its scrollbar thumb until the navigation is hovered or keyboard-focused.
+- Docker Compose now forwards `EXPENSES_AUTH_SIGNUP_ENABLED`, so setting it to `false` in `.env` disables self-service signup as documented.
 
 ## [0.4.10] - 2026-08-21
 

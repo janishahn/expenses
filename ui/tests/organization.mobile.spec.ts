@@ -45,7 +45,19 @@ test.describe("Organization surfaces (mobile)", () => {
     await expect(settings).toContainText("10.08.2026–17.08.2026")
     await expect(page.getByLabel("Name")).toHaveCount(0)
 
-    await settings.getByRole("button", { name: "Edit" }).click()
+    const archiveAction = settings.getByRole("button", { name: "Archive" })
+    const editAction = settings.getByRole("button", { name: "Edit tag" })
+    await expect(archiveAction).toHaveText("")
+    await expect(editAction).toHaveText("")
+    const [archiveBox, editBox] = await Promise.all([
+      archiveAction.boundingBox(),
+      editAction.boundingBox(),
+    ])
+    expect(archiveBox).not.toBeNull()
+    expect(editBox).not.toBeNull()
+    expect(Math.abs(archiveBox!.y - editBox!.y)).toBeLessThanOrEqual(1)
+
+    await editAction.click()
     const editDialog = page.getByRole("dialog", { name: "Edit tag" })
     await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
     await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
@@ -75,8 +87,25 @@ test.describe("Organization surfaces (mobile)", () => {
 
     const updatedName = `${tagName} updated`
     await editDialog.getByLabel("Name").fill(updatedName)
+    await editDialog
+      .locator("label", { hasText: "Hide from filter menus" })
+      .getByRole("switch")
+      .click()
     await editDialog.getByRole("button", { name: "Save" }).click()
     await expect(page.getByRole("heading", { name: updatedName })).toBeVisible()
+    await expect(settings).toContainText("Hidden from filter menus")
+
+    await archiveAction.click()
+    await expect(settings.getByRole("button", { name: "Restore" })).toBeVisible()
+    await expect(settings).toContainText("Lifecycle")
+    await expect(settings).toContainText(/Archived \d{2}\.\d{2}\.\d{4}/)
+
+    await page.goto("/tags?period=all")
+    const archivedLibrary = page.getByTestId("archived-tag-library")
+    await expect(archivedLibrary).toContainText(updatedName)
+    await archivedLibrary.getByRole("link", { name: new RegExp(updatedName) }).click()
+    await settings.getByRole("button", { name: "Restore" }).click()
+    await expect(settings.getByRole("button", { name: "Archive" })).toBeVisible()
   })
 
   test("creates and edits a transaction template", async ({ page, request }) => {

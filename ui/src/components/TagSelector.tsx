@@ -100,7 +100,7 @@ function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
             </p>
           ) : data && data.tags.length === 0 && selected.length === 0 ? (
             <p className="text-xs font-normal text-muted">
-              No tags yet.{" "}
+              No active tags.{" "}
               <Link
                 to="/tags"
                 className="text-accent underline-offset-2 hover:underline"

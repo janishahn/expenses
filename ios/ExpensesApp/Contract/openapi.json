@@ -2897,7 +2897,7 @@
           },
           "tags": {
             "items": {
-              "$ref": "#/components/schemas/TransactionTagOut"
+              "$ref": "#/components/schemas/FilterTagOut"
             },
             "title": "Tags",
             "type": "array"
@@ -3418,6 +3418,36 @@
           "items"
         ],
         "title": "DurablePurchasesResponseOut",
+        "type": "object"
+      },
+      "FilterTagOut": {
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "FilterTagOut",
         "type": "object"
       },
       "ForecastBreakdownOut": {
@@ -4662,7 +4692,7 @@
           },
           "tags": {
             "items": {
-              "$ref": "#/components/schemas/TransactionTagOut"
+              "$ref": "#/components/schemas/FilterTagOut"
             },
             "title": "Tags",
             "type": "array"
@@ -7134,6 +7164,17 @@
             "title": "Is Hidden From Budget",
             "type": "boolean"
           },
+          "is_hidden_from_filters": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden From Filters"
+          },
           "name": {
             "maxLength": 50,
             "minLength": 1,
@@ -7183,6 +7224,18 @@
       },
       "TagMutationOut": {
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "auto_attach_period": {
             "anyOf": [
               {
@@ -7212,6 +7265,10 @@
             "title": "Is Hidden From Budget",
             "type": "boolean"
           },
+          "is_hidden_from_filters": {
+            "title": "Is Hidden From Filters",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -7220,13 +7277,26 @@
         "required": [
           "id",
           "name",
-          "is_hidden_from_budget"
+          "is_hidden_from_budget",
+          "is_hidden_from_filters"
         ],
         "title": "TagMutationOut",
         "type": "object"
       },
       "TagOut": {
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "auto_attach_period": {
             "anyOf": [
               {
@@ -7254,6 +7324,10 @@
           },
           "is_hidden_from_budget": {
             "title": "Is Hidden From Budget",
+            "type": "boolean"
+          },
+          "is_hidden_from_filters": {
+            "title": "Is Hidden From Filters",
             "type": "boolean"
           },
           "name": {
@@ -7269,7 +7343,8 @@
         "required": [
           "id",
           "name",
-          "is_hidden_from_budget"
+          "is_hidden_from_budget",
+          "is_hidden_from_filters"
         ],
         "title": "TagOut",
         "type": "object"
@@ -8099,7 +8174,7 @@
           },
           "tags": {
             "items": {
-              "$ref": "#/components/schemas/TransactionTagOut"
+              "$ref": "#/components/schemas/FilterTagOut"
             },
             "title": "Tags",
             "type": "array"
@@ -8178,7 +8253,7 @@
           },
           "tags": {
             "items": {
-              "$ref": "#/components/schemas/TransactionTagOut"
+              "$ref": "#/components/schemas/FilterTagOut"
             },
             "title": "Tags",
             "type": "array"
@@ -11751,6 +11826,18 @@
     "/api/tags": {
       "get": {
         "operationId": "api_tags_api_tags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11761,6 +11848,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Api Tags"
@@ -11997,6 +12094,84 @@
           }
         },
         "summary": "Api Update Tag"
+      }
+    },
+    "/api/tags/{tag_id}/archive": {
+      "post": {
+        "operationId": "api_archive_tag_api_tags__tag_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "title": "Tag Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Archive Tag"
+      }
+    },
+    "/api/tags/{tag_id}/restore": {
+      "post": {
+        "operationId": "api_restore_tag_api_tags__tag_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "title": "Tag Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Restore Tag"
       }
     },
     "/api/templates": {
