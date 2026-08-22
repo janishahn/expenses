@@ -51,6 +51,88 @@ test("keeps archived and hidden filter visibility independent", async ({
   await expect(filterPanel.getByText(archivedName, { exact: true })).toBeVisible()
 })
 
+test("restores excluded spending-band categories in their original stack order", async ({
+  page,
+}) => {
+  await page.goto("/")
+  const isolated = await loginAsIsolatedUser(page)
+  const stamp = Date.now()
+  const today = new Date().toISOString().slice(0, 10)
+  const tagNames = [`Band exclude A ${stamp}`, `Band exclude C ${stamp}`]
+  const categoryNames = ["A", "B", "C", "D"].map(
+    (label) => `Band order ${label} ${stamp}`,
+  )
+
+  for (const name of tagNames) {
+    const response = await isolated.request.post("/api/tags", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name, is_hidden_from_budget: false },
+    })
+    expect(response.ok()).toBeTruthy()
+  }
+
+  const categoryIds: number[] = []
+  for (const name of categoryNames) {
+    const response = await isolated.request.post("/api/categories", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name, type: "expense", order: 0 },
+    })
+    expect(response.ok()).toBeTruthy()
+    categoryIds.push(((await response.json()) as { id: number }).id)
+  }
+
+  for (const [index, amountCents] of [40_000, 30_000, 20_000, 10_000].entries()) {
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T${String(10 + index).padStart(2, "0")}:00:00`,
+      type: "expense",
+      amount_cents: amountCents,
+      category_id: categoryIds[index],
+      title: categoryNames[index],
+      tags: index === 0 ? [tagNames[0]] : index === 2 ? [tagNames[1]] : [],
+    })
+  }
+
+  await page.goto("/?period=this_month")
+  const currentBand = page
+    .getByTestId("dashboard-spending-bands")
+    .locator(".recharts-wrapper")
+    .first()
+  const segments = currentBand.locator(".spending-band-segment")
+  await expect(segments).toHaveCount(4)
+  const initialFills = await segments.evaluateAll((elements) =>
+    elements.map((element) => getComputedStyle(element).fill),
+  )
+  expect(new Set(initialFills).size).toBe(4)
+
+  await page.getByRole("button", { name: "Filters", exact: true }).click()
+  const filterPanel = page.getByRole("dialog", { name: "Dashboard filters" })
+  await filterPanel.getByRole("button", { name: "Exclude" }).click()
+  for (const tagName of tagNames) {
+    await filterPanel.getByRole("checkbox", { name: tagName }).check()
+  }
+  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  await expect(segments).toHaveCount(2)
+
+  await page.getByRole("button", { name: "Remove Excluding: 2 tags" }).click()
+  await expect(segments).toHaveCount(4)
+  await expect
+    .poll(() =>
+      segments.evaluateAll((elements) => {
+        return elements
+          .map((element) => ({
+            fill: getComputedStyle(element).fill,
+            left: element.getBoundingClientRect().left,
+          }))
+          .sort((left, right) => left.left - right.left)
+          .map(({ fill }) => fill)
+      }),
+    )
+    .toEqual(initialFills)
+
+  await isolated.request.dispose()
+})
+
 test("uses one multi-tag include or exclude filter across desktop data surfaces", async ({
   page,
 }) => {

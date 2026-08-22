@@ -197,6 +197,9 @@ function SpendingBandsChart({
                 month.segments.forEach((segment) => {
                   chartRow[segmentKey(segment)] = segment.amount_cents
                 })
+                // Recharts appends newly mounted series to its internal stack registry.
+                // Reset that registry when filtering changes the ordered segment set.
+                const segmentOrderKey = month.segments.map(segmentKey).join("|")
 
                 return (
                   <div
@@ -228,6 +231,7 @@ function SpendingBandsChart({
                       >
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
+                            key={segmentOrderKey}
                             layout="vertical"
                             data={[chartRow]}
                             margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
