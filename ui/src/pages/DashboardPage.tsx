@@ -76,7 +76,7 @@ type DashboardResponse = {
   }
   recent: TransactionListItem[]
   categories: CategorySummary[]
-  tags: Array<{ id: number; name: string }>
+  tags: Array<{ id: number; name: string; archived_at?: string | null }>
   durable_purchases?: DurablePurchaseItem[]
   budget_pace?: {
     velocity_ratio: number

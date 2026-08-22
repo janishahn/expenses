@@ -40,13 +40,16 @@ type TagRow = {
   name: string
   color: string | null
   is_hidden_from_budget: boolean
+  is_hidden_from_filters: boolean
   auto_attach_period: { start: string; end: string } | null
+  archived_at: string | null
   usage_count: number
 }
 
 type TagMutationPayload = {
   name: string
   is_hidden_from_budget: boolean
+  is_hidden_from_filters: boolean
   auto_attach_period: { start: string; end: string } | null
 }
 
@@ -63,6 +66,7 @@ function TagsPage() {
   const [mergeOpen, setMergeOpen] = useState(false)
   const [name, setName] = useState("")
   const [hidden, setHidden] = useState(false)
+  const [hiddenFromFilters, setHiddenFromFilters] = useState(false)
   const [autoAttachEnabled, setAutoAttachEnabled] = useState(false)
   const [autoAttachStart, setAutoAttachStart] = useState("")
   const [autoAttachEnd, setAutoAttachEnd] = useState("")
@@ -74,6 +78,7 @@ function TagsPage() {
   const queryString = useMemo(() => {
     const params = new URLSearchParams(searchParams)
     if (!params.get("period")) params.set("period", "all")
+    params.set("include_archived", "1")
     return params.toString()
   }, [searchParams])
 
@@ -100,6 +105,7 @@ function TagsPage() {
       setCreateOpen(false)
       setName("")
       setHidden(false)
+      setHiddenFromFilters(false)
       setAutoAttachEnabled(false)
       setAutoAttachStart("")
       setAutoAttachEnd("")
@@ -111,6 +117,7 @@ function TagsPage() {
     resetCreateMutation()
     setName("")
     setHidden(false)
+    setHiddenFromFilters(false)
     setAutoAttachEnabled(false)
     setAutoAttachStart("")
     setAutoAttachEnd("")
@@ -161,6 +168,7 @@ function TagsPage() {
     createMutation.mutate({
       name: name.trim(),
       is_hidden_from_budget: hidden,
+      is_hidden_from_filters: hiddenFromFilters,
       auto_attach_period: autoAttachEnabled
         ? { start: autoAttachStart, end: autoAttachEnd }
         : null,
@@ -172,10 +180,12 @@ function TagsPage() {
     return <RouteError title="Tags" message="Unable to load tags." />
   }
 
+  const activeTags = data.tags.filter((tag) => !tag.archived_at)
+  const archivedTags = data.tags.filter((tag) => tag.archived_at)
   const mergeSource = data.tags.find((tag) => String(tag.id) === mergeSourceId)
   const mergeTarget = data.tags.find((tag) => String(tag.id) === mergeTargetId)
   const mergeTargets = mergeSource
-    ? data.tags.filter((tag) => tag.id !== mergeSource.id)
+    ? activeTags.filter((tag) => tag.id !== mergeSource.id)
     : []
 
   const resetMergeSelection = () => {
@@ -219,16 +229,16 @@ function TagsPage() {
           <div>
             <h2 className="font-head text-lg font-bold">Context library</h2>
             <p className="mt-0.5 text-xs text-muted">
-              Cross-cutting labels for activity and budget treatment
+              Cross-cutting labels for activity, filters, and budget treatment
             </p>
           </div>
           <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-            {data.tags.length}
+            {activeTags.length}
           </span>
         </SectionHeading>
-        {data.tags.length ? (
+        {activeTags.length ? (
           <div className="grid gap-2.5 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
-            {data.tags.map((tag) => (
+            {activeTags.map((tag) => (
               <Link
                 key={tag.id}
                 to={`/tags/${tag.id}`}
@@ -277,10 +287,55 @@ function TagsPage() {
           </div>
         ) : (
           <div className="p-6 text-sm text-muted">
-            No tags yet. Create one to organize transactions.
+            No active tags. Restore an archived tag or create a new one.
           </div>
         )}
       </FinancialPanel>
+
+      {archivedTags.length ? (
+        <FinancialPanel role="ledger" data-testid="archived-tag-library">
+          <SectionHeading>
+            <div>
+              <h2 className="font-head text-lg font-bold">Archived tags</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Retired labels kept for history and filtering
+              </p>
+            </div>
+            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
+              {archivedTags.length}
+            </span>
+          </SectionHeading>
+          <div className="grid gap-2.5 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
+            {archivedTags.map((tag) => (
+              <Link
+                key={tag.id}
+                to={`/tags/${tag.id}`}
+                className="group flex min-h-[5.75rem] items-start justify-between gap-3 rounded-lg bg-faint/80 p-3.5 text-inherit transition hover:bg-surface-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="category-icon-tile" data-signal-tone="purple">
+                    <TagIcon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-text group-hover:text-accent">
+                      {tag.name}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted">
+                      Archived {formatEuroDate(tag.archived_at?.slice(0, 10) ?? "")}
+                    </p>
+                    <p className="mt-1 font-mono text-[11px] text-muted">
+                      {tag.usage_count} uses in period
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-surface-hi px-2 py-1 text-[10px] font-semibold text-muted">
+                  Archived
+                </span>
+              </Link>
+            ))}
+          </div>
+        </FinancialPanel>
+      ) : null}
 
       <Dialog
         open={createOpen}
@@ -317,6 +372,10 @@ function TagsPage() {
             <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
               <Toggle on={hidden} onChange={setHidden} />
               <span>Exclude from budgets</span>
+            </label>
+            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
+              <Toggle on={hiddenFromFilters} onChange={setHiddenFromFilters} />
+              <span>Hide from filter menus</span>
             </label>
             <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
               <Toggle on={autoAttachEnabled} onChange={setAutoAttachEnabled} />
@@ -412,7 +471,7 @@ function TagsPage() {
                 <option value="">Choose source tag</option>
                 {data.tags.map((tag) => (
                   <option key={tag.id} value={tag.id}>
-                    {tag.name}
+                    {tag.name}{tag.archived_at ? " (archived)" : ""}
                   </option>
                 ))}
               </AppNativeSelect>

@@ -732,6 +732,31 @@
   }
 
   @media (min-width: 861px) {
+    .sidebar-nav-scroll {
+      --sidebar-scrollbar-thumb: transparent;
+      scrollbar-color: var(--sidebar-scrollbar-thumb) transparent;
+    }
+
+    .sidebar-nav-scroll:hover,
+    .sidebar-nav-scroll:focus-within {
+      --sidebar-scrollbar-thumb: rgb(var(--sidebar-muted) / 0.62);
+    }
+
+    .sidebar-nav-scroll::-webkit-scrollbar {
+      width: 0.75rem;
+    }
+
+    .sidebar-nav-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sidebar-nav-scroll::-webkit-scrollbar-thumb {
+      border: 0.25rem solid transparent;
+      border-radius: 9999px;
+      background: var(--sidebar-scrollbar-thumb);
+      background-clip: padding-box;
+    }
+
     .app-sidebar {
       inset: 0;
       width: 14rem;

@@ -65,7 +65,7 @@ Rules take care of repeated sorting. Match a title, amount, or transaction type,
 - **Digest and Reports** turn recent activity into a short review or an exportable PDF.
 - **Reconcile** compares a Commerzbank transaction CSV with your ledger and guides you through unresolved rows.
 - **Assistant** answers read-only questions about your spending when optional LLM support is enabled.
-- **Templates, categories, and tags** make frequent entries quick to create and old entries easier to find.
+- **Templates, categories, and tags** make frequent entries quick to create and old entries easier to find. Tags can be archived without losing historical assignments and hidden from filter menus independently.
 
 ## Run with Docker
 

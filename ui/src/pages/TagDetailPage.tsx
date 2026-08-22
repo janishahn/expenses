@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { FloppyDiskIcon } from "@phosphor-icons/react/FloppyDisk"
+import { ArchiveIcon } from "@phosphor-icons/react/Archive"
+import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
 import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
@@ -60,7 +62,9 @@ type TagDetailResponse = {
     name: string
     color: string | null
     is_hidden_from_budget: boolean
+    is_hidden_from_filters: boolean
     auto_attach_period: { start: string; end: string } | null
+    archived_at: string | null
   }
   period: { slug: string; start: string; end: string }
   kpis: { income: number; expenses: number; balance: number }
@@ -83,6 +87,7 @@ type TagSettingsEditorProps = {
     name: string
     color: string | null
     is_hidden_from_budget: boolean
+    is_hidden_from_filters: boolean
     auto_attach_period: { start: string; end: string } | null
   }) => void
   onDelete: () => void
@@ -100,6 +105,9 @@ function TagSettingsEditor({
 }: TagSettingsEditorProps) {
   const [name, setName] = useState(tag.name)
   const [hidden, setHidden] = useState(tag.is_hidden_from_budget)
+  const [hiddenFromFilters, setHiddenFromFilters] = useState(
+    tag.is_hidden_from_filters,
+  )
   const [autoAttachEnabled, setAutoAttachEnabled] = useState(
     tag.auto_attach_period !== null,
   )
@@ -116,6 +124,7 @@ function TagSettingsEditor({
       name: name.trim(),
       color: tag.color,
       is_hidden_from_budget: hidden,
+      is_hidden_from_filters: hiddenFromFilters,
       auto_attach_period: autoAttachEnabled
         ? { start: autoAttachStart, end: autoAttachEnd }
         : null,
@@ -138,7 +147,7 @@ function TagSettingsEditor({
             <div>
               <DialogTitle>Edit tag</DialogTitle>
               <p className="mt-1 text-xs text-muted">
-                Update identity, budget treatment, and automatic dates
+                Update identity, visibility, budget treatment, and automatic dates
               </p>
             </div>
             <DialogClose asChild>
@@ -167,6 +176,10 @@ function TagSettingsEditor({
             <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
               <Toggle on={hidden} onChange={setHidden} />
               <span>Exclude from budgets</span>
+            </label>
+            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
+              <Toggle on={hiddenFromFilters} onChange={setHiddenFromFilters} />
+              <span>Hide from filter menus</span>
             </label>
             <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
               <Toggle
@@ -273,6 +286,7 @@ function TagDetailPage() {
       name: string
       color: string | null
       is_hidden_from_budget: boolean
+      is_hidden_from_filters: boolean
       auto_attach_period: { start: string; end: string } | null
     }) =>
       apiFetch(`/api/tags/${tagId}`, {
@@ -294,6 +308,20 @@ function TagDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tags"] })
       navigate("/tags")
+    },
+  })
+
+  const lifecycleMutation = useMutation({
+    mutationFn: (action: "archive" | "restore") =>
+      apiFetch(`/api/tags/${tagId}/${action}`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tag", tagId] })
+      queryClient.invalidateQueries({ queryKey: ["tags"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["insights"] })
     },
   })
 
@@ -355,10 +383,19 @@ function TagDetailPage() {
       <PageScopeHeader
         title={tag.name}
         titleAccessory={
-          tag.is_hidden_from_budget ? (
-            <span className="rounded-full bg-signal-yellow-soft px-2.5 py-1 text-xs font-semibold text-text">
-              Excluded from budgets
-            </span>
+          tag.archived_at || tag.is_hidden_from_budget ? (
+            <div className="flex flex-wrap gap-2">
+              {tag.archived_at ? (
+                <span className="rounded-full bg-faint px-2.5 py-1 text-xs font-semibold text-muted">
+                  Archived
+                </span>
+              ) : null}
+              {tag.is_hidden_from_budget ? (
+                <span className="rounded-full bg-signal-yellow-soft px-2.5 py-1 text-xs font-semibold text-text">
+                  Excluded from budgets
+                </span>
+              ) : null}
+            </div>
           ) : null
         }
         backHref="/tags"
@@ -507,19 +544,60 @@ function TagDetailPage() {
               <div>
                 <h2 className="font-head text-lg font-bold">Tag settings</h2>
                 <p className="mt-0.5 text-xs text-muted">
-                  Identity, budget treatment, and automatic dates
+                  Identity, visibility, budget treatment, and automatic dates
                 </p>
               </div>
-              <AppButton
-                ref={editButtonRef}
-                type="button"
-                onClick={openEditor}
-                tone="secondary"
-              >
-                <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                Edit
-              </AppButton>
+              <div className="flex shrink-0 items-center gap-2">
+                <AppButton
+                  type="button"
+                  onClick={() =>
+                    lifecycleMutation.mutate(tag.archived_at ? "restore" : "archive")
+                  }
+                  tone={tag.archived_at ? "secondary" : "inline"}
+                  className={
+                    tag.archived_at
+                      ? "h-11 w-11 p-0"
+                      : "h-11 w-11 bg-transparent p-0 text-semantic-red shadow-none hover:bg-signal-red-soft hover:text-semantic-red"
+                  }
+                  aria-label={
+                    lifecycleMutation.isPending
+                      ? tag.archived_at
+                        ? "Restoring tag"
+                        : "Archiving tag"
+                      : tag.archived_at
+                        ? "Restore"
+                        : "Archive"
+                  }
+                  title={tag.archived_at ? "Restore tag" : "Archive tag"}
+                  disabled={lifecycleMutation.isPending}
+                >
+                  {tag.archived_at ? (
+                    <ArrowCounterClockwiseIcon className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </AppButton>
+                <AppButton
+                  ref={editButtonRef}
+                  type="button"
+                  onClick={openEditor}
+                  tone="secondary"
+                  className="h-11 w-11 p-0"
+                  aria-label="Edit tag"
+                  title="Edit tag"
+                >
+                  <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
+                </AppButton>
+              </div>
             </SectionHeading>
+            {lifecycleMutation.error ? (
+              <p className="px-5 pt-3 text-xs text-semantic-red">
+                {getApiErrorMessage(
+                  lifecycleMutation.error,
+                  tag.archived_at ? "Unable to restore tag." : "Unable to archive tag.",
+                )}
+              </p>
+            ) : null}
             <dl className="divide-y divide-border px-5">
               <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
                 <dt className="text-xs font-semibold text-muted">Name</dt>
@@ -542,6 +620,24 @@ function TagDetailPage() {
                   </span>
                 </dd>
               </div>
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
+                <dt className="text-xs font-semibold text-muted">
+                  Filter visibility
+                </dt>
+                <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
+                  {tag.is_hidden_from_filters
+                    ? "Hidden from filter menus"
+                    : "Available in filter menus"}
+                </dd>
+              </div>
+              {tag.archived_at ? (
+                <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
+                  <dt className="text-xs font-semibold text-muted">Lifecycle</dt>
+                  <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
+                    Archived {formatEuroDate(tag.archived_at.slice(0, 10))}
+                  </dd>
+                </div>
+              ) : null}
               <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
                 <dt className="text-xs font-semibold text-muted">
                   Automatic tagging

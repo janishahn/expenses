@@ -79,7 +79,7 @@ type TransactionRow = {
   description: string | null
   latitude: number | null
   longitude: number | null
-  tags: Array<{ id: number; name: string }>
+  tags: Array<{ id: number; name: string; archived_at?: string | null }>
   has_attachments: boolean
 }
 

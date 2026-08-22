@@ -1,5 +1,53 @@
 import { expect, test } from "./fixtures"
-import { createTransaction, loginAsIsolatedUser } from "./helpers"
+import {
+  createTransaction,
+  getCsrfToken,
+  loginAsIsolatedUser,
+} from "./helpers"
+
+test("keeps archived and hidden filter visibility independent on mobile", async ({
+  page,
+  request,
+}) => {
+  const token = await getCsrfToken(request)
+  const stamp = Date.now()
+  const archivedName = `Mobile archived vacation ${stamp}`
+  const hiddenName = `Mobile hidden filter tag ${stamp}`
+  const archivedResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: { name: archivedName, is_hidden_from_budget: false },
+  })
+  const archivedId = ((await archivedResponse.json()) as { id: number }).id
+  const hiddenResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: {
+      name: hiddenName,
+      is_hidden_from_budget: false,
+      is_hidden_from_filters: true,
+    },
+  })
+  const hiddenId = ((await hiddenResponse.json()) as { id: number }).id
+  const archiveResponse = await request.post(`/api/tags/${archivedId}/archive`, {
+    headers: { "X-CSRF-Token": token },
+  })
+  expect(archiveResponse.ok()).toBeTruthy()
+
+  await page.goto(`/transactions?period=all&tags=${hiddenId}`)
+  await page.getByRole("button", { name: /^Filters/ }).click()
+  let sheet = page.getByRole("dialog", { name: "Filter transactions" })
+  await expect(sheet.getByRole("checkbox", { name: hiddenName })).toBeChecked()
+  await expect(
+    sheet.getByRole("checkbox", { name: new RegExp(archivedName) }),
+  ).toBeVisible()
+  await expect(sheet).toContainText("Archived")
+
+  await sheet.getByRole("checkbox", { name: hiddenName }).uncheck()
+  await sheet.getByRole("button", { name: "Apply" }).last().click()
+  await page.getByRole("button", { name: /^Filters/ }).click()
+  sheet = page.getByRole("dialog", { name: "Filter transactions" })
+  await expect(sheet.getByText(hiddenName, { exact: true })).toHaveCount(0)
+  await expect(sheet.getByText(archivedName, { exact: true })).toBeVisible()
+})
 
 test("uses the unified multi-tag filter from each mobile sheet", async ({ page }) => {
   await page.goto("/")

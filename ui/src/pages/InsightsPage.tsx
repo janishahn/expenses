@@ -70,7 +70,7 @@ type InsightsResponse = {
     included_tag_ids: number[]
     excluded_tag_ids: number[]
   }
-  tags: Array<{ id: number; name: string }>
+  tags: Array<{ id: number; name: string; archived_at?: string | null }>
   categories: Array<{ id: number; name: string; type: string; icon: string | null }>
   series: MonthlySeriesPoint[]
   expense_breakdown: BreakdownItem[]
