@@ -3,7 +3,7 @@ import { AppCheckbox } from "./ui/product-fields"
 
 export type TagFilterMode = "include" | "exclude"
 
-type TagOption = { id: number; name: string }
+type TagOption = { id: number; name: string; archived_at?: string | null }
 
 type TagFilterPickerProps = {
   tags: TagOption[]
@@ -29,6 +29,24 @@ export default function TagFilterPicker({
   onChange,
   className,
 }: TagFilterPickerProps) {
+  const availableIds = new Set(tags.map((tag) => tag.id))
+  const options: Array<TagOption & { unavailable?: boolean }> = [
+    ...tags,
+    ...selectedIds
+      .filter((id) => !availableIds.has(id))
+      .map((id) => ({
+        id,
+        name: `Unavailable tag #${id}`,
+        archived_at: null,
+        unavailable: true,
+      })),
+  ].sort((left, right) => {
+    const leftArchived = Boolean(left.archived_at)
+    const rightArchived = Boolean(right.archived_at)
+    if (leftArchived !== rightArchived) return leftArchived ? 1 : -1
+    return left.name.localeCompare(right.name)
+  })
+
   return (
     <fieldset className={className}>
       <legend className="mb-2 text-xs font-semibold text-muted">Tags</legend>
@@ -45,9 +63,9 @@ export default function TagFilterPicker({
           onValueChange={(value) => onModeChange(value, selectedIds)}
         />
       </div>
-      {tags.length ? (
+      {options.length ? (
         <div className="max-h-52 divide-y divide-border overflow-y-auto rounded-lg border border-border bg-surface-hi">
-          {tags.map((tag) => (
+          {options.map((tag) => (
             <label
               key={tag.id}
               className="flex min-h-11 cursor-pointer items-center gap-3 px-3 text-sm text-text"
@@ -59,6 +77,11 @@ export default function TagFilterPicker({
                 }
               />
               <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+              {tag.archived_at ? (
+                <span className="shrink-0 text-xs text-muted">Archived</span>
+              ) : tag.unavailable ? (
+                <span className="shrink-0 text-xs text-muted">Deleted</span>
+              ) : null}
             </label>
           ))}
         </div>

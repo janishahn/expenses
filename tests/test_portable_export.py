@@ -85,6 +85,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             name="Client",
             color="#abcdef",
             is_hidden_from_budget=True,
+            is_hidden_from_filters=True,
             auto_attach_start_date=date(2026, 1, 10),
             auto_attach_end_date=date(2026, 1, 20),
         )
@@ -317,6 +318,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                     "name": "Client",
                     "color": "#abcdef",
                     "is_hidden_from_budget": True,
+                    "is_hidden_from_filters": True,
                     "auto_attach_start_date": "2026-01-10",
                     "auto_attach_end_date": "2026-01-20",
                     "archived_at": None,

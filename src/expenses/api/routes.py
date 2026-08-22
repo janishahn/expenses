@@ -1610,11 +1610,15 @@ def api_category_merge(
 
 
 @router.get("/api/tags", response_model=TagsResponseOut)
-def api_tags(request: Request, db: Session = Depends(get_db)):
+def api_tags(
+    request: Request,
+    include_archived: bool = False,
+    db: Session = Depends(get_db),
+):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     tag_service = TagService(db, user_id=user_id)
-    tags = tag_service.list_all()
+    tags = tag_service.list_all(include_archived=include_archived)
     usage_stmt = (
         select(transaction_tags.c.tag_id, func.count().label("usage"))
         .select_from(transaction_tags)
@@ -1645,6 +1649,7 @@ def api_tags(request: Request, db: Session = Depends(get_db)):
                 "name": tag.name,
                 "color": tag.color,
                 "is_hidden_from_budget": tag.is_hidden_from_budget,
+                "is_hidden_from_filters": tag.is_hidden_from_filters,
                 "auto_attach_period": (
                     {
                         "start": tag.auto_attach_start_date,
@@ -1653,6 +1658,7 @@ def api_tags(request: Request, db: Session = Depends(get_db)):
                     if tag.auto_attach_start_date is not None
                     else None
                 ),
+                "archived_at": tag.archived_at,
                 "usage_count": int(usage_map.get(tag.id, 0)),
             }
             for tag in tags
@@ -1669,6 +1675,7 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
         tag = TagService(db, user_id=user_id).create(
             name=data.name,
             is_hidden_from_budget=data.is_hidden_from_budget,
+            is_hidden_from_filters=data.is_hidden_from_filters or False,
             color=data.color,
             auto_attach_start_date=period.start if period else None,
             auto_attach_end_date=period.end if period else None,
@@ -1680,6 +1687,7 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
         "name": tag.name,
         "color": tag.color,
         "is_hidden_from_budget": tag.is_hidden_from_budget,
+        "is_hidden_from_filters": tag.is_hidden_from_filters,
         "auto_attach_period": (
             {
                 "start": tag.auto_attach_start_date,
@@ -1688,6 +1696,7 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
             if tag.auto_attach_start_date is not None
             else None
         ),
+        "archived_at": tag.archived_at,
     }
 
 
@@ -1719,6 +1728,7 @@ def api_tag_detail(tag_id: int, request: Request, db: Session = Depends(get_db))
             "name": tag.name,
             "color": tag.color,
             "is_hidden_from_budget": tag.is_hidden_from_budget,
+            "is_hidden_from_filters": tag.is_hidden_from_filters,
             "auto_attach_period": (
                 {
                     "start": tag.auto_attach_start_date,
@@ -1727,6 +1737,7 @@ def api_tag_detail(tag_id: int, request: Request, db: Session = Depends(get_db))
                 if tag.auto_attach_start_date is not None
                 else None
             ),
+            "archived_at": tag.archived_at,
         },
         "period": {
             "slug": period.slug,
@@ -1782,6 +1793,7 @@ def api_update_tag(
             tag_id=tag_id,
             name=data.name,
             is_hidden_from_budget=data.is_hidden_from_budget,
+            is_hidden_from_filters=data.is_hidden_from_filters,
             color=data.color,
             auto_attach_period_supplied=("auto_attach_period" in data.model_fields_set),
             auto_attach_start_date=period.start if period else None,
@@ -1795,6 +1807,7 @@ def api_update_tag(
         "name": tag.name,
         "color": tag.color,
         "is_hidden_from_budget": tag.is_hidden_from_budget,
+        "is_hidden_from_filters": tag.is_hidden_from_filters,
         "auto_attach_period": (
             {
                 "start": tag.auto_attach_start_date,
@@ -1803,7 +1816,30 @@ def api_update_tag(
             if tag.auto_attach_start_date is not None
             else None
         ),
+        "archived_at": tag.archived_at,
     }
+
+
+@router.post("/api/tags/{tag_id}/archive", response_model=StatusOut)
+def api_archive_tag(tag_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        TagService(db, user_id=user_id).archive(tag_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.post("/api/tags/{tag_id}/restore", response_model=StatusOut)
+def api_restore_tag(tag_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        TagService(db, user_id=user_id).restore(tag_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 @router.delete("/api/tags/{tag_id}", response_model=StatusOut)
@@ -4687,7 +4723,9 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
     items = items[:limit]
 
     categories = CategoryService(db, user_id=user_id).list_all()
-    tags = TagService(db, user_id=user_id).list_all()
+    tags = TagService(db, user_id=user_id).list_filter_options(
+        tuple([*filters.included_tag_ids, *filters.excluded_tag_ids])
+    )
     return {
         "items": [_serialize_transaction_item(txn) for txn in items],
         "page": page,
@@ -4715,7 +4753,14 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
             }
             for category in categories
         ],
-        "tags": [{"id": tag.id, "name": tag.name} for tag in tags],
+        "tags": [
+            {
+                "id": tag.id,
+                "name": tag.name,
+                "archived_at": tag.archived_at,
+            }
+            for tag in tags
+        ],
     }
 
 
@@ -4888,7 +4933,9 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         for scope_id, values in budget_progress_raw.items()
     }
 
-    all_tags = TagService(db, user_id=user_id).list_all()
+    all_tags = TagService(db, user_id=user_id).list_filter_options(
+        tuple([*tag_ids, *filters.excluded_tag_ids])
+    )
 
     return {
         "period": {
@@ -4901,7 +4948,9 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
             "included_tag_ids": tag_ids,
             "excluded_tag_ids": list(filters.excluded_tag_ids),
         },
-        "tags": [{"id": t.id, "name": t.name} for t in all_tags],
+        "tags": [
+            {"id": t.id, "name": t.name, "archived_at": t.archived_at} for t in all_tags
+        ],
         "categories": [
             {
                 "id": category.id,
@@ -5017,7 +5066,9 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     metrics_service = MetricsService(db, user_id=user_id)
     txn_service = TransactionService(db, user_id=user_id)
     categories = CategoryService(db, user_id=user_id).list_all()
-    tags = TagService(db, user_id=user_id).list_all()
+    tags = TagService(db, user_id=user_id).list_filter_options(
+        tuple([*filters.included_tag_ids, *filters.excluded_tag_ids])
+    )
     has_any_transactions = txn_service.has_any()
     included_tag_ids = list(filters.included_tag_ids)
     has_tag_scope = bool(included_tag_ids or filters.excluded_tag_ids)
@@ -5143,7 +5194,14 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
             }
             for category in categories
         ],
-        "tags": [{"id": tag.id, "name": tag.name} for tag in tags],
+        "tags": [
+            {
+                "id": tag.id,
+                "name": tag.name,
+                "archived_at": tag.archived_at,
+            }
+            for tag in tags
+        ],
     }
     if active_durable:
         payload["durable_purchases"] = active_durable

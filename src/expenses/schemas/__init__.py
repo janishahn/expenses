@@ -165,6 +165,10 @@ class TransactionTagOut(BaseModel):
     name: str
 
 
+class FilterTagOut(TransactionTagOut):
+    archived_at: Optional[datetime] = None
+
+
 class TagAutoAttachPeriod(BaseModel):
     start: date
     end: date
@@ -179,14 +183,18 @@ class TagAutoAttachPeriod(BaseModel):
 class TagOut(TransactionTagOut):
     color: Optional[str] = None
     is_hidden_from_budget: bool
+    is_hidden_from_filters: bool
     auto_attach_period: Optional[TagAutoAttachPeriod] = None
+    archived_at: Optional[datetime] = None
     usage_count: int = 0
 
 
 class TagMutationOut(TransactionTagOut):
     color: Optional[str] = None
     is_hidden_from_budget: bool
+    is_hidden_from_filters: bool
     auto_attach_period: Optional[TagAutoAttachPeriod] = None
+    archived_at: Optional[datetime] = None
 
 
 class TagsResponseOut(BaseModel):
@@ -268,7 +276,7 @@ class TransactionsResponseOut(BaseModel):
     period: PeriodOut
     filters: TransactionFiltersOut
     categories: list[CategorySummaryOut]
-    tags: list[TransactionTagOut]
+    tags: list[FilterTagOut]
 
 
 class DeletedTransactionOut(BaseModel):
@@ -383,7 +391,7 @@ class DashboardResponseOut(BaseModel):
     donut: DashboardDonutOut
     recent: list[TransactionListItemOut]
     categories: list[CategorySummaryOut]
-    tags: list[TransactionTagOut]
+    tags: list[FilterTagOut]
     durable_purchases: Optional[list[DashboardDurablePurchaseOut]] = None
     budget_pace: Optional[DashboardBudgetPaceOut] = None
     category_budget_pulse: Optional[list[DashboardCategoryBudgetPulseOut]] = None
@@ -454,7 +462,7 @@ class InsightsBudgetProgressOut(BaseModel):
 class InsightsResponseOut(BaseModel):
     period: PeriodOut
     filters: InsightsFiltersOut
-    tags: list[TransactionTagOut]
+    tags: list[FilterTagOut]
     categories: list[InsightsCategoryOut]
     series: list[InsightsMonthlySeriesPointOut]
     expense_breakdown: list[BreakdownItemOut]
@@ -1115,6 +1123,7 @@ class TagIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     color: Optional[str] = Field(None, max_length=9)
     is_hidden_from_budget: bool = False
+    is_hidden_from_filters: Optional[bool] = None
     auto_attach_period: Optional[TagAutoAttachPeriod] = None
 
 

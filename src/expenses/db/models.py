@@ -249,6 +249,9 @@ class Tag(Base, TimestampMixin):
     is_hidden_from_budget: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    is_hidden_from_filters: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     auto_attach_start_date: Mapped[Optional[date]] = mapped_column(Date)
     auto_attach_end_date: Mapped[Optional[date]] = mapped_column(Date)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

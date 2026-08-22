@@ -1,5 +1,55 @@
 import { expect, test } from "./fixtures"
-import { createTransaction, loginAsIsolatedUser } from "./helpers"
+import { createTransaction, getCsrfToken, loginAsIsolatedUser } from "./helpers"
+
+test("keeps archived and hidden filter visibility independent", async ({
+  page,
+  request,
+}) => {
+  const token = await getCsrfToken(request)
+  const stamp = Date.now()
+  const archivedName = `Archived vacation ${stamp}`
+  const hiddenName = `Hidden filter tag ${stamp}`
+
+  const archivedResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: { name: archivedName, is_hidden_from_budget: false },
+  })
+  const archivedId = ((await archivedResponse.json()) as { id: number }).id
+  const hiddenResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: {
+      name: hiddenName,
+      is_hidden_from_budget: false,
+      is_hidden_from_filters: true,
+    },
+  })
+  const hiddenId = ((await hiddenResponse.json()) as { id: number }).id
+  const archiveResponse = await request.post(`/api/tags/${archivedId}/archive`, {
+    headers: { "X-CSRF-Token": token },
+  })
+  expect(archiveResponse.ok()).toBeTruthy()
+
+  await page.goto(`/transactions?period=all&tags=${hiddenId}`)
+  await expect(
+    page.getByRole("button", { name: `Remove Only: ${hiddenName}` }),
+  ).toBeVisible()
+  await page.getByRole("button", { name: /^Filters/ }).click()
+  let filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+  await expect(filterPanel.getByRole("checkbox", { name: hiddenName })).toBeChecked()
+  await expect(
+    filterPanel.getByRole("checkbox", { name: new RegExp(archivedName) }),
+  ).toBeVisible()
+  await expect(filterPanel).toContainText("Archived")
+
+  await filterPanel.getByRole("checkbox", { name: hiddenName }).uncheck()
+  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  await expect(page).not.toHaveURL(new RegExp(`[?&]tags=${hiddenId}(?:&|$)`))
+
+  await page.getByRole("button", { name: /^Filters/ }).click()
+  filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+  await expect(filterPanel.getByText(hiddenName, { exact: true })).toHaveCount(0)
+  await expect(filterPanel.getByText(archivedName, { exact: true })).toBeVisible()
+})
 
 test("uses one multi-tag include or exclude filter across desktop data surfaces", async ({
   page,

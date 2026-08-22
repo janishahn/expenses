@@ -592,7 +592,9 @@ class LLMAssistantService:
 
     def _tag_payload(self) -> list[dict[str, Any]]:
         tags = self.session.scalars(
-            select(Tag).where(Tag.user_id == self.user_id).order_by(Tag.name)
+            select(Tag)
+            .where(Tag.user_id == self.user_id, Tag.archived_at.is_(None))
+            .order_by(Tag.name)
         ).all()
         return [{"id": tag.id, "name": tag.name} for tag in tags]
 

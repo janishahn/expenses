@@ -52,6 +52,46 @@ def test_tag_auto_attach_migration_preserves_tags_and_enforces_complete_periods(
     get_settings.cache_clear()
 
 
+def test_tag_filter_visibility_migration_defaults_existing_tags_to_visible(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "migration.db"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "202608141000")
+
+    now = datetime(2026, 8, 22, 12, 0, 0).isoformat(sep=" ")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO tags (
+                id, user_id, name, color, is_hidden_from_budget, archived_at,
+                auto_attach_start_date, auto_attach_end_date, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, 1, "Vacation", None, 0, None, None, None, now, now),
+        )
+        conn.commit()
+
+    command.upgrade(cfg, "head")
+
+    with sqlite3.connect(db_path) as conn:
+        columns = conn.execute("PRAGMA table_info('tags')").fetchall()
+        row = conn.execute(
+            "SELECT name, is_hidden_from_filters FROM tags WHERE id = 1"
+        ).fetchone()
+        filter_column = next(
+            column for column in columns if column[1] == "is_hidden_from_filters"
+        )
+        assert filter_column[3] == 1
+        assert row == ("Vacation", 0)
+
+    get_settings.cache_clear()
+
+
 def test_transaction_title_migration_backfills_legacy_null_and_blank_notes(
     monkeypatch, tmp_path: Path
 ) -> None:

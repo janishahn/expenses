@@ -201,6 +201,55 @@ test.describe("Transactions Page", () => {
     await expect(page.locator(".chip").filter({ hasText: addTag })).toBeVisible()
   })
 
+  test("preserves an archived assignment without offering it for new transactions", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      "E2E Archived Tag Assignment",
+    )
+    const archivedTag = `Archived assignment ${Date.now()}`
+    const tagResponse = await request.post("/api/tags", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: archivedTag, is_hidden_from_budget: false },
+    })
+    const tagId = ((await tagResponse.json()) as { id: number }).id
+    const transactionId = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T14:00:00",
+      type: "expense",
+      amount_cents: 5000,
+      category_id: categoryId,
+      title: `E2E archived assignment ${Date.now()}`,
+      tags: [archivedTag],
+    })
+    const archiveResponse = await request.post(`/api/tags/${tagId}/archive`, {
+      headers: { "X-CSRF-Token": token },
+    })
+    expect(archiveResponse.ok()).toBeTruthy()
+
+    await page.goto(`/transactions/${transactionId}/edit`)
+    await expect(
+      page.getByRole("button", { name: `Remove tag ${archivedTag}` }),
+    ).toBeVisible()
+
+    await page.goto("/")
+    await page
+      .getByRole("button", { name: "Add transaction", exact: true })
+      .first()
+      .click()
+    const addDialog = page.getByRole("dialog", { name: "Add transaction" })
+    await addDialog.getByPlaceholder("Search tags").fill(archivedTag)
+    await expect(
+      addDialog.getByRole("button", { name: `Add tag ${archivedTag}` }),
+    ).toHaveCount(0)
+    await expect(addDialog).toContainText(`No tags match “${archivedTag}”.`)
+  })
+
 
   test("separates page actions from filters and keeps selection controls stable", async ({
     page,
