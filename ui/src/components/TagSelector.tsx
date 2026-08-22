@@ -106,8 +106,7 @@ function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
                 className="text-accent underline-offset-2 hover:underline"
               >
                 Create tags
-              </Link>{" "}
-              to organize transactions.
+              </Link>
             </p>
           ) : null}
 
@@ -141,11 +140,9 @@ function TagSelector({ selected, onChange, scheduled = [] }: TagSelectorProps) {
 
           {!isError && trimmed && matches.length === 0 ? (
             <p className="text-xs font-normal text-muted">No tags match “{query}”.</p>
-          ) : !isError && moreCount > 0 ? (
+          ) : !isError && !trimmed && moreCount > 0 ? (
             <p className="text-xs font-normal text-muted">
-              {trimmed
-                ? "Keep typing to narrow the results."
-                : `Search to find ${moreCount} more tag${moreCount === 1 ? "" : "s"}.`}
+              Search to find {moreCount} more tag{moreCount === 1 ? "" : "s"}.
             </p>
           ) : null}
         </div>

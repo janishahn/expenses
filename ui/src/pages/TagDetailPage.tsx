@@ -144,12 +144,7 @@ function TagSettingsEditor({
       >
         <div className="-mr-5 overflow-y-auto pr-5">
           <DialogHeader>
-            <div>
-              <DialogTitle>Edit tag</DialogTitle>
-              <p className="mt-1 text-xs text-muted">
-                Update identity, visibility, budget treatment, and automatic dates
-              </p>
-            </div>
+            <DialogTitle>Edit tag</DialogTitle>
             <DialogClose asChild>
               <AppButton
                 tone="ghost"
@@ -470,12 +465,7 @@ function TagDetailPage() {
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
         <FinancialPanel role="ledger" data-testid="tag-activity-ledger">
           <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Activity</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                Transactions carrying this tag
-              </p>
-            </div>
+            <h2 className="font-head text-lg font-bold">Activity</h2>
             <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
               {transactions.length}
             </span>
@@ -541,12 +531,7 @@ function TagDetailPage() {
         <aside className="space-y-4">
           <FinancialPanel role="inspector" data-testid="tag-settings-inspector">
             <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">Tag settings</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  Identity, visibility, budget treatment, and automatic dates
-                </p>
-              </div>
+              <h2 className="font-head text-lg font-bold">Tag settings</h2>
               <div className="flex shrink-0 items-center gap-2">
                 <AppButton
                   type="button"
@@ -613,11 +598,6 @@ function TagDetailPage() {
                   {tag.is_hidden_from_budget
                     ? "Excluded from budgets"
                     : "Included in budgets"}
-                  <span className="mt-0.5 block text-xs font-normal text-muted">
-                    {tag.is_hidden_from_budget
-                      ? "Kept outside normal spending plans"
-                      : "Counts toward normal spending plans"}
-                  </span>
                 </dd>
               </div>
               <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
@@ -668,11 +648,13 @@ function TagDetailPage() {
                 title="Expenses"
                 breakdown={donut.expense_breakdown}
                 emptyMessage="No expenses in this period"
+                emptyGuidance="Add transactions with this tag."
               />
               <DonutChart
                 title="Income"
                 breakdown={donut.income_breakdown}
                 emptyMessage="No income in this period"
+                emptyGuidance="Add transactions with this tag."
               />
             </div>
           ) : (
@@ -681,7 +663,7 @@ function TagDetailPage() {
                 No activity yet
               </p>
               <p className="text-sm text-muted">
-                Add transactions with this tag to see insights.
+                Add transactions with this tag.
               </p>
             </FinancialPanel>
           )}

@@ -112,12 +112,15 @@ test.describe("Scenarios Page", () => {
 
     await page.getByLabel("Delete adjustment").click()
 
+    await expect(page.getByText("No adjustments yet.")).toBeVisible()
     await expect(
-      page.getByText("No adjustments yet. Add one to simulate impact.")
-    ).toBeVisible()
+      page.getByRole("img", {
+        name: "Baseline balance compared with the adjusted scenario",
+      }),
+    ).toHaveCount(0)
     await expect(
-      page.getByText("Add an adjustment to render scenario comparison and impact.")
-    ).toBeVisible()
+      page.getByRole("heading", { name: "Baseline vs scenario" }),
+    ).toHaveCount(0)
     await expect(page.locator("text=Average monthly delta")).not.toBeVisible()
     await expect(page.getByText("Modification")).not.toBeVisible()
   })

@@ -33,7 +33,11 @@ test.describe("Digest Page", () => {
     await expect(main.getByText("vs. last week")).toBeVisible()
     await expect(main.getByText("vs. 4-week avg")).toBeVisible()
     await expect(main.getByText("Transactions", { exact: true })).toBeVisible()
-    await expect(page.getByTestId("digest-weekly-composition")).toBeVisible()
+    const composition = page.getByTestId("digest-weekly-composition")
+    await expect(composition).toBeVisible()
+    await expect(
+      composition.getByRole("heading", { name: "This week at a glance" }),
+    ).toBeVisible()
     await expect(main.getByText("Top 5 categories this week")).toBeVisible()
     await expect(main.getByText("Budget status as of this week")).toBeVisible()
     await expect(main.getByText("Flagged this week")).toBeVisible()

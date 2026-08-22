@@ -30,7 +30,11 @@ test.describe("Summary and report surfaces (mobile)", () => {
 
       await page.goto("/digest")
       await expect(page.getByText("Total spent")).toBeVisible()
-      await expect(page.getByTestId("digest-weekly-composition")).toBeVisible()
+      const composition = page.getByTestId("digest-weekly-composition")
+      await expect(composition).toBeVisible()
+      await expect(
+        composition.getByRole("heading", { name: "This week at a glance" })
+      ).toBeVisible()
       const initialUrl = page.url()
       await page.getByRole("button", { name: "Previous week" }).click()
       await expect(page).not.toHaveURL(initialUrl)

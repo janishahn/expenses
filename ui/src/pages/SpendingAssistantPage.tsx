@@ -749,9 +749,6 @@ function SpendingAssistantPage() {
                 <p className="font-head text-xl font-bold text-text">
                   What should we inspect?
                 </p>
-                <p className="text-sm text-muted">
-                  Ask about spending, budgets, and transactions in your private ledger.
-                </p>
               </div>
               <div className="grid w-full max-w-2xl gap-2 sm:grid-cols-2">
                 {PROMPT_CHIPS.map((chip) => (

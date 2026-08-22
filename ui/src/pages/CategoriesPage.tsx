@@ -517,12 +517,7 @@ function CategoriesPage() {
         <div className="space-y-6">
           <FinancialPanel role="ledger">
             <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">Archived categories</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  Restore identities when they become useful again
-                </p>
-              </div>
+              <h2 className="font-head text-lg font-bold">Archived categories</h2>
               <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
                 {archivedCategories.length}
               </span>
@@ -560,8 +555,7 @@ function CategoriesPage() {
           </FinancialPanel>
 
           <FinancialPanel role="inspector" className="p-4">
-            <p className="mono-meta text-muted">Library maintenance</p>
-            <h2 className="mt-1 font-head text-lg font-bold">Merge categories</h2>
+            <h2 className="font-head text-lg font-bold">Merge categories</h2>
             <p className="mt-1 text-xs text-muted">
               Move all references to target and archive source.
             </p>
@@ -641,8 +635,7 @@ function CategoriesPage() {
             </div>
             {mergeConfirmOpen && (
               <div className="mt-3 rounded-lg bg-signal-blue-soft p-3 text-xs">
-                <p className="font-semibold text-text">Confirm category merge</p>
-                <p className="mt-1 text-muted">
+                <p className="text-muted">
                   Merge <span className="font-semibold text-text">{mergeSource?.name}</span>{" "}
                   into <span className="font-semibold text-text">{mergeTarget?.name}</span>? The
                   source category will be archived after merge.
@@ -732,7 +725,6 @@ function CategoriesPage() {
                   onChange={(event) =>
                     isEditing ? setEditName(event.target.value) : setName(event.target.value)
                   }
-                  placeholder="e.g. Groceries"
                   autoFocus
                   required
                 />

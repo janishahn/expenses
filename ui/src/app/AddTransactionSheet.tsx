@@ -390,7 +390,6 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                   type="text"
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Short title"
                   required
                 />
               </AppFieldLabel>
@@ -400,7 +399,7 @@ function AddTransactionSheet({ open, onClose }: AddTransactionSheetProps) {
                 <AppTextarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Optional description"
+                  aria-label="Description"
                 />
               </div>
 

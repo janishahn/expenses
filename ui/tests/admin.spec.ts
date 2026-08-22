@@ -15,6 +15,9 @@ test.describe("Admin Page", () => {
     await expect(page.getByText("Danger zone")).toBeVisible()
     await expect(page.getByText("Rebuild rollups")).toBeVisible()
     await expect(page.getByText("Recurring catch-up")).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Post all overdue transactions" })
+    ).toBeVisible()
     await expect(page.getByText("Pi health")).toBeVisible()
     await expect(page.getByText("System information")).toBeVisible()
 

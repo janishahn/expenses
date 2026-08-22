@@ -820,9 +820,6 @@ function BudgetsPage() {
           </AppButton>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3 sm:justify-end">
-          <p className="min-w-0 text-xs text-muted">
-            Monthly plans and {data.year_value} annual budgets
-          </p>
           <AppButton
             type="button"
             tone="inline"
@@ -902,7 +899,6 @@ function BudgetsPage() {
               <p className="mt-3 font-mono text-xl font-semibold text-semantic-red">
                 {formatCurrency(monthlySpent, false)} €
               </p>
-              <p className="mt-1 text-xs text-muted">In planned spending</p>
             </MetricLane>
             <MetricLane
               tone={monthlyRemaining < 0 ? "warning" : "income"}
@@ -922,7 +918,6 @@ function BudgetsPage() {
               >
                 {formatCurrency(Math.abs(monthlyRemaining), false)} €
               </p>
-              <p className="mt-1 text-xs text-muted">Within planned spending</p>
             </MetricLane>
             <MetricLane
               tone="warning"
@@ -1187,7 +1182,7 @@ function BudgetsPage() {
                 : `No budgets for ${selectedMonthLabel}`}
             </p>
             <p className="mt-1 text-sm text-muted">
-              Add a usual monthly limit. You can adjust individual months later.
+              You can adjust individual months later.
             </p>
             <AppButton
               type="button"
@@ -1203,14 +1198,9 @@ function BudgetsPage() {
 
       <FinancialPanel role="panel" className="min-w-0 overflow-hidden">
         <SectionHeading>
-          <div className="min-w-0">
-            <h2 className="font-head text-lg font-bold text-text">
-              Annual budgets · {data.year_value}
-            </h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Longer-term limits stay visible in the same workspace
-            </p>
-          </div>
+          <h2 className="font-head text-lg font-bold text-text">
+            Annual budgets · {data.year_value}
+          </h2>
           <AppButton
             type="button"
             tone="inline"
@@ -1362,16 +1352,7 @@ function BudgetsPage() {
         >
           <div className="-mr-5 overflow-y-auto pr-5">
             <DialogHeader>
-              <div>
-                <p className="text-xs font-semibold text-muted">
-                  {editorKind === "create"
-                    ? "Create a usual plan"
-                    : editorKind === "month"
-                      ? "Monthly budget"
-                      : "Annual budget"}
-                </p>
-                <DialogTitle>{dialogTitle}</DialogTitle>
-              </div>
+              <DialogTitle>{dialogTitle}</DialogTitle>
               <DialogClose asChild>
                 <AppButton
                   tone="ghost"

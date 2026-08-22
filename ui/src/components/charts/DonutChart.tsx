@@ -27,6 +27,7 @@ type DonutChartProps = {
   title: string
   breakdown: BreakdownItem[]
   emptyMessage: string
+  emptyGuidance?: string
   selectedCategoryName?: string | null
   onToggleCategory?: (categoryName: string) => void
 }
@@ -41,6 +42,7 @@ function DonutChart({
   title,
   breakdown,
   emptyMessage,
+  emptyGuidance,
   selectedCategoryName = null,
   onToggleCategory,
 }: DonutChartProps) {
@@ -68,7 +70,9 @@ function DonutChart({
     return (
       <AppCard className="p-6 text-center">
         <p className="font-head text-lg font-bold text-text">{emptyMessage}</p>
-        <p className="text-sm text-muted">Add transactions to see insights.</p>
+        {emptyGuidance ? (
+          <p className="text-sm text-muted">{emptyGuidance}</p>
+        ) : null}
       </AppCard>
     )
   }

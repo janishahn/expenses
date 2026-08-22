@@ -192,7 +192,6 @@ function ForecastPage() {
     <section className="space-y-4 md:space-y-5">
       <PageIntro
         title="Forecast"
-        description="Balance outlook from recurring commitments and recent spending"
         titleAccessory={isFetching ? <span className="loading-hint">Updating…</span> : null}
         titleAccessoryAlign="end"
       />
@@ -258,7 +257,6 @@ function ForecastPage() {
             {summary.average_monthly_net_cents >= 0 ? "+" : ""}
             {formatCurrency(summary.average_monthly_net_cents)} €
           </p>
-          <p className="mono-meta mt-1 text-muted">Income minus spending</p>
         </MetricLane>
         <MetricLane tone={summary.months_until_negative === null ? "neutral" : "warning"}>
           <p className="text-sm font-semibold text-text">Months until negative</p>
@@ -322,10 +320,7 @@ function ForecastPage() {
 
       <FinancialPanel role="ledger">
         <SectionHeading>
-          <div>
-            <h2 className="font-head text-lg font-bold">Monthly outlook</h2>
-            <p className="mt-0.5 text-xs text-muted">Open a month for its posting evidence</p>
-          </div>
+          <h2 className="font-head text-lg font-bold">Monthly outlook</h2>
         </SectionHeading>
         <div className="hidden grid-cols-[1.1fr_0.9fr_0.9fr_1fr_auto] gap-3 border-b border-border px-4 py-2.5 text-xs font-semibold text-muted md:grid">
           <span>Month</span>

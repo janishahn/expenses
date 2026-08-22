@@ -298,7 +298,6 @@ function ReconciliationPage() {
               id="reconciliation-account"
               value={accountLabel}
               onChange={(event) => setAccountLabel(event.target.value)}
-              placeholder="StartKonto"
             />
           </div>
           <div className="space-y-1.5">

@@ -555,8 +555,7 @@ function AdminPage() {
         <MetricLane tone="neutral" className="space-y-4">
           <h2 className="text-xl font-head font-bold">Database backups</h2>
           <p className="text-sm text-muted">
-            Download a complete SQLite dump so you can restore everything if
-            something goes sideways.
+            Download a complete SQLite dump.
           </p>
           <AppButton asChild className="block text-center">
             <a href="/api/admin/download-db">Download backup</a>
@@ -566,8 +565,7 @@ function AdminPage() {
         <MetricLane tone="neutral" className="space-y-4">
           <h2 className="text-xl font-head font-bold">Export transactions</h2>
           <p className="text-sm text-muted">
-            Grab a CSV of every transaction for auditing or to bring into
-            spreadsheets.
+            Grab a CSV of every transaction.
           </p>
           <AppButton asChild className="block w-full text-center">
             <a href="/api/admin/export-csv">Export CSV</a>
@@ -576,9 +574,6 @@ function AdminPage() {
 
         <MetricLane tone="neutral" className="space-y-4">
           <h2 className="text-xl font-head font-bold">Import</h2>
-          <p className="text-sm text-muted">
-            Import transactions from a legacy SQLite database.
-          </p>
           <AppButton asChild className="block text-center">
             <Link to="/admin/import">Open importer</Link>
           </AppButton>
@@ -591,8 +586,7 @@ function AdminPage() {
         >
           <h2 className="text-xl font-head font-bold">Danger zone</h2>
           <p className="text-sm text-muted">
-            Purge soft-deleted transactions older than a safe window to keep the
-            database lean.
+            Purge soft-deleted transactions older than a safe window.
           </p>
           <div className="flex gap-2">
             <AppInput
@@ -639,16 +633,15 @@ function AdminPage() {
 
         <MetricLane tone="neutral" className="space-y-4">
           <h2 className="text-xl font-head font-bold">Recurring catch-up</h2>
-          <p className="text-sm text-muted">
-            Run overdue recurring auto-posts now.
-          </p>
           <AppButton
             type="button"
             onClick={handleRecurringCatchUp}
             disabled={recurringCatchUpMutation.isPending}
             className="w-full"
           >
-            {recurringCatchUpMutation.isPending ? "Running…" : "Run catch-up"}
+            {recurringCatchUpMutation.isPending
+              ? "Posting…"
+              : "Post all overdue transactions"}
           </AppButton>
           <AdminActionFeedback message={recurringCatchUpMessage} />
         </MetricLane>
@@ -701,9 +694,6 @@ function AdminPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="font-head text-lg font-bold">Assistant usage</h2>
-              <p className="text-sm text-muted">
-                Spending Assistant model usage and cost.
-              </p>
             </div>
             <SegmentedControl
               value={usagePeriod}
@@ -764,9 +754,6 @@ function AdminPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="font-head text-lg font-bold">Application logs</h2>
-              <p className="text-sm text-muted">
-                Recent structured backend logs from the Pi.
-              </p>
             </div>
             <AppInput
               value={logSearch}
@@ -917,11 +904,7 @@ function AdminPage() {
                   </pre>
                 </div>
               </div>
-            ) : (
-              <div className="px-4 py-6 text-sm text-muted">
-                Select a log entry to inspect the full payload.
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       </FinancialPanel>

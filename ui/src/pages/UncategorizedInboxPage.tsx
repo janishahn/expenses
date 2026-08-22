@@ -392,12 +392,10 @@ function UncategorizedInboxPage() {
       <FinancialPanel role="ledger">
         <SectionHeading>
           <div>
-            <p className="mono-meta uppercase text-muted">Review queue</p>
-            <h2 className="mt-1 font-head text-lg font-bold text-text">
+            <h2 className="font-head text-lg font-bold text-text">
               {data.total} uncategorized {data.total === 1 ? "entry" : "entries"}
             </h2>
           </div>
-          <span className="chip">Suggestions stay staged</span>
         </SectionHeading>
         {data.items.length ? (
           data.items.map((txn) => {

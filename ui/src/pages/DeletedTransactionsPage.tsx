@@ -96,20 +96,15 @@ function DeletedTransactionsPage() {
       {data.transactions.length === 0 ? (
         <FinancialPanel role="ledger" className="p-10 text-center">
           <p className="font-head text-lg font-bold text-text">No deleted transactions</p>
-          <p className="text-sm text-muted">
-            Deleted transactions will appear here for recovery.
-          </p>
         </FinancialPanel>
       ) : (
         <FinancialPanel role="ledger">
           <SectionHeading>
             <div>
-              <p className="mono-meta uppercase text-muted">Recovery queue</p>
-              <h2 className="mt-1 font-head text-lg font-bold text-text">
+              <h2 className="font-head text-lg font-bold text-text">
                 {data.transactions.length} deleted {data.transactions.length === 1 ? "entry" : "entries"}
               </h2>
             </div>
-            <span className="chip">Restore or remove forever</span>
           </SectionHeading>
           {data.transactions.map((txn) => (
             <article

@@ -1,8 +1,11 @@
 import { expect, test } from "./fixtures"
-import { ensureCategory, getCsrfToken } from "./helpers"
+import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Organization surfaces (mobile)", () => {
-  test("creates a tag and updates it from the detail surface", async ({ page }) => {
+  test("creates a tag and updates it from the detail surface", async ({
+    page,
+    request,
+  }) => {
     const tagName = `Mobile tag ${Date.now()}`
     await page.goto("/tags")
     await page.getByRole("button", { name: "Add tag" }).first().click()
@@ -16,8 +19,27 @@ test.describe("Organization surfaces (mobile)", () => {
     await dialog.getByLabel("End date").fill("2026-08-17")
     await dialog.getByRole("button", { name: "Add tag" }).click()
 
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(
+      request,
+      token,
+      "expense",
+      "Mobile tag"
+    )
+    await createTransaction(request, token, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 4200,
+      category_id: categoryId,
+      title: `Mobile tag seed ${Date.now()}`,
+      tags: [tagName],
+    })
+
     await page.getByRole("link", { name: new RegExp(tagName) }).first().click()
     await expect(page).toHaveURL(/\/tags\/\d+/)
+    await expect(page.getByText("No income in this period")).toBeVisible()
+    await expect(page.getByText("Add transactions with this tag.")).toBeVisible()
     const settings = page.getByTestId("tag-settings-inspector")
     await expect(settings).toBeVisible()
     await expect(settings).toContainText("10.08.2026–17.08.2026")

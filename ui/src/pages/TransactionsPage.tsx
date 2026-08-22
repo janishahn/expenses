@@ -1194,7 +1194,6 @@ function TransactionsPage() {
                   setBulkTags(event.target.value)
                   setBulkPreview(null)
                 }}
-                placeholder="work, travel"
               />
             </AppFieldLabel>
           </div>
@@ -1364,7 +1363,6 @@ function TransactionsPage() {
                     setBulkTags(event.target.value)
                     setBulkPreview(null)
                   }}
-                  placeholder="work, travel"
                 />
               </AppFieldLabel>
               </>
