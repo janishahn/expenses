@@ -21,6 +21,38 @@ const samplePdf = Buffer.from(
 )
 
 test.describe("Transactions Page (mobile)", () => {
+  test("preserves Markdown formatting when editing and reopening a description", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "Description editing")
+    const transactionId = await createTransaction(request, token, {
+      date: "2026-09-09",
+      occurred_at: "2026-09-09T12:00:00",
+      type: "expense",
+      amount_cents: 1234,
+      category_id: categoryId,
+      title: "Description editing",
+      description: "**Original note**",
+      tags: [],
+    })
+
+    await page.goto(`/transactions/${transactionId}/edit`)
+    const editor = page.locator('.description-editor [contenteditable="true"]')
+    await expect(editor.locator("strong")).toHaveText("Original note")
+    await editor.press("End")
+    await editor.pressSequentially(" updated")
+    await page.getByRole("button", { name: "Save changes", exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+
+    const response = await request.get(`/api/transactions/${transactionId}`)
+    expect(response.ok()).toBeTruthy()
+    expect((await response.json()).description).toBe("**Original note updated**")
+    await page.getByRole("link", { name: "Edit transaction" }).click()
+    await expect(editor.locator("strong")).toHaveText("Original note updated")
+  })
+
   test("stages the period and secondary filters together in the sheet", async ({ page }) => {
     await page.goto("/transactions")
 
