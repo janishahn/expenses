@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependencies
+- Updated Tiptap, HTTPX2/HTTPCore2, and frontend tooling dependencies to address reported security vulnerabilities. HTTPX2 now uses the operating system certificate trust store and bounds streaming decompression memory.
+
 ## [0.5.2] - 2026-08-22
 
 ### Fixed
