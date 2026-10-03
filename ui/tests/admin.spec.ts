@@ -103,6 +103,27 @@ test.describe("Admin Page", () => {
     expect(logsRequestUrl?.searchParams.get("q")).not.toBe("failed")
   })
 
+  test("renders the selected log entry's structured details", async ({ page }) => {
+    await page.getByRole("button", { name: "All", exact: true }).click()
+    const firstRow = page.locator("tbody tr").first()
+    await expect(firstRow).toBeVisible()
+    const eventName = await firstRow.locator("td").nth(2).innerText()
+    const inspectButton = firstRow.getByRole("button", { name: /^Inspect / })
+
+    await inspectButton.click()
+    await expect(inspectButton).toHaveAttribute("aria-pressed", "true")
+
+    const details = page
+      .getByRole("heading", { name: "Entry details", exact: true })
+      .locator("../..")
+    await expect(details.getByText("Structured payload", { exact: true })).toBeVisible()
+    const payload = details.locator("pre").last()
+    await expect(payload).toBeVisible()
+    await expect
+      .poll(async () => JSON.parse(await payload.innerText()).event)
+      .toBe(eventName)
+  })
+
   test("renders low storage warning from backend validation override", async ({ page }) => {
     const csrfToken = await getCsrfToken(page.request)
     const setOverrideResponse = await page.request.post(

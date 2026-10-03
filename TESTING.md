@@ -9,9 +9,9 @@ uv run fast-tests
 uv run full-tests
 ```
 
-`fast-tests` is the normal local and pull-request gate. It runs Ruff, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
+`fast-tests` is the gate for feature work, shared code or configuration changes, and code changes prepared for a pull request. Docs-only and isolated low-risk local changes may use focused checks. The gate runs Ruff, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
 
-For normal feature work, pair `fast-tests` with the focused Playwright specs and materially distinct layouts affected by the change. Do not escalate to the complete matrix because a diff is large or a page was redesigned.
+When web behavior or layout changes, pair the gate with focused Playwright specs for each materially distinct affected layout. Do not escalate to the complete matrix because a diff is large or a page was redesigned. After checks pass, repeat or broaden them only for relevant changes, failures, or unresolved concerns.
 
 Reserve `full-tests` for release candidates, changes to shared browser/runtime infrastructure whose risk spans most routes (such as authentication bootstrap, Playwright fixtures, migrations/startup, or global navigation), or an explicit request. It runs the fast gate and then the complete Playwright suite in a single invocation. Every Playwright worker boots its own backend through the fixtures in `ui/tests/fixtures.ts`: a fresh temporary SQLite data directory, applied migrations, and FastAPI on a free local port serving the built `ui/dist` application and API on one origin. It never reuses a developer server or database.
 
@@ -37,14 +37,14 @@ npm run test:e2e:headed
 
 ## Policy
 
-- Every user-facing story gets at least one real full-stack browser happy path on every materially distinct supported layout: desktop Chromium and mobile WebKit.
+- Every new or changed web user-facing story has at least one real full-stack browser happy path on every materially distinct supported layout: desktop Chromium and mobile WebKit.
 - Permission, destructive-action, recovery, empty, failure, and feature-disabled states are browser-tested when their interaction is part of the story. Domain permutations and backend-only edge cases remain in focused API or unit tests.
 - Desktop and mobile files stay explicit. Mobile behavior belongs in `*.mobile.spec.ts`; tests use the controls actually visible in that layout.
 - Primary happy paths cross the browser, FastAPI API, service, and temporary database. Request interception is reserved for deterministic failure injection, external resources, and paid or nondeterministic providers.
 - Canonical authenticated routes are scanned for automatically detectable structural WCAG A/AA violations and browser runtime errors. Mobile routes additionally assert that the document does not overflow horizontally. Axe color-contrast checks are excluded because translucent and chart surfaces require design-token and screenshot review instead of computed-background inference.
 - Stable high-risk page and dialog archetypes have reviewed screenshot baselines. Update snapshots only for intentional UI changes and inspect the image diff before accepting it.
 - The three compatibility projects run only the critical create-and-read ledger journey. Broad feature behavior stays in the primary desktop/mobile projects to keep the cross-browser cost bounded.
-- New or changed user stories update the coverage ledger and the corresponding browser tests in the same change.
+- New or changed web user stories update the coverage ledger and affected browser tests in the same change. Extend suitable existing specs; add a file only when repository conventions require it or no existing file fits.
 - Do not add a test that only makes sure that a removed feature is not in the application. Write such a test only when the application keeps a live route or code path that blocks the removed feature.
 - Each browser test must check the behavior that its title tells, and the check must occur in a standard run. Code that only writes optional audit artifacts is not coverage.
 - An audit spec must not do a journey again when a feature spec owns that journey. An audit spec adds only checks that apply across features, for example theme, overflow, or accessibility.
@@ -74,7 +74,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Shared responsive page-scope headers, centered desktop page actions, scroll-stable filter panels, equal-height quick-period and Filters controls, and the compact mobile Transactions exception | `page-scope-header.spec.ts` | `page-scope-header.mobile.spec.ts` | Covered routes |
 | Dashboard metrics, quick periods, tag-only secondary-filter panel with archived/hidden visibility and scoped drill-downs, charts, privacy, category focus, quick add, scheduled-tag defaults and removal | `dashboard.spec.ts`, `tag-filters.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `summaries.mobile.spec.ts`, `visual.mobile.spec.ts` | Yes |
 | Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
-| Transaction actions and scroll-stable overflow, desktop quick period, mobile sheet-owned period, shared secondary filters and multi-tag scopes including stale hidden selections, in-place search expansion with mobile Filters displacement, selection, detail, edit, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `tag-filters.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `transactions.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Transaction actions and scroll-stable overflow, desktop quick period, mobile sheet-owned period, shared secondary filters and multi-tag scopes including stale hidden selections, in-place search expansion with mobile Filters displacement, selection, detail, edit, Markdown description editing and persistence, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `tag-filters.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `transactions.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Uncategorized Inbox categorization | `transactions.spec.ts` | `transactions.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Trash restore and permanent deletion | `transactions-trash.spec.ts` | `transactions.mobile.spec.ts` | Yes |
 | Route loading placeholder and data-dependent action readiness (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Transactions skeleton plus Budgets action readiness |
