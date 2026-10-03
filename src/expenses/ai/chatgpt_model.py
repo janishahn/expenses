@@ -9,10 +9,12 @@ from __future__ import annotations
 from dataclasses import replace
 
 import httpx
-from openai import AsyncOpenAI, APIStatusError, APIConnectionError
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.profiles.openai import OpenAIModelProfile
+from pydantic_ai.profiles.openai import OpenAIJsonSchemaTransformer, OpenAIModelProfile
 
 from expenses.ai import chatgpt
 from expenses.ai.preferences import ResolvedAI
@@ -59,6 +61,7 @@ class ChatGPTResponsesModel(OpenAIResponsesModel):
             configuration.model,
             provider=OpenAIProvider(openai_client=client),
             profile=OpenAIModelProfile(
+                json_schema_transformer=OpenAIJsonSchemaTransformer,
                 openai_system_prompt_role="developer",
                 openai_supports_encrypted_reasoning_content=True,
             ),
@@ -108,9 +111,9 @@ class ChatGPTResponsesModel(OpenAIResponsesModel):
             response = await super()._responses_create(
                 messages, True, model_settings, model_request_parameters
             )
-        except APIStatusError as exc:
+        except ModelHTTPError as exc:
             raise chatgpt.provider_error(exc.status_code, exc.body) from exc
-        except APIConnectionError as exc:
+        except ModelAPIError as exc:
             raise chatgpt.ChatGPTError(
                 "ChatGPT could not be reached. Try again later."
             ) from exc
@@ -130,3 +133,11 @@ async def build_model(configuration: ResolvedAI):
     if configuration.reasoning_effort != "auto":
         settings["openai_reasoning_effort"] = configuration.reasoning_effort
     return ChatGPTResponsesModel(configuration, client), http_client, settings
+
+
+async def validate_model(configuration: ResolvedAI) -> None:
+    model, http_client, settings = await build_model(configuration)
+    try:
+        await Agent(model, model_settings=settings).run("Reply with exactly OK.")
+    finally:
+        await http_client.aclose()

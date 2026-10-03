@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, StringConstraints
 from sqlalchemy.orm import Session
 
 from expenses.ai import chatgpt
@@ -23,7 +23,7 @@ FEATURES = {
 
 class FeatureChoice(BaseModel):
     provider: Provider = "configured"
-    model: str = Field(default="", max_length=200)
+    model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     reasoning_effort: Effort = "auto"
 
 
@@ -149,6 +149,7 @@ async def list_models(user_id: int, provider: Provider) -> list[dict]:
 async def update(session: Session, user_id: int, data: AISettingsUpdate) -> None:
     # Validate every requested change before committing any of them.
     catalogs = {}
+    validated_custom = set()
     for feature, selected in data.features.items():
         if selected.model:
             if selected.provider not in catalogs:
@@ -156,6 +157,20 @@ async def update(session: Session, user_id: int, data: AISettingsUpdate) -> None
                     m["id"]: m for m in await list_models(user_id, selected.provider)
                 }
             model = catalogs[selected.provider].get(selected.model)
+            if model is None and selected.provider == "chatgpt":
+                from expenses.ai.chatgpt_model import validate_model
+
+                selection = (selected.model, selected.reasoning_effort)
+                if selection not in validated_custom:
+                    try:
+                        await validate_model(ResolvedAI(user_id, "chatgpt", *selection))
+                    except chatgpt.ChatGPTError as exc:
+                        raise chatgpt.ChatGPTError(
+                            f"Could not validate model '{selected.model}' for {FEATURES[feature]}. {exc}",
+                            exc.code,
+                        ) from exc
+                    validated_custom.add(selection)
+                continue
             if model is None:
                 raise chatgpt.ChatGPTError(
                     f"The selected model for {FEATURES[feature]} is no longer available. Refresh the model list."

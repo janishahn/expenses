@@ -15,6 +15,7 @@ from expenses.ai import chatgpt, credentials, preferences
 from expenses.ai.chatgpt_model import ChatGPTResponsesModel
 from expenses.ai.preferences import ResolvedAI
 from expenses.core.config import get_settings
+from tests.e2e_ai_provider import response_events
 
 
 @pytest.fixture
@@ -122,6 +123,78 @@ def test_credentials_encrypted_and_connection_does_not_expose_tokens(enabled):
     assert response.json()["connection"]["status"] == "connected"
     assert "secret" not in response.text
     assert credentials.load(2) is None
+
+
+@pytest.mark.parametrize("failure", [None, "missing", "partial"])
+def test_custom_models_are_probed_once_and_saved_atomically(
+    enabled, monkeypatch, failure
+):
+    credentials.save(1, grant())
+    monkeypatch.setattr(preferences, "list_models", catalog)
+    before = enabled.get("/api/ai/settings").json()["features"]
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        assert str(request.url) == "https://api.openai.com/v1/responses"
+        assert body["store"] is False and body["stream"] is True
+        assert body["input"] == [{"role": "user", "content": "Reply with exactly OK."}]
+        assert not body.get("tools")
+        if body["model"] == "custom-sol" and failure == "missing":
+            return httpx.Response(404, json={"error": {"code": "model_not_found"}})
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=response_events(
+                "OK", terminal=None if failure == "partial" else "response.completed"
+            ),
+        )
+
+    class ProbeClient(httpx.AsyncClient):
+        def __init__(self, **kwargs):
+            super().__init__(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", ProbeClient)
+    choices = {
+        feature: {"provider": "chatgpt", "model": model, "reasoning_effort": effort}
+        for feature, model, effort in [
+            ("transaction_triage", " custom-luna ", "low"),
+            ("rule_mining", "custom-luna", "low"),
+            ("spending_chat", "custom-sol", "high"),
+        ]
+    }
+    response = enabled.put(
+        "/api/ai/settings", headers=csrf(enabled), json={"features": choices}
+    )
+    saved = enabled.get("/api/ai/settings").json()["features"]
+    if failure:
+        assert response.status_code == 409
+        assert "Could not validate model" in response.text
+        assert saved == before
+        if failure == "missing":
+            assert "Check its model ID" in response.text
+    else:
+        assert response.status_code == 200
+        assert {row["id"]: row["model"] for row in saved} == {
+            feature: choice["model"].strip() for feature, choice in choices.items()
+        }
+    assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == (
+        [("custom-luna", "low")]
+        if failure == "partial"
+        else [("custom-luna", "low"), ("custom-sol", "high")]
+    )
+
+
+def test_configured_provider_still_requires_catalog_model(enabled, monkeypatch):
+    monkeypatch.setattr(preferences, "list_models", catalog)
+    response = enabled.put(
+        "/api/ai/settings",
+        headers=csrf(enabled),
+        json={"features": {"transaction_triage": {"model": "custom-model"}}},
+    )
+    assert response.status_code == 409
+    assert "Refresh the model list" in response.text
 
 
 def test_pairing_is_expiring_one_time_and_not_a_login_session(enabled, monkeypatch):
@@ -285,79 +358,6 @@ def test_model_catalog_filters_hidden_models():
     ) == [{"id": "gpt-6-luna", "name": "Luna", "reasoning_efforts": ["low"]}]
 
 
-def response_events(text="Hello", terminal="response.completed", tool=False):
-    response = {
-        "id": "resp_1",
-        "created_at": 1,
-        "object": "response",
-        "status": "completed",
-        "model": "gpt-6-luna",
-        "output": [],
-        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
-    }
-    events = [
-        {"type": "response.created", "response": {**response, "status": "in_progress"}}
-    ]
-    if tool:
-        item = {
-            "type": "function_call",
-            "id": "fc_1",
-            "call_id": "call_1",
-            "name": "balance",
-            "namespace": "expenses",
-            "arguments": "",
-        }
-        events += [
-            {"type": "response.output_item.added", "output_index": 0, "item": item},
-            {
-                "type": "response.function_call_arguments.delta",
-                "item_id": "fc_1",
-                "output_index": 0,
-                "delta": "{}",
-            },
-        ]
-    else:
-        events += [
-            {
-                "type": "response.output_item.added",
-                "output_index": 0,
-                "item": {
-                    "type": "message",
-                    "id": "msg_1",
-                    "role": "assistant",
-                    "content": [],
-                    "status": "in_progress",
-                },
-            },
-            {
-                "type": "response.content_part.added",
-                "item_id": "msg_1",
-                "output_index": 0,
-                "content_index": 0,
-                "part": {"type": "output_text", "text": "", "annotations": []},
-            },
-            {
-                "type": "response.output_text.delta",
-                "item_id": "msg_1",
-                "output_index": 0,
-                "content_index": 0,
-                "delta": text,
-            },
-        ]
-    if terminal:
-        if terminal == "response.failed":
-            response["error"] = {
-                "code": "subscription_sharing_usage_limit_exceeded",
-                "message": "limit",
-            }
-            response["status"] = "failed"
-        events.append({"type": terminal, "response": response})
-    return "".join(
-        "data: " + json.dumps(event | {"sequence_number": i}) + "\n\n"
-        for i, event in enumerate(events)
-    )
-
-
 @pytest.mark.anyio
 async def test_responses_wire_contract_and_tool_history(enabled):
     credentials.save(1, grant())
@@ -381,6 +381,10 @@ async def test_responses_wire_contract_and_tool_history(enabled):
         }
         assert all(item.get("role") != "system" for item in body["input"])
         assert body["tools"][0]["type"] == "namespace"
+        tool = body["tools"][0]["tools"][0]
+        assert tool["strict"] is True
+        assert tool["parameters"]["required"] == ["currency"]
+        assert "default" not in tool["parameters"]["properties"]["currency"]
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
@@ -398,8 +402,8 @@ async def test_responses_wire_contract_and_tool_history(enabled):
             model_settings={"openai_store": False, "openai_reasoning_effort": "low"},
         )
 
-        @agent.tool_plain
-        def balance() -> str:
+        @agent.tool_plain(strict=True)
+        def balance(currency: str = "EUR") -> str:
             return "€12"
 
         result = await agent.run("What is my balance?")
@@ -409,6 +413,27 @@ async def test_responses_wire_contract_and_tool_history(enabled):
             item.get("type") == "function_call_output" for item in calls[1]["input"]
         )
         assert result.usage.input_tokens == 20
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status, code",
+    [(401, "reauth_required"), (403, "not_eligible"), (429, "usage_limit")],
+)
+async def test_http_errors_keep_chatgpt_recovery_guidance(enabled, status, code):
+    credentials.save(1, grant())
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(status, json={"error": {"message": "failed"}})
+        )
+    ) as http:
+        model = ChatGPTResponsesModel(
+            ResolvedAI(1, "chatgpt", "gpt-6-luna", "auto"),
+            AsyncOpenAI(api_key="unused", http_client=http, max_retries=0),
+        )
+        with pytest.raises(chatgpt.ChatGPTError) as error:
+            await Agent(model, model_settings={"openai_store": False}).run("Hello")
+        assert error.value.code == code
 
 
 @pytest.mark.anyio

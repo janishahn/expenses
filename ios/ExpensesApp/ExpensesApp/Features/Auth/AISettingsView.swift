@@ -7,6 +7,7 @@ struct AISettingsView: View {
     @State private var catalogErrors: [String: String] = [:]
     @State private var pairing: ChatGPTPairingResponse?
     @State private var busy = false
+    @State private var saving = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var confirmDisconnect = false
@@ -31,12 +32,15 @@ struct AISettingsView: View {
                     .disabled(busy || !settings.enabled)
                 }
                 Section {
-                    Button("Save AI settings") { Task { await save() } }
+                    Button(saving ? "Checking and saving…" : "Save AI settings") { Task { await save() } }
                         .disabled(busy || !settings.enabled)
                     Button("Refresh models") { Task { await refreshModels(settings) } }
                         .disabled(busy || !settings.enabled)
                 } footer: {
                     Text("Lower thinking levels can use less allowance. Model support varies; Model default uses the provider or feature default.")
+                    if features.contains(where: { $0.provider == "chatgpt" }) {
+                        Text("Custom model IDs are checked on save with a short request that uses ChatGPT allowance.")
+                    }
                 }
             } else if busy {
                 Section { ProgressView("Loading AI settings…") }
@@ -126,9 +130,10 @@ struct AISettingsView: View {
 
     private func save() async {
         busy = true
+        saving = true
         errorMessage = nil
         statusMessage = nil
-        defer { busy = false }
+        defer { busy = false; saving = false }
         do {
             let settings = try await model.saveAISettings(features)
             features = settings.features
@@ -163,6 +168,11 @@ private struct AIFeatureSettingsSection: View {
     let serverDefault: String
     let catalogError: String?
     let connected: Bool
+    @State private var enteringModelID = false
+
+    private var customModel: Bool {
+        feature.provider == "chatgpt" && (enteringModelID || (!feature.model.isEmpty && !models.contains(where: { $0.id == feature.model })))
+    }
 
     private var efforts: [String] {
         let supported = models.first { $0.id == feature.model }?.reasoningEfforts ?? []
@@ -173,21 +183,31 @@ private struct AIFeatureSettingsSection: View {
         Section(feature.name) {
             Picker("Provider", selection: Binding(get: { feature.provider }, set: { value in
                 feature.provider = value
+                enteringModelID = false
                 feature.model = ""
                 feature.reasoningEffort = "auto"
             })) {
                 Text("Local / API provider").tag("configured")
                 Text("ChatGPT plan").tag("chatgpt")
             }
-            Picker("Model", selection: Binding(get: { feature.model }, set: { value in
-                feature.model = value
+            Picker("Model", selection: Binding(get: { customModel ? "__custom__" : feature.model }, set: { value in
+                enteringModelID = value == "__custom__"
+                feature.model = enteringModelID ? "" : value
                 feature.reasoningEffort = "auto"
             })) {
                 Text(feature.provider == "configured" ? "Server default (\(serverDefault))" : "Choose a model").tag("")
-                if !feature.model.isEmpty && !models.contains(where: { $0.id == feature.model }) {
+                if !feature.model.isEmpty && !models.contains(where: { $0.id == feature.model }) && !customModel {
                     Text("\(feature.model) (not in current list)").tag(feature.model)
                 }
                 ForEach(models) { item in Text(item.name).tag(item.id) }
+                if feature.provider == "chatgpt" {
+                    Text("Enter model ID…").tag("__custom__")
+                }
+            }
+            if customModel {
+                TextField("Model ID", text: $feature.model)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
             Picker("Thinking level", selection: $feature.reasoningEffort) {
                 if !efforts.contains(feature.reasoningEffort) {

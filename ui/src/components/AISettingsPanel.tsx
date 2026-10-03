@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "../app/api"
 import { AppButton } from "./ui/product-button"
-import { AppFieldLabel, AppNativeSelect } from "./ui/product-fields"
+import { AppFieldLabel, AppInput, AppNativeSelect } from "./ui/product-fields"
 import { FinancialPanel } from "./product/ProductSurfaces"
 import { confirmDialog } from "./confirm"
 
@@ -231,6 +231,7 @@ function FeatureSettings({
       ])
     )
   )
+  const [customModels, setCustomModels] = useState<Record<string, boolean>>({})
   const configured = useQuery({
     queryKey: ["ai-models", "configured"],
     queryFn: () => apiFetch<{ models: Model[] }>("/api/ai/models?provider=configured"),
@@ -270,6 +271,9 @@ function FeatureSettings({
         const catalog = catalogs[selected.provider]
         const models = catalog.data?.models ?? []
         const selectedModel = models.find((m) => m.id === selected.model)
+        const customModel = selected.provider === "chatgpt" && (
+          customModels[feature.id] || (selected.model !== "" && !selectedModel && catalog.isSuccess)
+        )
         const availableEfforts = selectedModel?.reasoning_efforts.length
           ? ["auto", ...selectedModel.reasoning_efforts]
           : efforts
@@ -288,6 +292,7 @@ function FeatureSettings({
                   value={selected.provider}
                   onChange={(e) => {
                     const provider = e.target.value as AIProvider
+                    setCustomModels((previous) => ({ ...previous, [feature.id]: false }))
                     const models = catalogs[provider].data?.models ?? []
                     const preferred =
                       feature.id === "spending_chat" ? "gpt-6.1-sol" : "gpt-6-luna"
@@ -315,17 +320,19 @@ function FeatureSettings({
                 <AppFieldLabel htmlFor={`${feature.id}-model`}>Model</AppFieldLabel>
                 <AppNativeSelect
                   id={`${feature.id}-model`}
-                  value={selected.model}
-                  onChange={(e) =>
-                    change(feature.id, { model: e.target.value, reasoning_effort: "auto" })
-                  }
+                  value={customModel ? "__custom__" : selected.model}
+                  onChange={(e) => {
+                    const custom = e.target.value === "__custom__"
+                    setCustomModels((previous) => ({ ...previous, [feature.id]: custom }))
+                    change(feature.id, { model: custom ? "" : e.target.value, reasoning_effort: "auto" })
+                  }}
                 >
                   <option value="">
                     {selected.provider === "configured"
                       ? `Server default (${settings.configured_model})`
                       : "Choose a model"}
                   </option>
-                  {selected.model && !selectedModel && (
+                  {selected.model && !selectedModel && !customModel && (
                     <option value={selected.model}>
                       {selected.model} (not in current list)
                     </option>
@@ -335,7 +342,22 @@ function FeatureSettings({
                       {model.name}
                     </option>
                   ))}
+                  {selected.provider === "chatgpt" && <option value="__custom__">Enter model ID…</option>}
                 </AppNativeSelect>
+                {customModel && (
+                  <div className="mt-2">
+                    <AppFieldLabel htmlFor={`${feature.id}-custom-model`}>Model ID</AppFieldLabel>
+                    <AppInput
+                      id={`${feature.id}-custom-model`}
+                      value={selected.model}
+                      maxLength={200}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      onChange={(e) => change(feature.id, { model: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <AppFieldLabel htmlFor={`${feature.id}-thinking`}>
@@ -384,12 +406,17 @@ function FeatureSettings({
         Lower thinking levels can use less allowance. Model support varies; “Model default”
         uses the provider or feature default.
       </p>
+      {Object.values(choices).some((choice) => choice.provider === "chatgpt") && (
+        <p className="text-sm text-muted">
+          Custom model IDs are checked on save with a short request that uses ChatGPT allowance.
+        </p>
+      )}
       <div className="flex flex-wrap gap-3">
         <AppButton
           disabled={!settings.enabled || save.isPending}
           onClick={() => save.mutate()}
         >
-          Save AI settings
+          {save.isPending ? "Checking and saving…" : "Save AI settings"}
         </AppButton>
         <AppButton
           tone="ghost"

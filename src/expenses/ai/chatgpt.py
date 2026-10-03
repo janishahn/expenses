@@ -56,6 +56,11 @@ def provider_error(status: int, body: object = None) -> ChatGPTError:
             "This account, model, or request is not eligible for ChatGPT plan usage. Review your connection and model in AI settings.",
             "not_eligible",
         )
+    if status == 404 or code == "model_not_found":
+        return ChatGPTError(
+            "This model is not available to your account. Check its model ID in AI settings.",
+            "model_not_found",
+        )
     return ChatGPTError("ChatGPT could not complete the request. Try again later.")
 
 

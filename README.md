@@ -162,6 +162,11 @@ thinking level to ChatGPT; for the configured provider it retains the feature's
 existing default. Providers without model discovery can still use **Server
 default**, configured by `EXPENSES_LLM_MODEL`.
 
+If a ChatGPT model is missing from the catalog, choose **Enter model ID…** and
+enter its exact ID. Saving checks each distinct custom model and thinking-level
+choice with a short request using your connected account's ChatGPT allowance.
+This check sends no financial data. Settings stay unchanged if any check fails.
+
 ChatGPT usage shares the user's plan limits. AI settings and the assistant link to
 ChatGPT's usage controls. Expenses does not switch to a paid API or another account
 when the plan reaches a limit. Financial context needed by a request goes to
