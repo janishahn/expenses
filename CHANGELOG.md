@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom ChatGPT model IDs on web and iOS, validated with the connected account before saving when absent from the model catalog.
 
 ### Fixed
+- Preserve ChatGPT usage-limit recovery guidance for standalone streaming errors and SDK error envelopes.
 - Compact AI settings on desktop with aligned model controls, responsive spacing, and save and validation feedback beside the save action.
 - Apply OpenAI strict tool schemas to ChatGPT requests and preserve provider-specific recovery messages for failed requests.
 - Gave the Dashboard recent-transactions link a minimum 44-by-44-pixel touch target on mobile.

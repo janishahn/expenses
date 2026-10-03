@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import httpx
-from openai import AsyncOpenAI
+from openai import APIError, AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models.openai import OpenAIResponsesModel
@@ -36,19 +36,25 @@ class CompletedStream:
 
     async def __aiter__(self):
         completed = False
-        async for event in self.stream:
-            if event.type == "response.failed":
-                error = event.response.error
-                raise chatgpt.provider_error(
-                    400, {"error": error.model_dump() if error else {}}
-                )
-            if event.type in {"response.incomplete", "error"}:
-                raise chatgpt.ChatGPTError(
-                    "ChatGPT did not finish the response. Try again."
-                )
-            if event.type == "response.completed":
-                completed = True
-            yield event
+        try:
+            async for event in self.stream:
+                if event.type == "response.failed":
+                    error = event.response.error
+                    raise chatgpt.provider_error(
+                        400, {"error": error.model_dump() if error else {}}
+                    )
+                if event.type == "error":
+                    raise chatgpt.provider_error(400, event.model_dump())
+                if event.type == "response.incomplete":
+                    raise chatgpt.ChatGPTError(
+                        "ChatGPT did not finish the response. Try again."
+                    )
+                if event.type == "response.completed":
+                    completed = True
+                yield event
+        except APIError as exc:
+            # The SDK raises directly for SSE payloads with an `error` envelope.
+            raise chatgpt.provider_error(400, exc.body) from exc
         if not completed:
             raise chatgpt.ChatGPTError(
                 "The ChatGPT connection ended before the response completed. Try again."

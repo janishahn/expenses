@@ -535,14 +535,31 @@ async def test_suggestions_use_selected_chatgpt_model_and_schema(enabled, monkey
 
 
 @pytest.mark.anyio
-async def test_streamed_agent_does_not_report_success_after_usage_limit(enabled):
+@pytest.mark.parametrize("envelope", ["response.failed", "error", "sdk_error"])
+async def test_streamed_agent_does_not_report_success_after_usage_limit(
+    enabled, envelope
+):
     credentials.save(1, grant())
+    events_text = response_events(terminal="response.failed")
+    if envelope != "response.failed":
+        error = {
+            "code": "subscription_sharing_usage_limit_exceeded",
+            "message": "limit",
+        }
+        event = (
+            {"type": "error", "sequence_number": 4, "param": None, **error}
+            if envelope == "error"
+            else {"error": error}
+        )
+        events_text = response_events(terminal=None) + (
+            "data: " + json.dumps(event) + "\n\n"
+        )
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(
             lambda req: httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
-                text=response_events(terminal="response.failed"),
+                text=events_text,
             )
         )
     ) as http:
@@ -551,11 +568,12 @@ async def test_streamed_agent_does_not_report_success_after_usage_limit(enabled)
             AsyncOpenAI(api_key="unused", http_client=http, max_retries=0),
         )
         events = []
-        with pytest.raises(chatgpt.ChatGPTError, match="usage limit"):
+        with pytest.raises(chatgpt.ChatGPTError, match="usage limit") as error:
             async for event in Agent(
                 model, model_settings={"openai_store": False}
             ).run_stream_events("Hello"):
                 events.append(event)
+        assert error.value.code == "usage_limit"
         from pydantic_ai import AgentRunResultEvent
 
         assert not any(isinstance(event, AgentRunResultEvent) for event in events)
