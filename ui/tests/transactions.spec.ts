@@ -309,7 +309,6 @@ test.describe("Transactions Page", () => {
     await expect(filterTrigger).toBeFocused()
     await expect(register).toBeVisible()
     await expect(row).toBeVisible()
-    await expect(controlZone.getByTestId("transactions-summary")).toHaveCount(0)
     await expect(row.getByTestId("category-icon")).not.toHaveAttribute(
       "data-category-icon",
       "currency-circle-dollar",

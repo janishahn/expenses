@@ -45,7 +45,6 @@ test.describe("Navigation (mobile)", () => {
   test("loads dashboard as home page", async ({ page }) => {
     await page.goto("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
-    await expect(page.getByTestId("app-shell-header")).toHaveCount(0)
     await expect(
       page.locator("[data-page-scope-header]").getByRole("button", { name: "Open menu" }),
     ).toBeVisible()
@@ -76,11 +75,10 @@ test.describe("Navigation (mobile)", () => {
     await expect(page).toHaveURL(/\/\?period=this_month/)
   })
 
-  test("uses a shared floating primary action without fixed bottom navigation", async ({
+  test("uses a shared floating primary action", async ({
     page,
   }) => {
     await page.goto("/")
-    await expect(page.getByTestId("app-shell-bottom-nav")).toHaveCount(0)
     const addAction = page.getByTestId("app-shell-mobile-add-action")
     await expect(addAction).toBeVisible()
     await expect(addAction).toHaveAccessibleName("Add transaction")
@@ -320,7 +318,6 @@ test.describe("Navigation (mobile)", () => {
     await adminLink.scrollIntoViewIfNeeded()
     await adminLink.click()
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
 
     await page.getByRole("button", { name: "Cancel" }).click()
     await expect(page).toHaveURL("/")

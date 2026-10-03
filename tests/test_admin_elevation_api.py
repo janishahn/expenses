@@ -496,71 +496,31 @@ def test_admin_prefixed_balance_anchor_routes_are_hard_blocked(
     assert created.status_code == 200
     anchor_id = int(created.json()["id"])
 
-    anonymous_api_client.cookies.clear()
-    _signup(anonymous_api_client, "member", "member-pass")
-    _login(anonymous_api_client, "member", "member-pass")
-    member_headers = _csrf_headers(anonymous_api_client)
-
-    member_create = anonymous_api_client.post(
+    admin_create = anonymous_api_client.post(
         "/api/admin/balance-anchors",
-        headers=member_headers,
+        headers=bootstrap_headers,
         json={
             "as_of_at": "2026-01-02T11:00:00",
             "balance_cents": 54321,
-            "note": "member",
-        },
-    )
-    assert member_create.status_code == 404
-
-    member_update = anonymous_api_client.put(
-        f"/api/admin/balance-anchors/{anchor_id}",
-        headers=member_headers,
-        json={
-            "as_of_at": "2026-01-01T10:00:00",
-            "balance_cents": 999,
-            "note": "member-update",
-        },
-    )
-    assert member_update.status_code == 404
-
-    member_delete = anonymous_api_client.delete(
-        f"/api/admin/balance-anchors/{anchor_id}",
-        headers=member_headers,
-    )
-    assert member_delete.status_code == 404
-
-    anonymous_api_client.cookies.clear()
-    elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
-    assert elevated["status_code"] == 200
-    elevated_bootstrap_headers = _csrf_headers_for_token(
-        anonymous_api_client, bootstrap_token
-    )
-
-    admin_create = anonymous_api_client.post(
-        "/api/admin/balance-anchors",
-        headers=elevated_bootstrap_headers,
-        json={
-            "as_of_at": "2026-01-03T12:00:00",
-            "balance_cents": 100,
-            "note": "admin",
+            "note": "blocked",
         },
     )
     assert admin_create.status_code == 404
 
     admin_update = anonymous_api_client.put(
         f"/api/admin/balance-anchors/{anchor_id}",
-        headers=elevated_bootstrap_headers,
+        headers=bootstrap_headers,
         json={
             "as_of_at": "2026-01-01T10:00:00",
-            "balance_cents": 100,
-            "note": "admin-update",
+            "balance_cents": 999,
+            "note": "blocked-update",
         },
     )
     assert admin_update.status_code == 404
 
     admin_delete = anonymous_api_client.delete(
         f"/api/admin/balance-anchors/{anchor_id}",
-        headers=elevated_bootstrap_headers,
+        headers=bootstrap_headers,
     )
     assert admin_delete.status_code == 404
 

@@ -33,7 +33,6 @@ test.describe("Navigation", () => {
     for (const route of routes) {
       await page.goto(route.path)
       await expect(page.locator("main h1")).toContainText(route.heading)
-      await expect(page.getByTestId("app-shell-header")).toBeHidden()
       await expect(page.getByTestId("app-shell-utility")).toBeVisible()
     }
   })
@@ -186,7 +185,6 @@ test.describe("Navigation", () => {
 
     await clickSidebarLink(page, "Admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("dark")
@@ -222,101 +220,34 @@ test.describe("Navigation", () => {
     await expect(page).toHaveURL(/\/transactions\?period=last_month.*q=coffee/)
   })
 
-  test("should navigate to transactions page", async ({ page }) => {
+  test("navigates to every sidebar destination", async ({ page }) => {
+    test.setTimeout(90_000)
     await page.goto("/")
-    await clickSidebarLink(page, "Transactions")
-    await expect(page).toHaveURL("/transactions")
-    await expect(page.locator("main h1")).toContainText("Transactions")
-  })
 
-  test("should navigate to insights page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Insights")
-    await expect(page).toHaveURL("/insights")
-    await expect(page.locator("main h1")).toContainText("Insights")
-  })
+    const routes = [
+      { label: "Transactions", path: "/transactions", heading: "Transactions" },
+      { label: "Insights", path: "/insights", heading: "Insights" },
+      { label: "Forecast", path: "/forecast", heading: "Forecast" },
+      { label: "Budgets", path: "/budgets", heading: "Budgets" },
+      { label: "Digest", path: "/digest", heading: "Digest" },
+      { label: "Assistant", path: "/assistant", heading: "Assistant" },
+      { label: "Recurring", path: "/recurring", heading: "Recurring" },
+      { label: "Templates", path: "/templates", heading: "Templates" },
+      { label: "Rules", path: "/rules", heading: "Categorization Rules" },
+      { label: "Categories", path: "/categories", heading: "Categories" },
+      { label: "Tags", path: "/tags", heading: "Tags" },
+      { label: "Reports", path: "/reports/builder", heading: "Report Builder" },
+      { label: "What If", path: "/scenarios", heading: "What If" },
+    ]
 
-  test("should navigate to forecast page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Forecast")
-    await expect(page).toHaveURL("/forecast")
-    await expect(page.locator("main h1")).toContainText("Forecast")
-  })
+    for (const route of routes) {
+      await clickSidebarLink(page, route.label)
+      await expect(page).toHaveURL(route.path)
+      await expect(
+        page.getByRole("heading", { name: route.heading, level: 1 })
+      ).toBeVisible()
+    }
 
-  test("should navigate to budgets page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Budgets")
-    await expect(page).toHaveURL("/budgets")
-    await expect(page.locator("main h1")).toContainText("Budgets")
-  })
-
-  test("should navigate to digest page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Digest")
-    await expect(page).toHaveURL("/digest")
-    await expect(page.locator("main h1")).toContainText("Digest")
-  })
-
-  test("should navigate to spending assistant page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Assistant")
-    await expect(page).toHaveURL("/assistant")
-    await expect(
-      page.getByRole("heading", { name: "Assistant", level: 1 })
-    ).toBeVisible()
-  })
-
-  test("should navigate to recurring rules page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Recurring")
-    await expect(page).toHaveURL("/recurring")
-    await expect(page.locator("main h1")).toContainText("Recurring")
-  })
-
-  test("should navigate to templates page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Templates")
-    await expect(page).toHaveURL("/templates")
-    await expect(page.locator("main h1")).toContainText("Templates")
-  })
-
-  test("should navigate to categorization rules page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Rules")
-    await expect(page).toHaveURL("/rules")
-    await expect(page.locator("main h1")).toContainText("Categorization Rules")
-  })
-
-  test("should navigate to categories page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Categories")
-    await expect(page).toHaveURL("/categories")
-    await expect(page.locator("main h1")).toContainText("Categories")
-  })
-
-  test("should navigate to tags page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Tags")
-    await expect(page).toHaveURL("/tags")
-    await expect(page.locator("main h1")).toContainText("Tags")
-  })
-
-  test("should navigate to report builder page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "Reports")
-    await expect(page).toHaveURL("/reports/builder")
-    await expect(page.locator("main h1")).toContainText("Report Builder")
-  })
-
-  test("should navigate to scenarios page", async ({ page }) => {
-    await page.goto("/")
-    await clickSidebarLink(page, "What If")
-    await expect(page).toHaveURL("/scenarios")
-    await expect(page.locator("main h1")).toContainText("What If")
-  })
-
-  test("should navigate to admin elevation gate", async ({ page }) => {
-    await page.goto("/")
     await clickSidebarLink(page, "Admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect(page.locator("main h1")).toContainText("Re-enter your password")

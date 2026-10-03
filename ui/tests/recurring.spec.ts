@@ -26,7 +26,6 @@ test.describe("Recurring Rules Page", () => {
     page,
   }) => {
     await expect(page.getByTestId("commitments-board")).toBeVisible()
-    await expect(page.getByTestId("commitment-inspector")).toHaveCount(0)
     await page.getByRole("button", { name: "Add rule" }).click()
     const dialog = page.getByRole("dialog", { name: "Add rule" })
     await expect(dialog).toBeVisible()

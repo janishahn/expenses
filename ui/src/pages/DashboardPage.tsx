@@ -616,7 +616,7 @@ function DashboardPage() {
             <Link
               to={{ pathname: "/transactions", search: queryString }}
               state={{ returnTo }}
-              className="inline-flex min-h-11 items-center text-xs font-semibold text-primary hover:underline desk:min-h-0"
+              className="inline-flex min-h-11 min-w-11 items-center justify-end text-xs font-semibold text-primary hover:underline desk:min-h-0 desk:min-w-0"
             >
               View all
             </Link>

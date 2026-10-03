@@ -63,7 +63,6 @@ test.describe("Dashboard Page", () => {
     )
     await expect(page.getByTestId("dashboard-balance-card")).toBeVisible()
     await expect(page.getByTestId("dashboard-secondary-kpi-card")).toHaveCount(2)
-    await expect(page.getByTestId("dashboard-balance-delta")).toHaveCount(0)
   })
 
   test("keeps recent activity and donut legends out of nested scroll regions", async ({

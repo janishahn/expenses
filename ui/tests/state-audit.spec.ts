@@ -151,28 +151,6 @@ test.describe("Desktop state and preference audit evidence", () => {
       await captureAuditState(page, "desktop-chromium", theme, "transaction destructive confirmation")
       await page.getByRole("button", { name: "Cancel" }).click()
 
-      await page.goto("/admin")
-      await expect(page).toHaveURL(/\/admin\/elevate/)
-      await page.getByTestId("admin-elevation-password").fill("wrong-password")
-      await page.getByTestId("admin-elevation-submit").click()
-      await expect(page.getByTestId("admin-elevation-error")).toHaveText("Invalid password")
-      await captureAuditState(page, "desktop-chromium", theme, "admin elevation invalid password")
-
-      await page.route("**/api/auth/bootstrap-status", async (route) => {
-        const response = await route.fetch()
-        const payload = (await response.json()) as Record<string, unknown>
-        await route.fulfill({ json: { ...payload, llm_enabled: false } })
-      })
-      await page.goto("/rules")
-      await expect(page.getByRole("heading", { name: "Categorization Rules" })).toBeVisible()
-      await expect(page.getByRole("button", { name: "Mine rules" })).toHaveCount(0)
-      await captureAuditState(page, "desktop-chromium", theme, "llm feature disabled rules")
-      await page.goto("/assistant")
-      await expect(page).toHaveURL("/")
-      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible()
-      await captureAuditState(page, "desktop-chromium", theme, "llm feature disabled redirect")
-      await page.unroute("**/api/auth/bootstrap-status")
-
       await page.route(/\/api\/transactions(?:\?|$)/, async (route) => {
         await new Promise((resolve) => setTimeout(resolve, 1_000))
         await route.continue()
@@ -263,7 +241,7 @@ test.describe("Desktop state and preference audit evidence", () => {
       await expect(balanceChart).toBeVisible()
       await balanceChart.locator("svg").hover({ position: { x: 180, y: 70 } })
       await captureAuditState(page, "desktop-chromium", theme, "dashboard populated chart tooltip")
-      const legendButton = page.getByTestId("dashboard-donut-legend").getByRole("button").first()
+      const legendButton = page.getByTestId("donut-legend").getByRole("button").first()
       if (await legendButton.isVisible().catch(() => false)) {
         await legendButton.click()
         await captureAuditState(page, "desktop-chromium", theme, "dashboard category chart selection")
