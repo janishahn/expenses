@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Gave the Dashboard recent-transactions link a minimum 44-by-44-pixel touch target on mobile.
+
 ### Dependencies
+- Removed the unused shadcn generator dependency and its vulnerable dependency chain from frontend installs.
 - Updated Tiptap, HTTPX2/HTTPCore2, and frontend tooling dependencies to address reported security vulnerabilities. HTTPX2 now uses the operating system certificate trust store and bounds streaming decompression memory.
 - Updated WeasyPrint to 70.0, AnyIO to 4.14.2, urllib3 to 2.8.0, ip-address to 10.7.2, undici to 7.30.0, and affected Markdown and frontend tooling dependencies to resolve current dependency audit findings.
 
