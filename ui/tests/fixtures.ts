@@ -14,7 +14,7 @@ type Backend = {
   process: ChildProcess
 }
 
-async function startBackend(): Promise<Backend> {
+async function startBackend(mockAIProvider = false): Promise<Backend> {
   const dataDir = mkdtempSync(join(tmpdir(), "expenses-e2e-"))
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -42,6 +42,7 @@ async function startBackend(): Promise<Backend> {
   const serverScript = [
     "import socket",
     "import uvicorn",
+    `import runpy; runpy.run_path("tests/e2e_ai_provider.py")["install"](mock_openai=${mockAIProvider ? "True" : "False"})`,
     'sock = socket.create_server(("127.0.0.1", 0))',
     'print(f"EXPENSES_E2E_PORT={sock.getsockname()[1]}", flush=True)',
     'uvicorn.run("expenses.app:app", fd=sock.fileno(), access_log=False)',
@@ -100,11 +101,11 @@ async function stopBackend(backend: Backend): Promise<void> {
 
 // Every worker gets its own migrated temporary database and FastAPI server, so
 // workers can run concurrently while tests within a worker stay serial.
-const backendTest = base.extend<object, { backend: Backend }>({
+const backendTest = base.extend<object, { backend: Backend; mockAIProvider: boolean }>({
+  mockAIProvider: [false, { scope: "worker", option: true }],
   backend: [
-    // eslint-disable-next-line no-empty-pattern
-    async ({}, use) => {
-      const backend = await startBackend()
+    async ({ mockAIProvider }, use) => {
+      const backend = await startBackend(mockAIProvider)
       await use(backend)
       await stopBackend(backend)
     },

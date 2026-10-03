@@ -38,6 +38,7 @@ struct AssistantView: View {
                 .expensesScreenStyle()
             }
         }
+        .task { if model.identity?.authenticated == true { _ = try? await model.loadAISettings() } }
         .navigationTitle("Assistant")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -59,7 +60,15 @@ struct AssistantView: View {
     private var conversation: some View {
         transcript
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                composer
+                VStack(spacing: 4) {
+                    if model.aiSettings?.features.first(where: { $0.id == "spending_chat" })?.provider == "chatgpt" {
+                        HStack {
+                            Text("Using ChatGPT plan")
+                            Link("Manage usage", destination: URL(string: "https://chatgpt.com/settings/usage")!)
+                        }.font(.caption)
+                    }
+                    composer
+                }
             }
             .background(ExpensesBackground())
     }

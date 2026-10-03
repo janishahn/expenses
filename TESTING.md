@@ -92,6 +92,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Commerzbank CSV reconciliation inbox, reviewed outcomes, match selection, and editable create-and-match | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
 | PDF report options, include/exclude tag scope, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| ChatGPT pairing, per-feature provider/model/thinking settings, persistence, and disconnect | `ai-settings.spec.ts` | `ai-settings.mobile.spec.ts` | Real backend; external OpenAI responses simulated |
 | Settings, appearance, balance anchors, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
 | Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
 | Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |

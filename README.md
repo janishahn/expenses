@@ -139,6 +139,48 @@ EXPENSES_LLM_API_KEY=your-api-key
 
 Leave the API key blank only when a private endpoint intentionally accepts requests without one. Optional temperature and output-token settings are listed in [`.env.example`](.env.example).
 
+You can also connect a ChatGPT Plus or Pro plan. Set `EXPENSES_LLM_ENABLED=true`;
+this option does not require an API key or `EXPENSES_LLM_BASE_URL`. Each Expenses
+user connects their own ChatGPT account in **Settings → AI settings** (or
+**Account → AI settings** on iOS).
+
+1. Choose **Continue with ChatGPT** to create a pairing code valid for 10 minutes.
+2. On a Mac or Linux computer with a browser and an Expenses checkout, run
+   `uv run connect-chatgpt --server https://your-expenses-server` from that checkout.
+3. Enter the pairing code at the private prompt and approve sign-in and plan usage
+   in the browser. The helper completes OpenAI's loopback callback locally and
+   transfers the credentials over HTTPS to your Expenses server. Plain HTTP is
+   accepted only for a localhost Expenses server.
+4. Return to AI settings and select **I've finished connecting**. Choose a provider,
+   model, and thinking level separately for categorization, rule suggestions, and
+   spending analysis, then save. Web and iOS use the same saved choices.
+
+Model menus load the selected provider's `/models` endpoint. For example, choose
+GPT-6 Luna with low thinking for categorization and GPT-6.1 Sol for analysis if
+those models are offered by your connected account. **Model default** leaves the
+thinking level to ChatGPT; for the configured provider it retains the feature's
+existing default. Providers without model discovery can still use **Server
+default**, configured by `EXPENSES_LLM_MODEL`.
+
+ChatGPT usage shares the user's plan limits. AI settings and the assistant link to
+ChatGPT's usage controls. Expenses does not switch to a paid API or another account
+when the plan reaches a limit. Financial context needed by a request goes to
+OpenAI. Existing AI features run on explicit user actions; connecting an account
+does not enable background AI jobs.
+
+The self-hosted runtime stores encrypted credentials under
+`EXPENSES_DATA_DIR/secrets/chatgpt/` with owner-only permissions. The default
+credential-encryption key is in that directory; set
+`EXPENSES_AI_CREDENTIAL_KEY_FILE` to an existing Fernet key file mounted separately
+if desired. Preserve the key with protected instance backups. If it is lost, remove the
+inaccessible encrypted connection files, disconnect the old access in ChatGPT,
+and reconnect. Do not include this directory in shared exports or source control.
+Each runtime keeps its own host ID; cloned deployments must generate a new one.
+The server renews tokens automatically. **Disconnect** clears saved tokens and
+attempts remote revocation; if OpenAI is unreachable, also disconnect Expenses in
+ChatGPT settings. Signing out of Expenses alone does not disconnect ChatGPT.
+
+
 ## Serving & Access
 
 Expenses serves the web app and API over plain HTTP on one port. Keep that port on localhost or a private network, and put HTTPS in front of it before remote use.

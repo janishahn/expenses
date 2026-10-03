@@ -1,3 +1,4 @@
+import { ChatGPTUsageIndicator } from "../components/AISettingsPanel"
 import {
   useCallback,
   useEffect,
@@ -726,6 +727,7 @@ function SpendingAssistantPage() {
       className="relative flex h-[calc(100dvh-2rem)] min-h-[32rem] flex-col gap-3 desk:h-[calc(100dvh-7.75rem)] desk:min-h-[34rem]"
     >
       <PageIntro title="Assistant" />
+      <ChatGPTUsageIndicator />
       <div
         ref={threadRef}
         data-testid="spending-assistant-thread"

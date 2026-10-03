@@ -9,7 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from expenses.api import routes
+from expenses.api import routes, ai_routes
 from expenses.core.app_logging import (
     current_request_id,
     get_logger,
@@ -77,6 +77,8 @@ def shutdown_event() -> None:
 
 
 app.include_router(routes.router)
+
+app.include_router(ai_routes.router)
 get_db = routes.get_db
 _SENSITIVE_VALIDATION_FIELDS = {
     "authorization",

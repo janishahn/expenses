@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional Sign in with ChatGPT plan usage, with a local connection helper, protected per-user credentials, renewal, and disconnect controls.
+- Per-feature provider, model, and thinking-level settings on web and iOS, with model discovery for ChatGPT and OpenAI-compatible providers.
+
 ### Fixed
 - Gave the Dashboard recent-transactions link a minimum 44-by-44-pixel touch target on mobile.
 

@@ -1,6 +1,188 @@
 {
   "components": {
     "schemas": {
+      "AIConnectionStatus": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "plan_authorized": {
+            "title": "Plan Authorized",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "usage_url": {
+            "title": "Usage Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "email",
+          "plan_authorized",
+          "usage_url"
+        ],
+        "title": "AIConnectionStatus",
+        "type": "object"
+      },
+      "AIFeatureSettings": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "default": "configured",
+            "enum": [
+              "configured",
+              "chatgpt"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "title": "Reasoning Effort",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AIFeatureSettings",
+        "type": "object"
+      },
+      "AIModelCatalog": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AIModelOption"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "title": "AIModelCatalog",
+        "type": "object"
+      },
+      "AIModelOption": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reasoning_efforts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoning Efforts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "reasoning_efforts"
+        ],
+        "title": "AIModelOption",
+        "type": "object"
+      },
+      "AISettingsResponse": {
+        "properties": {
+          "configured_available": {
+            "title": "Configured Available",
+            "type": "boolean"
+          },
+          "configured_model": {
+            "title": "Configured Model",
+            "type": "string"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/AIConnectionStatus"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/AIFeatureSettings"
+            },
+            "title": "Features",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "configured_available",
+          "configured_model",
+          "connection",
+          "features"
+        ],
+        "title": "AISettingsResponse",
+        "type": "object"
+      },
+      "AISettingsUpdate": {
+        "properties": {
+          "features": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeatureChoice"
+            },
+            "propertyNames": {
+              "enum": [
+                "transaction_triage",
+                "rule_mining",
+                "spending_chat"
+              ]
+            },
+            "title": "Features",
+            "type": "object"
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "title": "AISettingsUpdate",
+        "type": "object"
+      },
       "AIUsageSummaryOut": {
         "properties": {
           "average_cost_decimal": {
@@ -3420,6 +3602,41 @@
         "title": "DurablePurchasesResponseOut",
         "type": "object"
       },
+      "FeatureChoice": {
+        "properties": {
+          "model": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "configured",
+            "enum": [
+              "configured",
+              "chatgpt"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "title": "Reasoning Effort",
+            "type": "string"
+          }
+        },
+        "title": "FeatureChoice",
+        "type": "object"
+      },
       "FilterTagOut": {
         "properties": {
           "archived_at": {
@@ -5382,6 +5599,21 @@
         ],
         "title": "MonthDayPolicy",
         "type": "string"
+      },
+      "PairingStart": {
+        "properties": {
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1024.0,
+            "title": "Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "port"
+        ],
+        "title": "PairingStart",
+        "type": "object"
       },
       "PeriodOut": {
         "properties": {
@@ -7398,6 +7630,55 @@
         "title": "TemplatesResponseOut",
         "type": "object"
       },
+      "TokenGrant": {
+        "properties": {
+          "access_token": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "title": "Access Token",
+            "type": "string"
+          },
+          "client_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 86400.0,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "id_token": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "title": "Id Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 2000,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "access_token",
+          "refresh_token",
+          "id_token",
+          "scope",
+          "expires_in"
+        ],
+        "title": "TokenGrant",
+        "type": "object"
+      },
       "TransactionDetailOut": {
         "properties": {
           "amount_cents": {
@@ -8839,6 +9120,177 @@
         "summary": "Api Set Admin System Health Validation Override"
       }
     },
+    "/api/ai/chatgpt/connection": {
+      "delete": {
+        "operationId": "disconnect_api_ai_chatgpt_connection_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Disconnect"
+      }
+    },
+    "/api/ai/chatgpt/pairing": {
+      "post": {
+        "operationId": "create_pairing_api_ai_chatgpt_pairing_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Pairing"
+      }
+    },
+    "/api/ai/chatgpt/pairing/complete": {
+      "post": {
+        "operationId": "complete_pairing_api_ai_chatgpt_pairing_complete_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-chatgpt-pairing",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "title": "X-Chatgpt-Pairing",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenGrant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Pairing"
+      }
+    },
+    "/api/ai/chatgpt/pairing/start": {
+      "post": {
+        "operationId": "start_pairing_api_ai_chatgpt_pairing_start_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-chatgpt-pairing",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "title": "X-Chatgpt-Pairing",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairingStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Pairing"
+      }
+    },
+    "/api/ai/models": {
+      "get": {
+        "operationId": "models_api_ai_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "enum": [
+                "configured",
+                "chatgpt"
+              ],
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIModelCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Models"
+      }
+    },
     "/api/ai/rules/mine": {
       "post": {
         "operationId": "api_ai_mine_rules_api_ai_rules_mine_post",
@@ -8959,6 +9411,60 @@
           }
         },
         "summary": "Api Ai Reject Rule Suggestion"
+      }
+    },
+    "/api/ai/settings": {
+      "get": {
+        "operationId": "settings_api_ai_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "put": {
+        "operationId": "save_settings_api_ai_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Settings"
       }
     },
     "/api/ai/spending-chat/stream": {

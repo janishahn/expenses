@@ -23,6 +23,9 @@ struct AuthView: View {
         Form {
             if let user = model.identity?.user {
                 signedInSection(user)
+                Section {
+                    NavigationLink("AI settings") { AISettingsView() }
+                }
                 if model.settings == nil && model.isLoading {
                     LoadingStateSection(title: "Loading account")
                 } else {

@@ -668,13 +668,16 @@ class SpendingAnalysisService:
 
 
 class PydanticAISpendingRunner:
-    def __init__(self) -> None:
+    def __init__(self, configuration: Any = None) -> None:
         settings = get_settings()
         if not settings.llm_enabled:
             raise LLMDisabledError("LLM usage is disabled")
-        if not settings.llm_base_url:
+        if not settings.llm_base_url and not (
+            configuration and configuration.provider == "chatgpt"
+        ):
             raise LLMDisabledError("EXPENSES_LLM_BASE_URL is not configured")
-        self.model_name = settings.llm_model
+        self.configuration = configuration
+        self.model_name = configuration.model if configuration else settings.llm_model
         self.base_url = settings.llm_base_url
         self.api_key = settings.llm_api_key
         self.temperature = (
@@ -706,28 +709,36 @@ class PydanticAISpendingRunner:
             raise LLMDisabledError("Install pydantic-ai to enable LLM usage") from exc
 
         usage_capture = OpenAICompatibleUsageCapture()
-        http_client = _retrying_http_client(
-            AsyncTenacityTransport=AsyncTenacityTransport,
-            RetryConfig=RetryConfig,
-            wait_retry_after=wait_retry_after,
-            usage_capture=usage_capture,
-        )
-        model_settings = _request_model_settings(
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            api_key=self.api_key,
-            reasoning_effort="medium",
-            omit_authorization=omit,
-        )
-        model_settings["parallel_tool_calls"] = False
-        model = OpenAIChatModel(
-            self.model_name,
-            provider=OpenAIProvider(
-                base_url=self.base_url,
-                api_key=self.api_key or None,
-                http_client=http_client,
-            ),
-        )
+        if self.configuration and self.configuration.provider == "chatgpt":
+            from expenses.ai.chatgpt_model import build_model
+
+            model, http_client, model_settings = await build_model(self.configuration)
+            self.base_url = "https://api.openai.com/v1"
+        else:
+            http_client = _retrying_http_client(
+                AsyncTenacityTransport=AsyncTenacityTransport,
+                RetryConfig=RetryConfig,
+                wait_retry_after=wait_retry_after,
+                usage_capture=usage_capture,
+            )
+            model_settings = _request_model_settings(
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                api_key=self.api_key,
+                reasoning_effort=self.configuration.reasoning_effort
+                if self.configuration
+                else "medium",
+                omit_authorization=omit,
+            )
+            model_settings["parallel_tool_calls"] = False
+            model = OpenAIChatModel(
+                self.model_name,
+                provider=OpenAIProvider(
+                    base_url=self.base_url,
+                    api_key=self.api_key or None,
+                    http_client=http_client,
+                ),
+            )
         agent: Agent[SpendingAgentContext, str] = Agent(
             model=model,
             model_settings=ModelSettings(**model_settings),
@@ -870,6 +881,18 @@ class PydanticAISpendingRunner:
                             base_url=self.base_url,
                             configured_model=self.model_name,
                         )
+                        if (
+                            self.configuration
+                            and self.configuration.provider == "chatgpt"
+                        ):
+                            from dataclasses import replace
+
+                            usage_metadata = replace(
+                                usage_metadata,
+                                llm_provider="chatgpt",
+                                cost_decimal=None,
+                                cost_unit=None,
+                            )
                         usage_metadata = apply_captured_provider_usage(
                             usage_metadata, usage_capture
                         )
@@ -1010,7 +1033,11 @@ class SpendingChatService:
     ) -> None:
         self.session = session
         self.user_id = user_id
-        self.runner = runner or PydanticAISpendingRunner()
+        from expenses.ai.preferences import resolve
+
+        self.runner = runner or PydanticAISpendingRunner(
+            resolve(session, user_id, "spending_chat")
+        )
         local_now = datetime.now(ZoneInfo(get_settings().timezone))
         self.today = today or local_now.date()
         self.now = now or local_now
@@ -1029,7 +1056,7 @@ class SpendingChatService:
             feature="spending_chat",
             status="running",
             prompt_version="spending_chat",
-            model=settings.llm_model,
+            model=getattr(self.runner, "model_name", settings.llm_model),
             input_hash=hashlib.sha256(input_json.encode("utf-8")).hexdigest(),
             input_json=input_json,
             created_at=datetime.utcnow(),

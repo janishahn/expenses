@@ -57,6 +57,7 @@ final class AppModel {
     var legacySQLitePreview: LegacySQLitePreviewResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
+    var aiSettings: AISettingsResponse?
     var csvPreview: CSVPreviewResponse?
     var recurring: RecurringResponse?
     var recurringOccurrences: RecurringOccurrencesResponse?
@@ -242,6 +243,39 @@ final class AppModel {
             clearStoredSession()
             clearUserScopedState()
         }
+    }
+
+    func loadAISettings() async throws -> AISettingsResponse {
+        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
+        let response = try await apiClient.aiSettings(token: token)
+        guard self.token == token else { throw CancellationError() }
+        aiSettings = response
+        return response
+    }
+
+    func saveAISettings(_ features: [AIFeatureSettings]) async throws -> AISettingsResponse {
+        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
+        let response = try await apiClient.saveAISettings(features, token: token)
+        guard self.token == token else { throw CancellationError() }
+        aiSettings = response
+        return response
+    }
+
+    func aiModels(provider: String) async throws -> [AIModelOption] {
+        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
+        return try await apiClient.aiModels(provider: provider, token: token).models
+    }
+
+    func createChatGPTPairing() async throws -> ChatGPTPairingResponse {
+        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
+        return try await apiClient.createChatGPTPairing(token: token)
+    }
+
+    func disconnectChatGPT() async throws -> ChatGPTDisconnectResponse {
+        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
+        let response = try await apiClient.disconnectChatGPT(token: token)
+        _ = try await loadAISettings()
+        return response
     }
 
     func loadAccountSettings() async {
@@ -2009,6 +2043,7 @@ final class AppModel {
     }
 
     private func clearUserScopedState() {
+        aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
         digestLoadID += 1
