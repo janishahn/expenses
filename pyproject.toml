@@ -25,9 +25,12 @@ dependencies = [
     "httpx>=0.28.1",
     "tenacity>=9.1.4",
     "pillow>=12.3.0",
+    "pyjwt[crypto]>=2.10.1",
+    "cryptography>=46.0.0",
 ]
 
 [project.scripts]
+connect-chatgpt = "expenses.cli.connect_chatgpt:main"
 dev = "expenses.cli.dev:main"
 export-ios-fixtures = "expenses.cli.export_ios_fixtures:main"
 run-ios-device = "expenses.cli.run_ios_device:main"

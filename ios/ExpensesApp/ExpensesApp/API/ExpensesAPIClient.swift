@@ -80,6 +80,27 @@ struct ExpensesAPIClient {
         )
     }
 
+    func aiSettings(token: String) async throws -> AISettingsResponse {
+        try await request(path: "/api/ai/settings", bearerToken: token)
+    }
+
+    func saveAISettings(_ features: [AIFeatureSettings], token: String) async throws -> AISettingsResponse {
+        let body = AISettingsUpdate(features: Dictionary(uniqueKeysWithValues: features.map { ($0.id, $0) }))
+        return try await request(path: "/api/ai/settings", method: "PUT", bearerToken: token, body: body)
+    }
+
+    func aiModels(provider: String, token: String) async throws -> AIModelCatalog {
+        try await request(path: "/api/ai/models?provider=\(provider)", bearerToken: token)
+    }
+
+    func createChatGPTPairing(token: String) async throws -> ChatGPTPairingResponse {
+        try await request(path: "/api/ai/chatgpt/pairing", method: "POST", bearerToken: token)
+    }
+
+    func disconnectChatGPT(token: String) async throws -> ChatGPTDisconnectResponse {
+        try await request(path: "/api/ai/chatgpt/connection", method: "DELETE", bearerToken: token)
+    }
+
     func settings(token: String) async throws -> SettingsResponse {
         try await request(path: "/api/settings", bearerToken: token)
     }

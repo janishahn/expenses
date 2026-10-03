@@ -71,6 +71,29 @@ class TimestampMixin:
     )
 
 
+class AIFeaturePreference(Base):
+    __tablename__ = "ai_feature_preferences"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    feature: Mapped[str] = mapped_column(String(40), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    reasoning_effort: Mapped[str] = mapped_column(String(20), nullable=False)
+
+
+class ChatGPTPairing(Base):
+    __tablename__ = "chatgpt_pairings"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    encrypted_flow: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = (UniqueConstraint("username", name="uq_users_username"),)

@@ -40,6 +40,8 @@
 		001000000000000000000031 /* AssistantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000033 /* AssistantModels.swift */; };
 		001000000000000000000032 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000034 /* AssistantView.swift */; };
 		001000000000000000000033 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000035 /* AppIcon.icon */; };
+		001000000000000000000036 /* AISettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000036 /* AISettingsModels.swift */; };
+		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +80,8 @@
 		002000000000000000000033 /* AssistantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantModels.swift; sourceTree = "<group>"; };
 		002000000000000000000034 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		002000000000000000000035 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		002000000000000000000036 /* AISettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsModels.swift; sourceTree = "<group>"; };
+		002000000000000000000037 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +134,7 @@
 			children = (
 				002000000000000000000004 /* APIModels.swift */,
 				002000000000000000000033 /* AssistantModels.swift */,
+				002000000000000000000036 /* AISettingsModels.swift */,
 				002000000000000000000013 /* DomainModels.swift */,
 				002000000000000000000005 /* ExpensesAPIClient.swift */,
 			);
@@ -176,6 +181,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000008 /* AuthView.swift */,
+				002000000000000000000037 /* AISettingsView.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -401,6 +407,8 @@
 				001000000000000000000029 /* CategoryIcons.swift in Sources */,
 				001000000000000000000031 /* AssistantModels.swift in Sources */,
 				001000000000000000000032 /* AssistantView.swift in Sources */,
+				001000000000000000000037 /* AISettingsView.swift in Sources */,
+				001000000000000000000036 /* AISettingsModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

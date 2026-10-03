@@ -1,3 +1,4 @@
+import AISettingsPanel from "../components/AISettingsPanel"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
@@ -315,6 +316,7 @@ function SettingsPage() {
   return (
     <section data-testid="settings-page" className="space-y-4">
       <PageIntro title="Settings" />
+      <AISettingsPanel />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] [&>*]:min-w-0">
         <FinancialPanel role="inspector" className="p-5">

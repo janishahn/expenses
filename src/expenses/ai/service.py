@@ -415,7 +415,7 @@ class LLMAssistantService:
             feature=feature,
             status="running",
             prompt_version=prompt_version,
-            model=settings.llm_model,
+            model=getattr(runner, "model_name", settings.llm_model),
             input_hash=hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
             entity_type=entity_type,
             entity_id=entity_id,
@@ -488,7 +488,11 @@ class LLMAssistantService:
         feature_settings = LLM_FEATURE_SETTINGS.get(
             feature, LLM_DEFAULT_FEATURE_SETTINGS
         )
+        from expenses.ai.preferences import resolve
+
+        configuration = resolve(self.session, self.user_id, feature)
         return PydanticAILLMRunner(
+            configuration=configuration,
             temperature=settings.llm_temperature
             if settings.llm_temperature is not None
             else feature_settings.temperature,

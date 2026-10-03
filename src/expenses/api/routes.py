@@ -4378,9 +4378,6 @@ async def api_ai_spending_chat_stream(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    settings = get_settings()
-    if not settings.llm_enabled or not settings.llm_base_url:
-        raise HTTPException(status_code=503, detail="LLM is not configured")
     try:
         validate_spending_chat_message_history(data.message_history)
     except LLMDisabledError as exc:
