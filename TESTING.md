@@ -7,7 +7,7 @@ E2E journeys are the primary proof of user-facing behavior. Keep focused backend
 ```bash
 uv run fast-tests       # backend tests, Ruff, frontend lint and production build
 uv run full-tests       # fast-tests, then all Playwright projects
-uv run ios-e2e          # native XCUITest journeys; macOS, Xcode and iOS 26 Simulator
+uv run ios-e2e          # local native journeys; macOS, Xcode and iOS 26 Simulator
 ```
 
 For web setup, run `npm --prefix ui run test:e2e:install` once. Linux also needs Noto Sans (`sudo apt-get install fonts-noto-core`) for the shared screenshot font configuration. After building with `npm --prefix ui run build`, use focused specs while editing:
@@ -19,9 +19,9 @@ npm run test:e2e -- transactions.mobile.spec.ts --project=mobile-webkit
 npm run test:e2e:ui
 ```
 
-Run the fast gate plus affected journeys for feature work. Use `full-tests` for shared browser/startup infrastructure and release candidates. Run `ios-e2e` for native changes on a Mac; a Linux-only check does not validate native compilation or interaction.
+Run the fast gate plus affected journeys for feature work. Use `full-tests` for shared browser/startup infrastructure and release candidates. Run `ios-e2e` locally on a Mac for native changes; native tests do not run in CI.
 
-PRs and main-branch pushes run backend checks, the web matrix, and native journeys in separate CI jobs. The same checks run weekly, on manual **Full tests** dispatch, and before release publication. CI allows one browser retry for diagnosis but fails retry-only passes. Keep diagnostics when investigating flakes; do not weaken assertions or accept snapshots merely to make a run green.
+PRs and main-branch pushes run backend checks and the web matrix in CI. The same checks run weekly, on manual **Full tests** dispatch, and before release publication. CI allows one browser retry for diagnosis but fails retry-only passes. Keep diagnostics when investigating flakes; do not weaken assertions or accept snapshots merely to make a run green.
 
 ## Policy
 
@@ -38,7 +38,7 @@ Playwright starts a real FastAPI server and migrated temporary SQLite database p
 
 `desktop-chromium` and `mobile-webkit` own broad web coverage, alongside their fresh-auth projects. Three compatibility projects run the critical ledger journey on desktop Firefox/WebKit and mobile Chromium. Mobile browser projects emulate devices; they do not exercise the native app or physical Safari.
 
-`ios-e2e` creates disposable backends and an owned iPhone simulator, runs the shared `ExpensesApp` scheme, then cleans up. Each ordinary native test uses its own account; first-run setup uses a separate pristine backend. Inference is disabled. Debug/simulator-only launch settings reset app-owned preferences/Keychain state and select the loopback backend. No developer signing certificate is needed. CI pins Xcode 26.3 on macOS 15; locally install Pango (`brew install pango`) for PDF generation if needed.
+`ios-e2e` creates disposable backends and an owned iPhone simulator, runs the shared `ExpensesApp` scheme, then cleans up. Each ordinary native test uses its own account; first-run setup uses a separate pristine backend. Inference is disabled. Debug/simulator-only launch settings reset app-owned preferences/Keychain state and select the loopback backend. No developer signing certificate is needed. Install Pango (`brew install pango`) locally for PDF generation if needed.
 
 Native journeys use `--skip-local-unlock`; they do not establish biometric or privacy-lock correctness. Real-device review remains necessary for hardware capture, biometrics, system sharing/permissions and device performance. The native suite is in `ios/ExpensesApp/ExpensesAppUITests/Journeys.swift`; gaps are explicit below.
 
@@ -70,6 +70,6 @@ AI settings journeys keep the real app/backend and substitute external identity/
 
 ## Diagnostics
 
-Playwright writes `ui/playwright-report` and `ui/test-results`; open a trace with `cd ui && npx playwright show-trace test-results/<test>/trace.zip`. Native logs and `.xcresult` bundles are under `test-results/ios/<run>/` (open the result bundle in Xcode). CI retains failure traces and retry results.
+Playwright writes `ui/playwright-report` and `ui/test-results`; open a trace with `cd ui && npx playwright show-trace test-results/<test>/trace.zip`. Native logs and `.xcresult` bundles are under `test-results/ios/<run>/` (open the result bundle in Xcode). Web CI retains failure traces and retry results.
 
 Set `UI_POLISH_AUDIT_ARTIFACT_DIR` only when collecting optional visual audit evidence. Artifacts alone are not test coverage.

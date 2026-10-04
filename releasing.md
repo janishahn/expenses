@@ -1,7 +1,7 @@
 # Releasing Expenses
 
 Releases are manual. Only start this process when the user asks for a release.
-Pushing a version tag runs backend, web and native iOS checks before publishing
+Pushing a version tag runs backend and web checks before publishing
 the container image, which may update instances tracking the latest release.
 
 ## Prepare
@@ -20,8 +20,9 @@ the container image, which may update instances tracking the latest release.
    sections. Update the reference links at the end of the file so `[Unreleased]`
    compares `vX.Y.Z...HEAD` and `[X.Y.Z]` compares
    `<previous-tag>...vX.Y.Z`.
-6. Run `uv run full-tests`. Resolve any product failure before tagging; report an
-   infrastructure failure separately.
+6. Run `uv run full-tests`. For native changes, also run `uv run ios-e2e` locally
+   on macOS. Resolve any product failure before tagging; report an infrastructure
+   failure separately.
 
 ## Publish
 

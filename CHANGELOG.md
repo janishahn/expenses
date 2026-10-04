@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Native iOS E2E journeys and `uv run ios-e2e`, using disposable simulator/backend state without signing credentials or paid inference.
-- Automatic web and native journey checks on pull requests and main-branch pushes, weekly runs, and checks before release publication.
+- Local native iOS E2E journeys and `uv run ios-e2e`, using disposable simulator/backend state without signing credentials or paid inference.
+- Automatic web journey checks on pull requests and main-branch pushes, weekly runs, and checks before release publication.
 - Optional Sign in with ChatGPT plan usage, with a local connection helper, protected per-user credentials, renewal, and disconnect controls.
 - Per-feature provider, model, and thinking-level settings on web and iOS, with model discovery for ChatGPT and OpenAI-compatible providers.
 - Custom ChatGPT model IDs on web and iOS, validated with the connected account before saving when absent from the model catalog.

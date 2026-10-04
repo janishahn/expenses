@@ -36,7 +36,8 @@ unnecessary background work.
 - When web behavior or layout changes, also run focused Playwright specs for
   each affected web layout.
 - For native changes, update the owning XCUITest journey and run `uv run ios-e2e`
-  on macOS. When working on Linux, state that native execution awaits macOS CI.
+  on a local Mac. On Linux, state that native execution was not run; CI covers
+  backend and web checks only.
 - User-facing changes update their E2E journeys; update the concise `TESTING.md`
   inventory when coverage changes. Cull redundant tests without losing unique invariant checks.
 - Use `uv run full-tests` for release candidates, shared browser or startup

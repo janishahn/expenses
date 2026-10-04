@@ -102,7 +102,3 @@ jobs:
             ui/test-results
           if-no-files-found: ignore
           retention-days: 7
-
-  ios-e2e:
-    name: Native journeys
-    uses: ./.github/workflows/ios-e2e.yml

@@ -230,7 +230,7 @@ uv run fast-tests
 uv run full-tests
 ```
 
-`fast-tests` is the normal local gate; pair feature changes with their affected E2E journeys. CI runs web and native journeys automatically. See [`TESTING.md`](TESTING.md) for focused commands and platform requirements, and [`releasing.md`](releasing.md) for the release process.
+`fast-tests` is the normal local gate; pair feature changes with their affected E2E journeys. CI runs backend checks and web journeys; native journeys run locally on macOS. See [`TESTING.md`](TESTING.md) for focused commands and platform requirements, and [`releasing.md`](releasing.md) for the release process.
 
 ## Automatic ingest
 
