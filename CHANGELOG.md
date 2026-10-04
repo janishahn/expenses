@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom ChatGPT model IDs on web and iOS, validated with the connected account before saving when absent from the model catalog.
 
 ### Fixed
-- Fix the native Quick Add button's accessible tap target and make the full transaction template row tappable.
+- Restore the native Quick Add button's hit target when it reappears after tab navigation, and make the full transaction template row tappable.
 - Restore keyboard focus to the mobile menu button after navigation, including slow-loading pages.
 - Wait for native budget and recurring data before allowing their creation forms to open.
 - Preserve ChatGPT usage-limit recovery guidance for standalone streaming errors and SDK error envelopes.

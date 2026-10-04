@@ -236,7 +236,13 @@ final class Journeys: XCTestCase {
         try replace(app.textFields["Amount"], with: "8.75")
         try tap(app.buttons["recurring.category"])
         try tap(app.buttons["Subscriptions"])
-        try tap(app.switches["Auto-post"])
+        // SwiftUI exposes the labeled row as a switch as well as the actual
+        // UISwitch child. Activate the control rather than its label container.
+        let autoPost = app.switches["Auto-post"].switches.firstMatch
+        try tap(autoPost)
+        let manual = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: autoPost)
+        _ = try XCTUnwrap(XCTWaiter.wait(for: [manual], timeout: 5) == .completed ? true : nil,
+                          "Auto-post did not turn off before saving the recurring rule.")
         try tap(app.buttons["Save"])
         XCTAssertTrue(app.staticTexts["Monthly membership"].waitForExistence(timeout: 20))
         try launch(reset: false)

@@ -33,10 +33,13 @@ struct RootView: View {
         ZStack {
             primaryTabs
 
-            quickAddButton
-                .opacity(showsFloatingQuickAdd ? 1 : 0)
-                .allowsHitTesting(showsFloatingQuickAdd)
-                .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
+            Group {
+                if showsFloatingQuickAdd {
+                    quickAddButton
+                        .transition(.opacity)
+                }
+            }
+            .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
         }
         .tint(ExpensesTheme.accent(for: scheme))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
@@ -173,7 +176,6 @@ struct RootView: View {
                 .foregroundStyle(ExpensesTheme.accent(for: scheme))
                 .accessibilityLabel("Quick Add")
                 .accessibilityIdentifier("transaction.add")
-                .accessibilityActivationPoint(.center)
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
                 .opacity(model.identity?.authenticated == true ? 1 : 0.48)
