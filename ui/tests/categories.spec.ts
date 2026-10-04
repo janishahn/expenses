@@ -116,9 +116,13 @@ test.describe("Categories Page", () => {
     const archivedRow = page.locator(".divide-y > div", { hasText: categoryName })
       .filter({ has: page.getByRole("button", { name: "Restore" }) })
     await expect(archivedRow).toBeVisible()
-    await archivedRow.getByRole("button", { name: "Restore" }).dispatchEvent("click")
+    await archivedRow.getByRole("button", { name: "Restore" }).click()
+    await expect(archivedRow).toHaveCount(0)
+    await expect(activeRow).toBeVisible()
 
-    await expect(page.locator("body")).toContainText(categoryName)
+    await page.reload()
+    await expect(activeRow).toBeVisible()
+    await expect(archivedRow).toHaveCount(0)
   })
 
   test("should edit a category on desktop", async ({ page }) => {
