@@ -364,12 +364,16 @@ final class Journeys: XCTestCase {
     }
 
     func testAppearancePreferencePersistsAfterRelaunch() async throws {
-        _ = try await signIn()
+        let user = try await signIn()
+        // Account sections arrive after login and push Appearance down. The
+        // session row is present only after the final account response loads.
+        try scrollTo(app.staticTexts[user.deviceName])
         let dark = app.segmentedControls["account.theme"].buttons["Dark"]
         try tap(dark)
         XCTAssertTrue(dark.isSelected)
         try launch(reset: false)
         try openMore("account")
+        try scrollTo(app.staticTexts[user.deviceName])
         try scrollTo(dark)
         XCTAssertTrue(dark.isSelected)
         try tap(app.segmentedControls["account.theme"].buttons["System"])
