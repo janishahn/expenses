@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from threading import Thread
 import time
 from uuid import uuid4
 
@@ -204,14 +205,34 @@ def run_tests(
             command,
             cwd=REPO_ROOT,
             env=env,
-            stdout=log,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             start_new_session=True,
         )
+
+        def copy_output() -> None:
+            assert process.stdout is not None
+            with process.stdout:
+                for line in process.stdout:
+                    log.write(line)
+                    log.flush()
+                    try:
+                        print(line, end="", flush=True)
+                    except BrokenPipeError:
+                        # A closed console consumer must not block Xcode or
+                        # discard the durable diagnostic log.
+                        pass
+
+        output = Thread(target=copy_output, daemon=True)
+        output.start()
         try:
             return process.wait(timeout=2700)
         finally:
             _stop_process(process)
+            output.join(timeout=10)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -95,7 +95,7 @@ def test_failed_simulator_boot_deletes_only_the_owned_device(
 
 
 def test_native_runner_propagates_xcode_failure_and_retains_log(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     xcodebuild = tmp_path / "xcodebuild"
     xcodebuild.write_text(
@@ -122,3 +122,4 @@ def test_native_runner_propagates_xcode_failure_and_retains_log(
         == 65
     )
     assert "A native journey failed" in (tmp_path / "xcodebuild.log").read_text()
+    assert "A native journey failed" in capsys.readouterr().out

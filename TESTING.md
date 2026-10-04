@@ -10,7 +10,7 @@ uv run full-tests       # fast-tests, then all Playwright projects
 uv run ios-e2e          # native XCUITest journeys; macOS, Xcode and iOS 26 Simulator
 ```
 
-For web setup, run `npm --prefix ui run test:e2e:install` once. After building with `npm --prefix ui run build`, use focused specs while editing:
+For web setup, run `npm --prefix ui run test:e2e:install` once. Linux also needs Noto Sans (`sudo apt-get install fonts-noto-core`) for the shared screenshot font configuration. After building with `npm --prefix ui run build`, use focused specs while editing:
 
 ```bash
 cd ui

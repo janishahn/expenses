@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test"
+import { fileURLToPath } from "node:url"
 
 const desktopViewport = { width: 1280, height: 800 }
 const criticalDesktopMatch = /.*\.critical\.spec\.ts/
@@ -22,6 +23,14 @@ export default defineConfig({
   // spec file caps the whole run; surface anything that grows past two minutes.
   reportSlowTests: { max: 10, threshold: 120_000 },
   use: {
+    // System sans defaults differ by Linux distribution. Keep reviewed visual
+    // baselines reproducible without replacing native fonts on macOS.
+    launchOptions: process.platform === "linux" ? {
+      env: {
+        ...process.env,
+        FONTCONFIG_FILE: fileURLToPath(new URL("./tests/fonts.conf", import.meta.url)),
+      },
+    } : {},
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     headless: true,
