@@ -99,9 +99,16 @@ test.describe("Budgets Page Mobile", () => {
       name: "Choose budget month",
     })
     await expect(monthPicker).toBeVisible()
-    const pickerBox = await monthPicker.boundingBox()
-    expect(pickerBox).not.toBeNull()
-    expect(pickerBox!.y - (labelBox!.y + labelBox!.height)).toBeCloseTo(8, 0)
+    // The page enters with translateY; the pre-click label position can be stale.
+    await expect.poll(async () => {
+      const [pickerBox, currentLabelBox] = await Promise.all([
+        monthPicker.boundingBox(),
+        month.boundingBox(),
+      ])
+      return pickerBox && currentLabelBox
+        ? pickerBox.y - (currentLabelBox.y + currentLabelBox.height)
+        : null
+    }).toBeCloseTo(8, 0)
     await page.keyboard.press("Escape")
 
     const initialMonth = await month.getAttribute("aria-label")
