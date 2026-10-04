@@ -9,21 +9,20 @@ final class Journeys: XCTestCase {
     private let password = "Native-journey-12345!"
 
     func testFirstAccountSetupPersistsSession() throws {
-        continueAfterFailure = false
         let freshBackend = try backendURL(key: "EXPENSES_UI_TEST_FRESH_BACKEND_URL")
         try launch(backend: freshBackend)
-        openMore("account")
+        try openMore("account")
         let setup = app.buttons["auth.setup"]
         XCTAssertTrue(setup.waitForExistence(timeout: 20))
         XCTAssertFalse(setup.isEnabled)
         let admin = User(username: "first-admin", token: "")
-        fillCredentials(admin, password: password)
-        tap(setup)
+        try fillCredentials(admin, password: password)
+        try tap(setup)
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
         try launch(reset: false, backend: freshBackend)
-        openMore("account")
+        try openMore("account")
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
-        tap(app.buttons["account.logout"])
+        try tap(app.buttons["account.logout"])
         XCTAssertTrue(app.buttons["auth.login"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["auth.setup"].isEnabled)
     }
@@ -31,26 +30,28 @@ final class Journeys: XCTestCase {
     func testLoginFailureSessionPersistenceAndLogout() async throws {
         let user = try await provisionUser()
         try launch()
-        openMore("account")
-        fillCredentials(user, password: "wrong-password")
-        tap(app.buttons["auth.login"])
+        try openMore("account")
+        try fillCredentials(user, password: "wrong-password")
+        try tap(app.buttons["auth.login"])
         XCTAssertTrue(app.staticTexts["request.error"].waitForExistence(timeout: 15))
+        try scrollTo(app.textFields["auth.username"], searchDownFirst: true)
         XCTAssertEqual(app.textFields["auth.username"].value as? String, user.username)
         XCTAssertFalse(app.buttons["account.logout"].exists)
 
-        replace(app.secureTextFields["auth.password"], with: password)
-        tap(app.buttons["auth.login"])
+        try replace(app.secureTextFields["auth.password"], with: password)
+        app.secureTextFields["auth.password"].typeText("\n")
+        try tap(app.buttons["auth.login"])
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
         try launch(reset: false)
-        openMore("account")
+        try openMore("account")
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
-        tap(app.buttons["account.logout"])
+        try tap(app.buttons["account.logout"])
         XCTAssertTrue(app.buttons["auth.login"].waitForExistence(timeout: 15))
         let sessions = try await sessions(for: user)
         let session = try XCTUnwrap(sessions.first { $0["device_name"] as? String == user.deviceName })
         XCTAssertNotNil(session["revoked_at"] as? String)
         try launch(reset: false)
-        openMore("account")
+        try openMore("account")
         XCTAssertTrue(app.buttons["auth.login"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["account.logout"].exists)
     }
@@ -63,42 +64,43 @@ final class Journeys: XCTestCase {
         _ = try await request("/api/mobile/auth/sessions/\(id)", method: "DELETE", token: user.token)
 
         try launch(reset: false)
-        openMore("account")
+        try openMore("account")
         XCTAssertTrue(app.buttons["auth.login"].waitForExistence(timeout: 20))
         XCTAssertFalse(app.buttons["account.logout"].exists)
-        fillCredentials(user, password: password)
-        tap(app.buttons["auth.login"])
+        try fillCredentials(user, password: password)
+        try tap(app.buttons["auth.login"])
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
     }
 
     func testTransactionCreateEditDeleteRestoreSurvivesRelaunch() async throws {
         let user = try await signIn()
-        createTransaction(title: "Lunch journey", amount: "12.34")
-        openTransaction("Lunch journey")
+        try createTransaction(title: "Lunch journey", amount: "12.34")
+        try openTransaction("Lunch journey")
         assertAmount("-€12.34")
 
         try launch(reset: false)
-        openTransaction("Lunch journey")
+        try openTransaction("Lunch journey")
         assertAmount("-€12.34")
-        tap(app.buttons["transaction.actions"])
-        tap(app.buttons["Edit"])
-        replace(app.textFields["transaction.title"], with: "Lunch corrected")
-        replace(app.textFields["transaction.amount"], with: "9.87")
-        tap(app.buttons["transaction.save"])
+        try tap(app.buttons["transaction.actions"])
+        try tap(app.buttons["Edit"])
+        try replace(app.textFields["transaction.amount"], with: "9.87")
+        try replace(app.textFields["transaction.title"], with: "Lunch corrected")
+        app.textFields["transaction.title"].typeText("\n")
+        try tap(app.buttons["transaction.save"])
         assertAmount("-€9.87")
-        tap(app.buttons["transaction.actions"])
-        tap(app.buttons["Delete"])
-        tap(app.buttons["Delete Transaction"])
+        try tap(app.buttons["transaction.actions"])
+        try tap(app.buttons["Delete"])
+        try tap(app.buttons["Delete Transaction"])
         XCTAssertTrue(app.staticTexts["No transactions yet"].waitForExistence(timeout: 15))
 
-        tap(app.buttons["transactions.mode"])
-        tap(app.buttons["Deleted"])
+        try tap(app.buttons["transactions.mode"])
+        try tap(app.buttons["Deleted"])
         XCTAssertTrue(app.staticTexts["Lunch corrected"].waitForExistence(timeout: 15))
-        tap(app.buttons["Deleted transaction actions"])
-        tap(app.buttons["Restore"])
+        try tap(app.buttons["Deleted transaction actions"])
+        try tap(app.buttons["Restore"])
         XCTAssertTrue(app.staticTexts["No deleted transactions"].waitForExistence(timeout: 15))
         try launch(reset: false)
-        openTransaction("Lunch corrected")
+        try openTransaction("Lunch corrected")
         assertAmount("-€9.87")
         let response = try await request("/api/transactions?period=all", token: user.token)
         let rows = try XCTUnwrap(response["items"] as? [[String: Any]])
@@ -109,37 +111,38 @@ final class Journeys: XCTestCase {
 
     func testInvalidTransactionKeepsInputAndCanBeCorrected() async throws {
         _ = try await signIn()
-        tap(app.tabBars.buttons["Transactions"])
-        tap(app.buttons["transaction.add"])
-        replace(app.textFields["transaction.title"], with: "Keep this draft")
-        tap(app.buttons["transaction.save"])
-        scrollTo(app.staticTexts["Amount is invalid."])
+        try tap(app.tabBars.buttons["Transactions"])
+        try tap(app.buttons["transaction.add"])
+        try replace(app.textFields["transaction.title"], with: "Keep this draft")
+        app.textFields["transaction.title"].typeText("\n")
+        try tap(app.buttons["transaction.save"])
+        try scrollTo(app.staticTexts["Amount is invalid."])
         XCTAssertTrue(app.staticTexts["Amount is invalid."].exists)
-        scrollTo(app.textFields["transaction.title"])
+        try scrollTo(app.textFields["transaction.title"], searchDownFirst: true)
         XCTAssertEqual(app.textFields["transaction.title"].value as? String, "Keep this draft")
-        replace(app.textFields["transaction.amount"], with: "0.01")
-        tap(app.buttons["transaction.save"])
-        openTransaction("Keep this draft")
+        try replace(app.textFields["transaction.amount"], with: "0.01")
+        try tap(app.buttons["transaction.save"])
+        try openTransaction("Keep this draft")
         assertAmount("-€0.01")
     }
 
     func testCategoriesAndTagsPersistAfterCreation() async throws {
         let user = try await signIn()
-        openMore("organize")
-        tap(app.buttons["organize.add"])
-        replace(app.textFields["Name"], with: "Journey category")
-        tap(app.buttons["Save"])
+        try openMore("organize")
+        try tap(app.buttons["organize.add"])
+        try replace(app.textFields["Name"], with: "Journey category")
+        try tap(app.buttons["Save"])
         XCTAssertTrue(app.staticTexts["Journey category"].waitForExistence(timeout: 15))
-        tap(app.segmentedControls["organize.section"].buttons["Tags"])
-        tap(app.buttons["organize.add"])
-        replace(app.textFields["Name"], with: "journey-tag")
-        tap(app.buttons["Save"])
+        try tap(app.segmentedControls["organize.section"].buttons["Tags"])
+        try tap(app.buttons["organize.add"])
+        try replace(app.textFields["Name"], with: "journey-tag")
+        try tap(app.buttons["Save"])
         XCTAssertTrue(app.staticTexts["journey-tag"].waitForExistence(timeout: 15))
 
         try launch(reset: false)
-        openMore("organize")
+        try openMore("organize")
         XCTAssertTrue(app.staticTexts["Journey category"].waitForExistence(timeout: 15))
-        tap(app.segmentedControls["organize.section"].buttons["Tags"])
+        try tap(app.segmentedControls["organize.section"].buttons["Tags"])
         XCTAssertTrue(app.staticTexts["journey-tag"].waitForExistence(timeout: 15))
         let categories = try await request("/api/categories", token: user.token)
         let category = try XCTUnwrap((categories["categories"] as? [[String: Any]])?
@@ -152,16 +155,16 @@ final class Journeys: XCTestCase {
         _ = try await seedTransaction(user, title: "Needle lunch", cents: 1234)
         _ = try await seedTransaction(user, title: "Other purchase", cents: 876)
         try login(user)
-        tap(app.tabBars.buttons["Transactions"])
+        try tap(app.tabBars.buttons["Transactions"])
         XCTAssertTrue(app.staticTexts["Other purchase"].waitForExistence(timeout: 20))
         let search = app.searchFields.firstMatch
-        replace(search, with: "Needle")
+        try replace(search, with: "Needle")
         XCTAssertTrue(app.staticTexts["Other purchase"].waitForNonExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Needle lunch"].exists)
-        replace(search, with: "")
+        try replace(search, with: "")
         search.typeText("\n")
         XCTAssertTrue(app.staticTexts["Other purchase"].waitForExistence(timeout: 15))
-        openTransaction("Needle lunch")
+        try openTransaction("Needle lunch")
         assertAmount("-€12.34")
     }
 
@@ -174,31 +177,31 @@ final class Journeys: XCTestCase {
         _ = try await seedTransaction(user, title: "Dinner", cents: 876, categoryID: categoryID)
         _ = try await seedTransaction(user, title: "Income", cents: 10000, type: "income")
         try login(user)
-        tap(app.tabBars.buttons["Dashboard"])
+        try tap(app.tabBars.buttons["Dashboard"])
         XCTAssertTrue(app.staticTexts["dashboard.expenses"].waitForExistence(timeout: 20))
         XCTAssertEqual(app.staticTexts["dashboard.expenses"].label, "€21.10")
         XCTAssertEqual(app.staticTexts["dashboard.income"].label, "€100.00")
         XCTAssertEqual(app.staticTexts["dashboard.balance"].label, "€78.90")
-        tap(app.tabBars.buttons["Insights"])
+        try tap(app.tabBars.buttons["Insights"])
         let categoryTotal = app.staticTexts["insights.expenses.Journey food"]
-        scrollTo(categoryTotal)
+        try scrollTo(categoryTotal)
         XCTAssertEqual(categoryTotal.label, "€21.10")
     }
 
     func testWhatIfShowsExactImpactWithoutCreatingRealTransactions() async throws {
         let user = try await signIn()
-        openMore("forecast")
-        tap(app.buttons["What If"])
-        tap(app.buttons["forecast.adjustment.type"])
-        tap(app.buttons["One-time event"])
-        replace(app.textFields["Name"], with: "Possible trip")
-        replace(app.textFields["Amount"], with: "50.25")
-        tap(app.buttons["Add Adjustment"])
-        tap(app.buttons["Run Scenario"])
+        try openMore("forecast")
+        try tap(app.buttons["What If"])
+        try tap(app.buttons["forecast.adjustment.type"])
+        try tap(app.buttons["One-time event"])
+        try replace(app.textFields["Name"], with: "Possible trip")
+        try replace(app.textFields["Amount"], with: "50.25")
+        try tap(app.buttons["Add Adjustment"])
+        try tap(app.buttons["Run Scenario"])
         let impact = app.descendants(matching: .any)["forecast.impact"]
-        scrollTo(impact)
+        try scrollTo(impact)
         XCTAssertEqual(impact.value as? String, "-€50.25")
-        tap(app.buttons["Done"])
+        try tap(app.buttons["Done"])
         let transactions = try await request("/api/transactions?period=all", token: user.token)
         XCTAssertEqual((transactions["items"] as? [Any])?.count, 0)
         let recurring = try await request("/api/recurring", token: user.token)
@@ -207,13 +210,13 @@ final class Journeys: XCTestCase {
 
     func testMonthBudgetPersistsWithExactAmount() async throws {
         let user = try await signIn()
-        openMore("budgets")
-        tap(app.buttons["Add Budget"])
-        replace(app.textFields["Amount"], with: "100.25")
-        tap(app.buttons["Save"])
+        try openMore("budgets")
+        try tap(app.buttons["Add Budget"])
+        try replace(app.textFields["Amount"], with: "100.25")
+        try tap(app.buttons["Save"])
         XCTAssertTrue(app.descendants(matching: .any)["budget.total"].waitForExistence(timeout: 20))
         try launch(reset: false)
-        openMore("budgets")
+        try openMore("budgets")
         XCTAssertTrue(app.descendants(matching: .any)["budget.total"].waitForExistence(timeout: 20))
         XCTAssertEqual(app.descendants(matching: .any)["budget.total"].value as? String, "€100.25")
         let response = try await request("/api/budgets?view=month", token: user.token)
@@ -226,17 +229,17 @@ final class Journeys: XCTestCase {
         _ = try await request("/api/categories", method: "POST", token: user.token,
                               body: ["name": "Subscriptions", "type": "expense", "icon": "repeat", "order": 0])
         try login(user)
-        openMore("recurring")
-        tap(app.buttons["Add Recurring Rule"])
-        replace(app.textFields["Name"], with: "Monthly membership")
-        replace(app.textFields["Amount"], with: "8.75")
-        tap(app.buttons["recurring.category"])
-        tap(app.buttons["Subscriptions"])
-        tap(app.switches["Auto-post"])
-        tap(app.buttons["Save"])
+        try openMore("recurring")
+        try tap(app.buttons["Add Recurring Rule"])
+        try replace(app.textFields["Name"], with: "Monthly membership")
+        try replace(app.textFields["Amount"], with: "8.75")
+        try tap(app.buttons["recurring.category"])
+        try tap(app.buttons["Subscriptions"])
+        try tap(app.switches["Auto-post"])
+        try tap(app.buttons["Save"])
         XCTAssertTrue(app.staticTexts["Monthly membership"].waitForExistence(timeout: 20))
         try launch(reset: false)
-        openMore("recurring")
+        try openMore("recurring")
         XCTAssertTrue(app.staticTexts["Monthly membership"].waitForExistence(timeout: 20))
         let response = try await request("/api/recurring", token: user.token)
         let rule = try XCTUnwrap((response["rules"] as? [[String: Any]])?.first)
@@ -251,26 +254,26 @@ final class Journeys: XCTestCase {
         _ = try await request("/api/categories", method: "POST", token: user.token,
                               body: ["name": "Coffee", "type": "expense", "icon": "coffee", "order": 0])
         try login(user)
-        openMore("organize")
-        tap(app.segmentedControls["organize.section"].buttons["Templates"])
-        tap(app.buttons["organize.add"])
-        replace(app.textFields["Name"], with: "Coffee template")
-        tap(app.buttons["template.category"])
-        tap(app.buttons["Coffee"])
-        replace(app.textFields["Default amount"], with: "3.45")
-        replace(app.textFields["Title"], with: "Morning coffee")
-        replace(app.textFields["Tags"], with: "routine")
-        tap(app.buttons["Save"])
+        try openMore("organize")
+        try tap(app.segmentedControls["organize.section"].buttons["Templates"])
+        try tap(app.buttons["organize.add"])
+        try replace(app.textFields["Name"], with: "Coffee template")
+        try tap(app.buttons["template.category"])
+        try tap(app.buttons["Coffee"])
+        try replace(app.textFields["Default amount"], with: "3.45")
+        try replace(app.textFields["Title"], with: "Morning coffee")
+        try replace(app.textFields["Tags"], with: "routine")
+        try tap(app.buttons["Save"])
         XCTAssertTrue(app.staticTexts["Coffee template"].waitForExistence(timeout: 15))
 
         try launch(reset: false)
-        tap(app.tabBars.buttons["Transactions"])
-        tap(app.buttons["transaction.add"])
-        tap(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Coffee template")).firstMatch)
+        try tap(app.tabBars.buttons["Transactions"])
+        try tap(app.buttons["transaction.add"])
+        try tap(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Coffee template")).firstMatch)
         XCTAssertEqual(app.textFields["transaction.title"].value as? String, "Morning coffee")
         XCTAssertEqual(app.textFields["transaction.amount"].value as? String, "3.45")
-        tap(app.buttons["transaction.save"])
-        openTransaction("Morning coffee")
+        try tap(app.buttons["transaction.save"])
+        try openTransaction("Morning coffee")
         assertAmount("-€3.45")
         let response = try await request("/api/transactions?period=all", token: user.token)
         let row = try XCTUnwrap((response["items"] as? [[String: Any]])?.first)
@@ -280,36 +283,36 @@ final class Journeys: XCTestCase {
 
     func testCSVExportOpensNativePreviewAndOffersSharing() async throws {
         _ = try await signIn()
-        createTransaction(title: "Export this purchase", amount: "42.16")
-        openMore("reports")
-        tap(app.buttons["Export CSV"])
+        try createTransaction(title: "Export this purchase", amount: "42.16")
+        try openMore("reports")
+        try tap(app.buttons["Export CSV"])
         // QLPreviewController is presented only after the authenticated download
         // has succeeded and the file has been written locally.
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 20))
-        tap(app.buttons["Done"])
+        try tap(app.buttons["Done"])
         let filename = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "expenses_export_", ".csv")).firstMatch
-        scrollTo(filename)
+        try scrollTo(filename)
         XCTAssertTrue(filename.exists)
-        tap(app.buttons["Preview"])
+        try tap(app.buttons["Preview"])
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 15))
-        tap(app.buttons["Done"])
-        scrollTo(app.buttons["Share"])
+        try tap(app.buttons["Done"])
+        try scrollTo(app.buttons["Share"])
         XCTAssertTrue(app.buttons["Share"].isEnabled)
     }
 
     func testPDFReportDownloadsAndReopensNativePreview() async throws {
         _ = try await signIn()
-        createTransaction(title: "Report purchase", amount: "24.68")
-        openMore("reports")
-        tap(app.buttons["Generate PDF"])
+        try createTransaction(title: "Report purchase", amount: "24.68")
+        try openMore("reports")
+        try tap(app.buttons["Generate PDF"])
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 30))
-        tap(app.buttons["Done"])
+        try tap(app.buttons["Done"])
         let filename = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", ".pdf")).firstMatch
-        scrollTo(filename)
+        try scrollTo(filename)
         XCTAssertTrue(filename.exists)
-        tap(app.buttons["Preview"])
+        try tap(app.buttons["Preview"])
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 15))
-        tap(app.buttons["Done"])
+        try tap(app.buttons["Done"])
     }
 
     func testReceiptCanBeDownloadedPreviewedAndDeleted() async throws {
@@ -319,12 +322,12 @@ final class Journeys: XCTestCase {
         _ = try await upload("/api/transactions/\(transactionID)/attachments", filename: "journey-receipt.png",
                              contentType: "image/png", data: png, token: user.token)
         try login(user)
-        openTransaction("Receipt purchase")
-        tap(app.buttons["Preview receipt"])
+        try openTransaction("Receipt purchase")
+        try tap(app.buttons["Preview receipt"])
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 20))
-        tap(app.buttons["Done"])
-        tap(app.buttons["Delete receipt"])
-        tap(app.buttons["Delete Receipt"])
+        try tap(app.buttons["Done"])
+        try tap(app.buttons["Delete receipt"])
+        try tap(app.buttons["Delete Receipt"])
         XCTAssertTrue(app.staticTexts["No receipts attached."].waitForExistence(timeout: 15))
         let detail = try await request("/api/transactions/\(transactionID)", token: user.token)
         XCTAssertEqual((detail["attachments"] as? [Any])?.count, 0)
@@ -339,8 +342,8 @@ final class Journeys: XCTestCase {
         let queue = try await request("/api/reconciliation", token: user.token)
         let bankID = try XCTUnwrap((queue["rows"] as? [[String: Any]])?.first?["id"] as? Int)
         try login(user)
-        openMore("reconcile")
-        tap(app.buttons["Create"])
+        try openMore("reconcile")
+        try tap(app.buttons["Create"])
         let matched = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Matched"),
                                                 object: app.staticTexts["reconciliation.status.\(bankID)"])
         XCTAssertEqual(XCTWaiter.wait(for: [matched], timeout: 20), .completed)
@@ -350,37 +353,37 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(rows.first?["amount_cents"] as? Int, 2345)
         XCTAssertEqual(rows.first?["type"] as? String, "expense")
         let title = try XCTUnwrap(rows.first?["title"] as? String)
-        openTransaction(title)
+        try openTransaction(title)
         assertAmount("-€23.45")
     }
 
     func testAppearancePreferencePersistsAfterRelaunch() async throws {
         _ = try await signIn()
         let dark = app.segmentedControls["account.theme"].buttons["Dark"]
-        tap(dark)
+        try tap(dark)
         XCTAssertTrue(dark.isSelected)
         try launch(reset: false)
-        openMore("account")
-        scrollTo(dark)
+        try openMore("account")
+        try scrollTo(dark)
         XCTAssertTrue(dark.isSelected)
-        tap(app.segmentedControls["account.theme"].buttons["System"])
+        try tap(app.segmentedControls["account.theme"].buttons["System"])
         XCTAssertTrue(app.segmentedControls["account.theme"].buttons["System"].isSelected)
     }
 
     func testUnavailableBackendCanBeCorrectedInDiagnostics() async throws {
         let user = try await provisionUser()
         try launch(backend: URL(string: "http://localhost:1")!)
-        openMore("account")
+        try openMore("account")
         XCTAssertTrue(app.buttons["Retry"].waitForExistence(timeout: 20))
-        openMore("diagnostics")
-        replace(app.textFields["diagnostics.backend"], with: try backendURL().absoluteString)
-        tap(app.buttons["Test connection"])
+        try openMore("diagnostics")
+        try replace(app.textFields["diagnostics.backend"], with: try backendURL().absoluteString)
+        try tap(app.buttons["Test connection"])
         let version = app.descendants(matching: .any)["diagnostics.version"]
-        scrollTo(version)
+        try scrollTo(version)
         XCTAssertTrue(version.exists)
-        openMore("account")
-        fillCredentials(user, password: password)
-        tap(app.buttons["auth.login"])
+        try openMore("account")
+        try fillCredentials(user, password: password)
+        try tap(app.buttons["auth.login"])
         XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
     }
 
@@ -404,7 +407,6 @@ final class Journeys: XCTestCase {
     }
 
     private func provisionUser() async throws -> User {
-        continueAfterFailure = false
         let status = try await request("/api/mobile/status")
         let action = status["setup_required"] as? Bool == true ? "setup" : "signup"
         let username = "ios-\(UUID().uuidString.prefix(12).lowercased())"
@@ -424,16 +426,18 @@ final class Journeys: XCTestCase {
 
     private func login(_ user: User) throws {
         try launch()
-        openMore("account")
-        fillCredentials(user, password: password)
-        tap(app.buttons["auth.login"])
-        XCTAssertTrue(app.buttons["account.logout"].waitForExistence(timeout: 20))
+        try openMore("account")
+        try fillCredentials(user, password: password)
+        try tap(app.buttons["auth.login"])
+        _ = try XCTUnwrap(app.buttons["account.logout"].waitForExistence(timeout: 20) ? true : nil,
+                          "Login did not show the authenticated account.")
     }
 
-    private func fillCredentials(_ user: User, password: String) {
-        replace(app.textFields["auth.username"], with: user.username)
-        replace(app.secureTextFields["auth.password"], with: password)
-        replace(app.textFields["auth.device"], with: user.deviceName)
+    private func fillCredentials(_ user: User, password: String) throws {
+        try replace(app.textFields["auth.username"], with: user.username)
+        try replace(app.secureTextFields["auth.password"], with: password)
+        try replace(app.textFields["auth.device"], with: user.deviceName)
+        app.textFields["auth.device"].typeText("\n")
     }
 
     private func launch(reset: Bool = true, backend: URL? = nil) throws {
@@ -444,30 +448,32 @@ final class Journeys: XCTestCase {
             "EXPENSES_UI_TEST_RESET": reset ? "1" : "0"
         ]
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["More"].waitForExistence(timeout: 20))
+        _ = try XCTUnwrap(app.tabBars.buttons["More"].waitForExistence(timeout: 20) ? true : nil,
+                          "The application did not finish launching.")
     }
 
-    private func openMore(_ destination: String) {
-        tap(app.tabBars.buttons["More"])
+    private func openMore(_ destination: String) throws {
+        try tap(app.tabBars.buttons["More"])
         for _ in 0..<4 {
             if app.navigationBars["More"].exists { break }
-            tap(app.navigationBars.buttons.element(boundBy: 0))
+            try tap(app.navigationBars.buttons.element(boundBy: 0))
         }
-        tap(app.buttons["more.\(destination)"])
+        try tap(app.buttons["more.\(destination)"])
     }
 
-    private func createTransaction(title: String, amount: String) {
-        tap(app.tabBars.buttons["Transactions"])
-        tap(app.buttons["transaction.add"])
-        replace(app.textFields["transaction.title"], with: title)
-        replace(app.textFields["transaction.amount"], with: amount)
-        tap(app.buttons["transaction.save"])
+    private func createTransaction(title: String, amount: String) throws {
+        try tap(app.tabBars.buttons["Transactions"])
+        try tap(app.buttons["transaction.add"])
+        try replace(app.textFields["transaction.amount"], with: amount)
+        try replace(app.textFields["transaction.title"], with: title)
+        app.textFields["transaction.title"].typeText("\n")
+        try tap(app.buttons["transaction.save"])
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 20))
     }
 
-    private func openTransaction(_ title: String) {
-        tap(app.tabBars.buttons["Transactions"])
-        tap(app.staticTexts[title])
+    private func openTransaction(_ title: String) throws {
+        try tap(app.tabBars.buttons["Transactions"])
+        try tap(app.staticTexts[title])
         XCTAssertTrue(app.buttons["transaction.actions"].waitForExistence(timeout: 20))
     }
 
@@ -477,30 +483,39 @@ final class Journeys: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [matches], timeout: 20), .completed)
     }
 
-    private func scrollTo(_ element: XCUIElement) {
+    private func scrollTo(_ element: XCUIElement, searchDownFirst: Bool = false) throws {
         // SwiftUI virtualizes rows, so a field above the current viewport may
-        // not exist yet. Search both directions, bounded, including after an
-        // error or a keyboard scroll; never assume every next field is below.
-        for _ in 0..<6 {
-            if element.exists && element.isHittable { return }
-            app.swipeUp()
+        // not exist yet. Scroll the form/list rather than the entire app, which
+        // can dismiss a sheet. Give newly presented content time to appear.
+        if element.exists && element.isHittable { return }
+        if !element.exists { _ = element.waitForExistence(timeout: 3) }
+        for (down, count) in [(searchDownFirst, 4), (!searchDownFirst, 8)] {
+            for _ in 0..<count {
+                if element.exists && element.isHittable { return }
+                let container = app.collectionViews.allElementsBoundByIndex.first { $0.isHittable }
+                    ?? app.scrollViews.allElementsBoundByIndex.first { $0.isHittable }
+                guard let container else { break }
+                if down { container.swipeDown() } else { container.swipeUp() }
+            }
         }
-        for _ in 0..<12 {
-            if element.exists && element.isHittable { return }
-            app.swipeDown()
-        }
+        // Swift errors stop async journeys; XCTest's Objective-C fail-fast
+        // control flow cannot safely unwind an async test frame.
+        _ = try XCTUnwrap(element.exists && element.isHittable ? element : nil,
+                          "Control is not visible after scrolling: \(element)")
     }
 
-    private func tap(_ element: XCUIElement) {
-        _ = element.waitForExistence(timeout: 10)
-        scrollTo(element)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+    private func tap(_ element: XCUIElement) throws {
+        try scrollTo(element)
+        if !element.isEnabled {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: element)
+            _ = try XCTUnwrap(XCTWaiter.wait(for: [ready], timeout: 15) == .completed ? element : nil,
+                              "Control did not become enabled: \(element)")
+        }
         element.tap()
     }
 
-    private func replace(_ element: XCUIElement, with text: String) {
-        tap(element)
+    private func replace(_ element: XCUIElement, with text: String) throws {
+        try tap(element)
         let current = element.value as? String ?? ""
         // A placeholder is not text. Secure text values contain one bullet per character.
         if current != element.placeholderValue {
