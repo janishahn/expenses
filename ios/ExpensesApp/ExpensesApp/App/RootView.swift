@@ -173,6 +173,7 @@ struct RootView: View {
                 .foregroundStyle(ExpensesTheme.accent(for: scheme))
                 .accessibilityLabel("Quick Add")
                 .accessibilityIdentifier("transaction.add")
+                .accessibilityActivationPoint(.center)
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
                 .opacity(model.identity?.authenticated == true ? 1 : 0.48)

@@ -76,6 +76,7 @@ struct TransactionFormView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }

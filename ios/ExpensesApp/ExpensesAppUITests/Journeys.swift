@@ -33,6 +33,7 @@ final class Journeys: XCTestCase {
         try openMore("account")
         try fillCredentials(user, password: "wrong-password")
         try tap(app.buttons["auth.login"])
+        try scrollTo(app.staticTexts["request.error"])
         XCTAssertTrue(app.staticTexts["request.error"].waitForExistence(timeout: 15))
         try scrollTo(app.textFields["auth.username"], searchDownFirst: true)
         XCTAssertEqual(app.textFields["auth.username"].value as? String, user.username)
@@ -111,8 +112,7 @@ final class Journeys: XCTestCase {
 
     func testInvalidTransactionKeepsInputAndCanBeCorrected() async throws {
         _ = try await signIn()
-        try tap(app.tabBars.buttons["Transactions"])
-        try tap(app.buttons["transaction.add"])
+        try openTransactionForm()
         try replace(app.textFields["transaction.title"], with: "Keep this draft")
         app.textFields["transaction.title"].typeText("\n")
         try tap(app.buttons["transaction.save"])
@@ -164,7 +164,8 @@ final class Journeys: XCTestCase {
         try replace(search, with: "")
         search.typeText("\n")
         XCTAssertTrue(app.staticTexts["Other purchase"].waitForExistence(timeout: 15))
-        try openTransaction("Needle lunch")
+        try tap(app.staticTexts["Needle lunch"])
+        XCTAssertTrue(app.buttons["transaction.actions"].waitForExistence(timeout: 20))
         assertAmount("-€12.34")
     }
 
@@ -267,8 +268,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(app.staticTexts["Coffee template"].waitForExistence(timeout: 15))
 
         try launch(reset: false)
-        try tap(app.tabBars.buttons["Transactions"])
-        try tap(app.buttons["transaction.add"])
+        try openTransactionForm()
         try tap(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Coffee template")).firstMatch)
         XCTAssertEqual(app.textFields["transaction.title"].value as? String, "Morning coffee")
         XCTAssertEqual(app.textFields["transaction.amount"].value as? String, "3.45")
@@ -377,6 +377,7 @@ final class Journeys: XCTestCase {
         XCTAssertTrue(app.buttons["Retry"].waitForExistence(timeout: 20))
         try openMore("diagnostics")
         try replace(app.textFields["diagnostics.backend"], with: try backendURL().absoluteString)
+        app.textFields["diagnostics.backend"].typeText("\n")
         try tap(app.buttons["Test connection"])
         let version = app.descendants(matching: .any)["diagnostics.version"]
         try scrollTo(version)
@@ -461,9 +462,15 @@ final class Journeys: XCTestCase {
         try tap(app.buttons["more.\(destination)"])
     }
 
-    private func createTransaction(title: String, amount: String) throws {
+    private func openTransactionForm() throws {
         try tap(app.tabBars.buttons["Transactions"])
         try tap(app.buttons["transaction.add"])
+        _ = try XCTUnwrap(app.navigationBars["Add Transaction"].waitForExistence(timeout: 10) ? true : nil,
+                          "Quick Add did not open the transaction form.")
+    }
+
+    private func createTransaction(title: String, amount: String) throws {
+        try openTransactionForm()
         try replace(app.textFields["transaction.amount"], with: amount)
         try replace(app.textFields["transaction.title"], with: title)
         app.textFields["transaction.title"].typeText("\n")
@@ -492,16 +499,56 @@ final class Journeys: XCTestCase {
         for (down, count) in [(searchDownFirst, 4), (!searchDownFirst, 8)] {
             for _ in 0..<count {
                 if element.exists && element.isHittable { return }
-                let container = app.collectionViews.allElementsBoundByIndex.first { $0.isHittable }
-                    ?? app.scrollViews.allElementsBoundByIndex.first { $0.isHittable }
+                let containers = (app.collectionViews.allElementsBoundByIndex
+                    + app.scrollViews.allElementsBoundByIndex).filter {
+                        !$0.frame.intersection(app.frame).isEmpty
+                    }
+                // Container hittability and query order do not identify a
+                // SwiftUI sheet. Prefer the target's container; virtualized
+                // targets require a container with a currently hittable child.
+                var container: XCUIElement?
+                if element.exists {
+                    let key = element.identifier.isEmpty ? element.label : element.identifier
+                    if !key.isEmpty {
+                        container = containers.first {
+                            $0.descendants(matching: element.elementType).matching(identifier: key).firstMatch.exists
+                        }
+                    }
+                }
+                if container == nil {
+                    container = containers.first {
+                        $0.descendants(matching: .any).allElementsBoundByIndex.contains { $0.isHittable }
+                    }
+                }
                 guard let container else { break }
-                if down { container.swipeDown() } else { container.swipeUp() }
+                try scroll(container, down: down)
             }
         }
         // Swift errors stop async journeys; XCTest's Objective-C fail-fast
         // control flow cannot safely unwind an async test frame.
         _ = try XCTUnwrap(element.exists && element.isHittable ? element : nil,
                           "Control is not visible after scrolling: \(element)")
+    }
+
+    private func scroll(_ container: XCUIElement, down: Bool) throws {
+        let screen = app.frame
+        let bounds = container.frame.intersection(screen)
+        let navigationBottom = app.navigationBars.allElementsBoundByIndex
+            .map { $0.frame.maxY }.max() ?? bounds.minY
+        let top = max(bounds.minY, navigationBottom)
+        let keyboard = app.keyboards.firstMatch
+        let bottom = min(bounds.maxY, keyboard.exists ? keyboard.frame.minY : bounds.maxY)
+        _ = try XCTUnwrap(bottom - top > 80 ? true : nil, "No visible form area is available for scrolling.")
+
+        // Default XCTest swipes can start on the decimal keyboard. Drag only
+        // within the visible form, away from navigation and sheet grabbers.
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        let upper = origin.withOffset(CGVector(dx: bounds.midX - screen.minX,
+                                              dy: top + (bottom - top) * 0.2 - screen.minY))
+        let lower = origin.withOffset(CGVector(dx: bounds.midX - screen.minX,
+                                              dy: top + (bottom - top) * 0.8 - screen.minY))
+        if down { upper.press(forDuration: 0.05, thenDragTo: lower) }
+        else { lower.press(forDuration: 0.05, thenDragTo: upper) }
     }
 
     private func tap(_ element: XCUIElement) throws {
