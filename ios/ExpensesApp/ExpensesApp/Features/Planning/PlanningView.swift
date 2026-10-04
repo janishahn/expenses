@@ -550,6 +550,7 @@ private struct ScenarioEditorSheet: View {
                             Text(kind.title).tag(kind)
                         }
                     }
+                    .accessibilityIdentifier("forecast.adjustment.type")
 
                     selectedFields
 
@@ -799,6 +800,8 @@ private struct ScenarioImpactSection: View {
     var body: some View {
         Section("Result") {
             LabeledContent("Final impact", value: signedEuros(scenario.impact.finalDeltaCents))
+                .accessibilityIdentifier("forecast.impact")
+                .accessibilityValue(signedEuros(scenario.impact.finalDeltaCents))
             LabeledContent("Average monthly impact", value: signedEuros(scenario.impact.averageMonthlyDeltaCents))
             LabeledContent("Scenario balance", value: AppFormatters.euros(scenario.summary.projectedBalanceCents))
             LabeledContent("Baseline balance", value: AppFormatters.euros(scenario.baseline.summary.projectedBalanceCents))

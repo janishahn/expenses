@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures"
+import { readFile } from "node:fs/promises"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Summary and report surfaces (mobile)", () => {
@@ -48,7 +49,7 @@ test.describe("Summary and report surfaces (mobile)", () => {
     }
   )
 
-  test("generates a tag-scoped real PDF and exposes the latest download", async ({
+  test("generates and downloads a complete tag-scoped PDF", async ({
     page,
     request,
   }) => {
@@ -101,6 +102,15 @@ test.describe("Summary and report surfaces (mobile)", () => {
       timeout: 30_000,
     })
     await expect(page.getByTestId("report-latest-pdf")).toContainText(".pdf")
+    const downloadPromise = page.waitForEvent("download")
+    await page.getByRole("link", { name: "Download latest PDF" }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toMatch(/\.pdf$/)
+    expect(await download.failure()).toBeNull()
+    const pdf = await readFile((await download.path())!)
+    expect(pdf.length).toBeGreaterThan(1_000)
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-")
+    expect(pdf.subarray(-32).toString()).toContain("%%EOF")
   })
 
   test("keeps the dashboard tag scope in spending-band drill-downs", async ({

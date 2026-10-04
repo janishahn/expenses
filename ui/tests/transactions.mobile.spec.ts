@@ -209,21 +209,20 @@ test.describe("Transactions Page (mobile)", () => {
     await searchbox.fill("waranty paperwork")
     await expect(page).toHaveURL(/q=waranty(?:\+|%20)paperwork/)
     await expect(page.getByTestId(`transaction-row-${transactionId}`)).toBeVisible()
+    await expect(page.locator('[data-testid^="transaction-row-"]')).toHaveCount(1)
     await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
 
     const clearSearch = page.getByRole("button", { name: "Clear search" })
-    const clearAlignment = await page.evaluate(() => {
-      const field = document.querySelector("#transaction-search")!.getBoundingClientRect()
-      const clear = document
-        .querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!
-        .getBoundingClientRect()
+    await expect(clearSearch).toBeVisible()
+    const clearAlignment = await clearSearch.evaluate((element) => {
+      const field = element.closest("#transaction-search")!.getBoundingClientRect()
+      const clear = element.getBoundingClientRect()
       return {
         top: clear.top - field.top,
         right: field.right - clear.right,
         bottom: field.bottom - clear.bottom,
       }
     })
-    await expect(clearSearch).toBeVisible()
     expect(Math.abs(clearAlignment.top)).toBeLessThanOrEqual(0.5)
     expect(Math.abs(clearAlignment.right)).toBeLessThanOrEqual(0.5)
     expect(Math.abs(clearAlignment.bottom)).toBeLessThanOrEqual(0.5)
@@ -495,7 +494,7 @@ test.describe("Transactions Page (mobile)", () => {
     expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
   })
 
-  test("edits a transaction from its mobile detail surface", async ({ page, request }) => {
+  test("preserves mobile edits after a failed save and persists them on retry", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "Mobile edit")
     const title = `Mobile edit ${Date.now()}`
@@ -513,11 +512,31 @@ test.describe("Transactions Page (mobile)", () => {
     await page.goto(`/transactions/${transactionId}`)
     await page.getByRole("link", { name: "Edit transaction" }).click()
     await expect(page).toHaveURL(`/transactions/${transactionId}/edit`)
+    const saveFailureMessage = "Unable to save this transaction. Try again."
+    await page.route(`**/api/transactions/${transactionId}`, async (route) => {
+      if (route.request().method() !== "PUT") return route.continue()
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: saveFailureMessage }),
+      })
+    })
     await page.getByLabel("Title").fill(updatedTitle)
+    await page.getByLabel("Amount").fill("24.51")
+    await page.getByRole("button", { name: "Save changes" }).click()
+
+    await expect(page.getByText(saveFailureMessage, { exact: true })).toBeVisible()
+    await expect(page).toHaveURL(`/transactions/${transactionId}/edit`)
+    await expect(page.getByLabel("Title")).toHaveValue(updatedTitle)
+    await expect(page.getByLabel("Amount")).toHaveValue("24.51")
+
+    await page.unroute(`**/api/transactions/${transactionId}`)
     await page.getByRole("button", { name: "Save changes" }).click()
 
     await expect(page).toHaveURL(`/transactions/${transactionId}`)
+    await page.reload()
     await expect(page.getByRole("heading", { name: updatedTitle })).toBeVisible()
+    await expect(page.locator("main")).toContainText("-24,51 €")
   })
 
   test("recategorizes a transaction from the mobile Inbox", async ({ page, request }) => {
@@ -660,6 +679,8 @@ test.describe("Transactions Page (mobile)", () => {
       .click()
     await expect(page).toHaveURL(/\/transactions\?/)
     await expect(page.getByTestId(`transaction-row-${transactionId}`)).toHaveCount(0)
+    await page.reload()
+    await expect(page.getByTestId(`transaction-row-${transactionId}`)).toHaveCount(0)
 
     await page.getByRole("button", { name: "More actions" }).click()
     await page.getByRole("menuitem", { name: "Trash" }).click()
@@ -673,6 +694,10 @@ test.describe("Transactions Page (mobile)", () => {
       .getByRole("button", { name: "Delete forever" })
       .click()
     await expect(deletedRow).toHaveCount(0)
+    await page.reload()
+    await expect(deletedRow).toHaveCount(0)
+    await page.goto(`/transactions/${transactionId}`)
+    await expect(page.getByText("Transaction not found.", { exact: true })).toBeVisible()
   })
 
   test("restores a transaction from mobile Trash", async ({ page, request }) => {
@@ -702,8 +727,9 @@ test.describe("Transactions Page (mobile)", () => {
     await row.getByRole("button", { name: "Restore" }).click()
     await expect(row).toBeHidden()
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(
-      page.locator('[data-testid^="transaction-row-"]').filter({ hasText: title })
-    ).toBeVisible()
+    await page.reload()
+    const restoredRow = page.getByTestId(`transaction-row-${transactionId}`)
+    await expect(restoredRow).toContainText(title)
+    await expect(restoredRow).toContainText("-19,99 €")
   })
 })

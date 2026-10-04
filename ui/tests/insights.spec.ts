@@ -37,10 +37,6 @@ test.describe("Insights Page", () => {
     await page.goto("/insights")
   })
 
-  test("should display insights heading", async ({ page }) => {
-    await expect(page.locator("main h1")).toContainText("Insights")
-  })
-
   test("uses page tabs without repeating the selected period", async ({ page }) => {
     await page.goto("/insights?period=this_month")
     await expect(page.getByText(/^Date:/)).toHaveCount(0)
@@ -99,11 +95,6 @@ test.describe("Insights Page", () => {
     await expect(page.getByRole("heading", { name: "Budget vs actual" })).toBeVisible()
   })
 
-  test("should load without errors", async ({ page }) => {
-    await expect(page.locator("text=Unable to load")).not.toBeVisible()
-    await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
-  })
-
   test("should show filter controls at tablet viewport (768-1024px)", async ({
     page,
   }) => {
@@ -116,6 +107,8 @@ test.describe("Insights Page", () => {
   test("should render net view", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const suffix = Date.now()
+    const tagName = `E2E Net Scope ${suffix}`
+    const tagId = await createTag(request, token, tagName)
     const incomeCategoryName = `E2E Net Income ${suffix}`
     const expenseCategoryName = `E2E Net Expense ${suffix}`
     const incomeCategory = await createCategory(request, token, incomeCategoryName, "income")
@@ -128,7 +121,7 @@ test.describe("Insights Page", () => {
       amount_cents: 150_000,
       category_id: incomeCategory,
       title: `E2E Net Income ${Date.now()}`,
-      tags: [],
+      tags: [tagName],
     })
     await createTransaction(request, token, {
       date: new Date().toISOString().slice(0, 10),
@@ -137,10 +130,10 @@ test.describe("Insights Page", () => {
       amount_cents: 90_000,
       category_id: expenseCategory,
       title: `E2E Net Expense ${Date.now()}`,
-      tags: [],
+      tags: [tagName],
     })
 
-    await page.goto("/insights")
+    await page.goto(`/insights?tags=${tagId}`)
     await page.getByRole("tab", { name: "Net" }).click()
     await expect(page).toHaveURL(/view=net/)
     await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()

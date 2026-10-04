@@ -150,6 +150,7 @@ struct RootView: View {
                 NavigationLink(value: destination) {
                     MoreDestinationRow(destination: destination)
                 }
+                .accessibilityIdentifier("more.\(destination.rawValue)")
             }
         }
     }
@@ -183,6 +184,7 @@ struct RootView: View {
                     in: .rect(cornerRadius: 27)
                 )
                 .accessibilityLabel("Quick Add")
+                .accessibilityIdentifier("transaction.add")
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
                 .opacity(model.identity?.authenticated == true ? 1 : 0.48)

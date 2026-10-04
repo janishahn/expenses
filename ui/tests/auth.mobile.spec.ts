@@ -25,14 +25,21 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
   test("signs up and logs in from the mobile auth surfaces", async ({ page }) => {
     const username = `mobile-user-${Date.now()}`
     await page.goto("/signup")
-    await page.getByTestId("auth-username").fill(username)
-    await page.getByTestId("auth-password").fill("hunter22")
-    await page.getByTestId("auth-submit").click()
+    const signupForm = page.getByTestId("signup-form")
+    await expect(signupForm).toBeVisible()
+    await signupForm.getByTestId("auth-username").fill(username)
+    await signupForm.getByTestId("auth-password").fill("hunter22")
+    await signupForm.getByTestId("auth-submit").click()
     await expect(page).toHaveURL(/\/login/)
 
-    await page.getByTestId("auth-username").fill(username)
-    await page.getByTestId("auth-password").fill("hunter22")
-    await page.getByTestId("auth-submit").click()
+    // The route URL can change before the lazy login page replaces signup.
+    // Scope shared field IDs to the form we intend to submit.
+    const loginForm = page.getByTestId("login-form")
+    await expect(loginForm).toBeVisible()
+    await expect(page.getByTestId("auth-success")).toBeVisible()
+    await loginForm.getByTestId("auth-username").fill(username)
+    await loginForm.getByTestId("auth-password").fill("hunter22")
+    await loginForm.getByTestId("auth-submit").click()
     await expect(page).toHaveURL(/\/(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
   })

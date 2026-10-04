@@ -9,7 +9,13 @@ import json
 import httpx
 
 
-def response_events(text="Hello", terminal="response.completed", tool=False):
+def response_events(
+    text="Hello",
+    terminal="response.completed",
+    tool=False,
+    tool_name="balance",
+    tool_arguments=None,
+):
     response = {
         "id": "resp_1",
         "created_at": 1,
@@ -27,7 +33,7 @@ def response_events(text="Hello", terminal="response.completed", tool=False):
             "type": "function_call",
             "id": "fc_1",
             "call_id": "call_1",
-            "name": "balance",
+            "name": tool_name,
             "namespace": "expenses",
             "arguments": "",
         }
@@ -37,7 +43,7 @@ def response_events(text="Hello", terminal="response.completed", tool=False):
                 "type": "response.function_call_arguments.delta",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "delta": "{}",
+                "delta": json.dumps(tool_arguments or {}),
             },
         ]
     else:
@@ -131,11 +137,37 @@ def install(mock_openai=False):
                 },
             )
         if request.url.path.endswith("/responses"):
-            if json.loads(request.content)["model"] == "custom-model":
+            body = json.loads(request.content)
+            if body["model"] == "custom-model":
+                events = response_events("OK")  # Settings model validation.
+                if body.get("tools"):
+                    # The external model asks the real agent to read May's ledger.
+                    # Only its prose is simulated; totals must come back through
+                    # the application's tool and Responses history serialization.
+                    output = next(
+                        (
+                            item["output"]
+                            for item in body["input"]
+                            if item.get("type") == "function_call_output"
+                        ),
+                        None,
+                    )
+                    if output is None:
+                        events = response_events(
+                            tool=True,
+                            tool_name="get_spending_overview",
+                            tool_arguments={"start": "2026-05-01", "end": "2026-05-31"},
+                        )
+                    else:
+                        result = json.loads(output)
+                        cents = result["totals"]["expense_cents"]
+                        events = response_events(
+                            f"Your May 2026 spending was **€{cents / 100:.2f}**."
+                        )
                 return httpx.Response(
                     200,
                     headers={"content-type": "text/event-stream"},
-                    text=response_events("OK"),
+                    text=events,
                 )
             return httpx.Response(404, json={"error": {"code": "model_not_found"}})
         if request.url.path.endswith("revocation_endpoint"):

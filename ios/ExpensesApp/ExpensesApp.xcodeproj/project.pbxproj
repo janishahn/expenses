@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		101000000000000000000001 /* Journeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102000000000000000000001 /* Journeys.swift */; };
 		001000000000000000000001 /* ExpensesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000001 /* ExpensesApp.swift */; };
 		001000000000000000000002 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000002 /* AppModel.swift */; };
 		001000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000003 /* RootView.swift */; };
@@ -44,7 +45,19 @@
 		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		103000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 008000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 005000000000000000000001;
+			remoteInfo = ExpensesApp;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		102000000000000000000001 /* Journeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Journeys.swift; sourceTree = "<group>"; };
+		102000000000000000000002 /* ExpensesAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ExpensesAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		002000000000000000000001 /* ExpensesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesApp.swift; sourceTree = "<group>"; };
 		002000000000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		002000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -85,6 +98,12 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		103000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		003000000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -99,6 +118,7 @@
 			isa = PBXGroup;
 			children = (
 				004000000000000000000002 /* ExpensesApp */,
+				104000000000000000000001 /* ExpensesAppUITests */,
 				004000000000000000000011 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -211,6 +231,7 @@
 		004000000000000000000011 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				102000000000000000000002 /* ExpensesAppUITests.xctest */,
 				002000000000000000000012 /* ExpensesApp.app */,
 			);
 			name = Products;
@@ -306,9 +327,30 @@
 			path = Assistant;
 			sourceTree = "<group>";
 		};
+		104000000000000000000001 /* ExpensesAppUITests */ = {
+			isa = PBXGroup;
+			children = (102000000000000000000001 /* Journeys.swift */,);
+			path = ExpensesAppUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		105000000000000000000001 /* ExpensesAppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 109000000000000000000001;
+			buildPhases = (
+				106000000000000000000001 /* Sources */,
+				103000000000000000000002 /* Frameworks */,
+				107000000000000000000001 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (108000000000000000000001 /* PBXTargetDependency */,);
+			name = ExpensesAppUITests;
+			productName = ExpensesAppUITests;
+			productReference = 102000000000000000000002 /* ExpensesAppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		005000000000000000000001 /* ExpensesApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 009000000000000000000002 /* Build configuration list for PBXNativeTarget "ExpensesApp" */;
@@ -336,6 +378,10 @@
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					105000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 005000000000000000000001;
+					};
 					005000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
@@ -355,11 +401,18 @@
 			projectRoot = "";
 			targets = (
 				005000000000000000000001 /* ExpensesApp */,
+				105000000000000000000001 /* ExpensesAppUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		107000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		007000000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -372,6 +425,12 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		106000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (101000000000000000000001 /* Journeys.swift in Sources */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		006000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -414,7 +473,45 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		108000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 005000000000000000000001 /* ExpensesApp */;
+			targetProxy = 103000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		110000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.janishahn.expenses.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = ExpensesApp;
+			};
+			name = Debug;
+		};
+		110000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.janishahn.expenses.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = ExpensesApp;
+			};
+			name = Release;
+		};
 		010000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -587,6 +684,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		109000000000000000000001 /* Build configuration list for PBXNativeTarget "ExpensesAppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				110000000000000000000001 /* Debug */,
+				110000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		009000000000000000000001 /* Build configuration list for PBXProject "ExpensesApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

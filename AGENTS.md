@@ -35,6 +35,10 @@ unnecessary background work.
   and code changes prepared for a pull request.
 - When web behavior or layout changes, also run focused Playwright specs for
   each affected web layout.
+- For native changes, update the owning XCUITest journey and run `uv run ios-e2e`
+  on macOS. When working on Linux, state that native execution awaits macOS CI.
+- User-facing changes update their E2E journeys; update the concise `TESTING.md`
+  inventory when coverage changes. Cull redundant tests without losing unique invariant checks.
 - Use `uv run full-tests` for release candidates, shared browser or startup
   infrastructure, or an explicit request. It includes `fast-tests`.
 - After checks pass, repeat or broaden them only for relevant changes,

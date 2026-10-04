@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Critical desktop journey", () => {
-  test("loads the shell, navigates the ledger, and creates a transaction", async ({
+  test("creates a transaction and preserves its exact amount after reload", async ({
     page,
     request,
   }) => {
@@ -29,8 +29,14 @@ test.describe("Critical desktop journey", () => {
     await expect(dialog).toBeHidden()
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(
-      page.locator('[data-testid^="transaction-row-"]').filter({ hasText: title })
-    ).toBeVisible()
+    const transaction = page
+      .locator('[data-testid^="transaction-row-"]')
+      .filter({ hasText: title })
+    await expect(transaction).toContainText("-12,34 €")
+    await transaction.click()
+    await expect(page).toHaveURL(/\/transactions\/\d+$/)
+    await page.reload()
+    await expect(page.getByRole("heading", { name: title })).toBeVisible()
+    await expect(page.locator("main")).toContainText("-12,34 €")
   })
 })

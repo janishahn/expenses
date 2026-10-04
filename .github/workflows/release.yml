@@ -22,8 +22,15 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/expenses
 
 jobs:
+  tests:
+    name: Verify release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/full-tests.yml
+
   publish:
     name: Build and publish image
+    needs: tests
     runs-on: ubuntu-latest
     timeout-minutes: 90
 

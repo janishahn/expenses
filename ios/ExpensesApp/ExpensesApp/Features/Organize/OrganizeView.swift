@@ -131,6 +131,7 @@ struct OrganizeView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Item")
+                .accessibilityIdentifier("organize.add")
                 .disabled(model.identity?.authenticated != true)
             }
         }
@@ -263,6 +264,7 @@ private struct OrganizeSectionPicker: View {
         }
         .pickerStyle(.segmented)
         .sensoryFeedback(.selection, trigger: selection)
+        .accessibilityIdentifier("organize.section")
     }
 }
 
@@ -1396,6 +1398,7 @@ private struct TemplateFormView: View {
                             Text(category.name).tag(Optional(category.id))
                         }
                     }
+                    .accessibilityIdentifier("template.category")
                 }
                 Section {
                     TextField("Default amount", text: $defaultAmount)

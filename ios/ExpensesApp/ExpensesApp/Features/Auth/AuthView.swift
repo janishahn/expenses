@@ -111,6 +111,7 @@ struct AuthView: View {
     private func signedInSection(_ user: AuthUser) -> some View {
         Section("Signed In") {
             LabeledContent("User", value: user.username)
+                .accessibilityIdentifier("account.user")
             LabeledContent("Admin", value: user.isAdmin ? "Yes" : "No")
             if let session = model.identity?.session {
                 LabeledContent("Device", value: session.deviceName)
@@ -119,6 +120,7 @@ struct AuthView: View {
             Button("Log out", role: .destructive) {
                 Task { await model.logout() }
             }
+            .accessibilityIdentifier("account.logout")
         }
     }
 
@@ -141,16 +143,19 @@ struct AuthView: View {
 
             Section("Credentials") {
                 TextField("Username", text: $username)
+                    .accessibilityIdentifier("auth.username")
                     .textInputAutocapitalization(.never)
                     .textContentType(.username)
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
+                    .accessibilityIdentifier("auth.password")
                     .textContentType(.password)
                 if model.status?.setupTokenRequired == true {
                     SecureField("Setup token", text: $setupToken)
                         .textContentType(.oneTimeCode)
                 }
                 TextField("Device name", text: $deviceName)
+                    .accessibilityIdentifier("auth.device")
             }
 
             Section("Access") {
@@ -167,6 +172,7 @@ struct AuthView: View {
                     Label("Log in", systemImage: "person.crop.circle.badge.checkmark")
                 }
                 .fontWeight(.semibold)
+                .accessibilityIdentifier("auth.login")
                 .disabled(authFieldsAreEmpty || model.isLoading)
 
                 Button {
@@ -182,6 +188,7 @@ struct AuthView: View {
                 } label: {
                     Label("Run first-time setup", systemImage: "wand.and.stars")
                 }
+                .accessibilityIdentifier("auth.setup")
                 .disabled(
                     authFieldsAreEmpty ||
                         setupTokenIsRequiredAndMissing ||
@@ -428,6 +435,7 @@ struct AuthView: View {
                 Text("Dark").tag("dark")
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("account.theme")
             .sensoryFeedback(.selection, trigger: appearanceBinding.wrappedValue)
         }
     }

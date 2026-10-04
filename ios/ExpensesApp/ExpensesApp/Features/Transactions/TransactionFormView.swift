@@ -101,6 +101,7 @@ struct TransactionFormView: View {
                     DatePicker("Date", selection: $occurredAt)
 
                     TextField("Amount", text: $amount)
+                        .accessibilityIdentifier("transaction.amount")
                         .keyboardType(.decimalPad)
 
                     Picker("Category", selection: $categoryID) {
@@ -113,6 +114,7 @@ struct TransactionFormView: View {
 
                 Section {
                     TextField("Title", text: $title)
+                        .accessibilityIdentifier("transaction.title")
                     TextField("Description", text: $description, axis: .vertical)
                         .lineLimit(3...8)
                     NavigationLink {
@@ -205,6 +207,7 @@ struct TransactionFormView: View {
                     Button("Save") {
                         Task { await save() }
                     }
+                    .accessibilityIdentifier("transaction.save")
                     .disabled(model.isLoading || !tagSchedulesLoaded)
                 }
             }

@@ -43,13 +43,6 @@ test.describe("Categories Page", () => {
     await page.goto("/categories")
   })
 
-  test("should open the category editor from the page action", async ({ page }) => {
-    await expect(page.getByTestId("category-library")).toBeVisible()
-    await expect(page.getByRole("dialog", { name: "Add category" })).toBeHidden()
-    await page.getByRole("button", { name: "Add category" }).first().click()
-    await expect(page.getByRole("dialog", { name: "Add category" })).toBeVisible()
-  })
-
   test("clears a failed create request when reopening the category editor", async ({
     page,
     request,
@@ -72,6 +65,8 @@ test.describe("Categories Page", () => {
 
   test("should create category with icon selected from picker", async ({ page }) => {
     const categoryName = `E2E Icon ${Date.now()}`
+    await expect(page.getByTestId("category-library")).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Add category" })).toBeHidden()
     await page.getByRole("button", { name: "Add category" }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add category" })
     await dialog.getByRole("textbox", { name: "Name" }).fill(categoryName)

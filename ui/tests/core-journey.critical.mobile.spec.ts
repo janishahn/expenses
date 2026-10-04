@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures"
 import { ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Critical mobile journey", () => {
-  test("loads the mobile shell, creates a transaction, and opens it from the ledger", async ({
+  test("creates a transaction and preserves its exact amount after reload", async ({
     page,
     request,
   }) => {
@@ -29,10 +29,12 @@ test.describe("Critical mobile journey", () => {
     const transaction = page
       .locator('[data-testid^="transaction-row-"]')
       .filter({ hasText: title })
-    await expect(transaction).toBeVisible()
+    await expect(transaction).toContainText("-9,87 €")
     await transaction.click()
     await expect(page).toHaveURL(/\/transactions\/\d+$/)
+    await page.reload()
     await expect(page.getByRole("heading", { name: title })).toBeVisible()
+    await expect(page.locator("main")).toContainText("-9,87 €")
 
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,

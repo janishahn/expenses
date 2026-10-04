@@ -28,13 +28,6 @@ test.describe("Forecast Page", () => {
     await expect(page).toHaveURL(/mode=recurring/)
   })
 
-  test("should navigate to what-if page", async ({ page }) => {
-    await page.getByRole("button", { name: "12 months" }).click()
-    await page.getByRole("button", { name: "Recurring only" }).click()
-    await page.getByRole("link", { name: "What if?" }).click()
-    await expect(page).toHaveURL(/\/scenarios\?horizon=12&mode=recurring/)
-  })
-
   test("shows monthly drill-down details and negative-balance warning", async ({
     page,
   }) => {
@@ -152,7 +145,7 @@ test.describe("Forecast Page", () => {
       .toBe("light")
 
     await page.getByRole("link", { name: "What if?" }).click()
-    await expect(page).toHaveURL(/\/scenarios\?/)
+    await expect(page).toHaveURL(/\/scenarios\?horizon=12&mode=recurring/)
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")

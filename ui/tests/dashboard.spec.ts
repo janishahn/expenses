@@ -51,11 +51,6 @@ test.describe("Dashboard Page", () => {
     await page.goto("/")
   })
 
-  test("should display KPI cards", async ({ page }) => {
-    await page.waitForLoadState("networkidle")
-    await expect(page.getByRole("main").locator("text=€").nth(1)).toBeVisible()
-  })
-
   test("defaults the dashboard to this month with a balance hero", async ({ page }) => {
     await expect(page.getByRole("button", { name: "This month" })).toHaveAttribute(
       "aria-pressed",
@@ -431,6 +426,9 @@ test.describe("Dashboard Page", () => {
     })
     await isolated.request.dispose()
 
+    // Stop the current-month dashboard opened by login before observing the
+    // historical page: its pending response can still start a forecast fetch.
+    await page.goto("about:blank")
     let forecastRequests = 0
     page.on("request", (interceptedRequest) => {
       if (interceptedRequest.url().includes("/api/forecast")) {
@@ -494,16 +492,6 @@ test.describe("Dashboard Page", () => {
     await expect(
       page.getByText("No spending was recorded in the last six months."),
     ).toBeVisible()
-  })
-
-  test("should have period navigation", async ({ page }) => {
-    const periodText = page.locator("text=/This month|Last month|Custom/i")
-    await expect(periodText.first()).toBeVisible()
-  })
-
-  test("should load without errors", async ({ page }) => {
-    await expect(page.locator("text=Unable to load")).not.toBeVisible()
-    await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
   })
 
   test("should dismiss add transaction dialog on outside click (desktop)", async ({

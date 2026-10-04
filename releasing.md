@@ -1,8 +1,8 @@
 # Releasing Expenses
 
 Releases are manual. Only start this process when the user asks for a release.
-Pushing a version tag publishes the container image and may update self-hosted
-instances that track the latest tagged release.
+Pushing a version tag runs backend, web and native iOS checks before publishing
+the container image, which may update instances tracking the latest release.
 
 ## Prepare
 
@@ -27,7 +27,8 @@ instances that track the latest tagged release.
 
 1. Commit the version, lockfile, and changelog together.
 2. Create the tag `vX.Y.Z` on that commit and push the commit and tag.
-3. Confirm that the release workflow publishes the expected container image.
+3. Confirm that all release checks pass and the workflow publishes the expected
+   container image.
 4. Create the GitHub Release from the tag, using the matching changelog section
    as operator-facing notes, and confirm that it is marked as the latest release
    when appropriate.

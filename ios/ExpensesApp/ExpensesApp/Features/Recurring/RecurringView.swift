@@ -70,7 +70,7 @@ struct RecurringView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Recurring Rule")
-                .disabled(model.identity?.authenticated != true)
+                .disabled(model.identity?.authenticated != true || model.recurring == nil)
             }
         }
         .expensesScreenStyle()
@@ -228,6 +228,7 @@ private struct RecurringRuleFormView: View {
                             Text(category.name).tag(Optional(category.id))
                         }
                     }
+                    .accessibilityIdentifier("recurring.category")
                 }
 
                 Section("Schedule") {

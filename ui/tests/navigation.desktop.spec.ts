@@ -385,11 +385,6 @@ test.describe("Navigation", () => {
     await expect(page).toHaveURL("/insights")
   })
 
-  test("should show 404 page for unknown routes", async ({ page }) => {
-    await page.goto("/unknown-route-12345")
-    await expect(page.locator("main h1")).toContainText("Page not found")
-  })
-
   test("recovers from unknown routes back to dashboard", async ({ page }) => {
     await page.goto("/unknown-route-12345")
     await page.getByRole("link", { name: "Back to dashboard" }).click()

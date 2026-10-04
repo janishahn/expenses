@@ -1,13 +1,10 @@
 import { test, expect } from "./fixtures"
+import { readFile } from "node:fs/promises"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Report Builder Page", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/reports/builder")
-  })
-
-  test("should show report sections toggles", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Report sections" })).toBeVisible()
   })
 
   test("should request pdf when generating", async ({ page }) => {
@@ -77,7 +74,9 @@ test.describe("Report Builder Page", () => {
     const runningBalance = page
       .locator("label", { hasText: "Show running balance" })
       .getByRole("switch")
+    await expect(runningBalance).toHaveAttribute("aria-checked", "false")
     await runningBalance.click()
+    await expect(runningBalance).toHaveAttribute("aria-checked", "true")
     await page.getByRole("button", { name: "Generate PDF Report" }).click()
 
     await expect.poll(() => payload).not.toBeNull()
@@ -196,13 +195,27 @@ test.describe("Report Builder Page", () => {
     await expect(page.getByRole("link", { name: "Download latest PDF" })).toBeVisible({
       timeout: 30_000,
     })
+    const downloadPromise = page.waitForEvent("download")
+    await page.getByRole("link", { name: "Download latest PDF" }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toMatch(/\.pdf$/)
+    await expect(page.getByTestId("report-latest-pdf")).toContainText(download.suggestedFilename())
+    expect(await download.failure()).toBeNull()
+    const pdf = await readFile((await download.path())!)
+    expect(pdf.length).toBeGreaterThan(1_000)
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-")
+    expect(pdf.subarray(-32).toString()).toContain("%%EOF")
+    const includedPdfUrl = await page.getByRole("link", { name: "Download latest PDF" }).getAttribute("href")
 
     await tagScope.getByRole("radio", { name: "Exclude" }).check()
     reportRequestPromise = page.waitForRequest("**/api/reports/pdf")
+    const excludedReportPromise = page.waitForResponse("**/api/reports/pdf")
     await page.getByRole("button", { name: "Generate PDF Report" }).click()
     payload = (await reportRequestPromise).postDataJSON() as Record<string, unknown>
     expect(payload.tag_ids).toEqual([])
     expect(payload.excluded_tag_ids).toEqual([tagId])
+    expect((await excludedReportPromise).ok()).toBeTruthy()
+    await expect(page.getByRole("link", { name: "Download latest PDF" })).not.toHaveAttribute("href", includedPdfUrl!)
   })
 
   test("offers archived tags but omits tags hidden from filter menus", async ({
@@ -243,47 +256,4 @@ test.describe("Report Builder Page", () => {
     await expect(page.getByText(hiddenName, { exact: true })).toHaveCount(0)
   })
 
-  test("shows latest generated PDF follow-up state", async ({ page }) => {
-    await page.addInitScript(() => {
-      window.open = () => {
-        const current = window.location.href
-        return {
-          location: { href: current },
-          close() {},
-        } as unknown as Window
-      }
-    })
-
-    await page.route("**/api/reports/pdf", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/pdf",
-        headers: {
-          "Content-Disposition": 'attachment; filename="expense_report_test.pdf"',
-        },
-        body: "%PDF-1.4\n%%EOF",
-      })
-    })
-
-    await page.getByRole("button", { name: "Generate PDF Report" }).click()
-
-    await expect(page.getByRole("link", { name: "Download latest PDF" })).toBeVisible()
-    await expect(page.getByTestId("report-latest-pdf")).toContainText(
-      "expense_report_test.pdf"
-    )
-  })
-
-  test("should toggle running balance switch", async ({ page }) => {
-    const toggle = page
-      .locator("label", { hasText: "Show running balance" })
-      .getByRole("switch")
-    await expect(toggle).toBeVisible()
-    await expect(toggle).toHaveAttribute("aria-checked", "false")
-    await toggle.click()
-    await expect(toggle).toHaveAttribute("aria-checked", "true")
-  })
-
-  test("should load without errors", async ({ page }) => {
-    await expect(page.locator("text=Unable to load")).not.toBeVisible()
-  })
 })
