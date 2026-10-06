@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-06
+
 ### Added
 - Optional Sign in with ChatGPT plan usage, with a local connection helper, protected per-user credentials, renewal, and disconnect controls.
 - Per-feature provider, model, and thinking-level settings on web and iOS, with model discovery for ChatGPT and OpenAI-compatible providers.
@@ -19,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gave the Dashboard recent-transactions link a minimum 44-by-44-pixel touch target on mobile.
 
 ### Dependencies
+- Updated source-map-js to 1.2.2 to fix a source-map parsing denial-of-service vulnerability in frontend tooling.
 - Removed the unused shadcn generator dependency and its vulnerable dependency chain from frontend installs.
 - Updated Tiptap, HTTPX2/HTTPCore2, and frontend tooling dependencies to address reported security vulnerabilities. HTTPX2 now uses the operating system certificate trust store and bounds streaming decompression memory.
 - Updated WeasyPrint to 70.0, AnyIO to 4.14.2, urllib3 to 2.8.0, ip-address to 10.7.2, undici to 7.30.0, and affected Markdown and frontend tooling dependencies to resolve current dependency audit findings.
@@ -371,7 +374,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/janishahn/expenses/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/janishahn/expenses/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/janishahn/expenses/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/janishahn/expenses/compare/v0.4.10...v0.5.0
