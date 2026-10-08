@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test"
+import { fileURLToPath } from "node:url"
 
 const desktopViewport = { width: 1280, height: 800 }
 const criticalDesktopMatch = /.*\.critical\.spec\.ts/
@@ -10,7 +11,9 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
+  failOnFlakyTests: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: process.env.CI ? 2 : undefined,
   // Browser launch and paint slow down when many workers share the machine;
   // WebKit especially can spend >20s starting a context under load.
   timeout: 60_000,
@@ -20,7 +23,15 @@ export default defineConfig({
   // spec file caps the whole run; surface anything that grows past two minutes.
   reportSlowTests: { max: 10, threshold: 120_000 },
   use: {
-    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
+    // System sans defaults differ by Linux distribution. Keep reviewed visual
+    // baselines reproducible without replacing native fonts on macOS.
+    launchOptions: process.platform === "linux" ? {
+      env: {
+        ...process.env,
+        FONTCONFIG_FILE: fileURLToPath(new URL("./tests/fonts.conf", import.meta.url)),
+      },
+    } : {},
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
     headless: true,
   },

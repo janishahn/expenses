@@ -52,7 +52,7 @@ struct BudgetsView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Budget")
-                .disabled(model.identity?.authenticated != true || viewMode.defaultSheet == nil)
+                .disabled(model.identity?.authenticated != true || model.budgets == nil || viewMode.defaultSheet == nil)
             }
         }
         .expensesScreenStyle()
@@ -236,6 +236,8 @@ private struct BudgetBurndownSection: View {
     var body: some View {
         Section("Overall Pace") {
             LabeledContent("Budget", value: AppFormatters.euros(burndown.budgetAmountCents))
+                .accessibilityIdentifier("budget.total")
+                .accessibilityValue(AppFormatters.euros(burndown.budgetAmountCents))
             LabeledContent("Spent", value: AppFormatters.euros(latestCumulative))
             LabeledContent("Daily allowance", value: "\(AppFormatters.euros(dailyAllowance)) / day")
             LabeledContent("Projected finish", value: AppFormatters.euros(projectedFinish))

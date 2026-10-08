@@ -6,20 +6,6 @@ import {
 } from "./helpers"
 
 test.describe("Deleted Transactions Page", () => {
-  test("should have back link to transactions", async ({ page }) => {
-    await page.goto("/transactions/deleted")
-    const backLink = page.getByRole("link", { name: /back to transactions/i })
-    await expect(backLink).toBeVisible()
-  })
-
-  test("should show empty state or deleted list", async ({ page }) => {
-    await page.goto("/transactions/deleted")
-    await page.waitForLoadState("networkidle")
-    await expect(page.locator("main")).toContainText(
-      /Restore|No deleted transactions/
-    )
-  })
-
   test("should restore a deleted transaction", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Expense")
@@ -39,6 +25,7 @@ test.describe("Deleted Transactions Page", () => {
     expect(deleteResponse.ok()).toBeTruthy()
 
     await page.goto("/transactions/deleted")
+    await expect(page.locator("main h1")).toContainText("Deleted Transactions")
     const row = page.getByTestId(`deleted-transaction-${transactionId}`)
     await expect(row).toBeVisible()
     const restored = page.waitForResponse(
@@ -49,9 +36,15 @@ test.describe("Deleted Transactions Page", () => {
     )
     await row.getByRole("button", { name: "Restore" }).click()
     await restored
+    await expect(row).toHaveCount(0)
+    await page.getByRole("link", { name: /back to transactions/i }).click()
+    await expect(page).toHaveURL("/transactions")
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(page.locator("body")).toContainText(title)
+    await page.reload()
+    const restoredRow = page.getByTestId(`transaction-row-${transactionId}`)
+    await expect(restoredRow).toContainText(title)
+    await expect(restoredRow).toContainText("-9,99 €")
   })
 
   test("should permanently delete a deleted transaction", async ({ page, request }) => {
@@ -89,6 +82,8 @@ test.describe("Deleted Transactions Page", () => {
       .click()
     await permanentDeleteResponse
 
+    await expect(row).toHaveCount(0)
+    await page.reload()
     await expect(row).toHaveCount(0)
     const detailResponse = await request.get(`/api/transactions/${transactionId}`)
     expect(detailResponse.status()).toBe(404)

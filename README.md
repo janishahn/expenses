@@ -230,7 +230,7 @@ uv run fast-tests
 uv run full-tests
 ```
 
-`fast-tests` is the normal local gate. See [`TESTING.md`](TESTING.md) for focused browser commands and when to use the full suite. See [`releasing.md`](releasing.md) for the release process.
+`fast-tests` is the normal local gate; pair feature changes with their affected E2E journeys. CI runs backend checks and web journeys; native journeys run locally on macOS. See [`TESTING.md`](TESTING.md) for focused commands and platform requirements, and [`releasing.md`](releasing.md) for the release process.
 
 ## Automatic ingest
 
@@ -265,6 +265,8 @@ uv run run-ios-device
 ```
 
 Set its backend URL to your Expenses HTTPS address. Mobile sessions stay in Keychain, and the app supports Face ID, Touch ID, or device-passcode unlock.
+
+On a Mac with Xcode and an iOS 26 Simulator runtime, run `uv run ios-e2e` to exercise native journeys against disposable local backends. Simulator tests need no developer signing certificate; see [`TESTING.md`](TESTING.md) for setup and diagnostics.
 
 <p>
   <img src="docs/screenshots/ios/dashboard-dark.png" alt="iPhone dashboard" height="530">

@@ -33,10 +33,13 @@ struct RootView: View {
         ZStack {
             primaryTabs
 
-            quickAddButton
-                .opacity(showsFloatingQuickAdd ? 1 : 0)
-                .allowsHitTesting(showsFloatingQuickAdd)
-                .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
+            Group {
+                if showsFloatingQuickAdd {
+                    quickAddButton
+                        .transition(.opacity)
+                }
+            }
+            .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
         }
         .tint(ExpensesTheme.accent(for: scheme))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
@@ -150,6 +153,7 @@ struct RootView: View {
                 NavigationLink(value: destination) {
                     MoreDestinationRow(destination: destination)
                 }
+                .accessibilityIdentifier("more.\(destination.rawValue)")
             }
         }
     }
@@ -164,25 +168,14 @@ struct RootView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .medium))
-                        .frame(width: 54, height: 54)
-                        .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .frame(width: 54, height: 54)
                 .foregroundStyle(ExpensesTheme.accent(for: scheme))
-                .background {
-                    RoundedRectangle(cornerRadius: 27, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .shadow(color: .black.opacity(scheme == .dark ? 0.24 : 0.12), radius: 18, y: 8)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 27, style: .continuous)
-                        .stroke(.white.opacity(scheme == .dark ? 0.12 : 0.42), lineWidth: 0.8)
-                }
-                .glassEffect(
-                    .regular.tint(ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.035 : 0.055)).interactive(),
-                    in: .rect(cornerRadius: 27)
-                )
                 .accessibilityLabel("Quick Add")
+                .accessibilityIdentifier("transaction.add")
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
                 .opacity(model.identity?.authenticated == true ? 1 : 0.48)

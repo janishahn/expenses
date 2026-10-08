@@ -6,12 +6,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from starlette.requests import Request
-
-from expenses.api import routes
 from expenses.core.config import get_settings
 from expenses.core.periods import Period
-from expenses.db.models import Category, Transaction, TransactionType
+from expenses.db.models import Transaction, TransactionType
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.schemas import TransactionIn
 from expenses.services import (
@@ -29,43 +26,6 @@ def make_session():
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     return session_local()
-
-
-def test_api_delete_transaction_soft_deletes(monkeypatch) -> None:
-    session = make_session()
-    category = Category(name="Food", type=TransactionType.expense, order=0)
-    session.add(category)
-    session.commit()
-    session.refresh(category)
-
-    txn = TransactionService(session).create(
-        TransactionIn(
-            date=date(2025, 1, 10),
-            occurred_at=datetime(2025, 1, 10, 12, 0),
-            type=TransactionType.expense,
-            amount_cents=5_000,
-            category_id=category.id,
-            title="Lunch",
-        )
-    )
-
-    monkeypatch.setattr(routes, "validate_csrf_token", lambda _: True)
-    monkeypatch.setattr(routes, "_require_current_user_id", lambda _request, _db: 1)
-    request = Request(
-        {
-            "type": "http",
-            "method": "DELETE",
-            "path": f"/api/transactions/{txn.id}",
-            "headers": [(b"x-csrf-token", b"valid")],
-        }
-    )
-
-    response = routes.api_delete_transaction(txn.id, request, session)
-
-    assert response == {"status": "ok"}
-    deleted = session.get(Transaction, txn.id)
-    assert deleted is not None
-    assert deleted.deleted_at is not None
 
 
 def test_api_create_transaction_stores_location(

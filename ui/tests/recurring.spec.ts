@@ -22,16 +22,6 @@ test.describe("Recurring Rules Page", () => {
     )
   })
 
-  test("should use a modal as the desktop creation entry", async ({
-    page,
-  }) => {
-    await expect(page.getByTestId("commitments-board")).toBeVisible()
-    await page.getByRole("button", { name: "Add rule" }).click()
-    const dialog = page.getByRole("dialog", { name: "Add rule" })
-    await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole("button", { name: "Add rule" })).toBeVisible()
-  })
-
   test("should show stats section when rules exist", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Stats")
@@ -95,6 +85,7 @@ test.describe("Recurring Rules Page", () => {
     const ruleName = `E2E Recurring ${Date.now()}`
     const today = new Date().toISOString().slice(0, 10)
 
+    await expect(page.getByTestId("commitments-board")).toBeVisible()
     await page.getByRole("button", { name: "Add rule" }).click()
     const dialog = page.getByRole("dialog", { name: "Add rule" })
     await dialog.getByLabel("Name").fill(ruleName)

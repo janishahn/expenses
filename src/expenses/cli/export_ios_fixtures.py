@@ -26,6 +26,8 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             "app": "expenses",
             "version": APP_VERSION,
             "setup_required": False,
+            "setup_token_required": bool(settings.auth_setup_token),
+            "signup_allowed": settings.auth_signup_enabled,
             "timezone": settings.timezone,
             "receipt_max_bytes": settings.receipt_max_bytes,
             "llm_enabled": settings.llm_enabled,

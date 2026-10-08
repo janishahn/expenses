@@ -360,6 +360,7 @@ private struct DashboardOverviewCard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(AppFormatters.euros(kpis.balance))
+                        .accessibilityIdentifier("dashboard.balance")
                         .font(.system(size: 31, weight: .semibold).monospacedDigit())
                         .foregroundStyle(kpis.balance >= 0 ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
                         .lineLimit(1)
@@ -430,6 +431,7 @@ private struct OverviewMetric: View {
                     .foregroundStyle(.secondary)
             }
             Text(value)
+                .accessibilityIdentifier("dashboard.\(title.lowercased())")
                 .font(.headline.monospacedDigit())
                 .foregroundStyle(color)
                 .lineLimit(1)

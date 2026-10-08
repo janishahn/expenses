@@ -149,6 +149,7 @@ struct TransactionDetailView: View {
                     } label: {
                         Label("Actions", systemImage: "ellipsis.circle")
                     }
+                    .accessibilityIdentifier("transaction.actions")
                 }
             }
         }
@@ -354,6 +355,7 @@ private struct TransactionSummaryCard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(AppFormatters.euros(signedAmount))
+                        .accessibilityIdentifier("transaction.total")
                         .font(.system(size: 31, weight: .semibold).monospacedDigit())
                         .foregroundStyle(
                             transaction.type == "income"

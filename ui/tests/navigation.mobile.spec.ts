@@ -277,15 +277,34 @@ test.describe("Navigation (mobile)", () => {
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
     await expect(page.getByRole("button", { name: "Open menu" })).toBeFocused()
 
-    await page.getByRole("button", { name: "Open menu" }).click()
-    const sidebar = page.getByRole("complementary", { name: "Application menu" })
-    await sidebar.getByRole("link", { name: "Transactions" }).click()
-    await expect(page).toHaveURL("/transactions")
-    await expect(page.locator("aside.app-sidebar")).not.toHaveClass(
-      /app-sidebar-open/,
-    )
-    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
-    await expect(page.getByRole("button", { name: "Open menu" })).toBeFocused()
+    let releaseTransactions: () => void = () => undefined
+    const transactionsReady = new Promise<void>((resolve) => {
+      releaseTransactions = resolve
+    })
+    await page.route(/\/api\/transactions(?:\?|$)/, async (route) => {
+      await transactionsReady
+      await route.continue()
+    })
+
+    try {
+      await page.getByRole("button", { name: "Open menu" }).click()
+      const sidebar = page.getByRole("complementary", { name: "Application menu" })
+      await sidebar.getByRole("link", { name: "Transactions" }).click()
+      await expect(page).toHaveURL("/transactions")
+      await expect(page.locator("aside.app-sidebar")).not.toHaveClass(
+        /app-sidebar-open/,
+      )
+      await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+      const loader = page.getByTestId("route-loading")
+      await expect(loader).toBeVisible()
+      await expect(loader.getByRole("button", { name: "Open menu" })).toBeFocused()
+
+      releaseTransactions()
+      await expect(loader).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Open menu" })).toBeFocused()
+    } finally {
+      releaseTransactions()
+    }
   })
 
   test("keeps theme selection in Settings and keeps navigation tappable", async ({

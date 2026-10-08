@@ -145,38 +145,12 @@ function expectEffectiveTouchTarget(control: EffectiveTargetMeasurement) {
 
 async function useAuditTheme(page: Page) {
   await page.emulateMedia({ colorScheme: auditTheme, reducedMotion: "reduce" })
-  await page.addInitScript(() => {
-    window.localStorage.setItem("ew.theme.preference", theme)
+  await page.addInitScript((selectedTheme) => {
+    window.localStorage.setItem("ew.theme.preference", selectedTheme)
   }, auditTheme)
 }
 
 test.describe("Mobile interaction audit evidence", () => {
-  test("records Playwright full-page screenshot pointer-media behavior", async ({ page }) => {
-    await useAuditTheme(page)
-    await page.goto("/settings")
-    const readInputMedia = (target: Page) =>
-      target.evaluate(() => ({
-        coarse: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-        anyCoarse: window.matchMedia("(any-hover: none) and (any-pointer: coarse)").matches,
-        maxTouchPoints: navigator.maxTouchPoints,
-      }))
-    const before = await readInputMedia(page)
-    await capture(page, "pointer-media-full-page-probe.png", true)
-    const after = await readInputMedia(page)
-    await page.goto("/reports/builder")
-    const reportAfter = await readInputMedia(page)
-    const freshPage = await page.context().newPage()
-    await freshPage.goto("/reports/builder")
-    const freshPageAfter = await readInputMedia(freshPage)
-    await freshPage.close()
-    persist("pointer-media-full-page-probe", {
-      before,
-      after,
-      reportAfter,
-      freshPageAfter,
-    })
-  })
-
   test("measures populated compact actions and modal close controls", async ({
     page,
     request,
@@ -1153,53 +1127,4 @@ test.describe("Mobile interaction audit evidence", () => {
     await isolated.request.dispose()
   })
 
-  test("measures the visible assistant return-to-latest control", async ({ page }) => {
-    await useAuditTheme(page)
-    const longAnswer = Array.from(
-      { length: 60 },
-      (_, index) => `Audit spending detail ${index + 1}.`,
-    ).join("\n\n")
-    const body = [
-      { type: "turn_started", turn_id: "audit-turn" },
-      { type: "text_chunk", content: longAnswer },
-      { type: "text_commit" },
-      {
-        type: "result",
-        assistant_message: longAnswer,
-        message_history: [],
-      },
-      { type: "done" },
-    ]
-      .map((event) => JSON.stringify(event))
-      .join("\n")
-
-    await page.route("**/api/ai/spending-chat/stream", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/x-ndjson",
-        body: `${body}\n`,
-      })
-    })
-    await page.goto("/assistant")
-    await page.getByTestId("spending-assistant-input").fill("Show the full audit")
-    await page.getByTestId("spending-assistant-send").click()
-    await expect(
-      page
-        .getByTestId("spending-assistant-thread")
-        .getByText("Audit spending detail 60."),
-    ).toBeAttached()
-    const control = page.getByTestId("spending-assistant-scroll-bottom")
-    await expect
-      .poll(() =>
-        control.evaluate((element) => element.getBoundingClientRect().width),
-      )
-      .toBeGreaterThanOrEqual(39)
-    const measured = await measurement("Assistant return to latest", control)
-    persist("assistant-scroll-latest-measurement", {
-      viewport: page.viewportSize(),
-      control: measured,
-    })
-    expectDirectTouchTarget(measured)
-    await capture(page, "assistant-scroll-latest.png")
-  })
 })

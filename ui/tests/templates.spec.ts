@@ -6,19 +6,14 @@ test.describe("Templates Page", () => {
     await page.goto("/templates")
   })
 
-  test("uses a compact sortable library with a modal editor", async ({ page }) => {
-    await expect(page.getByTestId("template-library")).toBeVisible()
-    await expect(page.getByRole("dialog", { name: "Add template" })).toBeHidden()
-    await page.getByRole("button", { name: "Add template" }).first().click()
-    await expect(page.getByRole("dialog", { name: "Add template" })).toBeVisible()
-  })
-
   test("should create a template", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Tmpl Create")
     const templateName = `E2E Template ${Date.now()}`
 
     await page.reload()
+    await expect(page.getByTestId("template-library")).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Add template" })).toBeHidden()
     await page.getByRole("button", { name: "Add template" }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add template" })
     await dialog.getByLabel("Name").fill(templateName)

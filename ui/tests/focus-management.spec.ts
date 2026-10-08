@@ -47,6 +47,10 @@ test.describe("Focus management", () => {
     await addTrigger.press("Enter")
     const addDialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(addDialog).toBeVisible()
+    // Wait for modal autofocus before exercising its keyboard dismissal.
+    await expect
+      .poll(() => addDialog.evaluate((dialog) => dialog.contains(document.activeElement)))
+      .toBe(true)
     await page.keyboard.press("Escape")
     await expect(addDialog).toBeHidden()
     await expect(addTrigger).toBeFocused()
@@ -57,6 +61,7 @@ test.describe("Focus management", () => {
     await categoryTrigger.press("Enter")
     const categoryDialog = page.getByRole("dialog", { name: "Add category" })
     await expect(categoryDialog).toBeVisible()
+    await expect(categoryDialog.getByRole("textbox", { name: "Name", exact: true })).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(categoryDialog).toBeHidden()
     await expect(categoryTrigger).toBeFocused()
@@ -103,6 +108,10 @@ test.describe("Focus management", () => {
           )
         ).toBe(true)
       }
+
+      const lastMenuLink = menu.getByRole("link", { name: "Admin", exact: true })
+      await lastMenuLink.scrollIntoViewIfNeeded()
+      await expect(lastMenuLink).toBeInViewport()
 
       if (artifactDirectory) {
         mkdirSync(resolve(artifactDirectory, theme), { recursive: true })

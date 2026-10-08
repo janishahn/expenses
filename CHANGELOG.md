@@ -10,11 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.3] - 2026-10-06
 
 ### Added
+- Local native iOS E2E journeys and `uv run ios-e2e`, using disposable simulator/backend state without signing credentials or paid inference.
+- Automatic web journey checks on pull requests and main-branch pushes, weekly runs, and checks before release publication.
 - Optional Sign in with ChatGPT plan usage, with a local connection helper, protected per-user credentials, renewal, and disconnect controls.
 - Per-feature provider, model, and thinking-level settings on web and iOS, with model discovery for ChatGPT and OpenAI-compatible providers.
 - Custom ChatGPT model IDs on web and iOS, validated with the connected account before saving when absent from the model catalog.
 
 ### Fixed
+- Restore the native Quick Add button's hit target when it reappears after tab navigation, and make the full transaction template row tappable.
+- Restore keyboard focus to the mobile menu button after navigation, including slow-loading pages.
+- Wait for native budget and recurring data before allowing their creation forms to open.
 - Preserve ChatGPT usage-limit recovery guidance for standalone streaming errors and SDK error envelopes.
 - Compact AI settings on desktop with aligned model controls, responsive spacing, and save and validation feedback beside the save action.
 - Apply OpenAI strict tool schemas to ChatGPT requests and preserve provider-specific recovery messages for failed requests.

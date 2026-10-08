@@ -160,6 +160,7 @@ test.describe("Transaction detail and edit routes", () => {
     await expect(page.getByLabel("Title")).toHaveValue(originalTitle)
 
     await page.getByLabel("Title").fill(updatedTitle)
+    await page.getByLabel("Amount").fill("45.68")
     const saveResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/transactions/${transactionId}`) &&
@@ -170,13 +171,15 @@ test.describe("Transaction detail and edit routes", () => {
     await saveResponse
 
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
-    await expect(page.locator("body")).toContainText(updatedTitle)
+    await page.reload()
+    await expect(page.getByRole("heading", { name: updatedTitle })).toBeVisible()
+    await expect(page.locator("main")).toContainText("-45,68 €")
 
     await page.getByRole("link", { name: "← Back" }).click()
     await expect(page).toHaveURL("/transactions")
   })
 
-  test("keeps user on edit and preserves unsaved values when save fails", async ({
+  test("preserves edits after a failed save and persists them on retry", async ({
     page,
     request,
   }) => {
@@ -217,6 +220,13 @@ test.describe("Transaction detail and edit routes", () => {
     await expect(page.locator("body")).toContainText(saveFailureMessage)
     await expect(page.getByLabel("Title")).toHaveValue(updatedTitle)
     await expect(page.getByLabel("Amount")).toHaveValue("45.67")
+
+    await page.unroute(`**/api/transactions/${transactionId}`)
+    await page.getByRole("button", { name: "Save changes" }).click()
+    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+    await page.reload()
+    await expect(page.getByRole("heading", { name: updatedTitle })).toBeVisible()
+    await expect(page.locator("main")).toContainText("-45,67 €")
   })
 
   test("keeps unsaved edit changes isolated when leaving without saving", async ({

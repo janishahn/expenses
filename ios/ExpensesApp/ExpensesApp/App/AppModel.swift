@@ -93,12 +93,38 @@ final class AppModel {
     private static let appearancePreferenceKey = "expenses.appearancePreference"
 
     init() {
+        #if DEBUG && targetEnvironment(simulator)
+        Self.configureUITestLaunch()
+        #endif
         let storedURL = UserDefaults.standard.string(forKey: ExpensesAppStorage.baseURLKey)
         let initialBaseURLString = storedURL ?? ExpensesAppStorage.defaultLocalBackendURL
         baseURLString = initialBaseURLString
         appearancePreference = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey) ?? "system"
         apiClient = ExpensesAPIClient(baseURL: URL(string: initialBaseURLString))
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    private static func configureUITestLaunch() {
+        let process = ProcessInfo.processInfo
+        guard process.arguments.contains("--ui-testing"),
+              let rawURL = process.environment["EXPENSES_UI_TEST_BACKEND_URL"],
+              let url = URL(string: rawURL),
+              url.scheme == "http",
+              url.host == "localhost"
+        else { return }
+
+        // Clear only this app's known state, before constructing the API client
+        // or reading the Keychain. Relaunch tests omit the reset flag.
+        if process.environment["EXPENSES_UI_TEST_RESET"] == "1" {
+            try? KeychainStore(service: ExpensesAppStorage.mobileKeychainService)
+                .delete(account: ExpensesAppStorage.tokenKey)
+            for key in [ExpensesAppStorage.baseURLKey, appearancePreferenceKey, "expenses.deviceID", "expenses.dashboardIncognito"] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        UserDefaults.standard.set(rawURL, forKey: ExpensesAppStorage.baseURLKey)
+    }
+    #endif
 
     var token: String? {
         try? keychain.readString(account: ExpensesAppStorage.tokenKey)

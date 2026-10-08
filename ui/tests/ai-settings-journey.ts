@@ -1,6 +1,31 @@
 import { expect, type Page } from "@playwright/test"
+import { createTransaction, ensureCategory, loginAsIsolatedUser } from "./helpers"
 
 export async function aiSettingsJourney(page: Page) {
+  await page.goto("/settings")
+  const { request, csrfToken } = await loginAsIsolatedUser(page)
+  try {
+    const expense = await ensureCategory(request, csrfToken, "expense", "Assistant expenses")
+    const income = await ensureCategory(request, csrfToken, "income", "Assistant income")
+    for (const [date, type, amount, category, title] of [
+      ["2026-05-03", "expense", 1234, expense, "Assistant groceries"],
+      ["2026-05-20", "expense", 567, expense, "Assistant coffee"],
+      ["2026-05-01", "income", 25000, income, "Assistant salary"],
+      ["2026-06-01", "expense", 99999, expense, "Outside the requested month"],
+    ] as const) {
+      await createTransaction(request, csrfToken, {
+        date,
+        occurred_at: `${date}T12:00:00`,
+        type,
+        amount_cents: amount,
+        category_id: category,
+        title,
+        tags: [],
+      })
+    }
+  } finally {
+    await request.dispose()
+  }
   await page.goto("/settings")
   const settings = page.getByTestId("ai-settings")
   await expect(settings.getByRole("heading", { name: "AI settings" })).toBeVisible()
@@ -84,6 +109,30 @@ export async function aiSettingsJourney(page: Page) {
     "href",
     "https://chatgpt.com/settings/usage"
   )
+  // Exercise FastAPI's real stream, model adapter, tool execution and database.
+  // The provider fixture only asks for a tool and formats its returned amount.
+  await page.getByTestId("spending-assistant-input").fill("How much did I spend in May 2026?")
+  await page.getByTestId("spending-assistant-send").click()
+  await expect(
+    page.locator('[data-testid="spending-assistant-message"][data-role="assistant"]').last()
+  ).toContainText("Your May 2026 spending was €18.01.")
+  const tool = page.getByTestId("spending-assistant-tool")
+  await expect(tool).toContainText("Spending overview")
+  await expect(tool).toContainText("2026-05-01 to 2026-05-31")
+  await expect(tool).toHaveAttribute("data-status", "success")
+  await tool.locator("summary").click()
+  await expect(page.getByTestId("spending-assistant-tool-summary")).toHaveText(
+    "€18.01 spent · €250.00 income"
+  )
+  await expect(page.getByTestId("spending-assistant-error")).toHaveCount(0)
+
+  // The read-only Assistant leaves the persisted ledger intact.
+  await page.goto("/transactions?period=custom&start=2026-05-01&end=2026-05-31")
+  const rows = page.locator('[data-testid^="transaction-row-"]')
+  await expect(rows).toHaveCount(3)
+  await expect(rows.filter({ hasText: "Assistant groceries" })).toContainText("-12,34 €")
+  await expect(rows.filter({ hasText: "Assistant coffee" })).toContainText("-5,67 €")
+  await expect(rows.filter({ hasText: "Assistant salary" })).toContainText("250,00 €")
   await page.goto("/settings")
   await settings.getByRole("button", { name: "Disconnect", exact: true }).click()
   await page

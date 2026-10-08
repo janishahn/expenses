@@ -17,13 +17,18 @@ type Backend = {
 async function startBackend(mockAIProvider = false): Promise<Backend> {
   const dataDir = mkdtempSync(join(tmpdir(), "expenses-e2e-"))
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith("EXPENSES_"))
+    ),
+    PYTHON_DOTENV_DISABLED: "1",
+    EXPENSES_ENV: "test",
     EXPENSES_DATA_DIR: dataDir,
+    EXPENSES_AUTH_PASSWORD_HASH_ITERATIONS: "1000",
     EXPENSES_AUTH_SIGNUP_ENABLED: "true",
     EXPENSES_LLM_ENABLED: "true",
     EXPENSES_LLM_BASE_URL: "http://127.0.0.1:1/v1",
+    EXPENSES_LLM_API_KEY: "unused",
   }
-  delete env.EXPENSES_DATABASE_URL
 
   const migrate = spawnSync("uv", ["run", "python", "-m", "alembic", "upgrade", "head"], {
     cwd: repoRoot,

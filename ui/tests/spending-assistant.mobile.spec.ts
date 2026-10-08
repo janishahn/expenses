@@ -142,6 +142,12 @@ test.describe("Spending Assistant (mobile)", () => {
 
     const scrollToLatest = page.getByTestId("spending-assistant-scroll-bottom")
     await expect(scrollToLatest).toBeVisible()
+    await expect
+      .poll(() => scrollToLatest.evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        return Math.min(bounds.width, bounds.height)
+      }))
+      .toBeGreaterThanOrEqual(44)
     await scrollToLatest.click()
     await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 60.")).toBeInViewport()
   })

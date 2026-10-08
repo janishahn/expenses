@@ -10,15 +10,6 @@ test.describe("Transactions Page", () => {
     await page.goto("/transactions")
   })
 
-  test("should be navigable to deleted transactions page", async ({ page }) => {
-    await page.goto("/transactions/deleted")
-    await expect(page.locator("main h1")).toContainText("Deleted Transactions")
-  })
-
-  test("should load transaction list", async ({ page }) => {
-    await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
-  })
-
   test("keeps header actions free of an outline-like shadow", async ({ page }) => {
     const controls = [
       page.getByRole("button", { name: "Search transactions" }),

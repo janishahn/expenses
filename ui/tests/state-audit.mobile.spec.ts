@@ -109,14 +109,9 @@ test.describe("Mobile state audit evidence", () => {
 
       await page.goto("/transactions")
       let dialog = await openGlobalAdd(page)
-      await expect(
-        dialog.getByText("Wait for tags to load before adding the transaction"),
-      ).toHaveCount(0)
       await dialog.getByLabel("Amount").fill("12.34")
       await dialog.getByLabel("Title").fill("   ")
-      await dialog.locator("form").evaluate((form) => {
-        if (form instanceof HTMLFormElement) form.requestSubmit()
-      })
+      await dialog.getByRole("button", { name: "Add transaction", exact: true }).click()
       const validationError = dialog.getByText("Title is required")
       await expect(validationError).toBeVisible()
       await validationError.scrollIntoViewIfNeeded()

@@ -100,10 +100,17 @@ test("restores excluded spending-band categories in their original stack order",
     .first()
   const segments = currentBand.locator(".spending-band-segment")
   await expect(segments).toHaveCount(4)
-  const initialFills = await segments.evaluateAll((elements) =>
-    elements.map((element) => getComputedStyle(element).fill),
-  )
-  expect(new Set(initialFills).size).toBe(4)
+  // Animated SVG paths can be replaced between collection and style reads.
+  // Capture a complete rendered baseline before comparing the restored order.
+  let initialFills: string[] = []
+  await expect(async () => {
+    initialFills = await segments.evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).fill),
+    )
+    expect(initialFills).toHaveLength(4)
+    expect(initialFills).not.toContain("")
+    expect(new Set(initialFills).size).toBe(4)
+  }).toPass({ timeout: 10_000 })
 
   await page.getByRole("button", { name: "Filters", exact: true }).click()
   const filterPanel = page.getByRole("dialog", { name: "Dashboard filters" })

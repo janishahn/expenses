@@ -135,10 +135,11 @@ test.describe("Transaction attachments and location", () => {
 
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E No Location")
-    const locationTitle = `E2E Location ${Date.now()}`
-    const plainTitle = `E2E No Location ${Date.now()}`
+    const runKey = `E2E Location Check ${Date.now()}`
+    const locationTitle = `${runKey} with coordinates`
+    const plainTitle = `${runKey} without coordinates`
 
-    await createIngestTransaction(request, {
+    const locationId = await createIngestTransaction(request, {
       amount_cents: 1299,
       title: locationTitle,
       date: "2026-03-20",
@@ -147,7 +148,7 @@ test.describe("Transaction attachments and location", () => {
       longitude: 13.404954,
     })
 
-    await createTransaction(request, token, {
+    const plainId = await createTransaction(request, token, {
       date: "2026-03-20",
       occurred_at: new Date("2026-03-20T12:00:00Z").toISOString(),
       type: "expense",
@@ -157,10 +158,10 @@ test.describe("Transaction attachments and location", () => {
       tags: [],
     })
 
-    await page.goto("/transactions?period=all")
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(runKey)}`)
 
-    const locationRow = page.locator("div.surface-card").filter({ hasText: locationTitle }).first()
-    const plainRow = page.locator("div.surface-card").filter({ hasText: plainTitle }).first()
+    const locationRow = page.getByTestId(`transaction-row-${locationId}`)
+    const plainRow = page.getByTestId(`transaction-row-${plainId}`)
 
     await expect(locationRow).toBeVisible()
     await expect(plainRow).toBeVisible()

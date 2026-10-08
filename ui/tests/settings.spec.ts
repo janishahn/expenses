@@ -5,6 +5,7 @@ import {
   loginWith,
 } from "./auth-helpers"
 import { getCsrfToken } from "./helpers"
+import { readPortableExport } from "./import-export-files"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -91,7 +92,7 @@ test.describe.serial("Settings and ordinary-user import flows", () => {
     const csvTitle = `Settings CSV ${Date.now()}`
     const csvContent = [
       "Date,Type,IsReimbursement,Amount,Category,Title",
-      `${new Date().toISOString().slice(0, 10)},expense,0,10.00,${csvCategory},${csvTitle}`,
+      `${new Date().toISOString().slice(0, 10)},expense,0,10.01,${csvCategory},${csvTitle}`,
     ].join("\n")
 
     await page.getByLabel("CSV file").setInputFiles({
@@ -103,7 +104,24 @@ test.describe.serial("Settings and ordinary-user import flows", () => {
     await expect(page.locator("body")).toContainText(csvTitle)
 
     await page.getByRole("button", { name: "Import CSV" }).click()
-    await expect(page.locator("body")).toContainText(/Imported \d+ transaction\(s\)\./)
+    await expect(page.getByText("Imported 1 transaction(s).", { exact: true })).toBeVisible()
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(csvTitle)}`)
+    await page.reload()
+    const importedRow = page.locator('[data-testid^="transaction-row-"]').filter({ hasText: csvTitle })
+    await expect(importedRow).toHaveCount(1)
+    await expect(importedRow).toContainText("-10,01 €")
+    await expect(importedRow).toContainText(csvCategory)
+
+    await page.goto("/settings")
+    const exportPromise = page.waitForEvent("download")
+    await page.getByRole("link", { name: "Download portable archive" }).click()
+    const archive = await exportPromise
+    expect(await archive.failure()).toBeNull()
+    const exported = readPortableExport((await archive.path())!)
+    expect(exported.format).toBe("expenses-portable-export")
+    expect(exported.transactions).toContainEqual(expect.objectContaining({
+      title: csvTitle, type: "expense", amount_cents: 1_001,
+    }))
 
     await page.goto("/admin/import")
     await expect(page).not.toHaveURL(/\/admin/)

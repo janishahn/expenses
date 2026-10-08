@@ -1,111 +1,75 @@
 # Testing
 
-This document is the authoritative testing policy and browser-coverage inventory for Expenses. Product planning or redesign working documents do not define test coverage.
+E2E journeys are the primary proof of user-facing behavior. Keep focused backend tests for financial calculations, authorization, migrations, concurrency, and failure recovery that UI tests cannot cover efficiently. This file owns the coverage inventory; the tests define the detailed scenarios.
 
 ## Commands
 
 ```bash
-uv run fast-tests
-uv run full-tests
+uv run fast-tests       # backend tests, Ruff, frontend lint and production build
+uv run full-tests       # fast-tests, then all Playwright projects
+uv run ios-e2e          # local native journeys; macOS, Xcode and iOS 26 Simulator
 ```
 
-`fast-tests` is the gate for feature work, shared code or configuration changes, and code changes prepared for a pull request. Docs-only and isolated low-risk local changes may use focused checks. The gate runs Ruff, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
-
-When web behavior or layout changes, pair the gate with focused Playwright specs for each materially distinct affected layout. Do not escalate to the complete matrix because a diff is large or a page was redesigned. After checks pass, repeat or broaden them only for relevant changes, failures, or unresolved concerns.
-
-Reserve `full-tests` for release candidates, changes to shared browser/runtime infrastructure whose risk spans most routes (such as authentication bootstrap, Playwright fixtures, migrations/startup, or global navigation), or an explicit request. It runs the fast gate and then the complete Playwright suite in a single invocation. Every Playwright worker boots its own backend through the fixtures in `ui/tests/fixtures.ts`: a fresh temporary SQLite data directory, applied migrations, and FastAPI on a free local port serving the built `ui/dist` application and API on one origin. It never reuses a developer server or database.
-
-Worker count scales with CPU cores, so spec files run concurrently while tests within a file stay serial against their worker's database by default. Long files whose tests are fully self-sufficient (read-only checks, or every test provisions its own data through the API) opt into per-test distribution with `test.describe.configure({ mode: "parallel" })`; a file may only opt in when no test depends on data or state left by an earlier test in that file. Test and assertion timeouts are set above the Playwright defaults because browser startup and paint slow down while many workers share one machine, and `reportSlowTests` flags any file that grows past two minutes so it can be split or opted into parallel mode before it caps the run again. The desktop and mobile auth specs each run first-run setup on a pristine instance; every other project bootstraps its worker's backend once and shares that authenticated storage state. The run produces one HTML report covering all projects.
-
-Install all browser binaries once after cloning or updating Playwright:
-
-```bash
-npm --prefix ui run test:e2e:install
-```
-
-Focused browser commands run from `ui/` after `npm run build`:
-
-```bash
-npm run test:e2e -- --project=desktop-chromium
-npm run test:e2e -- --project=mobile-webkit
-npm run test:e2e -- --project=critical-desktop-firefox
-npm run test:e2e -- --project=critical-desktop-webkit
-npm run test:e2e -- --project=critical-mobile-chromium
-npm run test:e2e:ui
-npm run test:e2e:headed
-```
-
-## Policy
-
-- Every new or changed web user-facing story has at least one real full-stack browser happy path on every materially distinct supported layout: desktop Chromium and mobile WebKit.
-- Permission, destructive-action, recovery, empty, failure, and feature-disabled states are browser-tested when their interaction is part of the story. Domain permutations and backend-only edge cases remain in focused API or unit tests.
-- Desktop and mobile files stay explicit. Mobile behavior belongs in `*.mobile.spec.ts`; tests use the controls actually visible in that layout.
-- Primary happy paths cross the browser, FastAPI API, service, and temporary database. Request interception is reserved for deterministic failure injection, external resources, and paid or nondeterministic providers.
-- Canonical authenticated routes are scanned for automatically detectable structural WCAG A/AA violations and browser runtime errors. Mobile routes additionally assert that the document does not overflow horizontally. Axe color-contrast checks are excluded because translucent and chart surfaces require design-token and screenshot review instead of computed-background inference.
-- Stable high-risk page and dialog archetypes have reviewed screenshot baselines. Update snapshots only for intentional UI changes and inspect the image diff before accepting it.
-- The three compatibility projects run only the critical create-and-read ledger journey. Broad feature behavior stays in the primary desktop/mobile projects to keep the cross-browser cost bounded.
-- New or changed web user stories update the coverage ledger and affected browser tests in the same change. Extend suitable existing specs; add a file only when repository conventions require it or no existing file fits.
-- Do not add a test that only makes sure that a removed feature is not in the application. Write such a test only when the application keeps a live route or code path that blocks the removed feature.
-- Each browser test must check the behavior that its title tells, and the check must occur in a standard run. Code that only writes optional audit artifacts is not coverage.
-- An audit spec must not do a journey again when a feature spec owns that journey. An audit spec adds only checks that apply across features, for example theme, overflow, or accessibility.
-
-## Browser matrix
-
-| Project | Engine and layout | Scope |
-|---|---|---|
-| `auth-bootstrap-chromium` | Chromium desktop | Fresh setup, login, logout, signup, and route guards |
-| `auth-bootstrap-mobile-webkit` | WebKit with iPhone 15 emulation | Fresh setup, login, logout, signup, and route guards on the mobile layout |
-| `desktop-chromium` | Chromium, 1280×800 | Complete desktop behavior, accessibility, and visual contracts |
-| `mobile-webkit` | WebKit with iPhone 15 emulation | Complete mobile behavior, accessibility, overflow, and visual contracts |
-| `critical-desktop-firefox` | Firefox, 1280×800 | Critical authenticated navigation and transaction creation |
-| `critical-desktop-webkit` | WebKit, 1280×800 | Critical authenticated navigation and transaction creation |
-| `critical-mobile-chromium` | Chromium with Pixel 7 emulation | Critical mobile transaction creation and detail navigation |
-
-Playwright mobile projects emulate viewport, user agent, touch, and browser-engine behavior; they do not run physical iOS Safari. Real-device or iOS Simulator Safari remains a supplemental manual check when a browser-engine issue requires it.
-
-## Coverage ledger
-
-`Desktop` and `Mobile` identify the owning Playwright specifications. `Surface contract` means the canonical route is also covered by structural accessibility, runtime-error, and mobile overflow assertions.
-
-| Product story or surface | Desktop | Mobile | Surface contract |
-|---|---|---|---|
-| First-run setup, login, logout, signup, protected deep links | `auth.spec.ts`, `settings.spec.ts` | `auth.mobile.spec.ts` | Real setup submission in both layouts |
-| Authenticated shell, scroll-stable desktop modals, Canvas-first mobile Menu/Back titles, shared overlay-aware create action, Settings-only theme selection, period propagation, and unknown routes | `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `navigation.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Shared responsive page-scope headers, centered desktop page actions, scroll-stable filter panels, equal-height quick-period and Filters controls, and the compact mobile Transactions exception | `page-scope-header.spec.ts` | `page-scope-header.mobile.spec.ts` | Covered routes |
-| Dashboard metrics, quick periods, tag-only secondary-filter panel with archived/hidden visibility and scoped drill-downs, charts, privacy, category focus, quick add, scheduled-tag defaults and removal, and recent-transactions touch targets | `dashboard.spec.ts`, `tag-filters.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `summaries.mobile.spec.ts`, `visual.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
-| Transaction actions and scroll-stable overflow, desktop quick period, mobile sheet-owned period, shared secondary filters and multi-tag scopes including stale hidden selections, in-place search expansion with mobile Filters displacement, selection, detail, edit, Markdown description editing and persistence, deletion, attachments, location, durable tracking | `transactions.spec.ts`, `tag-filters.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `transactions.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Uncategorized Inbox categorization | `transactions.spec.ts` | `transactions.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Trash restore and permanent deletion | `transactions-trash.spec.ts` | `transactions.mobile.spec.ts` | Yes |
-| Route loading placeholder and data-dependent action readiness (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Transactions skeleton plus Budgets action readiness |
-| Cross-route query and mutation error recovery, readable API detail, and missing-resource return paths | `state-audit.spec.ts`, `transactions-deletion.spec.ts` | `state-audit.mobile.spec.ts` | Desktop and mobile state contracts |
-| Optional read-only spending Assistant and disabled AI surfaces | `spending-assistant.spec.ts`, `llm-disabled.desktop.spec.ts` | `spending-assistant.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Insights page tabs and stable desktop canvas, quick periods, tag-only secondary-filter panel including top-tag scope, chart-local controls, Net view selection/data view, and drill-through | `insights.spec.ts`, `tag-filters.spec.ts` | `insights.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| Unified monthly and annual budgets, full-bleed mobile month navigation with an anchored picker, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Weekly digest navigation, full-bleed mobile period navigation, and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
-| Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts`, `focus-management.spec.ts` | `categories.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Tag create, date-range defaults, read-only detail and explicit edit flow, archive, restore, independent filter visibility, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts`, `tag-filters.spec.ts` | `organization.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Recurring page tabs, create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
-| Template create/edit/delete and reorder | `templates.spec.ts`, `focus-management.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Commerzbank CSV reconciliation inbox, reviewed outcomes, match selection, and editable create-and-match | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
-| PDF report options, include/exclude tag scope, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| ChatGPT pairing, per-feature provider/model/thinking settings, custom model validation and recovery, persistence, and disconnect | `ai-settings.spec.ts` | `ai-settings.mobile.spec.ts` | Real backend; external OpenAI responses simulated |
-| Settings, appearance, balance anchors, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
-| Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
-| Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |
-
-Backend tests remain authoritative for lower-level calculation, isolation, migration, import, export, reconciliation-matching, recurrence, LLM-provider, and security edge cases. Browser coverage proves that the supported user journey remains coherent through the rendered application.
-
-## Failure artifacts
-
-Playwright writes the HTML report to `ui/playwright-report` and failures to `ui/test-results`. Failed tests retain a screenshot and trace; the manually dispatched **Full tests** workflow uploads both directories. Open a local trace with:
+For web setup, run `npm --prefix ui run test:e2e:install` once. Linux also needs Noto Sans (`sudo apt-get install fonts-noto-core`) for the shared screenshot font configuration. After building with `npm --prefix ui run build`, use focused specs while editing:
 
 ```bash
 cd ui
-npx playwright show-trace test-results/<test>/trace.zip
+npm run test:e2e -- transactions.spec.ts --project=desktop-chromium
+npm run test:e2e -- transactions.mobile.spec.ts --project=mobile-webkit
+npm run test:e2e:ui
 ```
 
-The audit-oriented browser specs keep their behavioral assertions in normal test runs but do not write bulk screenshots or JSON manifests by default. Set `UI_POLISH_AUDIT_ARTIFACT_DIR` to an explicit repository-relative or absolute directory only when intentionally collecting a review evidence set. Local evidence under `artifacts/ui-polish-audit/` is ignored by Git.
+Run the fast gate plus affected journeys for feature work. Use `full-tests` for shared browser/startup infrastructure and release candidates. Run `ios-e2e` locally on a Mac for native changes; native tests do not run in CI.
+
+PRs and main-branch pushes run backend checks and the web matrix in CI. The same checks run weekly, on manual **Full tests** dispatch, and before release publication. CI allows one browser retry for diagnosis but fails retry-only passes. Keep diagnostics when investigating flakes; do not weaken assertions or accept snapshots merely to make a run green.
+
+## Policy
+
+- Update the owning E2E test when a user story changes, on every materially distinct supported client. Update this inventory only when coverage changes. Add missing coverage before deleting its only lower-level protection.
+- Assert the outcome, exact amounts where relevant, and persistence after reload/relaunch. Cover meaningful permissions, destructive actions, errors and recovery; avoid one giant dependent journey.
+- Seed prerequisites through APIs/fixtures; perform the action under test through the UI and the real backend. Simulate paid/nondeterministic providers at their boundary. Browser request interception is also appropriate for deliberate UI failure injection, but does not prove backend behavior.
+- Keep tests isolated and independently provisioned. Reuse authentication outside login tests; never use personal accounts or databases. Use deterministic assertions in CI; AI may help author reviewed test code.
+- Remove tests that assert nothing, restate incidental fixture values, or duplicate an existing failure detector. Consolidate unique assertions into the owning journey. Keep small tests when they protect a meaningful invariant; test-count and line-coverage targets are not goals.
+- Accessibility, focus, reflow and visual audits add cross-cutting checks instead of repeating feature journeys. Structural axe checks exclude color contrast; reviewed screenshots cover selected stable archetypes. Inspect visual diffs before changing baselines.
+
+## Isolation and platforms
+
+Playwright starts a real FastAPI server and migrated temporary SQLite database per worker, serving `ui/dist` and the API on one origin. Developer `EXPENSES_*` settings and `.env` files are excluded. Fresh-instance auth specs exercise setup/login; other specs reuse a worker login. Scope fixture data with unique users, tags or search keys so reuse cannot change pagination or totals. Files run concurrently and tests within a file remain serial unless independently provisioned.
+
+`desktop-chromium` and `mobile-webkit` own broad web coverage, alongside their fresh-auth projects. Three compatibility projects run the critical ledger journey on desktop Firefox/WebKit and mobile Chromium. Mobile browser projects emulate devices; they do not exercise the native app or physical Safari.
+
+`ios-e2e` creates disposable backends and an owned iPhone simulator, runs the shared `ExpensesApp` scheme, then cleans up. Each ordinary native test uses its own account; first-run setup uses a separate pristine backend. Inference is disabled. Debug/simulator-only launch settings reset app-owned preferences/Keychain state and select the loopback backend. No developer signing certificate is needed. Install Pango (`brew install pango`) locally for PDF generation if needed.
+
+Native journeys use `--skip-local-unlock`; they do not establish biometric or privacy-lock correctness. Real-device review remains necessary for hardware capture, biometrics, system sharing/permissions and device performance. The native suite is in `ios/ExpensesApp/ExpensesAppUITests/Journeys.swift`; gaps are explicit below.
+
+## Journey inventory
+
+Web names are spec stems under `ui/tests/` (`auth` means `auth.spec.ts`). A dash means no native E2E yet, not an unsupported product feature. Native entries name the behavior asserted by `Journeys.swift`.
+
+| Journey | Desktop web | Mobile web | Native iOS |
+|---|---|---|---|
+| Setup, login, logout, sessions and recovery | `auth`, `settings`, `admin-auth` | `auth.mobile` | Setup, login failure/recovery, relaunch, logout, remote revocation, unreachable backend |
+| Ledger create/read/edit, validation, deletion and restore | `transactions`, `transactions-detail`, `transactions-deletion`, `transactions-trash`, `core-journey.critical` | `transactions.mobile`, `core-journey.critical.mobile` | Exact amounts, edit/delete/restore, relaunch, invalid input recovery |
+| Receipt attachments and location | `transactions-attachments`, `transactions-detail` | `transactions.mobile`, `interaction-audit.mobile` | Receipt download/preview/delete; capture and location remain device checks |
+| Search, filters, Inbox and tag scopes | `transactions`, `tag-filters`, `tag-detail` | `transactions.mobile`, `tag-filters.mobile` | Search matching and clearing |
+| Categories, tags, templates and categorization rules | `categories`, `tags`, `templates`, `rules` | `categories.mobile`, `organization.mobile` | Category/tag creation, saved template application |
+| Dashboard and Insights drill-downs | `dashboard`, `insights`, `tag-filters` | `dashboard.mobile`, `insights.mobile`, `tag-filters.mobile` | Exact totals from known transactions |
+| Monthly/annual budgets | `budgets` | `budgets.mobile` | Exact monthly budget persistence |
+| Forecast and What If | `forecast`, `scenarios` | `planning.mobile` | Exact What If impact without ledger changes |
+| Recurring rules, evaluation and history | `recurring`, `recurring-occurrences` | `recurring.mobile` | Rule creation and persisted schedule |
+| Reconciliation import/review/matching | `reconciliation` | `reconciliation.mobile` | Create from a bank row with exact amount |
+| Digest and PDF reports | `digest`, `reports` | `summaries.mobile` | PDF generation/preview |
+| Settings, balance anchors, CSV and portable export | `settings` | `settings-admin.mobile` | Appearance persistence and CSV preview |
+| Valid legacy SQLite import and validation | `admin-import` | `settings-admin.mobile` | — |
+| Admin elevation, health, maintenance and logs | `admin-auth`, `admin` | `settings-admin.mobile` | — |
+| AI pairing/settings, real Assistant tool round-trip and disconnect | `ai-settings` | `ai-settings.mobile` | — |
+| Assistant streaming/error/cancel UI and disabled AI | `spending-assistant`, `llm-disabled.desktop` | `spending-assistant.mobile`, `state-audit.mobile` | — |
+| Navigation, themes, focus, loading/error recovery, accessibility and reflow | `navigation.desktop`, `focus-management`, `page-scope-header`, `route-loading`, `state-audit`, `surface-contracts`, `route-theme-audit`, `auth-theme-audit`, `stress-audit`, `visual` | Corresponding `.mobile` specs plus `interaction-audit.mobile`, `visual.mobile` | Navigation within the native journeys above |
+
+AI settings journeys keep the real app/backend and substitute external identity/inference. Assistant stream-shape cases simulate the app stream intentionally. Some forecast/report/digest presentation cases use fixed responses; backend tests remain responsible for calculation permutations, complete export contents and scheduler behavior. A successful download or visible chart alone is not proof of those properties.
+
+## Diagnostics
+
+Playwright writes `ui/playwright-report` and `ui/test-results`; open a trace with `cd ui && npx playwright show-trace test-results/<test>/trace.zip`. Native logs and `.xcresult` bundles are under `test-results/ios/<run>/` (open the result bundle in Xcode). Web CI retains failure traces and retry results.
+
+Set `UI_POLISH_AUDIT_ARTIFACT_DIR` only when collecting optional visual audit evidence. Artifacts alone are not test coverage.

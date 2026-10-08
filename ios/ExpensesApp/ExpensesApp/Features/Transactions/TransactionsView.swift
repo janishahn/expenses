@@ -421,6 +421,7 @@ private struct TransactionListModeMenu: View {
                 .labelStyle(.titleAndIcon)
         }
         .menuOrder(.fixed)
+        .accessibilityIdentifier("transactions.mode")
     }
 }
 

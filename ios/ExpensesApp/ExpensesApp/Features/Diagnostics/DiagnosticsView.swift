@@ -9,6 +9,7 @@ struct DiagnosticsView: View {
         List {
             Section("Connection") {
                 TextField("Backend URL", text: $model.baseURLString)
+                    .accessibilityIdentifier("diagnostics.backend")
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                 Button("Test connection") {
@@ -23,6 +24,7 @@ struct DiagnosticsView: View {
                 Section("Backend") {
                     LabeledContent("App", value: status.app)
                     LabeledContent("Version", value: status.version)
+                        .accessibilityIdentifier("diagnostics.version")
                     LabeledContent("Setup required", value: status.setupRequired ? "Yes" : "No")
                     LabeledContent("Timezone", value: status.timezone)
                     LabeledContent("Receipt limit", value: ByteCountFormatter.string(
@@ -63,6 +65,7 @@ struct ErrorDetailsView: View {
     var body: some View {
         Section("Error") {
             Text(error.message)
+                .accessibilityIdentifier("request.error")
             if let statusCode = error.statusCode {
                 LabeledContent("Status", value: "\(statusCode)")
             }

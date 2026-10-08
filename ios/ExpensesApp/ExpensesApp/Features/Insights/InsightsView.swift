@@ -407,6 +407,7 @@ private struct InsightsBreakdownSection: View {
                                 .font(.body.weight(.medium))
                             Spacer()
                             Text(AppFormatters.euros(row.amountCents))
+                                .accessibilityIdentifier("insights.\(title.lowercased()).\(row.name)")
                                 .font(.body.monospacedDigit())
                         }
                         ProgressView(value: min(100, max(0, row.percent)), total: 100)

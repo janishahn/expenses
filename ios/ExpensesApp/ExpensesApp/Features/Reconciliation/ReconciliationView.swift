@@ -280,6 +280,7 @@ private struct BankStatementRowCard: View {
 
             HStack {
                 Text(statusLabel)
+                    .accessibilityIdentifier("reconciliation.status.\(row.id)")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

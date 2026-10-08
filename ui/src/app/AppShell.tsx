@@ -96,7 +96,8 @@ function AppShell() {
   const sidebarRef = useRef<HTMLElement | null>(null)
   const shellContentRef = useRef<HTMLDivElement | null>(null)
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const [sidebarCloseCount, setSidebarCloseCount] = useState(0)
+  const pendingMenuFocusRef = useRef(false)
+  const menuFocusFrameRef = useRef<number | null>(null)
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
   // Stays mounted after the first open so the dialog's exit animation can
   // play; Radix only animates content that is still in the tree on close.
@@ -145,34 +146,56 @@ function AppShell() {
   const mobileFabAction =
     activeUtilityAction?.presentation === "quiet" ? null : activeUtilityAction
 
-  const closeSidebar = useCallback(() => {
-    setSidebarOpen(false)
-    setSidebarCloseCount((count) => count + 1)
+  const cancelMenuFocusFrame = useCallback(() => {
+    if (menuFocusFrameRef.current !== null) {
+      cancelAnimationFrame(menuFocusFrameRef.current)
+      menuFocusFrameRef.current = null
+    }
   }, [])
 
+  const restoreMenuFocus = useCallback(() => {
+    if (!pendingMenuFocusRef.current) return
+    cancelMenuFocusFrame()
+    menuFocusFrameRef.current = requestAnimationFrame(() => {
+      menuFocusFrameRef.current = null
+      if (!pendingMenuFocusRef.current || shellContentRef.current?.inert) return
+      const target = menuTriggerRef.current?.isConnected
+        ? menuTriggerRef.current
+        : shellContentRef.current?.querySelector<HTMLElement>(".page-title")
+      if (target?.isConnected) {
+        target.focus()
+        pendingMenuFocusRef.current = document.activeElement !== target
+      }
+    })
+  }, [cancelMenuFocusFrame])
+
+  const closeSidebar = useCallback(() => {
+    pendingMenuFocusRef.current = sidebarOpen && !isDesktop
+    setSidebarOpen(false)
+  }, [isDesktop, sidebarOpen])
+
   const openMobileNavigation = useCallback(() => {
+    pendingMenuFocusRef.current = false
+    cancelMenuFocusFrame()
     setSidebarOpen(true)
-  }, [])
+  }, [cancelMenuFocusFrame])
   const registerMobileNavigationTrigger = useCallback(
     (trigger: HTMLButtonElement | null) => {
+      // Loading and loaded routes can have different headers. Preserve focus
+      // only when the departing trigger actually held it.
+      if (!trigger && menuTriggerRef.current === document.activeElement) {
+        pendingMenuFocusRef.current = true
+      }
       menuTriggerRef.current = trigger
+      if (trigger) restoreMenuFocus()
     },
-    [],
+    [restoreMenuFocus],
   )
 
   useEffect(() => {
-    if (sidebarOpen || sidebarCloseCount === 0) return
-    const animationFrame = requestAnimationFrame(() => {
-      if (menuTriggerRef.current?.isConnected) {
-        menuTriggerRef.current.focus()
-        return
-      }
-      shellContentRef.current
-        ?.querySelector<HTMLElement>(".page-title")
-        ?.focus()
-    })
-    return () => cancelAnimationFrame(animationFrame)
-  }, [sidebarCloseCount, sidebarOpen])
+    if (!sidebarOpen) restoreMenuFocus()
+    return cancelMenuFocusFrame
+  }, [cancelMenuFocusFrame, restoreMenuFocus, sidebarOpen])
 
   useEffect(() => {
     if (isDesktop || !sidebarOpen) return
@@ -243,7 +266,7 @@ function AppShell() {
     return () => media.removeEventListener("change", syncDesktop)
   }, [])
 
-  const renderNavigation = (onNavigate: () => void) => (
+  const renderNavigation = () => (
     <nav className="sidebar-nav-scroll app-sidebar-nav" aria-label="Primary">
       {visibleGroups.map((group) => (
         <div key={group.label} className="app-sidebar-group-wrap">
@@ -254,7 +277,7 @@ function AppShell() {
                 key={item.to}
                 to={periodSearch ? `${item.to}${periodSearch}` : item.to}
                 end={item.end}
-                onClick={onNavigate}
+                onClick={closeSidebar}
                 className={({ isActive }) =>
                   `app-sidebar-link ${isActive ? "app-sidebar-link-active" : ""}`
                 }
@@ -299,7 +322,7 @@ function AppShell() {
           </button>
         </div>
 
-        {renderNavigation(closeSidebar)}
+        {renderNavigation()}
 
         <div className="app-sidebar-user">
           <span>{user?.username?.slice(0, 1).toUpperCase() ?? "E"}</span>
