@@ -19,6 +19,7 @@ from rapidfuzz.distance import Levenshtein
 
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
+from expenses.services.auto_categorization import apply_prediction
 from expenses.core.safe_regex import (
     RegexRejected,
     safe_regex_search,
@@ -667,7 +668,7 @@ class RuleService:
         )
         rules = self.session.scalars(stmt).all()
         if not rules:
-            return {"matched": 0, "applied": 0}
+            return {"matched": 0, "applied": 0, "category_set": False}
 
         title = (txn.title or "").strip()
         title_lower = title.lower()
@@ -758,7 +759,7 @@ class RuleService:
                 existing_tag_names.add(clean.lower())
                 applied += 1
 
-        return {"matched": matched, "applied": applied}
+        return {"matched": matched, "applied": applied, "category_set": category_set}
 
 
 class CategoryService:
@@ -1461,10 +1462,14 @@ class TransactionService:
         self.session.refresh(txn, ["category", "tags"])
         rule_result = RuleService(self.session, self.user_id).apply_rules(txn)
         self.session.flush()
+        auto_categorized = not rule_result["category_set"] and apply_prediction(
+            self.session, txn
+        )
+        self.session.flush()
         self._record_classification_event(
             transaction=txn,
             event_type="created",
-            source=source,
+            source="auto_category" if auto_categorized else source,
             before_category_id=None,
             after_category_id=txn.category_id,
             before_title=None,
@@ -1606,6 +1611,8 @@ class TransactionService:
         txn.type = data.type
         txn.amount_cents = data.amount_cents
         txn.category_id = category_id
+        if category_id != before_category_id:
+            txn.auto_category_confidence = None
         txn.title = data.title
         txn.description = (
             data.description.strip()

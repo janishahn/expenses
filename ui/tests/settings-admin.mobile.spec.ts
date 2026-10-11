@@ -1,7 +1,12 @@
 import { expect, test } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
+import { exerciseAutoCategorization } from "./helpers"
 
 test.describe("Settings and administration (mobile)", () => {
+  test("enables local categorization, trains, and saves its threshold", async ({ page }) => {
+    await exerciseAutoCategorization(page)
+  })
+
   test("uses appearance and export controls from Settings", async ({ page }) => {
     await page.goto("/settings")
     await expect(page.getByTestId("settings-page")).toBeVisible()

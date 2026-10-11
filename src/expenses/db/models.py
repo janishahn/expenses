@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -92,6 +93,22 @@ class ChatGPTPairing(Base):
     secret_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     encrypted_flow: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class AutoCategorizationPreference(Base):
+    __tablename__ = "auto_categorization_preferences"
+    __table_args__ = (CheckConstraint("threshold >= 0 AND threshold <= 1"),)
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    threshold: Mapped[float] = mapped_column(Float, default=0.8, nullable=False)
+    training_status: Mapped[str] = mapped_column(String(20), default="untrained")
+    checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    trained_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    training_fingerprint: Mapped[Optional[str]] = mapped_column(String(64))
+    model_json: Mapped[Optional[str]] = mapped_column(Text, deferred=True)
 
 
 class User(Base, TimestampMixin):
@@ -317,6 +334,7 @@ class Transaction(Base, TimestampMixin):
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id"), nullable=False
     )
+    auto_category_confidence: Mapped[Optional[float]] = mapped_column(Float)
     title: Mapped[Optional[str]] = mapped_column(Text)
     description: Mapped[Optional[str]] = mapped_column(Text)
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(9, 6))

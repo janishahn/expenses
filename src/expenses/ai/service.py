@@ -552,6 +552,7 @@ class LLMAssistantService:
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.id != txn.id,
+                Transaction.auto_category_confidence.is_(None),
                 Transaction.type == txn.type,
                 func.upper(Transaction.title).like(f"%{title_token}%"),
             )

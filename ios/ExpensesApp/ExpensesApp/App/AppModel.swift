@@ -288,6 +288,16 @@ final class AppModel {
         }
     }
 
+    func saveAutoCategorization(enabled: Bool, threshold: Double) async -> Bool {
+        guard let token else { return false }
+        return await runRequestReturningSuccess {
+            _ = try await apiClient.saveAutoCategorization(
+                AutoCategorizationUpdate(enabled: enabled, threshold: threshold), token: token
+            )
+            settings = try await apiClient.settings(token: token)
+        }
+    }
+
     func revokeMobileSession(_ session: MobileSession) async -> Bool {
         guard let token else {
             return false

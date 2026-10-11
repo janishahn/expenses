@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from sqlalchemy import select
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -9,7 +10,8 @@ from expenses.ai.service import LLMAssistantService
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.db.models import LLMJob
-from expenses.db.session import session_scope
+from expenses.db.session import engine, session_scope
+from expenses.services.auto_categorization import train_due_users
 from expenses.services import RecurringRuleService
 
 logger = get_logger("expenses.scheduler")
@@ -51,6 +53,15 @@ class SchedulerManager:
 
     def start(self) -> None:
         self._run_job("startup")
+        self.scheduler.add_job(
+            train_due_users,
+            IntervalTrigger(hours=1),
+            args=[engine],
+            id="auto_categorization_training",
+            replace_existing=True,
+            next_run_time=datetime.now(self.scheduler.timezone),
+            max_instances=1,
+        )
 
         trigger = CronTrigger(hour=3, minute=15)
         self.scheduler.add_job(

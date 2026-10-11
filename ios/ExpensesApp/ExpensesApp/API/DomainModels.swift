@@ -2504,15 +2504,35 @@ struct IngestTokenMetadata: Codable, Equatable {
     }
 }
 
+struct AutoCategorizationSettings: Codable, Equatable {
+    var enabled: Bool = false
+    var threshold: Double = 0.8
+    var trainingStatus: String = "untrained"
+    var trainedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, threshold
+        case trainingStatus = "training_status"
+        case trainedAt = "trained_at"
+    }
+}
+
+struct AutoCategorizationUpdate: Encodable {
+    let enabled: Bool
+    let threshold: Double
+}
+
 struct SettingsResponse: Codable, Equatable {
     let currentBalance: Int
     let balanceAnchors: [BalanceAnchor]
     let ingestToken: IngestTokenMetadata?
+    let autoCategorization: AutoCategorizationSettings
 
     enum CodingKeys: String, CodingKey {
         case currentBalance = "current_balance"
         case balanceAnchors = "balance_anchors"
         case ingestToken = "ingest_token"
+        case autoCategorization = "auto_categorization"
     }
 }
 

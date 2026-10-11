@@ -1,4 +1,4 @@
-import { request as playwrightRequest } from "@playwright/test"
+import { expect, request as playwrightRequest } from "@playwright/test"
 import type { APIRequestContext, Page } from "@playwright/test"
 import { loginWith } from "./auth-helpers"
 
@@ -53,6 +53,62 @@ export async function getCsrfToken(request: APIRequestContext): Promise<string> 
   const response = await request.get("/api/csrf")
   const payload = (await response.json()) as { token: string }
   return payload.token
+}
+
+export async function exerciseAutoCategorization(page: Page): Promise<void> {
+  await page.goto("/settings")
+  const { request, csrfToken } = await loginAsIsolatedUser(page)
+  const headers = { "X-CSRF-Token": csrfToken }
+  try {
+    const categories: number[] = []
+    for (const name of ["Bakery", "Transit"]) {
+      const response = await request.post("/api/categories", {
+        headers, data: { name, type: "expense", order: 0 },
+      })
+      expect(response.ok()).toBeTruthy()
+      categories.push((await response.json()).id)
+    }
+    for (let i = 0; i < 90; i++) {
+      const response = await request.post("/api/transactions", {
+        headers, data: {
+          date: "2026-01-01", occurred_at: "2026-01-01T12:00:00",
+          type: "expense", amount_cents: 500, category_id: categories[i % 2],
+          title: i % 2 === 0 ? "Corner bakery" : "City metro", tags: [],
+        },
+      })
+      expect(response.ok()).toBeTruthy()
+    }
+    await page.goto("/settings")
+    const panel = page.getByTestId("auto-categorization-settings")
+    const toggle = panel.getByRole("checkbox", { name: "Enable automatic categorization" })
+    await expect(toggle).not.toBeChecked()
+    await expect(panel.getByLabel("Confidence threshold")).toHaveValue("0.8")
+    await toggle.check()
+    await panel.getByRole("button", { name: "Save categorization settings" }).click()
+    await expect(panel.getByText("Model ready.", { exact: false })).toBeVisible()
+    const response = await request.post("/api/transactions", {
+      headers, data: {
+        date: "2026-10-11", occurred_at: "2026-10-11T12:00:00",
+        type: "expense", amount_cents: 500, title: "Corner bakery", tags: [],
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+    const detail = await request.get(`/api/transactions/${(await response.json()).id}`)
+    expect((await detail.json()).category_id).toBe(categories[0])
+    await panel.getByLabel("Confidence threshold").fill("0.9")
+    await panel.getByRole("button", { name: "Save categorization settings" }).click()
+    await expect(panel.getByText("Categorization settings saved.")).toBeVisible()
+    await page.reload()
+    await expect(toggle).toBeChecked()
+    await expect(panel.getByLabel("Confidence threshold")).toHaveValue("0.9")
+    await toggle.uncheck()
+    await panel.getByRole("button", { name: "Save categorization settings" }).click()
+    await expect(panel.getByText("Automatic categorization is off.")).toBeVisible()
+    await page.reload()
+    await expect(toggle).not.toBeChecked()
+  } finally {
+    await request.dispose()
+  }
 }
 
 // Signs the browser page in as a brand-new account so tests can assert exact

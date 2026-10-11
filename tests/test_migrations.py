@@ -9,6 +9,51 @@ from alembic.config import Config
 from expenses.core.config import get_settings
 
 
+def test_auto_categorization_migration_preserves_ledger_and_starts_opted_out(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "migration.db"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "202610031200")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            INSERT INTO users (id, username, password_hash, is_admin, created_at, updated_at)
+            VALUES (1, 'test', 'unused', 0, '2026-10-01', '2026-10-01')
+        """)
+        conn.execute("""
+            INSERT INTO categories (id, user_id, name, type, "order", created_at, updated_at)
+            VALUES (1, 1, 'Bakery', 'expense', 0, '2026-10-01', '2026-10-01')
+        """)
+        conn.execute("""
+            INSERT INTO transactions (id, user_id, date, occurred_at, type,
+                is_reimbursement, amount_cents, category_id, title, created_at, updated_at)
+            VALUES (1, 1, '2026-10-01', '2026-10-01 12:00:00', 'expense',
+                0, 550, 1, 'Corner bakery', '2026-10-01', '2026-10-01')
+        """)
+    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "head")
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT category_id, amount_cents, auto_category_confidence FROM transactions"
+        ).fetchone() == (1, 550, None)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM auto_categorization_preferences"
+        ).fetchone() == (0,)
+        conn.execute("INSERT INTO auto_categorization_preferences (user_id) VALUES (1)")
+        assert conn.execute(
+            "SELECT enabled, threshold, training_status FROM auto_categorization_preferences"
+        ).fetchone() == (0, 0.8, "untrained")
+    command.downgrade(cfg, "202610031200")
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT category_id, amount_cents FROM transactions"
+        ).fetchone() == (1, 550)
+    get_settings.cache_clear()
+
+
 def test_tag_auto_attach_migration_preserves_tags_and_enforces_complete_periods(
     monkeypatch, tmp_path: Path
 ) -> None:

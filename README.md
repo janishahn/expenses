@@ -59,6 +59,27 @@ Add salary, rent, subscriptions, and other regular payments once. Expenses can p
 
 Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you enable LLM help, Expenses can suggest rules from your history; you still review them before they take effect.
 
+For local automatic categorization, enable **Settings → Automatic categorization**
+(**Account → Automatic Categorization** on iOS). It is off by default for each user.
+The recommended confidence threshold is **0.80**; a higher value leaves more
+expenses uncategorized. Confidence estimates can still be wrong.
+
+Enabling starts background training using that user's categorized expenses.
+Training needs at least 60 titled expenses across two categories. The lightweight
+model compares title character fragments, amounts, and optional locations, with
+confidence calibrated on later transactions that were not in each training fold.
+It uses at most the latest 2,000 eligible expenses and 12,000 title fragments,
+without additional ML dependencies or external requests.
+
+Only new, non-recurring expenses still Uncategorized after deterministic rules
+are eligible. Manual categories always win. Edits do not rerun the model, and
+automatic predictions do not enter training until their category is changed by
+the user. While enabled, an hourly background check trains when seven days have
+passed since the last check, and only if eligible history changed. Missed checks
+resume after startup. Saved models load on demand and remain cached; the previous
+model stays active during retraining or if training fails. Turning the feature off
+stops predictions and scheduled training without changing existing transactions.
+
 ### More tools
 
 - **Forecast and What If** project cash flow and let you test a change before it becomes real.

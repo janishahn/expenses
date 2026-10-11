@@ -1,4 +1,5 @@
 import AISettingsPanel from "../components/AISettingsPanel"
+import AutoCategorizationSettings, { type AutoCategorizationSettingsData } from "../components/AutoCategorizationSettings"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
@@ -23,6 +24,7 @@ type BalanceAnchor = {
 }
 
 type SettingsPayload = {
+  auto_categorization: AutoCategorizationSettingsData
   current_balance: number
   balance_anchors: BalanceAnchor[]
   ingest_token: IngestTokenMetadata | null
@@ -85,6 +87,8 @@ function SettingsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiFetch<SettingsPayload>("/api/settings"),
+    refetchInterval: (query) => query.state.data?.auto_categorization.enabled
+      && query.state.data.auto_categorization.training_status === "training" ? 2000 : false,
   })
 
   const createAnchorMutation = useMutation({
@@ -317,6 +321,9 @@ function SettingsPage() {
     <section data-testid="settings-page" className="space-y-4">
       <PageIntro title="Settings" />
       <AISettingsPanel />
+      <AutoCategorizationSettings settings={data.auto_categorization}
+        onSaved={(auto_categorization) => queryClient.setQueryData<SettingsPayload>(["settings"],
+          (previous) => previous ? { ...previous, auto_categorization } : previous)} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] [&>*]:min-w-0">
         <FinancialPanel role="inspector" className="p-5">

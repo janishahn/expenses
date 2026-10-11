@@ -18,6 +18,7 @@ struct AuthView: View {
     @State private var anchorNote = ""
     @State private var selectedCSVFile: URL?
     @State private var presentingCSVImporter = false
+    @State private var categorizationDraft: AutoCategorizationSettings?
 
     var body: some View {
         Form {
@@ -29,6 +30,7 @@ struct AuthView: View {
                 if model.settings == nil && model.isLoading {
                     LoadingStateSection(title: "Loading account")
                 } else {
+                    autoCategorizationSection
                     ingestTokenSection
                     csvImportSection
                     balanceAnchorsSection
@@ -248,6 +250,56 @@ struct AuthView: View {
             return "Create the first admin account for this tracker. Your device will keep a local mobile session after setup."
         }
         return "Sign in to reuse this device as a trusted mobile session."
+    }
+
+    private var autoCategorizationSection: some View {
+        Section {
+            if let settings = model.settings?.autoCategorization {
+                let draft = categorizationDraft ?? settings
+                Toggle("Enable automatic categorization", isOn: Binding(
+                    get: { draft.enabled },
+                    set: { categorizationDraft = draft; categorizationDraft?.enabled = $0 }
+                ))
+                Stepper(value: Binding(
+                    get: { draft.threshold },
+                    set: { categorizationDraft = draft; categorizationDraft?.threshold = $0 }
+                ), in: 0...1, step: 0.01) {
+                    LabeledContent("Confidence threshold", value: draft.threshold.formatted(.number.precision(.fractionLength(2))))
+                }
+                Button("Save categorization settings") {
+                    Task {
+                        if await model.saveAutoCategorization(enabled: draft.enabled, threshold: draft.threshold) {
+                            categorizationDraft = nil
+                            statusText = "Categorization settings saved."
+                        }
+                    }
+                }
+                .disabled(categorizationDraft == nil || model.isLoading)
+                Text(categorizationStatus(settings))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if settings.enabled && settings.trainingStatus == "training" {
+                    Button("Refresh training status") { Task { await model.loadAccountSettings() } }
+                }
+            }
+        } header: {
+            Text("Automatic Categorization")
+        } footer: {
+            Text("Learns from your categorized expenses on this server. Your chosen categories and deterministic rules take priority. Recommended threshold: 0.80. Confidence is an estimate; higher values leave more expenses uncategorized.")
+        }
+        .disabled(model.isLoading)
+    }
+
+    private func categorizationStatus(_ settings: AutoCategorizationSettings) -> String {
+        guard settings.enabled else { return "Automatic categorization is off." }
+        let previous = settings.trainedAt == nil ? "" : " The previous model is still available."
+        switch settings.trainingStatus {
+        case "ready": return "Model ready. Checks for new training data run weekly."
+        case "training": return "Training your model…" + previous
+        case "insufficient_data": return "Training needs at least 60 categorized expenses across two categories, with titles." + previous
+        case "failed": return "Training failed. It will retry at the next weekly check." + previous
+        default: return "Enable to train from your categorized expenses."
+        }
     }
 
     private var ingestTokenSection: some View {
