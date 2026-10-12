@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New expenses use calibrated title-neighbor predictions only after manual categories and deterministic rules. Unreviewed predictions are excluded from training, and the previous model remains available during retraining.
 - Choose minimum confidence from 0–100% in 1% steps using a number field with up/down arrows on the web or a compact percentage row that opens a native wheel picker in an iOS bottom sheet.
 
+### Fixed
+- Ingest audit logs identify automatic category assignments instead of reporting the original category resolution.
+
 ## [0.5.3] - 2026-10-06
 
 ### Added

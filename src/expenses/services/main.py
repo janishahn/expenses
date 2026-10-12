@@ -2869,6 +2869,8 @@ class IngestService:
         txn = TransactionService(self.session, self.user_id).create(
             txn_in, source="ingest"
         )
+        if txn.auto_category_confidence is not None:
+            category_resolution = "auto_category"
         txn._ingest_log_fields = {
             "category_input": category_name_raw or None,
             "category_resolution": category_resolution,

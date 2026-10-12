@@ -14,8 +14,13 @@ from expenses.db.models import (
     User,
 )
 from expenses.db.session import Base
-from expenses.schemas import CategoryIn, RuleIn, TransactionIn
-from expenses.services import CategoryService, RuleService, TransactionService
+from expenses.schemas import CategoryIn, IngestTransactionIn, RuleIn, TransactionIn
+from expenses.services import (
+    CategoryService,
+    IngestService,
+    RuleService,
+    TransactionService,
+)
 from expenses.services import auto_categorization as categorization
 from expenses.services.category_model import Example, load_model, train
 
@@ -146,6 +151,32 @@ def test_manual_categories_rules_and_threshold_take_priority(history):
     )
     assert uncertain.category.name == "Uncategorized"
     assert uncertain.auto_category_confidence is None
+
+
+@pytest.mark.parametrize(
+    ("title", "category", "expected_category", "resolution"),
+    [
+        ("Corner bakery", None, "Bakery", "auto_category"),
+        ("Corner bakery", "Uncategorized", "Bakery", "auto_category"),
+        ("Corner bakery", "Transit", "Transit", "exact"),
+        ("zzzzzzzz", None, "Uncategorized", "uncategorized"),
+    ],
+)
+def test_ingest_distinguishes_automatic_category_resolution(
+    history, title, category, expected_category, resolution
+):
+    session, _, _ = history
+    categorization.train_user(session.get_bind(), 1)
+    txn = (
+        IngestService(session, 1)
+        .ingest_expense(
+            IngestTransactionIn(amount_cents=500, title=title, category=category)
+        )
+        .transaction
+    )
+    assert txn.category.name == expected_category
+    assert txn._ingest_log_fields["category_resolution"] == resolution
+    assert (txn.auto_category_confidence is not None) == (resolution == "auto_category")
 
 
 def test_corrections_stick_and_unrelated_edits_do_not_confirm_predictions(history):
