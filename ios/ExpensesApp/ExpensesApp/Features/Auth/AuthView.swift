@@ -18,6 +18,8 @@ struct AuthView: View {
     @State private var anchorNote = ""
     @State private var selectedCSVFile: URL?
     @State private var presentingCSVImporter = false
+    @State private var categorizationDraft: AutoCategorizationSettings?
+    @State private var presentingConfidencePicker = false
 
     var body: some View {
         Form {
@@ -29,6 +31,7 @@ struct AuthView: View {
                 if model.settings == nil && model.isLoading {
                     LoadingStateSection(title: "Loading account")
                 } else {
+                    autoCategorizationSection
                     ingestTokenSection
                     csvImportSection
                     balanceAnchorsSection
@@ -72,6 +75,10 @@ struct AuthView: View {
             } else {
                 await model.testConnection()
             }
+        }
+        .onChange(of: model.identity?.user?.id) {
+            categorizationDraft = nil
+            presentingConfidencePicker = false
         }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.settings == nil)
         .fileImporter(
@@ -248,6 +255,92 @@ struct AuthView: View {
             return "Create the first admin account for this tracker. Your device will keep a local mobile session after setup."
         }
         return "Sign in to reuse this device as a trusted mobile session."
+    }
+
+    private var autoCategorizationSection: some View {
+        Section {
+            if let settings = model.settings?.autoCategorization {
+                let draft = categorizationDraft ?? settings
+                Toggle("Categorize new expenses", isOn: Binding(
+                    get: { draft.enabled },
+                    set: { categorizationDraft = draft; categorizationDraft?.enabled = $0 }
+                ))
+                if let status = categorizationStatus(settings) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledContent("Status", value: status.label)
+                        if let detail = status.detail {
+                            Text(detail)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if settings.enabled && settings.trainingStatus == "training" {
+                    Button("Refresh status") { Task { await model.loadAccountSettings() } }
+                }
+                Button {
+                    presentingConfidencePicker = true
+                } label: {
+                    LabeledContent {
+                        Text(draft.threshold.formatted(.percent.precision(.fractionLength(0...2))))
+                            .monospacedDigit()
+                            .foregroundStyle(.tint)
+                    } label: {
+                        Text("Minimum confidence")
+                            .foregroundStyle(.primary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .sheet(isPresented: $presentingConfidencePicker) {
+                    ConfidencePickerSheet(threshold: Binding(
+                        get: { (categorizationDraft ?? settings).threshold },
+                        set: { value in
+                            var updated = categorizationDraft ?? settings
+                            updated.threshold = value
+                            categorizationDraft = updated
+                        }
+                    ), storedThreshold: settings.threshold)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                }
+                Button("Save changes") {
+                    Task {
+                        if await model.saveAutoCategorization(enabled: draft.enabled, threshold: draft.threshold) {
+                            categorizationDraft = nil
+                            statusText = "Automatic categorization saved."
+                        }
+                    }
+                }
+                .disabled((draft.enabled == settings.enabled && draft.threshold == settings.threshold) || model.isLoading)
+            }
+        } header: {
+            Text("Automatic Categorization")
+        } footer: {
+            Text("Learns from your categorized expenses on this server. Your own categories and rules always take priority. A higher minimum leaves more expenses uncategorized; 80% is recommended.")
+        }
+        .disabled(model.isLoading)
+    }
+
+    private func categorizationStatus(_ settings: AutoCategorizationSettings) -> (label: String, detail: String?)? {
+        guard settings.enabled else { return nil }
+        let previous = settings.trainedAt != nil
+        let history = "60 categorized expenses with titles, in at least two categories"
+        switch settings.trainingStatus {
+        case "ready":
+            return nil
+        case "training":
+            return (previous ? "Retraining…" : "Training…", nil)
+        case "insufficient_data":
+            return previous
+                ? ("Using previous model", "Not enough history to retrain. Needs \(history).")
+                : ("Not enough history", "Needs \(history).")
+        case "failed":
+            return previous
+                ? ("Using previous model", "Retraining failed. It retries at the next weekly check.")
+                : ("Training failed", "It retries at the next weekly check.")
+        default:
+            return ("Waiting for first training", nil)
+        }
     }
 
     private var ingestTokenSection: some View {
@@ -544,6 +637,35 @@ struct AuthView: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
         return formatter.string(from: date)
+    }
+}
+
+private struct ConfidencePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var threshold: Double
+    let storedThreshold: Double
+
+    var body: some View {
+        NavigationStack {
+            Picker("Minimum confidence", selection: $threshold) {
+                if storedThreshold != (storedThreshold * 100).rounded() / 100 {
+                    Text(storedThreshold.formatted(.percent.precision(.fractionLength(0...2))))
+                        .tag(storedThreshold)
+                }
+                ForEach(0...100, id: \.self) { percent in
+                    Text("\(percent)%").tag(Double(percent) / 100)
+                }
+            }
+            .pickerStyle(.wheel)
+            .padding(.horizontal)
+            .navigationTitle("Minimum confidence")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

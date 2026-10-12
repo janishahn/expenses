@@ -375,7 +375,10 @@ function AppShell() {
             type="button"
             data-testid="app-shell-mobile-add-action"
             aria-label={mobileFabAction.label}
-            onClick={mobileFabAction.onClick}
+            onClick={(event) => {
+              event.currentTarget.focus()
+              mobileFabAction.onClick()
+            }}
             className="app-mobile-fab desk:hidden"
           >
             <UtilityActionIcon aria-hidden="true" />

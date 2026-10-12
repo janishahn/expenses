@@ -41,7 +41,7 @@ test.describe("Transactions Page (mobile)", () => {
     await page.goto(`/transactions/${transactionId}/edit`)
     const editor = page.locator('.description-editor [contenteditable="true"]')
     await expect(editor.locator("strong")).toHaveText("Original note")
-    await editor.press("End")
+    await editor.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End")
     await editor.pressSequentially(" updated")
     await page.getByRole("button", { name: "Save changes", exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))

@@ -125,6 +125,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             fx_provider="fixture-bank",
             fx_fetched_at=datetime(2026, 1, 11, 18, 0),
             category_id=expense_category.id,
+            auto_category_confidence=0.91,
             title="Client train",
             description=None,
             latitude=Decimal("52.520008"),
@@ -295,6 +296,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                 "origin_rule_id",
                 "occurrence_date",
                 "tag_ids",
+                "auto_category_confidence",
             ):
                 assert field_name in transaction_properties
 
@@ -309,6 +311,11 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             assert expense_export["longitude"] == "13.404954"
             assert expense_export["deleted_at"] is None
             assert expense_export["tag_ids"] == [tag.id]
+            assert expense_export["auto_category_confidence"] == 0.91
+            reimbursement_export = next(
+                row for row in transactions if row["id"] == reimbursement.id
+            )
+            assert reimbursement_export["auto_category_confidence"] is None
 
             tags = _read_ndjson(archive, "data/tags.ndjson")
             assert tags == [

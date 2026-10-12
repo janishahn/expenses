@@ -1,4 +1,5 @@
 import AISettingsPanel from "../components/AISettingsPanel"
+import AutoCategorizationSettings, { type AutoCategorizationSettingsData } from "../components/AutoCategorizationSettings"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
@@ -23,6 +24,7 @@ type BalanceAnchor = {
 }
 
 type SettingsPayload = {
+  auto_categorization: AutoCategorizationSettingsData
   current_balance: number
   balance_anchors: BalanceAnchor[]
   ingest_token: IngestTokenMetadata | null
@@ -85,6 +87,8 @@ function SettingsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiFetch<SettingsPayload>("/api/settings"),
+    refetchInterval: (query) => query.state.data?.auto_categorization.enabled
+      && query.state.data.auto_categorization.training_status === "training" ? 2000 : false,
   })
 
   const createAnchorMutation = useMutation({
@@ -402,13 +406,18 @@ function SettingsPage() {
           </div>
         </FinancialPanel>
 
-        <FinancialPanel className="self-start p-4 xl:grid xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center xl:gap-4">
-          <h2 className="font-head text-xl font-bold tracking-tight">Appearance</h2>
-          <ThemePreferenceControl
-            testId="settings-theme-control"
-            className="mt-3 xl:mt-0"
-          />
-        </FinancialPanel>
+        <div className="grid content-start gap-4">
+          <FinancialPanel className="p-4 xl:grid xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center xl:gap-4">
+            <h2 className="font-head text-xl font-bold tracking-tight">Appearance</h2>
+            <ThemePreferenceControl
+              testId="settings-theme-control"
+              className="mt-3 xl:mt-0"
+            />
+          </FinancialPanel>
+          <AutoCategorizationSettings settings={data.auto_categorization}
+            onSaved={(auto_categorization) => queryClient.setQueryData<SettingsPayload>(["settings"],
+              (previous) => previous ? { ...previous, auto_categorization } : previous)} />
+        </div>
 
         <FinancialPanel role="inspector" className="p-5 lg:col-span-2">
           <h2 className="text-xl font-head font-bold">Balance snapshots</h2>
