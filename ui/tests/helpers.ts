@@ -81,7 +81,7 @@ export async function exerciseAutoCategorization(page: Page): Promise<void> {
     await page.goto("/settings")
     const panel = page.getByTestId("auto-categorization-settings")
     const toggle = panel.getByRole("switch", { name: "Automatic categorization" })
-    const threshold = panel.getByRole("combobox", { name: "Minimum confidence" })
+    const threshold = panel.getByLabel("Minimum confidence")
     const save = panel.getByRole("button", { name: "Save", exact: true })
     await expect(toggle).not.toBeChecked()
     await expect(threshold).toHaveValue("80")
@@ -102,16 +102,16 @@ export async function exerciseAutoCategorization(page: Page): Promise<void> {
     expect(response.ok()).toBeTruthy()
     const detail = await request.get(`/api/transactions/${(await response.json()).id}`)
     expect((await detail.json()).category_id).toBe(categories[0])
-    await threshold.selectOption("0")
-    await expect(threshold).toHaveValue("0")
-    await threshold.selectOption("100")
-    await expect(threshold).toHaveValue("100")
+    await threshold.fill("101")
+    await save.click()
+    await expect(panel.getByText("Enter a whole number from 0 to 100.")).toBeVisible()
+    await expect(threshold).toBeFocused()
     await page.route("**/api/settings/auto-categorization", (route) => route.fulfill({
       status: 503,
       contentType: "application/json",
       body: JSON.stringify({ detail: "Settings are temporarily unavailable." }),
     }), { times: 1 })
-    await threshold.selectOption("90")
+    await threshold.fill("90")
     await save.click()
     await expect(panel.getByRole("alert")).toHaveText("Settings are temporarily unavailable.")
     await expect(threshold).toHaveValue("90")

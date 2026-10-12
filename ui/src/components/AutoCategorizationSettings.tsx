@@ -1,10 +1,10 @@
-import { useId, useState } from "react"
+import { useId, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { InfoIcon } from "@phosphor-icons/react/Info"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { FinancialPanel } from "./product/ProductSurfaces"
 import { AppButton } from "./ui/product-button"
-import { AppNativeSelect, AppSwitch } from "./ui/product-fields"
+import { AppInput, AppSwitch } from "./ui/product-fields"
 
 export type AutoCategorizationSettingsData = {
   enabled: boolean
@@ -50,14 +50,17 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
   onSaved: (settings: AutoCategorizationSettingsData) => void
 }) {
   const id = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<{ enabled: boolean; percent: string } | null>(null)
+  const [invalid, setInvalid] = useState(false)
   const [saved, setSaved] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const savedPercent = toPercent(settings.threshold)
   const enabled = draft?.enabled ?? settings.enabled
   const percent = draft?.percent ?? savedPercent
-  // An unchanged selection preserves the stored threshold's precision.
+  // An untouched field sends the stored threshold unchanged; edits accept whole percentages.
   const thresholdChanged = percent !== savedPercent
+  const valid = !thresholdChanged || (/^\d{1,3}$/.test(percent) && Number(percent) <= 100)
   const dirty = enabled !== settings.enabled || thresholdChanged
   const mutation = useMutation({
     mutationFn: () => apiFetch<AutoCategorizationSettingsData>("/api/settings/auto-categorization", {
@@ -76,6 +79,7 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
   const change = (next: { enabled: boolean; percent: string }) => {
     setDraft(next)
     setSaved(false)
+    setInvalid(false)
     mutation.reset()
   }
   const status = describeStatus(settings)
@@ -84,9 +88,15 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
   return (
     <FinancialPanel className="p-5" data-testid="auto-categorization-settings">
       <form
+        noValidate
         aria-labelledby={`${id}-title`}
         onSubmit={(event) => {
           event.preventDefault()
+          if (!valid) {
+            setInvalid(true)
+            inputRef.current?.focus()
+            return
+          }
           mutation.mutate()
         }}
       >
@@ -143,18 +153,30 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
             </label>
             <p id={`${id}-hint`} className="text-xs text-muted">Recommended: 80%</p>
           </div>
-          <AppNativeSelect
-            id={`${id}-threshold`}
-            value={percent}
-            disabled={mutation.isPending}
-            aria-describedby={`${id}-hint`}
-            className="min-h-11 w-28 shrink-0 tabular-nums"
-            onChange={(event) => change({ enabled, percent: event.target.value })}
-          >
-            {!Number.isInteger(Number(savedPercent)) && <option value={savedPercent}>{savedPercent}%</option>}
-            {Array.from({ length: 101 }, (_, value) => <option key={value} value={value}>{value}%</option>)}
-          </AppNativeSelect>
+          <div className="flex shrink-0 items-center gap-2">
+            <AppInput
+              ref={inputRef}
+              id={`${id}-threshold`}
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              inputMode="numeric"
+              value={percent}
+              readOnly={mutation.isPending}
+              aria-invalid={invalid}
+              aria-describedby={invalid ? `${id}-hint ${id}-error` : `${id}-hint`}
+              className="w-20 text-right tabular-nums"
+              onChange={(event) => change({ enabled, percent: event.target.value })}
+            />
+            <span aria-hidden="true" className="text-sm text-muted">%</span>
+          </div>
         </div>
+        {invalid && (
+          <p id={`${id}-error`} role="alert" className="mt-2 text-sm text-semantic-red">
+            Enter a whole number from 0 to 100.
+          </p>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
           <AppButton type="submit" disabled={mutation.isPending || !dirty}>

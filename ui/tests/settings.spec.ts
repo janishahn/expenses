@@ -10,7 +10,7 @@ import { exerciseAutoCategorization, getCsrfToken } from "./helpers"
 test.use({ storageState: { cookies: [], origins: [] } })
 
 test.describe.serial("Settings and ordinary-user import flows", () => {
-  test("enables local categorization, trains, and saves a selected threshold after a failed save", async ({
+  test("enables local categorization, trains, and saves a validated threshold after a failed save", async ({
     page,
     request,
   }) => {
