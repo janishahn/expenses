@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Ingest audit logs identify automatic category assignments instead of reporting the original category resolution.
 - Discard unsaved iOS categorization settings and dismiss the confidence picker when the signed-in account changes.
+- Preserve automatic-category confidence in portable exports so unreviewed predictions remain identifiable when migrating data.
 
 ## [0.5.3] - 2026-10-06
 

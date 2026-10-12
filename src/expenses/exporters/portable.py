@@ -59,6 +59,9 @@ details, recurring links, and reimbursement links may only appear on a few recor
 Amounts are integer cents. Dates and datetimes are ISO strings. IDs are scoped to
 this export and are included so relationships can be reconstructed. Attachment
 metadata references receipt binaries by `archive_path`, relative to the ZIP root.
+
+A non-null `auto_category_confidence` marks an unreviewed automatic category
+assignment. Preserve it so predictions are not treated as confirmed training data.
 """
 
 
@@ -129,6 +132,7 @@ class TransactionExport(ExportModel):
     fx_provider: str | None
     fx_fetched_at: datetime | None
     category_id: int
+    auto_category_confidence: float | None
     title: str | None
     description: str | None
     latitude: Decimal | None
@@ -520,6 +524,7 @@ class PortableExportService:
                 fx_provider=row.fx_provider,
                 fx_fetched_at=row.fx_fetched_at,
                 category_id=row.category_id,
+                auto_category_confidence=row.auto_category_confidence,
                 title=row.title,
                 description=row.description,
                 latitude=row.latitude,
