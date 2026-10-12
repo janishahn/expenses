@@ -203,7 +203,8 @@ never cropped or stretched. A map fills its box by cropping around the pin.
 - PDFs: the viewer uses the browser's built-in PDF viewer. Previews and
   thumbnails show a PDF icon, since the server makes no PDF thumbnail.
 - Map: full column width, 180px tall, centered on the pin. Tiles follow the
-  theme, and the attribution stays visible. No location, no map: the Location
+  theme, and the attribution stays visible. The Location property shows the
+  coordinates; there is no place-name lookup. No location, no map: the Location
   property reads None.
 - The peek and mobile full view use the same sections in the same order.
 
@@ -373,7 +374,8 @@ prototype is the reference for content; these rules fix the structure.
   time. On desktop the section list replaces the sidebar, headed by "Back to
   app"; on mobile it is a horizontal chip row. Settings save on change; there
   is no Save button. Server sections need the admin password, shown as a
-  single locked card. Balance snapshots record a known balance at a moment;
+  single locked card. Health shows current readings, without history. Balance
+  snapshots record a known balance at a moment;
   they are not reconciliation and never use that word.
 - **Categorization settings.** A switch row, then the training status on its
   own row (Active with the training time, Training, Not enough history with
@@ -388,7 +390,7 @@ prototype is the reference for content; these rules fix the structure.
   day-calendar style (17 weeks, month and weekday labels, a Less/More legend,
   an outlined today) whose darkest days spell 404, with only faint days around
   the digits so they stay legible. Below it: "This page does not exist", the
-  requested path in monospace, and Go to dashboard. The calendar is decorative
+  requested path, and Go to dashboard. The calendar is decorative
   and hidden from assistive technology. Under reduced motion the cells only
   fade in.
 
@@ -456,8 +458,11 @@ changes and drop movement.
 `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
 `MonthPicker`, `Menu`, `Tooltip`, `Dialog`, `EntryDialog`, `BottomSheet`,
 `BulkBar`, `Peek`, `PropertyList`, `SettingsShell`, `ReceiptSection`,
-`ReceiptViewer`, `LocationMap`. A visual difference is a
-variant on the primitive, never a page-local class. A new primitive requires a
+`ReceiptViewer`, `LocationMap`, `DayCalendar`, and the controls `Button`,
+`IconButton`, `SegmentedControl`, `Switch`, `Checkbox`, `Radio`, `Pill`,
+`TagChip`, `SortMenu`, `TextField`, `Combobox`, `EmptyState`, and `Toast`.
+Confirmations are a `Dialog` variant. A visual difference is a variant on the
+primitive, never a page-local class. A new primitive requires a
 change to this document.
 
 **Lint.** oxlint replaces ESLint. Rule messages say what to do instead.
@@ -488,7 +493,7 @@ diff.
 - Red expenses and minus signs on expenses.
 - Per-row action buttons outside triage queues, and a global create button.
 - `transition: all`, `ease-in`, `scale(0)`, staggered entrances, load
-  animations, and animated layout properties.
+  animations (except the 404 calendar), and animated layout properties.
 - Two bottom-anchored layers at once; inputs in bottom-fixed bars other than
   the Assistant composer.
 - Native `alert`, `confirm`, and `prompt`.

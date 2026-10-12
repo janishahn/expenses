@@ -358,6 +358,7 @@ function BudgetBurndownPanel({
     data.daily_series.length > 0
       ? data.daily_series[data.daily_series.length - 1].cumulative_cents
       : 0
+  // oxlint-disable-next-line react/purity -- reads today's date on each render
   const now = new Date()
   let daysElapsed = data.days_in_month
   if (Number.isFinite(year) && Number.isFinite(month)) {

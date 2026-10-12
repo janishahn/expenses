@@ -38,6 +38,7 @@ type TagsResponse = {
 
 function ReportBuilderPage() {
   const [searchParams] = useSearchParams()
+  // oxlint-disable-next-line react/purity -- reads today's date on each render
   const today = new Date()
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
   const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)

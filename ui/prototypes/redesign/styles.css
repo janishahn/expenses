@@ -601,7 +601,7 @@ body { margin: 0; height: 100vh; display: flex; flex-direction: column; font: 13
 .nf .brand { margin: 0 0 24px; }
 .nf-stage { width: 100%; height: 290px; display: grid; place-items: center; margin-bottom: 18px; }
 .nf-t { font-weight: 600; font-size: 15px; }
-.nf-p { margin: 4px 0 18px; color: var(--ink-3); font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+.nf-p { margin: 4px 0 18px; color: var(--ink-3); font-size: 12px; line-height: 1.4; }
 
 .nf-cal { position: relative; padding: 22px 0 0 34px; text-align: left; }
 .nf-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 13px); grid-auto-columns: 13px; gap: 3px; }

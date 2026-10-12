@@ -194,6 +194,7 @@ function TagsPage() {
     mergePreviewMutation.reset()
     mergeApplyMutation.reset()
   }
+  // oxlint-disable-next-line react/purity -- reads today's date on each render
   const now = new Date()
   const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
   const today = new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)

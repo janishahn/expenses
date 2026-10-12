@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependencies
+- Replaced ESLint and its plugins with oxlint for web linting; `npm run lint` keeps the same rules.
+
 ## [0.6.1] - 2026-10-12
 
 ### Dependencies

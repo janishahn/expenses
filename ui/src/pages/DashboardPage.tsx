@@ -144,6 +144,7 @@ function DashboardPage() {
     if (!excludedTags && includedTags) params.set("tags", includedTags)
     return params.toString()
   }, [searchParams])
+  // oxlint-disable-next-line react/purity -- reads today's date on each render
   const now = new Date()
   const today = [
     now.getFullYear(),

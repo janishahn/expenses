@@ -110,6 +110,7 @@ function DashboardBalanceChart({
     [actualMonths, currentBalanceCents],
   )
   const finalForecast = forecastMonths[forecastMonths.length - 1]
+  // oxlint-disable-next-line react/purity -- reads today's date on each render
   const currentDate = new Date()
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`
   const actualEnd = actual[actual.length - 1]

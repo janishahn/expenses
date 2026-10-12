@@ -150,7 +150,7 @@ const txPeek = () => `<aside class="peek">${peekBar("Transactions", "Ramen Kazu"
       <span class="pl">Category</span><span class="pv ed" data-menu>${glyph("Restaurants")}Restaurants
         <div class="menu float combo"><div class="q">${I("search", ' style="color:var(--ink-3)"')}Re<span class="caret"></span></div>${mi(glyph("Restaurants") + "Restaurants" + I("check"))}${mi(glyph("Reimbursement") + "Reimbursement")}${mi(glyph("Housing") + "Rent and housing")}</div></span>
       <span class="pl">Tags</span><span class="pv">${tag("Personal")}${tag("Shared")}${ib("plus", "Add tag", 'style="width:22px;height:22px;font-size:13px"')}</span>
-      <span class="pl">Location</span><span class="pv ed">${I("map-pin", ' style="color:var(--ink-3)"')}Schwabing, München</span>
+      <span class="pl">Location</span><span class="pv ed">${I("map-pin", ' style="color:var(--ink-3)"')}48.161200, 11.585600</span>
       <span class="pl">Reimbursed</span><span class="pv"><span class="linkrec">${I("arrow-back-up", ' style="color:var(--income)"')}Lena — her share of ramen<span class="amt in">+ 32,00 €</span></span></span>
       <span class="pl">Net</span><span class="pv tab" style="font-weight:600">64,00 €</span>
       <span class="pl">Durable</span><span class="pv ed faint">Not tracked</span>
@@ -201,7 +201,7 @@ page("txfull", {
         <div class="card sub"><div class="lrow" style="grid-template-columns:18px minmax(0,1fr) auto 28px">${glyph("Reimbursement")}<span class="cell">Lena — her share of ramen <span class="faint">· 22 Oct</span></span><span class="amt in">+ 32,00 €</span>${ib("x", "Remove allocation")}</div></div>`;
     const props = reimb
       ? `<span class="pl">Type</span><span class="pv ed">Income</span><span class="pl">Date</span><span class="pv ed">Thu 22 Oct 2026, 21:02</span><span class="pl">Category</span><span class="pv ed">${glyph("Reimbursement")}Reimbursement</span><span class="pl">Tags</span><span class="pv">${tag("Shared")}</span><span class="pl">Reimbursement</span><span class="pv">${sw(true)}</span><span class="pl">Remaining</span><span class="pv tab">0,00 €</span>${bankRow("22 Oct")}`
-      : `<span class="pl">Type</span><span class="pv ed">Expense</span><span class="pl">Date</span><span class="pv ed">Thu 22 Oct 2026, 20:15</span><span class="pl">Category</span><span class="pv ed">${glyph("Restaurants")}Restaurants</span><span class="pl">Tags</span><span class="pv">${tag("Personal")}${tag("Shared")}</span><span class="pl">Reimbursed</span><span class="pv tab in">+ 32,00 €</span><span class="pl">Net</span><span class="pv tab" style="font-weight:600">64,00 €</span><span class="pl">Durable</span><span class="pv ed faint">Not tracked</span><span class="pl">Location</span>${opt("loc") === "loc-set" ? `<span class="pv ed">Schwabing, München</span>` : `<span class="pv ed faint">None</span>`}${bankRow("22 Oct")}`;
+      : `<span class="pl">Type</span><span class="pv ed">Expense</span><span class="pl">Date</span><span class="pv ed">Thu 22 Oct 2026, 20:15</span><span class="pl">Category</span><span class="pv ed">${glyph("Restaurants")}Restaurants</span><span class="pl">Tags</span><span class="pv">${tag("Personal")}${tag("Shared")}</span><span class="pl">Reimbursed</span><span class="pv tab in">+ 32,00 €</span><span class="pl">Net</span><span class="pv tab" style="font-weight:600">64,00 €</span><span class="pl">Durable</span><span class="pv ed faint">Not tracked</span><span class="pl">Location</span>${opt("loc") === "loc-set" ? `<span class="pv ed">48.161200, 11.585600</span>` : `<span class="pv ed faint">None</span>`}${bankRow("22 Oct")}`;
     const side = (!reimb && opt("loc") === "loc-set" ? location_() : "") + receipts(files);
     return bar(crumb(["Transactions", "transactions"], [reimb ? "Lena — her share of ramen" : "Ramen Kazu"]), more([mi("Copy link", "link"), SEP, mi("Delete", "trash", "danger")])) +
       (state.w === "w-mobile"
@@ -235,7 +235,7 @@ page("inbox", {
     const sugg = on ? `<div class="sugg-box"><div class="muted" style="font-size:12.5px">Suggestion</div><div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px">${glyph("Shopping")}<b>Shopping</b><span class="sp"></span><span class="tab">72 % confidence</span></div>
           <div style="display:flex;gap:6px;margin-top:12px"><span class="btn btn-primary">${I("check")}Accept</span><span class="btn btn-quiet">Reject</span></div></div>` : "";
     return bar(crumb(["Transactions", "transactions"], ["Uncategorized"])) +
-      `<div class="viewrow">${periodCtl("All time")}<span class="input hide-m" style="width:260px;height:26px">${I("search")}<span class="ph">tag:Work amount&gt;20</span></span></div>
+      `<div class="viewrow">${periodCtl("All time")}<span class="input hide-m" style="width:260px;height:26px">${I("search")}<span class="ph">Search</span></span></div>
       <div class="split"><div class="list">${head}${rows.map(row).join("")}<div class="lfoot">1–6 of 12${ib("chevron-left", "Previous page")}${ib("chevron-right", "Next page")}</div></div>
       <aside class="peek">${peekBar("Uncategorized", "Amazon.de Marketplace", { full: "txfull" })}<div class="pk-body"><div class="pk-title">Amazon.de Marketplace</div><div class="pk-amt">34,99 €</div>
         ${sugg}
