@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- API fields and endpoints for the redesigned web UI: a transaction list `total`; net and reimbursed amounts, `created_at`, and the linked bank row on transaction detail; paged Trash with bulk restore and permanent delete; an admin purge preview; month-end balance history; period totals on categories and tags; tag `created_at`; `category_id` on breakdown items; a 6- or 12-month category breakdown; and Insights month grids, recurring split, a 53-week day calendar, budget history, and `recurring_cents`.
+- Uncategorized transactions show local-model category suggestions while automatic categorization is on and trained. A rejected suggestion is remembered per transaction.
+- `GET /api/settings/auto-categorization`, and the minimum training history (`min_history`) in automatic categorization settings.
+- Bank reconciliation records how each statement row was resolved (matched, created, or ignored) with an optional ignore reason. New endpoints list open and resolved rows by account with paging, list bank accounts, search all transactions for a match, accept suggested matches in bulk, and optionally update the transaction amount to the bank amount when matching. Creating a transaction from a row accepts tags and notes, and reopening can move the created transaction to the trash.
+
+### Changed
+- Bank rows matched to a transaction that is later moved to the trash are open for reconciliation again.
+- Upgrading backfills existing bank rows as ignored (if reviewed) or matched. Rows created from a statement before this release are marked matched, because they cannot be told apart from matched rows.
+
 ### Dependencies
 - Replaced ESLint and its plugins with oxlint for web linting; `npm run lint` keeps the same rules.
 
