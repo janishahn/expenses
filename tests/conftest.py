@@ -66,3 +66,13 @@ def csrf_headers(api_client: TestClient) -> dict[str, str]:
     assert response.status_code == 200
     token = response.json()["token"]
     return {"X-CSRF-Token": token}
+
+
+@pytest.fixture()
+def db_session(api_client: TestClient):
+    generator = app_main.app.dependency_overrides[app_main.get_db]()
+    session = next(generator)
+    try:
+        yield session
+    finally:
+        generator.close()

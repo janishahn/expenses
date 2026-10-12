@@ -280,6 +280,9 @@ class BankStatementRowExport(ExportModel):
     import_hash: str
     matched_transaction_id: int | None
     reviewed_at: datetime | None
+    resolution: str | None = None
+    resolved_at: datetime | None = None
+    ignore_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -726,6 +729,9 @@ class PortableExportService:
                 import_hash=row.import_hash,
                 matched_transaction_id=row.matched_transaction_id,
                 reviewed_at=row.reviewed_at,
+                resolution=row.resolution,
+                resolved_at=row.resolved_at,
+                ignore_reason=row.ignore_reason,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
