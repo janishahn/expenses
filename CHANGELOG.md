@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Per-user local automatic categorization in web and iOS settings, off by default with an adjustable minimum confidence (default 80%). Settings show the saved training status separately from unsaved changes. Enabling trains from categorized history; enabled users are checked weekly for changed training data.
+- Per-user local automatic categorization in web and iOS settings, off by default with an adjustable minimum confidence (default 80%). Settings show training progress and issues separately from unsaved changes; the web toggle alone indicates when categorization is active. Enabling trains from categorized history; enabled users are checked weekly for changed training data.
 - New expenses use calibrated title-neighbor predictions only after manual categories and deterministic rules. Unreviewed predictions are excluded from training, and the previous model remains available during retraining.
 
 ## [0.5.3] - 2026-10-06

@@ -23,7 +23,7 @@ function describeStatus({ enabled, training_status, trained_at }: AutoCategoriza
   const previous = trained_at !== null
   switch (training_status) {
     case "ready":
-      return { label: "Active", dot: "bg-semantic-green" }
+      return null
     case "training":
       return previous
         ? { label: "Active · retraining…", dot: "bg-semantic-green" }
@@ -116,11 +116,13 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
               </button>
             </div>
             <div aria-live="polite" className="text-sm text-muted">
-              <p className="flex items-center gap-2">
-                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${status.dot}`} />
-                {status.label}
-              </p>
-              {status.detail && <p className="mt-1">{status.detail}</p>}
+              {status && <>
+                <p className="flex items-center gap-2">
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${status.dot}`} />
+                  {status.label}
+                </p>
+                {status.detail && <p className="mt-1">{status.detail}</p>}
+              </>}
             </div>
           </div>
           <AppSwitch

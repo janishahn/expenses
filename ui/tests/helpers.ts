@@ -90,7 +90,9 @@ export async function exerciseAutoCategorization(page: Page): Promise<void> {
     await expect(panel.getByText("Unsaved changes")).toBeVisible()
     await expect(panel.getByText("Off", { exact: true })).toBeVisible()
     await save.click()
-    await expect(panel.getByText("Active", { exact: true })).toBeVisible()
+    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
+    await expect(panel.getByText("Training…", { exact: true })).toBeHidden()
+    await expect(panel.getByText("Active", { exact: true })).toHaveCount(0)
     const response = await request.post("/api/transactions", {
       headers, data: {
         date: "2026-10-11", occurred_at: "2026-10-11T12:00:00",
