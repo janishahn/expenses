@@ -76,6 +76,10 @@ struct AuthView: View {
                 await model.testConnection()
             }
         }
+        .onChange(of: model.identity?.user?.id) {
+            categorizationDraft = nil
+            presentingConfidencePicker = false
+        }
         .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.settings == nil)
         .fileImporter(
             isPresented: $presentingCSVImporter,
