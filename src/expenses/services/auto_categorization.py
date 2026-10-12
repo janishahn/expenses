@@ -84,9 +84,10 @@ def train_user(bind: Engine | Connection, user_id: int) -> None:
                 ).hexdigest()
                 if fingerprint == preference.training_fingerprint:
                     preference.checked_at = datetime.utcnow()
-                    preference.training_status = (
-                        "ready" if preference.trained_at else "insufficient_data"
-                    )
+                    if preference.training_status != "insufficient_data":
+                        preference.training_status = (
+                            "ready" if preference.trained_at else "insufficient_data"
+                        )
                     session.commit()
                     return
                 preference.training_status = "training"
@@ -98,10 +99,10 @@ def train_user(bind: Engine | Connection, user_id: int) -> None:
                 if preference is None:
                     return
                 preference.checked_at = datetime.utcnow()
+                preference.training_fingerprint = fingerprint
                 if model is None:
                     preference.training_status = "insufficient_data"
                 else:
-                    preference.training_fingerprint = fingerprint
                     # Commit the artifact and timestamp together; readers continue
                     # using the previous model until this transaction succeeds.
                     preference.model_json = model.model_dump_json()

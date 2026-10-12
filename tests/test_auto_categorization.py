@@ -258,6 +258,47 @@ def test_weekly_retraining_only_when_due_enabled_and_history_changed(history):
     assert preference.checked_at > trained_at
 
 
+@pytest.mark.parametrize("previous_model", [False, True])
+def test_insufficient_history_is_remembered_until_it_changes(history, previous_model):
+    session, _, transit = history
+    if previous_model:
+        categorization.train_user(session.get_bind(), 1)
+    session.expire_all()
+    preference = session.get(AutoCategorizationPreference, 1)
+    artifact, trained_at = preference.model_json, preference.trained_at
+    previous_fingerprint = preference.training_fingerprint
+    category = session.get(Category, transit)
+    category.archived_at = datetime.utcnow()
+    session.commit()
+    categorization.train_user(session.get_bind(), 1)
+    session.expire_all()
+    fingerprint = preference.training_fingerprint
+    assert fingerprint is not None and fingerprint != previous_fingerprint
+    assert preference.training_status == "insufficient_data"
+    assert preference.model_json == artifact
+    assert preference.trained_at == trained_at
+
+    due = datetime.utcnow() - timedelta(days=8)
+    preference.checked_at = due
+    session.commit()
+    categorization.train_due_users(session.get_bind())
+    session.expire_all()
+    assert preference.checked_at > due
+    assert preference.training_fingerprint == fingerprint
+    assert preference.training_status == "insufficient_data"
+    assert preference.model_json == artifact
+    assert preference.trained_at == trained_at
+
+    category.archived_at = None
+    preference.checked_at = due
+    session.commit()
+    categorization.train_due_users(session.get_bind())
+    session.expire_all()
+    assert preference.training_fingerprint != fingerprint
+    assert preference.training_status == "ready"
+    assert preference.model_json is not None
+
+
 def test_failed_retraining_keeps_old_model_and_interrupted_job_recovers(
     history, monkeypatch
 ):

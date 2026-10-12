@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ignore completed categorization saves and errors from an old iOS session after switching accounts.
 - Preserve automatic-category confidence in portable exports so unreviewed predictions remain identifiable when migrating data.
 - Bound temporary vocabulary collection during local model training to reduce peak memory for long, diverse transaction titles.
+- Remember insufficient training histories so weekly checks retry only after eligible data changes, while retaining any previous model.
 
 ## [0.5.3] - 2026-10-06
 
