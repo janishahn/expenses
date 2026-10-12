@@ -61,7 +61,7 @@ Rules take care of repeated sorting. Match a title, amount, or transaction type,
 
 For local automatic categorization, enable **Settings → Automatic categorization**
 (**Account → Automatic Categorization** on iOS). It is off by default for each user.
-The recommended confidence threshold is **0.80**; a higher value leaves more
+The recommended minimum confidence is **80%**; a higher value leaves more
 expenses uncategorized. Confidence estimates can still be wrong.
 
 Enabling starts background training using that user's categorized expenses.

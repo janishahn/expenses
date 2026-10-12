@@ -321,9 +321,6 @@ function SettingsPage() {
     <section data-testid="settings-page" className="space-y-4">
       <PageIntro title="Settings" />
       <AISettingsPanel />
-      <AutoCategorizationSettings settings={data.auto_categorization}
-        onSaved={(auto_categorization) => queryClient.setQueryData<SettingsPayload>(["settings"],
-          (previous) => previous ? { ...previous, auto_categorization } : previous)} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] [&>*]:min-w-0">
         <FinancialPanel role="inspector" className="p-5">
@@ -409,13 +406,18 @@ function SettingsPage() {
           </div>
         </FinancialPanel>
 
-        <FinancialPanel className="self-start p-4 xl:grid xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center xl:gap-4">
-          <h2 className="font-head text-xl font-bold tracking-tight">Appearance</h2>
-          <ThemePreferenceControl
-            testId="settings-theme-control"
-            className="mt-3 xl:mt-0"
-          />
-        </FinancialPanel>
+        <div className="grid content-start gap-4">
+          <FinancialPanel className="p-4 xl:grid xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center xl:gap-4">
+            <h2 className="font-head text-xl font-bold tracking-tight">Appearance</h2>
+            <ThemePreferenceControl
+              testId="settings-theme-control"
+              className="mt-3 xl:mt-0"
+            />
+          </FinancialPanel>
+          <AutoCategorizationSettings settings={data.auto_categorization}
+            onSaved={(auto_categorization) => queryClient.setQueryData<SettingsPayload>(["settings"],
+              (previous) => previous ? { ...previous, auto_categorization } : previous)} />
+        </div>
 
         <FinancialPanel role="inspector" className="p-5 lg:col-span-2">
           <h2 className="text-xl font-head font-bold">Balance snapshots</h2>

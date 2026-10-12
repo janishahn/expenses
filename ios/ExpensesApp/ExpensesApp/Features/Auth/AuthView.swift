@@ -256,49 +256,66 @@ struct AuthView: View {
         Section {
             if let settings = model.settings?.autoCategorization {
                 let draft = categorizationDraft ?? settings
-                Toggle("Enable automatic categorization", isOn: Binding(
+                let status = categorizationStatus(settings)
+                Toggle("Categorize new expenses", isOn: Binding(
                     get: { draft.enabled },
                     set: { categorizationDraft = draft; categorizationDraft?.enabled = $0 }
                 ))
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent("Status", value: status.label)
+                    if let detail = status.detail {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if settings.enabled && settings.trainingStatus == "training" {
+                    Button("Refresh status") { Task { await model.loadAccountSettings() } }
+                }
+                // Rounding keeps repeated 0.01 steps on the two-decimal grid.
                 Stepper(value: Binding(
                     get: { draft.threshold },
-                    set: { categorizationDraft = draft; categorizationDraft?.threshold = $0 }
+                    set: { categorizationDraft = draft; categorizationDraft?.threshold = ($0 * 100).rounded() / 100 }
                 ), in: 0...1, step: 0.01) {
-                    LabeledContent("Confidence threshold", value: draft.threshold.formatted(.number.precision(.fractionLength(2))))
+                    LabeledContent("Minimum confidence", value: draft.threshold.formatted(.percent.precision(.fractionLength(0...2))))
                 }
-                Button("Save categorization settings") {
+                Button("Save changes") {
                     Task {
                         if await model.saveAutoCategorization(enabled: draft.enabled, threshold: draft.threshold) {
                             categorizationDraft = nil
-                            statusText = "Categorization settings saved."
+                            statusText = "Automatic categorization saved."
                         }
                     }
                 }
-                .disabled(categorizationDraft == nil || model.isLoading)
-                Text(categorizationStatus(settings))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if settings.enabled && settings.trainingStatus == "training" {
-                    Button("Refresh training status") { Task { await model.loadAccountSettings() } }
-                }
+                .disabled((draft.enabled == settings.enabled && draft.threshold == settings.threshold) || model.isLoading)
             }
         } header: {
             Text("Automatic Categorization")
         } footer: {
-            Text("Learns from your categorized expenses on this server. Your chosen categories and deterministic rules take priority. Recommended threshold: 0.80. Confidence is an estimate; higher values leave more expenses uncategorized.")
+            Text("Learns from your categorized expenses on this server. Your own categories and rules always take priority. A higher minimum leaves more expenses uncategorized; 80% is recommended.")
         }
         .disabled(model.isLoading)
     }
 
-    private func categorizationStatus(_ settings: AutoCategorizationSettings) -> String {
-        guard settings.enabled else { return "Automatic categorization is off." }
-        let previous = settings.trainedAt == nil ? "" : " The previous model is still available."
+    private func categorizationStatus(_ settings: AutoCategorizationSettings) -> (label: String, detail: String?) {
+        guard settings.enabled else { return ("Off", nil) }
+        let previous = settings.trainedAt != nil
+        let history = "60 categorized expenses with titles, in at least two categories"
         switch settings.trainingStatus {
-        case "ready": return "Model ready. Checks for new training data run weekly."
-        case "training": return "Training your model…" + previous
-        case "insufficient_data": return "Training needs at least 60 categorized expenses across two categories, with titles." + previous
-        case "failed": return "Training failed. It will retry at the next weekly check." + previous
-        default: return "Enable to train from your categorized expenses."
+        case "ready":
+            return ("Active", nil)
+        case "training":
+            return (previous ? "Active · retraining…" : "Training…", nil)
+        case "insufficient_data":
+            return previous
+                ? ("Active · using previous model", "Not enough history to retrain. Needs \(history).")
+                : ("Not enough history", "Needs \(history).")
+        case "failed":
+            return previous
+                ? ("Active · using previous model", "Retraining failed. It retries at the next weekly check.")
+                : ("Training failed", "It retries at the next weekly check.")
+        default:
+            return ("Waiting for first training", nil)
         }
     }
 

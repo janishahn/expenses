@@ -80,12 +80,17 @@ export async function exerciseAutoCategorization(page: Page): Promise<void> {
     }
     await page.goto("/settings")
     const panel = page.getByTestId("auto-categorization-settings")
-    const toggle = panel.getByRole("checkbox", { name: "Enable automatic categorization" })
+    const toggle = panel.getByRole("switch", { name: "Automatic categorization" })
+    const threshold = panel.getByLabel("Minimum confidence")
+    const save = panel.getByRole("button", { name: "Save", exact: true })
     await expect(toggle).not.toBeChecked()
-    await expect(panel.getByLabel("Confidence threshold")).toHaveValue("0.8")
+    await expect(threshold).toHaveValue("80")
+    await expect(save).toBeDisabled()
     await toggle.check()
-    await panel.getByRole("button", { name: "Save categorization settings" }).click()
-    await expect(panel.getByText("Model ready.", { exact: false })).toBeVisible()
+    await expect(panel.getByText("Unsaved changes")).toBeVisible()
+    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
+    await save.click()
+    await expect(panel.getByText("Active", { exact: true })).toBeVisible()
     const response = await request.post("/api/transactions", {
       headers, data: {
         date: "2026-10-11", occurred_at: "2026-10-11T12:00:00",
@@ -95,17 +100,33 @@ export async function exerciseAutoCategorization(page: Page): Promise<void> {
     expect(response.ok()).toBeTruthy()
     const detail = await request.get(`/api/transactions/${(await response.json()).id}`)
     expect((await detail.json()).category_id).toBe(categories[0])
-    await panel.getByLabel("Confidence threshold").fill("0.9")
-    await panel.getByRole("button", { name: "Save categorization settings" }).click()
-    await expect(panel.getByText("Categorization settings saved.")).toBeVisible()
+    await threshold.fill("101")
+    await save.click()
+    await expect(panel.getByText("Enter a whole number from 0 to 100.")).toBeVisible()
+    await expect(threshold).toBeFocused()
+    await page.route("**/api/settings/auto-categorization", (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Settings are temporarily unavailable." }),
+    }), { times: 1 })
+    await threshold.fill("90")
+    await save.click()
+    await expect(panel.getByRole("alert")).toHaveText("Settings are temporarily unavailable.")
+    await expect(threshold).toHaveValue("90")
+    await expect(toggle).toBeChecked()
+    await save.click()
+    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
+    const stored = await (await request.get("/api/settings")).json()
+    expect(stored.auto_categorization.threshold).toBe(0.9)
     await page.reload()
     await expect(toggle).toBeChecked()
-    await expect(panel.getByLabel("Confidence threshold")).toHaveValue("0.9")
+    await expect(threshold).toHaveValue("90")
     await toggle.uncheck()
-    await panel.getByRole("button", { name: "Save categorization settings" }).click()
-    await expect(panel.getByText("Automatic categorization is off.")).toBeVisible()
+    await save.click()
+    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
     await page.reload()
     await expect(toggle).not.toBeChecked()
+    await expect(threshold).toHaveValue("90")
   } finally {
     await request.dispose()
   }

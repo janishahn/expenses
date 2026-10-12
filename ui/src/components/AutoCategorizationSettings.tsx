@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useId, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { InfoIcon } from "@phosphor-icons/react/Info"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { FinancialPanel } from "./product/ProductSurfaces"
 import { AppButton } from "./ui/product-button"
-import { AppFieldLabel, AppInput } from "./ui/product-fields"
+import { AppInput, AppSwitch } from "./ui/product-fields"
 
 export type AutoCategorizationSettingsData = {
   enabled: boolean
@@ -12,18 +13,62 @@ export type AutoCategorizationSettingsData = {
   trained_at: string | null
 }
 
+// toPrecision drops float noise such as 0.07 * 100 = 7.000000000000001 without rounding stored values.
+const toPercent = (threshold: number) => String(Number((threshold * 100).toPrecision(12)))
+
+const historyRequirement = "60 categorized expenses with titles, in at least two categories"
+
+function describeStatus({ enabled, training_status, trained_at }: AutoCategorizationSettingsData) {
+  if (!enabled) return { label: "Off", dot: "bg-border-hi" }
+  const previous = trained_at !== null
+  switch (training_status) {
+    case "ready":
+      return { label: "Active", dot: "bg-semantic-green" }
+    case "training":
+      return previous
+        ? { label: "Active · retraining…", dot: "bg-semantic-green" }
+        : { label: "Training…", dot: "bg-accent" }
+    case "insufficient_data":
+      return previous
+        ? { label: "Active · using previous model", dot: "bg-[rgb(var(--warning))]",
+            detail: `Not enough history to retrain. Needs ${historyRequirement}.` }
+        : { label: "Not enough history", dot: "bg-[rgb(var(--warning))]",
+            detail: `Needs ${historyRequirement}.` }
+    case "failed":
+      return previous
+        ? { label: "Active · using previous model", dot: "bg-[rgb(var(--warning))]",
+            detail: "Retraining failed. It retries at the next weekly check." }
+        : { label: "Training failed", dot: "bg-semantic-red",
+            detail: "It retries at the next weekly check." }
+    case "untrained":
+      return { label: "Waiting for first training", dot: "bg-accent" }
+  }
+}
+
 export default function AutoCategorizationSettings({ settings, onSaved }: {
   settings: AutoCategorizationSettingsData
   onSaved: (settings: AutoCategorizationSettingsData) => void
 }) {
-  const [draft, setDraft] = useState<{ enabled: boolean; threshold: string } | null>(null)
+  const id = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [draft, setDraft] = useState<{ enabled: boolean; percent: string } | null>(null)
+  const [invalid, setInvalid] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const savedPercent = toPercent(settings.threshold)
   const enabled = draft?.enabled ?? settings.enabled
-  const threshold = draft?.threshold ?? String(settings.threshold)
+  const percent = draft?.percent ?? savedPercent
+  // An untouched field sends the stored threshold unchanged; edits accept whole percentages.
+  const thresholdChanged = percent !== savedPercent
+  const valid = !thresholdChanged || (/^\d{1,3}$/.test(percent) && Number(percent) <= 100)
+  const dirty = enabled !== settings.enabled || thresholdChanged
   const mutation = useMutation({
     mutationFn: () => apiFetch<AutoCategorizationSettingsData>("/api/settings/auto-categorization", {
       method: "PUT",
-      body: JSON.stringify({ enabled, threshold: Number(threshold) }),
+      body: JSON.stringify({
+        enabled,
+        threshold: thresholdChanged ? Number(percent) / 100 : settings.threshold,
+      }),
     }),
     onSuccess: (result) => {
       onSaved(result)
@@ -31,42 +76,120 @@ export default function AutoCategorizationSettings({ settings, onSaved }: {
       setSaved(true)
     },
   })
-  const status = {
-    untrained: "Enable to train from your categorized expenses.",
-    training: settings.trained_at ? "Updating your model. The previous model is still available." : "Training your model…",
-    ready: "Model ready. Checks for new training data run weekly.",
-    insufficient_data: "Training needs at least 60 categorized expenses across two categories, with titles.",
-    failed: "Training failed. It will retry at the next weekly check.",
-  }[settings.training_status]
+  const change = (next: { enabled: boolean; percent: string }) => {
+    setDraft(next)
+    setSaved(false)
+    setInvalid(false)
+    mutation.reset()
+  }
+  const status = describeStatus(settings)
+  const feedback = mutation.error || mutation.isPending ? "" : dirty ? "Unsaved changes" : saved ? "Saved" : ""
 
   return (
     <FinancialPanel className="p-5" data-testid="auto-categorization-settings">
-      <h2 className="font-head text-xl font-bold">Automatic categorization</h2>
-      <p className="mt-2 text-sm text-muted">
-        Learn from your categorized expenses on this server. Your chosen categories and deterministic rules always take priority.
-      </p>
-      <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}>
-        <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
-          <input type="checkbox" checked={enabled} disabled={mutation.isPending}
-            onChange={(event) => { setDraft({ enabled: event.target.checked, threshold }); setSaved(false) }} />
-          Enable automatic categorization
-        </label>
-        <AppFieldLabel>
-          Confidence threshold
-          <AppInput type="number" min="0" max="1" step="0.01" required value={threshold}
-            disabled={mutation.isPending} className="mt-1 max-w-40" inputMode="decimal"
-            onChange={(event) => { setDraft({ enabled, threshold: event.target.value }); setSaved(false) }} />
-        </AppFieldLabel>
-        <p className="text-sm text-muted">Recommended: 0.80. Higher values leave more expenses uncategorized. Confidence is an estimate.</p>
-        <AppButton type="submit" disabled={mutation.isPending || draft === null}>
-          {mutation.isPending ? "Saving…" : "Save categorization settings"}
-        </AppButton>
-        {mutation.error && <p role="alert" className="text-sm text-semantic-red">{getApiErrorMessage(mutation.error, "Unable to save settings.")}</p>}
-        {saved && <p role="status" className="text-sm text-semantic-green">Categorization settings saved.</p>}
+      <form
+        noValidate
+        aria-labelledby={`${id}-title`}
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!valid) {
+            setInvalid(true)
+            inputRef.current?.focus()
+            return
+          }
+          mutation.mutate()
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-0.5">
+              <h2 id={`${id}-title`} className="font-head text-xl font-bold">Automatic categorization</h2>
+              <button
+                type="button"
+                aria-label="How automatic categorization works"
+                aria-expanded={helpOpen}
+                aria-controls={`${id}-help`}
+                onClick={() => setHelpOpen((open) => !open)}
+                className="-my-2 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:text-text aria-expanded:text-text"
+              >
+                <InfoIcon aria-hidden="true" className="size-5" />
+              </button>
+            </div>
+            <div aria-live="polite" className="text-sm text-muted">
+              <p className="flex items-center gap-2">
+                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${status.dot}`} />
+                {status.label}
+              </p>
+              {status.detail && <p className="mt-1">{status.detail}</p>}
+            </div>
+          </div>
+          <AppSwitch
+            className="mt-2"
+            aria-labelledby={`${id}-title`}
+            checked={enabled}
+            disabled={mutation.isPending}
+            onCheckedChange={(checked) => change({ enabled: checked, percent })}
+          />
+        </div>
+
+        <div id={`${id}-help`} hidden={!helpOpen} className="mt-3 max-w-prose space-y-2 text-sm text-muted">
+          <p>
+            Fills in a category for new expenses that are still uncategorized after your rules, when the model
+            is at least as confident as your minimum. A higher minimum leaves more expenses uncategorized.
+            Categories you choose are never changed.
+          </p>
+          <p>
+            Training runs on this server when you turn it on, then weekly when your history changes. It needs{" "}
+            {historyRequirement}.
+          </p>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-4">
+          <div className="min-w-0">
+            <label htmlFor={`${id}-threshold`} className="text-sm font-semibold">
+              Minimum confidence<span className="sr-only"> in percent</span>
+            </label>
+            <p id={`${id}-hint`} className="text-xs text-muted">Recommended: 80%</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <AppInput
+              ref={inputRef}
+              id={`${id}-threshold`}
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              inputMode="numeric"
+              value={percent}
+              readOnly={mutation.isPending}
+              aria-invalid={invalid}
+              aria-describedby={invalid ? `${id}-hint ${id}-error` : `${id}-hint`}
+              className="w-20 text-right tabular-nums"
+              onChange={(event) => change({ enabled, percent: event.target.value })}
+            />
+            <span aria-hidden="true" className="text-sm text-muted">%</span>
+          </div>
+        </div>
+        {invalid && (
+          <p id={`${id}-error`} role="alert" className="mt-2 text-sm text-semantic-red">
+            Enter a whole number from 0 to 100.
+          </p>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <AppButton type="submit" disabled={mutation.isPending || !dirty}>
+            {mutation.isPending ? "Saving…" : "Save"}
+          </AppButton>
+          <p role="status" className={`text-sm ${saved && !dirty ? "font-semibold text-semantic-green" : "text-muted"}`}>
+            {feedback}
+          </p>
+          {mutation.error && (
+            <p role="alert" className="basis-full text-sm text-semantic-red">
+              {getApiErrorMessage(mutation.error, "Unable to save automatic categorization.")}
+            </p>
+          )}
+        </div>
       </form>
-      <p className="mt-3 text-sm text-muted" aria-live="polite">{settings.enabled ? status : "Automatic categorization is off."}</p>
-      {settings.enabled && settings.trained_at && settings.training_status !== "ready" && settings.training_status !== "training"
-        && <p className="mt-1 text-sm text-muted">The previous model is still available.</p>}
     </FinancialPanel>
   )
 }

@@ -3,7 +3,7 @@ import { ensureElevatedAdmin } from "./auth-helpers"
 import { exerciseAutoCategorization } from "./helpers"
 
 test.describe("Settings and administration (mobile)", () => {
-  test("enables local categorization, trains, and saves its threshold", async ({ page }) => {
+  test("enables local categorization, trains, and saves a validated threshold after a failed save", async ({ page }) => {
     await exerciseAutoCategorization(page)
   })
 
