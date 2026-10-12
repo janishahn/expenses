@@ -118,14 +118,23 @@ class CategoryModel(BaseModel):
 
 def fit_neighbors(rows: list[Example], classes: list[int]) -> CategoryModel:
     term_frequency: Counter[str] = Counter()
-    document_frequency: Counter[str] = Counter()
     for row in rows:
-        counts = grams(row.title)
-        term_frequency.update(counts)
-        document_frequency.update(counts.keys())
+        term_frequency.update(grams(row.title))
+        if len(term_frequency) > 2 * MAX_TERMS:
+            # Bound temporary vocabulary too; later recurring terms can re-enter.
+            retained = sorted(
+                term_frequency, key=lambda term: (-term_frequency[term], term)
+            )[:MAX_TERMS]
+            term_frequency = Counter({term: term_frequency[term] for term in retained})
     vocabulary = sorted(term_frequency, key=lambda term: (-term_frequency[term], term))[
         :MAX_TERMS
     ]
+    term_frequency.clear()
+    document_frequency = Counter({term: 0 for term in vocabulary})
+    for row in rows:
+        document_frequency.update(
+            term for term in grams(row.title) if term in document_frequency
+        )
     idf = {
         term: math.log((1 + len(rows)) / (1 + document_frequency[term])) + 1
         for term in vocabulary

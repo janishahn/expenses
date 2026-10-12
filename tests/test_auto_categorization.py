@@ -1,4 +1,8 @@
 from datetime import date, datetime, timedelta
+import math
+import random
+import string
+import tracemalloc
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -22,6 +26,7 @@ from expenses.services import (
     TransactionService,
 )
 from expenses.services import auto_categorization as categorization
+from expenses.services import category_model
 from expenses.services.category_model import Example, load_model, train
 
 
@@ -301,6 +306,32 @@ def test_calibration_uses_later_examples_and_optional_location():
     noisy_model = train(noisy)
     assert noisy_model is not None
     assert noisy_model.temperature > model.temperature
+
+
+def test_vocabulary_collection_stays_bounded_with_diverse_titles(monkeypatch):
+    monkeypatch.setattr(category_model, "MAX_TERMS", 128)
+    rng = random.Random(60)
+    bakery = Example("Corner bäckerei", 500, None, None, 1)
+    rows = (
+        [bakery]
+        + [
+            Example(
+                "".join(rng.choices(string.ascii_lowercase, k=256)), 500, None, None, 2
+            )
+            for _ in range(160)
+        ]
+        + [bakery] * 10
+    )
+    tracemalloc.start()
+    try:
+        model = category_model.fit_neighbors(rows, [1, 2])
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 5 * 1024 * 1024
+    assert len(model.terms) <= 128
+    assert model.predict(bakery).category_id == 1
+    assert model.terms["bäc"][0] == pytest.approx(math.log((1 + len(rows)) / 12) + 1)
 
 
 def test_settings_enable_trains_in_background_and_is_user_scoped(
