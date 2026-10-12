@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Per-user local automatic categorization in web and iOS settings, off by default with an adjustable minimum confidence (default 80%). Settings show training progress and issues separately from unsaved changes; the toggle alone indicates when categorization is active. Enabling trains from categorized history; enabled users are checked weekly for changed training data.
+- New expenses use calibrated title-neighbor predictions only after manual categories and deterministic rules. Unreviewed predictions are excluded from training, and the previous model remains available during retraining.
+- Choose minimum confidence from 0–100% in 1% steps using a number field with up/down arrows on the web or a compact percentage row that opens a native wheel picker in an iOS bottom sheet.
+
+### Fixed
+- Ingest audit logs identify automatic category assignments instead of reporting the original category resolution.
+- Discard unsaved iOS categorization settings and dismiss the confidence picker when the signed-in account changes.
+- Ignore completed categorization saves and errors from an old iOS session after switching accounts.
+- Preserve automatic-category confidence in portable exports so unreviewed predictions remain identifiable when migrating data.
+- Bound temporary vocabulary collection during local model training to reduce peak memory for long, diverse transaction titles.
+- Remember insufficient training histories so weekly checks retry only after eligible data changes, while retaining any previous model.
+
 ## [0.5.3] - 2026-10-06
 
 ### Added

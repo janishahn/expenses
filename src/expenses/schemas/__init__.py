@@ -1265,10 +1265,25 @@ class IngestTokenMetadataOut(BaseModel):
     last_used_at: Optional[datetime] = None
 
 
+class AutoCategorizationSettingsIn(BaseModel):
+    enabled: bool = False
+    threshold: float = Field(default=0.8, ge=0, le=1, allow_inf_nan=False)
+
+
+class AutoCategorizationSettingsOut(AutoCategorizationSettingsIn):
+    training_status: Literal[
+        "untrained", "training", "ready", "insufficient_data", "failed"
+    ] = "untrained"
+    trained_at: datetime | None = None
+
+
 class SettingsResponseOut(BaseModel):
     current_balance: int
     balance_anchors: list[BalanceAnchorOut]
     ingest_token: Optional[IngestTokenMetadataOut] = None
+    auto_categorization: AutoCategorizationSettingsOut = Field(
+        default_factory=AutoCategorizationSettingsOut
+    )
 
 
 class IngestTokenCreateResponseOut(BaseModel):

@@ -1,4 +1,4 @@
-import { request as playwrightRequest } from "@playwright/test"
+import { expect, request as playwrightRequest } from "@playwright/test"
 import type { APIRequestContext, Page } from "@playwright/test"
 import { loginWith } from "./auth-helpers"
 
@@ -53,6 +53,85 @@ export async function getCsrfToken(request: APIRequestContext): Promise<string> 
   const response = await request.get("/api/csrf")
   const payload = (await response.json()) as { token: string }
   return payload.token
+}
+
+export async function exerciseAutoCategorization(page: Page): Promise<void> {
+  await page.goto("/settings")
+  const { request, csrfToken } = await loginAsIsolatedUser(page)
+  const headers = { "X-CSRF-Token": csrfToken }
+  try {
+    const categories: number[] = []
+    for (const name of ["Bakery", "Transit"]) {
+      const response = await request.post("/api/categories", {
+        headers, data: { name, type: "expense", order: 0 },
+      })
+      expect(response.ok()).toBeTruthy()
+      categories.push((await response.json()).id)
+    }
+    for (let i = 0; i < 90; i++) {
+      const response = await request.post("/api/transactions", {
+        headers, data: {
+          date: "2026-01-01", occurred_at: "2026-01-01T12:00:00",
+          type: "expense", amount_cents: 500, category_id: categories[i % 2],
+          title: i % 2 === 0 ? "Corner bakery" : "City metro", tags: [],
+        },
+      })
+      expect(response.ok()).toBeTruthy()
+    }
+    await page.goto("/settings")
+    const panel = page.getByTestId("auto-categorization-settings")
+    const toggle = panel.getByRole("switch", { name: "Automatic categorization" })
+    const threshold = panel.getByLabel("Minimum confidence")
+    const save = panel.getByRole("button", { name: "Save", exact: true })
+    await expect(toggle).not.toBeChecked()
+    await expect(threshold).toHaveValue("80")
+    await expect(save).toBeDisabled()
+    await toggle.check()
+    await expect(panel.getByText("Unsaved changes")).toBeVisible()
+    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
+    await save.click()
+    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
+    await expect(panel.getByText("Training…", { exact: true })).toBeHidden()
+    await expect(panel.getByText("Active", { exact: true })).toHaveCount(0)
+    const response = await request.post("/api/transactions", {
+      headers, data: {
+        date: "2026-10-11", occurred_at: "2026-10-11T12:00:00",
+        type: "expense", amount_cents: 500, title: "Corner bakery", tags: [],
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+    const detail = await request.get(`/api/transactions/${(await response.json()).id}`)
+    expect((await detail.json()).category_id).toBe(categories[0])
+    await threshold.fill("101")
+    await save.click()
+    await expect(panel.getByText("Enter a whole number from 0 to 100.")).toBeVisible()
+    await expect(threshold).toBeFocused()
+    await page.route("**/api/settings/auto-categorization", (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Settings are temporarily unavailable." }),
+    }), { times: 1 })
+    await threshold.fill("90")
+    await save.click()
+    await expect(panel.getByRole("alert")).toHaveText("Settings are temporarily unavailable.")
+    await expect(threshold).toHaveValue("90")
+    await expect(toggle).toBeChecked()
+    await save.click()
+    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
+    const stored = await (await request.get("/api/settings")).json()
+    expect(stored.auto_categorization.threshold).toBe(0.9)
+    await page.reload()
+    await expect(toggle).toBeChecked()
+    await expect(threshold).toHaveValue("90")
+    await toggle.uncheck()
+    await save.click()
+    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(toggle).not.toBeChecked()
+    await expect(threshold).toHaveValue("90")
+  } finally {
+    await request.dispose()
+  }
 }
 
 // Signs the browser page in as a brand-new account so tests can assert exact

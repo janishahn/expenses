@@ -1,14 +1,23 @@
 import { expect, test } from "./fixtures"
 import {
   ORDINARY_USER,
+  ensureBootstrap,
   ensureOrdinaryUser,
   loginWith,
 } from "./auth-helpers"
-import { getCsrfToken } from "./helpers"
+import { exerciseAutoCategorization, getCsrfToken } from "./helpers"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
 test.describe.serial("Settings and ordinary-user import flows", () => {
+  test("enables local categorization, trains, and saves a validated threshold after a failed save", async ({
+    page,
+    request,
+  }) => {
+    await ensureBootstrap(request)
+    await exerciseAutoCategorization(page)
+  })
+
   test("settings deep-link is guarded before protected content renders", async ({ page }) => {
     await page.goto("/settings")
     await expect(page).toHaveURL(/\/(setup|login)\?redirect=/)

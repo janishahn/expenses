@@ -105,6 +105,10 @@ struct ExpensesAPIClient {
         try await request(path: "/api/settings", bearerToken: token)
     }
 
+    func saveAutoCategorization(_ body: AutoCategorizationUpdate, token: String) async throws -> AutoCategorizationSettings {
+        try await request(path: "/api/settings/auto-categorization", method: "PUT", bearerToken: token, body: body)
+    }
+
     func createOrRotateIngestToken(token: String) async throws -> IngestTokenCreateResponse {
         try await request(path: "/api/settings/ingest-token", method: "POST", bearerToken: token)
     }

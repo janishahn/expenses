@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -57,6 +58,7 @@ from expenses.auth import (
     verify_password,
 )
 from expenses.ai.client import LLMDisabledError
+from expenses.services.auto_categorization import settings_for, train_user
 from expenses.ai.schemas import (
     RuleSuggestionOut,
     TransactionSuggestionOut,
@@ -84,6 +86,7 @@ from expenses.db.session import SessionLocal
 from expenses.exporters import PortableExportError, PortableExportService
 from expenses.importers.legacy_sqlite import LegacySQLiteImportService
 from expenses.db.models import (
+    AutoCategorizationPreference,
     Category,
     LLMJob,
     MobileAuthSession,
@@ -174,6 +177,8 @@ from expenses.schemas import (
     RuleToggleIn,
     StatusOut,
     SettingsResponseOut,
+    AutoCategorizationSettingsIn,
+    AutoCategorizationSettingsOut,
     IngestTokenCreateResponseOut,
     TemplateReorderIn,
     TagIn,
@@ -1129,6 +1134,7 @@ def _user_settings_payload(db: Session, user_id: int) -> dict[str, object]:
     ingest_token = get_user_ingest_token(db, user_id)
     return {
         "current_balance": current_balance,
+        "auto_categorization": settings_for(db, user_id),
         "balance_anchors": [
             _serialize_balance_anchor(anchor) for anchor in balance_anchors
         ],
@@ -3008,6 +3014,32 @@ def api_settings(request: Request, db: Session = Depends(get_db)):
     return _user_settings_payload(db, user_id)
 
 
+@router.put(
+    "/api/settings/auto-categorization", response_model=AutoCategorizationSettingsOut
+)
+def api_update_auto_categorization(
+    data: AutoCategorizationSettingsIn,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    preference = db.get(AutoCategorizationPreference, user_id)
+    if preference is None:
+        preference = AutoCategorizationPreference(user_id=user_id, enabled=False)
+        db.add(preference)
+    first_enable = data.enabled and not preference.enabled
+    preference.enabled = data.enabled
+    preference.threshold = data.threshold
+    if first_enable:
+        preference.training_status = "training"
+    db.commit()
+    if first_enable:
+        background_tasks.add_task(train_user, db.get_bind(), user_id)
+    return settings_for(db, user_id)
+
+
 @router.post(
     "/api/settings/ingest-token",
     response_model=IngestTokenCreateResponseOut,
@@ -4651,6 +4683,7 @@ def api_transactions_bulk_apply(
                 )
             if txn.category_id != target_category.id:
                 txn.category_id = target_category.id
+                txn.auto_category_confidence = None
                 counts["category_changed"] += 1
 
         if not tag_patch:

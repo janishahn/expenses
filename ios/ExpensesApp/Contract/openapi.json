@@ -658,6 +658,66 @@
         "title": "AuthUserOut",
         "type": "object"
       },
+      "AutoCategorizationSettingsIn": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "threshold": {
+            "default": 0.8,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "title": "AutoCategorizationSettingsIn",
+        "type": "object"
+      },
+      "AutoCategorizationSettingsOut": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "threshold": {
+            "default": 0.8,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "type": "number"
+          },
+          "trained_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trained At"
+          },
+          "training_status": {
+            "default": "untrained",
+            "enum": [
+              "untrained",
+              "training",
+              "ready",
+              "insufficient_data",
+              "failed"
+            ],
+            "title": "Training Status",
+            "type": "string"
+          }
+        },
+        "title": "AutoCategorizationSettingsOut",
+        "type": "object"
+      },
       "BalanceAnchorIn": {
         "properties": {
           "as_of_at": {
@@ -7252,6 +7312,9 @@
       },
       "SettingsResponseOut": {
         "properties": {
+          "auto_categorization": {
+            "$ref": "#/components/schemas/AutoCategorizationSettingsOut"
+          },
           "balance_anchors": {
             "items": {
               "$ref": "#/components/schemas/BalanceAnchorOut"
@@ -12169,6 +12232,44 @@
           }
         },
         "summary": "Api Settings"
+      }
+    },
+    "/api/settings/auto-categorization": {
+      "put": {
+        "operationId": "api_update_auto_categorization_api_settings_auto_categorization_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoCategorizationSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCategorizationSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Update Auto Categorization"
       }
     },
     "/api/settings/balance-anchors": {
