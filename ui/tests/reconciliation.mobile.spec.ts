@@ -22,7 +22,7 @@ test("reconciles a CSV and creates an edited transaction on mobile", async ({ pa
   await row.getByRole("button", { name: "Create new transaction" }).click()
   const dialog = page.getByRole("dialog", { name: "Create transaction" })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel("Title").fill(`Mobile lunch ${suffix}`)
+  await dialog.getByLabel("Title", { exact: true }).fill(`Mobile lunch ${suffix}`)
   await dialog.getByLabel("Transaction date").fill("2026-05-06")
   await dialog.getByLabel("Description (optional)").fill("Lunch with friends")
   await dialog.getByRole("button", { name: "Create and match" }).click()

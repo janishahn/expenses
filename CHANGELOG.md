@@ -7,12 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Added
 - Per-user local automatic categorization in web and iOS settings, off by default with an adjustable minimum confidence (default 80%). Settings show training progress and issues separately from unsaved changes; the toggle alone indicates when categorization is active. Enabling trains from categorized history; enabled users are checked weekly for changed training data.
 - New expenses use calibrated title-neighbor predictions only after manual categories and deterministic rules. Unreviewed predictions are excluded from training, and the previous model remains available during retraining.
 - Choose minimum confidence from 0–100% in 1% steps using a number field with up/down arrows on the web or a compact percentage row that opens a native wheel picker in an iOS bottom sheet.
 
 ### Fixed
+- Restore focus to the mobile Add button after dismissing its dialog in WebKit.
 - Ingest audit logs identify automatic category assignments instead of reporting the original category resolution.
 - Discard unsaved iOS categorization settings and dismiss the confidence picker when the signed-in account changes.
 - Ignore completed categorization saves and errors from an old iOS session after switching accounts.
@@ -387,7 +390,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/janishahn/expenses/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/janishahn/expenses/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/janishahn/expenses/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/janishahn/expenses/compare/v0.5.0...v0.5.1

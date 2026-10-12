@@ -131,6 +131,15 @@ test.describe("Summary and report surfaces (mobile)", () => {
       title: `Mobile dashboard transaction ${suffix}`,
       tags: [tagName],
     })
+    await createTransaction(request, csrfToken, {
+      date: today,
+      occurred_at: `${today}T13:00:00`,
+      type: "expense",
+      amount_cents: 1_200,
+      category_id: categoryId,
+      title: `Mobile dashboard untagged transaction ${suffix}`,
+      tags: [],
+    })
 
     await page.goto("/")
     await page.getByRole("button", { name: "Filters", exact: true }).click()
