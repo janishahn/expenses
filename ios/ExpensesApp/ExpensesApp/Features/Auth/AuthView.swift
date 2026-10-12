@@ -272,13 +272,19 @@ struct AuthView: View {
                 if settings.enabled && settings.trainingStatus == "training" {
                     Button("Refresh status") { Task { await model.loadAccountSettings() } }
                 }
-                // Rounding keeps repeated 0.01 steps on the two-decimal grid.
-                Stepper(value: Binding(
+                Picker("Minimum confidence", selection: Binding(
                     get: { draft.threshold },
-                    set: { categorizationDraft = draft; categorizationDraft?.threshold = ($0 * 100).rounded() / 100 }
-                ), in: 0...1, step: 0.01) {
-                    LabeledContent("Minimum confidence", value: draft.threshold.formatted(.percent.precision(.fractionLength(0...2))))
+                    set: { categorizationDraft = draft; categorizationDraft?.threshold = $0 }
+                )) {
+                    if settings.threshold != (settings.threshold * 100).rounded() / 100 {
+                        Text(settings.threshold.formatted(.percent.precision(.fractionLength(0...2))))
+                            .tag(settings.threshold)
+                    }
+                    ForEach(0...100, id: \.self) { percent in
+                        Text("\(percent)%").tag(Double(percent) / 100)
+                    }
                 }
+                .pickerStyle(.navigationLink)
                 Button("Save changes") {
                     Task {
                         if await model.saveAutoCategorization(enabled: draft.enabled, threshold: draft.threshold) {
