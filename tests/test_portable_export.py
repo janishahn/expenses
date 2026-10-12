@@ -221,6 +221,9 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                     import_hash="a" * 64,
                     matched_transaction_id=expense.id,
                     reviewed_at=datetime(2026, 1, 14, 8, 0),
+                    resolution="ignored",
+                    resolved_at=datetime(2026, 1, 14, 8, 0),
+                    ignore_reason="Duplicate of a card slip",
                 ),
                 TransactionClassificationEvent(
                     user_id=1,
@@ -316,6 +319,11 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                 row for row in transactions if row["id"] == reimbursement.id
             )
             assert reimbursement_export["auto_category_confidence"] is None
+
+            bank_rows = _read_ndjson(archive, "data/bank_statement_rows.ndjson")
+            assert bank_rows[0]["resolution"] == "ignored"
+            assert bank_rows[0]["resolved_at"] == "2026-01-14T08:00:00"
+            assert bank_rows[0]["ignore_reason"] == "Duplicate of a card slip"
 
             tags = _read_ndjson(archive, "data/tags.ndjson")
             assert tags == [

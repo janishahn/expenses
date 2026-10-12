@@ -18,10 +18,20 @@ from expenses.db.models import (
     TransactionType,
 )
 from expenses.schemas import AutoCategorizationSettingsOut
-from expenses.services.category_model import MAX_HISTORY, Example, load_model, train
+from expenses.services.category_model import (
+    MAX_HISTORY,
+    CategoryModel,
+    Example,
+    Prediction,
+    load_model,
+    train,
+)
 
 logger = logging.getLogger(__name__)
 _training_lock = Lock()
+MODEL_CACHE_SIZE = 4
+# Parsed models by user, keyed by training time, so reads do not reparse the JSON.
+_model_cache: dict[int, tuple[datetime, CategoryModel]] = {}
 
 
 def settings_for(session: Session, user_id: int) -> AutoCategorizationSettingsOut:
@@ -134,22 +144,22 @@ def train_due_users(bind: Engine | Connection) -> None:
         train_user(bind, user_id)
 
 
-def apply_prediction(session: Session, txn: Transaction) -> bool:
+def eligible_prediction(
+    session: Session, txn: Transaction, model: CategoryModel
+) -> Prediction | None:
+    """Predict a category for a still-uncategorized expense, or None if ineligible."""
     if (
         txn.type != TransactionType.expense
         or txn.origin_rule_id
         or not (txn.title or "").strip()
     ):
-        return False
+        return None
     # RuleService can change category_id without refreshing the relationship.
     category = session.get(Category, txn.category_id)
     if category is None or category.name.lower() != "uncategorized":
-        return False
-    preference = session.get(AutoCategorizationPreference, txn.user_id)
-    if preference is None or not preference.enabled or not preference.model_json:
-        return False
+        return None
     try:
-        prediction = load_model(preference.model_json).predict(
+        prediction = model.predict(
             Example(
                 title=txn.title,
                 amount_cents=txn.amount_cents,
@@ -160,9 +170,9 @@ def apply_prediction(session: Session, txn: Transaction) -> bool:
         )
     except (ValueError, ArithmeticError, IndexError, KeyError):
         logger.exception("Local category prediction failed for user %s", txn.user_id)
-        return False
-    if not prediction.eligible or prediction.confidence < preference.threshold:
-        return False
+        return None
+    if not prediction.eligible:
+        return None
     predicted = session.get(Category, prediction.category_id)
     if (
         predicted is None
@@ -171,7 +181,54 @@ def apply_prediction(session: Session, txn: Transaction) -> bool:
         or predicted.archived_at is not None
         or predicted.name.lower() == "uncategorized"
     ):
+        return None
+    return prediction
+
+
+def apply_prediction(session: Session, txn: Transaction) -> bool:
+    preference = session.get(AutoCategorizationPreference, txn.user_id)
+    if preference is None or not preference.enabled or not preference.model_json:
         return False
-    txn.category = predicted
+    try:
+        model = load_model(preference.model_json)
+    except ValueError:
+        logger.exception("Local category model is invalid for user %s", txn.user_id)
+        return False
+    prediction = eligible_prediction(session, txn, model)
+    if prediction is None or prediction.confidence < preference.threshold:
+        return False
+    txn.category = session.get(Category, prediction.category_id)
     txn.auto_category_confidence = prediction.confidence
     return True
+
+
+def suggestions_for(
+    session: Session, user_id: int, transactions: list[Transaction]
+) -> dict[int, Prediction]:
+    """Local-model suggestions for the given transactions, keyed by transaction id."""
+    preference = session.get(AutoCategorizationPreference, user_id)
+    if preference is None or not preference.enabled or preference.trained_at is None:
+        return {}
+    cached = _model_cache.get(user_id)
+    if cached is None or cached[0] != preference.trained_at:
+        if not preference.model_json:
+            return {}
+        try:
+            model = load_model(preference.model_json)
+        except ValueError:
+            logger.exception("Local category model is invalid for user %s", user_id)
+            return {}
+        _model_cache.pop(user_id, None)
+        _model_cache[user_id] = (preference.trained_at, model)
+        while len(_model_cache) > MODEL_CACHE_SIZE:
+            del _model_cache[next(iter(_model_cache))]
+    model = _model_cache[user_id][1]
+    suggestions: dict[int, Prediction] = {}
+    for txn in transactions:
+        prediction = eligible_prediction(session, txn, model)
+        if (
+            prediction is not None
+            and prediction.category_id != txn.category_suggestion_dismissed_id
+        ):
+            suggestions[txn.id] = prediction
+    return suggestions

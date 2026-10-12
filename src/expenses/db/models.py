@@ -255,7 +255,9 @@ class Category(Base, TimestampMixin):
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     transactions: Mapped[list["Transaction"]] = relationship(
-        "Transaction", back_populates="category"
+        "Transaction",
+        back_populates="category",
+        foreign_keys="Transaction.category_id",
     )
     recurring_rules: Mapped[list["RecurringRule"]] = relationship(
         "RecurringRule", back_populates="category"
@@ -335,6 +337,9 @@ class Transaction(Base, TimestampMixin):
         ForeignKey("categories.id"), nullable=False
     )
     auto_category_confidence: Mapped[Optional[float]] = mapped_column(Float)
+    category_suggestion_dismissed_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
     title: Mapped[Optional[str]] = mapped_column(Text)
     description: Mapped[Optional[str]] = mapped_column(Text)
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(9, 6))
@@ -346,7 +351,7 @@ class Transaction(Base, TimestampMixin):
     occurrence_date: Mapped[Optional[date]] = mapped_column(Date)
 
     category: Mapped["Category"] = relationship(
-        "Category", back_populates="transactions"
+        "Category", back_populates="transactions", foreign_keys=[category_id]
     )
     origin_rule: Mapped[Optional["RecurringRule"]] = relationship(
         "RecurringRule", back_populates="transactions"
@@ -702,6 +707,13 @@ class BankStatementRow(Base, TimestampMixin):
             "reviewed_at",
             "matched_transaction_id",
         ),
+        Index(
+            "ix_bank_statement_rows_user_resolution",
+            "user_id",
+            "resolution",
+            "resolved_at",
+        ),
+        Index("ix_bank_statement_rows_matched_transaction", "matched_transaction_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -721,6 +733,9 @@ class BankStatementRow(Base, TimestampMixin):
         ForeignKey("transactions.id", ondelete="SET NULL")
     )
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    resolution: Mapped[Optional[str]] = mapped_column(String(20))
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    ignore_reason: Mapped[Optional[str]] = mapped_column(String(200))
 
     matched_transaction: Mapped[Optional["Transaction"]] = relationship("Transaction")
 

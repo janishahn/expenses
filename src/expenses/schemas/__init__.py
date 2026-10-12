@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from expenses.db.models import (
     BudgetFrequency,
@@ -16,6 +16,7 @@ from expenses.db.models import (
     RuleMatchType,
     TransactionType,
 )
+from expenses.services.category_model import MIN_HISTORY
 
 
 class ReportOptions(BaseModel):
@@ -148,6 +149,8 @@ class CategoryListItemOut(CategorySummaryOut):
     archived_at: Optional[datetime] = None
     order: int
     usage_count: int = 0
+    expense_cents: int = 0
+    income_cents: int = 0
 
 
 class CategoryOut(CategorySummaryOut):
@@ -187,6 +190,9 @@ class TagOut(TransactionTagOut):
     auto_attach_period: Optional[TagAutoAttachPeriod] = None
     archived_at: Optional[datetime] = None
     usage_count: int = 0
+    expense_cents: int = 0
+    income_cents: int = 0
+    created_at: datetime
 
 
 class TagMutationOut(TransactionTagOut):
@@ -195,6 +201,7 @@ class TagMutationOut(TransactionTagOut):
     is_hidden_from_filters: bool
     auto_attach_period: Optional[TagAutoAttachPeriod] = None
     archived_at: Optional[datetime] = None
+    created_at: datetime
 
 
 class TagsResponseOut(BaseModel):
@@ -241,12 +248,21 @@ class DurablePurchaseOut(BaseModel):
     acquired_on: date
 
 
+class TransactionBankRowOut(BaseModel):
+    id: int
+    account_label: str
+    booking_date: date
+
+
 class TransactionDetailOut(BaseModel):
     id: int
     date: date
     occurred_at: Optional[datetime] = None
     type: str
     amount_cents: int
+    net_amount_cents: int
+    reimbursed_total_cents: int
+    created_at: datetime
     category_id: Optional[int] = None
     category: Optional[CategorySummaryOut] = None
     title: str
@@ -257,6 +273,7 @@ class TransactionDetailOut(BaseModel):
     tags: list[str] = Field(default_factory=list)
     durable_purchase: Optional[DurablePurchaseOut] = None
     attachments: list[ReceiptAttachmentOut] = Field(default_factory=list)
+    bank_row: Optional[TransactionBankRowOut] = None
 
 
 class TransactionFiltersOut(BaseModel):
@@ -273,6 +290,7 @@ class TransactionsResponseOut(BaseModel):
     page: int
     limit: int
     has_more: bool
+    total: int
     period: PeriodOut
     filters: TransactionFiltersOut
     categories: list[CategorySummaryOut]
@@ -292,6 +310,19 @@ class DeletedTransactionOut(BaseModel):
 
 class DeletedTransactionsResponseOut(BaseModel):
     transactions: list[DeletedTransactionOut]
+    total: int
+
+
+class TransactionIdsIn(BaseModel):
+    ids: list[int] = Field(..., max_length=1000)
+
+
+class TransactionsRestoredOut(BaseModel):
+    restored: int
+
+
+class TransactionsPurgedOut(BaseModel):
+    deleted: int
 
 
 class IdOut(BaseModel):
@@ -331,6 +362,9 @@ class DashboardDeltasOut(BaseModel):
 
 
 class BreakdownItemOut(BaseModel):
+    category_id: Optional[int] = Field(
+        None, validation_alias=AliasChoices("category_id", "id")
+    )
     name: str
     amount_cents: int
     percent: float
@@ -474,6 +508,74 @@ class InsightsResponseOut(BaseModel):
     budget_month: str
     budget_effective: list[InsightsBudgetEffectiveOut]
     budget_progress: dict[str, InsightsBudgetProgressOut]
+    recurring_cents: int
+
+
+class InsightsMonthGridRowOut(BaseModel):
+    id: Optional[int] = None
+    name: str
+    icon: Optional[str] = None
+    values_cents: list[int]
+
+
+class InsightsMonthGridResponseOut(BaseModel):
+    months: list[str]
+    current_month: str
+    rows: list[InsightsMonthGridRowOut]
+
+
+class InsightsRecurringSplitRowOut(BaseModel):
+    month: str
+    recurring_cents: int
+    other_cents: int
+
+
+class InsightsRecurringSplitResponseOut(BaseModel):
+    months: list[str]
+    current_month: str
+    rows: list[InsightsRecurringSplitRowOut]
+
+
+class InsightsDayAmountOut(BaseModel):
+    date: date
+    amount_cents: int
+
+
+class InsightsDayCalendarResponseOut(BaseModel):
+    start: date
+    end: date
+    days: list[InsightsDayAmountOut]
+    weekday_avg_cents: list[int]
+    weekend_share: float
+
+
+class InsightsBudgetHistoryCellOut(BaseModel):
+    month: str
+    budget_cents: Optional[int] = None
+    spent_cents: int
+
+
+class InsightsBudgetHistoryRowOut(BaseModel):
+    category_id: Optional[int] = None
+    name: str
+    icon: Optional[str] = None
+    first_month: Optional[str] = None
+    cells: list[InsightsBudgetHistoryCellOut]
+
+
+class InsightsBudgetHistoryResponseOut(BaseModel):
+    months: list[str]
+    current_month: str
+    rows: list[InsightsBudgetHistoryRowOut]
+
+
+class BalanceHistoryPointOut(BaseModel):
+    month: str
+    balance_cents: int
+
+
+class BalanceHistoryResponseOut(BaseModel):
+    months: list[BalanceHistoryPointOut]
 
 
 class InsightsFlowNodeOut(BaseModel):
@@ -560,6 +662,9 @@ class BankStatementRowOut(BaseModel):
     purpose: Optional[str] = None
     raw_description: str
     reviewed_at: Optional[datetime] = None
+    resolution: Optional[Literal["matched", "created", "ignored"]] = None
+    resolved_at: Optional[datetime] = None
+    ignore_reason: Optional[str] = None
     status: Literal["matched", "suggested", "ambiguous", "missing", "reviewed"]
     candidate_count: int
     candidates: list[BankReconciliationTransactionOut]
@@ -576,8 +681,52 @@ class BankRowActionResponseOut(StatusOut):
     transaction_id: Optional[int] = None
 
 
+class BankRowsPageOut(BaseModel):
+    items: list[BankStatementRowOut]
+    total: int
+    page: int
+    limit: int
+
+
+class BankAccountOut(BaseModel):
+    label: str
+    row_count: int
+    last_import_at: Optional[datetime] = None
+
+
+class BankAccountsResponseOut(BaseModel):
+    accounts: list[BankAccountOut]
+
+
+class BankRowIgnoreIn(BaseModel):
+    reason: Optional[str] = Field(None, max_length=200)
+
+    @model_validator(mode="after")
+    def normalize_reason(self):
+        if self.reason is not None:
+            self.reason = self.reason.strip() or None
+        return self
+
+
+class BankRowReopenIn(BaseModel):
+    trash_created_transaction: bool = False
+
+
+class BankAcceptSuggestionsIn(BaseModel):
+    row_ids: list[int] = Field(..., max_length=500)
+
+
+class BankAcceptSuggestionsOut(BaseModel):
+    accepted: int
+
+
+class BankRowCandidatesOut(BaseModel):
+    items: list[BankReconciliationTransactionOut]
+
+
 class BankRowMatchIn(BaseModel):
     transaction_id: int
+    update_amount_to_bank: bool = False
 
 
 class BankTransactionCreateIn(BaseModel):
@@ -587,6 +736,8 @@ class BankTransactionCreateIn(BaseModel):
     category_id: Optional[int] = None
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
+    tag_ids: list[int] = Field(default_factory=list, max_length=50)
+    notes: Optional[str] = None
 
     @model_validator(mode="after")
     def normalize_text(self):
@@ -595,6 +746,8 @@ class BankTransactionCreateIn(BaseModel):
             raise ValueError("Title cannot be blank")
         if self.description is not None:
             self.description = self.description.strip() or None
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
         return self
 
 
@@ -658,6 +811,10 @@ class AdminPurgeDeletedIn(BaseModel):
 class AdminPurgeDeletedOut(StatusOut):
     count: int
     attachments_count: int
+
+
+class AdminPurgeDeletedPreviewOut(BaseModel):
+    count: int
 
 
 class AdminRebuildRollupsOut(StatusOut):
@@ -1275,6 +1432,7 @@ class AutoCategorizationSettingsOut(AutoCategorizationSettingsIn):
         "untrained", "training", "ready", "insufficient_data", "failed"
     ] = "untrained"
     trained_at: datetime | None = None
+    min_history: int = MIN_HISTORY
 
 
 class SettingsResponseOut(BaseModel):
@@ -1583,9 +1741,22 @@ class UncategorizedDefinitionOut(BaseModel):
     matched_category_ids: list[int]
 
 
+class CategorySuggestionOut(BaseModel):
+    category_id: int
+    confidence: float
+
+
+class UncategorizedTransactionItemOut(TransactionListItemOut):
+    suggestion: Optional[CategorySuggestionOut] = None
+
+
 class UncategorizedTransactionsResponseOut(TransactionsResponseOut):
-    total: int
+    items: list[UncategorizedTransactionItemOut]
     definition: UncategorizedDefinitionOut
+
+
+class CategorySuggestionDismissIn(BaseModel):
+    category_id: int
 
 
 class DigestHeadlineOut(BaseModel):

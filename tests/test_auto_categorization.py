@@ -27,7 +27,7 @@ from expenses.services import (
 )
 from expenses.services import auto_categorization as categorization
 from expenses.services import category_model
-from expenses.services.category_model import Example, load_model, train
+from expenses.services.category_model import MIN_HISTORY, Example, load_model, train
 
 
 @pytest.fixture
@@ -384,7 +384,9 @@ def test_settings_enable_trains_in_background_and_is_user_scoped(
         "threshold": 0.8,
         "training_status": "untrained",
         "trained_at": None,
+        "min_history": MIN_HISTORY,
     }
+    assert api_client.get("/api/settings/auto-categorization").json() == original
     assert (
         api_client.put(
             "/api/settings/auto-categorization", json={"enabled": True}
