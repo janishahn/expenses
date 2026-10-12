@@ -290,12 +290,29 @@ final class AppModel {
 
     func saveAutoCategorization(enabled: Bool, threshold: Double) async -> Bool {
         guard let token else { return false }
-        return await runRequestReturningSuccess {
+        isLoading = true
+        lastError = nil
+        defer {
+            if self.token == token { isLoading = false }
+        }
+        do {
             _ = try await apiClient.saveAutoCategorization(
                 AutoCategorizationUpdate(enabled: enabled, threshold: threshold), token: token
             )
-            settings = try await apiClient.settings(token: token)
+            guard self.token == token else { return false }
+            let response = try await apiClient.settings(token: token)
+            guard self.token == token else { return false }
+            settings = response
+            return true
+        } catch let error as APIErrorInfo {
+            guard self.token == token else { return false }
+            isLoading = false
+            handleAPIError(error)
+        } catch {
+            guard self.token == token else { return false }
+            lastError = APIErrorInfo(message: error.localizedDescription)
         }
+        return false
     }
 
     func revokeMobileSession(_ session: MobileSession) async -> Bool {
