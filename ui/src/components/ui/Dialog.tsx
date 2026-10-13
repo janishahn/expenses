@@ -102,7 +102,11 @@ export function ConfirmDialogHost() {
 
   useEffect(() => {
     registerConfirmHost((next) => {
-      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      // A menu item is gone once its menu closes, so focus returns to the button that opened the menu.
+      const menu = active?.matches("[role^='menuitem']") ? active.closest("[role='menu'], [role='dialog']") : null
+      const opener = menu?.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`) : null
+      returnFocusRef.current = opener ?? active
       setRequest(next)
       setOpen(true)
     })

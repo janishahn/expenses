@@ -980,6 +980,15 @@
   /* The ✕ box reaches the pill's edge; its hit area takes the 6px gap and part of the label. */
   .pillX { position: relative; align-self: stretch; margin: 0 -8px 0 -5px; padding: 0 8px 0 7px; }
   .pillX::before { content: ""; position: absolute; inset: -9px -6px -9px -11px; }
+  /* Step arrows widen, and their hit areas grow outward so they never cover the label. */
+  .pillStep { position: relative; width: 40px; }
+  .pillStep::before { content: ""; position: absolute; inset: -11px 0 -11px -4px; }
+  .pillInner ~ .pillStep::before { inset: -11px -4px -11px 0; }
+  .segItem { position: relative; min-width: 44px; justify-content: center; padding: 0 7px; }
+  .segItem::before { content: ""; position: absolute; inset: -11px 0; }
+  /* The grip's hit area takes the row's left padding and the column gap. */
+  .grip { position: relative; }
+  .grip::before { content: ""; position: absolute; inset: -10px -12px -10px -16px; }
   .props { row-gap: 0; }
   .pl, .pv { min-height: 44px; }
   .prompts { grid-template-columns: minmax(0, 1fr); width: 100%; }
