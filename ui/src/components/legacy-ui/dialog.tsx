@@ -47,7 +47,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "drawer-overlay fixed inset-0 z-[70]",
+      "drawer-overlay fixed inset-0 z-[40]",
       className
     )}
     {...props}
@@ -69,7 +69,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "drawer-panel drawer-motion fixed top-1/2 left-1/2 z-[70] max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 p-4 outline-none",
+          "drawer-panel drawer-motion fixed top-1/2 left-1/2 z-[40] max-h-[88vh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 p-4 outline-none",
           className
         )}
         onOpenAutoFocus={(event) => {

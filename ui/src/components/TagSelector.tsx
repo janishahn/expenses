@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { XIcon } from "@phosphor-icons/react/X"
 import { Link } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { AppInput } from "./ui/product-fields"
+import { AppInput } from "./legacy-ui/product-fields"
 
 const RECENT_LIMIT = 3
 const SEARCH_LIMIT = 8

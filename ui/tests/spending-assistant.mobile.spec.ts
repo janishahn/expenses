@@ -54,19 +54,24 @@ test.describe("Spending Assistant (mobile)", () => {
     await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
     await expect(composer).toBeVisible()
     await expect(page.getByTestId("spending-assistant-input")).toBeVisible()
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Add transaction" })).toHaveCount(0)
 
+    // The composer docks just above the tab bar.
     const composerBounds = await composer.boundingBox()
-    const viewport = page.viewportSize()
+    const tabBarBounds = await page.getByRole("navigation", { name: "Tabs" }).boundingBox()
     expect(composerBounds).not.toBeNull()
-    expect(viewport).not.toBeNull()
-    if (composerBounds && viewport) {
-      expect(viewport.height - (composerBounds.y + composerBounds.height)).toBeLessThan(48)
+    expect(tabBarBounds).not.toBeNull()
+    if (composerBounds && tabBarBounds) {
+      const gap = tabBarBounds.y - (composerBounds.y + composerBounds.height)
+      expect(gap).toBeGreaterThanOrEqual(0)
+      expect(gap).toBeLessThan(48)
     }
 
-    // The dock action is route-specific: it must return on other mobile pages.
+    // The page action is route-specific: Add returns on other mobile pages.
     await page.goto("/transactions")
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toBeVisible()
+    await expect(
+      page.getByTestId("app-shell-utility").getByRole("button", { name: "Add transaction" }),
+    ).toBeVisible()
   })
 
   test("streams an answer without horizontal overflow", async ({ page }) => {
@@ -92,7 +97,7 @@ test.describe("Spending Assistant (mobile)", () => {
     await expect(page.getByTestId("spending-assistant-copy")).toBeVisible()
     await expect(page.getByTestId("spending-assistant-copy-user")).toBeVisible()
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
-    await expect(page.getByTestId("app-shell-mobile-quiet-action")).toHaveAccessibleName(
+    await expect(page.getByTestId("app-shell-utility").getByRole("button")).toHaveAccessibleName(
       "New chat",
     )
 

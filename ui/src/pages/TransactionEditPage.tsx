@@ -31,13 +31,13 @@ import DescriptionEditor from "../components/DescriptionEditor"
 import TagSelector from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppCheckbox,
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

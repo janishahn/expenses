@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom"
 import PageIntro from "./PageIntro"
 import { FinancialPanel } from "./product/ProductSurfaces"
-import { AppButton } from "./ui/product-button"
+import { AppButton } from "./legacy-ui/product-button"
 
 type RouteErrorProps = {
   title: string

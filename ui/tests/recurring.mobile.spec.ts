@@ -37,9 +37,8 @@ test.describe("Recurring Rules Page (mobile)", () => {
 
     await page.goto("/recurring")
 
-    const addAction = page.getByTestId("app-shell-mobile-add-action")
+    const addAction = page.getByTestId("app-shell-utility").getByRole("button")
     await expect(addAction).toHaveAccessibleName("Add rule")
-    await expect(addAction).toHaveText("")
     await addAction.click()
     await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
     await page.getByRole("button", { name: "Close rule editor" }).click()

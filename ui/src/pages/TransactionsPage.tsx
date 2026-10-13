@@ -25,33 +25,33 @@ import PeriodPicker from "../components/PeriodPicker"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
 import SegmentedControl from "../components/SegmentedControl"
 import TransactionDescription from "../components/TransactionDescription"
-import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppCard } from "../components/legacy-ui/product-card"
 import {
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog"
+} from "../components/legacy-ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu"
+} from "../components/legacy-ui/dropdown-menu"
 import {
   Sheet,
   SheetContent,
   SheetClose,
   SheetHeader,
   SheetTitle,
-} from "../components/ui/sheet"
+} from "../components/legacy-ui/sheet"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,

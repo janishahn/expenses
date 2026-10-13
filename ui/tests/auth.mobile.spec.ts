@@ -47,12 +47,8 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
     await page.getByTestId("auth-submit").click()
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
 
-    await page.getByRole("button", { name: "Open menu" }).click()
-    const sidebar = page.getByRole("complementary", { name: "Application menu" })
-    await expect(sidebar).toBeVisible()
-    const settingsLink = sidebar.getByRole("link", { name: "Settings" })
-    await settingsLink.scrollIntoViewIfNeeded()
-    await settingsLink.click()
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "More" }).click()
+    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Settings" }).click()
     await expect(page.getByTestId("settings-page")).toBeVisible()
 
     await page.getByTestId("auth-logout").click()

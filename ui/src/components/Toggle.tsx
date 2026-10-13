@@ -1,4 +1,4 @@
-import { AppSwitch } from "./ui/product-fields"
+import { AppSwitch } from "./legacy-ui/product-fields"
 
 export function Toggle({
   on,

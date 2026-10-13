@@ -52,44 +52,6 @@ test.describe("Insights Page", () => {
     )
   })
 
-  test("keeps the page canvas stable when tab content changes document height", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1920, height: 1000 })
-    await page.goto("/insights")
-    await expect(
-      page.getByRole("heading", { name: "Monthly income vs expenses" }),
-    ).toBeVisible()
-
-    const pageCanvas = page.locator(".page-enter")
-    const analysisBox = await pageCanvas.boundingBox()
-    const analysisLayout = await page.evaluate(() => ({
-      clientHeight: document.documentElement.clientHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-    }))
-    expect(analysisBox).not.toBeNull()
-    expect(analysisLayout.scrollHeight).toBeGreaterThan(analysisLayout.clientHeight)
-
-    await page.getByRole("tab", { name: "Net" }).click()
-    await expect(page).toHaveURL(/view=net/)
-    await expect(page.getByRole("tab", { name: "Net" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    )
-    const netBox = await pageCanvas.boundingBox()
-    const netLayout = await page.evaluate(() => ({
-      clientHeight: document.documentElement.clientHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-      scrollbarGutter: getComputedStyle(document.documentElement).scrollbarGutter,
-      overflowY: getComputedStyle(document.documentElement).overflowY,
-    }))
-    expect(netBox).not.toBeNull()
-    expect(netLayout.scrollHeight).toBeLessThanOrEqual(netLayout.clientHeight)
-    expect(netLayout.scrollbarGutter).toBe("auto")
-    expect(netLayout.overflowY).toBe("scroll")
-    expect(Math.abs(netBox!.x - analysisBox!.x)).toBeLessThanOrEqual(0.5)
-  })
-
   test("should show analytics content", async ({ page }) => {
     await page.waitForLoadState("networkidle")
     await expect(

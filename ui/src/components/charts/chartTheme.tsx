@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect, useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 
 export const CHART_ANIMATION_DURATION = 1275
 export const CHART_BAR_ANIMATION_DURATION = 340
@@ -7,10 +7,8 @@ export const CHART_TOOLTIP_ANIMATION_DURATION = 340
 export const CHART_GRID_COLOR = "rgb(var(--border) / 0.62)"
 
 export const CHART_TICK_STYLE = {
-  fill: "rgb(var(--muted))",
-  fontFamily: "IBM Plex Mono",
+  fill: "var(--ink-3)",
   fontSize: 11,
-  fontWeight: 500,
 }
 
 export const CHART_MONO_TICK_STYLE = CHART_TICK_STYLE
@@ -21,22 +19,9 @@ export type ChartTooltipRow = {
   color?: string
 }
 
+// Charts do not animate on load.
 export function useChartAnimation(): boolean {
-  const [active, setActive] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  )
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)")
-    const update = () => setActive(!media.matches)
-    update()
-    media.addEventListener("change", update)
-    return () => media.removeEventListener("change", update)
-  }, [])
-
-  return active
+  return false
 }
 
 export function withAlpha(color: string, alpha: number): string {

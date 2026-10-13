@@ -454,14 +454,15 @@ changes and drop movement.
 ## Enforcement
 
 **Closed primitive kit.** Pages compose these primitives from
-`ui/src/components/ui/` and nothing else visual: `Panel`, `Sheet`, `ChartCard`,
-`LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
-`MonthPicker`, `Menu`, `Tooltip`, `Dialog`, `EntryDialog`, `BottomSheet`,
-`BulkBar`, `Peek`, `PropertyList`, `SettingsShell`, `ReceiptSection`,
-`ReceiptViewer`, `LocationMap`, `DayCalendar`, and the controls `Button`,
-`IconButton`, `SegmentedControl`, `Switch`, `Checkbox`, `Radio`, `Pill`,
-`TagChip`, `SortMenu`, `TextField`, `Combobox`, `EmptyState`, and `Toast`.
-Confirmations are a `Dialog` variant. A visual difference is a variant on the
+`ui/src/components/ui/` and nothing else visual: `AppFrame`, `Panel`, `Sheet`,
+`ChartCard`, `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
+`MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
+`BottomSheet`, `BulkBar`, `Peek`, `PropertyList`, `SettingsShell`,
+`ReceiptSection`, `ReceiptViewer`, `LocationMap`, `DayCalendar`, `Amount`,
+`CategoryGlyph`, and the controls `Button`, `IconButton`, `SegmentedControl`,
+`Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
+`Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
+`Dialog` variant; loading and failed pages are `Panel` variants. A visual difference is a variant on the
 primitive, never a page-local class. A new primitive requires a
 change to this document.
 

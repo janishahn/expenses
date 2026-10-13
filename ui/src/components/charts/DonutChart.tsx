@@ -8,7 +8,7 @@ import {
   type TooltipContentProps,
 } from "recharts"
 import { formatCurrency } from "../../app/format"
-import { AppCard } from "../ui/product-card"
+import { AppCard } from "../legacy-ui/product-card"
 import {
   CHART_ANIMATION_DURATION,
   CHART_TOOLTIP_ANIMATION_DURATION,

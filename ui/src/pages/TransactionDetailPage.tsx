@@ -37,8 +37,8 @@ import {
   FinancialPanel,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppCard } from "../components/legacy-ui/product-card"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

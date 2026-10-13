@@ -45,7 +45,7 @@ const SheetOverlay = React.forwardRef<
     ref={ref}
     data-slot="sheet-overlay"
     className={cn(
-      "drawer-overlay fixed inset-0 z-[65]",
+      "drawer-overlay fixed inset-0 z-[40]",
       className
     )}
     {...props}
@@ -72,7 +72,7 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-[65] flex flex-col bg-surface text-text outline-none shadow-[var(--shadow-raised)]",
+          "fixed z-[40] flex flex-col bg-surface text-text outline-none shadow-[var(--shadow-raised)]",
           "data-[side=bottom]:inset-x-2 data-[side=bottom]:bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] data-[side=bottom]:max-h-[calc(88vh-env(safe-area-inset-bottom,0px))] data-[side=bottom]:rounded-[1.75rem] data-[side=bottom]:border",
           "data-[side=top]:inset-x-2 data-[side=top]:top-2 data-[side=top]:max-h-[88vh] data-[side=top]:rounded-[1.75rem] data-[side=top]:border",
           "data-[side=left]:inset-y-2 data-[side=left]:left-2 data-[side=left]:w-[calc(100%-1rem)] data-[side=left]:max-w-sm data-[side=left]:rounded-[1.75rem] data-[side=left]:border",

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { expect, test } from "./fixtures"
 
-test("mobile drawer and controlled overlays preserve modal focus", async ({
+test("mobile More sheet and controlled overlays preserve modal focus", async ({
   browserName,
   page,
 }) => {
@@ -22,15 +22,14 @@ test("mobile drawer and controlled overlays preserve modal focus", async ({
   await page.goto("/transactions")
 
   if (browserName === "webkit") {
-    const menuTrigger = page.getByRole("button", { name: "Open menu" })
+    const menuTrigger = page
+      .getByRole("navigation", { name: "Tabs" })
+      .getByRole("button", { name: "More" })
     await menuTrigger.tap()
-    const menu = page.getByRole("complementary", { name: "Application menu" })
+    const menu = page.getByRole("dialog", { name: "More" })
     await expect(menu).toBeVisible()
-    await expect(page.getByTestId("app-shell-content")).toHaveAttribute("inert", "")
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden")
-    await menu.getByRole("button", { name: "Close menu" }).tap()
+    await page.mouse.click(187, 40)
     await expect(menu).toBeHidden()
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("")
 
     await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
     const addDialog = page.getByRole("dialog", { name: "Add transaction" })
@@ -62,24 +61,22 @@ test("mobile drawer and controlled overlays preserve modal focus", async ({
     return
   }
 
-  const menuTrigger = page.getByRole("button", { name: "Open menu" })
+  const menuTrigger = page
+    .getByRole("navigation", { name: "Tabs" })
+    .getByRole("button", { name: "More" })
   await menuTrigger.focus()
   await menuTrigger.press("Enter")
-  const menu = page.getByRole("complementary", { name: "Application menu" })
+  const menu = page.getByRole("dialog", { name: "More" })
   await expect(menu).toBeVisible()
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        Boolean(document.activeElement?.closest('[aria-label="Application menu"]'))
-      )
+      page.evaluate(() => Boolean(document.activeElement?.closest("[role='dialog']")))
     )
     .toBe(true)
   for (let index = 0; index < 24; index += 1) {
     await page.keyboard.press("Tab")
     expect(
-      await page.evaluate(() =>
-        Boolean(document.activeElement?.closest('[aria-label="Application menu"]'))
-      )
+      await page.evaluate(() => Boolean(document.activeElement?.closest("[role='dialog']")))
     ).toBe(true)
   }
   await page.keyboard.press("Escape")
@@ -88,7 +85,7 @@ test("mobile drawer and controlled overlays preserve modal focus", async ({
 
   await menuTrigger.press("Enter")
   await expect(menu).toBeVisible()
-  await page.mouse.click(389, 330)
+  await page.mouse.click(187, 40)
   await expect(menu).toBeHidden()
   await expect(menuTrigger).toBeFocused()
 

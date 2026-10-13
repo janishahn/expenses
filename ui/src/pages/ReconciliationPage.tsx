@@ -22,13 +22,13 @@ import {
   FinancialPanel,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
   AppTextarea,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import {
   Dialog,
   DialogClose,
@@ -37,7 +37,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog"
+} from "../components/legacy-ui/dialog"
 
 type CreateTransactionPayload = {
   date: string

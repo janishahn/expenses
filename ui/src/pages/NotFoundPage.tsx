@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom"
 import PageIntro from "../components/PageIntro"
-import { AppButton } from "../components/ui/product-button"
-import { AppCard } from "../components/ui/product-card"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppCard } from "../components/legacy-ui/product-card"
 
 function NotFoundPage() {
   return (

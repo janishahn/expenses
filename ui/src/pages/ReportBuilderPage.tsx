@@ -7,12 +7,12 @@ import { Toggle } from "../components/Toggle"
 import PageIntro from "../components/PageIntro"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppFieldLabel,
   AppNativeSelect,
   AppTextarea,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 
 function toLocalDateInputValue(value: Date): string {
   const year = value.getFullYear()

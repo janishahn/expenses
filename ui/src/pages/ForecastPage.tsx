@@ -17,7 +17,7 @@ import {
   WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

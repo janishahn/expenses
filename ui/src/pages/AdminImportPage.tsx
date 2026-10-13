@@ -5,8 +5,8 @@ import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { formatCurrency, formatEuroDate } from "../app/format"
 import PageIntro from "../components/PageIntro"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppNativeSelect } from "../components/ui/product-fields"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppNativeSelect } from "../components/legacy-ui/product-fields"
 
 type SqliteCategory = {
   id: number

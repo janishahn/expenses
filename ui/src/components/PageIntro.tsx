@@ -1,6 +1,5 @@
 import type { MouseEventHandler, ReactNode } from "react"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ArrowLeft"
-import { ListIcon } from "@phosphor-icons/react/List"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { Link, useOutletContext } from "react-router-dom"
 import type { AppShellOutletContext } from "../app/AppShell"
@@ -30,8 +29,7 @@ function PageIntro({
   backReplace,
   backOnClick,
 }: PageIntroProps) {
-  const { openMobileNavigation, registerMobileNavigationTrigger, utilityAction } =
-    useOutletContext<AppShellOutletContext>()
+  const { utilityAction } = useOutletContext<AppShellOutletContext>()
   const quietAction = utilityAction?.presentation === "quiet" ? utilityAction : null
   const QuietActionIcon = quietAction?.icon ?? PlusIcon
   const backAriaLabel =
@@ -78,17 +76,7 @@ function PageIntro({
                 >
                   <ArrowLeftIcon weight="bold" aria-hidden="true" />
                 </Link>
-              ) : (
-                <button
-                  type="button"
-                  ref={registerMobileNavigationTrigger}
-                  className="app-mobile-page-nav desk:hidden"
-                  aria-label="Open menu"
-                  onClick={openMobileNavigation}
-                >
-                  <ListIcon weight="bold" aria-hidden="true" />
-                </button>
-              )}
+              ) : null}
               <h1 className="page-title" tabIndex={-1}>{title}</h1>
               {titleAccessoryAlign === "inline" ? titleAccessory : null}
             </div>

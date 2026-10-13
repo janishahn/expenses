@@ -20,8 +20,8 @@ import {
   MetricLane,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppInput, AppNativeSelect } from "../components/ui/product-fields"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppFieldLabel, AppInput, AppNativeSelect } from "../components/legacy-ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,

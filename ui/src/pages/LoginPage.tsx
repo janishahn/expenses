@@ -2,8 +2,8 @@ import { useState, type FormEvent } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
 import ProductMark from "../components/ProductMark"
-import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppFieldLabel, AppInput } from "../components/legacy-ui/product-fields"
 
 function LoginPage() {
   const { login, signupAllowed } = useAuth()

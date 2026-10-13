@@ -81,6 +81,34 @@ const categoryFallbackIcons = [
   "receipt",
 ] as const
 
+function resolveCategoryIconKey(icon: string | null, label?: string | null): string {
+  const normalizedLabel = label?.trim().toLowerCase() ?? ""
+  const labelHash = Array.from(normalizedLabel).reduce(
+    (total, character) => total + character.codePointAt(0)!,
+    0
+  )
+  const inferredIcon = normalizedLabel
+    ? categoryIconHints.find(([pattern]) => pattern.test(normalizedLabel))?.[1]
+    : undefined
+  return icon && icon.length > 0 && (
+    icon !== DEFAULT_CATEGORY_ICON_KEY || !normalizedLabel
+  )
+    ? icon
+    : inferredIcon ?? (
+      normalizedLabel
+        ? categoryFallbackIcons[labelHash % categoryFallbackIcons.length]
+        : DEFAULT_CATEGORY_ICON_KEY
+    )
+}
+
+// The bare category icon, without the tile.
+export function CategoryIconSvg({ icon, label }: { icon: string | null; label?: string | null }) {
+  const iconKey = resolveCategoryIconKey(icon, label)
+  const CuratedIcon = CURATED_CATEGORY_ICONS[iconKey]
+  if (CuratedIcon) return <CuratedIcon aria-hidden="true" />
+  return <DynamicCategoryIcon iconKey={iconKey} className="" />
+}
+
 export function CategoryIcon({
   icon,
   label,
@@ -91,22 +119,7 @@ export function CategoryIcon({
   className?: string
 }) {
   const normalizedLabel = label?.trim().toLowerCase() ?? ""
-  const labelHash = Array.from(normalizedLabel).reduce(
-    (total, character) => total + character.codePointAt(0)!,
-    0
-  )
-  const inferredIcon = normalizedLabel
-    ? categoryIconHints.find(([pattern]) => pattern.test(normalizedLabel))?.[1]
-    : undefined
-  const iconKey = icon && icon.length > 0 && (
-    icon !== DEFAULT_CATEGORY_ICON_KEY || !normalizedLabel
-  )
-    ? icon
-    : inferredIcon ?? (
-      normalizedLabel
-        ? categoryFallbackIcons[labelHash % categoryFallbackIcons.length]
-        : DEFAULT_CATEGORY_ICON_KEY
-    )
+  const iconKey = resolveCategoryIconKey(icon, label)
   const CuratedIcon = CURATED_CATEGORY_ICONS[iconKey]
   const toneKey = normalizedLabel ? `${iconKey}:${normalizedLabel}` : iconKey
   const toneIndex = Array.from(toneKey).reduce(

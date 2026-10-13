@@ -1,5 +1,5 @@
 import { expect, request as playwrightRequest } from "@playwright/test"
-import type { APIRequestContext, Page } from "@playwright/test"
+import type { APIRequestContext, Locator, Page } from "@playwright/test"
 import { loginWith } from "./auth-helpers"
 
 type DashboardMockPayload = {
@@ -47,6 +47,15 @@ type DashboardMockPayload = {
       velocity_ratio: number
     }
   }
+}
+
+// Radix starts handling outside presses and Escape a moment after a layer
+// mounts. Wait for the entrance and one timer tick before dismissing it.
+export async function waitForEntrance(layer: Locator): Promise<void> {
+  await layer.evaluate(async (node) => {
+    await Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+  })
 }
 
 export async function getCsrfToken(request: APIRequestContext): Promise<string> {

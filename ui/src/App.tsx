@@ -9,6 +9,7 @@ import {
   useSearchParams,
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
+import LegacyLayout from "./app/LegacyLayout"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
 const AdminElevationPage = lazy(() => import("./pages/AdminElevationPage"))
@@ -214,40 +215,42 @@ function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
-          <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
-          <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
-          <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
-          <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
-          <Route
-            path="/assistant"
-            element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
-          />
-          <Route path="/insights" element={<InsightsPage />} />
-          <Route path="/forecast" element={<ForecastPage />} />
-          <Route path="/budgets" element={<BudgetsPage />} />
-          <Route path="/digest" element={<DigestPage />} />
-          <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/tags" element={<TagsPage />} />
-          <Route path="/tags/:tagId" element={<TagDetailPage />} />
-          <Route path="/recurring" element={<RecurringRulesPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route
-            path="/recurring/:ruleId/occurrences"
-            element={<RecurringOccurrencesPage />}
-          />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route path="/scenarios" element={<ScenariosPage />} />
-          <Route path="/reconciliation" element={<ReconciliationPage />} />
-          <Route path="/reports/builder" element={<ReportBuilderPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin/elevate" element={<AdminElevationPage />} />
-          <Route element={<AdminRoute />}>
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/admin/import" element={<AdminImportPage />} />
+          <Route element={<LegacyLayout />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/transactions" element={<TransactionsPage />} />
+            <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
+            <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
+            <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
+            <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
+            <Route
+              path="/assistant"
+              element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
+            />
+            <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/forecast" element={<ForecastPage />} />
+            <Route path="/budgets" element={<BudgetsPage />} />
+            <Route path="/digest" element={<DigestPage />} />
+            <Route path="/categories" element={<CategoriesPage />} />
+            <Route path="/tags" element={<TagsPage />} />
+            <Route path="/tags/:tagId" element={<TagDetailPage />} />
+            <Route path="/recurring" element={<RecurringRulesPage />} />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route
+              path="/recurring/:ruleId/occurrences"
+              element={<RecurringOccurrencesPage />}
+            />
+            <Route path="/rules" element={<RulesPage />} />
+            <Route path="/scenarios" element={<ScenariosPage />} />
+            <Route path="/reconciliation" element={<ReconciliationPage />} />
+            <Route path="/reports/builder" element={<ReportBuilderPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/admin/elevate" element={<AdminElevationPage />} />
+            <Route element={<AdminRoute />}>
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/import" element={<AdminImportPage />} />
+            </Route>
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
-          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
     </Routes>

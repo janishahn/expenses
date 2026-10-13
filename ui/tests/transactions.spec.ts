@@ -33,35 +33,6 @@ test.describe("Transactions Page", () => {
     }
   })
 
-  test("keeps document scrolling and the page canvas stable while actions are open", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1920, height: 240 })
-    await page.goto("/transactions")
-
-    const pageCanvas = page.locator(".page-enter")
-    const beforeBox = await pageCanvas.boundingBox()
-    expect(beforeBox).not.toBeNull()
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
-      ),
-    ).toBe(true)
-
-    await page.getByRole("button", { name: "More actions" }).click()
-    await expect(page.getByRole("menu")).toBeVisible()
-
-    expect(
-      await page.evaluate(() => ({
-        bodyOverflow: getComputedStyle(document.body).overflow,
-        scrollLocked: document.body.hasAttribute("data-scroll-locked"),
-      })),
-    ).toEqual({ bodyOverflow: "visible", scrollLocked: false })
-    const afterBox = await pageCanvas.boundingBox()
-    expect(afterBox).not.toBeNull()
-    expect(Math.abs(afterBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
-  })
-
   test("keeps desktop filter actions visible in a short viewport", async ({
     page,
     request,

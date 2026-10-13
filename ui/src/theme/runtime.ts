@@ -13,11 +13,11 @@ const THEME_CHROME_DEFAULTS: Record<
   { themeColor: string; backgroundColor: string }
 > = {
   light: {
-    themeColor: "#eeefe9",
+    themeColor: "#eaeae7",
     backgroundColor: "rgb(238 239 233)",
   },
   dark: {
-    themeColor: "#111511",
+    themeColor: "#11100e",
     backgroundColor: "rgb(17 21 17)",
   },
 }

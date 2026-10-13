@@ -211,15 +211,8 @@ test.describe("Mobile interaction audit evidence", () => {
     await page.goto("/transactions")
     controls.push(
       await measurement(
-        "Mobile page menu trigger",
-        page.getByRole("button", { name: "Open menu" }),
-      ),
-    )
-    await page.goto("/assistant")
-    controls.push(
-      await measurement(
-        "Assistant page menu trigger",
-        page.getByRole("button", { name: "Open menu" }),
+        "Mobile More tab",
+        page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "More" }),
       ),
     )
 

@@ -486,7 +486,6 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(page.locator(`iframe[title="${pdfName}"]`)).toBeVisible()
 
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
 
     const viewport = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

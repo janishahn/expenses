@@ -13,8 +13,8 @@ import {
   FinancialPanel,
   MetricLane,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppInput } from "../components/ui/product-fields"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppInput } from "../components/legacy-ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

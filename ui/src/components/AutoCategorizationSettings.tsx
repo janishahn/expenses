@@ -3,8 +3,8 @@ import { useMutation } from "@tanstack/react-query"
 import { InfoIcon } from "@phosphor-icons/react/Info"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { FinancialPanel } from "./product/ProductSurfaces"
-import { AppButton } from "./ui/product-button"
-import { AppInput, AppSwitch } from "./ui/product-fields"
+import { AppButton } from "./legacy-ui/product-button"
+import { AppInput, AppSwitch } from "./legacy-ui/product-fields"
 
 export type AutoCategorizationSettingsData = {
   enabled: boolean

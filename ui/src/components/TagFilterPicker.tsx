@@ -1,5 +1,5 @@
 import SegmentedControl from "./SegmentedControl"
-import { AppCheckbox } from "./ui/product-fields"
+import { AppCheckbox } from "./legacy-ui/product-fields"
 
 export type TagFilterMode = "include" | "exclude"
 

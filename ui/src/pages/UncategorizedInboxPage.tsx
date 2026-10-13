@@ -17,12 +17,12 @@ import {
   SectionHeading,
   WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import {
   buildCustomPeriodSearchParams,
   buildPresetPeriodSearchParams,

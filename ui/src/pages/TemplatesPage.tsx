@@ -37,19 +37,19 @@ import {
   FinancialPanel,
   SectionHeading,
 } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog"
+} from "../components/legacy-ui/dialog"
 import {
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

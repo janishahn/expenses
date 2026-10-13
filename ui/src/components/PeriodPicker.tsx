@@ -1,12 +1,12 @@
 import { useState } from "react"
 import { formatEuroDate } from "../app/format"
 import SegmentedControl from "./SegmentedControl"
-import { AppButton } from "./ui/product-button"
-import { AppCard } from "./ui/product-card"
+import { AppButton } from "./legacy-ui/product-button"
+import { AppCard } from "./legacy-ui/product-card"
 import {
   AppFieldLabel,
   AppInput,
-} from "./ui/product-fields"
+} from "./legacy-ui/product-fields"
 
 type PeriodPickerProps = {
   periodSlug: string

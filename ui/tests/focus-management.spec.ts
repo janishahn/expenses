@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { expect, test, type Page } from "./fixtures"
-import { ensureCategory, getCsrfToken } from "./helpers"
+import { ensureCategory, getCsrfToken, waitForEntrance } from "./helpers"
 
 const artifactDirectory = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
   ? resolve(
@@ -72,35 +72,28 @@ test.describe("Focus management", () => {
   })
 
   for (const theme of ["light", "dark"] as const) {
-    test(`responsive drawer traps and returns focus in ${theme}`, async ({ page }) => {
+    test(`responsive More sheet traps and returns focus in ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: 640, height: 400 })
       await useTheme(page, theme)
       await page.goto("/transactions")
 
-      const menuTrigger = page.getByRole("button", { name: "Open menu" })
+      const menuTrigger = page
+        .getByRole("navigation", { name: "Tabs" })
+        .getByRole("button", { name: "More" })
       await menuTrigger.focus()
       await menuTrigger.press("Enter")
-      const menu = page.getByRole("complementary", { name: "Application menu" })
+      const menu = page.getByRole("dialog", { name: "More" })
       await expect(menu).toBeVisible()
       await expect
         .poll(() =>
-          page.evaluate(() =>
-            Boolean(document.activeElement?.closest('[aria-label="Application menu"]'))
-          )
+          page.evaluate(() => Boolean(document.activeElement?.closest("[role='dialog']")))
         )
         .toBe(true)
-      const closeButton = page.getByRole("button", { name: "Close menu" })
-      await page.keyboard.press("Tab")
-      await expect(closeButton).toBeFocused()
-      await page.waitForTimeout(350)
-      await expect(closeButton).toBeFocused()
 
       for (let index = 0; index < 24; index += 1) {
         await page.keyboard.press("Tab")
         expect(
-          await page.evaluate(() =>
-            Boolean(document.activeElement?.closest('[aria-label="Application menu"]'))
-          )
+          await page.evaluate(() => Boolean(document.activeElement?.closest("[role='dialog']")))
         ).toBe(true)
       }
 
@@ -117,7 +110,8 @@ test.describe("Focus management", () => {
 
       await menuTrigger.press("Enter")
       await expect(menu).toBeVisible()
-      await page.mouse.click(636, 200)
+      await waitForEntrance(menu)
+      await page.mouse.click(320, 20)
       await expect(menu).toBeHidden()
       await expect(menuTrigger).toBeFocused()
 

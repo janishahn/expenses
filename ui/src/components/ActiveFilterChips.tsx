@@ -1,5 +1,5 @@
 import { XIcon } from "@phosphor-icons/react/X"
-import { AppButton } from "./ui/product-button"
+import { AppButton } from "./legacy-ui/product-button"
 
 export type ActiveFilterChip = {
   key: string

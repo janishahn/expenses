@@ -16,20 +16,11 @@ test.describe("Page scope headers (mobile)", () => {
       await page.goto(entry.path)
       const header = page.locator("[data-page-scope-header]")
       const title = header.getByRole("heading", { name: entry.title })
-      const menu = header.getByRole("button", { name: "Open menu" })
       const period = header.getByRole("group", { name: "Period" })
       await expect(title).toBeVisible()
-      await expect(menu).toBeVisible()
 
-      const [titleBox, menuBox] = await Promise.all([
-        title.boundingBox(),
-        menu.boundingBox(),
-      ])
+      const titleBox = await title.boundingBox()
       expect(titleBox).not.toBeNull()
-      expect(menuBox).not.toBeNull()
-      expect(titleBox!.x).toBeGreaterThan(menuBox!.x + menuBox!.width)
-      expect(Math.abs(titleBox!.y + titleBox!.height / 2 - (menuBox!.y + menuBox!.height / 2)))
-        .toBeLessThan(4)
 
       const filters = header.getByRole("button", { name: /^Filters/ })
       let controlsY: number

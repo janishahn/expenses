@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import { AppButton } from "./ui/product-button"
-import { AppFieldLabel, AppInput, AppNativeSelect } from "./ui/product-fields"
+import { AppButton } from "./legacy-ui/product-button"
+import { AppFieldLabel, AppInput, AppNativeSelect } from "./legacy-ui/product-fields"
 import { FinancialPanel } from "./product/ProductSurfaces"
 import { confirmDialog } from "./confirm"
 

@@ -1,3 +1,5 @@
+import { isPrivacyOn } from "./privacy"
+
 const CURRENCY_FORMAT_WITH_CENTS = new Intl.NumberFormat("de-DE", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -45,4 +47,21 @@ export function formatFileSize(sizeBytes: number): string {
 
 export function formatCoordinate(value: number): string {
   return value.toFixed(6)
+}
+
+// expense: ink, no sign. income: income tone with "+". signed: "+"/"−" by value.
+// balance: "−" only when negative. Expenses are never red.
+export type AmountKind = "expense" | "income" | "signed" | "balance"
+
+export function formatAmount(cents: number, kind: AmountKind = "balance", decimals = true): string {
+  const value = formatCurrency(Math.abs(cents), decimals)
+  if (kind === "income") return `+ ${value} €`
+  if (kind === "signed") return `${cents < 0 ? "−" : "+"} ${value} €`
+  if (kind === "balance" && cents < 0) return `− ${value} €`
+  return `${value} €`
+}
+
+// For tooltips, table cells and accessible names: masked while privacy mode is on.
+export function formatAmountPrivate(cents: number, kind: AmountKind = "balance", decimals = true): string {
+  return isPrivacyOn() ? "•••• €" : formatAmount(cents, kind, decimals)
 }

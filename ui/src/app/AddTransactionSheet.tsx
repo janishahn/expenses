@@ -6,21 +6,21 @@ import { CategoryIcon } from "../components/CategoryIcon"
 import TagSelector, { type TagsResponse } from "../components/TagSelector"
 import TransactionDateTimeField from "../components/TransactionDateTimeField"
 import SegmentedControl from "../components/SegmentedControl"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppCheckbox,
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
   AppTextarea,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog"
+} from "../components/legacy-ui/dialog"
 import { apiFetch, getApiErrorMessage } from "./api"
 import type {
   CategoriesResponse,

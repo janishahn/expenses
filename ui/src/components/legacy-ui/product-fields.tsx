@@ -1,9 +1,9 @@
 import * as React from "react"
 
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/legacy-ui/checkbox"
+import { Input } from "@/components/legacy-ui/input"
+import { Switch } from "@/components/legacy-ui/switch"
+import { Textarea } from "@/components/legacy-ui/textarea"
 import { cn } from "@/lib/utils"
 
 const inputToneClass =

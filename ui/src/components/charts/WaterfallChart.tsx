@@ -25,7 +25,7 @@ import {
 } from "recharts"
 import { formatCurrency } from "../../app/format"
 import { FinancialPanel } from "../product/ProductSurfaces"
-import { AppButton } from "../ui/product-button"
+import { AppButton } from "../legacy-ui/product-button"
 import {
   CHART_GRID_COLOR,
   CHART_MONO_TICK_STYLE,

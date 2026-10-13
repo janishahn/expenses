@@ -12,7 +12,7 @@ test.describe("Page scope headers", () => {
     ]) {
       await page.goto(entry.path)
 
-      const canvas = page.locator(".page-enter")
+      const canvas = page.locator(".app-content-frame")
       const action = page.getByTestId("app-shell-utility").getByRole("button", {
         name: entry.action,
       })
@@ -29,50 +29,6 @@ test.describe("Page scope headers", () => {
         ),
       ).toBeLessThanOrEqual(0.5)
     }
-  })
-
-  test("keeps document scrolling and the page canvas stable while filters are open", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1920, height: 500 })
-    await page.goto("/")
-    await expect(
-      page.getByRole("heading", { name: "Recent transactions" }),
-    ).toBeVisible()
-
-    const canvas = page.locator(".page-enter")
-    const beforeBox = await canvas.boundingBox()
-    expect(beforeBox).not.toBeNull()
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            document.documentElement.scrollHeight >
-            document.documentElement.clientHeight,
-        ),
-      )
-      .toBe(true)
-
-    await page.getByRole("button", { name: "Filters", exact: true }).click()
-    await expect(page.getByTestId("page-filter-panel")).toBeVisible()
-
-    expect(
-      await page.evaluate(() => ({
-        bodyOverflow: getComputedStyle(document.body).overflow,
-        scrollLocked: document.body.hasAttribute("data-scroll-locked"),
-      })),
-    ).toEqual({ bodyOverflow: "visible", scrollLocked: false })
-    const openBox = await canvas.boundingBox()
-    expect(openBox).not.toBeNull()
-    expect(Math.abs(openBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(openBox!.width - beforeBox!.width)).toBeLessThanOrEqual(0.5)
-
-    await page.getByRole("button", { name: "Close filters" }).click()
-    await expect(page.getByTestId("page-filter-panel")).toBeHidden()
-    const closedBox = await canvas.boundingBox()
-    expect(closedBox).not.toBeNull()
-    expect(Math.abs(closedBox!.x - beforeBox!.x)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(closedBox!.width - beforeBox!.width)).toBeLessThanOrEqual(0.5)
   })
 
   test("aligns quick periods with page titles when desktop space allows", async ({

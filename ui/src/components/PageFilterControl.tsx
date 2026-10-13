@@ -9,13 +9,13 @@ import { FunnelSimpleIcon } from "@phosphor-icons/react/FunnelSimple"
 import { XIcon } from "@phosphor-icons/react/X"
 import { Popover as PopoverPrimitive } from "radix-ui"
 import { cn } from "../lib/utils"
-import { AppButton } from "./ui/product-button"
+import { AppButton } from "./legacy-ui/product-button"
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "./ui/sheet"
+} from "./legacy-ui/sheet"
 
 type PageFilterControlProps = {
   title: string

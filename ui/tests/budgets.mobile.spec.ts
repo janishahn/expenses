@@ -60,7 +60,7 @@ test.describe("Budgets Page Mobile", () => {
     await expect(page.getByRole("heading", { name: "Monthly budgets" })).toBeVisible()
     await expect(page.getByRole("heading", { name: /Annual budgets/ })).toBeVisible()
 
-    const addAction = page.getByTestId("app-shell-mobile-add-action")
+    const addAction = page.getByTestId("app-shell-utility").getByRole("button")
     await expect(addAction).toHaveAccessibleName("Add budget")
     await addAction.click()
 

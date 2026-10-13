@@ -19,12 +19,12 @@ import {
   WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import { buildSearchParams } from "../lib/searchParams"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import {
   AppFieldLabel,
   AppInput,
   AppNativeSelect,
-} from "../components/ui/product-fields"
+} from "../components/legacy-ui/product-fields"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

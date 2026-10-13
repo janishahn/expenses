@@ -516,9 +516,15 @@ test.describe("Spending Assistant", () => {
     // newest content extends below the viewport.
     const scrollToLatest = page.getByTestId("spending-assistant-scroll-bottom")
     await expect(scrollToLatest).toBeVisible()
-    const scrollTopBefore = await thread.evaluate(
-      (element) => element.scrollTop
-    )
+    // Let the send-time smooth scroll settle before measuring.
+    const scrollTopBefore = await thread.evaluate(async (element) => {
+      let last = -1
+      while (element.scrollTop !== last) {
+        last = element.scrollTop
+        await new Promise((resolve) => window.setTimeout(resolve, 100))
+      }
+      return last
+    })
     await emitEvent(page, { type: "text_chunk", content: "\n\nNewest detail." })
     await expect(page.getByTestId("spending-assistant-thread").getByText("Newest detail.")).toBeAttached()
     await expect

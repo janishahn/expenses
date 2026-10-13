@@ -53,10 +53,12 @@ test.describe("Desktop interaction audit evidence", () => {
       if (directory) mkdirSync(directory, { recursive: true })
       await page.goto("/transactions")
 
-      const menuTrigger = page.getByRole("button", { name: "Open menu" })
+      const menuTrigger = page
+        .getByRole("navigation", { name: "Tabs" })
+        .getByRole("button", { name: "More" })
       await menuTrigger.focus()
       await menuTrigger.click()
-      const menu = page.getByRole("complementary", { name: "Application menu" })
+      const menu = page.getByRole("dialog", { name: "More" })
       await expect(menu).toBeVisible()
       await page.waitForTimeout(300)
       if (directory) {

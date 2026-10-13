@@ -16,7 +16,7 @@ import {
   WorkspaceToolbar,
 } from "../components/product/ProductSurfaces"
 import TransactionDescription from "../components/TransactionDescription"
-import { AppButton } from "../components/ui/product-button"
+import { AppButton } from "../components/legacy-ui/product-button"
 import RouteLoading from "../components/RouteLoading"
 import RouteError from "../components/RouteError"
 

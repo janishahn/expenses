@@ -724,7 +724,12 @@ function SpendingAssistantPage() {
     <section
       data-testid="spending-assistant-page"
       aria-label="Assistant conversation"
-      className="relative flex h-[calc(100dvh-2rem)] min-h-[32rem] flex-col gap-3 desk:h-[calc(100dvh-7.75rem)] desk:min-h-[34rem]"
+      // Fills the page panel; the New chat row above the page appears once a conversation starts.
+      className={`relative flex min-h-[32rem] flex-col gap-3 desk:min-h-[34rem] ${
+        messages.length === 0
+          ? "h-[calc(100dvh-5.75rem-env(safe-area-inset-bottom))] desk:h-[calc(100dvh-3.25rem)]"
+          : "h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] desk:h-[calc(100dvh-6.5rem)]"
+      }`}
     >
       <PageIntro title="Assistant" />
       <ChatGPTUsageIndicator />

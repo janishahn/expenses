@@ -3,8 +3,8 @@ import { ShieldCheckIcon } from "@phosphor-icons/react/ShieldCheck"
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
 import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
+import { AppButton } from "../components/legacy-ui/product-button"
+import { AppFieldLabel, AppInput } from "../components/legacy-ui/product-fields"
 
 function toSafeAdminRedirect(raw: string | null): string {
   const target = getSafeRedirectTarget(raw, "/admin")
