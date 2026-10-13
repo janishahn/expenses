@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import type { Icon } from "@phosphor-icons/react"
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
 import { CalendarBlankIcon } from "@phosphor-icons/react/CalendarBlank"
@@ -176,13 +176,20 @@ function useBurndown(month: string, scope: string | null, compare: boolean) {
   })
 }
 
+// Budgets also show on the Dashboard and in the Insights budget history.
+function invalidateBudgetViews(queryClient: QueryClient) {
+  for (const key of ["budgets", "dashboard", "insights"]) {
+    void queryClient.invalidateQueries({ queryKey: [key] })
+  }
+}
+
 function useSaveBudget(onSaved: () => void, onFailed: (message: string) => void) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (request: BudgetRequest) => apiFetch(request.path, { method: "POST", body: JSON.stringify(request.body) }),
     onSuccess: () => {
       onSaved()
-      void queryClient.invalidateQueries({ queryKey: ["budgets"] })
+      invalidateBudgetViews(queryClient)
     },
     onError: (error) => onFailed(getApiErrorMessage(error, "Could not save the budget.")),
   })
@@ -631,7 +638,7 @@ function BudgetsPage() {
 
   const remove = useMutation({
     mutationFn: (path: string) => apiFetch(path, { method: "DELETE" }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["budgets"] }),
+    onSuccess: () => invalidateBudgetViews(queryClient),
   })
 
   if (isLoading) return <PanelLoading title="Budgets" label="Loading budgets…" />
