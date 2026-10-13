@@ -45,7 +45,7 @@ Use Budgets when you want to plan, not only review. Set monthly or annual limits
 
 ![Insights](docs/screenshots/insights-light.png)
 
-Insights helps when totals alone do not tell the full story. Change the period or narrow the view by type and tags, then compare income with spending, inspect category trends, or open the Net view to see how each month changed the balance. Charts link back to the transactions behind them.
+Insights helps when totals alone do not tell the full story. Change the period or narrow the view by tags, then compare income with spending, separate recurring costs from everything else, follow each category or tag month by month, and see which days of the week you spend most. Charts link back to the transactions behind them.
 
 ### Recurring income and expenses
 

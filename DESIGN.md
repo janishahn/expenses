@@ -4,13 +4,7 @@ These are rules, not suggestions. When a rule and a page disagree, the page is
 wrong. Code and tests define feature behavior; this document defines how the
 web app looks, moves, and reads.
 
-The reference prototype is `ui/prototypes/redesign/index.html`. Run the Vite dev
-server and open `/prototypes/redesign/`. When this document is ambiguous, match
-the prototype. The prototype loads Tabler icons from a CDN for convenience; the
-app uses bundled Phosphor icons and never loads remote assets.
-
-The web UI is migrating to this spec. Do not extend the old visual patterns
-while touching a page; move what you touch to the primitives below.
+The app uses bundled Phosphor icons and never loads remote assets.
 
 ## Principles
 
@@ -294,7 +288,7 @@ Data integrity:
 ## Pages
 
 Each page is a metric strip (optional), cards or one list, and a peek. The
-prototype is the reference for content; these rules fix the structure.
+pages below fix the structure; the current pages show the content.
 
 - **Dashboard.** Strip: Balance, Cash in, Spent, Net, Budget pace. Then Balance
   and Recent side by side, Spending by category full width, Category share and

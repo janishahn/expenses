@@ -15,8 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bank reconciliation records how each statement row was resolved (matched, created, or ignored) with an optional ignore reason. New endpoints list open and resolved rows by account with paging, list bank accounts, search all transactions for a match, accept suggested matches in bulk, and optionally update the transaction amount to the bank amount when matching. Creating a transaction from a row accepts tags and notes, and reopening can move the created transaction to the trash.
 
 ### Changed
+- Redesigned the web app around one quiet visual system in light and dark. Desktop has a sidebar and an inset page panel; mobile has a tab bar with a More sheet. Every page, chart, dialog, and menu uses the same components, and charts can show their data as a table.
+- Transactions open in a side peek or a full view where every field saves as you edit it; a failed save keeps your entry and shows the error. `/transactions/:id/edit` now opens the transaction. Adding a transaction starts from the Transactions header on every layout.
+- Settings and Admin are sections with their own URLs, and changes save at once. Admin asks for your password in place before showing server sections.
+- Reconcile reviews statement rows in suggested, several-match, and no-match groups, with Match all, a search for any transaction, ignore reasons, create and match, Undo for every action, and a Resolved view filtered by outcome and account.
 - Bank rows matched to a transaction that is later moved to the trash are open for reconciliation again.
 - Upgrading backfills existing bank rows as ignored (if reviewed) or matched. Rows created from a statement before this release are marked matched, because they cannot be told apart from matched rows.
+
+### Removed
+- The separate transaction edit page, and the mobile navigation drawer and floating add button.
 
 ### Dependencies
 - Replaced ESLint and its plugins with oxlint for web linting. `npm run lint` keeps the previous rules and adds design rules that keep pages on the shared component kit.

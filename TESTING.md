@@ -35,6 +35,8 @@ npm run test:e2e:ui
 npm run test:e2e:headed
 ```
 
+Visual baselines exist for macOS (`darwin`) and Linux. Regenerate the macOS files locally with `--update-snapshots`. For the Linux files, run the **Full tests** workflow on the branch with `update_snapshots` checked, then copy the files from its `visual-baselines-linux` artifact into `ui/tests/`.
+
 ## Policy
 
 - Every new or changed web user-facing story has at least one real full-stack browser happy path on every materially distinct supported layout: desktop Chromium and mobile WebKit.
@@ -90,11 +92,11 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Recurring page tabs, create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
 | Template create/edit/delete and reorder | `templates.spec.ts`, `focus-management.spec.ts` | `organization.mobile.spec.ts` | Yes |
 | Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Per-user local categorization toggle, unsaved state, threshold validation, failed-save recovery and persistence, first training, new expense prediction, and disable | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Real background training; backend tests cover weekly checks, correction provenance, and manual/rule priority |
-| Commerzbank CSV reconciliation inbox, reviewed outcomes, match selection, and editable create-and-match | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
+| Per-user local categorization toggle that saves at once, threshold validation with Escape to revert, failed-save recovery and persistence, first training, new expense prediction, and disable | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Real background training; backend tests cover weekly checks, correction provenance, and manual/rule priority |
+| Reconcile: Commerzbank CSV import with preview and duplicate count, suggested, several and no-match bands, Match all, match search with the bank-amount switch, ignore reasons, create and match, Undo, the Resolved view with outcome and account filters, and reopen with keep-or-trash for created transactions | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
 | PDF report options, include/exclude tag scope, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | ChatGPT pairing, per-feature provider/model/thinking settings, custom model validation and recovery, persistence, and disconnect | `ai-settings.spec.ts` | `ai-settings.mobile.spec.ts` | Real backend; external OpenAI responses simulated |
-| Settings, appearance, balance anchors, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
+| Settings sections with URLs: profile and sign out, ingest token, appearance, balance snapshots, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
 | Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
 | Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |
 
