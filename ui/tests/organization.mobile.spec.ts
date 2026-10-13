@@ -1,162 +1,170 @@
-import { expect, test } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import { expect, test, type APIRequestContext, type Page } from "./fixtures"
+import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+
+type StoredTag = {
+  id: number
+  name: string
+  is_hidden_from_filters: boolean
+  archived_at: string | null
+  auto_attach_period: { start: string; end: string } | null
+}
+
+async function fetchTag(request: APIRequestContext, name: string) {
+  const response = await request.get("/api/tags?period=all&include_archived=1")
+  expect(response.ok()).toBeTruthy()
+  const { tags } = (await response.json()) as { tags: StoredTag[] }
+  return tags.find((tag) => tag.name === name)
+}
+
+async function openRow(page: Page, listName: string, name: string) {
+  await page.getByRole("list", { name: listName }).getByRole("listitem", { name, exact: true }).click()
+}
 
 test.describe("Organization surfaces (mobile)", () => {
-  test("creates a tag and updates it from the detail surface", async ({
+  test("creates a tag with an auto-add range and manages it from the peek and the tag page", async ({
     page,
     request,
   }) => {
-    const tagName = `Mobile tag ${Date.now()}`
-    await page.goto("/tags")
-    await page.getByRole("button", { name: "Add tag" }).first().click()
-    const dialog = page.getByRole("dialog", { name: "Add tag" })
-    await dialog.getByLabel("Name").fill(tagName)
-    await dialog
-      .locator("label", { hasText: "Automatically add during a date range" })
-      .getByRole("switch")
-      .click()
-    await dialog.getByLabel("Start date").fill("2026-08-10")
-    await dialog.getByLabel("End date").fill("2026-08-17")
-    await dialog.getByRole("button", { name: "Add tag" }).click()
-
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      "Mobile tag"
-    )
+    const stamp = Date.now()
+    const tagName = `Mobile tag ${stamp}`
+    await page.goto("/tags")
+    const addButton = page.getByRole("button", { name: "Add tag" }).first()
+    await addButton.click()
+    const dialog = page.getByRole("dialog", { name: "Add tag" })
+    await dialog.getByRole("textbox", { name: "Name" }).fill(tagName)
+    await dialog.getByRole("button", { name: "Auto-add off" }).click()
+    const range = page.getByRole("dialog", { name: "Auto-add" })
+    await range.getByRole("button", { name: "Save" }).click()
+    await expect(range.getByRole("alert")).toHaveText("Choose a start and an end date.")
+    await range.getByLabel("From").fill("2026-08-17")
+    await range.getByLabel("Until").fill("2026-08-10")
+    await range.getByRole("button", { name: "Save" }).click()
+    await expect(range.getByRole("alert")).toHaveText("The end must not be before the start.")
+    await range.getByLabel("Until").fill("2026-08-24")
+    await range.getByRole("button", { name: "Save" }).click()
+    await expect(dialog.getByRole("button", { name: /^Auto-add 17/ })).toBeVisible()
+    await dialog.getByRole("button", { name: "Add tag" }).click()
+    await expect(dialog).toBeHidden()
+
+    const categoryId = await createCategory(request, token, "expense", `Mobile tag category ${stamp}`)
     await createTransaction(request, token, {
       date: new Date().toISOString().slice(0, 10),
       occurred_at: new Date().toISOString(),
       type: "expense",
       amount_cents: 4200,
       category_id: categoryId,
-      title: `Mobile tag seed ${Date.now()}`,
+      title: `Mobile tag seed ${stamp}`,
       tags: [tagName],
     })
-
-    await page.getByRole("link", { name: new RegExp(tagName) }).first().click()
-    await expect(page).toHaveURL(/\/tags\/\d+/)
-    await expect(page.getByText("No income in this period")).toBeVisible()
-    await expect(page.getByText("Add transactions with this tag.")).toBeVisible()
-    const settings = page.getByTestId("tag-settings-inspector")
-    await expect(settings).toBeVisible()
-    await expect(settings).toContainText("10.08.2026–17.08.2026")
-    await expect(page.getByLabel("Name")).toHaveCount(0)
-
-    const archiveAction = settings.getByRole("button", { name: "Archive" })
-    const editAction = settings.getByRole("button", { name: "Edit tag" })
-    await expect(archiveAction).toHaveText("")
-    await expect(editAction).toHaveText("")
-    const [archiveBox, editBox] = await Promise.all([
-      archiveAction.boundingBox(),
-      editAction.boundingBox(),
-    ])
-    expect(archiveBox).not.toBeNull()
-    expect(editBox).not.toBeNull()
-    expect(Math.abs(archiveBox!.y - editBox!.y)).toBeLessThanOrEqual(1)
-
-    await editAction.click()
-    const editDialog = page.getByRole("dialog", { name: "Edit tag" })
-    await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
-    await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
-    const datePadding = await editDialog.getByLabel("Start date").evaluate((input) => {
-      const style = window.getComputedStyle(input)
-      return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]
+    expect((await fetchTag(request, tagName))?.auto_attach_period).toEqual({
+      start: "2026-08-17",
+      end: "2026-08-24",
     })
-    expect(datePadding).toEqual(["0px", "0px", "0px", "0px"])
-    const datePanel = editDialog.getByLabel("Start date").locator("xpath=../..")
-    const dateFieldBounds = await datePanel.evaluate((panel) => {
-      const panelBounds = panel.getBoundingClientRect()
-      return Array.from(panel.querySelectorAll('input[type="date"]')).map((input) => {
-        const inputBounds = input.getBoundingClientRect()
-        return {
-          inputLeft: inputBounds.left,
-          inputRight: inputBounds.right,
-          panelLeft: panelBounds.left,
-          panelRight: panelBounds.right,
-        }
-      })
-    })
-    expect(dateFieldBounds).toHaveLength(2)
-    for (const bounds of dateFieldBounds) {
-      expect(bounds.inputLeft).toBeGreaterThanOrEqual(bounds.panelLeft - 1)
-      expect(bounds.inputRight).toBeLessThanOrEqual(bounds.panelRight + 1)
-    }
 
+    await page.reload()
+    await openRow(page, "Tags", tagName)
+    const peek = page.getByRole("complementary", { name: tagName })
+    await expect(peek).toContainText("42,00")
+    await expect(peek).toContainText("spent")
+    await expect(page.getByRole("heading", { name: "Tags", level: 1 })).toBeHidden()
+
+    const filterSwitch = peek.getByRole("switch", { name: "Show in filter menus" })
+    await expect(filterSwitch).toBeChecked()
+    await filterSwitch.click()
+    await expect(filterSwitch).not.toBeChecked()
+    await expect.poll(async () => (await fetchTag(request, tagName))?.is_hidden_from_filters).toBe(true)
+
+    await peek.getByRole("button", { name: "Edit Name" }).click()
     const updatedName = `${tagName} updated`
-    await editDialog.getByLabel("Name").fill(updatedName)
-    await editDialog
-      .locator("label", { hasText: "Hide from filter menus" })
-      .getByRole("switch")
-      .click()
-    await editDialog.getByRole("button", { name: "Save" }).click()
-    await expect(page.getByRole("heading", { name: updatedName })).toBeVisible()
-    await expect(settings).toContainText("Hidden from filter menus")
+    await peek.getByRole("textbox", { name: "Name" }).fill(updatedName)
+    await peek.getByRole("textbox", { name: "Name" }).press("Enter")
+    await expect(page.getByRole("complementary", { name: updatedName })).toBeVisible()
 
-    await archiveAction.click()
-    await expect(settings.getByRole("button", { name: "Restore" })).toBeVisible()
-    await expect(settings).toContainText("Lifecycle")
-    await expect(settings).toContainText(/Archived \d{2}\.\d{2}\.\d{4}/)
+    const renamed = page.getByRole("complementary", { name: updatedName })
+    await renamed.getByRole("button", { name: "All 1" }).click()
+    await expect(page).toHaveURL(/\/tags\/\d+/)
+    await expect(page.getByRole("heading", { name: updatedName, level: 1 })).toBeVisible()
+    await expect(page.getByRole("listitem", { name: `Mobile tag seed ${stamp}` })).toContainText("42,00")
+    await page.goBack()
 
-    await page.goto("/tags?period=all")
-    const archivedLibrary = page.getByTestId("archived-tag-library")
-    await expect(archivedLibrary).toContainText(updatedName)
-    await archivedLibrary.getByRole("link", { name: new RegExp(updatedName) }).click()
-    await settings.getByRole("button", { name: "Restore" }).click()
-    await expect(settings.getByRole("button", { name: "Archive" })).toBeVisible()
+    await expect(page.getByRole("complementary", { name: updatedName })).toBeVisible()
+    await page.getByRole("complementary", { name: updatedName }).getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("dialog", { name: "More actions" }).getByRole("menuitem", { name: "Archive" }).click()
+    await expect(page.getByRole("status").filter({ hasText: `Archived ${updatedName}.` })).toBeVisible()
+    await expect.poll(async () => (await fetchTag(request, updatedName))?.archived_at).not.toBeNull()
   })
 
-  test("creates and edits a transaction template", async ({ page, request }) => {
+  test("creates a transaction template and edits it in its peek", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      "Mobile template"
-    )
+    const categoryName = `Mobile template category ${Date.now()}`
+    await createCategory(request, token, "expense", categoryName)
     const name = `Mobile template ${Date.now()}`
 
     await page.goto("/templates")
     await page.getByRole("button", { name: "Add template" }).first().click()
     const addDialog = page.getByRole("dialog", { name: "Add template" })
-    await addDialog.getByLabel("Name").fill(name)
-    await addDialog.getByLabel("Category").selectOption(String(categoryId))
-    await addDialog.getByLabel("Default amount (optional)").fill("4.25")
+    await addDialog.getByRole("textbox", { name: "Name" }).fill(name)
+    await addDialog.getByRole("textbox", { name: "Default amount" }).fill("4.25")
+    await addDialog.getByRole("button", { name: /^Category / }).click()
+    await page.getByRole("combobox", { name: "Category" }).fill(categoryName)
+    await page.getByRole("option", { name: categoryName, exact: true }).click()
     await addDialog.getByRole("button", { name: "Add template" }).click()
+    await expect(addDialog).toBeHidden()
 
-    const row = page.getByTestId("template-row").filter({ hasText: name })
-    await expect(row).toBeVisible()
-    await row.getByRole("button", { name: `Edit ${name}` }).click()
-    const editDialog = page.getByRole("dialog", { name: "Edit template" })
-    await editDialog.getByLabel("Name").fill(`${name} updated`)
-    await editDialog.getByRole("button", { name: "Save changes" }).click()
-    await expect(
-      page.getByTestId("template-row").filter({ hasText: `${name} updated` })
-    ).toBeVisible()
+    const list = page.getByRole("list", { name: "Templates" })
+    const row = list.getByRole("listitem", { name, exact: true })
+    await expect(row).toContainText("4,25")
+    await row.click()
+    const peek = page.getByRole("complementary", { name })
+    await expect(peek.getByRole("button", { name: /^Category/ })).toContainText(categoryName)
+
+    const updatedName = `${name} updated`
+    await peek.getByRole("button", { name: "Edit Name" }).click()
+    await peek.getByRole("textbox", { name: "Name" }).fill(updatedName)
+    await peek.getByRole("textbox", { name: "Name" }).press("Enter")
+    await peek.getByRole("button", { name: /^Amount/ }).click()
+    const amountSheet = page.getByRole("dialog", { name: "Default amount" })
+    await amountSheet.getByRole("textbox", { name: "Default amount" }).fill("7.50")
+    await amountSheet.getByRole("button", { name: "Save" }).click()
+
+    await page.getByRole("complementary", { name: updatedName }).getByRole("button", { name: "Templates" }).click()
+    const updatedRow = list.getByRole("listitem", { name: updatedName, exact: true })
+    await expect(updatedRow).toContainText("7,50")
+    const response = await request.get("/api/templates")
+    const { templates } = (await response.json()) as {
+      templates: Array<{ name: string; default_amount_cents: number | null }>
+    }
+    expect(templates.find((template) => template.name === updatedName)?.default_amount_cents).toBe(750)
   })
 
-  test("creates and toggles a categorization rule", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    await ensureCategory(request, token, "expense", "Mobile rule")
+  test("creates a categorization rule and toggles it in its peek", async ({ page, request }) => {
     const name = `Mobile rule ${Date.now()}`
 
     await page.goto("/rules")
     await page.getByRole("button", { name: "Add rule" }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add rule" })
-    await dialog.getByLabel("Name").fill(name)
-    await dialog.getByLabel("Title text").fill("mobile-rule")
+    await dialog.getByRole("textbox", { name: "Name" }).fill(name)
+    await dialog.getByRole("textbox", { name: "Title text" }).fill("mobile-rule")
     await dialog.getByRole("button", { name: "Add rule" }).click()
+    await expect(dialog).toBeHidden()
 
-    const card = page.getByTestId("automation-rule").filter({ hasText: name })
-    const toggle = card.getByRole("switch")
-    await expect(toggle).toBeVisible()
-    const initialState = await toggle.getAttribute("aria-checked")
+    await openRow(page, "Rules", name)
+    const peek = page.getByRole("complementary", { name })
+    const toggle = peek.getByRole("switch", { name: "Enabled" })
+    await expect(toggle).toBeChecked()
     await toggle.click()
-    await expect(toggle).toHaveAttribute(
-      "aria-checked",
-      initialState === "true" ? "false" : "true"
-    )
+    await expect(toggle).not.toBeChecked()
+    await expect
+      .poll(async () => {
+        const { rules } = (await (await request.get("/api/rules")).json()) as {
+          rules: Array<{ name: string; enabled: boolean }>
+        }
+        return rules.find((rule) => rule.name === name)?.enabled
+      })
+      .toBe(false)
+
+    await peek.getByRole("button", { name: "Rules" }).click()
+    await expect(page.getByRole("listitem", { name, exact: true })).toContainText("Off")
   })
 })

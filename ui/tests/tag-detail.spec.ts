@@ -1,137 +1,209 @@
+import type { APIRequestContext, Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+
+async function createTag(request: APIRequestContext, token: string, name: string): Promise<number> {
+  const response = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: { name, is_hidden_from_budget: false },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
+async function seed(
+  request: APIRequestContext,
+  token: string,
+  tagName: string,
+  categoryName: string,
+  amountCents: number,
+  type: "expense" | "income" = "expense",
+) {
+  const categoryId = await createCategory(request, token, type, categoryName)
+  const today = new Date().toISOString().slice(0, 10)
+  await createTransaction(request, token, {
+    date: today,
+    occurred_at: new Date().toISOString(),
+    type,
+    amount_cents: amountCents,
+    category_id: categoryId,
+    title: `Tag detail ${type} ${tagName}`,
+    tags: [tagName],
+  })
+}
+
+// Waits for the menu to leave, so the next menu opens after the previous one finished closing.
+async function pickMenuItem(page: Page, role: "menuitem" | "menuitemcheckbox", name: string) {
+  await page.getByRole(role, { name }).click()
+  await expect(page.getByRole("menu")).toHaveCount(0)
+}
 
 test.describe("Tag Detail Page", () => {
-  test("updates, archives, restores, and deletes a tag", async ({ page, request }) => {
+  test("shows totals, transactions and the breakdown of a tag", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Tag Detail")
-    const originalName = `E2E Tag Detail ${Date.now()}`
-
-    const createTagResponse = await request.post("/api/tags", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: originalName, is_hidden_from_budget: false },
-    })
-    expect(createTagResponse.ok()).toBeTruthy()
-    const createTagPayload = (await createTagResponse.json()) as { id: number }
-    const tagId = createTagPayload.id
-
-    await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 4200,
-      category_id: categoryId,
-      title: `Tag detail seed ${Date.now()}`,
-      tags: [originalName],
-    })
+    const stamp = Date.now()
+    const name = `E2E Tag Detail ${stamp}`
+    const tagId = await createTag(request, token, name)
+    await seed(request, token, name, `E2E Tag Detail Groceries ${stamp}`, 4_200)
 
     await page.goto(`/tags/${tagId}?period=all`)
-    await expect(page.locator("main h1")).toContainText(originalName)
-    await expect(page.getByTestId("donut-legend").first()).toBeVisible()
-    await expect(page.getByText("No income in this period")).toBeVisible()
-    await expect(page.getByText("Add transactions with this tag.")).toBeVisible()
-    const sparklines = page.locator("main path.recharts-line-curve")
-    await expect(sparklines).toHaveCount(3)
-    const expenseShape = await sparklines.nth(1).evaluate((path) => {
-      const line = path as SVGPathElement
-      const length = line.getTotalLength()
-      const start = line.getPointAtLength(0)
-      const middle = line.getPointAtLength(length / 2)
-      const end = line.getPointAtLength(length)
-      return {
-        startToMiddle: Math.abs(start.y - middle.y),
-        startToEnd: Math.abs(start.y - end.y),
-      }
-    })
-    expect(expenseShape.startToMiddle).toBeLessThan(1)
-    expect(expenseShape.startToEnd).toBeGreaterThan(10)
-    const settings = page.getByTestId("tag-settings-inspector")
-    await expect(settings).toContainText("Included in budgets")
-    await expect(page.getByRole("dialog", { name: "Edit tag" })).toHaveCount(0)
-    await expect(page.getByLabel("Name")).toHaveCount(0)
+    await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible()
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Tags")
+    const metric = (label: string) =>
+      page.locator('[class*="_lab_"]', { hasText: new RegExp(`^${label}$`) }).locator("..")
+    await expect(metric("Expenses")).toContainText(/42,00\s?€/)
+    await expect(metric("Income")).toContainText(/0,00\s?€/)
+    await expect(metric("Balance")).toContainText(/42,00\s?€/)
+    await expect(
+      page.getByRole("list", { name: "Transactions" }).getByRole("listitem"),
+    ).toHaveCount(1)
 
-    const archiveAction = settings.getByRole("button", { name: "Archive" })
-    const editAction = settings.getByRole("button", { name: "Edit tag" })
-    await expect(archiveAction).toHaveText("")
-    await expect(editAction).toHaveText("")
-    const [archiveBox, editBox] = await Promise.all([
-      archiveAction.boundingBox(),
-      editAction.boundingBox(),
-    ])
-    expect(archiveBox).not.toBeNull()
-    expect(editBox).not.toBeNull()
-    expect(Math.abs(archiveBox!.y - editBox!.y)).toBeLessThanOrEqual(1)
-    expect(
-      await archiveAction.evaluate((element) => getComputedStyle(element).backgroundColor),
-    ).toBe("rgba(0, 0, 0, 0)")
-    expect(
-      await editAction.evaluate((element) => getComputedStyle(element).backgroundColor),
-    ).not.toBe("rgba(0, 0, 0, 0)")
+    const expenses = page.getByRole("region", { name: "Expenses" })
+    await expenses.getByRole("button", { name: "Chart options" }).click()
+    await pickMenuItem(page, "menuitemcheckbox", "Show as table")
+    const table = expenses.getByRole("table", { name: "Expenses by category" })
+    await expect(table).toContainText(`E2E Tag Detail Groceries ${stamp}`)
+    await expect(table).toContainText(/42,00\s?€/)
+    await expect(table).toContainText("100 %")
+    await expect(page.getByRole("region", { name: "Income" })).toHaveCount(0)
+  })
 
-    await editAction.click()
-    const editDialog = page.getByRole("dialog", { name: "Edit tag" })
-    await expect(editDialog).toBeVisible()
+  test("shows the income breakdown only when the tag has income", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const name = `E2E Tag Income ${stamp}`
+    const tagId = await createTag(request, token, name)
+    await seed(request, token, name, `E2E Tag Detail Groceries ${stamp}`, 1_000)
+    await seed(request, token, name, `E2E Tag Detail Salary ${stamp}`, 5_000, "income")
 
-    const budgetToggle = editDialog
-      .locator("label", { hasText: "Exclude from budgets" })
-      .getByRole("switch")
-    await expect(budgetToggle).toBeVisible()
-    const initialBudgetState = await budgetToggle.getAttribute("aria-checked")
-    await budgetToggle.click()
-    await expect(budgetToggle).toHaveAttribute(
-      "aria-checked",
-      initialBudgetState === "true" ? "false" : "true"
-    )
+    await page.goto(`/tags/${tagId}?period=all`)
+    const income = page.getByRole("region", { name: "Income" })
+    await income.getByRole("button", { name: "Chart options" }).click()
+    await pickMenuItem(page, "menuitemcheckbox", "Show as table")
+    const table = income.getByRole("table", { name: "Income by category" })
+    await expect(table).toContainText(`E2E Tag Detail Salary ${stamp}`)
+    await expect(table).toContainText(/50,00\s?€/)
+  })
 
-    const filterToggle = editDialog
-      .locator("label", { hasText: "Hide from filter menus" })
-      .getByRole("switch")
-    await expect(filterToggle).toHaveAttribute("aria-checked", "false")
-    await filterToggle.click()
-    await expect(filterToggle).toHaveAttribute("aria-checked", "true")
+  test("shows an empty state for a tag without transactions", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const tagId = await createTag(request, token, `E2E Tag Empty ${Date.now()}`)
+    await page.goto(`/tags/${tagId}?period=all`)
+    await expect(page.getByText("No transactions in this period.")).toBeVisible()
+    await expect(page.getByText("No spending in this period.")).toBeVisible()
+  })
 
-    await editDialog
-      .locator("label", { hasText: "Automatically add during a date range" })
-      .getByRole("switch")
-      .click()
-    await editDialog.getByLabel("Start date").fill("2026-08-10")
-    await editDialog.getByLabel("End date").fill("2026-08-17")
+  test("edits settings as they change and keeps them after reload", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const originalName = `E2E Tag Edit ${Date.now()}`
+    const tagId = await createTag(request, token, originalName)
+
+    await page.goto(`/tags/${tagId}?period=all`)
+    const settings = page.getByRole("region", { name: "Settings" })
+    await expect(settings.getByRole("switch", { name: "Count in budgets" })).toBeChecked()
+    await expect(settings.getByRole("switch", { name: "Show in filter menus" })).toBeChecked()
 
     const updatedName = `${originalName} Updated`
-    await editDialog.getByLabel("Name").fill(updatedName)
-    await editDialog.getByRole("button", { name: "Save" }).click()
-    await expect(editDialog).toHaveCount(0)
-    await expect(page.locator("main h1")).toContainText(updatedName)
-    await expect(settings).toContainText("Excluded from budgets")
-    await expect(settings).toContainText("Hidden from filter menus")
-    await expect(settings).toContainText("10.08.2026–17.08.2026")
+    await settings.getByRole("button", { name: /^Name/ }).click()
+    const namePopover = page.getByRole("dialog", { name: "Name" })
+    await namePopover.getByLabel("Name").fill("")
+    await namePopover.getByRole("button", { name: "Save" }).click()
+    await expect(namePopover.getByText("Enter a tag name.")).toBeVisible()
+    await namePopover.getByLabel("Name").fill(updatedName)
+    await namePopover.getByRole("button", { name: "Save" }).click()
+    await expect(page.getByRole("heading", { name: updatedName, level: 1 })).toBeVisible()
 
-    await archiveAction.click()
-    await expect(page.locator("main")).toContainText("Archived")
-    await expect(settings).toContainText("Lifecycle")
-    await expect(settings).toContainText(/Archived \d{2}\.\d{2}\.\d{4}/)
+    await settings.getByRole("switch", { name: "Count in budgets" }).click()
+    await expect(settings).toContainText("Excluded")
+    await settings.getByRole("switch", { name: "Show in filter menus" }).click()
+    await expect(settings).toContainText("Hidden")
+
+    await settings.getByRole("button", { name: /Auto-add/ }).click()
+    const autoAdd = page.getByRole("dialog", { name: "Auto-add" })
+    await autoAdd.getByLabel("From").fill("2026-08-10")
+    await autoAdd.getByLabel("Until").fill("2026-08-17")
+    await autoAdd.getByRole("button", { name: "Save" }).click()
+    await expect(settings.getByRole("button", { name: /Auto-add/ })).toContainText("10")
+
+    await page.reload()
+    await expect(page.getByRole("heading", { name: updatedName, level: 1 })).toBeVisible()
+    await expect(settings.getByRole("switch", { name: "Count in budgets" })).not.toBeChecked()
+    await expect(settings.getByRole("switch", { name: "Show in filter menus" })).not.toBeChecked()
+    await settings.getByRole("button", { name: /Auto-add/ }).click()
+    await expect(autoAdd.getByLabel("From")).toHaveValue("2026-08-10")
+    await expect(autoAdd.getByLabel("Until")).toHaveValue("2026-08-17")
+    await autoAdd.getByRole("button", { name: "Turn off" }).click()
+    await expect(settings.getByRole("button", { name: /Auto-add/ })).toContainText("Off")
+  })
+
+  test("archives with undo, restores and deletes a tag", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const name = `E2E Tag Lifecycle ${Date.now()}`
+    const tagId = await createTag(request, token, name)
+
+    await page.goto(`/tags/${tagId}?period=all`)
+    const settings = page.getByRole("region", { name: "Settings" })
+    await page.getByRole("button", { name: "More actions" }).first().click()
+    await pickMenuItem(page, "menuitem", "Archive")
+    const toast = page.getByRole("status").filter({ hasText: `Archived ${name}.` })
+    await expect(toast).toBeVisible()
+    await expect(settings.getByText("Archived", { exact: true })).toBeVisible()
+    await toast.getByRole("button", { name: "Undo" }).click()
+    await expect(settings.getByText("Archived", { exact: true })).toHaveCount(0)
+
+    await page.getByRole("button", { name: "More actions" }).first().click()
+    await pickMenuItem(page, "menuitem", "Archive")
+    await expect(settings.getByText("Archived", { exact: true })).toBeVisible()
 
     await page.goto("/tags?period=all")
-    const archivedLibrary = page.getByTestId("archived-tag-library")
-    await expect(archivedLibrary).toContainText(updatedName)
-    await archivedLibrary.getByRole("link", { name: new RegExp(updatedName) }).click()
-    await settings.getByRole("button", { name: "Restore" }).click()
-    await expect(settings.getByRole("button", { name: "Archive" })).toBeVisible()
-    await expect(settings).not.toContainText("Lifecycle")
+    await expect(
+      page.getByRole("list", { name: "Tags" }).getByRole("listitem", { name }),
+    ).toContainText("Archived")
+    await page.goto(`/tags/${tagId}?period=all`)
+    await page.getByRole("button", { name: "More actions" }).first().click()
+    await pickMenuItem(page, "menuitem", "Restore")
+    await expect(settings.getByText("Archived", { exact: true })).toHaveCount(0)
 
-    await settings.getByRole("button", { name: "Archive" }).click()
-    await expect(settings.getByRole("button", { name: "Restore" })).toBeVisible()
-
-    await settings.getByRole("button", { name: "Edit" }).click()
-    await expect(editDialog.getByLabel("Start date")).toHaveValue("2026-08-10")
-    await expect(editDialog.getByLabel("End date")).toHaveValue("2026-08-17")
-
-    await editDialog.getByRole("button", { name: "Delete tag" }).click()
+    await page.getByRole("button", { name: "More actions" }).first().click()
+    await pickMenuItem(page, "menuitem", "Delete")
     await page
-      .getByRole("dialog", { name: "Delete this tag?" })
-      .getByRole("button", { name: "Delete", exact: true })
+      .getByRole("dialog", { name: `Delete tag "${name}"?` })
+      .getByRole("button", { name: "Delete" })
       .click()
-    await expect(page).toHaveURL("/tags")
-    await expect(page.locator("body")).not.toContainText(updatedName)
+    await expect(page).toHaveURL(/\/tags$/)
+    await expect(page.getByRole("list", { name: "Tags" }).getByRole("listitem", { name })).toHaveCount(0)
+  })
+
+  test("merges the tag into another and opens the target", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const source = `E2E Detail Merge Source ${stamp}`
+    const target = `E2E Detail Merge Target ${stamp}`
+    const sourceId = await createTag(request, token, source)
+    const targetId = await createTag(request, token, target)
+    await seed(request, token, source, `E2E Tag Detail Groceries ${stamp}`, 2_700)
+
+    await page.goto(`/tags/${sourceId}?period=all`)
+    await page.getByRole("button", { name: "More actions" }).first().click()
+    await pickMenuItem(page, "menuitem", "Merge into…")
+    const dialog = page.getByRole("dialog", { name: `Merge ${source}` })
+    await dialog.getByLabel("Into").selectOption({ label: target })
+    await expect(dialog.getByText("Transactions").locator("..")).toContainText("1")
+    await dialog.getByRole("button", { name: "Merge", exact: true }).click()
+
+    await expect(page).toHaveURL(new RegExp(`/tags/${targetId}`))
+    await expect(page.getByRole("heading", { name: target, level: 1 })).toBeVisible()
+    await expect(page.getByRole("status").filter({ hasText: `Merged ${source} into ${target}.` })).toBeVisible()
+    await expect(page.getByRole("list", { name: "Transactions" }).getByRole("listitem")).toHaveCount(1)
+  })
+
+  test("shows a way back when the tag does not exist", async ({ page }) => {
+    await page.goto("/tags/999999")
+    await expect(page.getByText("Tag not found.")).toBeVisible()
+    await page.getByRole("link", { name: "Back to tags" }).click()
+    await expect(page).toHaveURL(/\/tags$/)
   })
 })

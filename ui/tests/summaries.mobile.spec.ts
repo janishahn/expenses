@@ -2,51 +2,48 @@ import { expect, test } from "./fixtures"
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Summary and report surfaces (mobile)", () => {
-  test(
-    "navigates the weekly digest and renders its decision sections",
-    async ({ page, request }) => {
-      const csrfToken = await getCsrfToken(request)
-      const categoryId = await ensureCategory(
-        request,
-        csrfToken,
-        "expense",
-        "Digest expense"
-      )
-      const now = new Date()
-      const date = [
-        now.getFullYear(),
-        String(now.getMonth() + 1).padStart(2, "0"),
-        String(now.getDate()).padStart(2, "0"),
-      ].join("-")
-      await createTransaction(request, csrfToken, {
-        date,
-        occurred_at: `${date}T12:00:00`,
-        type: "expense",
-        amount_cents: 1250,
-        category_id: categoryId,
-        title: "Digest coverage",
-        tags: [],
-      })
+  test("navigates the weekly digest and renders its sections", async ({
+    page,
+    request,
+  }) => {
+    const csrfToken = await getCsrfToken(request)
+    const categoryName = `Digest expense ${Date.now()}`
+    const categoryId = await ensureCategory(request, csrfToken, "expense", categoryName)
+    await createTransaction(request, csrfToken, {
+      date: "2019-03-05",
+      occurred_at: "2019-03-05T12:00:00",
+      type: "expense",
+      amount_cents: 1250,
+      category_id: categoryId,
+      title: "Digest coverage",
+      tags: [],
+    })
 
-      await page.goto("/digest")
-      await expect(page.getByText("Total spent")).toBeVisible()
-      const navigation = page.getByTestId("digest-period-navigation")
-      const navigationBox = await navigation.boundingBox()
-      const viewport = page.viewportSize()
-      expect(navigationBox).not.toBeNull()
-      expect(viewport).not.toBeNull()
-      expect(navigationBox!.x).toBeCloseTo(0)
-      expect(navigationBox!.width).toBeCloseTo(viewport!.width)
-      const composition = page.getByTestId("digest-weekly-composition")
-      await expect(composition).toBeVisible()
-      await expect(
-        composition.getByRole("heading", { name: "This week at a glance" })
-      ).toBeVisible()
-      const initialUrl = page.url()
-      await page.getByRole("button", { name: "Previous week" }).click()
-      await expect(page).not.toHaveURL(initialUrl)
+    await page.goto("/digest?week_of=2019-03-04")
+    await expect(page.getByRole("heading", { name: "Digest", level: 1 })).toBeVisible()
+    const spent = page.getByText("Spent", { exact: true }).locator("..")
+    await expect(spent).toContainText(/12,50\s?€/)
+    await expect(spent).toContainText("1 transaction")
+    for (const name of ["Top categories", "Budgets", "Unusual", "Auto-posted"]) {
+      await expect(page.getByRole("heading", { name })).toBeVisible()
     }
-  )
+    await expect(
+      page.getByRole("list", { name: "Top categories" }).getByRole("listitem", { name: categoryName }),
+    ).toBeVisible()
+
+    const week = page.getByRole("group", { name: "Week" })
+    await week.getByRole("button", { name: "Previous week" }).click()
+    await expect(page).toHaveURL(/week_of=2019-02-25/)
+    await expect(page.getByText("No spending this week.").first()).toBeVisible()
+    await week.getByRole("button", { name: "Next week" }).click()
+    await expect(page).toHaveURL(/week_of=2019-03-04/)
+
+    await page
+      .getByRole("list", { name: "Top categories" })
+      .getByRole("listitem", { name: categoryName })
+      .tap()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*category=${categoryId}`))
+  })
 
   test("generates a tag-scoped real PDF and exposes the latest download", async ({
     page,
@@ -78,29 +75,35 @@ test.describe("Summary and report surfaces (mobile)", () => {
       tags: [tagName],
     })
 
-    await page.addInitScript(() => {
-      window.open = () => {
-        const current = window.location.href
-        return {
-          location: { href: current },
-          close() {},
-        } as unknown as Window
-      }
-    })
-
     await page.goto("/reports/builder")
-    const tagScope = page.getByRole("radiogroup", { name: "Tag scope" })
-    await tagScope.getByRole("radio", { name: "Only include" }).check()
-    await page.getByRole("checkbox", { name: tagName }).check()
-    const reportRequestPromise = page.waitForRequest("**/api/reports/pdf")
-    await page.getByRole("button", { name: "Generate PDF Report" }).click()
-    const payload = (await reportRequestPromise).postDataJSON() as Record<string, unknown>
+    await page
+      .getByRole("radiogroup", { name: "Tags" })
+      .getByRole("radio", { name: "Only include" })
+      .tap()
+    await page.getByRole("button", { name: /^Choose tags/ }).tap()
+    await page.getByRole("option", { name: new RegExp(tagName) }).tap()
+    await page.keyboard.press("Escape")
+    const requestPromise = page.waitForRequest("**/api/reports/pdf")
+    const responsePromise = page.waitForResponse("**/api/reports/pdf")
+    const popupPromise = page.waitForEvent("popup")
+    await page.getByRole("button", { name: "Generate PDF" }).tap()
+    const payload = (await requestPromise).postDataJSON() as Record<string, unknown>
     expect(payload.tag_ids).toEqual([tagId])
     expect(payload.excluded_tag_ids).toEqual([])
-    await expect(page.getByRole("link", { name: "Download latest PDF" })).toBeVisible({
+    const popup = await popupPromise
+    const response = await responsePromise
+    expect(response.status()).toBe(200)
+    expect(response.headers()["content-type"]).toContain("application/pdf")
+    const filename = /filename="?([^";]+\.pdf)"?/.exec(
+      response.headers()["content-disposition"] ?? "",
+    )?.[1]
+    expect(filename).toBeTruthy()
+    expect((await response.body()).length).toBeGreaterThan(0)
+    await popup.close()
+    await expect(page.getByText(filename!, { exact: true })).toBeVisible({
       timeout: 30_000,
     })
-    await expect(page.getByTestId("report-latest-pdf")).toContainText(".pdf")
+    await expect(page.getByRole("button", { name: "Download" })).toBeVisible()
   })
 
   test("keeps the dashboard tag scope in spending-band drill-downs", async ({

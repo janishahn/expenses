@@ -1,6 +1,6 @@
 import { request, test as base } from "@playwright/test"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,6 +24,10 @@ async function startBackend(mockAIProvider = false): Promise<Backend> {
     EXPENSES_LLM_BASE_URL: "http://127.0.0.1:1/v1",
   }
   delete env.EXPENSES_DATABASE_URL
+  // WeasyPrint loads Pango from Homebrew on macOS; `uv run dev` sets the same path (src/expenses/cli/dev.py).
+  if (process.platform === "darwin" && existsSync("/opt/homebrew/lib")) {
+    env.DYLD_FALLBACK_LIBRARY_PATH = ["/opt/homebrew/lib", env.DYLD_FALLBACK_LIBRARY_PATH].filter(Boolean).join(":")
+  }
 
   const migrate = spawnSync("uv", ["run", "python", "-m", "alembic", "upgrade", "head"], {
     cwd: repoRoot,

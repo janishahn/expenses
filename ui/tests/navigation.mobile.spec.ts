@@ -123,21 +123,18 @@ test.describe("Navigation (mobile)", () => {
     for (const entry of actionPages) {
       await page.goto(entry.path)
       await expect(
-        page.getByTestId("app-shell-utility").getByRole("button"),
-      ).toHaveAccessibleName(entry.label)
+        page.locator("main header").getByRole("button", { name: entry.label, exact: true }),
+      ).toBeVisible()
     }
 
     await page.goto("/budgets")
     await expect(page.getByRole("button", { name: "Add budget", exact: true }).first()).toBeVisible()
-    await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
 
     await page.goto("/transactions")
     await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toBeVisible()
-    await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
 
     for (const path of ["/insights", "/settings", "/reports/builder"]) {
       await page.goto(path)
-      await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
     }
 
     await page.goto("/budgets")
@@ -155,10 +152,10 @@ test.describe("Navigation (mobile)", () => {
       { label: "Digest", path: "/digest", heading: "Digest" },
       { label: "Recurring", path: "/recurring", heading: "Recurring" },
       { label: "Templates", path: "/templates", heading: "Templates" },
-      { label: "Rules", path: "/rules", heading: "Categorization Rules" },
+      { label: "Rules", path: "/rules", heading: "Rules" },
       { label: "Categories", path: "/categories", heading: "Categories" },
       { label: "Tags", path: "/tags", heading: "Tags" },
-      { label: "Reports", path: "/reports/builder", heading: "Report Builder" },
+      { label: "Reports", path: "/reports/builder", heading: "Reports" },
       { label: "What If", path: "/scenarios", heading: "What If" },
       { label: "Reconcile", path: "/reconciliation", heading: "Reconciliation" },
       { label: "Settings", path: "/settings", heading: "Settings" },

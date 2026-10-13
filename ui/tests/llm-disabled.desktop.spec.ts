@@ -15,7 +15,9 @@ test.describe("AI surfaces hidden when LLM is disabled", () => {
 
   test("omits the Assistant entry from the sidebar", async ({ page }) => {
     await page.goto("/")
-    const sidebar = page.locator("aside")
+    const sidebar = page.getByRole("complementary", {
+      name: "Application navigation",
+    })
     await expect(sidebar).toBeVisible()
     await expect(sidebar.getByRole("link", { name: "Transactions" })).toBeVisible()
     await expect(sidebar.getByRole("link", { name: "Assistant" })).toHaveCount(0)
@@ -31,13 +33,17 @@ test.describe("AI surfaces hidden when LLM is disabled", () => {
     await page.goto("/transactions")
     await expect(page.locator("main h1")).toContainText("Transactions")
     await page.getByRole("button", { name: "Search", exact: true }).click()
-    await expect(page.getByRole("searchbox", { name: "Search transactions" })).toBeVisible()
+    const search = page.getByRole("searchbox", { name: "Search transactions" })
+    await expect(search).toBeVisible()
+    await search.fill("coffee")
+    await expect(page).toHaveURL(/q=coffee/)
     await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
   })
 
-  test("hides the rule suggestions card on the rules page", async ({ page }) => {
+  test("hides rule suggestions on the rules page", async ({ page }) => {
     await page.goto("/rules")
-    await expect(page.locator("main h1")).toContainText("Categorization Rules")
-    await expect(page.getByRole("button", { name: "Mine rules" })).toHaveCount(0)
+    await expect(page.locator("main h1")).toContainText("Rules")
+    await expect(page.getByRole("button", { name: "Add rule" }).first()).toBeVisible()
+    await expect(page.getByRole("button", { name: "More actions" })).toHaveCount(0)
   })
 })

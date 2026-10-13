@@ -73,7 +73,7 @@ test.describe("Navigation", () => {
     await page.goto("/insights")
     await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
     await page.goto("/recurring")
-    await expect(page.getByRole("tablist", { name: "Recurring views" })).toBeVisible()
+    await expect(page.getByRole("radiogroup", { name: "Recurring view" })).toBeVisible()
 
     await page.goto("/budgets")
     await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
@@ -276,10 +276,10 @@ test.describe("Navigation", () => {
       { label: "Assistant", path: "/assistant", heading: "Assistant" },
       { label: "Recurring", path: "/recurring", heading: "Recurring" },
       { label: "Templates", path: "/templates", heading: "Templates" },
-      { label: "Rules", path: "/rules", heading: "Categorization Rules" },
+      { label: "Rules", path: "/rules", heading: "Rules" },
       { label: "Categories", path: "/categories", heading: "Categories" },
       { label: "Tags", path: "/tags", heading: "Tags" },
-      { label: "Reports", path: "/reports/builder", heading: "Report Builder" },
+      { label: "Reports", path: "/reports/builder", heading: "Reports" },
       { label: "What If", path: "/scenarios", heading: "What If" },
       { label: "Reconcile", path: "/reconciliation", heading: "Reconciliation" },
     ]
@@ -314,7 +314,7 @@ test.describe("Navigation", () => {
     await page.keyboard.press("Escape")
 
     await page.goto("/recurring")
-    await page.getByRole("button", { name: "Add rule" }).click()
+    await page.locator("main header").getByRole("button", { name: "Add rule" }).click()
     await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
   })
 
