@@ -81,7 +81,9 @@ export function useTransactionRecord(id: number) {
         return false
       }
       queryClient.setQueryData(key, applyTransactionChanges(current, changes))
+      // A newer value entered while this one saved stays shown.
       setEntered((current) => {
+        if (current[field] !== changes) return current
         const next = { ...current }
         delete next[field]
         return next

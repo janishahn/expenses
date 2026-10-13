@@ -193,6 +193,46 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).title).toBe(title)
   })
 
+  test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {
+    const { token, title, id } = await seedExpense(request, "Queued Failure")
+    const stamp = Date.now()
+    const first = `E2E Queued First ${stamp}`
+    const second = `E2E Queued Second ${stamp}`
+    const firstId = await createCategory(request, token, "expense", first)
+    await createCategory(request, token, "expense", second)
+    const failure = "Second save failed"
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let puts = 0
+    await page.route(`**/api/transactions/${id}`, async (route, routed) => {
+      if (routed.method() !== "PUT") {
+        await route.continue()
+        return
+      }
+      puts += 1
+      if (puts === 1) {
+        await held
+        await route.continue()
+        return
+      }
+      await route.fulfill({ status: 500, json: { detail: failure } })
+    })
+
+    await page.goto(peekUrl(title, id))
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: /^Category / }).click()
+    await page.getByRole("option", { name: first }).click()
+    await peek.getByRole("button", { name: `Category ${first}` }).click()
+    await page.getByRole("option", { name: second }).click()
+    release()
+
+    await expect(peek.getByRole("alert")).toHaveText(failure)
+    await expect(peek.getByRole("button", { name: `Category ${second}` })).toBeVisible()
+    expect((await fetchTransaction(request, id)).category_id).toBe(firstId)
+  })
+
   test("preserves Markdown formatting when editing and reopening notes", async ({
     page,
     request,
