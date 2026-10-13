@@ -649,6 +649,8 @@ class BankReconciliationTransactionOut(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
+    category_id: Optional[int] = None
+    category_icon: Optional[str] = None
     date_delta_days: int
 
 

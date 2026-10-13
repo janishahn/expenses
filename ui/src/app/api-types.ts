@@ -194,12 +194,14 @@ export type ReimbursementExpenseSearchResponse = {
 export type BankReconciliationTransaction = {
   id: number
   date: string
-  type: string
+  type: "income" | "expense"
   amount_cents: number
   signed_amount_cents: number
   title: string | null
   description: string | null
   category: string | null
+  category_id: number | null
+  category_icon: string | null
   date_delta_days: number
 }
 
@@ -209,6 +211,8 @@ export type BankStatementRowStatus =
   | "ambiguous"
   | "missing"
   | "reviewed"
+
+export type BankRowResolution = "matched" | "created" | "ignored"
 
 export type BankStatementRow = {
   id: number
@@ -222,26 +226,26 @@ export type BankStatementRow = {
   purpose: string | null
   raw_description: string
   reviewed_at: string | null
+  resolution: BankRowResolution | null
+  resolved_at: string | null
+  ignore_reason: string | null
   status: BankStatementRowStatus
   candidate_count: number
   candidates: BankReconciliationTransaction[]
   suggested_transaction: BankReconciliationTransaction | null
 }
 
-export type BankReconciliationSummary = {
-  row_count: number
-  unresolved_count: number
-  suggested_count: number
-  matched_count: number
-  reviewed_count: number
-  bank_total_cents: number
-  only_in_expenses_count: number
+export type BankRowsPage = {
+  items: BankStatementRow[]
+  total: number
+  page: number
+  limit: number
 }
 
-export type BankReconciliationResponse = {
-  summary: BankReconciliationSummary
-  rows: BankStatementRow[]
-  only_in_expenses: BankReconciliationTransaction[]
+export type BankAccount = {
+  label: string
+  row_count: number
+  last_import_at: string | null
 }
 
 export type BankStatementPreviewRow = {

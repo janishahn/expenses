@@ -10,7 +10,6 @@ import {
   useSearchParams,
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
-import LegacyLayout from "./app/LegacyLayout"
 import { PanelLoading } from "./components/ui/Panel"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
@@ -248,9 +247,7 @@ function AppRoutes() {
             <Route path="/admin/import" element={<AdminImportPage />} />
             <Route path="/admin/:section?" element={<AdminPage />} />
           </Route>
-          <Route element={<LegacyLayout />}>
-            <Route path="/reconciliation" element={<ReconciliationPage />} />
-          </Route>
+          <Route path="/reconciliation" element={<ReconciliationPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

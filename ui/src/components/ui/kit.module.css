@@ -130,6 +130,7 @@
   color: var(--ink-2); font-size: 12px; white-space: nowrap; cursor: pointer;
 }
 .segItem svg { width: 13px; height: 13px; }
+.segCount { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .segItem[aria-checked="true"], .segItem[aria-selected="true"] {
   background: var(--seg-on); color: var(--ink); font-weight: 500; box-shadow: var(--edge);
 }
@@ -363,6 +364,7 @@
 }
 .dayLedger { padding-left: 44px; }
 .day:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
+.dayCount { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .dayEnd { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
 .day .btn { height: 22px; margin-right: -8px; font-size: 12px; }
 .lhead {

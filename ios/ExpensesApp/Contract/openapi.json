@@ -1000,6 +1000,28 @@
             ],
             "title": "Category"
           },
+          "category_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Icon"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
           "date": {
             "format": "date",
             "title": "Date",

@@ -8,6 +8,8 @@ export type SegmentOption<T extends string> = {
   icon?: Icon
   // Icon-only segments still need a name.
   iconOnly?: boolean
+  // A count after the label, such as the rows left to review.
+  count?: number
 }
 
 // A radio group drawn as segments: page views, ranges, Expense/Income.
@@ -55,6 +57,7 @@ export function SegmentedControl<T extends string>({
           >
             {IconComponent ? <IconComponent aria-hidden="true" /> : null}
             {option.iconOnly ? null : option.label}
+            {option.count != null ? <span className={s.segCount}>{option.count}</span> : null}
           </button>
         )
       })}

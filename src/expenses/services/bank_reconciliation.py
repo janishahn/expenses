@@ -869,6 +869,8 @@ class BankReconciliationService:
             "title": txn.title,
             "description": txn.description,
             "category": txn.category.name if txn.category else None,
+            "category_id": txn.category_id,
+            "category_icon": txn.category.icon if txn.category else None,
             "date_delta_days": (booking_date - txn.date).days,
         }
 

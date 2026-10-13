@@ -50,6 +50,7 @@ export function Peek({
   fullViewState,
   menu,
   footer,
+  footerEnd,
   children,
 }: {
   // The list's name, shown in the breadcrumb and on the mobile back button.
@@ -61,6 +62,8 @@ export function Peek({
   fullViewState?: unknown
   menu?: ReactNode
   footer?: ReactNode
+  // Right end of the footer, such as Ignore in a triage peek.
+  footerEnd?: ReactNode
   children: ReactNode
 }) {
   const navigate = useNavigate()
@@ -103,7 +106,17 @@ export function Peek({
         <IconButton icon={XIcon} label="Close" onClick={onClose} className={s.hideMobile} />
       </div>
       <div className={s.pkBody}>{children}</div>
-      {footer ? <div className={s.pkFoot}>{footer}</div> : null}
+      {footer || footerEnd ? (
+        <div className={s.pkFoot}>
+          {footer}
+          {footerEnd ? (
+            <>
+              <span className={s.sp} />
+              {footerEnd}
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   )
 }

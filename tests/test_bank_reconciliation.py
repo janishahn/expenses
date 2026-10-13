@@ -252,6 +252,9 @@ def test_missing_bank_row_can_create_and_match_edited_transaction(
     assert create_response.status_code == 200
     reconciliation = api_client.get("/api/reconciliation").json()
     assert reconciliation["rows"][0]["status"] == "matched"
+    matched = reconciliation["rows"][0]["suggested_transaction"]
+    assert matched["category"] == "Online shopping"
+    assert matched["category_id"] == category_id
     transactions = api_client.get("/api/transactions?period=all").json()["items"]
     created = next(
         item

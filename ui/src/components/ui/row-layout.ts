@@ -54,6 +54,8 @@ export function rowProps({ onOpen, selected = false, label, ...columns }: Omit<R
     tabIndex: onOpen ? 0 : undefined,
     onClick: onOpen
       ? (event: MouseEvent<HTMLDivElement>) => {
+          // Clicks in a row's menus and dialogs arrive through React portals from outside the row.
+          if (!event.currentTarget.contains(event.target as Node)) return
           if ((event.target as HTMLElement).closest("button, a, input, [role='checkbox'], [role='switch']") && event.target !== event.currentTarget) return
           onOpen()
         }
