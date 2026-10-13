@@ -209,7 +209,7 @@ function AddTemplateDialog({
 }
 
 function TemplatePeek({
-  template,
+  template: stored,
   categories,
   tagOptions,
   onClose,
@@ -220,11 +220,17 @@ function TemplatePeek({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const { errors, setError, save } = useQueuedSave<TemplateRow, TemplatePayload, TemplateField>({
-    url: `/api/templates/${template.id}`,
-    source: template,
+  const {
+    view: template,
+    errors,
+    setError,
+    save,
+  } = useQueuedSave<TemplateRow, TemplatePayload, TemplateField>({
+    url: `/api/templates/${stored.id}`,
+    source: stored,
     toPayload: templatePayload,
     onSaved: () => invalidateTemplates(queryClient),
+    draftFields: ["name"],
   })
   const remove = useMutation({
     mutationFn: () => apiFetch(`/api/templates/${template.id}`, { method: "DELETE" }),

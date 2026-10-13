@@ -334,6 +334,33 @@ test.describe("Rules Page", () => {
     expect((await listRules(request)).some((rule) => rule.name === "Will not save")).toBe(false)
   })
 
+  test("keeps a switched value and shows the error when its save fails", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const ruleName = `E2E Failing switch ${Date.now()}`
+    const id = await createRule(request, token, { name: ruleName, match_value: "failing-switch" })
+    await page.route(`**/api/rules/${id}`, async (route) => {
+      if (route.request().method() === "PUT") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Temporary save failure" }),
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto(`/rules?peek=${id}`)
+    const peek = page.getByRole("complementary", { name: ruleName })
+    const enabled = peek.getByRole("switch", { name: "Enabled" })
+    await expect(enabled).toBeChecked()
+    await enabled.click()
+
+    await expect(peek.getByRole("alert")).toHaveText("Temporary save failure")
+    await expect(enabled).not.toBeChecked()
+    expect((await listRules(request)).find((rule) => rule.name === ruleName)?.enabled).toBe(true)
+  })
+
   test("lists the recent transactions a rule matches in its peek", async ({
     page,
     request,

@@ -178,7 +178,7 @@ function categoryMergeCounts(counts: Record<string, number>) {
 }
 
 function CategoryPeek({
-  category,
+  category: stored,
   period,
   categories,
   onClose,
@@ -193,11 +193,17 @@ function CategoryPeek({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [merging, setMerging] = useState(false)
-  const { errors, setError, save } = useQueuedSave<CategoryListItem, CategoryPayload, CategoryField>({
-    url: `/api/categories/${category.id}`,
-    source: category,
+  const {
+    view: category,
+    errors,
+    setError,
+    save,
+  } = useQueuedSave<CategoryListItem, CategoryPayload, CategoryField>({
+    url: `/api/categories/${stored.id}`,
+    source: stored,
     toPayload: categoryPayload,
     onSaved: () => invalidateCategories(queryClient),
+    draftFields: ["name"],
   })
   const ledgerParams = writePeriodToSearch(new URLSearchParams({ category: String(category.id) }), period)
   const recent = useQuery({

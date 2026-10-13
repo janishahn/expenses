@@ -82,7 +82,7 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
   const navigate = useNavigate()
   const { tag, kpis, donut, transactions } = data
   const [merging, setMerging] = useState(false)
-  const { errors, setError, save } = useTagSave(tag)
+  const { view, errors, setError, save } = useTagSave(tag)
   const { archive, restore, confirmDelete } = useTagLifecycle(tag, () => navigate("/tags", { replace: true }))
   const tags = useQuery({
     queryKey: ["tags", "all"],
@@ -149,21 +149,21 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
         <CardStack>
           <Sheet title="Settings">
             <TagSettingsList
-              tag={tag}
+              tag={view}
               errors={errors}
               save={save}
               lead={
                 <Property label="Name" editable error={errors.name}>
                   <ValuePopover
                     label="Name"
-                    value={tag.name}
+                    value={view.name}
                     onSave={(next) => {
                       if (!next.trim()) return "Enter a tag name."
                       setError("name", null)
                       void save("name", { name: next.trim() })
                       return null
                     }}
-                    trigger={<PropertyButton>{tag.name}</PropertyButton>}
+                    trigger={<PropertyButton>{view.name}</PropertyButton>}
                   />
                 </Property>
               }

@@ -437,15 +437,21 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   )
 }
 
-function RulePeek({ rule, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
+function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [now] = useState(() => new Date())
-  const { errors, setError, save } = useQueuedSave<RecurringRule, RulePayload, RuleField>({
-    url: `/api/recurring/${rule.id}`,
-    source: rule,
+  const {
+    view: rule,
+    errors,
+    setError,
+    save,
+  } = useQueuedSave<RecurringRule, RulePayload, RuleField>({
+    url: `/api/recurring/${stored.id}`,
+    source: stored,
     toPayload: rulePayload,
     onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring"] }),
+    draftFields: ["name", "amount"],
   })
   const label = ruleLabel(rule)
   const schedule: Schedule = { unit: rule.interval_unit, count: rule.interval_count, policy: rule.month_day_policy }

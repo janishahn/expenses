@@ -46,13 +46,14 @@ function invalidateTagViews(queryClient: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function useTagSave(tag: TagRecord) {
+export function useTagSave(tag: TagRecord, draftFields?: readonly TagField[]) {
   const queryClient = useQueryClient()
   return useQueuedSave<TagRecord, TagPayload, TagField>({
     url: `/api/tags/${tag.id}`,
     source: tag,
     toPayload: tagPayload,
     onSaved: () => invalidateTagViews(queryClient),
+    draftFields,
   })
 }
 

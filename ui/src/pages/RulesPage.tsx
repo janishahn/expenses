@@ -590,14 +590,20 @@ function AddRuleDialog({ data, onClose }: { data: RulesResponse; onClose: () => 
   )
 }
 
-function RulePeek({ rule, data, onClose }: { rule: RuleRow; data: RulesResponse; onClose: () => void }) {
+function RulePeek({ rule: stored, data, onClose }: { rule: RuleRow; data: RulesResponse; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { errors, setError, save } = useQueuedSave<RuleRow, RulePayload, RuleField>({
-    url: `/api/rules/${rule.id}`,
-    source: rule,
+  const {
+    view: rule,
+    errors,
+    setError,
+    save,
+  } = useQueuedSave<RuleRow, RulePayload, RuleField>({
+    url: `/api/rules/${stored.id}`,
+    source: stored,
     toPayload: rulePayload,
     onSaved: () => void queryClient.invalidateQueries({ queryKey: ["rules"] }),
+    draftFields: ["name"],
   })
   const payload = rulePayload(rule)
   const preview = useRulePreview(payload, [rule.id, JSON.stringify(payload)])
@@ -608,7 +614,10 @@ function RulePeek({ rule, data, onClose }: { rule: RuleRow; data: RulesResponse;
       void queryClient.invalidateQueries({ queryKey: ["rules"] })
     },
   })
-  const category = data.categories.find((entry) => entry.id === rule.set_category_id) ?? rule.set_category
+  const category =
+    rule.set_category_id === null ? null : (data.categories.find((entry) => entry.id === rule.set_category_id) ?? rule.set_category)
+  const budgetTag =
+    rule.budget_exclude_tag_id === null ? null : (data.tags.find((tag) => tag.id === rule.budget_exclude_tag_id) ?? rule.budget_exclude_tag)
   const hiddenTags = data.tags.filter((tag) => tag.is_hidden_from_budget)
   const amount = amountCondition(rule.min_amount_cents, rule.max_amount_cents)
   const matches = preview.data
@@ -743,7 +752,7 @@ function RulePeek({ rule, data, onClose }: { rule: RuleRow; data: RulesResponse;
               onChange={(tags) => void save("tags", { add_tags: tags })}
             />
           </Property>
-          {hiddenTags.length || rule.budget_exclude_tag ? (
+          {hiddenTags.length || budgetTag ? (
             <Property label="Budgets" editable error={errors.budgets}>
               <BudgetsMenu
                 tags={hiddenTags}
@@ -752,8 +761,8 @@ function RulePeek({ rule, data, onClose }: { rule: RuleRow; data: RulesResponse;
                   if (tagId !== rule.budget_exclude_tag_id) void save("budgets", { budget_exclude_tag_id: tagId })
                 }}
                 trigger={
-                  <PropertyButton empty={!rule.budget_exclude_tag}>
-                    {rule.budget_exclude_tag ? `Excluded with ${rule.budget_exclude_tag.name}` : "Included"}
+                  <PropertyButton empty={!budgetTag}>
+                    {budgetTag ? `Excluded with ${budgetTag.name}` : "Included"}
                   </PropertyButton>
                 }
               />

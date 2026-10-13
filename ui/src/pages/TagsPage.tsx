@@ -168,7 +168,7 @@ function TagPeek({
 }) {
   const navigate = useNavigate()
   const [merging, setMerging] = useState(false)
-  const { errors, setError, save } = useTagSave(tag)
+  const { view, errors, setError, save } = useTagSave(tag, ["name"])
   const { archive, restore, confirmDelete } = useTagLifecycle(tag, onClose)
   const periodParams = writePeriodToSearch(new URLSearchParams(), period)
   const fullView = `/tags/${tag.id}?${periodParams.toString()}`
@@ -215,7 +215,7 @@ function TagPeek({
           <Amount cents={tag.income_cents} kind="income" /> income
         </PeekSubline>
       ) : null}
-      <TagSettingsList tag={tag} errors={errors} save={save}>
+      <TagSettingsList tag={view} errors={errors} save={save}>
         <Property label={periodLabel(period, DEFAULT_PERIOD_PRESETS)}>{usesText(tag.usage_count)}</Property>
         <Property label="Created">{formatShortDate(tag.created_at)}</Property>
         {tag.archived_at ? <Property label="Archived">{formatShortDate(tag.archived_at)}</Property> : null}
