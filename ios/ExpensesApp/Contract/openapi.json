@@ -2536,6 +2536,17 @@
       },
       "BulkOperationIn": {
         "properties": {
+          "expected_category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Category Id"
+          },
           "lifecycle": {
             "default": "none",
             "enum": [

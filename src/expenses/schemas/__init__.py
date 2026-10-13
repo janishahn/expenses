@@ -1722,6 +1722,8 @@ class BulkOperationIn(BaseModel):
     set_category_id: Optional[int] = None
     tag_patch: Optional[BulkTagPatchIn] = None
     lifecycle: Literal["none", "soft_delete", "restore"] = "none"
+    # An Undo sends the category it reverses; transactions in another category are skipped.
+    expected_category_id: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_operation(self) -> "BulkOperationIn":

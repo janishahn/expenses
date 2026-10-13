@@ -172,6 +172,52 @@ def test_bulk_restore_brings_back_the_month_totals(
     assert api_client.get(march).json()["kpis"]["expenses"] == 3_500
 
 
+def test_bulk_category_undo_skips_a_transaction_changed_since(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    filed = _category(api_client, csrf_headers, "Filed")
+    newer = _category(api_client, csrf_headers, "Newer")
+    original = _category(api_client, csrf_headers, "Original")
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=900, title="Lunch", category_id=newer
+    )
+
+    def undo() -> dict:
+        response = api_client.post(
+            "/api/transactions/bulk/apply",
+            headers=csrf_headers,
+            json={
+                "selection": {"mode": "ids", "transaction_ids": [transaction_id]},
+                "operation": {
+                    "set_category_id": original,
+                    "expected_category_id": filed,
+                },
+            },
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    skipped = undo()
+    assert skipped["skipped_count"] == 1
+    assert skipped["changes"]["category_changed"] == 0
+    detail = api_client.get(f"/api/transactions/{transaction_id}").json()
+    assert detail["category_id"] == newer
+
+    api_client.post(
+        "/api/transactions/bulk/apply",
+        headers=csrf_headers,
+        json={
+            "selection": {"mode": "ids", "transaction_ids": [transaction_id]},
+            "operation": {"set_category_id": filed},
+        },
+    )
+    reverted = undo()
+    assert reverted["skipped_count"] == 0
+    assert reverted["changes"]["category_changed"] == 1
+    detail = api_client.get(f"/api/transactions/{transaction_id}").json()
+    assert detail["category_id"] == original
+
+
 def test_bulk_trash_actions_ignore_other_users_transactions(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

@@ -776,6 +776,36 @@ test.describe("Transactions Page", () => {
     expect((await fetchTransaction(request, id)).category_id).not.toBe(targetId)
   })
 
+  test("leaves a transaction recategorized elsewhere when its inbox Undo runs", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const targetName = `E2E Undo Target ${stamp}`
+    await createCategory(request, token, "expense", targetName)
+    const newerId = await createCategory(request, token, "expense", `E2E Undo Newer ${stamp}`)
+    const title = `E2E Undo Changed ${stamp}`
+    const id = await createUncategorizedExpense(request, token, title)
+
+    await page.goto(`/transactions/inbox?q=${encodeURIComponent(title)}`)
+    const row = page.getByRole("listitem", { name: title })
+    await row.getByRole("button", { name: "Category" }).click()
+    await page.getByRole("combobox").fill(targetName)
+    await page.getByRole("option", { name: targetName }).click()
+    const toast = page.getByRole("status")
+    await expect(toast).toContainText(`Moved to ${targetName}`)
+
+    // Another tab files it elsewhere while the Undo toast is still visible.
+    const elsewhere = await request.post("/api/transactions/bulk/apply", {
+      headers: { "X-CSRF-Token": token },
+      data: { selection: { mode: "ids", transaction_ids: [id] }, operation: { set_category_id: newerId } },
+    })
+    expect(elsewhere.ok()).toBeTruthy()
+
+    await toast.getByRole("button", { name: "Undo" }).click()
+    await expect(page.getByRole("status")).toContainText("The transaction changed since, so it was left as it is.")
+    expect((await fetchTransaction(request, id)).category_id).toBe(newerId)
+    await expect(row).toHaveCount(0)
+  })
+
   test("recategorizes selected uncategorized transactions after confirming", async ({
     page,
     request,

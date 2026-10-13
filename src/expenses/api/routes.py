@@ -1321,6 +1321,7 @@ def _resolve_bulk_transactions(
     txn_service = TransactionService(db, user_id=user_id)
     lifecycle = payload.operation.lifecycle
     include_deleted = lifecycle == "restore"
+    expected_category_id = payload.operation.expected_category_id
 
     if payload.selection.mode == "ids":
         requested_ids = [int(i) for i in payload.selection.transaction_ids]
@@ -1342,6 +1343,8 @@ def _resolve_bulk_transactions(
             stmt = stmt.where(Transaction.deleted_at.isnot(None))
         else:
             stmt = stmt.where(Transaction.deleted_at.is_(None))
+        if expected_category_id is not None:
+            stmt = stmt.where(Transaction.category_id == expected_category_id)
         transactions = db.scalars(stmt).unique().all()
         return transactions, len(requested_ids) - len(transactions)
 
@@ -1371,6 +1374,9 @@ def _resolve_bulk_transactions(
             status_code=400,
             detail=f"Selection exceeds maximum of {max_items} transactions",
         )
+    if expected_category_id is not None:
+        kept = [row for row in rows if row.category_id == expected_category_id]
+        return kept, len(rows) - len(kept)
     return rows, 0
 
 

@@ -183,16 +183,21 @@ function UncategorizedInboxPage() {
   listSearch.delete("peek")
   const listHref = `${location.pathname}${listSearch.toString() ? `?${listSearch.toString()}` : ""}`
 
-  const applyCategory = (ids: number[], categoryId: number) =>
+  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null = null) =>
     apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
       method: "POST",
       body: JSON.stringify({
         selection: { mode: "ids", transaction_ids: ids },
-        operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" },
+        operation: {
+          set_category_id: categoryId,
+          tag_patch: null,
+          lifecycle: "none",
+          expected_category_id: expectedCategoryId,
+        },
       }),
     })
 
-  // Files one row under a category; Undo puts it back under Uncategorized.
+  // Files one row under a category; Undo puts it back under Uncategorized unless it changed since.
   const categorize = async (row: InboxItem, category: CategorySummary) => {
     const previousId = row.category?.id
     try {
@@ -211,13 +216,17 @@ function UncategorizedInboxPage() {
           : {
               label: "Undo",
               onClick: async () => {
+                let result: BulkResponse
                 try {
-                  await applyCategory([row.id], previousId)
+                  result = await applyCategory([row.id], previousId, category.id)
                 } catch (failure) {
                   showToast({ message: getApiErrorMessage(failure, "Unable to undo the change.") })
                   return
                 }
                 invalidateTransactionData(queryClient)
+                if (result.skipped_count) {
+                  showToast({ message: "The transaction changed since, so it was left as it is." })
+                }
               },
             },
     })
