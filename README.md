@@ -59,7 +59,7 @@ Add salary, rent, subscriptions, and other regular payments once. Expenses can p
 
 Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you enable LLM help, Expenses can suggest rules from your history; you still review them before they take effect.
 
-For local automatic categorization, enable **Settings → Automatic categorization**
+For local automatic categorization, enable **Automatic categorization** in **Settings → Categorization**
 (**Account → Automatic Categorization** on iOS). It is off by default for each user.
 The recommended minimum confidence is **80%**; a higher value leaves more
 expenses uncategorized. Confidence estimates can still be wrong.
