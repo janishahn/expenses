@@ -26,7 +26,7 @@ import { periodFromSearch, periodLabel, writePeriodToSearch, DEFAULT_PERIOD_PRES
 import { Pill } from "../components/ui/Pill"
 import { Popover } from "../components/ui/Popover"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
-import { MetricStrip, Sheet, type Metric } from "../components/ui/Sheet"
+import { MetricStrip, Sheet, SummaryCard, type Metric, type SummaryBudget } from "../components/ui/Sheet"
 import { categoryColor } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
@@ -45,7 +45,15 @@ type DashboardResponse = {
   recent: TransactionListItem[]
   categories: CategorySummary[]
   tags: Array<{ id: number; name: string }>
-  budget_pace?: { velocity_ratio: number; projected_cents: number; budget_cents: number } | null
+  budget_pace?: {
+    velocity_ratio: number
+    projected_cents: number
+    budget_cents: number
+    spent_cents: number
+    remaining_cents: number
+    daily_remaining_cents: number
+    days_remaining: number
+  } | null
   category_budget_pulse?: Array<{
     scope_category_id: number
     scope_label: string
@@ -235,20 +243,19 @@ function DashboardPage() {
     </>
   )
   const today = localIsoDate(now)
-  const metrics: Metric[] = [
-    {
-      label: "Balance",
-      value: <Amount cents={kpis.balance} />,
-      detail: data.period.end >= today ? "as of today" : `as of ${MONTH_YEAR.format(new Date(`${data.period.end}T00:00:00Z`))}`,
-    },
-    { label: "Cash in", value: <Amount cents={kpis.income} />, detail: deltas ? delta(deltas.income) : undefined },
-    { label: "Spent", value: <Amount cents={kpis.expenses} />, detail: deltas ? delta(deltas.expenses) : undefined },
-    {
-      label: "Net",
-      value: <Amount cents={kpis.income - kpis.expenses} kind="signed" tone={kpis.income >= kpis.expenses ? "income" : undefined} />,
-      detail: deltas ? delta(deltas.income - deltas.expenses) : undefined,
-    },
-  ]
+  const balanceMetric: Metric = {
+    label: "Balance",
+    value: <Amount cents={kpis.balance} />,
+    detail: data.period.end >= today ? "as of today" : `as of ${MONTH_YEAR.format(new Date(`${data.period.end}T00:00:00Z`))}`,
+  }
+  const cashInMetric: Metric = { label: "Cash in", value: <Amount cents={kpis.income} />, detail: deltas ? delta(deltas.income) : undefined }
+  const spentMetric: Metric = { label: "Spent", value: <Amount cents={kpis.expenses} />, detail: deltas ? delta(deltas.expenses) : undefined }
+  const netMetric: Metric = {
+    label: "Net",
+    value: <Amount cents={kpis.income - kpis.expenses} kind="signed" tone={kpis.income >= kpis.expenses ? "income" : undefined} />,
+    detail: deltas ? delta(deltas.income - deltas.expenses) : undefined,
+  }
+  const metrics = [balanceMetric, cashInMetric, spentMetric, netMetric]
   if (data.budget_pace) {
     metrics.push({
       label: "Budget pace",
@@ -346,6 +353,46 @@ function DashboardPage() {
   const asOf = data.period.slug === "last_month" ? new Date(`${data.period.end}T00:00:00`) : now
   const pace = asOf.getDate() / new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0).getDate()
 
+  const overall = data.budget_pace
+  const summaryBudget: SummaryBudget | undefined = overall
+    ? {
+        label: "Overall budget",
+        used: (
+          <>
+            <Amount cents={overall.spent_cents} decimals={false} /> of <Amount cents={overall.budget_cents} decimals={false} />
+          </>
+        ),
+        ratio: overall.budget_cents ? overall.spent_cents / overall.budget_cents : 0,
+        over: overall.remaining_cents < 0,
+        pace,
+        remaining:
+          overall.remaining_cents < 0 ? (
+            <>
+              <Amount cents={-overall.remaining_cents} decimals={false} tone="over" /> over
+            </>
+          ) : (
+            <>
+              <Amount cents={overall.remaining_cents} decimals={false} /> left
+              {overall.days_remaining > 0 ? (
+                <>
+                  {" · "}
+                  <Amount cents={overall.daily_remaining_cents} decimals={false} />
+                  /day
+                </>
+              ) : null}
+            </>
+          ),
+        // A finished month has no projection left to make.
+        projection:
+          overall.days_remaining > 0 ? (
+            <>
+              Likely <Amount cents={overall.projected_cents} decimals={false} />
+            </>
+          ) : undefined,
+        projectionOver: overall.projected_cents > overall.budget_cents,
+      }
+    : undefined
+
   const durableItems = (durable.data?.items ?? []).filter((item) => showAmortized || !item.fully_amortized)
   const amortizedCount = (durable.data?.items ?? []).filter((item) => item.fully_amortized).length
 
@@ -355,6 +402,248 @@ function DashboardPage() {
       <MenuSeparator />
       <MenuItem onSelect={() => hideCard(key)}>Hide from dashboard</MenuItem>
     </>
+  )
+
+  const balanceCard = hiddenCards.includes("balance") ? null : (
+    <ChartCard
+      title="Balance"
+      meta={
+        finalForecast ? (
+          <>
+            likely <Amount cents={finalForecast.end_balance_cents} decimals={false} /> in{" "}
+            {SHORT_MONTH.format(monthDate(finalForecast.month))}
+          </>
+        ) : undefined
+      }
+      menu={
+        <>
+          <MenuLink to="/forecast">Open in Forecast</MenuLink>
+          <MenuSeparator />
+          <MenuItem onSelect={() => hideCard("balance")}>Hide from dashboard</MenuItem>
+          {rangeAvailable ? (
+            <>
+              <MenuSeparator />
+              <MenuItem checked={showRange} onSelect={() => setShowRange(!showRange)}>
+                Show forecast range
+              </MenuItem>
+            </>
+          ) : null}
+        </>
+      }
+      legend={balanceLegend}
+      empty={history.isError ? "Balance history is unavailable." : actual.length ? undefined : history.isLoading ? "Loading…" : "No balance history yet."}
+      table={
+        <ChartTable
+          label="Balance by month"
+          columns={["Month", "Actual", "Likely", "80% range"]}
+          rows={balanceLabels.map((label, index) => ({
+            key: String(index),
+            cells: [
+              label,
+              actualValues[index] === null ? "–" : <Amount cents={actualValues[index] as number} />,
+              index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index] as number} /> : "–",
+              index > todayIndex && rangeAvailable ? (
+                <>
+                  <Amount cents={rangeLo[index] as number} /> – <Amount cents={rangeHi[index] as number} />
+                </>
+              ) : (
+                "–"
+              ),
+            ],
+          }))}
+        />
+      }
+    >
+      {(focus) => (
+        <LineChart
+          labels={balanceLabels}
+          height={isDesktop ? 180 : 120}
+          xEvery={isDesktop ? 1 : 3}
+          mark={projected.length ? todayIndex : undefined}
+          idle={todayIndex}
+          focus={focus}
+          series={[
+            { key: "actual", values: actualValues },
+            ...(projected.length ? [{ key: "likely", values: likelyValues, color: "var(--ink-3)", dash: true }] : []),
+          ]}
+          bands={rangeAvailable && showRange ? [{ key: "range", lo: rangeLo, hi: rangeHi }] : []}
+          tooltip={balanceTip}
+        />
+      )}
+    </ChartCard>
+  )
+  const recentCard = (
+    <Sheet
+      title="Recent"
+        actions={<IconButton icon={ArrowRightIcon} label="Open transactions" onClick={() => navigate("/transactions")} />}
+    >
+      {data.recent.length ? (
+        <List flat label="Recent transactions">
+          {data.recent.slice(0, 7).map((row) => (
+            <Row
+              key={row.id}
+              {...RECENT_COLUMNS}
+              label={row.title || "Untitled"}
+              onOpen={() => navigate(`/transactions?peek=${row.id}`)}
+            >
+              <CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />
+              <Cell>{row.title || "Untitled"}</Cell>
+              <AmountCell>
+                <Amount cents={row.amount_cents} kind={row.type === "income" ? "income" : "expense"} />
+              </AmountCell>
+            </Row>
+          ))}
+        </List>
+      ) : (
+        <EmptyState inline>No transactions in this period</EmptyState>
+      )}
+    </Sheet>
+  )
+  const spendingCard = hiddenCards.includes("spending") ? null : (
+    <ChartCard
+      title="Spending by category"
+      controls={
+        <SegmentedControl
+          label="Months"
+          value={bandMonths}
+          options={[
+            { value: "6", label: "6M" },
+            { value: "12", label: "12M" },
+          ]}
+          onChange={setBandMonths}
+        />
+      }
+      menu={chartMenu("spending", true)}
+      legend={bandLegend}
+      empty={bands.isError ? "Spending is unavailable." : bandData.some((month) => month.total_cents > 0) ? undefined : bands.isLoading ? "Loading…" : "No spending in these months."}
+      table={
+        <ChartTable
+          label="Spending by category and month"
+          columns={["Month", ...bandLegend.map((entry) => String(entry.label)), "Total"]}
+          rows={bandData.map((month) => ({
+            key: month.month,
+            cells: [
+              MONTH_YEAR.format(monthDate(month.month)),
+              ...bandLegend.map((entry) => {
+                const segment = month.segments.find((item) => String(item.category_id) === entry.key)
+                return segment ? <Amount cents={segment.amount_cents} /> : "–"
+              }),
+              <Amount cents={month.total_cents} />,
+            ],
+          }))}
+        />
+      }
+    >
+      {(focus) => (
+        <StackedBands
+          rows={bandRows}
+          max={bandMax}
+          focus={focus}
+          tooltip={(row, segment) => {
+            const entry = bandCategories.get(segment.key)
+            return (
+              <ChartTooltip
+                title={MONTH_YEAR.format(monthDate(row.key))}
+                rows={[{ key: segment.key, label: entry?.label, value: <Amount cents={segment.value} />, color: segment.color }]}
+              />
+            )
+          }}
+          onSelect={(row, segment) =>
+            openLedger(segment.key === "null" ? null : Number(segment.key), monthBounds(row.key))
+          }
+        />
+      )}
+    </ChartCard>
+  )
+  const shareCard = hiddenCards.includes("share") ? null : (
+    <ChartCard
+      title="Category share"
+      controls={
+        <SegmentedControl
+          label="Type"
+          value={shareType}
+          options={[
+            { value: "expense", label: "Expenses" },
+            { value: "income", label: "Income" },
+          ]}
+          onChange={setShareType}
+        />
+      }
+      menu={chartMenu("share", true)}
+      empty={shareItems.length ? undefined : shareType === "expense" ? "No spending in this period." : "No income in this period."}
+      table={
+        <ChartTable
+          label="Category share"
+          columns={["Category", "Amount", "Share"]}
+          rows={shareItems.map((item) => ({
+            key: String(item.category_id),
+            cells: [item.name, <Amount cents={item.amount_cents} />, `${Math.round(item.percent)} %`],
+          }))}
+        />
+      }
+    >
+      {(focus) => (
+        <Donut
+          focus={focus}
+          center={<Amount cents={shareTotal} decimals={false} />}
+          centerLabel={isDesktop ? periodName : undefined}
+          compact={!isDesktop}
+          items={shareItems.map((item) => ({
+            key: String(item.category_id),
+            label: item.name,
+            value: item.amount_cents,
+            color: categoryColor(item.category_id),
+            amount: <Amount cents={item.amount_cents} />,
+            share: `${Math.round(item.percent)} %`,
+          }))}
+          tooltip={(item) => (
+            <ChartTooltip rows={[{ key: item.key, label: item.label, value: item.amount, color: item.color }]} />
+          )}
+          onSelect={(item) => openLedger(item.key === "null" ? null : Number(item.key), null)}
+        />
+      )}
+    </ChartCard>
+  )
+  const budgetsCard = (
+    <Sheet
+      title="Budgets"
+        actions={<IconButton icon={ArrowRightIcon} label="Open budgets" onClick={() => navigate("/budgets")} />}
+    >
+      {budgets.length ? (
+          <List flat label="Budgets">
+            {budgets.map((budget) => {
+              const category = categoriesById.get(budget.scope_category_id)
+              const over = budget.remaining_cents < 0
+              return (
+                <Row
+                  key={budget.scope_category_id}
+                  columns="18px 110px minmax(0, 1fr) 110px"
+                  mobileColumns="18px 92px minmax(0, 1fr) 84px"
+                  label={budget.scope_label}
+                  onOpen={() => navigate("/budgets")}
+                >
+                  <CategoryGlyph categoryId={budget.scope_category_id} icon={category?.icon} name={budget.scope_label} />
+                  <Cell>{budget.scope_label}</Cell>
+                  <BudgetBar ratio={budget.spent_cents / budget.amount_cents} over={over} pace={pace} />
+                  <Cell align="right" tone="muted">
+                    {over ? (
+                      <>
+                        <Amount cents={-budget.remaining_cents} decimals={false} tone="over" /> over
+                      </>
+                    ) : (
+                      <>
+                        <Amount cents={budget.remaining_cents} decimals={false} /> left
+                      </>
+                    )}
+                  </Cell>
+                </Row>
+              )
+            })}
+          </List>
+      ) : (
+        <EmptyState inline>No category budgets this month</EmptyState>
+      )}
+    </Sheet>
   )
 
   return (
@@ -396,247 +685,29 @@ function DashboardPage() {
         </ViewRow>
       }
     >
-      <MetricStrip metrics={metrics} />
-      <CardRow wide>
-        {hiddenCards.includes("balance") ? null : (
-          <ChartCard
-            title="Balance"
-            meta={
-              finalForecast ? (
-                <>
-                  likely <Amount cents={finalForecast.end_balance_cents} decimals={false} /> in{" "}
-                  {SHORT_MONTH.format(monthDate(finalForecast.month))}
-                </>
-              ) : undefined
-            }
-            menu={
-              <>
-                <MenuLink to="/forecast">Open in Forecast</MenuLink>
-                <MenuSeparator />
-                <MenuItem onSelect={() => hideCard("balance")}>Hide from dashboard</MenuItem>
-                {rangeAvailable ? (
-                  <>
-                    <MenuSeparator />
-                    <MenuItem checked={showRange} onSelect={() => setShowRange(!showRange)}>
-                      Show forecast range
-                    </MenuItem>
-                  </>
-                ) : null}
-              </>
-            }
-            legend={balanceLegend}
-            empty={history.isError ? "Balance history is unavailable." : actual.length ? undefined : history.isLoading ? "Loading…" : "No balance history yet."}
-            table={
-              <ChartTable
-                label="Balance by month"
-                columns={["Month", "Actual", "Likely", "80% range"]}
-                rows={balanceLabels.map((label, index) => ({
-                  key: String(index),
-                  cells: [
-                    label,
-                    actualValues[index] === null ? "–" : <Amount cents={actualValues[index] as number} />,
-                    index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index] as number} /> : "–",
-                    index > todayIndex && rangeAvailable ? (
-                      <>
-                        <Amount cents={rangeLo[index] as number} /> – <Amount cents={rangeHi[index] as number} />
-                      </>
-                    ) : (
-                      "–"
-                    ),
-                  ],
-                }))}
-              />
-            }
-          >
-            {(focus) => (
-              <LineChart
-                labels={balanceLabels}
-                height={180}
-                xEvery={isDesktop ? 1 : 3}
-                mark={projected.length ? todayIndex : undefined}
-                idle={todayIndex}
-                focus={focus}
-                series={[
-                  { key: "actual", values: actualValues },
-                  ...(projected.length ? [{ key: "likely", values: likelyValues, color: "var(--ink-3)", dash: true }] : []),
-                ]}
-                bands={rangeAvailable && showRange ? [{ key: "range", lo: rangeLo, hi: rangeHi }] : []}
-                tooltip={balanceTip}
-              />
-            )}
-          </ChartCard>
-        )}
-        <Sheet
-          title="Recent"
-            actions={<IconButton icon={ArrowRightIcon} label="Open transactions" onClick={() => navigate("/transactions")} />}
-        >
-          {data.recent.length ? (
-            <List flat label="Recent transactions">
-              {data.recent.slice(0, 7).map((row) => (
-                <Row
-                  key={row.id}
-                  {...RECENT_COLUMNS}
-                  label={row.title || "Untitled"}
-                  onOpen={() => navigate(`/transactions?peek=${row.id}`)}
-                >
-                  <CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />
-                  <Cell>{row.title || "Untitled"}</Cell>
-                  <AmountCell>
-                    <Amount cents={row.amount_cents} kind={row.type === "income" ? "income" : "expense"} />
-                  </AmountCell>
-                </Row>
-              ))}
-            </List>
-          ) : (
-            <EmptyState inline>No transactions in this period</EmptyState>
-          )}
-        </Sheet>
-      </CardRow>
-      {hiddenCards.includes("spending") ? null : (
-        <ChartCard
-          title="Spending by category"
-          controls={
-            <SegmentedControl
-              label="Months"
-              value={bandMonths}
-              options={[
-                { value: "6", label: "6M" },
-                { value: "12", label: "12M" },
-              ]}
-              onChange={setBandMonths}
-            />
-          }
-          menu={chartMenu("spending", true)}
-          legend={bandLegend}
-          empty={bands.isError ? "Spending is unavailable." : bandData.some((month) => month.total_cents > 0) ? undefined : bands.isLoading ? "Loading…" : "No spending in these months."}
-          table={
-            <ChartTable
-              label="Spending by category and month"
-              columns={["Month", ...bandLegend.map((entry) => String(entry.label)), "Total"]}
-              rows={bandData.map((month) => ({
-                key: month.month,
-                cells: [
-                  MONTH_YEAR.format(monthDate(month.month)),
-                  ...bandLegend.map((entry) => {
-                    const segment = month.segments.find((item) => String(item.category_id) === entry.key)
-                    return segment ? <Amount cents={segment.amount_cents} /> : "–"
-                  }),
-                  <Amount cents={month.total_cents} />,
-                ],
-              }))}
-            />
-          }
-        >
-          {(focus) => (
-            <StackedBands
-              rows={bandRows}
-              max={bandMax}
-              focus={focus}
-              tooltip={(row, segment) => {
-                const entry = bandCategories.get(segment.key)
-                return (
-                  <ChartTooltip
-                    title={MONTH_YEAR.format(monthDate(row.key))}
-                    rows={[{ key: segment.key, label: entry?.label, value: <Amount cents={segment.value} />, color: segment.color }]}
-                  />
-                )
-              }}
-              onSelect={(row, segment) =>
-                openLedger(segment.key === "null" ? null : Number(segment.key), monthBounds(row.key))
-              }
-            />
-          )}
-        </ChartCard>
+      {isDesktop ? (
+        <>
+          <MetricStrip metrics={metrics} />
+          <CardRow wide>
+            {balanceCard}
+            {recentCard}
+          </CardRow>
+          {spendingCard}
+          <CardRow>
+            {shareCard}
+            {budgetsCard}
+          </CardRow>
+        </>
+      ) : (
+        <>
+          <SummaryCard lead={spentMetric} budget={summaryBudget} metrics={[balanceMetric, cashInMetric, netMetric]} />
+          {budgetsCard}
+          {recentCard}
+          {balanceCard}
+          {spendingCard}
+          {shareCard}
+        </>
       )}
-      <CardRow>
-        {hiddenCards.includes("share") ? null : (
-          <ChartCard
-            title="Category share"
-            controls={
-              <SegmentedControl
-                label="Type"
-                value={shareType}
-                options={[
-                  { value: "expense", label: "Expenses" },
-                  { value: "income", label: "Income" },
-                ]}
-                onChange={setShareType}
-              />
-            }
-            menu={chartMenu("share", true)}
-            empty={shareItems.length ? undefined : shareType === "expense" ? "No spending in this period." : "No income in this period."}
-            table={
-              <ChartTable
-                label="Category share"
-                columns={["Category", "Amount", "Share"]}
-                rows={shareItems.map((item) => ({
-                  key: String(item.category_id),
-                  cells: [item.name, <Amount cents={item.amount_cents} />, `${Math.round(item.percent)} %`],
-                }))}
-              />
-            }
-          >
-            {(focus) => (
-              <Donut
-                focus={focus}
-                center={<Amount cents={shareTotal} decimals={false} />}
-                centerLabel={periodName}
-                items={shareItems.map((item) => ({
-                  key: String(item.category_id),
-                  label: item.name,
-                  value: item.amount_cents,
-                  color: categoryColor(item.category_id),
-                  amount: <Amount cents={item.amount_cents} />,
-                  share: `${Math.round(item.percent)} %`,
-                }))}
-                tooltip={(item) => (
-                  <ChartTooltip rows={[{ key: item.key, label: item.label, value: item.amount, color: item.color }]} />
-                )}
-                onSelect={(item) => openLedger(item.key === "null" ? null : Number(item.key), null)}
-              />
-            )}
-          </ChartCard>
-        )}
-        <Sheet
-          title="Budgets"
-            actions={<IconButton icon={ArrowRightIcon} label="Open budgets" onClick={() => navigate("/budgets")} />}
-        >
-          {budgets.length ? (
-              <List flat label="Budgets">
-                {budgets.map((budget) => {
-                  const category = categoriesById.get(budget.scope_category_id)
-                  const over = budget.remaining_cents < 0
-                  return (
-                    <Row
-                      key={budget.scope_category_id}
-                      columns="18px 110px minmax(0, 1fr) 110px"
-                      mobileColumns="18px 92px minmax(0, 1fr) 84px"
-                      label={budget.scope_label}
-                      onOpen={() => navigate("/budgets")}
-                    >
-                      <CategoryGlyph categoryId={budget.scope_category_id} icon={category?.icon} name={budget.scope_label} />
-                      <Cell>{budget.scope_label}</Cell>
-                      <BudgetBar ratio={budget.spent_cents / budget.amount_cents} over={over} pace={pace} />
-                      <Cell align="right" tone="muted">
-                        {over ? (
-                          <>
-                            <Amount cents={-budget.remaining_cents} decimals={false} tone="over" /> over
-                          </>
-                        ) : (
-                          <>
-                            <Amount cents={budget.remaining_cents} decimals={false} /> left
-                          </>
-                        )}
-                      </Cell>
-                    </Row>
-                  )
-                })}
-              </List>
-          ) : (
-            <EmptyState inline>No category budgets this month</EmptyState>
-          )}
-        </Sheet>
-      </CardRow>
       <Sheet
         title="Durable purchases"
         menu={

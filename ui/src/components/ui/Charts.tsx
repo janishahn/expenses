@@ -316,13 +316,16 @@ export function Donut({
   items,
   center,
   centerLabel,
+  compact = false,
   focus,
   tooltip,
   onSelect,
 }: {
   items: DonutItem[]
   center: ReactNode
-  centerLabel: ReactNode
+  centerLabel?: ReactNode
+  // A small ring beside the five largest shares, for phones; the card's table lists them all.
+  compact?: boolean
   focus: ChartFocus
   tooltip: (item: DonutItem) => ReactNode
   onSelect?: (item: DonutItem) => void
@@ -339,7 +342,7 @@ export function Donut({
     focus.set(null)
   }
   return (
-    <div ref={root} className={s.donutWrap}>
+    <div ref={root} className={clsx(s.donutWrap, compact && s.donutCompact)}>
       <div className={s.donut} onPointerLeave={leave}>
         <svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true">
           {items.map((item, index) => (
@@ -365,10 +368,17 @@ export function Donut({
         </svg>
         <div className={s.donutCenter}>
           <div className={s.donutValue}>{center}</div>
-          <div className={s.donutLabel}>{centerLabel}</div>
+          {centerLabel != null ? <div className={s.donutLabel}>{centerLabel}</div> : null}
         </div>
       </div>
-      <ShareList items={items} focus={focus} onLeave={leave} />
+      {compact ? (
+        <div className={s.dlCompactWrap}>
+          <ShareList items={items.slice(0, 5)} focus={focus} onLeave={leave} />
+          {items.length > 5 ? <div className={s.dlMore}>{items.length - 5} more</div> : null}
+        </div>
+      ) : (
+        <ShareList items={items} focus={focus} onLeave={leave} />
+      )}
       {hover ? <PointerTip at={hover.at}>{tooltip(hover.item)}</PointerTip> : null}
     </div>
   )

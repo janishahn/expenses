@@ -7853,6 +7853,10 @@ class BudgetService:
             "velocity_ratio": float(overall_progress["velocity_ratio"]),
             "projected_cents": int(overall_progress["projected_total_cents"]),
             "budget_cents": int(overall.amount_cents),
+            "spent_cents": int(overall_progress["spent_cents"]),
+            "remaining_cents": int(overall_progress["remaining_cents"]),
+            "daily_remaining_cents": int(overall_progress["daily_remaining_cents"]),
+            "days_remaining": int(overall_progress["days_remaining"]),
             "sparkline": sparkline,
         }
 

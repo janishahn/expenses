@@ -3195,13 +3195,29 @@
             "title": "Budget Cents",
             "type": "integer"
           },
+          "daily_remaining_cents": {
+            "title": "Daily Remaining Cents",
+            "type": "integer"
+          },
+          "days_remaining": {
+            "title": "Days Remaining",
+            "type": "integer"
+          },
           "projected_cents": {
             "title": "Projected Cents",
+            "type": "integer"
+          },
+          "remaining_cents": {
+            "title": "Remaining Cents",
             "type": "integer"
           },
           "sparkline": {
             "title": "Sparkline",
             "type": "string"
+          },
+          "spent_cents": {
+            "title": "Spent Cents",
+            "type": "integer"
           },
           "velocity_ratio": {
             "title": "Velocity Ratio",
@@ -3212,6 +3228,10 @@
           "velocity_ratio",
           "projected_cents",
           "budget_cents",
+          "spent_cents",
+          "remaining_cents",
+          "daily_remaining_cents",
+          "days_remaining",
           "sparkline"
         ],
         "title": "DashboardBudgetPaceOut",

@@ -174,8 +174,14 @@ def test_dashboard_budget_pace_only_for_overall_budget(
         "velocity_ratio",
         "projected_cents",
         "budget_cents",
+        "spent_cents",
+        "remaining_cents",
+        "daily_remaining_cents",
+        "days_remaining",
         "sparkline",
     }
+    assert payload["budget_pace"]["spent_cents"] == 0
+    assert payload["budget_pace"]["remaining_cents"] == 200_000
     sparkline = payload["budget_pace"]["sparkline"]
     values = [float(value) for value in sparkline.split(",")]
     assert len(values) == 7

@@ -377,6 +377,24 @@ def test_category_breakdown_months_param_and_category_ids(
     assert insights["expense_breakdown"][0]["category_id"] == category_id
 
 
+def test_dashboard_category_share_lists_every_category(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for index in range(10):
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=1_000 * (index + 1),
+            title=f"Purchase {index}",
+            category_id=_category(api_client, csrf_headers, f"Category {index}"),
+        )
+
+    donut = api_client.get("/api/dashboard").json()["donut"]["expense_breakdown"]
+    assert len(donut) == 10
+    assert sum(item["amount_cents"] for item in donut) == 55_000
+    assert round(sum(item["percent"] for item in donut)) == 100
+
+
 def test_month_grid_returns_thirteen_months_per_category_income_and_tag(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

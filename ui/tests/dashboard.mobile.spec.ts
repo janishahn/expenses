@@ -41,7 +41,7 @@ function eur(text: string): RegExp {
   return new RegExp(text.replace("+", "\\+").replace(/\./g, "[\\s.]").replace(/ /g, "\\s"))
 }
 
-// The label text of a metric in the strip, with its value and detail beneath.
+// The label text of a figure in the summary card, with its value and detail beneath.
 function metric(page: Page, label: string) {
   return page.getByText(label, { exact: true }).first().locator("..")
 }
@@ -105,9 +105,6 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(metric(page, "Spent")).toContainText(eur("500,00 €"))
     await expect(metric(page, "Net")).toContainText(eur("+ 1.500,00 €"))
     await expect(metric(page, "Balance")).toContainText(eur("1.500,00 €"))
-    await expect(metric(page, "Balance")).toContainText(
-      `as of ${SHORT_MONTHS[lastMonth.slice(5)]} ${lastMonth.slice(0, 4)}`,
-    )
 
     await page.getByRole("button", { name: /^Period:/ }).tap()
     await page.getByRole("menuitemcheckbox", { name: "This month" }).tap()
@@ -115,7 +112,6 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(metric(page, "Spent")).toContainText(eur("120,00 €"))
     await expect(metric(page, "Spent")).toContainText("vs previous")
     await expect(metric(page, "Balance")).toContainText(eur("1.380,00 €"))
-    await expect(metric(page, "Balance")).toContainText("as of today")
     await expectNoHorizontalOverflow(page)
   })
 
@@ -336,7 +332,7 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(page.getByRole("complementary", { name: "Recent item 5" })).toBeVisible()
   })
 
-  test("shows budget pace in the metrics and category budgets as left or over", async ({ page }) => {
+  test("shows the overall budget in the summary and category budgets as left or over", async ({ page }) => {
     await page.goto("/")
     const isolated = await loginAsIsolatedUser(page)
     const today = localToday()
@@ -372,7 +368,9 @@ test.describe("Dashboard Page (mobile)", () => {
     await isolated.request.dispose()
 
     await page.goto("/?period=this_month")
-    await expect(metric(page, "Budget pace")).toContainText("projected")
+    const overall = page.getByRole("group", { name: "Overall budget" })
+    await expect(overall).toContainText(eur("120 € of 2.000 €"))
+    await expect(overall).toContainText(eur("1.880 € left"))
 
     const budgets = page.getByRole("region", { name: "Budgets" })
     await expect(budgets.getByRole("listitem", { name: "Dining out" })).toContainText("20 € over")
