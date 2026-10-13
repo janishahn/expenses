@@ -13,7 +13,7 @@ import type {
   CategoriesResponse,
   TagsResponse,
 } from "../app/api-types"
-import { formatAmount, formatDateRange, formatShortDate } from "../app/format"
+import { formatAmountPrivate, formatDateRange, formatShortDate } from "../app/format"
 import { shortDateLabel } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { TagPicker } from "../components/TagPicker"
@@ -147,7 +147,7 @@ export function CreateFromRowDialog({
       pending={pending}
       error={error}
     >
-      <EntryAmount readOnly income={type === "income"} value={formatAmount(Math.abs(row.amount_cents), type)} />
+      <EntryAmount readOnly income={type === "income"} value={formatAmountPrivate(Math.abs(row.amount_cents), type)} />
       <EntryName
         aria-label="Title"
         placeholder="Title"
