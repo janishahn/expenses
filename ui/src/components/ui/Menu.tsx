@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactElement, type ReactNode } from "react"
+import { createContext, useContext, useState, type PointerEvent, type ReactElement, type ReactNode } from "react"
 import { DropdownMenu } from "radix-ui"
 import type { Icon } from "@phosphor-icons/react"
 import { CheckIcon } from "@phosphor-icons/react/Check"
@@ -44,6 +44,10 @@ export function Menu({
           sideOffset={4}
           collisionPadding={8}
           className={clsx(s.floatLayer, s.menu)}
+          // An item that opened a dialog hands focus to it; returning focus to the trigger would leave it on the page.
+          onCloseAutoFocus={(event) => {
+            if (document.querySelector(OPEN_DIALOG)) event.preventDefault()
+          }}
           // Radix can ignore Esc for a few hundred milliseconds after the menu opens on a busy page,
           // so the focused menu closes itself. Stopping the event keeps an open peek open.
           onKeyDown={(event) => {
@@ -71,6 +75,14 @@ type MenuItemProps = {
   end?: ReactNode
   // Present for toggles and single-choice lists; shows a check when true.
   checked?: boolean
+}
+
+const OPEN_DIALOG = "[role='dialog'][data-state='open'], [role='alertdialog']"
+
+// When an item opens a dialog, the overlay appearing under the pointer counts as leaving the item, and Radix
+// would focus the closing menu. Skipping that keeps focus in the dialog.
+function keepDialogFocus(event: PointerEvent<HTMLDivElement>) {
+  if (document.querySelector(OPEN_DIALOG)) event.preventDefault()
 }
 
 function ItemContent({ icon: IconComponent, children, end, checked }: MenuItemProps) {
@@ -111,13 +123,14 @@ export function MenuItem(props: MenuItemProps) {
         checked={props.checked}
         disabled={props.disabled}
         onSelect={() => props.onSelect?.()}
+        onPointerLeave={keepDialogFocus}
       >
         <ItemContent {...props} />
       </DropdownMenu.CheckboxItem>
     )
   }
   return (
-    <DropdownMenu.Item className={className} disabled={props.disabled} onSelect={() => props.onSelect?.()}>
+    <DropdownMenu.Item className={className} disabled={props.disabled} onSelect={() => props.onSelect?.()} onPointerLeave={keepDialogFocus}>
       <ItemContent {...props} />
     </DropdownMenu.Item>
   )

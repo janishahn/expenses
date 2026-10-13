@@ -3814,12 +3814,16 @@
           "transaction_id": {
             "title": "Transaction Id",
             "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TransactionType"
           }
         },
         "required": [
           "transaction_id",
           "rule_name",
           "date",
+          "type",
           "amount_cents"
         ],
         "title": "DigestRecurringPostingOut",
@@ -6529,6 +6533,18 @@
           "month_day_policy": {
             "$ref": "#/components/schemas/MonthDayPolicy",
             "default": "snap_to_end"
+          },
+          "rule_anchor_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Anchor Date"
           },
           "skip_weekends": {
             "default": false,

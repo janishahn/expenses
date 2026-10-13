@@ -11,10 +11,12 @@ import {
 import {
   CURATED_CATEGORY_ICONS,
   DEFAULT_CATEGORY_ICON_KEY,
+  iconLabel,
 } from "./categoryIconsCatalog"
-import SegmentedControl from "./SegmentedControl"
-import { AppButton } from "./legacy-ui/product-button"
-import { AppInput } from "./legacy-ui/product-fields"
+import { Button } from "./ui/Button"
+import { EmptyState } from "./ui/EmptyState"
+import { IconChoice, IconGrid } from "./ui/IconGrid"
+import { TextField } from "./ui/TextField"
 
 const RECENT_ICONS_STORAGE_KEY = "ew.recentCategoryIcons.v2"
 const RECENT_ICONS_LIMIT = 12
@@ -54,7 +56,7 @@ function writeRecentIcons(icons: string[]): void {
   }
 }
 
-function PickerIconGlyph({ iconKey, className }: { iconKey: string; className: string }) {
+function PickerIconGlyph({ iconKey }: { iconKey: string }) {
   const resolvedIconKey = resolvePhosphorIconKey(iconKey)
   const displayIconKey = resolvedIconKey ?? DEFAULT_CATEGORY_ICON_KEY
   const curatedIcon = CURATED_CATEGORY_ICONS[displayIconKey]
@@ -83,199 +85,84 @@ function PickerIconGlyph({ iconKey, className }: { iconKey: string; className: s
 
   if (curatedIcon) {
     const CuratedIcon = curatedIcon
-    return <CuratedIcon className={className} />
+    return <CuratedIcon aria-hidden="true" />
   }
   const iconComponent =
     dynamicIcon.iconKey === displayIconKey ? dynamicIcon.iconComponent : null
   if (iconComponent) {
     const Icon = iconComponent
-    return <Icon className={className} />
+    return <Icon aria-hidden="true" />
   }
-  return <CurrencyCircleDollarIcon className={className} />
+  return <CurrencyCircleDollarIcon aria-hidden="true" />
 }
 
-export function IconPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (icon: string) => void
-}) {
-  const [mode, setMode] = useState<"quick" | "search">("quick")
+// Loaded on demand: searching every Phosphor icon needs the full icon metadata.
+// An empty search shows recent picks, then the curated category icons.
+export default function IconPicker({ value, onPick }: { value: string | null; onPick: (iconKey: string) => void }) {
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [resultLimit, setResultLimit] = useState(SEARCH_PAGE_SIZE)
-  const [recentIcons, setRecentIcons] = useState<string[]>(() => readRecentIcons())
+  const [recentIcons] = useState<string[]>(() => readRecentIcons())
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedQuery(query)
-    }, 120)
+    const timeoutId = window.setTimeout(() => setDebouncedQuery(query), 120)
     return () => window.clearTimeout(timeoutId)
   }, [query])
 
   const normalizedQuery = debouncedQuery.trim().toLowerCase()
   const searchResults = useMemo(() => {
-    if (!normalizedQuery) {
-      return ALL_PHOSPHOR_ICON_KEYS
-    }
+    if (!normalizedQuery) return []
     const queryParts = normalizedQuery.split(/\s+/).filter((part) => part.length > 0)
-    return ALL_PHOSPHOR_ICON_KEYS.filter((iconKey) => {
-      const haystack = ICON_SEARCH_TEXT[iconKey]
-      if (iconKey.includes(normalizedQuery)) {
-        return true
-      }
-      return queryParts.every((part) => haystack.includes(part))
-    })
+    return ALL_PHOSPHOR_ICON_KEYS.filter(
+      (iconKey) => iconKey.includes(normalizedQuery) || queryParts.every((part) => ICON_SEARCH_TEXT[iconKey].includes(part))
+    )
   }, [normalizedQuery])
 
-  const visibleSearchResults = searchResults.slice(0, resultLimit)
-
-  const applyIcon = (iconKey: string) => {
+  const pick = (iconKey: string) => {
     const resolvedIconKey = resolvePhosphorIconKey(iconKey) ?? DEFAULT_CATEGORY_ICON_KEY
-    onChange(resolvedIconKey)
-    const next = [
-      resolvedIconKey,
-      ...recentIcons.filter((item) => item !== resolvedIconKey),
-    ].slice(
-      0,
-      RECENT_ICONS_LIMIT
-    )
-    setRecentIcons(next)
-    writeRecentIcons(next)
+    writeRecentIcons([resolvedIconKey, ...recentIcons.filter((item) => item !== resolvedIconKey)].slice(0, RECENT_ICONS_LIMIT))
+    onPick(resolvedIconKey)
   }
 
-  const quickIcons = Array.from(
-    new Set([
-      ...recentIcons.filter((iconKey) => {
-        const resolvedIconKey = resolvePhosphorIconKey(iconKey)
-        return resolvedIconKey ? Boolean(CURATED_CATEGORY_ICONS[resolvedIconKey]) : false
-      }),
-      ...Object.keys(CURATED_CATEGORY_ICONS),
-    ])
-  )
-  const selectedIconKey =
-    resolvePhosphorIconKey(value) ?? DEFAULT_CATEGORY_ICON_KEY
-
-  useEffect(() => {
-    if (value.length > 0 && !isValidPhosphorIconKey(value)) {
-      onChange(DEFAULT_CATEGORY_ICON_KEY)
-    }
-  }, [onChange, value])
+  const selectedIconKey = resolvePhosphorIconKey(value)
+  const icons = normalizedQuery
+    ? searchResults.slice(0, resultLimit)
+    : Array.from(new Set([...recentIcons, ...Object.keys(CURATED_CATEGORY_ICONS)]))
 
   return (
-    <div className="space-y-2">
-      <SegmentedControl
-        value={mode}
-        ariaLabel="Icon source"
-        items={[
-          { value: "quick", label: "Quick picks" },
-          { value: "search", label: "Search all" },
-        ]}
-        onValueChange={(value) => {
-          setMode(value)
-          if (value === "search") setResultLimit(SEARCH_PAGE_SIZE)
+    <>
+      <TextField
+        autoFocus
+        type="search"
+        aria-label="Search icons"
+        placeholder="Search icons"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value)
+          setResultLimit(SEARCH_PAGE_SIZE)
         }}
       />
-
-      <div className="rounded-lg border border-border bg-surface-hi/70 px-2.5 py-1.5 text-xs text-muted">
-        Selected: <span className="font-semibold text-text">{selectedIconKey}</span>
-      </div>
-
-      {mode === "quick" ? (
-        <div className="space-y-2">
-          {recentIcons.length ? (
-            <div>
-              <p className="mb-1 text-[11px] font-semibold uppercase text-muted">Recent</p>
-              <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-6 md:grid-cols-8">
-                {recentIcons.map((iconKey) => (
-                  <button
-                    key={`recent-${iconKey}`}
-                    type="button"
-                    onClick={() => applyIcon(iconKey)}
-                    aria-label={`Pick icon ${iconKey}`}
-                    className={`flex h-11 w-11 items-center justify-center rounded-md border transition ${
-                      value === iconKey
-                        ? "border-accent bg-accent-dim"
-                        : "border-border/85 hover:bg-faint"
-                    }`}
-                  >
-                    <PickerIconGlyph
-                      iconKey={iconKey}
-                      className={`h-4 w-4 ${value === iconKey ? "text-accent" : "text-muted"}`}
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-6 md:grid-cols-8">
-            {quickIcons.map((iconKey) => (
-              <button
-                key={iconKey}
-                type="button"
-                onClick={() => applyIcon(iconKey)}
-                aria-label={`Pick icon ${iconKey}`}
-                className={`flex h-11 w-11 items-center justify-center rounded-md border transition ${
-                  value === iconKey
-                    ? "border-accent bg-accent-dim"
-                    : "border-border/70 hover:bg-faint"
-                }`}
-              >
-                <PickerIconGlyph
-                  iconKey={iconKey}
-                  className={`h-4 w-4 ${value === iconKey ? "text-accent" : "text-muted"}`}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <AppInput
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setResultLimit(SEARCH_PAGE_SIZE)
-            }}
-            aria-label="Search all icons"
-          />
-          <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-6 md:grid-cols-8">
-            {visibleSearchResults.map((iconKey) => (
-              <button
-                key={iconKey}
-                type="button"
-                onClick={() => applyIcon(iconKey)}
-                aria-label={`Pick icon ${iconKey}`}
-                title={iconKey}
-                className={`flex h-11 w-11 items-center justify-center rounded-md border transition ${
-                  value === iconKey
-                    ? "border-accent bg-accent-dim"
-                    : "border-border/70 hover:bg-faint"
-                }`}
-              >
-                <PickerIconGlyph
-                  iconKey={iconKey}
-                  className={`h-4 w-4 ${value === iconKey ? "text-accent" : "text-muted"}`}
-                />
-              </button>
-            ))}
-          </div>
-          {searchResults.length > resultLimit ? (
-            <AppButton
-              type="button"
-              onClick={() => setResultLimit((prev) => prev + SEARCH_PAGE_SIZE)}
-              tone="inline"
+      {icons.length ? (
+        <IconGrid label={normalizedQuery ? "Matching icons" : "Suggested icons"}>
+          {icons.map((iconKey) => (
+            <IconChoice
+              key={iconKey}
+              label={iconLabel(iconKey)}
+              selected={iconKey === selectedIconKey}
+              onSelect={() => pick(iconKey)}
             >
-              Load more icons
-            </AppButton>
-          ) : null}
-          {!searchResults.length ? (
-            <p className="text-xs text-muted">No icons found for this query.</p>
-          ) : null}
-        </div>
+              <PickerIconGlyph iconKey={iconKey} />
+            </IconChoice>
+          ))}
+        </IconGrid>
+      ) : (
+        <EmptyState inline>No icons found.</EmptyState>
       )}
-
-    </div>
+      {normalizedQuery && searchResults.length > resultLimit ? (
+        <Button variant="ghost" size="small" onClick={() => setResultLimit((previous) => previous + SEARCH_PAGE_SIZE)}>
+          More icons
+        </Button>
+      ) : null}
+    </>
   )
 }

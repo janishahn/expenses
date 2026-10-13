@@ -8,6 +8,7 @@ export function Amount({
   kind = "balance",
   decimals = true,
   tone,
+  currency = "EUR",
   className,
 }: {
   cents: number
@@ -15,10 +16,12 @@ export function Amount({
   decimals?: boolean
   // Override the tone, e.g. "over" for an exceeded budget or "muted" for secondary figures.
   tone?: "income" | "over" | "muted" | "faint"
+  // Recurring rules may be kept in US dollars; everything else is in euros.
+  currency?: "EUR" | "USD"
   className?: string
 }) {
   const hidden = usePrivacy()
-  const text = formatAmount(cents, kind, decimals)
+  const text = formatAmount(cents, kind, decimals, currency === "USD" ? "$" : "€")
   const toneClass =
     tone === "income" || (!tone && kind === "income")
       ? s.in

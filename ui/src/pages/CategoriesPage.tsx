@@ -1,818 +1,463 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArchiveIcon } from "@phosphor-icons/react/Archive"
-import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
-import { XIcon } from "@phosphor-icons/react/X"
-import { useOutletContext, useSearchParams } from "react-router-dom"
+import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
+import { GitMergeIcon } from "@phosphor-icons/react/GitMerge"
+import { ListNumbersIcon } from "@phosphor-icons/react/ListNumbers"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import type { CategoryListItem } from "../app/api-types"
-import type { AppShellOutletContext } from "../app/AppShell"
-import { formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageFilterBar from "../components/PageFilterBar"
-import PageScopeHeader from "../components/PageScopeHeader"
-import PeriodPicker from "../components/PeriodPicker"
-import { DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
-import {
-  FinancialPanel,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/legacy-ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/legacy-ui/dialog"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/legacy-ui/product-fields"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
-
-const IconPicker = lazy(() =>
-  import("../components/IconPicker").then((module) => ({
-    default: module.IconPicker,
-  }))
-)
+import type { CategoryListItem, TransactionsResponse } from "../app/api-types"
+import { useQueuedSave } from "../app/queued-save"
+import { categoryIconName, DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
+import { ValuePopover } from "../components/FormPopover"
+import { IconPickerPopover } from "../components/IconPickerPopover"
+import { MergeDialog } from "../components/MergeDialog"
+import { Amount } from "../components/ui/Amount"
+import { Button } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryChips, EntryDialog, EntryName } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { AmountCell, Cell, List, Row, type Columns } from "../components/ui/LedgerRow"
+import { MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { DEFAULT_PERIOD_PRESETS, periodFromSearch, periodLabel, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Pill } from "../components/ui/Pill"
+import { InlineText, Property, PropertyButton, PropertyList } from "../components/ui/PropertyList"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { SortMenu, type SortDirection, type SortKey } from "../components/ui/SortMenu"
+import { showToast } from "../components/ui/toast-store"
+import { buildSearchParams } from "../lib/searchParams"
 
 type CategoriesPageResponse = {
   period: { slug: string; start: string; end: string }
   categories: CategoryListItem[]
 }
+type CategoryField = "name" | "icon" | "order"
+// The body of PUT /api/categories/{id}; the type is fixed once created.
+type CategoryPayload = { name: string; icon: string; order: number }
+type SortField = "usage" | "name"
+
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const CATEGORY_COLUMNS: Columns = { columns: "18px minmax(0, 1fr) 100px" }
+const RECENT_COLUMNS = "minmax(0, 1fr) auto"
+const SORT_KEYS: ReadonlyArray<SortKey<SortField>> = [
+  { key: "usage", label: "Usage", directions: { asc: "Least used first", desc: "Most used first" }, defaultDirection: "desc" },
+  { key: "name", label: "Name", directions: { asc: "A to Z", desc: "Z to A" }, defaultDirection: "asc" },
+]
+const ARCHIVED_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
+
+function categoryPayload(category: CategoryListItem): CategoryPayload {
+  return { name: category.name, icon: category.icon ?? DEFAULT_CATEGORY_ICON_KEY, order: category.order ?? 0 }
+}
+
+const ORDER_ERROR = "Enter a whole number."
+
+function parseOrder(raw: string): number | null {
+  const value = Number(raw.trim())
+  return raw.trim() && Number.isInteger(value) ? value : null
+}
+
+function usesText(count: number): string {
+  return count === 1 ? "1 use" : `${count} uses`
+}
+
+function sortCategories(rows: CategoryListItem[], field: SortField, direction: SortDirection): CategoryListItem[] {
+  const sign = direction === "asc" ? 1 : -1
+  return [...rows].sort((a, b) => {
+    if (field === "usage" && (a.usage_count ?? 0) !== (b.usage_count ?? 0)) {
+      return sign * ((a.usage_count ?? 0) - (b.usage_count ?? 0))
+    }
+    return (field === "name" ? sign : 1) * a.name.localeCompare(b.name)
+  })
+}
+
+function invalidateCategories(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: ["categories"] })
+}
+
+function AddCategoryDialog({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [type, setType] = useState<"expense" | "income">("expense")
+  const [name, setName] = useState("")
+  const [icon, setIcon] = useState(DEFAULT_CATEGORY_ICON_KEY)
+  const [order, setOrder] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const create = useMutation({
+    mutationFn: (payload: CategoryPayload & { type: string }) =>
+      apiFetch<CategoryListItem>("/api/categories", { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      invalidateCategories(queryClient)
+      onClose()
+    },
+    onError: (failure) => setError(getApiErrorMessage(failure, "Unable to create category.")),
+  })
+  const submit = () => {
+    setError(null)
+    if (!name.trim()) return setError("Enter a category name.")
+    create.mutate({ name: name.trim(), type, icon, order })
+  }
+  return (
+    <EntryDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+      title="Add category"
+      direction={
+        <SegmentedControl
+          label="Type"
+          value={type}
+          options={[
+            { value: "expense", label: "Expense" },
+            { value: "income", label: "Income" },
+          ]}
+          onChange={setType}
+        />
+      }
+      submitLabel="Add category"
+      onSubmit={submit}
+      pending={create.isPending}
+      error={error}
+    >
+      <EntryName autoFocus aria-label="Name" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
+      <EntryChips>
+        <IconPickerPopover
+          value={icon}
+          onChange={setIcon}
+          trigger={
+            <Pill leading={<CategoryGlyph categoryId={null} icon={icon} name={name} />} aria-label={`Icon ${categoryIconName(icon)}`}>
+              {icon === DEFAULT_CATEGORY_ICON_KEY ? "Icon" : categoryIconName(icon)}
+            </Pill>
+          }
+        />
+        <ValuePopover
+          label="Order"
+          inputMode="numeric"
+          submitLabel="Done"
+          value={String(order)}
+          onSave={(value) => {
+            const next = parseOrder(value)
+            if (next === null) return ORDER_ERROR
+            setOrder(next)
+            return null
+          }}
+          trigger={
+            <Pill icon={ListNumbersIcon} set={order !== 0} aria-label={`Order ${order}`}>
+              Order {order}
+            </Pill>
+          }
+        />
+      </EntryChips>
+    </EntryDialog>
+  )
+}
+
+function categoryMergeCounts(counts: Record<string, number>) {
+  const count = (key: string) => counts[key] ?? 0
+  const plural = (value: number, word: string) => `${value} ${word}${value === 1 ? "" : "s"}`
+  return (
+    <>
+      <Property label="Transactions">{count("transactions")}</Property>
+      <Property label="Recurring rules" empty={!count("recurring_rules")}>
+        {count("recurring_rules")}
+      </Property>
+      <Property label="Rule actions" empty={!count("rules_set_category")}>
+        {count("rules_set_category")}
+      </Property>
+      <Property label="Budgets" empty={!count("budget_templates") && !count("budget_overrides")}>
+        {plural(count("budget_templates"), "plan")}, {plural(count("budget_overrides"), "adjustment")}
+      </Property>
+    </>
+  )
+}
+
+function CategoryPeek({
+  category,
+  period,
+  categories,
+  onClose,
+  onMerged,
+}: {
+  category: CategoryListItem
+  period: PeriodSelection
+  categories: CategoryListItem[]
+  onClose: () => void
+  onMerged: (target: CategoryListItem) => void
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [merging, setMerging] = useState(false)
+  const { errors, setError, save } = useQueuedSave<CategoryListItem, CategoryPayload, CategoryField>({
+    url: `/api/categories/${category.id}`,
+    source: category,
+    toPayload: categoryPayload,
+    onSaved: () => invalidateCategories(queryClient),
+  })
+  const ledgerParams = writePeriodToSearch(new URLSearchParams({ category: String(category.id) }), period)
+  const recent = useQuery({
+    queryKey: ["transactions", "category-recent", category.id, ledgerParams.toString()],
+    queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${ledgerParams.toString()}&limit=5`),
+  })
+  const restore = useMutation({
+    mutationFn: () => apiFetch(`/api/categories/${category.id}/restore`, { method: "POST" }),
+    onSuccess: () => invalidateCategories(queryClient),
+    onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to restore the category.") }),
+  })
+  const archive = useMutation({
+    mutationFn: () => apiFetch(`/api/categories/${category.id}/archive`, { method: "POST" }),
+    onSuccess: () => {
+      invalidateCategories(queryClient)
+      showToast({ message: `Archived ${category.name}.`, action: { label: "Undo", onClick: () => restore.mutate() } })
+    },
+    onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to archive the category.") }),
+  })
+  const archived = Boolean(category.archived_at)
+  const sum = category.type === "income" ? category.income_cents : category.expense_cents
+  const recentItems = recent.data?.items ?? []
+  const fromParams = new URLSearchParams(ledgerParams)
+  fromParams.set("from", "categories")
+
+  return (
+    <Peek
+      parent="Categories"
+      title={category.name}
+      onClose={onClose}
+      menu={
+        archived ? (
+          <MenuItem icon={ArrowCounterClockwiseIcon} onSelect={() => restore.mutate()}>
+            Restore
+          </MenuItem>
+        ) : (
+          <>
+            <MenuItem icon={GitMergeIcon} onSelect={() => setMerging(true)}>
+              Merge into…
+            </MenuItem>
+            <MenuItem icon={ArchiveIcon} onSelect={() => archive.mutate()}>
+              Archive
+            </MenuItem>
+          </>
+        )
+      }
+    >
+      <InlineText
+        variant="title"
+        label="Name"
+        value={category.name}
+        error={errors.name}
+        onCancel={() => setError("name", null)}
+        onSave={(next) => {
+          if (!next.trim()) {
+            setError("name", "Enter a category name.")
+            return false
+          }
+          return save("name", { name: next.trim() })
+        }}
+      />
+      <PropertyList>
+        <Property label="Type">{category.type === "income" ? "Income" : "Expense"}</Property>
+        <Property label="Icon" editable error={errors.icon}>
+          <IconPickerPopover
+            value={category.icon}
+            onChange={(icon) => {
+              if (icon !== category.icon) void save("icon", { icon })
+            }}
+            trigger={
+              <PropertyButton>
+                <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} />
+                {categoryIconName(category.icon)}
+              </PropertyButton>
+            }
+          />
+        </Property>
+        <Property label="Order" editable error={errors.order}>
+          <ValuePopover
+            label="Order"
+            inputMode="numeric"
+            value={String(category.order ?? 0)}
+            onSave={(value) => {
+              const order = parseOrder(value)
+              if (order === null) return ORDER_ERROR
+              void save("order", { order })
+              return null
+            }}
+            trigger={<PropertyButton>{category.order ?? 0}</PropertyButton>}
+          />
+        </Property>
+        <Property label={periodLabel(period, DEFAULT_PERIOD_PRESETS)}>
+          <span>
+            {usesText(category.usage_count ?? 0)}
+            {sum ? (
+              <>
+                {" · "}
+                <Amount cents={sum} kind={category.type === "income" ? "income" : "expense"} />
+              </>
+            ) : null}
+          </span>
+        </Property>
+        {category.archived_at ? <Property label="Archived">{ARCHIVED_DATE.format(new Date(category.archived_at))}</Property> : null}
+      </PropertyList>
+      <PeekSection
+        title="Recent"
+        action={
+          recent.data && recent.data.total > recentItems.length ? (
+            <Button variant="ghost" size="small" onClick={() => navigate(`/transactions?${fromParams.toString()}`)}>
+              All {recent.data.total}
+            </Button>
+          ) : undefined
+        }
+      >
+        {recentItems.length ? (
+          <List flat label="Recent transactions">
+            {recentItems.map((item) => (
+              <Row
+                key={item.id}
+                columns={RECENT_COLUMNS}
+                label={item.title ?? "Untitled"}
+                onOpen={() => navigate(`/transactions/${item.id}`)}
+              >
+                <Cell>{item.title ?? "Untitled"}</Cell>
+                <AmountCell>
+                  <Amount cents={item.amount_cents} kind={item.type === "income" ? "income" : "expense"} />
+                </AmountCell>
+              </Row>
+            ))}
+          </List>
+        ) : (
+          <EmptyState inline>{recent.isLoading ? "Loading…" : recent.isError ? "Unable to load transactions." : "None"}</EmptyState>
+        )}
+      </PeekSection>
+      {merging ? (
+        <MergeDialog
+          source={category}
+          targets={categories.filter((entry) => entry.id !== category.id && entry.type === category.type && !entry.archived_at)}
+          noun="category"
+          errorMessage="Unable to merge categories."
+          endpoint="/api/categories/merge"
+          body={(targetId) => ({ source_category_id: category.id, target_category_id: targetId })}
+          invalidate={["categories", "transactions", "insights", "budgets", "recurring", "rules"]}
+          renderCounts={categoryMergeCounts}
+          onClose={() => setMerging(false)}
+          onMerged={(target) => {
+            setMerging(false)
+            onMerged(target)
+          }}
+        />
+      ) : null}
+    </Peek>
+  )
+}
 
 function CategoriesPage() {
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queryClient = useQueryClient()
-  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [type, setType] = useState("expense")
-  const [icon, setIcon] = useState(DEFAULT_CATEGORY_ICON_KEY)
-  const [order, setOrder] = useState("0")
-  const [sortIncome, setSortIncome] = useState("usage")
-  const [sortExpense, setSortExpense] = useState("usage")
-  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
-  const [editName, setEditName] = useState("")
-  const [editIcon, setEditIcon] = useState(DEFAULT_CATEGORY_ICON_KEY)
-  const [editOrder, setEditOrder] = useState("0")
-  const [editType, setEditType] = useState("expense")
-  const [mergeSourceId, setMergeSourceId] = useState("")
-  const [mergeTargetId, setMergeTargetId] = useState("")
-  const [mergePreview, setMergePreview] = useState<Record<string, number> | null>(null)
-  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false)
-  const [mergeOutcomeMessage, setMergeOutcomeMessage] = useState<string | null>(null)
-  const [savedFlash, setSavedFlash] = useState(false)
-
-  useEffect(() => {
-    if (!savedFlash) {
-      return
-    }
-    const id = window.setTimeout(() => setSavedFlash(false), 2100)
-    return () => window.clearTimeout(id)
-  }, [savedFlash])
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
-    }
-    return params.toString()
-  }, [searchParams])
+  const [adding, setAdding] = useState(false)
+  const [sort, setSort] = useState<{ field: SortField; direction: SortDirection }>({ field: "usage", direction: "desc" })
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const peekId = Number(searchParams.get("peek")) || null
+  const queryString = writePeriodToSearch(new URLSearchParams(), period).toString()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["categories", queryString],
     queryFn: () => apiFetch<CategoriesPageResponse>(`/api/categories?${queryString}`),
   })
 
-  const resetEditState = useCallback(() => {
-    setEditingCategoryId(null)
-    setEditName("")
-    setEditIcon(DEFAULT_CATEGORY_ICON_KEY)
-    setEditOrder("0")
-    setEditType("expense")
-  }, [])
+  if (isLoading) return <PanelLoading title="Categories" label="Loading categories…" />
+  if (error || !data) return <PanelError title="Categories" message="Unable to load categories." />
 
-  const normalizeIconKey = (iconKey: string) =>
-    iconKey.length > 0 ? iconKey : DEFAULT_CATEGORY_ICON_KEY
+  const update = (values: Record<string, string | null>, replace = false) =>
+    setSearchParams(buildSearchParams(searchParams, values), { replace })
+  const active = data.categories.filter((category) => !category.archived_at)
+  const bands = [
+    { label: "Expenses", rows: sortCategories(active.filter((category) => category.type !== "income"), sort.field, sort.direction) },
+    { label: "Income", rows: sortCategories(active.filter((category) => category.type === "income"), sort.field, sort.direction) },
+    { label: "Archived", rows: sortCategories(data.categories.filter((category) => category.archived_at), "name", "asc") },
+  ].filter((band) => band.rows.length)
+  const peekCategory = data.categories.find((category) => category.id === peekId)
+  const peek = peekCategory ? (
+    <CategoryPeek
+      key={peekCategory.id}
+      category={peekCategory}
+      period={period}
+      categories={data.categories}
+      onClose={() => update({ peek: null }, true)}
+      onMerged={(target) => {
+        showToast({ message: `Merged ${peekCategory.name} into ${target.name}.` })
+        update({ peek: String(target.id) }, true)
+      }}
+    />
+  ) : null
 
-  const createMutation = useMutation({
-    mutationFn: (payload: { name: string; type: string; icon: string; order: number }) =>
-      apiFetch<CategoryListItem>("/api/categories", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      setName("")
-      setIcon(DEFAULT_CATEGORY_ICON_KEY)
-      setOrder("0")
-      queryClient.invalidateQueries({ queryKey: ["categories"] })
-      setSavedFlash(true)
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: (payload: { id: number; name: string; icon: string; order: number }) =>
-      apiFetch<CategoryListItem>(`/api/categories/${payload.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: payload.name,
-          icon: payload.icon,
-          order: payload.order,
-        }),
-      }),
-  })
-
-  const archiveMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch<{ status: string }>(`/api/categories/${id}/archive`, {
-        method: "POST",
-      }),
-    onSuccess: (_result, id) => {
-      if (editingCategoryId === id) {
-        setEditorOpen(false)
-        resetEditState()
+  const main = bands.length ? (
+    <List label="Categories">
+      {bands.map((band) => [
+        <DayBand key={`band-${band.label}`} label={band.label} end={band.rows.length} />,
+        ...band.rows.map((category) => (
+          <Row
+            key={category.id}
+            {...CATEGORY_COLUMNS}
+            label={category.name}
+            dim={Boolean(category.archived_at)}
+            selected={category.id === peekId}
+            onOpen={() => update({ peek: String(category.id) })}
+          >
+            <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} />
+            <Cell strong>{category.name}</Cell>
+            <Cell align="right" tone="muted">
+              {category.archived_at
+                ? `Archived ${ARCHIVED_DATE.format(new Date(category.archived_at))}`
+                : usesText(category.usage_count ?? 0)}
+            </Cell>
+          </Row>
+        )),
+      ])}
+    </List>
+  ) : (
+    <EmptyState
+      icon={ShapesIcon}
+      action={
+        <Button variant="primary" icon={PlusIcon} onClick={() => setAdding(true)}>
+          Add category
+        </Button>
       }
-      queryClient.invalidateQueries({ queryKey: ["categories"] })
-    },
-  })
-
-  const restoreMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch<{ status: string }>(`/api/categories/${id}/restore`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] })
-    },
-  })
-
-  const mergePreviewMutation = useMutation({
-    mutationFn: (payload: { source_category_id: number; target_category_id: number }) =>
-      apiFetch<{ counts: Record<string, number> }>("/api/categories/merge/preview", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (result) => setMergePreview(result.counts),
-  })
-
-  const mergeApplyMutation = useMutation({
-    mutationFn: (payload: { source_category_id: number; target_category_id: number }) =>
-      apiFetch<{ counts: Record<string, number> }>("/api/categories/merge", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setMergePreview(null)
-      setMergeConfirmOpen(false)
-      setMergeOutcomeMessage("Categories merged. Source category was archived.")
-      setMergeSourceId("")
-      setMergeTargetId("")
-      queryClient.invalidateQueries({ queryKey: ["categories"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-      queryClient.invalidateQueries({ queryKey: ["budgets"] })
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-    },
-  })
-
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(buildPresetPeriodSearchParams(searchParams, value))
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-
-  const parseOrder = (value: string) => {
-    const parsed = Number.parseInt(value, 10)
-    if (Number.isNaN(parsed)) {
-      return 0
-    }
-    return parsed
-  }
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    createMutation.mutate({
-      name: name.trim(),
-      type,
-      icon: normalizeIconKey(icon),
-      order: parseOrder(order),
-    })
-  }
-
-  const resetCreateMutation = createMutation.reset
-  const openCreateEditor = useCallback(() => {
-    resetCreateMutation()
-    resetEditState()
-    setName("")
-    setType("expense")
-    setIcon(DEFAULT_CATEGORY_ICON_KEY)
-    setOrder("0")
-    setEditorOpen(true)
-  }, [resetCreateMutation, resetEditState])
-
-  useEffect(() => {
-    setUtilityAction({ label: "Add category", onClick: openCreateEditor })
-    return () => setUtilityAction(null)
-  }, [openCreateEditor, setUtilityAction])
-
-  const startEdit = (row: CategoryListItem) => {
-    updateMutation.reset()
-    setEditingCategoryId(row.id)
-    setEditName(row.name)
-    setEditIcon(row.icon ?? DEFAULT_CATEGORY_ICON_KEY)
-    setEditOrder(String(row.order))
-    setEditType(row.type)
-    setEditorOpen(true)
-  }
-
-  const closeEditor = () => {
-    if (updateMutation.isPending) {
-      return
-    }
-    setEditorOpen(false)
-    resetEditState()
-  }
-
-  const submitEdit = () => {
-    if (!editingCategoryId) {
-      return
-    }
-    updateMutation.mutate(
-      {
-        id: editingCategoryId,
-        name: editName.trim(),
-        icon: normalizeIconKey(editIcon),
-        order: parseOrder(editOrder),
-      },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["categories"] })
-          setEditorOpen(false)
-          resetEditState()
-          setSavedFlash(true)
-        },
-      }
-    )
-  }
-
-  const handleEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    submitEdit()
-  }
-
-  if (isLoading) {
-    return <RouteLoading title="Categories" label="Loading categories…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Categories" message="Unable to load categories." />
-  }
-
-  const activeCategories = data.categories.filter((row) => !row.archived_at)
-  const archivedCategories = data.categories.filter((row) => row.archived_at)
-  const isEditing = editingCategoryId !== null
-  const iconPickerFallback = (
-    <div className="rounded-lg bg-faint px-3 py-2 text-xs text-muted">
-      Loading icon picker…
-    </div>
-  )
-
-  const sortedCategories = (rows: CategoryListItem[], mode: string) => {
-    const sorted = [...rows]
-    sorted.sort((a, b) => {
-      if (mode === "usage") {
-        const aUsage = a.usage_count ?? 0
-        const bUsage = b.usage_count ?? 0
-        if (bUsage !== aUsage) {
-          return bUsage - aUsage
-        }
-      }
-      return a.name.localeCompare(b.name)
-    })
-    return sorted
-  }
-
-  const incomeCategories = sortedCategories(
-    activeCategories.filter((row) => row.type === "income"),
-    sortIncome
-  )
-  const expenseCategories = sortedCategories(
-    activeCategories.filter((row) => row.type === "expense"),
-    sortExpense
-  )
-  const mergeCandidates = [...incomeCategories, ...expenseCategories]
-  const mergeSource = mergeCandidates.find((row) => String(row.id) === mergeSourceId)
-  const mergeTarget = mergeCandidates.find((row) => String(row.id) === mergeTargetId)
-  const mergeTargets = mergeSource
-    ? mergeCandidates.filter(
-        (row) => row.id !== mergeSource.id && row.type === mergeSource.type
-      )
-    : []
-
-  const runMergePreview = () => {
-    setMergePreview(null)
-    setMergeConfirmOpen(false)
-    setMergeOutcomeMessage(null)
-    mergeApplyMutation.reset()
-    if (!mergeSourceId || !mergeTargetId) {
-      return
-    }
-    mergePreviewMutation.mutate({
-      source_category_id: Number(mergeSourceId),
-      target_category_id: Number(mergeTargetId),
-    })
-  }
-
-  const openMergeConfirmation = () => {
-    if (!mergeSourceId || !mergeTargetId) {
-      return
-    }
-    setMergeOutcomeMessage(null)
-    mergePreviewMutation.reset()
-    mergeApplyMutation.reset()
-    setMergeConfirmOpen(true)
-  }
-
-  const runMergeApply = () => {
-    if (!mergeSourceId || !mergeTargetId) {
-      return
-    }
-    mergePreviewMutation.reset()
-    mergeApplyMutation.mutate({
-      source_category_id: Number(mergeSourceId),
-      target_category_id: Number(mergeTargetId),
-    })
-  }
-
-  const mergeError =
-    mergeApplyMutation.error || mergePreviewMutation.error
-      ? getApiErrorMessage(
-          mergeApplyMutation.error || mergePreviewMutation.error,
-          "Unable to merge categories.",
-        )
-      : null
-  const showsGuardedBudgetError = Boolean(
-    mergeError?.toLowerCase().includes("overlapping budget scopes")
+    >
+      No categories yet.
+    </EmptyState>
   )
 
   return (
-    <section className="space-y-6">
-      <PageScopeHeader
-        title="Categories"
-        controls={
-          <PageFilterBar
-            period={
-              <PeriodPicker
-                periodSlug={data.period.slug}
-                start={data.period.start}
-                end={data.period.end}
-                onSetPreset={setPresetPeriod}
-                onApplyCustom={applyCustomPeriod}
-              />
-            }
-          />
-        }
-      />
-
-      <div className="grid grid-cols-1 items-start gap-4 desk:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
-        <div
-          className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2"
-          data-testid="category-library"
-        >
-          <FinancialPanel role="ledger">
-            <SectionHeading className="items-stretch max-sm:flex-col sm:items-end">
-              <div>
-                <h2 className="font-head text-lg font-bold">Income categories</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  {incomeCategories.length} active
-                </p>
-              </div>
-              <AppFieldLabel className="grid min-w-0 gap-1 text-xs text-muted sm:min-w-[8.75rem]">
-                Sort by
-                <AppNativeSelect
-                  className="field-sm"
-                  value={sortIncome}
-                  onChange={(event) => setSortIncome(event.target.value)}
-                >
-                  <option value="usage">Usage</option>
-                  <option value="name">Name</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-            </SectionHeading>
-            <div className="divide-y divide-border">
-              {incomeCategories.length ? (
-                incomeCategories.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <CategoryIcon icon={row.icon} label={row.name} />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-text">{row.name}</p>
-                        <p className="text-xs text-muted">{row.usage_count} uses this period</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <AppButton
-                        type="button"
-                        onClick={() => startEdit(row)}
-                        tone="ghost"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Edit ${row.name}`}
-                      >
-                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={() => archiveMutation.mutate(row.id)}
-                        tone="ghost"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Archive ${row.name}`}
-                      >
-                        <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-6 text-sm text-muted">No income categories yet.</div>
-              )}
-            </div>
-          </FinancialPanel>
-
-          <FinancialPanel role="ledger">
-            <SectionHeading className="items-stretch max-sm:flex-col sm:items-end">
-              <div>
-                <h2 className="font-head text-lg font-bold">Expense categories</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  {expenseCategories.length} active
-                </p>
-              </div>
-              <AppFieldLabel className="grid min-w-0 gap-1 text-xs text-muted sm:min-w-[8.75rem]">
-                Sort by
-                <AppNativeSelect
-                  className="field-sm"
-                  value={sortExpense}
-                  onChange={(event) => setSortExpense(event.target.value)}
-                >
-                  <option value="usage">Usage</option>
-                  <option value="name">Name</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-            </SectionHeading>
-            <div className="divide-y divide-border">
-              {expenseCategories.length ? (
-                expenseCategories.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <CategoryIcon icon={row.icon} label={row.name} />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-text">{row.name}</p>
-                        <p className="text-xs text-muted">{row.usage_count} uses this period</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <AppButton
-                        type="button"
-                        onClick={() => startEdit(row)}
-                        tone="ghost"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Edit ${row.name}`}
-                      >
-                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={() => archiveMutation.mutate(row.id)}
-                        tone="ghost"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Archive ${row.name}`}
-                      >
-                        <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-6 text-sm text-muted">No expense categories yet.</div>
-              )}
-            </div>
-          </FinancialPanel>
-        </div>
-
-        <div className="space-y-6">
-          <FinancialPanel role="ledger">
-            <SectionHeading>
-              <h2 className="font-head text-lg font-bold">Archived categories</h2>
-              <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-                {archivedCategories.length}
-              </span>
-            </SectionHeading>
-            <div className="divide-y divide-border">
-              {archivedCategories.length ? (
-                archivedCategories.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-faint/60"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <CategoryIcon icon={row.icon} label={row.name} />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-text">{row.name}</p>
-                        <p className="text-xs text-muted">
-                          {row.type} · Archived {formatEuroDate(row.archived_at ?? "")}
-                        </p>
-                      </div>
-                    </div>
-                    <AppButton
-                      type="button"
-                      onClick={() => restoreMutation.mutate(row.id)}
-                      tone="ghost"
-                      className="px-3 py-1 text-xs"
-                    >
-                      Restore
-                    </AppButton>
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-6 text-sm text-muted">No archived categories.</div>
-              )}
-            </div>
-          </FinancialPanel>
-
-          <FinancialPanel role="inspector" className="p-4">
-            <h2 className="font-head text-lg font-bold">Merge categories</h2>
-            <p className="mt-1 text-xs text-muted">
-              Move all references to target and archive source.
-            </p>
-            <div className="mt-4 grid gap-3">
-              <AppFieldLabel>
-                Source
-                <AppNativeSelect
-                  value={mergeSourceId}
-                  onChange={(event) => {
-                    setMergeSourceId(event.target.value)
-                    setMergeTargetId("")
-                    setMergePreview(null)
-                    setMergeConfirmOpen(false)
-                    setMergeOutcomeMessage(null)
-                    mergePreviewMutation.reset()
-                    mergeApplyMutation.reset()
-                  }}
-                >
-                  <option value="">Choose source category</option>
-                  {mergeCandidates.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.type})
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <AppFieldLabel>
-                Target
-                <AppNativeSelect
-                  value={mergeTargetId}
-                  onChange={(event) => {
-                    setMergeTargetId(event.target.value)
-                    setMergePreview(null)
-                    setMergeConfirmOpen(false)
-                    setMergeOutcomeMessage(null)
-                    mergePreviewMutation.reset()
-                    mergeApplyMutation.reset()
-                  }}
-                  disabled={!mergeSource}
-                >
-                  <option value="">Choose target category</option>
-                  {mergeTargets.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.type})
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
-            </div>
-            <div className="mt-3 flex gap-2">
-              <AppButton
-                type="button"
-                onClick={runMergePreview}
-                disabled={mergePreviewMutation.isPending || !mergeSourceId || !mergeTargetId}
-                className="flex-1"
-                tone="ghost"
-              >
-                {mergePreviewMutation.isPending ? "Previewing…" : "Preview"}
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={openMergeConfirmation}
-                disabled={
-                  mergeApplyMutation.isPending ||
-                  mergeConfirmOpen ||
-                  !mergeSourceId ||
-                  !mergeTargetId
-                }
-                className="flex-1"
-              >
-                {mergeApplyMutation.isPending
-                  ? "Merging…"
-                  : mergeConfirmOpen
-                    ? "Awaiting confirmation…"
-                    : "Merge"}
-              </AppButton>
-            </div>
-            {mergeConfirmOpen && (
-              <div className="mt-3 rounded-lg bg-signal-blue-soft p-3 text-xs">
-                <p className="text-muted">
-                  Merge <span className="font-semibold text-text">{mergeSource?.name}</span>{" "}
-                  into <span className="font-semibold text-text">{mergeTarget?.name}</span>? The
-                  source category will be archived after merge.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <AppButton
-                    type="button"
-                    tone="ghost"
-                    className="flex-1"
-                    onClick={() => setMergeConfirmOpen(false)}
-                    disabled={mergeApplyMutation.isPending}
-                  >
-                    Cancel
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    className="flex-1"
-                    onClick={runMergeApply}
-                    disabled={mergeApplyMutation.isPending}
-                  >
-                    {mergeApplyMutation.isPending ? "Merging…" : "Confirm merge"}
-                  </AppButton>
-                </div>
-              </div>
-            )}
-            {mergeError && (
-              <div className="mt-3 rounded-lg border border-semantic-red/40 bg-semantic-red/10 p-3 text-xs text-semantic-red">
-                <p className="font-semibold">
-                  {showsGuardedBudgetError ? "Guarded budget conflict" : "Merge failed"}
-                </p>
-                <p className="mt-1">{mergeError}</p>
-              </div>
-            )}
-            {mergeOutcomeMessage && (
-              <p className="mt-3 rounded-lg bg-signal-green-soft p-3 text-xs text-semantic-green">
-                {mergeOutcomeMessage}
-              </p>
-            )}
-            {mergePreview && (
-              <div className="mt-3 rounded-lg bg-faint p-3 text-xs text-muted">
-                <p>Transactions: {mergePreview.transactions ?? 0}</p>
-                <p>Recurring rules: {mergePreview.recurring_rules ?? 0}</p>
-                <p>Rule category actions: {mergePreview.rules_set_category ?? 0}</p>
-                <p>Budget templates: {mergePreview.budget_templates ?? 0}</p>
-                <p>Budget overrides: {mergePreview.budget_overrides ?? 0}</p>
-              </div>
-            )}
-          </FinancialPanel>
-        </div>
-      </div>
-
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => {
-          if (!open && !createMutation.isPending && !updateMutation.isPending) {
-            closeEditor()
+    <Panel
+      title="Categories"
+      layout="fill"
+      peekOpen={peek !== null}
+      actions={
+        <Button variant="primary" icon={PlusIcon} aria-label="Add category" onClick={() => setAdding(true)}>
+          {isDesktop ? "Add category" : "Add"}
+        </Button>
+      }
+      viewRow={
+        <ViewRow
+          end={
+            <SortMenu
+              keys={SORT_KEYS}
+              value={sort.field}
+              direction={sort.direction}
+              onChange={(field, direction) => setSort({ field, direction })}
+            />
           }
-        }}
-      >
-        <DialogContent
-          aria-label={isEditing ? "Edit category" : "Add category"}
-          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
         >
-          <div className="-mr-5 overflow-y-auto pr-5">
-            <DialogHeader>
-              <DialogTitle>{isEditing ? "Edit category" : "Add category"}</DialogTitle>
-              <DialogClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="h-9 w-9 rounded-full p-0"
-                  aria-label="Close category editor"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  <XIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-              </DialogClose>
-            </DialogHeader>
-
-            <form
-              onSubmit={isEditing ? handleEditSubmit : handleCreate}
-              className="space-y-4"
-            >
-              <AppFieldLabel>
-                Name
-                <AppInput
-                  value={isEditing ? editName : name}
-                  onChange={(event) =>
-                    isEditing ? setEditName(event.target.value) : setName(event.target.value)
-                  }
-                  autoFocus
-                  required
-                />
-              </AppFieldLabel>
-              {isEditing ? (
-                <div className="form-label">
-                  Type
-                  <p className="rounded-lg border border-border bg-surface-hi/60 px-3 py-2 text-sm font-semibold capitalize text-text">
-                    {editType}
-                  </p>
-                </div>
-              ) : (
-                <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={type}
-                    onChange={(event) => setType(event.target.value)}
-                    className="mt-1"
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-              )}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted">Icon</p>
-                <Suspense fallback={iconPickerFallback}>
-                  <IconPicker
-                    value={isEditing ? editIcon : icon}
-                    onChange={isEditing ? setEditIcon : setIcon}
-                  />
-                </Suspense>
-              </div>
-              <AppFieldLabel>
-                Order (optional)
-                <AppInput
-                  value={isEditing ? editOrder : order}
-                  onChange={(event) =>
-                    isEditing ? setEditOrder(event.target.value) : setOrder(event.target.value)
-                  }
-                  type="number"
-                />
-              </AppFieldLabel>
-              {(isEditing ? updateMutation.error : createMutation.error) ? (
-                <p className="text-xs text-semantic-red">
-                  {getApiErrorMessage(
-                    isEditing ? updateMutation.error : createMutation.error,
-                    isEditing
-                      ? "Unable to update category."
-                      : "Unable to create category.",
-                  )}
-                </p>
-              ) : null}
-              <div className="flex gap-2 border-t border-border pt-4">
-                <AppButton
-                  type="submit"
-                  className="flex-1"
-                  disabled={isEditing ? updateMutation.isPending : createMutation.isPending}
-                >
-                  {isEditing
-                    ? updateMutation.isPending
-                      ? "Saving…"
-                      : "Save changes"
-                    : createMutation.isPending
-                      ? "Creating…"
-                      : "Add category"}
-                </AppButton>
-                <AppButton
-                  type="button"
-                  onClick={closeEditor}
-                  tone="ghost"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  Cancel
-                </AppButton>
-              </div>
-            </form>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {savedFlash && (
-        <div className="fixed inset-x-0 bottom-6 z-[80] flex justify-center pointer-events-none">
-          <div className="toast-flash pointer-events-auto rounded-full border border-border bg-surface px-4 py-2 text-sm font-semibold text-semantic-green shadow-[var(--shadow-raised)]">
-            Changes saved
-          </div>
-        </div>
-      )}
-    </section>
+          <PeriodControl value={period} onChange={(next) => setSearchParams(writePeriodToSearch(searchParams, next))} />
+        </ViewRow>
+      }
+    >
+      <PeekLayout peek={peek} main={main} />
+      {adding ? <AddCategoryDialog onClose={() => setAdding(false)} /> : null}
+    </Panel>
   )
 }
 

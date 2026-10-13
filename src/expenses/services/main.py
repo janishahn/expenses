@@ -8188,6 +8188,7 @@ class DigestService:
                     "rule_id": txn.origin_rule_id,
                     "rule_name": txn.origin_rule.name if txn.origin_rule else "",
                     "date": txn.date.isoformat(),
+                    "type": txn.type.value,
                     "amount_cents": amount,
                     "category": {
                         "id": txn.category.id,

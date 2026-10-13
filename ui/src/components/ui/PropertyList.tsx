@@ -116,6 +116,7 @@ export function InlineText({
   placeholder,
   inputMode,
   display,
+  detail,
   error,
   onCancel,
 }: {
@@ -129,6 +130,8 @@ export function InlineText({
   inputMode?: "decimal" | "text"
   // How the value reads when not editing; defaults to the raw value.
   display?: ReactNode
+  // Muted text after the shown value, such as "every month" after an amount.
+  detail?: ReactNode
   error?: string | null
   // Esc discards the entered text; the owner clears its error here.
   onCancel?: () => void
@@ -166,6 +169,7 @@ export function InlineText({
         onClick={() => setDraft(value)}
       >
         {value ? (display ?? value) : placeholder}
+        {detail != null ? <span className={s.pkAmtDetail}> {detail}</span> : null}
       </button>
     )
   }

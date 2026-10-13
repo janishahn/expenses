@@ -195,3 +195,20 @@ export function MonthPicker({ value, onChange }: { value: string; onChange: (mon
     </span>
   )
 }
+
+// One week for week-scoped pages such as the Digest: ‹ 12 – 18 Oct 2026 ›.
+export function WeekStepper({ label, onStep }: { label: string; onStep: (direction: -1 | 1) => void }) {
+  return (
+    <span role="group" aria-label="Week" className={clsx(s.pill, s.pillStepper)}>
+      <button type="button" className={s.pillStep} aria-label="Previous week" onClick={() => onStep(-1)}>
+        <CaretLeftIcon aria-hidden="true" />
+      </button>
+      <span className={s.pillInner}>
+        <span className={s.pillLabel}>{label}</span>
+      </span>
+      <button type="button" className={s.pillStep} aria-label="Next week" onClick={() => onStep(1)}>
+        <CaretRightIcon aria-hidden="true" />
+      </button>
+    </span>
+  )
+}

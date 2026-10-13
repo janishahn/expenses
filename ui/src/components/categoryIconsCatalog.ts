@@ -74,3 +74,14 @@ export const CURATED_CATEGORY_ICONS: Record<string, PhosphorIcon> = {
   globe: GlobeIcon,
   [DEFAULT_CATEGORY_ICON_KEY]: CurrencyCircleDollarIcon,
 }
+
+// "fork-knife" reads as "Fork knife".
+export function iconLabel(iconKey: string): string {
+  const words = iconKey.replace(/-/g, " ")
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+// The default key lets the glyph follow the category name.
+export function categoryIconName(iconKey: string | null): string {
+  return !iconKey || iconKey === DEFAULT_CATEGORY_ICON_KEY ? "Automatic" : iconLabel(iconKey)
+}

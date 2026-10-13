@@ -1,1016 +1,930 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { useState, type FormEvent, type ReactElement } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { ArrowsClockwiseIcon } from "@phosphor-icons/react/ArrowsClockwise"
+import { CalendarBlankIcon } from "@phosphor-icons/react/CalendarBlank"
+import { CalendarSlashIcon } from "@phosphor-icons/react/CalendarSlash"
+import { CalendarXIcon } from "@phosphor-icons/react/CalendarX"
+import { CurrencyDollarIcon } from "@phosphor-icons/react/CurrencyDollar"
+import { LightningIcon } from "@phosphor-icons/react/Lightning"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
-import { XIcon } from "@phosphor-icons/react/X"
-import { Link, useOutletContext, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
-import type { AppShellOutletContext } from "../app/AppShell"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { Toggle } from "../components/Toggle"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { apiFetch, getApiErrorMessage } from "../app/api"
+import { useQueuedSave } from "../app/queued-save"
+import { amountInput, parseAmountCents } from "../app/transactions"
+import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
-import { PageTabPanel, PageTabs } from "../components/PageTabs"
-import DonutChart from "../components/charts/DonutChart"
-import type { BreakdownItem } from "../components/charts/DonutChart"
+import { Amount } from "../components/ui/Amount"
+import { Button } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip } from "../components/ui/ChartCard"
+import { Donut } from "../components/ui/Charts"
+import { Combobox } from "../components/ui/Combobox"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryAmount, EntryChips, EntryDialog, EntryName, EntryPreview } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { AmountCell, Cell, List, ListHead, Row, type Columns } from "../components/ui/LedgerRow"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { Pill } from "../components/ui/Pill"
+import { Popover, PopoverActions } from "../components/ui/Popover"
+import { InlineText, Property, PropertyButton, PropertyList } from "../components/ui/PropertyList"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { MetricStrip, Sheet } from "../components/ui/Sheet"
+import { Switch } from "../components/ui/Switch"
+import { TagChips } from "../components/ui/TagChip"
+import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
+import { categoryColor } from "../components/ui/tokens"
+import { buildSearchParams } from "../lib/searchParams"
 import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/legacy-ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/legacy-ui/dialog"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/legacy-ui/product-fields"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+  MONTH_DAY_POLICIES,
+  fullDate,
+  needsMonthDayPolicy,
+  repeatsText,
+  ruleLabel,
+  rulePayload,
+  scheduleText,
+  shortDate,
+  type Currency,
+  type IntervalUnit,
+  type MonthDayPolicy,
+  type OccurrencesResponse,
+  type RecurringResponse,
+  type RecurringRule,
+  type RulePayload,
+} from "./recurring-rule"
 
-type RuleCategory = {
-  id: number
-  name: string
-  type: string
-  icon: string | null
+type View = "commitments" | "audit"
+type RuleField = "name" | "amount" | "type" | "category" | "currency" | "repeats" | "starts" | "ends" | "post" | "weekends"
+type Schedule = { unit: IntervalUnit; count: number; policy: MonthDayPolicy }
+
+const COMMITMENT_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) 120px 120px 90px 20px 110px",
+  narrowColumns: "18px minmax(0, 1fr) 90px 20px 110px",
+  mobileColumns: "18px minmax(0, 1fr) auto auto",
+}
+const AUDIT_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) 110px 80px 100px 100px 100px",
+  narrowColumns: "18px minmax(0, 1fr) 100px 100px",
+  mobileColumns: "18px minmax(0, 1fr) 100px",
+}
+const POSTED_COLUMNS = "minmax(0, 1fr) auto"
+const UNITS: Array<{ value: IntervalUnit; label: string }> = [
+  { value: "day", label: "Days" },
+  { value: "week", label: "Weeks" },
+  { value: "month", label: "Months" },
+  { value: "year", label: "Years" },
+]
+
+function todayIso(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
 }
 
-type RecurringRuleRow = {
-  id: number
-  name: string | null
-  type: string
-  currency_code: string
-  amount_cents: number
-  monthly_equivalent_cents: number
-  category_id: number
-  category: RuleCategory | null
-  anchor_date: string
-  interval_unit: string
-  interval_count: number
-  next_occurrence: string
-  end_date: string | null
-  auto_post: boolean
-  skip_weekends: boolean
-  month_day_policy: string
+// The next four dates of a schedule; a saved rule previews from its next occurrence.
+function useUpcoming(start: string, schedule: Schedule & { skipWeekends: boolean }, anchor?: string) {
+  return useQuery({
+    queryKey: ["recurring", "preview", start, anchor ?? null, schedule.unit, schedule.count, schedule.policy, schedule.skipWeekends],
+    queryFn: () =>
+      apiFetch<{ occurrences: string[]; error?: string }>("/api/recurring/preview", {
+        method: "POST",
+        body: JSON.stringify({
+          start_date: start,
+          rule_anchor_date: anchor ?? null,
+          interval_unit: schedule.unit,
+          interval_count: schedule.count,
+          month_day_policy: schedule.policy,
+          skip_weekends: schedule.skipWeekends,
+        }),
+      }),
+    enabled: Boolean(start),
+    retry: 0,
+  })
 }
 
-type RecurringStats = {
-  total_monthly_income: number
-  total_monthly_expenses: number
-  net_monthly: number
-  coverage_ratio: number
-  expense_breakdown: Array<{ name: string; amount_cents: number; percent: number }>
-  income_breakdown: Array<{ name: string; amount_cents: number; percent: number }>
-  rule_counts: { income: number; expense: number; total: number }
-}
-
-type RecurringResponse = {
-  rules: RecurringRuleRow[]
-  stats: RecurringStats
-  categories: RuleCategory[]
-}
-
-function frequencyLabel(rule: RecurringRuleRow): string {
-  if (rule.interval_unit === "month" && rule.interval_count === 1) {
-    return "Monthly"
+function DatePopover({
+  label,
+  value,
+  trigger,
+  submitLabel,
+  onSave,
+  clearLabel,
+  onClear,
+}: {
+  label: string
+  value: string
+  trigger: ReactElement
+  submitLabel: string
+  onSave: (value: string) => void
+  clearLabel?: string
+  onClear?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(false)
+    if (draft && draft !== value) onSave(draft)
   }
-  if (rule.interval_unit === "year" && rule.interval_count === 1) {
-    return "Yearly"
+  return (
+    <Popover
+      form
+      label={label}
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDraft(value)
+        setOpen(next)
+      }}
+      trigger={trigger}
+    >
+      <form onSubmit={submit}>
+        <FieldGrid narrow>
+          <Field label={label}>
+            <TextField type="date" required autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} />
+          </Field>
+        </FieldGrid>
+        <PopoverActions
+          start={
+            onClear ? (
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => {
+                  setOpen(false)
+                  onClear()
+                }}
+              >
+                {clearLabel}
+              </Button>
+            ) : undefined
+          }
+        >
+          <Button type="submit" variant="primary" size="small" disabled={!draft}>
+            {submitLabel}
+          </Button>
+        </PopoverActions>
+      </form>
+    </Popover>
+  )
+}
+
+function RepeatsPopover({
+  value,
+  anchor,
+  trigger,
+  submitLabel,
+  onSave,
+}: {
+  value: Schedule
+  anchor: string
+  trigger: ReactElement
+  submitLabel: string
+  onSave: (value: Schedule) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [unit, setUnit] = useState(value.unit)
+  const [count, setCount] = useState(String(value.count))
+  const [policy, setPolicy] = useState(value.policy)
+  const parsedCount = Number(count)
+  const valid = Number.isInteger(parsedCount) && parsedCount >= 1
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!valid) return
+    setOpen(false)
+    onSave({ unit, count: parsedCount, policy })
   }
-  if (rule.interval_count === 1) {
-    return `Every ${rule.interval_unit}`
+  return (
+    <Popover
+      form
+      label="Repeats"
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setUnit(value.unit)
+          setCount(String(value.count))
+          setPolicy(value.policy)
+        }
+        setOpen(next)
+      }}
+      trigger={trigger}
+    >
+      <form onSubmit={submit}>
+        <FieldGrid narrow>
+          <Field label="Every">
+            <TextField type="number" min={1} step={1} autoFocus value={count} onChange={(event) => setCount(event.target.value)} />
+          </Field>
+          <Field label="Unit">
+            <Select value={unit} onChange={(event) => setUnit(event.target.value as IntervalUnit)}>
+              {UNITS.map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {anchor && needsMonthDayPolicy(unit, anchor) ? (
+            <Field label="Short months">
+              <Select value={policy} onChange={(event) => setPolicy(event.target.value as MonthDayPolicy)}>
+                {MONTH_DAY_POLICIES.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+        </FieldGrid>
+        <PopoverActions>
+          <Button type="submit" variant="primary" size="small" disabled={!valid}>
+            {submitLabel}
+          </Button>
+        </PopoverActions>
+      </form>
+    </Popover>
+  )
+}
+
+function CurrencyMenu({ value, trigger, onSelect }: { value: Currency; trigger: ReactElement; onSelect: (value: Currency) => void }) {
+  return (
+    <Menu label="Currency" align="start" trigger={trigger}>
+      <MenuItem checked={value === "EUR"} onSelect={() => onSelect("EUR")}>
+        Euro (€)
+      </MenuItem>
+      <MenuItem checked={value === "USD"} onSelect={() => onSelect("USD")}>
+        US dollar ($)
+      </MenuItem>
+    </Menu>
+  )
+}
+
+function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [now] = useState(() => new Date())
+  const [type, setType] = useState<"expense" | "income">("expense")
+  const [amount, setAmount] = useState("")
+  const [name, setName] = useState("")
+  const [currency, setCurrency] = useState<Currency>("EUR")
+  const [categoryId, setCategoryId] = useState<number | null>(
+    () => data.categories.find((category) => category.type === "expense")?.id ?? null
+  )
+  const [schedule, setSchedule] = useState<Schedule>({ unit: "month", count: 1, policy: "snap_to_end" })
+  const [start, setStart] = useState(() => todayIso(now))
+  const [end, setEnd] = useState("")
+  const [autoPost, setAutoPost] = useState(true)
+  const [skipWeekends, setSkipWeekends] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const upcoming = useUpcoming(start, { ...schedule, skipWeekends })
+  const categories = data.categories.filter((category) => category.type === type)
+  const category = categories.find((entry) => entry.id === categoryId)
+
+  const create = useMutation({
+    mutationFn: (payload: RulePayload) => apiFetch("/api/recurring", { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recurring"] })
+      onClose()
+    },
+    onError: (failure) => setError(getApiErrorMessage(failure, "Unable to add the rule.")),
+  })
+
+  const submit = () => {
+    setError(null)
+    const cents = parseAmountCents(amount)
+    if (cents === null) return setError("Enter a valid amount.")
+    if (!start) return setError("Select a start date.")
+    if (categoryId === null) return setError("Select a category.")
+    create.mutate({
+      name: name.trim() || null,
+      type,
+      currency_code: currency,
+      amount_cents: cents,
+      category_id: categoryId,
+      anchor_date: start,
+      interval_unit: schedule.unit,
+      interval_count: schedule.count,
+      next_occurrence: start,
+      end_date: end || null,
+      auto_post: autoPost,
+      skip_weekends: skipWeekends,
+      month_day_policy: schedule.policy,
+    })
   }
-  return `Every ${rule.interval_count} ${rule.interval_unit}s`
+
+  const dates = (upcoming.data?.error ? [] : (upcoming.data?.occurrences ?? [])).filter((date) => !end || date <= end)
+
+  return (
+    <EntryDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+      title="Add rule"
+      direction={
+        <SegmentedControl
+          label="Type"
+          value={type}
+          options={[
+            { value: "expense", label: "Expense" },
+            { value: "income", label: "Income" },
+          ]}
+          onChange={(next) => {
+            setType(next)
+            setCategoryId(data.categories.find((entry) => entry.type === next)?.id ?? null)
+          }}
+        />
+      }
+      submitLabel="Add rule"
+      onSubmit={submit}
+      pending={create.isPending}
+      error={error}
+    >
+      <EntryAmount
+        autoFocus
+        placeholder={currency === "USD" ? "0,00 $" : "0,00 €"}
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+      />
+      <EntryName placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
+      <EntryChips>
+        <Combobox
+          label="Category"
+          options={categories.map((entry) => ({
+            value: entry.id,
+            label: entry.name,
+            leading: <CategoryGlyph categoryId={entry.id} icon={entry.icon} name={entry.name} />,
+          }))}
+          selected={categoryId === null ? [] : [categoryId]}
+          onSelect={setCategoryId}
+          trigger={
+            <Pill
+              icon={category ? undefined : ShapesIcon}
+              leading={category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} /> : undefined}
+              set={Boolean(category)}
+              aria-label={`Category ${category?.name ?? "none"}`}
+            >
+              {category?.name ?? "Category"}
+            </Pill>
+          }
+        />
+        <RepeatsPopover
+          value={schedule}
+          anchor={start}
+          submitLabel="Done"
+          onSave={setSchedule}
+          trigger={
+            <Pill icon={ArrowsClockwiseIcon} aria-label={`Repeats ${repeatsText(schedule.unit, schedule.count)}`}>
+              {repeatsText(schedule.unit, schedule.count)}
+            </Pill>
+          }
+        />
+        <DatePopover
+          label="Starts"
+          value={start}
+          submitLabel="Done"
+          onSave={setStart}
+          trigger={
+            <Pill icon={CalendarBlankIcon} aria-label={`Starts ${start ? fullDate(start) : "not set"}`}>
+              {start ? `From ${fullDate(start)}` : "Start date"}
+            </Pill>
+          }
+        />
+        <DatePopover
+          label="Ends"
+          value={end || start}
+          submitLabel="Done"
+          onSave={setEnd}
+          trigger={
+            <Pill
+              icon={CalendarSlashIcon}
+              set={Boolean(end)}
+              onClear={end ? () => setEnd("") : undefined}
+              clearLabel="Clear end date"
+              aria-label={`Ends ${end ? fullDate(end) : "never"}`}
+            >
+              {end ? `Until ${fullDate(end)}` : "No end"}
+            </Pill>
+          }
+        />
+        <Pill icon={LightningIcon} set={autoPost} aria-pressed={autoPost} onClick={() => setAutoPost(!autoPost)}>
+          Post automatically
+        </Pill>
+        <Pill icon={CalendarXIcon} set={skipWeekends} aria-pressed={skipWeekends} onClick={() => setSkipWeekends(!skipWeekends)}>
+          Skip weekends
+        </Pill>
+        <CurrencyMenu
+          value={currency}
+          onSelect={setCurrency}
+          trigger={
+            <Pill icon={CurrencyDollarIcon} set={currency === "USD"} aria-label={`Currency ${currency}`}>
+              {currency}
+            </Pill>
+          }
+        />
+      </EntryChips>
+      <EntryPreview>
+        {upcoming.data?.error
+          ? upcoming.data.error
+          : upcoming.isError
+            ? "Preview unavailable"
+            : dates.length
+              ? `Next ${dates.map((date) => shortDate(date, now)).join(" · ")}`
+              : null}
+      </EntryPreview>
+    </EntryDialog>
+  )
+}
+
+function RulePeek({ rule, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [now] = useState(() => new Date())
+  const { errors, setError, save } = useQueuedSave<RecurringRule, RulePayload, RuleField>({
+    url: `/api/recurring/${rule.id}`,
+    source: rule,
+    toPayload: rulePayload,
+    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring"] }),
+  })
+  const label = ruleLabel(rule)
+  const schedule: Schedule = { unit: rule.interval_unit, count: rule.interval_count, policy: rule.month_day_policy }
+  const upcoming = useUpcoming(rule.next_occurrence, { ...schedule, skipWeekends: rule.skip_weekends }, rule.anchor_date)
+  const posted = useQuery({
+    queryKey: ["recurring", rule.id, "occurrences"],
+    queryFn: () => apiFetch<OccurrencesResponse>(`/api/recurring/${rule.id}/occurrences`),
+  })
+  const remove = useMutation({
+    mutationFn: () => apiFetch(`/api/recurring/${rule.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      onClose()
+      queryClient.removeQueries({ queryKey: ["recurring", rule.id] })
+      void queryClient.invalidateQueries({ queryKey: ["recurring"], exact: true })
+    },
+  })
+
+  const dates = (upcoming.data?.error ? [] : (upcoming.data?.occurrences ?? [])).filter(
+    (date) => !rule.end_date || date <= rule.end_date
+  )
+  const occurrences = posted.data?.occurrences ?? []
+  const category = data.categories.find((entry) => entry.id === rule.category_id) ?? rule.category
+  const perYear = rule.monthly_equivalent_cents * 12
+
+  return (
+    <Peek
+      parent="Recurring"
+      title={label}
+      onClose={onClose}
+      fullViewTo={`/recurring/${rule.id}/occurrences`}
+      menu={
+        <MenuItem
+          icon={TrashIcon}
+          danger
+          onSelect={async () => {
+            if (await confirmDialog({ title: `Delete recurring rule "${label}"?`, confirmLabel: "Delete", tone: "danger" })) {
+              remove.mutate()
+            }
+          }}
+        >
+          Delete rule
+        </MenuItem>
+      }
+    >
+      <InlineText
+        variant="title"
+        label="Name"
+        value={rule.name ?? ""}
+        placeholder={rule.category?.name ?? "Untitled"}
+        error={errors.name}
+        onCancel={() => setError("name", null)}
+        onSave={(next) => save("name", { name: next.trim() || null })}
+      />
+      <InlineText
+        variant="amount"
+        label="Amount"
+        inputMode="decimal"
+        value={amountInput(rule.amount_cents)}
+        display={<Amount cents={rule.amount_cents} kind={rule.type} currency={rule.currency_code} />}
+        detail={repeatsText(rule.interval_unit, rule.interval_count).toLowerCase()}
+        error={errors.amount}
+        onCancel={() => setError("amount", null)}
+        onSave={(next) => {
+          const cents = parseAmountCents(next)
+          if (cents === null) {
+            setError("amount", "Enter a valid amount.")
+            return false
+          }
+          return save("amount", { amount_cents: cents })
+        }}
+      />
+      {remove.isError ? <FieldError>{getApiErrorMessage(remove.error, "Unable to delete the rule.")}</FieldError> : null}
+      <PropertyList>
+        <Property label="Type" editable error={errors.type}>
+          <Menu label="Type" align="start" trigger={<PropertyButton>{rule.type === "expense" ? "Expense" : "Income"}</PropertyButton>}>
+            {(["expense", "income"] as const).map((next) => (
+              <MenuItem
+                key={next}
+                checked={rule.type === next}
+                onSelect={() => {
+                  if (rule.type === next) return
+                  const fallback = data.categories.find((entry) => entry.type === next)
+                  if (!fallback) {
+                    setError("type", `Add an ${next} category first.`)
+                    return
+                  }
+                  void save("type", { type: next, category_id: fallback.id })
+                }}
+              >
+                {next === "expense" ? "Expense" : "Income"}
+              </MenuItem>
+            ))}
+          </Menu>
+        </Property>
+        <Property label="Category" editable error={errors.category}>
+          <CategoryPicker
+            categories={data.categories.filter((entry) => entry.type === rule.type)}
+            selectedId={rule.category_id}
+            onSelect={(categoryId) => {
+              if (categoryId !== null && categoryId !== rule.category_id) void save("category", { category_id: categoryId })
+            }}
+            trigger={
+              <PropertyButton empty={!category}>
+                {category ? (
+                  <>
+                    <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} />
+                    {category.name}
+                  </>
+                ) : (
+                  "Uncategorized"
+                )}
+              </PropertyButton>
+            }
+          />
+        </Property>
+        <Property label="Repeats" editable error={errors.repeats}>
+          <RepeatsPopover
+            value={schedule}
+            anchor={rule.anchor_date}
+            submitLabel="Save"
+            onSave={(next) =>
+              void save("repeats", { interval_unit: next.unit, interval_count: next.count, month_day_policy: next.policy })
+            }
+            trigger={<PropertyButton>{scheduleText(rule.interval_unit, rule.interval_count, rule.anchor_date)}</PropertyButton>}
+          />
+        </Property>
+        <Property label="Starts" editable error={errors.starts}>
+          <DatePopover
+            label="Starts"
+            value={rule.anchor_date}
+            submitLabel="Save"
+            onSave={(next) => void save("starts", { anchor_date: next })}
+            trigger={<PropertyButton>{fullDate(rule.anchor_date)}</PropertyButton>}
+          />
+        </Property>
+        <Property label="Ends" editable error={errors.ends}>
+          <DatePopover
+            label="Ends"
+            value={rule.end_date ?? rule.next_occurrence}
+            submitLabel="Save"
+            onSave={(next) => void save("ends", { end_date: next })}
+            clearLabel="No end"
+            onClear={rule.end_date ? () => void save("ends", { end_date: null }) : undefined}
+            trigger={<PropertyButton empty={!rule.end_date}>{rule.end_date ? fullDate(rule.end_date) : "Never"}</PropertyButton>}
+          />
+        </Property>
+        <Property label="Currency" editable error={errors.currency}>
+          <CurrencyMenu
+            value={rule.currency_code}
+            onSelect={(next) => {
+              if (next !== rule.currency_code) void save("currency", { currency_code: next })
+            }}
+            trigger={<PropertyButton>{rule.currency_code === "USD" ? "US dollar ($)" : "Euro (€)"}</PropertyButton>}
+          />
+        </Property>
+        <Property label="Post" error={errors.post}>
+          <Switch
+            label="Post automatically"
+            checked={rule.auto_post}
+            onCheckedChange={(checked) => void save("post", { auto_post: checked })}
+          />
+          {rule.auto_post ? "Automatically" : "Manually"}
+        </Property>
+        <Property label="Weekends" error={errors.weekends}>
+          <Switch
+            label="Skip weekends"
+            checked={rule.skip_weekends}
+            onCheckedChange={(checked) => void save("weekends", { skip_weekends: checked })}
+          />
+          {rule.skip_weekends ? "Moved to Monday" : "Allowed"}
+        </Property>
+      </PropertyList>
+      {rule.type === "expense" ? (
+        <PeekSection title="Cost">
+          <PropertyList>
+            <Property label="Per day">
+              <Amount cents={Math.round(perYear / 365)} />
+            </Property>
+            <Property label="Per year">
+              <Amount cents={perYear} />
+            </Property>
+            <Property label="5 years">
+              <Amount cents={rule.monthly_equivalent_cents * 60} />
+            </Property>
+          </PropertyList>
+        </PeekSection>
+      ) : null}
+      <PeekSection title="Upcoming">
+        {dates.length ? (
+          <TagChips names={dates.map((date) => shortDate(date, now))} max={dates.length} />
+        ) : (
+          <EmptyState inline>{upcoming.isLoading ? "Loading…" : "None"}</EmptyState>
+        )}
+      </PeekSection>
+      <PeekSection
+        title="Posted"
+        action={
+          occurrences.length > 3 ? (
+            <Button variant="ghost" size="small" onClick={() => navigate(`/recurring/${rule.id}/occurrences`)}>
+              All {occurrences.length}
+            </Button>
+          ) : undefined
+        }
+      >
+        {occurrences.length ? (
+          <List flat label="Posted">
+            {occurrences.slice(0, 3).map((occurrence) => (
+              <Row
+                key={occurrence.id}
+                columns={POSTED_COLUMNS}
+                label={occurrence.occurrence_date ? fullDate(occurrence.occurrence_date) : "Posted"}
+                onOpen={() => navigate(`/transactions/${occurrence.id}`)}
+              >
+                <Cell tone="muted">{occurrence.occurrence_date ? fullDate(occurrence.occurrence_date) : "–"}</Cell>
+                <AmountCell>
+                  <Amount cents={occurrence.amount_cents} kind={rule.type} />
+                </AmountCell>
+              </Row>
+            ))}
+          </List>
+        ) : (
+          <EmptyState inline>{posted.isLoading ? "Loading…" : "None yet"}</EmptyState>
+        )}
+      </PeekSection>
+    </Peek>
+  )
 }
 
 function RecurringRulesPage() {
-  const queryClient = useQueryClient()
-  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [name, setName] = useState("")
-  const [type, setType] = useState("expense")
-  const [currency, setCurrency] = useState("EUR")
-  const [amount, setAmount] = useState("")
-  const [categoryId, setCategoryId] = useState("")
-  const [anchorDate, setAnchorDate] = useState("")
-  const [intervalUnit, setIntervalUnit] = useState("month")
-  const [intervalCount, setIntervalCount] = useState("1")
-  const [endDate, setEndDate] = useState("")
-  const [autoPost, setAutoPost] = useState(true)
-  const [skipWeekends, setSkipWeekends] = useState(false)
-  const [monthDayPolicy, setMonthDayPolicy] = useState("snap_to_end")
-  const [nextOccurrence, setNextOccurrence] = useState("")
-  const [formError, setFormError] = useState("")
-  const [evaluatingRuleId, setEvaluatingRuleId] = useState<number | null>(null)
-  const [replacementNotes, setReplacementNotes] = useState<Record<number, string>>({})
-
-  const activeView = searchParams.get("view") === "audit" ? "audit" : "rules"
+  const [now] = useState(() => new Date())
+  const [adding, setAdding] = useState(false)
+  const view: View = searchParams.get("view") === "audit" ? "audit" : "commitments"
+  const peekId = Number(searchParams.get("peek")) || null
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["recurring"],
     queryFn: () => apiFetch<RecurringResponse>("/api/recurring"),
   })
 
-  const createMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch("/api/recurring", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-      setEditingId(null)
-      setFormError("")
-      setEditorOpen(false)
-    },
-  })
+  if (isLoading) return <PanelLoading title="Recurring" label="Loading recurring rules…" />
+  if (error || !data) return <PanelError title="Recurring" message="Unable to load recurring rules." />
 
-  const updateMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch(`/api/recurring/${editingId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-      setEditingId(null)
-      setFormError("")
-      setEditorOpen(false)
-    },
-  })
+  const update = (values: Record<string, string | null>) => setSearchParams(buildSearchParams(searchParams, values))
+  const closePeek = () => setSearchParams(buildSearchParams(searchParams, { peek: null }), { replace: true })
+  const stats = data.stats
+  const expenses = data.rules.filter((rule) => rule.type === "expense")
+  const income = data.rules.filter((rule) => rule.type === "income")
+  const peekRule = data.rules.find((rule) => rule.id === peekId)
 
-  const toggleMutation = useMutation({
-    mutationFn: (payload: { id: number; auto_post: boolean }) =>
-      apiFetch(`/api/recurring/${payload.id}/toggle`, {
-        method: "POST",
-        body: JSON.stringify({ auto_post: payload.auto_post }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-    },
-  })
+  const ruleRow = (rule: RecurringRule) => (
+    <Row
+      key={rule.id}
+      {...COMMITMENT_COLUMNS}
+      label={ruleLabel(rule)}
+      selected={rule.id === peekId}
+      onOpen={() => update({ peek: String(rule.id) })}
+    >
+      <CategoryGlyph categoryId={rule.category_id} icon={rule.category?.icon} name={rule.category?.name} />
+      <Cell strong>{ruleLabel(rule)}</Cell>
+      <Cell tone="muted" hide="narrow">
+        {rule.category?.name ?? "Uncategorized"}
+      </Cell>
+      <Cell tone="muted" hide="narrow">
+        {repeatsText(rule.interval_unit, rule.interval_count)}
+      </Cell>
+      <Cell tone="muted">Next {shortDate(rule.next_occurrence, now)}</Cell>
+      <Cell tone="faint" hide="mobile">
+        {rule.auto_post ? <LightningIcon size={14} role="img" aria-label="Posts automatically" /> : null}
+      </Cell>
+      <AmountCell>
+        <Amount cents={rule.amount_cents} kind={rule.type} currency={rule.currency_code} />
+      </AmountCell>
+    </Row>
+  )
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch(`/api/recurring/${id}`, { method: "DELETE" }),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-      if (evaluatingRuleId === id) {
-        setEvaluatingRuleId(null)
-      }
-    },
-  })
+  const byCost = expenses.slice().sort((a, b) => b.monthly_equivalent_cents - a.monthly_equivalent_cents)
+  const mix = Array.from(
+    byCost
+      .reduce((groups, rule) => {
+        const entry = groups.get(rule.category_id) ?? { rule, perYear: 0 }
+        entry.perYear += rule.monthly_equivalent_cents * 12
+        return groups.set(rule.category_id, entry)
+      }, new Map<number, { rule: RecurringRule; perYear: number }>())
+      .values()
+  ).sort((a, b) => b.perYear - a.perYear)
+  const annualTotal = stats.total_monthly_expenses * 12
+  const share = (cents: number) => `${annualTotal ? Math.round((cents / annualTotal) * 100) : 0} %`
 
-  const deleteRule = async (rule: RecurringRuleRow) => {
-    const label = rule.name || rule.category?.name || "Untitled"
-    if (!(await confirmDialog({ title: `Delete recurring rule "${label}"?` }))) {
-      return
-    }
-    deleteMutation.mutate(rule.id)
-  }
-
-  const handleEditRule = (rule: RecurringRuleRow) => {
-    setEditingId(rule.id)
-    setName(rule.name ?? "")
-    setType(rule.type)
-    setCurrency(rule.currency_code)
-    setAmount((rule.amount_cents / 100).toFixed(2))
-    setCategoryId(String(rule.category_id))
-    setAnchorDate(rule.anchor_date)
-    setIntervalUnit(rule.interval_unit)
-    setIntervalCount(String(rule.interval_count))
-    setEndDate(rule.end_date ?? "")
-    setAutoPost(rule.auto_post)
-    setSkipWeekends(rule.skip_weekends)
-    setMonthDayPolicy(rule.month_day_policy)
-    setNextOccurrence(rule.next_occurrence)
-    setEditorOpen(true)
-  }
-
-  const showMonthPolicy = useMemo(() => {
-    if (!anchorDate) return false
-    const day = Number(anchorDate.split("-")[2])
-    return (
-      (intervalUnit === "month" || intervalUnit === "year") &&
-      Number.isFinite(day) &&
-      day > 28
-    )
-  }, [anchorDate, intervalUnit])
-
-  const parseAmount = (raw: string) => {
-    const normalized = raw.replace(/\s/g, "").replace(",", ".")
-    const value = Number(normalized)
-    if (!Number.isFinite(value) || value < 0) {
-      return null
-    }
-    return Math.round(value * 100)
-  }
-
-  const previewIntervalCount = Number(intervalCount) || 1
-  const {
-    data: previewData,
-    error: previewQueryError,
-    isFetching: previewLoading,
-  } = useQuery({
-    queryKey: [
-      "recurring",
-      "preview",
-      anchorDate,
-      intervalUnit,
-      previewIntervalCount,
-      monthDayPolicy,
-      skipWeekends,
-    ],
-    queryFn: () =>
-      apiFetch<{ occurrences: string[]; error?: string }>("/api/recurring/preview", {
-        method: "POST",
-        body: JSON.stringify({
-          start_date: anchorDate,
-          interval_unit: intervalUnit,
-          interval_count: previewIntervalCount,
-          month_day_policy: monthDayPolicy,
-          skip_weekends: skipWeekends,
-        }),
-      }),
-    enabled: Boolean(anchorDate),
-    retry: 0,
-  })
-
-  const previewError = anchorDate
-    ? previewData?.error || (previewQueryError ? "Preview unavailable" : "")
-    : ""
-  const preview = previewError ? [] : previewData?.occurrences || []
-
-  const resetForm = useCallback(() => {
-    const nextType = "expense"
-    const defaultCategory = data?.categories.find((c) => c.type === nextType)
-    setEditingId(null)
-    setName("")
-    setType(nextType)
-    setCurrency("EUR")
-    setAmount("")
-    setCategoryId(defaultCategory ? String(defaultCategory.id) : "")
-    setAnchorDate("")
-    setIntervalUnit("month")
-    setIntervalCount("1")
-    setEndDate("")
-    setAutoPost(true)
-    setSkipWeekends(false)
-    setMonthDayPolicy("snap_to_end")
-    setNextOccurrence("")
-    setFormError("")
-  }, [data?.categories])
-
-  const openCreateEditor = useCallback(() => {
-    resetForm()
-    setEditorOpen(true)
-  }, [resetForm])
-
-  useEffect(() => {
-    if (activeView !== "rules") {
-      setUtilityAction(null)
-      return
-    }
-    setUtilityAction({ label: "Add rule", onClick: openCreateEditor })
-    return () => setUtilityAction(null)
-  }, [activeView, openCreateEditor, setUtilityAction])
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFormError("")
-    const amountCents = parseAmount(amount)
-    if (amountCents === null) {
-      setFormError("Enter a valid amount.")
-      return
-    }
-    if (!anchorDate) {
-      setFormError("Select a start date.")
-      return
-    }
-    if (!categoryId) {
-      setFormError("Select a category.")
-      return
-    }
-    const payload = {
-      name: name.trim() || null,
-      type,
-      currency_code: currency,
-      amount_cents: amountCents,
-      category_id: Number(categoryId),
-      anchor_date: anchorDate,
-      interval_unit: intervalUnit,
-      interval_count: previewIntervalCount,
-      next_occurrence: editingId ? nextOccurrence : anchorDate,
-      end_date: endDate || null,
-      auto_post: autoPost,
-      skip_weekends: skipWeekends,
-      month_day_policy: monthDayPolicy,
-    }
-    if (editingId) {
-      updateMutation.mutate(payload)
-      return
-    }
-    createMutation.mutate(payload)
-  }
-
-  const setView = (view: "rules" | "audit") => {
-    setEditorOpen(false)
-    const next = new URLSearchParams(searchParams)
-    if (view === "audit") {
-      next.set("view", "audit")
-    } else {
-      next.delete("view")
-    }
-    setSearchParams(next)
-  }
-
-  if (isLoading) {
-    return <RouteLoading title="Recurring Rules" label="Loading recurring rules…" />
-  }
-  if (error || !data) {
-    return (
-      <RouteError
-        title="Recurring Rules"
-        message="Unable to load recurring rules."
+  const commitments = data.rules.length ? (
+    <>
+      <MetricStrip
+        metrics={[
+          {
+            label: "Income per month",
+            value: <Amount cents={stats.total_monthly_income} kind="income" />,
+            detail: `${stats.rule_counts.income} ${stats.rule_counts.income === 1 ? "rule" : "rules"}`,
+          },
+          {
+            label: "Expenses per month",
+            value: <Amount cents={stats.total_monthly_expenses} />,
+            detail: `${stats.rule_counts.expense} ${stats.rule_counts.expense === 1 ? "rule" : "rules"}`,
+          },
+          {
+            label: "Covered",
+            value: `${Math.round(stats.coverage_ratio)} %`,
+            detail: (
+              <>
+                <Amount cents={Math.abs(stats.net_monthly)} kind={stats.net_monthly >= 0 ? "income" : "expense"} decimals={false} />{" "}
+                {stats.net_monthly >= 0 ? "left per month" : "short per month"}
+              </>
+            ),
+          },
+        ]}
       />
-    )
-  }
+      <List scroll={false} label="Recurring rules">
+        {expenses.length ? (
+          <>
+            <DayBand
+              label="Expenses"
+              end={
+                <>
+                  <Amount cents={stats.total_monthly_expenses} /> per month
+                </>
+              }
+            />
+            {expenses.map(ruleRow)}
+          </>
+        ) : null}
+        {income.length ? (
+          <>
+            <DayBand
+              label="Income"
+              end={
+                <>
+                  <Amount cents={stats.total_monthly_income} kind="income" /> per month
+                </>
+              }
+            />
+            {income.map(ruleRow)}
+          </>
+        ) : null}
+      </List>
+    </>
+  ) : null
 
-  const categoryOptions = data.categories.filter((c) => c.type === type)
-  const expenseRules = data.rules
-    .filter((rule) => rule.type === "expense")
-    .slice()
-    .sort(
-      (a, b) =>
-        b.monthly_equivalent_cents * 60 - a.monthly_equivalent_cents * 60
-    )
-  const annualDonut: BreakdownItem[] = data.stats.expense_breakdown.map((item) => ({
-    name: item.name,
-    amount_cents: item.amount_cents * 12,
-    percent: item.percent,
-  }))
-  return (
-    <section className="space-y-6">
-      <PageIntro title="Recurring Rules" />
-
-      <PageTabs
-          value={activeView}
-          ariaLabel="Recurring views"
-          items={[
-            { value: "rules", label: "Commitments" },
-            { value: "audit", label: "Audit" },
-          ]}
-          onValueChange={(value) => setView(value as "rules" | "audit")}
-          className="space-y-6"
-        >
-
-        <PageTabPanel value="rules" className="space-y-6">
-          {data.stats.rule_counts.total > 0 && (
-            <div
-              data-testid="recurring-summary"
-              className="grid grid-cols-1 gap-3 sm:grid-cols-3"
-            >
-              <MetricLane tone="income">
-                <p className="text-xs font-semibold text-muted">
-                  Monthly income
-                </p>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-semantic-green">
-                  {formatCurrency(data.stats.total_monthly_income)} €
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {data.stats.rule_counts.income} income rule(s)
-                </p>
-              </MetricLane>
-              <MetricLane tone="expense">
-                <p className="text-xs font-semibold text-muted">
-                  Monthly expenses
-                </p>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-semantic-red">
-                  {formatCurrency(data.stats.total_monthly_expenses)} €
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {data.stats.rule_counts.expense} expense rule(s)
-                </p>
-              </MetricLane>
-              <MetricLane tone={data.stats.coverage_ratio >= 100 ? "plan" : "warning"}>
-                <p className="text-xs font-semibold text-muted">
-                  Coverage ratio
-                </p>
-                <p
-                  className={`mt-3 font-mono text-2xl font-semibold tabular-nums ${
-                    data.stats.coverage_ratio >= 100
-                      ? "text-semantic-green"
-                      : "text-semantic-red"
-                  }`}
-                >
-                  {Math.round(data.stats.coverage_ratio)}%
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  Net {formatCurrency(data.stats.net_monthly)} € per month
-                </p>
-              </MetricLane>
-            </div>
-          )}
-
-          {(data.stats.expense_breakdown.length > 0 ||
-            data.stats.income_breakdown.length > 0) && (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <FinancialPanel className="p-5">
-                <h2 className="font-head text-lg font-bold">Expense mix</h2>
-                <div className="mt-4 space-y-3">
-                  {data.stats.expense_breakdown.length ? (
-                    data.stats.expense_breakdown.map((row) => (
-                      <div key={row.name} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-text">{row.name}</span>
-                          <span className="font-mono text-semantic-red">
-                            {formatCurrency(row.amount_cents)} €
-                          </span>
-                        </div>
-                        <div className="h-[5px] rounded-full bg-faint">
-                          <div
-                            className="h-[5px] rounded-full bg-semantic-red"
-                            style={{ width: `${row.percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted">No expense rules.</p>
-                  )}
-                </div>
-              </FinancialPanel>
-              <FinancialPanel className="p-5">
-                <h2 className="font-head text-lg font-bold">Income mix</h2>
-                <div className="mt-4 space-y-3">
-                  {data.stats.income_breakdown.length ? (
-                    data.stats.income_breakdown.map((row) => (
-                      <div key={row.name} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-text">{row.name}</span>
-                          <span className="font-mono text-semantic-green">
-                            {formatCurrency(row.amount_cents)} €
-                          </span>
-                        </div>
-                        <div className="h-[5px] rounded-full bg-faint">
-                          <div
-                            className="h-[5px] rounded-full bg-semantic-green"
-                            style={{ width: `${row.percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted">No income rules.</p>
-                  )}
-                </div>
-              </FinancialPanel>
-            </div>
-          )}
-
-          <div className="grid items-start gap-4">
-            <FinancialPanel role="ledger" data-testid="commitments-board">
-              <SectionHeading>
-                <h2 className="font-head text-lg font-bold">Commitments</h2>
-                <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-                  {data.rules.length}
-                </span>
-              </SectionHeading>
-              <div className="divide-y divide-border">
-                {data.rules.length ? (
-                  data.rules.map((rule) => {
-                    const symbol = rule.currency_code === "USD" ? "$" : "€"
-                    const label = rule.name || rule.category?.name || "Untitled"
-                    return (
-                      <div
-                        key={rule.id}
-                        data-testid="recurring-commitment"
-                        className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-faint/60 md:flex-row md:items-center md:justify-between"
-                      >
-                        <div className="min-w-0 flex items-start gap-2">
-                          <CategoryIcon
-                            icon={rule.category?.icon ?? null}
-                            label={rule.category?.name}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-3 md:block">
-                              <p className="font-semibold text-text">{label}</p>
-                              <span
-                                className={`shrink-0 font-mono text-sm font-semibold md:hidden ${
-                                  rule.type === "income"
-                                    ? "text-semantic-green"
-                                    : "text-semantic-red"
-                                }`}
-                              >
-                                {rule.type === "income" ? "+" : "-"}
-                                {formatCurrency(rule.amount_cents)} {symbol}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-muted">
-                              {rule.category?.name ?? "Uncategorized"} · {frequencyLabel(rule)}
-                            </p>
-                            <p className="mt-1 font-mono text-[11px] text-muted">
-                              Next {formatEuroDate(rule.next_occurrence)}
-                              {rule.currency_code !== "EUR"
-                                ? ` · ${formatCurrency(rule.monthly_equivalent_cents)} € monthly equivalent`
-                                : ""}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="hidden flex-wrap items-center gap-2 md:flex">
-                          <span
-                            className={`font-mono text-sm font-semibold ${
-                              rule.type === "income"
-                                ? "text-semantic-green"
-                                : "text-semantic-red"
-                            }`}
-                          >
-                            {rule.type === "income" ? "+" : "-"}
-                            {formatCurrency(rule.amount_cents)} {symbol}
-                          </span>
-                          <Toggle
-                            on={rule.auto_post}
-                            ariaLabel={`Toggle auto-post for ${label}`}
-                            onChange={(val) =>
-                              toggleMutation.mutate({
-                                id: rule.id,
-                                auto_post: val,
-                              })
-                            }
-                          />
-                          <AppButton asChild tone="inline">
-                            <Link to={`/recurring/${rule.id}/occurrences`}>
-                              History
-                            </Link>
-                          </AppButton>
-                          <AppButton
-                            type="button"
-                            onClick={() => handleEditRule(rule)}
-                            tone="inline"
-                            className="h-11 w-11 p-0"
-                            aria-label={`Edit ${label}`}
-                          >
-                            <PencilSimpleIcon className="h-4 w-4" />
-                          </AppButton>
-                          <AppButton
-                            type="button"
-                            onClick={() => deleteRule(rule)}
-                            tone="inlineDanger"
-                            className="h-11 w-11 p-0"
-                            aria-label={`Delete ${label}`}
-                          >
-                            <TrashIcon className="h-3.5 w-3.5" />
-                          </AppButton>
-                        </div>
-                        <div className="flex items-center gap-2 md:hidden">
-                          <Toggle
-                            on={rule.auto_post}
-                            ariaLabel={`Toggle auto-post for ${label}`}
-                            onChange={(val) =>
-                              toggleMutation.mutate({
-                                id: rule.id,
-                                auto_post: val,
-                              })
-                            }
-                          />
-                          <AppButton asChild tone="inline">
-                            <Link to={`/recurring/${rule.id}/occurrences`}>
-                              History
-                            </Link>
-                          </AppButton>
-                          <AppButton
-                            type="button"
-                            onClick={() => handleEditRule(rule)}
-                            tone="inline"
-                            className="h-11 w-11 p-0"
-                            aria-label={`Edit ${label}`}
-                          >
-                            <PencilSimpleIcon className="h-4 w-4" />
-                          </AppButton>
-                          <AppButton
-                            type="button"
-                            onClick={() => deleteRule(rule)}
-                            tone="inlineDanger"
-                            className="h-11 w-11 p-0"
-                            aria-label={`Delete ${label}`}
-                          >
-                            <TrashIcon className="h-3.5 w-3.5" />
-                          </AppButton>
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : (
-                  <div className="px-4 py-6 text-sm text-muted">
-                    No recurring rules yet.
-                  </div>
-                )}
-              </div>
-            </FinancialPanel>
-
-          </div>
-        </PageTabPanel>
-
-        <PageTabPanel value="audit" className="space-y-6">
-          <FinancialPanel role="chart" className="p-5" data-testid="subscription-audit">
-            <p className="mono-meta text-muted">
-              Subscription Audit
-            </p>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <MetricLane tone="expense" className="p-4">
-                <p className="text-xs font-semibold text-muted">
-                  Monthly total
-                </p>
-                <p className="mt-3 font-mono text-2xl font-semibold text-semantic-red">
-                  {formatCurrency(data.stats.total_monthly_expenses)} €
-                </p>
-              </MetricLane>
-              <MetricLane tone="warning" className="p-4">
-                <p className="text-xs font-semibold text-muted">
-                  Annual total
-                </p>
-                <p className="mt-3 font-mono text-2xl font-semibold text-text">
-                  {formatCurrency(data.stats.total_monthly_expenses * 12)} €
-                </p>
-              </MetricLane>
-              <MetricLane tone="plan" className="p-4">
-                <p className="text-xs font-semibold text-muted">
-                  5-year total
-                </p>
-                <p className="mt-3 font-mono text-2xl font-semibold text-text">
-                  {formatCurrency(data.stats.total_monthly_expenses * 60)} €
-                </p>
-              </MetricLane>
-            </div>
-
-            <div className="mt-5">
-              <DonutChart
-                title="Annual expense mix"
-                breakdown={annualDonut}
-                emptyMessage="No expense rules"
-              />
-            </div>
-          </FinancialPanel>
-
-          <FinancialPanel role="ledger" data-testid="recurring-true-cost">
-            <SectionHeading>
-              <h2 className="font-head text-lg font-bold">True cost</h2>
-            </SectionHeading>
-
-            {expenseRules.length === 0 ? (
-              <p className="p-5 text-sm text-muted">No expense recurring rules.</p>
-            ) : (
-              <div className="overflow-x-auto px-3 pb-3">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border text-left text-xs uppercase text-muted">
-                    <tr>
-                      <th className="px-2 py-2">Service</th>
-                      <th className="px-2 py-2">Frequency</th>
-                      <th className="px-2 py-2">Next charge</th>
-                      <th className="px-2 py-2 text-right">Per month</th>
-                      <th className="px-2 py-2 text-right">Per year</th>
-                      <th className="px-2 py-2 text-right">5-year cost</th>
-                      <th className="px-2 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {expenseRules.map((rule) => {
-                      const serviceName = rule.name || rule.category?.name || "Untitled"
-                      const perMonth = rule.monthly_equivalent_cents
-                      const perYear = perMonth * 12
-                      const fiveYears = perMonth * 60
-                      const daily = fiveYears / 1825
-                      const weekly = fiveYears / 260
-                      const isExpanded = evaluatingRuleId === rule.id
-
-                      return (
-                        <Fragment key={rule.id}>
-                          <tr className="transition-colors hover:bg-faint/60">
-                            <td className="px-2 py-3">
-                              <div className="flex items-center gap-2">
-                                <CategoryIcon
-                                  icon={rule.category?.icon ?? null}
-                                  label={rule.category?.name}
-                                />
-                                <span className="font-semibold text-text">{serviceName}</span>
-                              </div>
-                            </td>
-                            <td className="px-2 py-3 text-muted">{frequencyLabel(rule)}</td>
-                            <td className="px-2 py-3 text-muted">{formatEuroDate(rule.next_occurrence)}</td>
-                            <td className="px-2 py-3 text-right font-mono text-text">
-                              {formatCurrency(perMonth)} €
-                            </td>
-                            <td className="px-2 py-3 text-right font-mono text-text">
-                              {formatCurrency(perYear)} €
-                            </td>
-                            <td className="px-2 py-3 text-right font-mono font-semibold text-semantic-red">
-                              {formatCurrency(fiveYears)} €
-                            </td>
-                            <td className="px-2 py-3 text-right">
-                              <AppButton
-                                type="button"
-                                onClick={() =>
-                                  setEvaluatingRuleId((current) =>
-                                    current === rule.id ? null : rule.id
-                                  )
-                                }
-                                tone="ghost"
-                                className="px-2 py-1 text-xs"
-                              >
-                                Evaluate
-                              </AppButton>
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr>
-                              <td className="px-2 pb-4" colSpan={7}>
-                                <div className="rounded-lg bg-faint p-3">
-                                  <p className="font-semibold text-text">
-                                    Canceling {serviceName} saves you {formatCurrency(fiveYears)} € over the next 5 years.
-                                  </p>
-                                  <p className="mt-1 text-sm text-muted">
-                                    That's equivalent to {(daily / 100).toFixed(2)} € per day, or {Math.round(weekly / 100)} € per week.
-                                  </p>
-                                  <AppFieldLabel className="mt-3">
-                                    What would you replace this with?
-                                    <AppInput
-                                      value={replacementNotes[rule.id] || ""}
-                                      onChange={(event) =>
-                                        setReplacementNotes((current) => ({
-                                          ...current,
-                                          [rule.id]: event.target.value,
-                                        }))
-                                      }
-                                      className="mt-1"
-                                      placeholder="Optional"
-                                    />
-                                  </AppFieldLabel>
-                                  <div className="mt-3 flex gap-2">
-                                    <AppButton
-                                      type="button"
-                                      onClick={() => deleteMutation.mutate(rule.id)}
-                                      tone="danger"
-                                      disabled={deleteMutation.isPending}
-                                    >
-                                      I canceled it
-                                    </AppButton>
-                                    <AppButton
-                                      type="button"
-                                      onClick={() => setEvaluatingRuleId(null)}
-                                      tone="ghost"
-                                    >
-                                      Keep it
-                                    </AppButton>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </FinancialPanel>
-        </PageTabPanel>
-      </PageTabs>
-
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => {
-          if (!open && !createMutation.isPending && !updateMutation.isPending) {
-            setEditorOpen(false)
-          }
-        }}
+  const audit = expenses.length ? (
+    <>
+      <MetricStrip
+        metrics={[
+          {
+            label: "Per month",
+            value: <Amount cents={stats.total_monthly_expenses} />,
+            detail: `${expenses.length} expense ${expenses.length === 1 ? "rule" : "rules"}`,
+          },
+          { label: "Per year", value: <Amount cents={annualTotal} /> },
+          { label: "Over 5 years", value: <Amount cents={stats.total_monthly_expenses * 60} decimals={false} /> },
+        ]}
+      />
+      <ChartCard
+        title="Annual mix"
+        table={
+          <ChartTable
+            label="Annual cost by category"
+            columns={["Category", "Per year", "Share"]}
+            rows={mix.map((entry) => ({
+              key: String(entry.rule.category_id),
+              cells: [entry.rule.category?.name ?? "Uncategorized", <Amount cents={entry.perYear} />, share(entry.perYear)],
+            }))}
+          />
+        }
       >
-        <DialogContent
-          aria-label={editingId ? "Edit rule" : "Add rule"}
-          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
-        >
-          <div className="-mr-5 overflow-y-auto pr-5">
-            <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Edit rule" : "Add rule"}
-              </DialogTitle>
-              <DialogClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="h-9 w-9 rounded-full p-0"
-                  aria-label="Close rule editor"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  <XIcon className="h-4 w-4" />
-                </AppButton>
-              </DialogClose>
-            </DialogHeader>
+        {(focus) => (
+          <Donut
+            focus={focus}
+            center={<Amount cents={annualTotal} decimals={false} />}
+            caption="per year"
+            items={mix.map((entry) => ({
+              key: String(entry.rule.category_id),
+              label: entry.rule.category?.name ?? "Uncategorized",
+              value: entry.perYear,
+              color: categoryColor(entry.rule.category_id),
+              amount: <Amount cents={entry.perYear} />,
+              share: share(entry.perYear),
+            }))}
+            tooltip={(item) => <ChartTooltip rows={[{ key: item.key, label: item.label, value: item.amount, color: item.color }]} />}
+          />
+        )}
+      </ChartCard>
+      <List scroll={false} label="True cost">
+        <ListHead {...AUDIT_COLUMNS}>
+          <span />
+          <span>Rule</span>
+          <Cell hide="narrow">Repeats</Cell>
+          <Cell hide="narrow">Next</Cell>
+          <Cell align="right">Per month</Cell>
+          <Cell align="right" hide="mobile">
+            Per year
+          </Cell>
+          <Cell align="right" hide="narrow">
+            5 years
+          </Cell>
+        </ListHead>
+        {byCost.map((rule) => (
+          <Row
+            key={rule.id}
+            {...AUDIT_COLUMNS}
+            label={ruleLabel(rule)}
+            selected={rule.id === peekId}
+            onOpen={() => update({ peek: String(rule.id) })}
+          >
+            <CategoryGlyph categoryId={rule.category_id} icon={rule.category?.icon} name={rule.category?.name} />
+            <Cell strong>{ruleLabel(rule)}</Cell>
+            <Cell tone="muted" hide="narrow">
+              {repeatsText(rule.interval_unit, rule.interval_count)}
+            </Cell>
+            <Cell tone="muted" hide="narrow">
+              {shortDate(rule.next_occurrence, now)}
+            </Cell>
+            <Cell align="right">
+              <Amount cents={rule.monthly_equivalent_cents} />
+            </Cell>
+            <Cell align="right" tone="muted" hide="mobile">
+              <Amount cents={rule.monthly_equivalent_cents * 12} decimals={false} />
+            </Cell>
+            <Cell align="right" tone="muted" hide="narrow">
+              <Amount cents={rule.monthly_equivalent_cents * 60} decimals={false} />
+            </Cell>
+          </Row>
+        ))}
+      </List>
+    </>
+  ) : null
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <AppFieldLabel>
-                  Name
-                  <AppInput
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    className="mt-1"
-                    autoFocus
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={type}
-                    onChange={(event) => {
-                      const nextType = event.target.value
-                      const defaultCategory = data.categories.find(
-                        (category) => category.type === nextType
-                      )
-                      setType(nextType)
-                      setCategoryId(defaultCategory ? String(defaultCategory.id) : "")
-                    }}
-                    className="mt-1"
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Amount
-                  <div className="mt-1 grid grid-cols-[7.25rem_minmax(0,1fr)] gap-2">
-                    <AppNativeSelect
-                      value={currency}
-                      onChange={(event) => setCurrency(event.target.value)}
-                      className="min-w-0"
-                    >
-                      <option value="EUR">EUR (€)</option>
-                      <option value="USD">USD ($)</option>
-                    </AppNativeSelect>
-                    <AppInput
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      inputMode="decimal"
-                      className="min-w-0"
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Category
-                  <AppNativeSelect
-                    value={categoryId}
-                    onChange={(event) => setCategoryId(event.target.value)}
-                    className="mt-1"
-                    required
-                  >
-                    <option value="">Select a category</option>
-                    {categoryOptions.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Start date
-                  <AppInput
-                    type="date"
-                    value={anchorDate}
-                    onChange={(event) => setAnchorDate(event.target.value)}
-                    className="mt-1"
-                    required
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  End date (optional)
-                  <AppInput
-                    type="date"
-                    value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    className="mt-1"
-                  />
-                </AppFieldLabel>
-                <div className="grid grid-cols-[auto_minmax(0,1fr)] items-end gap-2">
-                  <AppFieldLabel>
-                    Every
-                    <AppInput
-                      type="number"
-                      min={1}
-                      value={intervalCount}
-                      onChange={(event) => setIntervalCount(event.target.value)}
-                      className="mt-1 w-20"
-                    />
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                    Interval
-                    <AppNativeSelect
-                      value={intervalUnit}
-                      onChange={(event) => setIntervalUnit(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="day">Day(s)</option>
-                      <option value="week">Week(s)</option>
-                      <option value="month">Month(s)</option>
-                      <option value="year">Year(s)</option>
-                    </AppNativeSelect>
-                  </AppFieldLabel>
-                </div>
-                {showMonthPolicy ? (
-                  <AppFieldLabel>
-                    If day doesn't exist in month
-                    <AppNativeSelect
-                      value={monthDayPolicy}
-                      onChange={(event) => setMonthDayPolicy(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="snap_to_end">Post on last day</option>
-                      <option value="skip">Skip that month</option>
-                      <option value="carry_forward">Use previous month's day</option>
-                    </AppNativeSelect>
-                  </AppFieldLabel>
-                ) : null}
-              </div>
+  const empty = (
+    <Sheet>
+      <EmptyState
+        icon={ArrowsClockwiseIcon}
+        action={
+          <Button variant="primary" icon={PlusIcon} onClick={() => setAdding(true)}>
+            Add rule
+          </Button>
+        }
+      >
+        {view === "audit" && data.rules.length ? "No recurring expenses." : "No recurring rules yet."}
+      </EmptyState>
+    </Sheet>
+  )
 
-              <div className="flex flex-wrap items-center gap-5 border-y border-border py-3 text-xs text-muted">
-                <label className="flex min-h-11 items-center gap-3">
-                  <Toggle
-                    on={autoPost}
-                    onChange={setAutoPost}
-                    ariaLabel="Post automatically"
-                  />
-                  Post automatically
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={skipWeekends}
-                    onChange={(event) => setSkipWeekends(event.target.checked)}
-                    className="control-check"
-                  />
-                  Skip weekends
-                </label>
-              </div>
+  const peek = peekRule ? <RulePeek key={peekRule.id} rule={peekRule} data={data} onClose={closePeek} /> : null
 
-              <div className="rounded-lg bg-faint p-3">
-                <p className="text-xs font-semibold text-muted">Upcoming</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
-                  {previewLoading ? <span>Calculating…</span> : null}
-                  {previewError ? <span>{previewError}</span> : null}
-                  {!previewLoading && !previewError && preview.length === 0 ? (
-                    anchorDate ? <span>No upcoming dates.</span> : null
-                  ) : null}
-                  {!previewError
-                    ? preview.map((occurrence) => (
-                        <span key={occurrence} className="rounded-sm bg-surface-hi px-2 py-1">
-                          {formatEuroDate(occurrence)}
-                        </span>
-                      ))
-                    : null}
-                </div>
-              </div>
-
-              {formError ? (
-                <p className="text-xs text-semantic-red">{formError}</p>
-              ) : null}
-              <div className="flex gap-2 border-t border-border pt-4">
-                <AppButton
-                  type="submit"
-                  className="flex-1"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {editingId
-                    ? updateMutation.isPending
-                      ? "Saving…"
-                      : "Save changes"
-                    : createMutation.isPending
-                      ? "Saving…"
-                      : "Add rule"}
-                </AppButton>
-                <AppButton
-                  type="button"
-                  onClick={() => setEditorOpen(false)}
-                  tone="ghost"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  Cancel
-                </AppButton>
-              </div>
-            </form>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
+  return (
+    <Panel
+      title="Recurring"
+      layout="fill"
+      peekOpen={peek !== null}
+      actions={
+        <Button variant="primary" icon={PlusIcon} aria-label="Add rule" onClick={() => setAdding(true)}>
+          {isDesktop ? "Add rule" : "Add"}
+        </Button>
+      }
+      viewRow={
+        <ViewRow>
+          <SegmentedControl
+            label="Recurring view"
+            value={view}
+            options={[
+              { value: "commitments", label: "Commitments" },
+              { value: "audit", label: "Audit" },
+            ]}
+            onChange={(next) => update({ view: next === "audit" ? "audit" : null })}
+          />
+        </ViewRow>
+      }
+    >
+      <PeekLayout scroll peek={peek} main={(view === "audit" ? audit : commitments) ?? empty} />
+      {adding ? <AddRuleDialog data={data} onClose={() => setAdding(false)} /> : null}
+    </Panel>
   )
 }
 

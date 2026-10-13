@@ -63,3 +63,12 @@ export function CheckboxField({
     </label>
   )
 }
+
+// Labeled checkboxes that wrap onto as many lines as they need.
+export function CheckGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div role="group" aria-label={label} className={s.checks}>
+      {children}
+    </div>
+  )
+}

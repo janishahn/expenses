@@ -227,28 +227,22 @@ function AppRoutes() {
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
           <Route path="/scenarios" element={<ScenariosPage />} />
+          <Route path="/recurring" element={<RecurringRulesPage />} />
+          <Route path="/recurring/:ruleId/occurrences" element={<RecurringOccurrencesPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/rules" element={<RulesPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/tags" element={<TagsPage />} />
+          <Route path="/tags/:tagId" element={<TagDetailPage />} />
+          <Route path="/digest" element={<DigestPage />} />
+          <Route path="/reports/builder" element={<ReportBuilderPage />} />
           <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
           <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
+          <Route path="/assistant" element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />} />
           <Route element={<LegacyLayout />}>
-            <Route
-              path="/assistant"
-              element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
-            />
-            <Route path="/digest" element={<DigestPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="/tags" element={<TagsPage />} />
-            <Route path="/tags/:tagId" element={<TagDetailPage />} />
-            <Route path="/recurring" element={<RecurringRulesPage />} />
-            <Route path="/templates" element={<TemplatesPage />} />
-            <Route
-              path="/recurring/:ruleId/occurrences"
-              element={<RecurringOccurrencesPage />}
-            />
-            <Route path="/rules" element={<RulesPage />} />
             <Route path="/reconciliation" element={<ReconciliationPage />} />
-            <Route path="/reports/builder" element={<ReportBuilderPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/admin/elevate" element={<AdminElevationPage />} />
             <Route element={<AdminRoute />}>

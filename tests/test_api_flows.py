@@ -316,6 +316,24 @@ def test_tags_rules_and_recurring_api_flows(
     assert len(response.json()["occurrences"]) >= 2
 
     response = api_client.post(
+        "/api/recurring/preview",
+        json={
+            "start_date": "2026-11-30",
+            "rule_anchor_date": "2026-01-31",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "month_day_policy": "snap_to_end",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["occurrences"] == [
+        "2026-11-30",
+        "2026-12-31",
+        "2027-01-31",
+        "2027-02-28",
+    ]
+
+    response = api_client.post(
         "/api/recurring",
         headers=csrf_headers,
         json={

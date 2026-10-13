@@ -1,11 +1,14 @@
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react"
+import type { ReactNode } from "react"
 import { ArrowsLeftRightIcon } from "@phosphor-icons/react/ArrowsLeftRight"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
 import clsx from "clsx"
 import { Checkbox } from "./Checkbox"
 import { TagChips } from "./TagChip"
+import { columnAttrs, columnStyle, rowProps, type Columns, type RowProps } from "./row-layout"
 import s from "./kit.module.css"
+
+export type { Columns }
 
 // A complete, flat list in one sheet. `scroll` lists fill the remaining height and scroll;
 // in-flow lists grow with their rows.
@@ -37,30 +40,6 @@ export function List({
   )
 }
 
-export type Columns = {
-  // CSS grid columns for desktop.
-  columns: string
-  // Below 780px of list width (for example with the peek open).
-  narrowColumns?: string
-  // Below the desktop breakpoint.
-  mobileColumns?: string
-}
-
-function columnStyle({ columns, narrowColumns, mobileColumns }: Columns): CSSProperties {
-  return {
-    "--cols": columns,
-    "--cols-narrow": narrowColumns,
-    "--cols-mobile": mobileColumns ?? narrowColumns,
-  } as CSSProperties
-}
-
-function columnAttrs({ narrowColumns, mobileColumns }: Columns) {
-  return {
-    "data-cols-narrow": narrowColumns ? "" : undefined,
-    "data-cols-mobile": mobileColumns || narrowColumns ? "" : undefined,
-  }
-}
-
 // Column labels, only where values would be ambiguous without them.
 export function ListHead({ children, ...columns }: Columns & { children: ReactNode }) {
   return (
@@ -70,47 +49,9 @@ export function ListHead({ children, ...columns }: Columns & { children: ReactNo
   )
 }
 
-export function Row({
-  children,
-  onOpen,
-  selected = false,
-  dim = false,
-  label,
-  ...columns
-}: Columns & {
-  children: ReactNode
-  // Opens the row's peek or detail. Rows without it are static.
-  onOpen?: () => void
-  selected?: boolean
-  // Archived or inactive records.
-  dim?: boolean
-  // Accessible name for the row when it opens something.
-  label?: string
-}) {
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault()
-      onOpen?.()
-    }
-  }
+export function Row({ children, dim = false, ...props }: RowProps) {
   return (
-    <div
-      role="listitem"
-      className={clsx(s.row, dim && s.rowDim)}
-      style={columnStyle(columns)}
-      {...columnAttrs(columns)}
-      data-clickable={onOpen ? "" : undefined}
-      data-selected={selected ? "" : undefined}
-      aria-current={selected ? "true" : undefined}
-      aria-label={label}
-      tabIndex={onOpen ? 0 : undefined}
-      onClick={onOpen ? (event) => {
-        if ((event.target as HTMLElement).closest("button, a, input, [role='checkbox'], [role='switch']") && event.target !== event.currentTarget) return
-        onOpen()
-      } : undefined}
-      onKeyDown={onOpen ? onKeyDown : undefined}
-    >
+    <div className={clsx(s.row, dim && s.rowDim)} style={columnStyle(props)} {...rowProps(props)}>
       {children}
     </div>
   )
@@ -244,6 +185,16 @@ export function LedgerRow({
       <AmountCell>{amount}</AmountCell>
     </Row>
   )
+}
+
+// Small marker icons in a row, such as a tag excluded from budgets; each icon carries its own label.
+export function RowFlags({ children }: { children: ReactNode }) {
+  return <span className={s.flags}>{children}</span>
+}
+
+// A smaller figure before the main amount, such as a tag's income before its spending; hidden on mobile.
+export function AmountPrefix({ children }: { children: ReactNode }) {
+  return <span className={clsx(s.net, s.hideMobile)}>{children}</span>
 }
 
 // The muted net before a reimbursed expense's gross amount; hidden on mobile.

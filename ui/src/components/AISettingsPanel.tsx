@@ -1,10 +1,12 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowUpRightIcon } from "@phosphor-icons/react/ArrowUpRight"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { AppButton } from "./legacy-ui/product-button"
 import { AppFieldLabel, AppInput, AppNativeSelect } from "./legacy-ui/product-fields"
 import { FinancialPanel } from "./product/ProductSurfaces"
 import { confirmDialog } from "./confirm"
+import { LinkButton } from "./ui/Button"
 
 export type AIProvider = "configured" | "chatgpt"
 type Model = { id: string; name: string; reasoning_efforts: string[] }
@@ -47,7 +49,8 @@ const featureColumns =
   "@min-[60rem]:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1.75fr)_minmax(0,1fr)]"
 const fieldLabel = "@min-[60rem]:sr-only"
 
-export function ChatGPTUsageIndicator() {
+// Opens the ChatGPT usage page when the Assistant runs on a ChatGPT plan.
+export function ChatGPTPlanLink() {
   const { data } = useQuery({
     queryKey: settingsKey,
     queryFn: () => apiFetch<AISettings>("/api/ai/settings"),
@@ -55,17 +58,10 @@ export function ChatGPTUsageIndicator() {
   })
   if (data?.features.find((f) => f.id === "spending_chat")?.provider !== "chatgpt") return null
   return (
-    <p className="text-sm text-muted">
-      Using ChatGPT plan ·{" "}
-      <a
-        className="text-accent underline"
-        href={data.connection.usage_url}
-        target="_blank"
-        rel="noreferrer"
-      >
-        Manage usage
-      </a>
-    </p>
+    <LinkButton variant="ghost" to={data.connection.usage_url} target="_blank" rel="noreferrer">
+      ChatGPT plan
+      <ArrowUpRightIcon aria-hidden="true" />
+    </LinkButton>
   )
 }
 

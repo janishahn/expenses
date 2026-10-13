@@ -121,10 +121,12 @@ class RecurringPreviewIn(BaseModel):
     interval_count: int = Field(default=1, ge=1)
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
     skip_weekends: bool = False
+    # A saved rule's anchor, when previewing from its next occurrence rather than its start.
+    rule_anchor_date: Optional[date] = None
 
     @property
     def anchor_date(self) -> date:
-        return self.start_date
+        return self.rule_anchor_date or self.start_date
 
 
 class RecurringPreviewOut(BaseModel):
@@ -1807,6 +1809,7 @@ class DigestRecurringPostingOut(BaseModel):
     rule_id: Optional[int] = None
     rule_name: str
     date: date
+    type: TransactionType
     amount_cents: int
     category: Optional[DigestCategoryRefOut] = None
 

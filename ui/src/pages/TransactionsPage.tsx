@@ -79,7 +79,12 @@ type TagPatchMode = "add" | "remove" | "replace"
 const LIST_KEYS = ["period", "start", "end", "type", "category", "tag", "tags", "exclude_tags", "q", "page"]
 // Pages whose chart marks open the ledger scoped to a slice (`from` in the URL); the
 // breadcrumb leads back to them.
-const ORIGINS = { dashboard: { label: "Dashboard", to: "/" }, insights: { label: "Insights", to: "/insights" } }
+const ORIGINS = {
+  dashboard: { label: "Dashboard", to: "/" },
+  insights: { label: "Insights", to: "/insights" },
+  categories: { label: "Categories", to: "/categories" },
+  digest: { label: "Digest", to: "/digest" },
+}
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
 
 const TAG_PATCH_COPY: Record<TagPatchMode, { title: string; verb: string }> = {
@@ -180,7 +185,10 @@ function TransactionsPage() {
   const filterCount = (typeFilter ? 1 : 0) + (categoryId ? 1 : 0) + (tagIds.length ? 1 : 0)
   const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
   const fromParam = searchParams.get("from")
-  const origin = fromParam === "dashboard" || fromParam === "insights" ? ORIGINS[fromParam] : null
+  const origin =
+    fromParam === "dashboard" || fromParam === "insights" || fromParam === "categories" || fromParam === "digest"
+      ? ORIGINS[fromParam]
+      : null
   // A drill-down names its slice, such as "Travel · Aug 2026".
   const title = origin
     ? [categoryFilter?.name, periodLabel(period, DEFAULT_PERIOD_PRESETS)].filter(Boolean).join(" · ")

@@ -32,9 +32,13 @@ export function AsideLayout({ main, aside }: { main: ReactNode; aside: ReactNode
   )
 }
 
-function floatingLayerOpen(): boolean {
+const FLOATING_LAYER = "[data-radix-popper-content-wrapper], [role='dialog'], [role='alertdialog']"
+
+// A dialog that unmounts as it closes is gone before this listener runs, so the key's target counts too.
+function floatingLayerOpen(event: KeyboardEvent): boolean {
   return Boolean(
-    document.querySelector("[data-radix-popper-content-wrapper], [role='dialog'][data-state='open'], [role='alertdialog']")
+    (event.target instanceof Element && event.target.closest(FLOATING_LAYER)) ||
+      document.querySelector("[data-radix-popper-content-wrapper], [role='dialog'][data-state='open'], [role='alertdialog']")
   )
 }
 
@@ -63,7 +67,7 @@ export function Peek({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // Esc first closes menus, pickers, and dialogs; only then the peek.
-      if (event.key !== "Escape" || floatingLayerOpen()) return
+      if (event.key !== "Escape" || floatingLayerOpen(event)) return
       onClose()
     }
     document.addEventListener("keydown", onKeyDown)
@@ -135,16 +139,19 @@ export function PeekHeadline({
   detail,
 }: {
   glyph?: ReactNode
-  title: ReactNode
+  // Left out when an InlineText above edits the title.
+  title?: ReactNode
   figure: ReactNode
   detail?: ReactNode
 }) {
   return (
     <>
-      <h2 className={clsx(s.pkTitle, s.pkTitleStatic)}>
-        {glyph}
-        {title}
-      </h2>
+      {title != null ? (
+        <h2 className={clsx(s.pkTitle, s.pkTitleStatic)}>
+          {glyph}
+          {title}
+        </h2>
+      ) : null}
       <div className={s.pkAmt}>
         {figure}
         {detail != null ? <span className={s.pkAmtDetail}> {detail}</span> : null}

@@ -1,4 +1,5 @@
 import { useId, type CSSProperties, type ReactNode } from "react"
+import type { Icon } from "@phosphor-icons/react"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import clsx from "clsx"
 import { IconButton } from "./Button"
@@ -60,6 +61,34 @@ export function CardForm({ onSubmit, children }: { onSubmit: () => void; childre
     >
       {children}
     </form>
+  )
+}
+
+// A page-width form in one card. From 720px of card width, `main` sits left and `side` right, with `top`
+// and `wide` across; narrower, the groups stack in that order.
+export function FormCard({ top, main, side, wide }: { top?: ReactNode; main: ReactNode; side?: ReactNode; wide?: ReactNode }) {
+  return (
+    <section className={clsx(s.card, s.formCard)}>
+      <div className={s.formCols}>
+        {top != null ? <div className={s.formTop}>{top}</div> : null}
+        <div className={s.formMain}>{main}</div>
+        {side != null ? <div className={s.formSide}>{side}</div> : null}
+        {wide != null ? <div className={s.formWide}>{wide}</div> : null}
+      </div>
+    </section>
+  )
+}
+
+// One file the page produced, such as a generated report: its name, a muted note, and an action.
+export function FileRow({ icon: IconComponent, name, meta, action }: { icon: Icon; name: string; meta?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className={s.fileRow}>
+      <IconComponent aria-hidden="true" />
+      <span className={s.fileName}>{name}</span>
+      {meta != null ? <span className={s.fileMeta}>{meta}</span> : null}
+      <span className={s.sp} />
+      {action}
+    </div>
   )
 }
 

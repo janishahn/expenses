@@ -9,6 +9,9 @@ export type CategoryListItem = CategorySummary & {
   archived_at: string | null
   order?: number
   usage_count?: number
+  // Sums for the requested period.
+  expense_cents?: number
+  income_cents?: number
 }
 
 export type CategoriesResponse = {

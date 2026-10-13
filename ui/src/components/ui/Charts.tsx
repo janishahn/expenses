@@ -368,25 +368,74 @@ export function Donut({
           <div className={s.donutCaption}>{caption}</div>
         </div>
       </div>
-      <div className={s.dl} role="list" onPointerLeave={leave}>
-        {items.map((item) => {
-          const dim = dimmed(focus, item.key) ? "" : undefined
-          return (
-            <div key={item.key} role="listitem" className={s.dlRow} onPointerEnter={() => focus.set(item.key)}>
-              <span className={s.dlName} data-dim={dim}>
-                <span aria-hidden="true" className={s.swatch} style={{ background: item.color }} />
-                {item.label}
-              </span>
-              <span className={s.dlAmount} data-dim={dim}>
-                {item.amount}
-              </span>
-              <span className={s.dlShare} data-dim={dim}>
-                {item.share}
-              </span>
-            </div>
-          )
-        })}
+      <ShareList items={items} focus={focus} onLeave={leave} />
+      {hover ? <PointerTip at={hover.at}>{tooltip(hover.item)}</PointerTip> : null}
+    </div>
+  )
+}
+
+// Each share's name, amount, and percentage; hovering one dims the others in the chart.
+function ShareList({ items, focus, onLeave }: { items: DonutItem[]; focus: ChartFocus; onLeave: () => void }) {
+  return (
+    <div className={s.dl} role="list" onPointerLeave={onLeave}>
+      {items.map((item) => {
+        const dim = dimmed(focus, item.key) ? "" : undefined
+        return (
+          <div key={item.key} role="listitem" className={s.dlRow} onPointerEnter={() => focus.set(item.key)}>
+            <span className={s.dlName} data-dim={dim}>
+              <span aria-hidden="true" className={s.swatch} style={{ background: item.color }} />
+              {item.label}
+            </span>
+            <span className={s.dlAmount} data-dim={dim}>
+              {item.amount}
+            </span>
+            <span className={s.dlShare} data-dim={dim}>
+              {item.share}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// One bar split into shares, such as a week's spending by category, above the list of amounts.
+export function ShareBar({
+  items,
+  focus,
+  tooltip,
+  onSelect,
+}: {
+  items: DonutItem[]
+  focus: ChartFocus
+  tooltip: (item: DonutItem) => ReactNode
+  onSelect?: (item: DonutItem) => void
+}) {
+  const root = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<{ item: DonutItem; at: PointerAt } | null>(null)
+  const total = items.reduce((sum, item) => sum + item.value, 0)
+  const leave = () => {
+    setHover(null)
+    focus.set(null)
+  }
+  return (
+    <div ref={root} className={s.shareBar}>
+      <div className={clsx(s.track, s.trackTall)} aria-hidden="true" onPointerLeave={leave}>
+        {items.map((item) => (
+          <span
+            key={item.key}
+            data-dim={dimmed(focus, item.key) ? "" : undefined}
+            style={{ width: `${total ? (item.value / total) * 100 : 0}%`, background: item.color }}
+            onPointerMove={(event) => {
+              if (!root.current) return
+              focus.set(item.key)
+              setHover({ item, at: pointerAt(event, root.current) })
+            }}
+            onClick={onSelect ? () => onSelect(item) : undefined}
+          />
+        ))}
       </div>
+      <ShareList items={items} focus={focus} onLeave={leave} />
       {hover ? <PointerTip at={hover.at}>{tooltip(hover.item)}</PointerTip> : null}
     </div>
   )
@@ -405,6 +454,11 @@ export function BudgetBar({ ratio, over = false, pace }: { ratio: number; over?:
 // Cards side by side on desktop, stacked on mobile. Wide gives the first card 1.5 shares.
 export function CardRow({ wide = false, children }: { wide?: boolean; children: ReactNode }) {
   return <div className={clsx(s.cardRow, wide && s.cardRowWide)}>{children}</div>
+}
+
+// Cards stacked in one column of a CardRow, such as a record's settings above its chart.
+export function CardStack({ children }: { children: ReactNode }) {
+  return <div className={s.cardStack}>{children}</div>
 }
 
 export type ColumnSeries = { key: string; values: number[]; color: string }

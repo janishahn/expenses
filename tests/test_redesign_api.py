@@ -391,6 +391,46 @@ def test_recurring_split_separates_rule_postings(
     assert api_client.get("/api/insights").json()["recurring_cents"] == 1_200
 
 
+def test_digest_recurring_postings_report_their_type(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    category_id = _category(api_client, csrf_headers, "Salary", "income")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Payday",
+            "type": "income",
+            "amount_cents": 300_000,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    posted = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=300_000,
+        title="Payday",
+        category_id=category_id,
+        txn_type="income",
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == posted)
+        .values(origin_rule_id=rule["id"])
+    )
+    db_session.commit()
+
+    postings = api_client.get("/api/digest").json()["recurring_postings"]
+    assert [(row["transaction_id"], row["type"]) for row in postings] == [
+        (posted, "income")
+    ]
+
+
 def test_day_calendar_excludes_recurring_and_reports_weekday_stats(
     api_client: TestClient, csrf_headers: dict[str, str], db_session
 ) -> None:
