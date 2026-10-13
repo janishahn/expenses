@@ -28,10 +28,14 @@ export function CategoryPicker({
   label?: string
   align?: "start" | "end"
 }) {
+  // The server files a missing category under its "Uncategorized" category, so with
+  // allowNone that category is the Uncategorized option rather than a second one.
+  const isUncategorized = (category: CategorySummary) => category.name.toLowerCase() === "uncategorized"
+  const listed = allowNone ? categories.filter((entry) => !isUncategorized(entry)) : categories
   // Grouped lists show expense categories first, then income, each in their own order.
   const ordered = grouped
-    ? [...categories.filter((entry) => entry.type !== "income"), ...categories.filter((entry) => entry.type === "income")]
-    : categories
+    ? [...listed.filter((entry) => entry.type !== "income"), ...listed.filter((entry) => entry.type === "income")]
+    : listed
   const options: ComboboxOption<number>[] = [
     ...(allowNone ? [{ value: NONE, label: "Uncategorized" }] : []),
     ...ordered.map((category) => ({
@@ -41,7 +45,9 @@ export function CategoryPicker({
       group: grouped ? (category.type === "income" ? "Income" : "Expense") : undefined,
     })),
   ]
-  const selected = selectedId === undefined ? [] : selectedId === null ? (allowNone ? [NONE] : []) : [selectedId]
+  const selectsNone =
+    selectedId === null || (allowNone && categories.some((entry) => entry.id === selectedId && isUncategorized(entry)))
+  const selected = selectedId === undefined ? [] : selectsNone ? (allowNone ? [NONE] : []) : [selectedId]
   return (
     <Combobox
       trigger={trigger}

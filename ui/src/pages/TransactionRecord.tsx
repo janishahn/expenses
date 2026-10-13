@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowBendUpLeftIcon } from "@phosphor-icons/react/ArrowBendUpLeft"
 import { BankIcon } from "@phosphor-icons/react/Bank"
@@ -739,18 +739,24 @@ export function TransactionPeek({
   linkTo,
   fullViewTo,
   fullViewState,
+  parent = "Transactions",
+  lead,
 }: {
   id: number
   onClose: () => void
   linkTo: LinkTo
   fullViewTo: string
   fullViewState?: unknown
+  // The list the peek belongs to, for its breadcrumb and mobile back button.
+  parent?: string
+  // Shown between the amount and the properties, such as a category suggestion.
+  lead?: ReactNode
 }) {
   const record = useTransactionRecord(id)
   const view = record.view
   return (
     <Peek
-      parent="Transactions"
+      parent={parent}
       title={view?.title ?? "Transaction"}
       onClose={onClose}
       fullViewTo={view ? fullViewTo : undefined}
@@ -760,6 +766,7 @@ export function TransactionPeek({
       {view ? (
         <>
           <TransactionHead record={record} />
+          {lead}
           <TransactionProperties record={record} linkTo={linkTo} variant="peek" />
           <TransactionNotes record={record} />
           <TransactionLocation record={record} />

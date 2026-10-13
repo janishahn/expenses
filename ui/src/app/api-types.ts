@@ -83,6 +83,8 @@ export type TransactionsResponse = {
 
 export type TransactionRouteState = {
   returnTo?: string
+  // The breadcrumb name of returnTo; Transactions when unset.
+  returnLabel?: string
   hasOriginContext?: boolean
 }
 

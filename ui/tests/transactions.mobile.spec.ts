@@ -3,7 +3,9 @@ import type { APIRequestContext, Page } from "@playwright/test"
 import {
   createIngestTransaction,
   createTransaction,
+  createUncategorizedExpense,
   getCsrfToken,
+  loginWithTrainedSuggestions,
   stubOsmTiles,
   uploadAttachment,
 } from "./helpers"
@@ -532,64 +534,54 @@ test.describe("Transactions Page (mobile)", () => {
     expect((await fetchTransaction(request, id)).title).toBe(title)
   })
 
-  test("recategorizes a transaction from the mobile Inbox", async ({ page, request }) => {
+  test("recategorizes a transaction from the mobile Inbox with Select", async ({
+    page,
+    request,
+  }) => {
     const token = await getCsrfToken(request)
-    const categoriesResponse = await request.get("/api/categories?period=all")
-    const categories = (await categoriesResponse.json()) as {
-      categories: Array<{
-        id: number
-        name: string
-        type: string
-        archived_at: string | null
-      }>
-    }
-    let uncategorizedId = categories.categories.find(
-      (category) =>
-        category.type === "expense" &&
-        category.archived_at === null &&
-        category.name.toLowerCase() === "uncategorized"
-    )?.id
-    if (!uncategorizedId) {
-      const created = await request.post("/api/categories", {
-        headers: { "X-CSRF-Token": token },
-        data: { name: "Uncategorized", type: "expense", order: 0 },
-      })
-      expect(created.ok()).toBeTruthy()
-      uncategorizedId = ((await created.json()) as { id: number }).id
-    }
-    const targetCategory = await request.post("/api/categories", {
-      headers: { "X-CSRF-Token": token },
-      data: {
-        name: `Mobile inbox target ${Date.now()}`,
-        type: "expense",
-        order: 0,
-      },
-    })
-    expect(targetCategory.ok()).toBeTruthy()
-    const targetId = ((await targetCategory.json()) as { id: number }).id
+    const targetName = `Mobile inbox target ${Date.now()}`
+    const targetId = await createCategory(request, token, targetName)
     const title = `Mobile inbox ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 3100,
-      category_id: uncategorizedId,
-      title,
-      tags: [],
-    })
+    const transactionId = await createUncategorizedExpense(request, token, title)
 
-    await page.goto("/transactions/inbox")
-    await page.getByRole("button", { name: "All time", exact: true }).click()
-    await page.getByRole("textbox", { name: "Search", exact: true }).fill(title)
-    const row = page.getByTestId(`uncategorized-row-${transactionId}`)
-    await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
-    await page.getByLabel("Move selected to category").selectOption(String(targetId))
-    await page.getByRole("button", { name: "Apply", exact: true }).click()
+    await page.goto(`/transactions/inbox?q=${encodeURIComponent(title)}`)
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Select" }).tap()
+    const row = page.getByRole("listitem", { name: title })
+    await row.tap()
+    await expect(page).not.toHaveURL(/peek=/)
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toContainText("1 selected")
+    await bulk.getByRole("button", { name: "Category" }).tap()
+    await page.getByRole("combobox").fill(targetName)
+    await page.getByRole("option", { name: targetName }).tap()
     await page
-      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
-      .getByRole("button", { name: "Apply", exact: true })
-      .click()
-    await expect(row).toBeHidden()
+      .getByRole("dialog", { name: "Change the category of 1 transaction?" })
+      .getByRole("button", { name: "Apply" })
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Updated 1 transaction")
+    await expect(row).toHaveCount(0)
+    expect((await fetchTransaction(request, transactionId)).category_id).toBe(targetId)
+  })
+
+  test("accepts a category suggestion from the mobile Inbox peek", async ({ page }) => {
+    const title = `Corner bakery mobile ${Date.now()}`
+    const { request, bakeryId, uncategorizedIds } = await loginWithTrainedSuggestions(page, [title])
+    try {
+      await page.goto("/transactions/inbox")
+      const row = page.getByRole("listitem", { name: title })
+      await row.tap()
+      await expect(page).toHaveURL(/peek=\d+/)
+      const peek = page.getByRole("complementary", { name: title })
+      await expect(peek).toContainText("Bakery")
+      await peek.getByRole("button", { name: "Accept" }).tap()
+      await expect(page.getByRole("status")).toContainText("Moved to Bakery")
+      await expect(page).not.toHaveURL(/peek=/)
+      await expect(row).toHaveCount(0)
+      expect((await fetchTransaction(request, uncategorizedIds[0])).category_id).toBe(bakeryId)
+    } finally {
+      await request.dispose()
+    }
   })
 
   test("deletes a transaction from its peek and permanently deletes it from Trash", async ({
@@ -598,7 +590,7 @@ test.describe("Transactions Page (mobile)", () => {
   }) => {
     const token = await getCsrfToken(request)
     const title = `Mobile delete ${Date.now()}`
-    const transactionId = await seed(request, token, title)
+    await seed(request, token, title)
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
     await page.getByRole("listitem", { name: title }).tap()
@@ -616,14 +608,19 @@ test.describe("Transactions Page (mobile)", () => {
     await page.getByRole("button", { name: "More actions" }).tap()
     await page.getByRole("link", { name: "Trash" }).tap()
     await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    const deletedRow = page.getByTestId(`deleted-transaction-${transactionId}`)
+    const list = page.getByRole("list", { name: "Deleted transactions" })
+    const deletedRow = list.getByRole("listitem", { name: title })
     await expect(deletedRow).toBeVisible()
 
-    await deletedRow.getByRole("button", { name: "Delete forever" }).click()
+    await deletedRow.tap()
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toContainText("1 selected")
+    await bulk.getByRole("button", { name: "Delete forever" }).tap()
     await page
-      .getByRole("dialog", { name: "Permanently delete this transaction?" })
+      .getByRole("dialog", { name: "Delete 1 transaction forever?" })
       .getByRole("button", { name: "Delete forever" })
-      .click()
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Deleted 1 transaction forever")
     await expect(deletedRow).toHaveCount(0)
   })
 
@@ -640,9 +637,14 @@ test.describe("Transactions Page (mobile)", () => {
     await page.getByRole("button", { name: "More actions" }).tap()
     await page.getByRole("link", { name: "Trash" }).tap()
     await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    const row = page.getByTestId(`deleted-transaction-${transactionId}`)
+    const row = page.getByRole("list", { name: "Deleted transactions" }).getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
-    await row.getByRole("button", { name: "Restore" }).click()
+    await row.tap()
+    await page
+      .getByRole("toolbar", { name: "Selected rows" })
+      .getByRole("button", { name: "Restore" })
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Restored 1 transaction")
     await expect(row).toBeHidden()
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
     await expect(page.getByRole("listitem", { name: title })).toBeVisible()

@@ -309,7 +309,7 @@ test.describe("Error recovery regressions", () => {
       {
         path: "/transactions/deleted",
         api: "**/api/transactions/deleted",
-        title: "Deleted Transactions",
+        title: "Trash",
       },
       { path: "/recurring", api: "**/api/recurring", title: "Recurring Rules" },
       { path: "/rules", api: "**/api/rules", title: "Categorization Rules" },

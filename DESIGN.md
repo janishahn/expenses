@@ -459,7 +459,7 @@ changes and drop movement.
 `MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
 `BottomSheet`, `BulkBar`, `Peek`, `PropertyList`, `SettingsShell`,
 `Notes`, `ReceiptSection`, `ReceiptViewer`, `LocationMap`, `DayCalendar`, `Amount`,
-`CategoryGlyph`, and the controls `Button`, `IconButton`, `SegmentedControl`,
+`CategoryGlyph`, `SuggestionBox`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
 `Dialog` variant; loading and failed pages are `Panel` variants. A visual difference is a variant on the

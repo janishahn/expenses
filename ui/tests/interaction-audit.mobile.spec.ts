@@ -394,19 +394,21 @@ test.describe("Mobile interaction audit evidence", () => {
       expect(uncategorizedResponse.ok()).toBeTruthy()
       uncategorizedId = ((await uncategorizedResponse.json()) as { id: number }).id
     }
-    const uncategorizedTransactionId = await createTransaction(request, token, {
+    const uncategorizedTitle = `Audit inbox transaction ${suffix}`
+    await createTransaction(request, token, {
       date: new Date().toISOString().slice(0, 10),
       occurred_at: new Date().toISOString(),
       type: "expense",
       amount_cents: 1_234,
       category_id: uncategorizedId,
-      title: `Audit inbox transaction ${suffix}`,
+      title: uncategorizedTitle,
       tags: [],
     })
     await page.goto("/transactions/inbox?period=all")
-    const inboxCheckbox = page
-      .getByTestId(`uncategorized-row-${uncategorizedTransactionId}`)
-      .getByRole("checkbox", { name: `Select transaction ${uncategorizedTransactionId}` })
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Select" }).tap()
+    const inboxRow = page.getByRole("listitem", { name: uncategorizedTitle })
+    const inboxCheckbox = inboxRow.getByRole("checkbox", { name: `Select ${uncategorizedTitle}` })
     controls.push(await measurement("Uncategorized row checkbox", inboxCheckbox))
     await capture(page, "uncategorized-row-checkbox.png", true)
 
@@ -430,9 +432,9 @@ test.describe("Mobile interaction audit evidence", () => {
       .filter((control) => control.label !== "Uncategorized row checkbox")
       .forEach(expectDirectTouchTarget)
     effectiveControls.forEach(expectEffectiveTouchTarget)
-    const inboxLabel = await inboxCheckbox.locator("xpath=ancestor::label").boundingBox()
-    expect(inboxLabel?.width, "Uncategorized row checkbox label width").toBeGreaterThanOrEqual(44)
-    expect(inboxLabel?.height, "Uncategorized row checkbox label height").toBeGreaterThanOrEqual(44)
+    const inboxLabel = await inboxRow.boundingBox()
+    expect(inboxLabel?.width, "Uncategorized selectable row width").toBeGreaterThanOrEqual(44)
+    expect(inboxLabel?.height, "Uncategorized selectable row height").toBeGreaterThanOrEqual(44)
     persist("compact-action-measurements", {
       viewport: page.viewportSize(),
       controls,

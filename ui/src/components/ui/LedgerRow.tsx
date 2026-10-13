@@ -155,6 +155,35 @@ export function RowActions({ children, reveal = false }: { children: ReactNode; 
   return <span className={clsx(s.acts, reveal && s.rowHover)}>{children}</span>
 }
 
+// The selection checkbox and glyph of a selectable row. Desktop shows the checkbox on hover;
+// mobile selection mode puts it in the glyph's place.
+export function RowLead({
+  glyph,
+  title,
+  checked,
+  selecting = false,
+  onCheckedChange,
+}: {
+  glyph: ReactNode
+  title: string
+  checked: boolean
+  selecting?: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  const checkbox = <Checkbox rowSelect checked={checked} onCheckedChange={onCheckedChange} label={`Select ${title}`} />
+  return (
+    <>
+      <span className={s.hideMobile}>{selecting ? null : checkbox}</span>
+      {selecting ? checkbox : glyph}
+    </>
+  )
+}
+
+// The right-aligned amount at the end of a row.
+export function AmountCell({ children }: { children: ReactNode }) {
+  return <span className={s.amt}>{children}</span>
+}
+
 export function ListFooter({ children }: { children: ReactNode }) {
   return <div className={s.lfoot}>{children}</div>
 }
@@ -197,11 +226,9 @@ export function LedgerRow({
   onCheckedChange: (checked: boolean) => void
   onOpen: () => void
 }) {
-  const checkbox = <Checkbox rowSelect checked={checked} onCheckedChange={onCheckedChange} label={`Select ${title}`} />
   return (
     <Row {...LEDGER_COLUMNS} selected={selected || checked} onOpen={selecting ? () => onCheckedChange(!checked) : onOpen} label={title}>
-      <span className={s.hideMobile}>{selecting ? null : checkbox}</span>
-      {selecting ? checkbox : glyph}
+      <RowLead glyph={glyph} title={title} checked={checked} selecting={selecting} onCheckedChange={onCheckedChange} />
       <span className={s.title}>{title}</span>
       <Cell tone="muted" hide="mobile">
         {category}
@@ -214,7 +241,7 @@ export function LedgerRow({
         {location ? <MapPinIcon aria-label="Location" role="img" /> : null}
         {reimbursed ? <ArrowsLeftRightIcon aria-label="Reimbursed" role="img" /> : null}
       </span>
-      <span className={s.amt}>{amount}</span>
+      <AmountCell>{amount}</AmountCell>
     </Row>
   )
 }

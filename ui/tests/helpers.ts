@@ -483,3 +483,89 @@ export async function mockVisualSupportingApi(page: Page): Promise<void> {
     ),
   ])
 }
+
+// Creates an expense without a category, which the backend files under "Uncategorized".
+export async function createUncategorizedExpense(
+  request: APIRequestContext,
+  csrfToken: string,
+  title: string,
+  amountCents = 1500
+): Promise<number> {
+  const response = await request.post("/api/transactions", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: amountCents,
+      title,
+      tags: [],
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
+// Signs the page in as a fresh account with a trained local category model:
+// 90 categorized "Corner bakery" / "City metro" expenses, then the setting
+// enabled. Create uncategorized rows before calling so they are suggested
+// rather than categorized on creation. The account is isolated, so the enabled
+// setting cannot leak into other tests.
+export async function loginWithTrainedSuggestions(
+  page: Page,
+  uncategorizedTitles: string[]
+): Promise<{
+  request: APIRequestContext
+  csrfToken: string
+  bakeryId: number
+  uncategorizedIds: number[]
+}> {
+  await page.goto("/settings")
+  const { request, csrfToken } = await loginAsIsolatedUser(page)
+  const headers = { "X-CSRF-Token": csrfToken }
+  const ids: number[] = []
+  for (const name of ["Bakery", "Transit"]) {
+    const response = await request.post("/api/categories", {
+      headers,
+      data: { name, type: "expense", order: 0 },
+    })
+    expect(response.ok()).toBeTruthy()
+    ids.push(((await response.json()) as { id: number }).id)
+  }
+  for (let index = 0; index < 90; index++) {
+    const response = await request.post("/api/transactions", {
+      headers,
+      data: {
+        date: "2026-01-01",
+        occurred_at: "2026-01-01T12:00:00",
+        type: "expense",
+        amount_cents: 500,
+        category_id: ids[index % 2],
+        title: index % 2 === 0 ? "Corner bakery" : "City metro",
+        tags: [],
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+  }
+  const uncategorizedIds: number[] = []
+  for (const title of uncategorizedTitles) {
+    uncategorizedIds.push(await createUncategorizedExpense(request, csrfToken, title))
+  }
+  const enabled = await request.put("/api/settings/auto-categorization", {
+    headers,
+    data: { enabled: true, threshold: 0.8 },
+  })
+  expect(enabled.ok()).toBeTruthy()
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (await request.get("/api/settings/auto-categorization")).json()) as {
+            training_status: string
+          }
+        ).training_status,
+      { timeout: 30_000 }
+    )
+    .toBe("ready")
+  return { request, csrfToken, bakeryId: ids[0], uncategorizedIds }
+}

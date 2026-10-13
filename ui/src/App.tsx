@@ -222,12 +222,12 @@ function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
+          <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
           <Route element={<LegacyLayout />}>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
-            <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
             <Route
               path="/assistant"
               element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}

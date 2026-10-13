@@ -1,7 +1,13 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { readFile } from "node:fs/promises"
 import { expect, test } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import {
+  createTransaction,
+  createUncategorizedExpense,
+  ensureCategory,
+  getCsrfToken,
+  loginWithTrainedSuggestions,
+} from "./helpers"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -91,7 +97,7 @@ test.describe("Transactions Page", () => {
     await page.getByRole("button", { name: "More actions" }).click()
     await page.getByRole("menuitem", { name: "Trash" }).click()
     await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    await expect(page.locator("main h1")).toContainText("Deleted Transactions")
+    await expect(page.locator("main h1")).toContainText("Trash")
   })
 
   test("keeps header actions free of an outline-like shadow", async ({ page }) => {
@@ -610,51 +616,48 @@ test.describe("Transactions Page", () => {
     })
   })
 
-  test("should recategorize uncategorized inbox transactions", async ({ page, request }) => {
+  test("files an uncategorized transaction from its Category pill and undoes it", async ({
+    page,
+    request,
+  }) => {
     const token = await getCsrfToken(request)
-    const categoriesResponse = await request.get("/api/categories?period=all")
-    const categoriesPayload = (await categoriesResponse.json()) as {
-      categories: Array<{ id: number; name: string; type: string; archived_at: string | null }>
-    }
+    const stamp = Date.now()
+    const targetName = `E2E Pill Target ${stamp}`
+    const targetId = await createCategory(request, token, "expense", targetName)
+    const title = `E2E Pill ${stamp}`
+    const id = await createUncategorizedExpense(request, token, title)
 
-    let uncategorizedCategory = categoriesPayload.categories.find(
-      (category) =>
-        category.type === "expense" &&
-        category.archived_at === null &&
-        category.name.trim().toLowerCase() === "uncategorized",
-    )
-    if (!uncategorizedCategory) {
-      const createUncategorizedResponse = await request.post("/api/categories", {
-        headers: { "X-CSRF-Token": token },
-        data: { name: "Uncategorized", type: "expense", order: 0 },
-      })
-      expect(createUncategorizedResponse.ok()).toBeTruthy()
-      const created = (await createUncategorizedResponse.json()) as { id: number }
-      uncategorizedCategory = {
-        id: created.id,
-        name: "Uncategorized",
-        type: "expense",
-        archived_at: null,
-      }
-    }
+    await page.goto(`/transactions/inbox?q=${encodeURIComponent(title)}`)
+    const row = page.getByRole("listitem", { name: title })
+    await row.getByRole("button", { name: "Category" }).click()
+    await page.getByRole("combobox").fill(targetName)
+    await page.getByRole("option", { name: targetName }).click()
 
-    const targetCategoryResponse = await request.post("/api/categories", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: `E2E Inbox Target ${Date.now()}`, type: "expense", order: 0 },
-    })
-    expect(targetCategoryResponse.ok()).toBeTruthy()
-    const targetCategory = (await targetCategoryResponse.json()) as { id: number }
+    const toast = page.getByRole("status")
+    await expect(toast).toContainText(`Moved to ${targetName}`)
+    await expect(row).toHaveCount(0)
+    await expect(page.getByText("No matching transactions")).toBeVisible()
+    expect((await fetchTransaction(request, id)).category_id).toBe(targetId)
 
-    const title = `E2E Inbox Recat ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: today(),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 4321,
-      category_id: uncategorizedCategory.id,
-      title,
-      tags: [],
-    })
+    await toast.getByRole("button", { name: "Undo" }).click()
+    await expect(row).toBeVisible()
+    expect((await fetchTransaction(request, id)).category_id).not.toBe(targetId)
+  })
+
+  test("recategorizes selected uncategorized transactions after confirming", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const targetName = `E2E Inbox Target ${stamp}`
+    const targetId = await createCategory(request, token, "expense", targetName)
+    const marker = `inboxbulk${stamp}q`
+    const ids = [
+      await createUncategorizedExpense(request, token, `${marker} one`),
+      await createUncategorizedExpense(request, token, `${marker} two`),
+    ]
+    const untouchedId = await createUncategorizedExpense(request, token, `${marker} three`)
 
     let forecastRequests = 0
     await page.route("**/api/forecast?*", async (route) => {
@@ -663,36 +666,86 @@ test.describe("Transactions Page", () => {
     })
     await page.goto("/")
     await expect.poll(() => forecastRequests).toBeGreaterThanOrEqual(1)
-
     const sidebar = page.getByRole("complementary", { name: "Application navigation" })
     await sidebar.getByRole("link", { name: "Transactions", exact: true }).click()
     await sidebar.getByRole("link", { name: /^Uncategorized/ }).click()
     await expect(page.getByRole("heading", { name: "Uncategorized", level: 1 })).toBeVisible()
-    await page.getByRole("button", { name: "All time", exact: true }).click()
-    await page.getByRole("textbox", { name: "Search", exact: true }).fill(title)
+    await page.getByRole("searchbox", { name: "Search uncategorized transactions" }).fill(marker)
 
-    const row = page.getByTestId(`uncategorized-row-${transactionId}`)
-    await expect(row).toBeVisible()
-    await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
+    for (const name of ["one", "two"]) {
+      await page.getByRole("listitem", { name: `${marker} ${name}` }).hover()
+      await page.getByRole("checkbox", { name: `Select ${marker} ${name}` }).check()
+    }
+    const bar = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bar).toContainText("2 selected")
+    await bar.getByRole("button", { name: "Category" }).click()
+    await page.getByRole("combobox").fill(targetName)
+    await page.getByRole("option", { name: targetName }).click()
+    const confirm = page.getByRole("dialog", { name: "Change the category of 2 transactions?" })
+    await confirm.getByRole("button", { name: "Apply" }).click()
 
-    await page.getByLabel("Move selected to category").selectOption(String(targetCategory.id))
-    const applyResponse = page.waitForResponse(
-      (response) =>
-        response.url().endsWith("/api/transactions/bulk/apply") &&
-        response.request().method() === "POST" &&
-        response.status() === 200,
-    )
-    await page.getByRole("button", { name: "Apply", exact: true }).click()
-    await page
-      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
-      .getByRole("button", { name: "Apply", exact: true })
-      .click()
-    await applyResponse
-
-    await expect(row).toHaveCount(0)
-    expect((await fetchTransaction(request, transactionId)).category_id).toBe(targetCategory.id)
+    await expect(page.getByRole("status")).toContainText("Updated 2 transactions")
+    await expect(bar).toBeHidden()
+    await expect(page.getByRole("listitem", { name: `${marker} one` })).toHaveCount(0)
+    await expect(page.getByRole("listitem", { name: `${marker} three` })).toBeVisible()
+    for (const id of ids) {
+      expect((await fetchTransaction(request, id)).category_id).toBe(targetId)
+    }
+    expect((await fetchTransaction(request, untouchedId)).category_id).not.toBe(targetId)
 
     await sidebar.getByRole("link", { name: "Dashboard", exact: true }).click()
     await expect.poll(() => forecastRequests).toBeGreaterThanOrEqual(2)
+  })
+
+  test("accepts and rejects local category suggestions", async ({ page }) => {
+    const stamp = Date.now()
+    const accepted = `Corner bakery accept ${stamp}`
+    const rejected = `Corner bakery reject ${stamp}`
+    const { request, bakeryId, uncategorizedIds } = await loginWithTrainedSuggestions(page, [
+      accepted,
+      rejected,
+    ])
+    try {
+      await page.goto("/transactions/inbox")
+      const acceptRow = page.getByRole("listitem", { name: accepted })
+      const rejectRow = page.getByRole("listitem", { name: rejected })
+      await expect(
+        acceptRow.getByRole("button", { name: "Suggested category Bakery, change" }),
+      ).toBeVisible()
+      await expect(acceptRow).toContainText(/\d+\s%\sconfidence/)
+
+      await rejectRow.getByRole("button", { name: "Reject" }).click()
+      await expect(rejectRow.getByRole("button", { name: "Accept" })).toHaveCount(0)
+      await expect(rejectRow.getByRole("button", { name: "Category", exact: true })).toBeVisible()
+      await expect(rejectRow).toBeVisible()
+      expect((await fetchTransaction(request, uncategorizedIds[1])).category_id).not.toBe(bakeryId)
+
+      await acceptRow.getByRole("button", { name: "Accept" }).click()
+      await expect(page.getByRole("status")).toContainText("Moved to Bakery")
+      await expect(acceptRow).toHaveCount(0)
+      expect((await fetchTransaction(request, uncategorizedIds[0])).category_id).toBe(bakeryId)
+    } finally {
+      await request.dispose()
+    }
+  })
+
+  test("accepts a suggestion from the peek", async ({ page }) => {
+    const title = `Corner bakery peek ${Date.now()}`
+    const { request, bakeryId, uncategorizedIds } = await loginWithTrainedSuggestions(page, [title])
+    try {
+      await page.goto("/transactions/inbox")
+      await page.getByRole("listitem", { name: title }).click()
+      await expect(page).toHaveURL(/peek=\d+/)
+      await page
+        .getByRole("complementary", { name: title })
+        .getByRole("button", { name: "Accept" })
+        .click()
+      await expect(page.getByRole("status")).toContainText("Moved to Bakery")
+      await expect(page).not.toHaveURL(/peek=/)
+      await expect(page.getByRole("listitem", { name: title })).toHaveCount(0)
+      expect((await fetchTransaction(request, uncategorizedIds[0])).category_id).toBe(bakeryId)
+    } finally {
+      await request.dispose()
+    }
   })
 })

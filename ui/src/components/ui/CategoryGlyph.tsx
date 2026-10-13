@@ -1,3 +1,4 @@
+import { QuestionIcon } from "@phosphor-icons/react/Question"
 import clsx from "clsx"
 import { CategoryIconSvg } from "../CategoryIcon"
 import s from "./kit.module.css"
@@ -22,6 +23,15 @@ export function CategoryGlyph({
       style={{ color: categoryColor(categoryId) }}
     >
       <CategoryIconSvg icon={icon ?? null} label={name} />
+    </span>
+  )
+}
+
+// The glyph of a row that has no category or suggestion yet.
+export function UnknownGlyph() {
+  return (
+    <span aria-hidden="true" className={clsx(s.glyph, s.faint)}>
+      <QuestionIcon />
     </span>
   )
 }

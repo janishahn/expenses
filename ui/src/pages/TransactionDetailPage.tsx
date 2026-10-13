@@ -24,8 +24,9 @@ function TransactionDetailPage() {
   const id = Number(transactionId)
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as TransactionRouteState | null)?.returnTo ?? "/transactions"
-  const parents = [{ label: "Transactions", to: returnTo }]
+  const routeState = location.state as TransactionRouteState | null
+  const returnTo = routeState?.returnTo ?? "/transactions"
+  const parents = [{ label: routeState?.returnLabel ?? "Transactions", to: returnTo }]
   const record = useTransactionRecord(id)
   const view = record.view
   const linkTo = (otherId: number) => `/transactions/${otherId}`

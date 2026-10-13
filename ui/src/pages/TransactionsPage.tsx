@@ -671,8 +671,8 @@ function TransactionsPage() {
           </>
         }
       >
+        {/* Bulk edits move rows to a category; they cannot clear one. */}
         <CategoryPicker
-          allowNone
           grouped
           label="Set category"
           categories={categories}
