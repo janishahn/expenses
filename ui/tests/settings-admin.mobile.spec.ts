@@ -117,6 +117,10 @@ test.describe("Settings and administration (mobile)", () => {
 
   test("manages the ingest token from the account section", async ({ page }) => {
     await page.goto("/settings")
+    // Other specs give the shared user an ingest token, so this one starts from a user without one.
+    const { request } = await loginAsIsolatedUser(page)
+    await request.dispose()
+    await page.goto("/settings")
     await expect(page.locator("main h1")).toHaveText("Settings")
     const sections = page.getByRole("navigation", { name: "Settings sections" })
     await expect(sections.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page")

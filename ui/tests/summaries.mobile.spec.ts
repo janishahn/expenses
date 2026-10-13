@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.describe("Summary and report surfaces (mobile)", () => {
   test("navigates the weekly digest and renders its sections", async ({
@@ -8,7 +8,7 @@ test.describe("Summary and report surfaces (mobile)", () => {
   }) => {
     const csrfToken = await getCsrfToken(request)
     const categoryName = `Digest expense ${Date.now()}`
-    const categoryId = await ensureCategory(request, csrfToken, "expense", categoryName)
+    const categoryId = await createCategory(request, csrfToken, "expense", categoryName)
     await createTransaction(request, csrfToken, {
       date: "2019-03-05",
       occurred_at: "2019-03-05T12:00:00",
