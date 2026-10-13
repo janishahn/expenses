@@ -380,10 +380,10 @@ function ReconciliationPage() {
     if (transactions) invalidateTransactionData(queryClient)
   }
   const post = (path: string, body?: unknown) =>
-    apiFetch<{ status: string; transaction_id?: number | null }>(`/api/reconciliation/bank-rows/${path}`, {
-      method: "POST",
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
+    apiFetch<{ status: string; transaction_id?: number | null; previous_amount_cents?: number | null }>(
+      `/api/reconciliation/bank-rows/${path}`,
+      { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }
+    )
   const reopen = (row: BankStatementRow, trashCreatedTransaction = false) =>
     post(`${row.id}/reopen`, trashCreatedTransaction ? { trash_created_transaction: true } : undefined)
 
@@ -466,22 +466,27 @@ function ReconciliationPage() {
     )
   }
   const matchTransaction = async (row: BankStatementRow, transaction: BankReconciliationTransaction, setAmount: boolean) => {
+    let replacedAmount: number | null = null
     reportFailure(
       await act({
         row,
-        run: () =>
-          post(`${row.id}/match-transaction`, { transaction_id: transaction.id, update_amount_to_bank: setAmount }).then(
-            () => undefined
-          ),
+        run: async () => {
+          const result = await post(`${row.id}/match-transaction`, {
+            transaction_id: transaction.id,
+            update_amount_to_bank: setAmount,
+          })
+          replacedAmount = result.previous_amount_cents ?? null
+        },
         message: `Matched with ${candidateTitle(transaction)}`,
-        // Undo also restores the amount the match replaced.
+        // Undo also restores the amount the match replaced, unless the amount was edited since.
         undo: async () => {
           await reopen(row)
-          if (!setAmount) return
+          if (replacedAmount === null) return
           const detail = await apiFetch<TransactionDetail>(`/api/transactions/${transaction.id}`)
+          if (detail.amount_cents !== Math.abs(row.amount_cents)) return
           await apiFetch(`/api/transactions/${transaction.id}`, {
             method: "PUT",
-            body: JSON.stringify(transactionPayload(detail, { amount_cents: transaction.amount_cents })),
+            body: JSON.stringify(transactionPayload(detail, { amount_cents: replacedAmount })),
           })
         },
         transactions: setAmount,

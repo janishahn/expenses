@@ -551,7 +551,7 @@ class BankReconciliationService:
 
     def match_transaction(
         self, row_id: int, transaction_id: int, *, update_amount_to_bank: bool = False
-    ) -> None:
+    ) -> int | None:
         row = self._get_row(row_id)
         self._require_unresolved(row)
         txn = self.session.scalar(
@@ -567,10 +567,15 @@ class BankReconciliationService:
             raise ValueError("Transaction type differs from the bank row")
         if transaction_id in self._reserved_transaction_ids(exclude_row_id=row.id):
             raise ValueError("Transaction is already matched to another bank row")
+        previous_amount_cents = txn.amount_cents
         if update_amount_to_bank:
             self._set_amount_to_bank(txn, row)
         self._resolve_matched(row, transaction_id)
         self.session.commit()
+        # The amount the bank amount replaced, so the match can be undone.
+        if txn.amount_cents == previous_amount_cents:
+            return None
+        return previous_amount_cents
 
     def ignore(self, row_id: int, reason: str | None) -> None:
         row = self._get_row(row_id)

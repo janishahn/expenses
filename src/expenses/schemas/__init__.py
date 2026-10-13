@@ -683,6 +683,8 @@ class BankReconciliationResponseOut(BaseModel):
 
 class BankRowActionResponseOut(StatusOut):
     transaction_id: Optional[int] = None
+    # Set when a match changed the transaction amount to the bank amount.
+    previous_amount_cents: Optional[int] = None
 
 
 class BankRowsPageOut(BaseModel):

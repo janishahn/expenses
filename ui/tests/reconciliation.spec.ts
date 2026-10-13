@@ -241,6 +241,38 @@ test.describe("Reconcile", () => {
     await expect.poll(async () => (await fetchTransaction(user, id)).amount_cents).toBe(2500)
   })
 
+  test("Undo keeps an amount edited after the match", async ({ page }) => {
+    const user = await signIn(page)
+    const id = await addExpense(user, "Physio visit", "2026-05-01", 4000)
+    await importRows(user, [{ date: "2026-05-20", payee: "PHYSIO", cents: -4500 }])
+    await page.goto("/reconciliation")
+
+    await rowItem(openList(page), "PHYSIO").click()
+    const peek = page.getByRole("complementary", { name: "PHYSIO" })
+    await peek.getByRole("searchbox", { name: "Find a transaction" }).fill("Physio")
+    await peek.getByRole("radio", { name: "Physio visit" }).check()
+    await peek.getByRole("button", { name: "Match", exact: true }).click()
+    await expect(toast(page)).toContainText("Matched with Physio visit")
+    // Another tab edits the amount while the Undo toast is up.
+    const edited = await user.request.put(`/api/transactions/${id}`, {
+      headers: { "X-CSRF-Token": user.csrfToken },
+      data: {
+        date: "2026-05-01",
+        occurred_at: "2026-05-01T12:00:00",
+        type: "expense",
+        amount_cents: 4700,
+        category_id: user.categoryId,
+        title: "Physio visit",
+        tags: [],
+      },
+    })
+    expect(edited.ok()).toBeTruthy()
+
+    await toast(page).getByRole("button", { name: "Undo" }).click()
+    await expect(rowItem(openList(page), "PHYSIO")).toBeVisible()
+    expect((await fetchTransaction(user, id)).amount_cents).toBe(4700)
+  })
+
   test("keeps the transaction amount when the amount switch is off", async ({ page }) => {
     const user = await signIn(page)
     const id = await addExpense(user, "Optician visit", "2026-05-01", 8000)

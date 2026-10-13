@@ -3652,7 +3652,9 @@ def api_match_bank_row_transaction(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).match_transaction(
+        previous_amount_cents = BankReconciliationService(
+            db, user_id=user_id
+        ).match_transaction(
             row_id,
             payload.transaction_id,
             update_amount_to_bank=payload.update_amount_to_bank,
@@ -3663,7 +3665,11 @@ def api_match_bank_row_transaction(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok", "transaction_id": payload.transaction_id}
+    return {
+        "status": "ok",
+        "transaction_id": payload.transaction_id,
+        "previous_amount_cents": previous_amount_cents,
+    }
 
 
 @router.post(

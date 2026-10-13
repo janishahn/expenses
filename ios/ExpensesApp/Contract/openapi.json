@@ -1086,6 +1086,17 @@
       },
       "BankRowActionResponseOut": {
         "properties": {
+          "previous_amount_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Amount Cents"
+          },
           "status": {
             "title": "Status",
             "type": "string"

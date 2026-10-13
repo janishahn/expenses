@@ -826,6 +826,9 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
 
     statuses = [plain, updated, wrong_type, wrong_type_updated, missing]
     assert [r.status_code for r in statuses] == [200, 200, 400, 400, 400]
+    # The replaced amount lets the web undo the change.
+    assert plain.json()["previous_amount_cents"] is None
+    assert updated.json()["previous_amount_cents"] == 1_900
 
     def amount(transaction_id: int) -> int:
         return api_client.get(f"/api/transactions/{transaction_id}").json()[
