@@ -10,7 +10,7 @@ import { Navigate, useParams } from "react-router-dom"
 import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
 import type { AIUsageSummary } from "../app/api-types"
 import { useAuth } from "../app/auth"
-import { formatShortDate, formatShortDateTime } from "../app/format"
+import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
 import { confirmDialog } from "../components/confirm"
 import { Button, LinkButton } from "../components/ui/Button"
 import { EmptyState, Status } from "../components/ui/EmptyState"
@@ -79,7 +79,6 @@ type AdminLogsResponse = {
 
 type LogFilter = "errors" | "ingest" | "imports" | "scheduler" | "all"
 
-const NUMBER = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 })
 const DECIMAL = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 })
 const GB = 1024 ** 3
 const LOG_COLUMNS: Columns = {
@@ -324,18 +323,18 @@ function UsageSection({ period }: { period: AIUsageSummary["period"] }) {
         },
         {
           label: "Tokens",
-          value: NUMBER.format(data.total_tokens),
-          detail: `${NUMBER.format(data.cached_input_tokens)} cached · ${NUMBER.format(data.reasoning_tokens)} reasoning`,
+          value: formatCount(data.total_tokens),
+          detail: `${formatCount(data.cached_input_tokens)} cached · ${formatCount(data.reasoning_tokens)} reasoning`,
         },
         {
           label: "Chats",
-          value: NUMBER.format(data.total_chats),
-          detail: `${NUMBER.format(data.completed_chats)} completed · ${NUMBER.format(data.failed_chats)} failed`,
+          value: formatCount(data.total_chats),
+          detail: `${formatCount(data.completed_chats)} completed · ${formatCount(data.failed_chats)} failed`,
         },
         {
           label: "Per chat",
-          value: `${NUMBER.format(data.average_total_tokens)} tokens`,
-          detail: data.p95_duration_ms != null ? `${NUMBER.format(data.p95_duration_ms)} ms p95` : undefined,
+          value: `${formatCount(data.average_total_tokens)} tokens`,
+          detail: data.p95_duration_ms != null ? `${formatCount(data.p95_duration_ms)} ms p95` : undefined,
         },
       ]}
     />
@@ -369,7 +368,7 @@ function LogPeek({ entry, onClose }: { entry: LogEntry; onClose: () => void }) {
         </Property>
         {entry.method || entry.path ? <Property label="Request">{[entry.method, entry.path].filter(Boolean).join(" ")}</Property> : null}
         {entry.status_code !== undefined ? <Property label="Status">{entry.status_code}</Property> : null}
-        {entry.duration_ms !== undefined ? <Property label="Duration">{`${NUMBER.format(entry.duration_ms)} ms`}</Property> : null}
+        {entry.duration_ms !== undefined ? <Property label="Duration">{`${formatCount(entry.duration_ms)} ms`}</Property> : null}
       </PropertyList>
       {typeof entry.raw_body === "string" ? (
         <PeekSection title="Captured body">

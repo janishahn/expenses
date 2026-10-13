@@ -8,6 +8,7 @@ import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import type { CategorySummary, TransactionListItem } from "../app/api-types"
+import { formatCount } from "../app/format"
 import { setPrivacy, usePrivacy } from "../app/privacy"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
 import { Amount } from "../components/ui/Amount"
@@ -667,7 +668,7 @@ function DashboardPage() {
                   <BudgetBar ratio={item.percent_amortized / 100} />
                 </Cell>
                 <Cell align="right" tone="muted">
-                  {item.days_owned.toLocaleString("de-DE")} of {item.expected_lifespan_days.toLocaleString("de-DE")} days
+                  {formatCount(item.days_owned)} of {formatCount(item.expected_lifespan_days)} days
                 </Cell>
               </Row>
             ))}

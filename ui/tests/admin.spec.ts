@@ -335,7 +335,7 @@ test.describe("Admin Page", () => {
     await expect(strip.getByText("$0.0123")).toBeVisible()
     await expect(strip.getByText("$0.0025 per chat")).toBeVisible()
     await expect(strip.getByText("6 completed · 1 failed")).toBeVisible()
-    await expect(strip.getByText("1.500")).toBeVisible()
+    await expect(strip.getByText("1 500")).toBeVisible()
     await expect.poll(() => requestedPeriods.includes("week")).toBeTruthy()
 
     await period.getByRole("radio", { name: "Month" }).click()

@@ -9,6 +9,13 @@ const CURRENCY_FORMAT_NO_CENTS = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 0,
 })
 
+const COUNT_FORMAT = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 })
+
+// Whole counts group thousands with a space, like amounts.
+export function formatCount(value: number): string {
+  return COUNT_FORMAT.format(value).replace(/\./g, " ")
+}
+
 export function formatCurrency(cents: number, includeCents = true): string {
   const formatter = includeCents
     ? CURRENCY_FORMAT_WITH_CENTS
