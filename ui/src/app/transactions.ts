@@ -19,7 +19,19 @@ export type TransactionChanges = {
 
 // Every view that shows transaction-derived figures.
 export function invalidateTransactionData(queryClient: QueryClient) {
-  for (const key of ["transactions", "transaction", "dashboard", "insights", "budgets", "forecast", "tag"]) {
+  for (const key of [
+    "transactions",
+    "transaction",
+    "dashboard",
+    "insights",
+    "budgets",
+    "forecast",
+    "categories",
+    "tags",
+    "tag",
+    "digest",
+    "reconciliation",
+  ]) {
     void queryClient.invalidateQueries({ queryKey: [key] })
   }
 }
