@@ -855,18 +855,36 @@
       },
       "BankAcceptSuggestionsOut": {
         "properties": {
-          "row_ids": {
+          "matches": {
             "items": {
-              "type": "integer"
+              "$ref": "#/components/schemas/BankAcceptedMatchOut"
             },
-            "title": "Row Ids",
+            "title": "Matches",
             "type": "array"
           }
         },
         "required": [
-          "row_ids"
+          "matches"
         ],
         "title": "BankAcceptSuggestionsOut",
+        "type": "object"
+      },
+      "BankAcceptedMatchOut": {
+        "properties": {
+          "row_id": {
+            "title": "Row Id",
+            "type": "integer"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_id",
+          "transaction_id"
+        ],
+        "title": "BankAcceptedMatchOut",
         "type": "object"
       },
       "BankAccountOut": {

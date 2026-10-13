@@ -725,9 +725,14 @@ class BankAcceptSuggestionsIn(BaseModel):
     row_ids: list[int] = Field(..., max_length=500)
 
 
+class BankAcceptedMatchOut(BaseModel):
+    row_id: int
+    transaction_id: int
+
+
 class BankAcceptSuggestionsOut(BaseModel):
     # The rows matched by this request; rows without exactly one candidate are skipped.
-    row_ids: list[int]
+    matches: list[BankAcceptedMatchOut]
 
 
 class BankRowCandidatesOut(BaseModel):

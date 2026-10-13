@@ -388,11 +388,11 @@ function ReconciliationPage() {
     )
   // An Undo passes the outcome it reverses, so the server leaves a row changed since then as it is.
   const reopen = (
-    row: BankStatementRow,
+    rowId: number,
     expected?: { resolution: BankRowResolution; transactionId?: number },
     trashCreatedTransaction = false
   ) =>
-    post(`${row.id}/reopen`, {
+    post(`${rowId}/reopen`, {
       trash_created_transaction: trashCreatedTransaction,
       expected_resolution: expected?.resolution,
       expected_transaction_id: expected?.transactionId,
@@ -448,31 +448,37 @@ function ReconciliationPage() {
 
   const matchSuggestion = async (row: BankStatementRow) => {
     const candidate = row.suggested_transaction ?? row.candidates[0]
+    let matchedId: number | undefined
     reportFailure(
       await act({
         row,
-        run: () => post(`${row.id}/accept-suggestion`).then(() => undefined),
+        run: async () => {
+          matchedId = (await post(`${row.id}/accept-suggestion`)).transaction_id ?? undefined
+        },
         message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}`,
-        undo: () => reopen(row, { resolution: "matched" }),
+        undo: () => reopen(row.id, { resolution: "matched", transactionId: matchedId }),
       })
     )
   }
   const matchAll = async (band: BankStatementRow[]) => {
     // The server skips rows that no longer have exactly one candidate; Undo leaves them as they are.
-    let matched: BankStatementRow[] = []
+    let matches: Array<{ row_id: number; transaction_id: number }> = []
     reportFailure(
       await act({
         row: band.find((row) => row.id === peekId) ?? null,
         run: async () => {
-          const result = await apiFetch<{ row_ids: number[] }>("/api/reconciliation/bank-rows/accept-suggestions", {
+          const result = await apiFetch<{ matches: typeof matches }>("/api/reconciliation/bank-rows/accept-suggestions", {
             method: "POST",
             body: JSON.stringify({ row_ids: band.map((row) => row.id) }),
           })
-          matched = band.filter((row) => result.row_ids.includes(row.id))
-          return `Matched ${plural(matched.length, "row")}`
+          matches = result.matches
+          return `Matched ${plural(matches.length, "row")}`
         },
         message: "Matched",
-        undo: () => Promise.all(matched.map((row) => reopen(row, { resolution: "matched" }))),
+        undo: () =>
+          Promise.all(
+            matches.map((match) => reopen(match.row_id, { resolution: "matched", transactionId: match.transaction_id }))
+          ),
       })
     )
   }
@@ -491,7 +497,7 @@ function ReconciliationPage() {
         message: `Matched with ${candidateTitle(transaction)}`,
         // Undo also restores the amount the match replaced, unless the amount was edited since.
         undo: async () => {
-          await reopen(row, { resolution: "matched", transactionId: transaction.id })
+          await reopen(row.id, { resolution: "matched", transactionId: transaction.id })
           if (replacedAmount === null) return
           const detail = await apiFetch<TransactionDetail>(`/api/transactions/${transaction.id}`)
           if (detail.amount_cents !== Math.abs(row.amount_cents)) return
@@ -509,7 +515,7 @@ function ReconciliationPage() {
       row,
       run: () => post(`${row.id}/ignore`, { reason }).then(() => undefined),
       message: reason ? `Ignored · ${reason}` : "Ignored",
-      undo: () => reopen(row, { resolution: "ignored" }),
+      undo: () => reopen(row.id, { resolution: "ignored" }),
     })
   // Undoing a create moves the new transaction to Trash.
   const createFromRow = async (row: BankStatementRow, payload: CreateFromRowPayload, receipt: File | null) => {
@@ -530,7 +536,7 @@ function ReconciliationPage() {
         }
       },
       message: `Created ${payload.title}`,
-      undo: () => reopen(row, { resolution: "created", transactionId: createdId }, true),
+      undo: () => reopen(row.id, { resolution: "created", transactionId: createdId }, true),
       transactions: true,
     })
     if (error) setDialogError(error)
@@ -541,7 +547,7 @@ function ReconciliationPage() {
     const { resolution, ignore_reason: reason } = row
     const error = await act({
       row,
-      run: () => reopen(row, undefined, trashCreatedTransaction).then(() => undefined),
+      run: () => reopen(row.id, undefined, trashCreatedTransaction).then(() => undefined),
       message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash" : "Moved back to review",
       undo:
         resolution === "ignored"

@@ -123,6 +123,7 @@ def test_reconciliation_suggests_card_payment_with_bank_posting_delay(
         headers=csrf_headers,
     )
     assert accept_response.status_code == 200
+    assert accept_response.json()["transaction_id"] == transaction_id
 
     response = api_client.get("/api/reconciliation")
     assert response.json()["rows"][0]["status"] == "matched"
@@ -732,15 +733,17 @@ def test_undo_reopen_skips_a_changed_row_and_restores_a_created_row(
 def test_accept_suggestions_only_accepts_rows_with_one_candidate(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
-    for day, cents, title in (
-        ("2026-05-04", 1_200, "Cafe"),
-        ("2026-05-10", 2_000, "Shop"),
-        ("2026-05-20", 3_000, "Gym A"),
-        ("2026-05-20", 3_000, "Gym B"),
-    ):
-        _create_transaction(
+    ids = {
+        title: _create_transaction(
             api_client, csrf_headers, date=day, amount_cents=cents, title=title
         )
+        for day, cents, title in (
+            ("2026-05-04", 1_200, "Cafe"),
+            ("2026-05-10", 2_000, "Shop"),
+            ("2026-05-20", 3_000, "Gym A"),
+            ("2026-05-20", 3_000, "Gym B"),
+        )
+    }
     _upload_csv(
         api_client,
         csrf_headers,
@@ -763,7 +766,10 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
 
     # Both cafe rows suggest the same transaction; the newer row takes it.
     assert response.json() == {
-        "row_ids": [rows["Shop"]["id"], rows["Cafe again"]["id"]]
+        "matches": [
+            {"row_id": rows["Shop"]["id"], "transaction_id": ids["Shop"]},
+            {"row_id": rows["Cafe again"]["id"], "transaction_id": ids["Cafe"]},
+        ]
     }
     after = _rows(api_client)
     names = ("Cafe", "Cafe again", "Shop", "Gym", "Nothing")
@@ -777,7 +783,7 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
     repeated = _post(
         api_client, csrf_headers, "accept-suggestions", {"row_ids": row_ids}
     )
-    assert repeated.json() == {"row_ids": []}
+    assert repeated.json() == {"matches": []}
 
 
 def test_candidate_search_ignores_amount_and_skips_transactions_matched_elsewhere(

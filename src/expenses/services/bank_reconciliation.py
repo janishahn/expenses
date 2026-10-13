@@ -520,7 +520,7 @@ class BankReconciliationService:
             for txn in self.session.scalars(stmt)
         ]
 
-    def accept_suggestion(self, row_id: int) -> None:
+    def accept_suggestion(self, row_id: int) -> int:
         row = self._get_row(row_id)
         self._require_unresolved(row)
         candidates = self._candidate_transactions(
@@ -530,8 +530,9 @@ class BankReconciliationService:
             raise ValueError("Bank row does not have exactly one suggested match")
         self._resolve_matched(row, candidates[0].id)
         self.session.commit()
+        return candidates[0].id
 
-    def accept_suggestions(self, row_ids: list[int]) -> list[int]:
+    def accept_suggestions(self, row_ids: list[int]) -> list[tuple[int, int]]:
         reserved_transaction_ids = self._reserved_transaction_ids()
         rows = self.session.scalars(
             select(BankStatementRow)
@@ -541,7 +542,7 @@ class BankReconciliationService:
             )
             .order_by(BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
         ).all()
-        accepted: list[int] = []
+        accepted: list[tuple[int, int]] = []
         for row in rows:
             if not self._is_unresolved(row):
                 continue
@@ -550,7 +551,7 @@ class BankReconciliationService:
                 continue
             self._resolve_matched(row, candidates[0].id)
             reserved_transaction_ids.add(candidates[0].id)
-            accepted.append(row.id)
+            accepted.append((row.id, candidates[0].id))
         self.session.commit()
         return accepted
 

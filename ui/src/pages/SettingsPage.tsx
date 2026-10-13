@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { CopyIcon } from "@phosphor-icons/react/Copy"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
@@ -203,6 +203,13 @@ function AppearanceCard() {
   )
 }
 
+// Snapshots set the balances that Dashboard and Forecast show.
+function invalidateSnapshotViews(queryClient: QueryClient) {
+  for (const key of ["settings", "dashboard", "forecast"]) {
+    void queryClient.invalidateQueries({ queryKey: [key] })
+  }
+}
+
 function SnapshotDialog({ anchor, onClose }: { anchor: BalanceAnchor | null; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [asOf, setAsOf] = useState(anchor ? anchor.as_of_at.slice(0, 16) : "")
@@ -216,14 +223,14 @@ function SnapshotDialog({ anchor, onClose }: { anchor: BalanceAnchor | null; onC
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings"] })
+      invalidateSnapshotViews(queryClient)
       onClose()
     },
   })
   const remove = useMutation({
     mutationFn: (id: number) => apiFetch<{ status: string }>(`/api/settings/balance-anchors/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings"] })
+      invalidateSnapshotViews(queryClient)
       onClose()
     },
   })
@@ -305,7 +312,7 @@ function SnapshotsCard({ data }: { data: SettingsPayload }) {
   const [editing, setEditing] = useState<BalanceAnchor | "new" | null>(null)
   const remove = useMutation({
     mutationFn: (id: number) => apiFetch<{ status: string }>(`/api/settings/balance-anchors/${id}`, { method: "DELETE" }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => invalidateSnapshotViews(queryClient),
   })
   return (
     <>
@@ -495,9 +502,11 @@ function SettingsPage() {
       {key === "categorization" && data ? (
         <AutoCategorizationSettings
           settings={data.auto_categorization}
-          onSaved={(auto_categorization) =>
+          onSaved={(auto_categorization) => {
             queryClient.setQueryData<SettingsPayload>(["settings"], (previous) => (previous ? { ...previous, auto_categorization } : previous))
-          }
+            // The inbox shows model suggestions only while categorization is on.
+            void queryClient.invalidateQueries({ queryKey: ["transactions", "uncategorized"] })
+          }}
         />
       ) : null}
       {key === "ai" ? <AISettingsPanel /> : null}

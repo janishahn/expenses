@@ -3471,10 +3471,15 @@ def api_accept_bank_row_suggestions(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    row_ids = BankReconciliationService(db, user_id=user_id).accept_suggestions(
+    accepted = BankReconciliationService(db, user_id=user_id).accept_suggestions(
         data.row_ids
     )
-    return {"row_ids": row_ids}
+    return {
+        "matches": [
+            {"row_id": row_id, "transaction_id": transaction_id}
+            for row_id, transaction_id in accepted
+        ]
+    }
 
 
 @router.post(
@@ -3569,14 +3574,16 @@ def api_accept_bank_row_suggestion(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).accept_suggestion(row_id)
+        transaction_id = BankReconciliationService(
+            db, user_id=user_id
+        ).accept_suggestion(row_id)
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BankRowAlreadyResolvedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok"}
+    return {"status": "ok", "transaction_id": transaction_id}
 
 
 @router.post(
