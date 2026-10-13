@@ -35,13 +35,12 @@ async function effectiveTarget(locator: Locator) {
       const parsed = Number.parseFloat(value)
       return Number.isFinite(parsed) ? parsed : 0
     }
+    // The used size of a rendered pseudo-element. Offsets would be wrong for inline elements,
+    // whose containing block differs from their bounding box.
     const hitArea = (pseudo: "::before" | "::after") => {
       const style = window.getComputedStyle(element, pseudo)
       if (style.content === "none") return { width: 0, height: 0 }
-      return {
-        width: rect.width - number(style.left) - number(style.right),
-        height: rect.height - number(style.top) - number(style.bottom),
-      }
+      return { width: number(style.width), height: number(style.height) }
     }
     const before = hitArea("::before")
     const after = hitArea("::after")
