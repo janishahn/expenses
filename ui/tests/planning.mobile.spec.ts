@@ -1,10 +1,15 @@
 import { expect, test } from "./fixtures"
-import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
-function nextMonthValue(): string {
-  const nextMonth = new Date()
-  nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
-  return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}`
+function nextMonth(): { value: string; short: string; long: string } {
+  const date = new Date()
+  date.setDate(1)
+  date.setMonth(date.getMonth() + 1)
+  return {
+    value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+    short: new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date),
+    long: new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(date),
+  }
 }
 
 function previousMonthDate(monthsAgo: number): string {
@@ -19,12 +24,7 @@ test.describe("Planning surfaces (mobile)", () => {
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      "E2E Forecast"
-    )
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Forecast")
     for (const [index, amount] of [12000, 18000, 15000].entries()) {
       const transactionDate = previousMonthDate(index + 1)
       await createTransaction(request, token, {
@@ -39,37 +39,86 @@ test.describe("Planning surfaces (mobile)", () => {
     }
 
     await page.goto("/forecast")
-    await expect(page.getByText(/80% prediction range/)).toBeVisible()
-    await page.getByRole("button", { name: "12 months" }).click()
-    await page.getByRole("button", { name: "Recurring only" }).click()
+    await expect(page.getByText(/80% range/).first()).toBeVisible()
+    await page.getByRole("radio", { name: "12M" }).click()
+    await page.getByRole("radio", { name: "Recurring only" }).click()
     await expect(page).toHaveURL(/horizon=12/)
     await expect(page).toHaveURL(/mode=recurring/)
+    await expect(
+      page.getByRole("list", { name: "Monthly outlook" }).getByRole("listitem"),
+    ).toHaveCount(12)
 
-    await page.getByRole("link", { name: "What if?" }).click()
+    await page.getByRole("link", { name: "What if", exact: true }).click()
     await expect(page).toHaveURL(/\/scenarios\?horizon=12&mode=recurring/)
-    await expect(page.getByRole("heading", { name: "What If" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "What If", level: 1 })).toBeVisible()
+    await expect(page.getByRole("radio", { name: "12M" })).toBeChecked()
+    await expect(page.getByRole("radio", { name: "Recurring only" })).toBeChecked()
+  })
+
+  test("opens a forecast month and returns to the outlook", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await createCategory(
+      request,
+      token,
+      "expense",
+      `E2E Mobile Forecast Rent ${Date.now()}`,
+    )
+    const month = nextMonth()
+    const ruleName = `E2E Mobile Forecast Rule ${Date.now()}`
+    const response = await request.post("/api/recurring", {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        name: ruleName,
+        type: "expense",
+        currency_code: "EUR",
+        amount_cents: 90_000_000,
+        category_id: categoryId,
+        anchor_date: `${month.value}-02`,
+        interval_unit: "month",
+        interval_count: 1,
+        next_occurrence: `${month.value}-02`,
+        end_date: null,
+        auto_post: true,
+        skip_weekends: false,
+        month_day_policy: "snap_to_end",
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+
+    await page.goto("/forecast?mode=recurring")
+    const row = page.getByRole("listitem", { name: month.long })
+    await row.click()
+    await expect(page).toHaveURL(new RegExp(`peek=${month.value}`))
+    const peek = page.getByRole("complementary", { name: month.long })
+    await expect(peek.getByRole("list", { name: "Recurring" })).toContainText(ruleName)
+    await peek.getByRole("button", { name: "Forecast" }).click()
+    await expect(page).not.toHaveURL(/peek=/)
+    await expect(row).toBeVisible()
   })
 
   test("adds and removes a one-time scenario adjustment", async ({ page }) => {
     await page.goto("/scenarios")
-    await page.getByLabel("Adjustment type").selectOption("one_time")
-    await page.getByLabel("Name").fill("Mobile vacation")
-    await page
-      .getByRole("textbox", { name: "Month", exact: true })
-      .fill(nextMonthValue())
-    await page.getByLabel("Amount").fill("300.00")
-    await page.getByRole("button", { name: "Add adjustment" }).click()
+    const adjustments = page.getByRole("region", { name: "Adjustments" })
+    await adjustments.getByRole("button", { name: "Add", exact: true }).click()
+    await page.getByRole("menuitem", { name: "One-time event" }).click()
+    const form = adjustments.locator("form")
+    await form.getByLabel("Name").fill("Mobile vacation")
+    await form.getByLabel("Amount").fill("300.00")
+    await form.getByRole("button", { name: "Add", exact: true }).click()
 
-    await expect(page.getByText(/^Mobile vacation in /)).toBeVisible()
-    await expect(
-      page.getByRole("img", {
-        name: "Baseline balance compared with the adjusted scenario",
-      }),
-    ).toBeVisible()
-    await page.getByLabel("Delete adjustment").click()
-    await expect(page.getByText("No adjustments yet.")).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Baseline vs scenario" })
-    ).toHaveCount(0)
+    await expect(adjustments.getByRole("listitem")).toContainText(
+      new RegExp(`^Mobile vacation in ${nextMonth().short}`),
+    )
+    await expect(page.getByText("after 1 adjustment")).toBeVisible()
+    const chart = page.getByRole("region", { name: "Balance" })
+    await expect(chart.getByText("Difference", { exact: true })).toBeVisible()
+    const impact = page.getByRole("list", { name: "Impact by adjustment" })
+    await expect(impact).toContainText("Mobile vacation")
+    await expect(impact).toContainText(/300\s?€/)
+
+    await adjustments.getByRole("button", { name: "Remove adjustment" }).click()
+    await expect(adjustments.getByText("No adjustments")).toBeVisible()
+    await expect(page.getByText("No changes")).toBeVisible()
+    await expect(page.getByRole("list", { name: "Impact by adjustment" })).toHaveCount(0)
   })
 })

@@ -68,7 +68,8 @@ test.describe("Navigation (mobile)", () => {
 
   test("preserves period across tab navigation", async ({ page }) => {
     await page.goto("/")
-    await page.getByRole("button", { name: "This month" }).click()
+    await page.getByRole("button", { name: /^Period:/ }).click()
+    await page.getByRole("menuitemcheckbox", { name: "This month" }).click()
     await expect(page).toHaveURL(/period=this_month/)
 
     await tabBar(page).getByRole("link", { name: "Transactions" }).click()
@@ -112,8 +113,6 @@ test.describe("Navigation (mobile)", () => {
   test("shows page-level creation actions above the page", async ({ page }) => {
     test.setTimeout(90_000)
     const actionPages = [
-      { path: "/", label: "Add transaction" },
-      { path: "/budgets", label: "Add budget" },
       { path: "/recurring", label: "Add rule" },
       { path: "/templates", label: "Add template" },
       { path: "/rules", label: "Add rule" },
@@ -128,6 +127,10 @@ test.describe("Navigation (mobile)", () => {
       ).toHaveAccessibleName(entry.label)
     }
 
+    await page.goto("/budgets")
+    await expect(page.getByRole("button", { name: "Add budget", exact: true }).first()).toBeVisible()
+    await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
+
     await page.goto("/transactions")
     await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toBeVisible()
     await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
@@ -138,7 +141,7 @@ test.describe("Navigation (mobile)", () => {
     }
 
     await page.goto("/budgets")
-    await page.getByTestId("app-shell-utility").getByRole("button").click()
+    await page.getByRole("button", { name: "Add budget", exact: true }).first().click()
     await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
   })
 

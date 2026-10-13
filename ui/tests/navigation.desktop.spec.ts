@@ -48,12 +48,10 @@ test.describe("Navigation", () => {
   test("distinguishes value selectors from page view tabs", async ({
     page,
   }) => {
-    const selectors = [
-      { path: "/", label: "Period" },
-      { path: "/forecast", label: "Forecast horizon" },
-      { path: "/scenarios", label: "Scenario model" },
-      { path: "/settings", label: "Theme mode" },
-    ]
+    const selectors = [{ path: "/settings", label: "Theme mode" }]
+
+    await page.goto("/")
+    await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
 
     for (const selector of selectors) {
       await page.goto(selector.path)
@@ -62,14 +60,24 @@ test.describe("Navigation", () => {
       await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
     }
 
+    for (const selector of [
+      { path: "/forecast", label: "Forecast horizon" },
+      { path: "/scenarios", label: "Scenario model" },
+    ]) {
+      await page.goto(selector.path)
+      const group = page.getByRole("radiogroup", { name: selector.label })
+      await expect(group).toBeVisible()
+      await expect(group.getByRole("radio", { checked: true })).toHaveCount(1)
+    }
+
     await page.goto("/insights")
-    await expect(page.getByRole("tablist", { name: "Insights views" })).toBeVisible()
+    await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
     await page.goto("/recurring")
     await expect(page.getByRole("tablist", { name: "Recurring views" })).toBeVisible()
 
     await page.goto("/budgets")
     await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
-    await expect(page.getByLabel("Budget month")).toBeVisible()
+    await expect(page.getByRole("group", { name: "Month" })).toBeVisible()
 
     await expect(page.getByLabel(/^Period:/)).toHaveCount(0)
   })
@@ -233,7 +241,8 @@ test.describe("Navigation", () => {
 
   test("should preserve period across primary navigation", async ({ page }) => {
     await page.goto("/")
-    await page.getByRole("button", { name: "This month" }).click()
+    await page.getByRole("button", { name: /^Period:/ }).click()
+    await page.getByRole("menuitemcheckbox", { name: "This month" }).click()
     await expect(page).toHaveURL(/period=this_month/)
 
     await clickSidebarLink(page, "Transactions")
@@ -291,18 +300,16 @@ test.describe("Navigation", () => {
   test("uses page-specific desktop utility actions", async ({
     page,
   }) => {
-    for (const route of ["/", "/transactions"]) {
-      await page.goto(route)
-      await page.getByRole("button", { name: "Add transaction" }).click()
-      await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
-      await page.keyboard.press("Escape")
-    }
+    await page.goto("/transactions")
+    await page.getByRole("button", { name: "Add transaction" }).click()
+    await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
+    await page.keyboard.press("Escape")
 
     await page.goto("/insights")
     await expect(page.getByRole("button", { name: "Add transaction" })).toHaveCount(0)
 
     await page.goto("/budgets")
-    await page.getByRole("button", { name: "Add budget" }).click()
+    await page.getByRole("button", { name: "Add budget" }).first().click()
     await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
     await page.keyboard.press("Escape")
 
@@ -318,16 +325,20 @@ test.describe("Navigation", () => {
 
     for (const entry of [
       {
-        path: "/",
-        action: "Add transaction",
+        path: "/transactions",
+        action: (page: Page) =>
+          page.getByRole("button", { name: "Add transaction", exact: true }),
         dialog: "Add transaction",
       },
-      { path: "/budgets", action: "Add budget", dialog: "Add budget" },
+      {
+        path: "/budgets",
+        action: (page: Page) =>
+          page.getByRole("button", { name: "Add budget", exact: true }).first(),
+        dialog: "Add budget",
+      },
     ]) {
       await page.goto(entry.path)
-      const action = page
-        .getByTestId("app-shell-utility")
-        .getByRole("button", { name: entry.action, exact: true })
+      const action = entry.action(page)
       await expect(action).toBeVisible()
 
       // Emulate a classic 15px desktop scrollbar so Radix's compensation is
