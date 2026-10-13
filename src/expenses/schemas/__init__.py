@@ -400,6 +400,10 @@ class DashboardBudgetPaceOut(BaseModel):
     velocity_ratio: float
     projected_cents: int
     budget_cents: int
+    spent_cents: int
+    remaining_cents: int
+    daily_remaining_cents: int
+    days_remaining: int
     sparkline: str
 
 

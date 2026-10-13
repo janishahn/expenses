@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The dashboard's `budget_pace` includes the overall budget's `spent_cents`, `remaining_cents`, `daily_remaining_cents`, and `days_remaining`.
+
+### Changed
+- On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
+
+### Fixed
+- Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.
+
 ## [0.7.0] - 2026-10-13
 
 ### Added

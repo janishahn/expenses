@@ -3,6 +3,7 @@ import type { Icon } from "@phosphor-icons/react"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import clsx from "clsx"
 import { IconButton } from "./Button"
+import { BudgetBar } from "./Charts"
 import { Menu } from "./Menu"
 import s from "./kit.module.css"
 
@@ -118,6 +119,53 @@ export function MetricStrip({ metrics }: { metrics: Metric[] }) {
           {metric.detail != null ? <div className={s.delta}>{metric.detail}</div> : null}
         </div>
       ))}
+    </section>
+  )
+}
+
+export type SummaryBudget = {
+  label: string
+  used: ReactNode
+  ratio: number
+  over: boolean
+  pace: number | null
+  remaining: ReactNode
+  projection?: ReactNode
+  projectionOver?: boolean
+}
+
+// The metric strip on a phone: one lead figure, an optional budget, and the other figures in a row.
+export function SummaryCard({ lead, budget, metrics }: { lead: Metric; budget?: SummaryBudget; metrics: Metric[] }) {
+  return (
+    <section className={clsx(s.card, s.summary)}>
+      <div>
+        <div className={s.lab}>{lead.label}</div>
+        <div className={s.summaryNum}>{lead.value}</div>
+        {lead.detail != null ? <div className={s.delta}>{lead.detail}</div> : null}
+      </div>
+      {budget ? (
+        <div role="group" aria-label={budget.label} className={s.summaryBudget}>
+          <div className={s.summaryLine}>
+            <span className={s.lab}>{budget.label}</span>
+            <span className={s.muted}>{budget.used}</span>
+          </div>
+          <BudgetBar ratio={budget.ratio} over={budget.over} pace={budget.pace} />
+          <div className={s.summaryLine}>
+            <span className={s.muted}>{budget.remaining}</span>
+            {budget.projection != null ? (
+              <span className={budget.projectionOver ? s.over : s.muted}>{budget.projection}</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className={s.summaryRow}>
+        {metrics.map((metric) => (
+          <div key={metric.label}>
+            <div className={s.lab}>{metric.label}</div>
+            <div className={s.summaryValue}>{metric.value}</div>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }

@@ -293,7 +293,11 @@ pages below fix the structure; the current pages show the content.
 - **Dashboard.** Strip: Balance, Cash in, Spent, Net, Budget pace. Then Balance
   and Recent side by side, Spending by category full width, Category share and
   Budgets side by side, Durable purchases. No create action. The header holds
-  the privacy toggle.
+  the privacy toggle. On mobile a summary card replaces the strip: Spent with its
+  comparison, the overall budget (bar, left and per day, likely total) when one
+  is set, then Balance, Cash in, and Net in one row. Then Budgets, Recent,
+  Balance, Spending by category, Category share as a small ring with its five
+  largest shares, and Durable purchases.
 - **Budgets.** View row: month control. Strip: Overall budget, Spent, Left,
   Projected. Overall pace chart. One list with Monthly and Annual bands; each
   row shows the bar with the pace tick and "left" or "over". The peek shows the
@@ -451,7 +455,7 @@ changes and drop movement.
 `ui/src/components/ui/` and nothing else visual: `AppFrame`, `Panel`, `Sheet`,
 `ChartCard` with the charts `LineChart`, `ColumnChart`, `StackedBands`, `Donut`,
 `BudgetBar`, and `WeekdayBars` and the grids `MonthGrid`, `BudgetGrid`, and
-`DayCalendar`, `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
+`DayCalendar`, `LedgerRow`, `DayBand`, `MetricStrip` with its mobile `SummaryCard`, `ViewRow`, `PeriodControl`,
 `MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
 `BottomSheet`, `BulkBar`, `Peek` with its `PeekLayout` and `AsideLayout`,
 `PropertyList`, `SettingsShell`, `Notes`, `ReceiptSection`, `ReceiptViewer`,

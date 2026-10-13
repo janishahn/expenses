@@ -5510,11 +5510,13 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         donut_context.update(
             {
                 "mode": "both",
+                # Every category: a top-N cut would leave the ring's total short of its percentages.
                 "expense_breakdown": metrics_service.category_breakdown(
                     period,
                     TransactionType.expense,
                     tag_ids=included_tag_ids,
                     excluded_tag_ids=filters.excluded_tag_ids,
+                    limit=None,
                 ),
                 "income_breakdown": metrics_service.category_breakdown(
                     period,
