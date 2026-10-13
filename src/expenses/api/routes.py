@@ -4919,9 +4919,9 @@ def api_transactions_bulk_apply(
 
     txn_service = TransactionService(db, user_id=user_id)
     if operation.lifecycle == "soft_delete":
-        for txn in transactions:
-            txn_service.soft_delete(txn.id)
-            counts["deleted"] += 1
+        counts["deleted"] = txn_service.soft_delete_many(
+            [txn.id for txn in transactions]
+        )
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),
@@ -4930,9 +4930,7 @@ def api_transactions_bulk_apply(
             "changes": counts,
         }
     if operation.lifecycle == "restore":
-        for txn in transactions:
-            txn_service.restore(txn.id)
-            counts["restored"] += 1
+        counts["restored"] = txn_service.restore_many([txn.id for txn in transactions])
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),

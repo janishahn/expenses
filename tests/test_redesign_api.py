@@ -172,6 +172,39 @@ def test_bulk_restore_brings_back_the_month_totals(
     assert api_client.get(march).json()["kpis"]["expenses"] == 3_500
 
 
+def test_bulk_apply_trash_and_restore_update_the_month_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    ids = [
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=cents,
+            title=f"April {cents}",
+            on=date(2026, 4, day),
+        )
+        for day, cents in ((5, 1_000), (15, 2_500), (25, 400))
+    ]
+    april = "/api/dashboard?period=custom&start=2026-04-01&end=2026-04-30"
+
+    def apply(lifecycle: str) -> dict:
+        response = api_client.post(
+            "/api/transactions/bulk/apply",
+            headers=csrf_headers,
+            json={
+                "selection": {"mode": "ids", "transaction_ids": ids},
+                "operation": {"lifecycle": lifecycle},
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["changes"]
+
+    assert apply("soft_delete")["deleted"] == 3
+    assert api_client.get(april).json()["kpis"]["expenses"] == 0
+    assert apply("restore")["restored"] == 3
+    assert api_client.get(april).json()["kpis"]["expenses"] == 3_900
+
+
 def test_bulk_category_undo_skips_a_transaction_changed_since(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
