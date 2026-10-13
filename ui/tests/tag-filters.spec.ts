@@ -30,23 +30,18 @@ test("keeps archived and hidden filter visibility independent", async ({
   expect(archiveResponse.ok()).toBeTruthy()
 
   await page.goto(`/transactions?period=all&tags=${hiddenId}`)
-  await expect(
-    page.getByRole("button", { name: `Remove Only: ${hiddenName}` }),
-  ).toBeVisible()
-  await page.getByRole("button", { name: /^Filters/ }).click()
-  let filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+  await expect(page.getByRole("button", { name: "Clear tag filter" })).toBeVisible()
+  await page.getByRole("button", { name: `Only: ${hiddenName}` }).click()
+  let filterPanel = page.getByRole("dialog", { name: "Tag filter" })
   await expect(filterPanel.getByRole("checkbox", { name: hiddenName })).toBeChecked()
-  await expect(
-    filterPanel.getByRole("checkbox", { name: new RegExp(archivedName) }),
-  ).toBeVisible()
-  await expect(filterPanel).toContainText("Archived")
+  await expect(filterPanel.getByRole("checkbox", { name: archivedName })).toBeVisible()
 
-  await filterPanel.getByRole("checkbox", { name: hiddenName }).uncheck()
-  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  await filterPanel.getByRole("checkbox", { name: hiddenName }).click()
   await expect(page).not.toHaveURL(new RegExp(`[?&]tags=${hiddenId}(?:&|$)`))
+  await page.keyboard.press("Escape")
 
-  await page.getByRole("button", { name: /^Filters/ }).click()
-  filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+  await page.getByRole("button", { name: "Tag", exact: true }).click()
+  filterPanel = page.getByRole("dialog", { name: "Tag filter" })
   await expect(filterPanel.getByText(hiddenName, { exact: true })).toHaveCount(0)
   await expect(filterPanel.getByText(archivedName, { exact: true })).toBeVisible()
 })
@@ -160,7 +155,7 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
     tagIds.push(((await response.json()) as { id: number }).id)
   }
 
-  const vacationID = await createTransaction(isolated.request, isolated.csrfToken, {
+  await createTransaction(isolated.request, isolated.csrfToken, {
     date: today,
     occurred_at: `${today}T10:00:00`,
     type: "expense",
@@ -169,7 +164,7 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
     title: `${marker} vacation`,
     tags: [vacationName],
   })
-  const projectID = await createTransaction(isolated.request, isolated.csrfToken, {
+  await createTransaction(isolated.request, isolated.csrfToken, {
     date: today,
     occurred_at: `${today}T11:00:00`,
     type: "expense",
@@ -178,7 +173,7 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
     title: `${marker} project`,
     tags: [projectName],
   })
-  const regularID = await createTransaction(isolated.request, isolated.csrfToken, {
+  await createTransaction(isolated.request, isolated.csrfToken, {
     date: today,
     occurred_at: `${today}T12:00:00`,
     type: "expense",
@@ -200,8 +195,8 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
   }).toEqual({ excluded: String(tagIds[1]), hasIncluded: false })
 
   await page.goto(`/transactions?period=this_month&q=${encodeURIComponent(marker)}`)
-  await page.getByRole("button", { name: "Filters", exact: true }).click()
-  let filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
+  await page.getByRole("button", { name: "Tag", exact: true }).click()
+  let filterPanel = page.getByRole("dialog", { name: "Tag filter" })
   for (const tagName of [vacationName, projectName]) {
     const checkbox = filterPanel.getByRole("checkbox", { name: tagName })
     await expect(checkbox).not.toBeChecked()
@@ -217,34 +212,35 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
       }),
     ).toBe(true)
   }
-  await filterPanel.getByRole("button", { name: "Exclude" }).click()
-  await expect(filterPanel.getByRole("button", { name: "Exclude" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  )
-  await filterPanel.getByRole("checkbox", { name: vacationName }).check()
-  await filterPanel.getByRole("checkbox", { name: projectName }).check()
-  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  await filterPanel.getByRole("radio", { name: "Exclude" }).click()
+  await expect(filterPanel.getByRole("radio", { name: "Exclude" })).toBeChecked()
+  await filterPanel.getByRole("checkbox", { name: vacationName }).click()
+  await filterPanel.getByRole("checkbox", { name: projectName }).click()
+  await expect(filterPanel.getByRole("checkbox", { name: vacationName })).toBeChecked()
+  await expect(filterPanel.getByRole("checkbox", { name: projectName })).toBeChecked()
   await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagIds[0]}%2C${tagIds[1]}`))
-  await expect(page.getByTestId(`transaction-row-${vacationID}`)).toHaveCount(0)
-  await expect(page.getByTestId(`transaction-row-${projectID}`)).toHaveCount(0)
-  await expect(page.getByTestId(`transaction-row-${regularID}`)).toBeVisible()
-  await expect(page.getByRole("button", { name: "Remove Excluding: 2 tags" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  const list = page.getByRole("list", { name: "Transactions" })
+  await expect(list.getByRole("listitem", { name: `${marker} vacation` })).toHaveCount(0)
+  await expect(list.getByRole("listitem", { name: `${marker} project` })).toHaveCount(0)
+  await expect(list.getByRole("listitem", { name: `${marker} regular` })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Excluding: 2 tags" })).toBeVisible()
   await page.getByRole("button", { name: "More actions" }).click()
-  await expect(page.getByRole("menuitem", { name: "Export CSV" })).toHaveAttribute(
-    "href",
+  const downloadPromise = page.waitForEvent("download")
+  await page.getByRole("menuitem", { name: "Export CSV" }).click()
+  expect((await downloadPromise).url()).toMatch(
     new RegExp(`exclude_tags=${tagIds[0]}%2C${tagIds[1]}`),
   )
-  await page.keyboard.press("Escape")
 
-  await page.getByRole("button", { name: /^Filters/ }).click()
-  filterPanel = page.getByRole("dialog", { name: "Filter transactions" })
-  await filterPanel.getByRole("button", { name: "Only include" }).click()
-  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  await page.getByRole("button", { name: "Excluding: 2 tags" }).click()
+  filterPanel = page.getByRole("dialog", { name: "Tag filter" })
+  await filterPanel.getByRole("radio", { name: "Only include" }).click()
   await expect(page).toHaveURL(new RegExp(`tags=${tagIds[0]}%2C${tagIds[1]}`))
-  await expect(page.getByTestId(`transaction-row-${vacationID}`)).toBeVisible()
-  await expect(page.getByTestId(`transaction-row-${projectID}`)).toBeVisible()
-  await expect(page.getByTestId(`transaction-row-${regularID}`)).toHaveCount(0)
+  await expect(page).not.toHaveURL(/exclude_tags=/)
+  await page.keyboard.press("Escape")
+  await expect(list.getByRole("listitem", { name: `${marker} vacation` })).toBeVisible()
+  await expect(list.getByRole("listitem", { name: `${marker} project` })).toBeVisible()
+  await expect(list.getByRole("listitem", { name: `${marker} regular` })).toHaveCount(0)
 
   await page.goto("/?period=this_month")
   const dashboardFilterTrigger = page.getByRole("button", {

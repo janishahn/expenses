@@ -37,10 +37,10 @@ test("mobile More sheet and controlled overlays preserve modal focus", async ({
     await addDialog.getByRole("button", { name: "Close" }).tap()
     await expect(addDialog).toBeHidden()
 
-    await page.getByRole("button", { name: /^Filters/ }).tap()
-    const filtersSheet = page.getByRole("dialog", { name: "Filter transactions" })
+    await page.getByRole("button", { name: /^Filter/ }).tap()
+    const filtersSheet = page.getByRole("dialog", { name: "Filter" })
     await expect(filtersSheet).toBeVisible()
-    await filtersSheet.getByRole("button", { name: "Close filters" }).tap()
+    await page.mouse.click(187, 40)
     await expect(filtersSheet).toBeHidden()
 
     await page.goto("/categories")
@@ -103,10 +103,10 @@ test("mobile More sheet and controlled overlays preserve modal focus", async ({
   await page.locator('[data-slot="dialog-overlay"]').waitFor({ state: "detached" })
   await page.waitForTimeout(500)
 
-  const filtersTrigger = page.getByRole("button", { name: /^Filters/ })
+  const filtersTrigger = page.getByRole("button", { name: /^Filter/ })
   await filtersTrigger.focus()
   await filtersTrigger.press("Enter")
-  const filtersSheet = page.getByRole("dialog", { name: "Filter transactions" })
+  const filtersSheet = page.getByRole("dialog", { name: "Filter" })
   await expect(filtersSheet).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(filtersSheet).toBeHidden()

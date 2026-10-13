@@ -60,10 +60,7 @@ async function seedFinancialHistory(request: APIRequestContext, suffix: string) 
 }
 
 async function openGlobalAdd(page: Page) {
-  await page
-    .getByTestId("app-shell-utility")
-    .getByRole("button", { name: "Add transaction", exact: true })
-    .click()
+  await page.getByRole("button", { name: "Add transaction", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Add transaction" })
   await expect(dialog).toBeVisible()
   return dialog
@@ -100,10 +97,8 @@ test.describe("Desktop state and preference audit evidence", () => {
       ).toHaveCount(0)
       await dialog.getByLabel("Amount").fill("12.34")
       await dialog.getByLabel("Title").fill("   ")
-      await dialog.locator("form").evaluate((form) => {
-        if (form instanceof HTMLFormElement) form.requestSubmit()
-      })
-      await expect(dialog.getByText("Title is required")).toBeVisible()
+      await dialog.getByRole("button", { name: "Add transaction" }).click()
+      await expect(dialog.getByText("Enter a title.")).toBeVisible()
       await captureAuditState(page, "desktop-chromium", theme, "global add validation error")
       await page.keyboard.press("Escape")
 
@@ -131,7 +126,7 @@ test.describe("Desktop state and preference audit evidence", () => {
       await dialog.getByLabel("Amount").fill("56.78")
       await dialog.getByLabel("Title").fill("Audit pending transaction")
       await dialog.getByRole("button", { name: "Add transaction" }).click()
-      await expect(dialog.getByRole("button", { name: "Saving..." })).toBeDisabled()
+      await expect(dialog.getByRole("button", { name: "Add transaction" })).toBeDisabled()
       await captureAuditState(page, "desktop-chromium", theme, "global add pending disabled")
       const requestError = dialog.getByText(/Audit amount must be positive/)
       await expect(requestError).toBeVisible()
@@ -146,7 +141,8 @@ test.describe("Desktop state and preference audit evidence", () => {
       await page.unroute("**/api/transactions")
 
       await page.goto(`/transactions/${transactionId}`)
-      await page.getByRole("button", { name: "Delete transaction" }).click()
+      await page.getByRole("button", { name: "More actions" }).click()
+      await page.getByRole("menuitem", { name: "Delete" }).click()
       await expect(page.getByRole("dialog", { name: "Delete this transaction?" })).toBeVisible()
       await captureAuditState(page, "desktop-chromium", theme, "transaction destructive confirmation")
       await page.getByRole("button", { name: "Cancel" }).click()
@@ -176,7 +172,7 @@ test.describe("Desktop state and preference audit evidence", () => {
       await captureAuditState(page, "desktop-chromium", theme, "transactions route error")
       recoverList = true
       await retryTransactions.click()
-      await expect(page.getByText(/matching transactions/i)).toBeVisible()
+      await expect(page.getByRole("list", { name: "Transactions" })).toBeVisible()
       await captureAuditState(page, "desktop-chromium", theme, "transactions route error recovered")
       await page.unroute(/\/api\/transactions(?:\?|$)/)
 
@@ -358,9 +354,7 @@ test.describe("Error recovery regressions", () => {
       })
     )
     await page.goto("/transactions/999999998")
-    await expect(
-      page.getByRole("heading", { name: "Unable to load transaction." })
-    ).toBeVisible()
+    await expect(page.getByRole("alert").filter({ hasText: "Unable to load transaction." })).toBeVisible()
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Back to transactions" })).toHaveCount(0)
     await captureAuditState(

@@ -36,7 +36,6 @@ test.describe("Page scope headers", () => {
   }) => {
     const pages = [
       { path: "/", title: "Dashboard", filters: true },
-      { path: "/transactions", title: "Transactions", filters: true },
       { path: "/insights", title: "Insights", filters: true },
       { path: "/categories", title: "Categories", filters: false },
       { path: "/tags", title: "Tags", filters: false },
@@ -69,22 +68,13 @@ test.describe("Page scope headers", () => {
     }
   })
 
-  test("stacks the transaction scope controls on constrained desktop widths", async ({
+  test("keeps the Transactions header within constrained desktop widths", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1024, height: 800 })
     await page.goto("/transactions")
-
-    const header = page.locator("[data-page-scope-header]")
-    const title = header.getByRole("heading", { name: "Transactions" })
-    const period = header.getByRole("group", { name: "Period" })
-    const [titleBox, periodBox] = await Promise.all([
-      title.boundingBox(),
-      period.boundingBox(),
-    ])
-    expect(titleBox).not.toBeNull()
-    expect(periodBox).not.toBeNull()
-    expect(periodBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height)
+    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Add transaction" })).toBeVisible()
 
     const layout = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,

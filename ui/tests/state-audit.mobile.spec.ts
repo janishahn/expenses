@@ -114,10 +114,8 @@ test.describe("Mobile state audit evidence", () => {
       ).toHaveCount(0)
       await dialog.getByLabel("Amount").fill("12.34")
       await dialog.getByLabel("Title").fill("   ")
-      await dialog.locator("form").evaluate((form) => {
-        if (form instanceof HTMLFormElement) form.requestSubmit()
-      })
-      const validationError = dialog.getByText("Title is required")
+      await dialog.getByRole("button", { name: "Add transaction" }).click()
+      const validationError = dialog.getByText("Enter a title.")
       await expect(validationError).toBeVisible()
       await validationError.scrollIntoViewIfNeeded()
       await captureAuditState(page, layout, theme, "global add validation error")
@@ -135,7 +133,7 @@ test.describe("Mobile state audit evidence", () => {
       await dialog.getByLabel("Amount").fill("56.78")
       await dialog.getByLabel("Title").fill("Audit mobile pending transaction")
       await dialog.getByRole("button", { name: "Add transaction" }).click()
-      await expect(dialog.getByRole("button", { name: "Saving..." })).toBeDisabled()
+      await expect(dialog.getByRole("button", { name: "Add transaction" })).toBeDisabled()
       await captureAuditState(page, layout, theme, "global add pending disabled")
       const requestError = dialog.getByText(/Audit mobile save unavailable/)
       await expect(requestError).toBeVisible()
@@ -151,7 +149,8 @@ test.describe("Mobile state audit evidence", () => {
       await page.unroute("**/api/transactions")
 
       await page.goto(`/transactions/${transactionId}`)
-      await page.getByRole("button", { name: "Delete transaction" }).click()
+      await page.getByRole("button", { name: "More actions" }).click()
+      await page.getByRole("menuitem", { name: "Delete" }).click()
       await expect(page.getByRole("dialog", { name: "Delete this transaction?" })).toBeVisible()
       await captureAuditState(page, layout, theme, "transaction destructive confirmation")
       await page.getByRole("button", { name: "Cancel" }).click()
@@ -203,7 +202,7 @@ test.describe("Mobile state audit evidence", () => {
       await captureAuditState(page, layout, theme, "transactions route error")
       recoverList = true
       await retryTransactions.click()
-      await expect(page.getByText(/matching transactions/i)).toBeVisible()
+      await expect(page.getByRole("list", { name: "Transactions" })).toBeVisible()
       await captureAuditState(page, layout, theme, "transactions route error recovered")
       await page.unroute(/\/api\/transactions(?:\?|$)/)
 
@@ -387,9 +386,7 @@ test("transaction detail server failure remains retryable on mobile", async ({
     })
   )
   await page.goto("/transactions/999999998")
-  await expect(
-    page.getByRole("heading", { name: "Unable to load transaction." })
-  ).toBeVisible()
+  await expect(page.getByRole("alert").filter({ hasText: "Unable to load transaction." })).toBeVisible()
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
   await expect(page.getByRole("link", { name: "Back to transactions" })).toHaveCount(0)
   await captureAuditState(page, layout, "light", "transaction detail server error")

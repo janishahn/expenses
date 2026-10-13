@@ -36,7 +36,7 @@ export function Sheet({
           <span className={s.sp} />
           {actions}
           {menu ? (
-            <Menu label="More" trigger={<IconButton icon={DotsThreeIcon} label="More" />}>
+            <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
               {menu}
             </Menu>
           ) : null}

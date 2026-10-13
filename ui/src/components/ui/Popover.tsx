@@ -13,6 +13,7 @@ export function Popover({
   open: controlledOpen,
   onOpenChange,
   children,
+  form = false,
   className,
 }: {
   trigger: ReactElement
@@ -22,6 +23,8 @@ export function Popover({
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: ReactNode | ((close: () => void) => ReactNode)
+  // Small editors (a date, a durable period) get form padding instead of list padding.
+  form?: boolean
   className?: string
 }) {
   const isDesktop = useIsDesktop()
@@ -34,7 +37,7 @@ export function Popover({
   const content = typeof children === "function" ? children(() => setOpen(false)) : children
   if (!isDesktop) {
     return (
-      <BottomSheet open={open} onOpenChange={setOpen} title={label} trigger={trigger}>
+      <BottomSheet open={open} onOpenChange={setOpen} title={label} trigger={trigger} form={form}>
         {content}
       </BottomSheet>
     )
@@ -48,11 +51,22 @@ export function Popover({
           sideOffset={4}
           collisionPadding={8}
           aria-label={label}
-          className={clsx(s.floatLayer, s.popover, className)}
+          className={clsx(s.floatLayer, s.popover, form && s.popoverForm, className)}
         >
           {content}
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
+  )
+}
+
+// The buttons that end a popover editor: `start` on the left (such as Stop tracking), the rest right-aligned.
+export function PopoverActions({ start, children }: { start?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={s.popoverActions}>
+      {start}
+      <span className={s.sp} />
+      {children}
+    </div>
   )
 }

@@ -23,7 +23,15 @@ export function Tooltip({
 }) {
   return (
     <TooltipPrimitive.Root>
-      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Trigger
+        asChild
+        onFocus={(event) => {
+          // Only keyboard focus opens the tooltip, not a dialog focusing its first button after a click.
+          if (!event.currentTarget.matches(":focus-visible")) event.preventDefault()
+        }}
+      >
+        {children}
+      </TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           side={side}

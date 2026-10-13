@@ -6,7 +6,6 @@ test.describe("Page scope headers (mobile)", () => {
   }) => {
     const pages = [
       { path: "/", title: "Dashboard", filters: true, quickPeriod: true },
-      { path: "/transactions", title: "Transactions", filters: true, quickPeriod: false },
       { path: "/insights", title: "Insights", filters: true, quickPeriod: true },
       { path: "/categories", title: "Categories", filters: false, quickPeriod: true },
       { path: "/tags", title: "Tags", filters: false, quickPeriod: true },
@@ -23,43 +22,19 @@ test.describe("Page scope headers (mobile)", () => {
       expect(titleBox).not.toBeNull()
 
       const filters = header.getByRole("button", { name: /^Filters/ })
-      let controlsY: number
-      let periodHeight: number | null = null
-      if (entry.quickPeriod) {
-        await expect(period).toBeVisible()
-        const periodBox = await period.boundingBox()
-        expect(periodBox).not.toBeNull()
-        expect(periodBox!.y).toBeGreaterThan(titleBox!.y)
-        controlsY = periodBox!.y
-        periodHeight = periodBox!.height
-      } else {
-        await expect(period).toHaveCount(0)
-        const moreActions = header.getByRole("button", { name: "More actions" })
-        await expect(moreActions).toBeVisible()
-        const moreActionsBox = await moreActions.boundingBox()
-        expect(moreActionsBox).not.toBeNull()
-        expect(
-          Math.abs(
-            titleBox!.y + titleBox!.height / 2
-              - (moreActionsBox!.y + moreActionsBox!.height / 2),
-          ),
-        ).toBeLessThan(4)
-        expect(moreActionsBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width)
-        const search = header.getByRole("button", { name: "Search transactions" })
-        const searchBox = await search.boundingBox()
-        expect(searchBox).not.toBeNull()
-        expect(searchBox!.y).toBeGreaterThan(titleBox!.y)
-        controlsY = searchBox!.y
-      }
+      await expect(period).toBeVisible()
+      const periodBox = await period.boundingBox()
+      expect(periodBox).not.toBeNull()
+      expect(periodBox!.y).toBeGreaterThan(titleBox!.y)
+      const controlsY = periodBox!.y
+      const periodHeight = periodBox!.height
 
       if (entry.filters) {
         await expect(filters).toBeVisible()
         const filterBox = await filters.boundingBox()
         expect(filterBox).not.toBeNull()
         expect(Math.abs(filterBox!.y - controlsY)).toBeLessThan(1)
-        if (periodHeight !== null) {
-          expect(Math.abs(filterBox!.height - periodHeight)).toBeLessThanOrEqual(1)
-        }
+        expect(Math.abs(filterBox!.height - periodHeight)).toBeLessThanOrEqual(1)
       } else {
         await expect(filters).toHaveCount(0)
       }
@@ -70,5 +45,27 @@ test.describe("Page scope headers (mobile)", () => {
       }))
       expect(layout.content).toBeLessThanOrEqual(layout.viewport)
     }
+  })
+
+  test("keeps the Transactions header actions on the title row without overflow", async ({
+    page,
+  }) => {
+    await page.goto("/transactions")
+    const title = page.getByRole("heading", { name: "Transactions", level: 1 })
+    const add = page.getByRole("button", { name: "Add transaction", exact: true })
+    await expect(title).toBeVisible()
+    await expect(add).toBeVisible()
+    const [titleBox, addBox] = await Promise.all([title.boundingBox(), add.boundingBox()])
+    expect(titleBox).not.toBeNull()
+    expect(addBox).not.toBeNull()
+    expect(
+      Math.abs(titleBox!.y + titleBox!.height / 2 - (addBox!.y + addBox!.height / 2)),
+    ).toBeLessThan(8)
+
+    const layout = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(layout.content).toBeLessThanOrEqual(layout.viewport)
   })
 })

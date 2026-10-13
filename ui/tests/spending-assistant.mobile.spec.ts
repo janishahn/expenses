@@ -69,9 +69,7 @@ test.describe("Spending Assistant (mobile)", () => {
 
     // The page action is route-specific: Add returns on other mobile pages.
     await page.goto("/transactions")
-    await expect(
-      page.getByTestId("app-shell-utility").getByRole("button", { name: "Add transaction" }),
-    ).toBeVisible()
+    await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toBeVisible()
   })
 
   test("streams an answer without horizontal overflow", async ({ page }) => {

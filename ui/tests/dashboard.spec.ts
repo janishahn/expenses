@@ -542,17 +542,11 @@ test.describe("Dashboard Page", () => {
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText("Manage")).toBeVisible()
 
-    const templateButton = dialog
-      .locator("button")
-      .filter({ hasText: /Coffee Template/ })
-      .first()
-    await templateButton.click()
+    await dialog.getByRole("button", { name: /Coffee Template/ }).click()
 
-    await expect(dialog.getByLabel("Amount")).toHaveValue("4.25")
+    await expect(dialog.getByLabel("Amount")).toHaveValue("4,25")
     await expect(dialog.getByLabel("Title")).toHaveValue("Template title")
-    await expect(
-      dialog.getByRole("button", { name: "Remove tag template" })
-    ).toBeVisible()
+    await expect(dialog.getByRole("button", { name: /^Tags / })).toContainText("template")
   })
 
   test("filters the add-sheet tag picker by search", async ({ page, request }) => {
@@ -573,12 +567,15 @@ test.describe("Dashboard Page", () => {
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
 
-    await expect(dialog.getByRole("button", { name: `Add tag ${alphaTag}` })).toBeVisible()
-    await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toBeVisible()
+    // A scheduled tag from another test may be preselected, which names the chip after it.
+    await dialog.getByRole("button", { name: /^Tags/ }).click()
+    const picker = page.getByRole("listbox", { name: "Tags" })
+    await expect(picker.getByRole("option", { name: alphaTag })).toBeVisible()
+    await expect(picker.getByRole("option", { name: betaTag })).toBeVisible()
 
-    await dialog.getByPlaceholder("Search tags").fill(alphaTag)
-    await expect(dialog.getByRole("button", { name: `Add tag ${alphaTag}` })).toBeVisible()
-    await expect(dialog.getByRole("button", { name: `Add tag ${betaTag}` })).toHaveCount(0)
+    await page.getByRole("combobox", { name: "Tags" }).fill(alphaTag)
+    await expect(picker.getByRole("option", { name: alphaTag })).toBeVisible()
+    await expect(picker.getByRole("option", { name: betaTag })).toHaveCount(0)
   })
 
   test("shows scheduled tags and saves a manual removal", async ({ page, request }) => {
@@ -598,12 +595,15 @@ test.describe("Dashboard Page", () => {
     await page.goto("/")
     await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
-    const scheduledChip = dialog.getByRole("button", {
-      name: `Remove tag ${tagName}`,
-    })
-    await expect(scheduledChip).toContainText("Auto")
-    await scheduledChip.click()
-    await expect(scheduledChip).toHaveCount(0)
+    const tagsChip = dialog.getByRole("button", { name: tagName })
+    await expect(tagsChip).toBeVisible()
+    await tagsChip.click()
+    const scheduledOption = page.getByRole("option", { name: tagName })
+    await expect(scheduledOption).toHaveAttribute("aria-selected", "true")
+    await scheduledOption.click()
+    await expect(scheduledOption).toHaveAttribute("aria-selected", "false")
+    await page.keyboard.press("Escape")
+    await expect(dialog.getByRole("button", { name: tagName })).toHaveCount(0)
 
     await dialog.getByLabel("Amount").fill("9.00")
     await dialog.getByLabel("Title").fill(`Scheduled removal ${Date.now()}`)
@@ -627,12 +627,7 @@ test.describe("Dashboard Page", () => {
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      `E2E Forecast Refresh ${Date.now()}`,
-    )
+    await ensureCategory(request, token, "expense", `E2E Forecast Refresh ${Date.now()}`)
     let forecastRequests = 0
     await page.route("**/api/forecast?*", async (route) => {
       forecastRequests += 1
@@ -645,7 +640,8 @@ test.describe("Dashboard Page", () => {
     await page.getByRole("button", { name: "Add transaction", exact: true }).first().click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await dialog.getByLabel("Amount").fill("12.34")
-    await dialog.getByLabel("Category").selectOption(String(categoryId))
+    await dialog.getByRole("button", { name: "Category", exact: true }).click()
+    await page.getByRole("listbox", { name: "Category" }).getByRole("option").nth(1).click()
     await dialog.getByLabel("Title").fill("Forecast refresh evidence")
     await dialog.getByRole("button", { name: "Add transaction" }).click()
 
@@ -700,9 +696,10 @@ test.describe("Dashboard Page", () => {
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
 
-    const categoryOptions = await dialog
-      .getByLabel("Category")
-      .locator("option")
+    await dialog.getByRole("button", { name: "Category", exact: true }).click()
+    const categoryOptions = await page
+      .getByRole("listbox", { name: "Category" })
+      .getByRole("option")
       .allTextContents()
     expect(categoryOptions).toContain(activeName)
     expect(categoryOptions).not.toContain(archivedName)
@@ -732,27 +729,23 @@ test.describe("Dashboard Page", () => {
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
 
-    await expect(dialog.getByLabel("When")).toBeVisible()
+    await expect(dialog.getByRole("button", { name: /^Date (Today|Yesterday|\w{3} \d)/ })).toBeVisible()
     await expect(dialog.getByLabel("Amount")).toBeVisible()
-    await expect(dialog.getByLabel("Category")).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Category", exact: true })).toBeVisible()
     await expect(dialog.getByLabel("Title")).toBeVisible()
-    await expect(dialog.getByText("Tags", { exact: true })).toBeVisible()
-    await expect(dialog.getByText("Templates", { exact: true })).toBeVisible()
-    await expect(dialog.getByText("This is a reimbursement")).toHaveCount(0)
+    await expect(dialog.getByRole("button", { name: /^Tags$|scheduled-/ })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: /Handoff Template/ })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Reimbursement" })).toHaveCount(0)
 
-    await dialog.getByText("Income", { exact: true }).click()
-    await expect(dialog.getByText("This is a reimbursement")).toBeVisible()
-    await dialog.getByText("Expense", { exact: true }).click()
-    await expect(dialog.getByText("This is a reimbursement")).toHaveCount(0)
+    await dialog.getByRole("radio", { name: "Income" }).click()
+    await expect(dialog.getByRole("button", { name: "Reimbursement" })).toBeVisible()
+    await dialog.getByRole("radio", { name: "Expense" }).click()
+    await expect(dialog.getByRole("button", { name: "Reimbursement" })).toHaveCount(0)
 
     await dialog.getByLabel("Amount").fill("12.34")
     await dialog.getByLabel("Title").fill("   ")
-    await dialog.locator("form").evaluate((form) => {
-      if (form instanceof HTMLFormElement) {
-        form.requestSubmit()
-      }
-    })
-    await expect(dialog.getByText("Title is required")).toBeVisible()
+    await dialog.getByRole("button", { name: "Add transaction" }).click()
+    await expect(dialog.getByText("Enter a title.")).toBeVisible()
 
     await dialog.getByRole("button", { name: "Manage", exact: true }).click()
     await expect(page).toHaveURL("/templates")
@@ -892,19 +885,15 @@ test.describe("Dashboard Page", () => {
       page.evaluate(() => document.documentElement.dataset.theme)
     ).resolves.toBe("light")
 
-    await page.locator(`a[href="/transactions/${transactionId}/edit"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}/edit$`))
-
     await page.goBack()
+    await expect(page).toHaveURL(dashboardUrl)
+
+    await rowLink.click()
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
-
-    await page.locator(`a[href="/transactions/${transactionId}/edit"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}/edit$`))
-
-    await page.locator(`a[href="/transactions/${transactionId}"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
-
-    await page.getByRole("link", { name: "← Back" }).click()
+    await page
+      .getByRole("navigation", { name: "Breadcrumb" })
+      .getByRole("link", { name: "Transactions" })
+      .click()
     await expect(page).toHaveURL(dashboardUrl)
     await expect(
       page.evaluate(() => document.documentElement.dataset.theme)

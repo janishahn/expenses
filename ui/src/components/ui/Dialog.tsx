@@ -42,6 +42,10 @@ export function Dialog({
   const isDesktop = useIsDesktop()
   useBottomLayer(open && !isDesktop)
   const { ref: dragRef, handleProps: dragHandleProps } = useSheetDrag(!isDesktop, () => onOpenChange(false))
+  // Dialogs open without a Radix trigger, so focus returns to whatever had it as the dialog opened.
+  // It is read while rendering the open state, before an autofocused field inside takes focus.
+  const [opener, setOpener] = useState(() => ({ open, element: open ? document.activeElement : null }))
+  if (opener.open !== open) setOpener({ open, element: open ? document.activeElement : opener.element })
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -50,7 +54,12 @@ export function Dialog({
           ref={dragRef}
           {...(warning ? {} : { "aria-describedby": undefined })}
           className={clsx(s.floatLayer, s.dialog, sizeClass[size])}
-          onCloseAutoFocus={onCloseAutoFocus}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event)
+            if (event.defaultPrevented) return
+            event.preventDefault()
+            if (opener.element instanceof HTMLElement) opener.element.focus()
+          }}
         >
           <div className={s.dgTop} {...dragHandleProps}>
             {header ?? <DialogPrimitive.Title className={s.dgTitle}>{title}</DialogPrimitive.Title>}

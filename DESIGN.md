@@ -458,7 +458,7 @@ changes and drop movement.
 `ChartCard`, `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
 `MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
 `BottomSheet`, `BulkBar`, `Peek`, `PropertyList`, `SettingsShell`,
-`ReceiptSection`, `ReceiptViewer`, `LocationMap`, `DayCalendar`, `Amount`,
+`Notes`, `ReceiptSection`, `ReceiptViewer`, `LocationMap`, `DayCalendar`, `Amount`,
 `CategoryGlyph`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a

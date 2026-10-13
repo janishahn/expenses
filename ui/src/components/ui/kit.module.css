@@ -194,12 +194,14 @@
 
 @media (hover: hover) and (pointer: fine) {
   .nav:hover, .brand:hover, .ib:hover, .btnGhost:hover, .btnDanger:hover, .btnPlain:hover,
-  .row[data-clickable]:hover, .rrow:hover, .navGroup:hover, .ed:hover, .legendItem:hover, .pillStep:hover, .mpGrid button:hover:not(:disabled) {
+  .row[data-clickable]:hover, .rrow:hover, .recLink:hover, .navGroup:hover, .ed:hover, .legendItem:hover, .pillStep:hover, .mpGrid button:hover:not(:disabled) {
     background: var(--hover);
   }
   .row:hover .cb { opacity: 1; }
   .legendItem:hover { color: var(--ink); }
   .row:hover .rowHover, .row:focus-within .rowHover { opacity: 1; }
+  .tag .tagRemove { display: inline-grid; opacity: 0; }
+  .tag:hover .tagRemove, .tag:focus-within .tagRemove { opacity: 1; }
 }
 
 /* Floating layers */
@@ -243,6 +245,8 @@
   padding: 4px; transform-origin: var(--radix-popover-content-transform-origin, top);
   max-height: var(--radix-popover-content-available-height, 70vh); overflow: auto;
 }
+.popoverForm { width: 300px; padding: 12px; display: grid; gap: 10px; }
+.popoverActions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .popover[data-state="open"] { animation: floatIn 160ms var(--ease-out); }
 .popover[data-state="closed"] { animation: floatOut 120ms var(--ease-out); }
 .tip {
@@ -279,11 +283,12 @@
 .dgTitle { margin: 0; padding-left: 4px; font-size: 13px; font-weight: 600; }
 .dgBody { padding: 8px 4px 16px; }
 .dgFoot {
-  position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; margin: 0 -12px; padding: 10px 12px;
+  position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 -12px; padding: 10px 12px;
   border-top: 1px solid var(--line-soft); background: var(--float);
 }
 .warn { margin: 0; padding: 4px 4px 14px; color: var(--ink-2); }
 .sheetMenu { padding: 2px 0 6px; }
+.sheetForm { display: grid; gap: 12px; padding: 4px 4px 16px; }
 .sheetMenu .mi { height: 44px; font-size: 14px; }
 .grabber { width: 36px; height: 4px; margin: 0 auto 8px; border-radius: 2px; background: var(--chip-edge); }
 
@@ -320,6 +325,8 @@
   box-shadow: var(--edge); container-type: inline-size;
 }
 .listStatic { flex: none; overflow: visible; }
+.listFlat { margin: 0 -8px; background: transparent; box-shadow: none; }
+.listFlat .row { padding: 0 8px; min-height: 32px; }
 .day {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   height: 28px; padding: 0 16px; background: var(--day); color: var(--ink-2); font-size: 12px; font-weight: 500;
@@ -365,7 +372,8 @@
   height: 18px; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--r-chip);
   background: var(--chip); box-shadow: 0 0 0 1px var(--chip-edge); color: var(--ink-2); font-size: 11.5px; white-space: nowrap; flex: none;
 }
-.tagRemove { display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink-3); cursor: pointer; }
+/* The ✕ appears on hover or keyboard focus; touch layouts remove tags through the picker. */
+.tagRemove { display: none; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink-3); cursor: pointer; }
 .tagRemove svg { width: 10px; height: 10px; }
 .more { color: var(--ink-3); font-size: 11.5px; }
 .flags { display: flex; justify-content: flex-end; gap: 6px; color: var(--ink-3); }
@@ -394,6 +402,8 @@
 }
 @keyframes bulkIn { from { opacity: 0; transform: translate(-50%, 8px); } }
 .bulkN { margin-right: 8px; font-weight: 500; }
+.btn.bulkN { margin-left: -8px; margin-right: 4px; color: var(--ink); }
+.btn.bulkN svg { width: 12px; height: 12px; color: var(--ink-3); }
 
 /* Peek, properties, full view */
 .split { flex: 1; min-height: 0; display: flex; gap: 8px; margin: 0 8px 8px; }
@@ -416,9 +426,17 @@
   position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 10px 16px;
   border-top: 1px solid var(--line-soft); background: var(--sheet);
 }
-.pkTitle { margin: 4px -6px 2px; padding: 2px 6px; border-radius: var(--r-ctl); font-size: 16px; font-weight: 600; line-height: 1.35; }
+.ed { cursor: pointer; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.inlineInput {
+  display: block; width: calc(100% + 6px); min-height: 0; border: 0; outline: 0; resize: vertical;
+  background: var(--sheet); box-shadow: inset 0 0 0 1px var(--focus); color: inherit; font: inherit;
+}
+.pkTitle {
+  display: block; width: calc(100% + 12px); margin: 4px -6px 2px; padding: 2px 6px; border-radius: var(--r-ctl);
+  font-size: 16px; font-weight: 600; line-height: 1.35;
+}
 .pkAmt {
-  width: fit-content; margin: 0 -6px 14px; padding: 0 6px; border-radius: var(--r-ctl);
+  display: block; width: fit-content; margin: 0 -6px 14px; padding: 0 6px; border-radius: var(--r-ctl);
   font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
 }
 .pkSub { margin: -12px 0 14px; color: var(--ink-2); }
@@ -432,16 +450,35 @@
   margin-left: -6px; padding: 0 6px; border-radius: var(--r-ctl);
 }
 .pvCell { min-width: 0; display: grid; }
-.ed { cursor: pointer; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.pv > svg { width: 14px; height: 14px; flex: none; }
+.pvStrong { font-weight: 600; }
+.recLink {
+  min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 6px; margin: 0 -6px; padding: 3px 6px;
+  border-radius: var(--r-ctl); color: inherit; text-decoration: none;
+}
+.recLink svg { width: 14px; height: 14px; flex: none; }
+.recLinkText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recLinkEnd { flex: none; font-variant-numeric: tabular-nums; }
 .pv.ed { width: calc(100% + 6px); }
 .notes.ed { display: block; width: calc(100% + 6px); }
-.inlineInput {
-  display: block; width: calc(100% + 6px); border: 0; outline: 0; resize: vertical;
-  background: var(--sheet); box-shadow: inset 0 0 0 1px var(--focus); color: inherit; font: inherit;
-}
 .pkTitle.inlineInput, .pkAmt.inlineInput { width: calc(100% + 12px); }
 .fullMain .pkTitle { font-size: 20px; }
 .notes { margin-left: -6px; padding: 4px 6px; border-radius: var(--r-ctl); line-height: 1.5; }
+.notesText { cursor: text; }
+.notesEditing { width: calc(100% + 6px); background: var(--sheet); box-shadow: inset 0 0 0 1px var(--focus); }
+.notesEditing :global(.ProseMirror) { min-height: 3em; outline: 0; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote { margin: 6px 0; }
+.md ul, .md ol { padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md li > p { margin: 0; }
+.md a { color: inherit; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 2px; }
+.md code { padding: 1px 4px; border-radius: 4px; background: var(--day); font-size: 0.92em; }
+.md pre { overflow-x: auto; padding: 8px; border-radius: var(--r-ctl); background: var(--day); }
+.md pre code { padding: 0; background: none; }
+.md blockquote { padding-left: 10px; color: var(--ink-2); box-shadow: inset 2px 0 0 var(--control-edge); }
+.md h1, .md h2, .md h3, .md h4 { margin: 10px 0 4px; font-size: 13.5px; font-weight: 600; }
 .full {
   flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 8px;
   margin: 0 8px 8px; align-items: start; align-content: start;
@@ -526,6 +563,7 @@
 }
 .viewer[data-state="open"] { animation: dialogIn 180ms var(--ease-out); }
 .vwBar { height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; font-size: 12.5px; white-space: nowrap; }
+.vwBar > svg { width: 16px; height: 16px; flex: none; }
 .vwName { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .vwDiv { width: 1px; height: 16px; margin: 0 4px; background: var(--chip-edge); }
 .vwStage { position: relative; flex: 1; min-height: 0; margin: 0 8px 8px; overflow: auto; border-radius: var(--r-ctl); background: var(--day); }
@@ -535,15 +573,17 @@
 
 /* Entry dialog */
 .dgAmt {
-  width: 100%; padding: 12px 6px 0; border: 0; outline: 0; background: transparent; color: var(--ink);
+  width: 100%; min-height: 0; padding: 12px 6px 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--ink);
   font: inherit; font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums;
 }
 .dgAmtIn { color: var(--income); }
-.dgName { width: 100%; padding: 2px 6px 12px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; }
+.dgName { width: 100%; min-height: 0; padding: 2px 6px 12px; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--ink); font: inherit; font-size: 15px; }
 .dgAmt::placeholder, .dgName::placeholder, .dgNotes::placeholder { color: var(--ink-3); }
+/* Borderless entry fields show only the caret, as the combobox query does. */
+.dgAmt:focus-visible, .dgName:focus-visible, .dgNotes:focus-visible, .comboQuery input:focus-visible { outline: 0; }
 .dgChips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
 .dgNotes {
-  width: 100%; min-height: 44px; padding: 6px; border: 0; outline: 0; resize: vertical; background: transparent;
+  width: 100%; min-height: 44px; padding: 6px; border: 0; outline: 0; box-shadow: none; resize: vertical; background: transparent;
   color: var(--ink); font: inherit; line-height: 1.5;
 }
 .dgPreview { padding: 0 6px 12px; color: var(--ink-2); }
@@ -604,8 +644,10 @@
   .dayLedger { padding-left: 46px; }
   .bulk { left: 8px; right: 8px; bottom: 8px; transform: none; justify-content: space-between; animation: none; }
   .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
-  .split { margin-bottom: 0; }
-  .peekOpen .splitMain { display: none; }
+  .split { position: relative; margin-bottom: 0; }
+  /* The peek covers the list, which stays laid out so Back returns to the same scroll position. */
+  .peekOpen .splitMain { visibility: hidden; }
+  .peekOpen .peek { position: absolute; inset: 0; }
   .peekOpen .split { margin-top: 8px; }
   .peekOpen > .bar, .peekOpen > .viewrow { display: none; }
   .peek { width: 100%; }
@@ -628,6 +670,26 @@
   .dialog[data-state="open"], .viewer[data-state="open"] { animation: sheetIn 240ms var(--ease-drawer); }
   .dialog[data-state="closed"] { animation: sheetOut 200ms var(--ease-drawer); }
   .dgFoot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  /* Compact controls keep their look and reach 44px touch targets through hit areas.
+     The view row is 44px tall because it scrolls sideways and clips anything beyond it. */
+  .viewrow { min-height: 44px; }
+  .tplRow { padding-bottom: 9px; }
+  .dgChips { row-gap: 18px; }
+  .btn::before { content: ""; position: absolute; inset: -8px 0; }
+  .btnSmall::before { inset: -11px 0; }
+  .ibSmall::before { inset: -11px; }
+  button.pill::before, .pillInner::before { content: ""; position: absolute; inset: -9px 0; }
+  .pillInner { position: relative; align-self: stretch; }
+  /* The ✕ box reaches the pill's edge; its hit area takes the 6px gap and part of the label. */
+  .pillX { position: relative; align-self: stretch; margin: 0 -8px 0 -5px; padding: 0 8px 0 7px; }
+  .pillX::before { content: ""; position: absolute; inset: -9px -6px -9px -11px; }
+  .props { row-gap: 0; }
+  .pl, .pv { min-height: 44px; }
+  .crumb a { position: relative; }
+  .crumb a::before { content: ""; position: absolute; inset: -13px -4px; }
+  /* The map clips its corner control, so the attribution link's hit area grows upward. */
+  .map :global(.leaflet-control-attribution a) { position: relative; }
+  .map :global(.leaflet-control-attribution a)::before { content: ""; position: absolute; inset: -32px -4px 0; }
 }
 @keyframes sheetIn { from { transform: translateY(100%); } }
 @keyframes sheetOut { to { transform: translateY(100%); } }

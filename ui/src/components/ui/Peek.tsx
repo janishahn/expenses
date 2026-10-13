@@ -31,6 +31,7 @@ export function Peek({
   title,
   onClose,
   fullViewTo,
+  fullViewState,
   menu,
   footer,
   children,
@@ -40,6 +41,8 @@ export function Peek({
   title: string
   onClose: () => void
   fullViewTo?: string
+  // Router state for the full view, such as where its breadcrumb returns to.
+  fullViewState?: unknown
   menu?: ReactNode
   footer?: ReactNode
   children: ReactNode
@@ -69,10 +72,15 @@ export function Peek({
         </button>
         <span className={s.sp} />
         {fullViewTo ? (
-          <IconButton icon={ArrowsOutSimpleIcon} label="Open full view" onClick={() => navigate(fullViewTo)} />
+          <IconButton
+            icon={ArrowsOutSimpleIcon}
+            label="Open full view"
+            onClick={() => navigate(fullViewTo, { state: fullViewState })}
+            className={s.hideMobile}
+          />
         ) : null}
         {menu ? (
-          <Menu label="More" trigger={<IconButton icon={DotsThreeIcon} label="More" />}>
+          <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
             {menu}
           </Menu>
         ) : null}

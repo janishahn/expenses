@@ -67,7 +67,9 @@ async function effectiveTargetMeasurement(
   await expect(locator).toBeVisible()
   return locator.evaluate((element, controlLabel) => {
     const rect = element.getBoundingClientRect()
-    const after = window.getComputedStyle(element, "::after")
+    const afterStyle = window.getComputedStyle(element, "::after")
+    const after =
+      afterStyle.content === "none" ? window.getComputedStyle(element, "::before") : afterStyle
     const number = (value: string) => {
       const parsed = Number.parseFloat(value)
       return Number.isFinite(parsed) ? parsed : 0
@@ -139,8 +141,8 @@ function expectEffectiveTouchTarget(control: EffectiveTargetMeasurement) {
     control.generatedTarget?.height ?? 0,
     control.enclosingLabel?.height ?? 0,
   )
-  expect(width, `${control.label} effective width`).toBeGreaterThanOrEqual(44)
-  expect(height, `${control.label} effective height`).toBeGreaterThanOrEqual(44)
+  expect.soft(width, `${control.label} effective width`).toBeGreaterThanOrEqual(44)
+  expect.soft(height, `${control.label} effective height`).toBeGreaterThanOrEqual(44)
 }
 
 async function useAuditTheme(page: Page) {
@@ -208,6 +210,7 @@ test.describe("Mobile interaction audit evidence", () => {
     expect(templateResponse.ok()).toBeTruthy()
 
     const controls: ControlMeasurement[] = []
+    const effectiveControls: EffectiveTargetMeasurement[] = []
     await page.goto("/transactions")
     controls.push(
       await measurement(
@@ -317,36 +320,38 @@ test.describe("Mobile interaction audit evidence", () => {
       moreActions: moreBox,
       actionsShareTitleRow: moreBox!.y < titleBox!.y + titleBox!.height,
     }
-    controls.push(await measurement("Transactions more actions", moreActions))
+    effectiveControls.push(
+      await effectiveTargetMeasurement("Transactions more actions", moreActions),
+    )
     await capture(page, "transactions-wrapped-heading-actions.png")
-    await page.getByRole("button", { name: /^Filters/ }).click()
-    controls.push(
-      await measurement(
-        "Transaction filter sheet close",
-        page.getByRole("button", { name: "Close filters" }),
+    effectiveControls.push(
+      await effectiveTargetMeasurement(
+        "Transactions Filter",
+        page.getByRole("button", { name: /^Filter/ }),
       ),
     )
-    await page.getByRole("button", { name: "Close filters" }).click()
-    const transactionRow = page.getByTestId(`transaction-row-${transactionId}`)
-    const transactionCheckbox = transactionRow.getByRole("checkbox", {
-      name: `Select transaction ${transactionId}`,
+    await moreActions.click()
+    await page.getByRole("menuitem", { name: "Select" }).click()
+    const transactionRowItem = page.getByRole("listitem", {
+      name: `Audit mobile transaction ${suffix}`,
     })
-    await transactionCheckbox.check()
-    const transactionCheckboxLabel = await transactionCheckbox
-      .locator("xpath=ancestor::label")
-      .boundingBox()
+    await transactionRowItem.click()
+    await expect(
+      transactionRowItem.getByRole("checkbox", { name: `Select Audit mobile transaction ${suffix}` }),
+    ).toBeChecked()
+    const transactionCheckboxLabel = await transactionRowItem.boundingBox()
     expect(
       transactionCheckboxLabel?.width,
-      "Transactions row checkbox label width",
+      "Transactions selectable row width",
     ).toBeGreaterThanOrEqual(44)
     expect(
       transactionCheckboxLabel?.height,
-      "Transactions row checkbox label height",
+      "Transactions selectable row height",
     ).toBeGreaterThanOrEqual(44)
-    controls.push(
-      await measurement(
+    effectiveControls.push(
+      await effectiveTargetMeasurement(
         "Transactions clear selection",
-        page.getByTestId("transactions-selection-controls").getByRole("button", {
+        page.getByRole("toolbar", { name: "Selected rows" }).getByRole("button", {
           name: "Clear selection",
         }),
       ),
@@ -358,18 +363,18 @@ test.describe("Mobile interaction audit evidence", () => {
       mimeType: "image/png",
       buffer: onePixelPng,
     })
-    await page.goto(`/transactions/${transactionId}/edit`)
-    controls.push(
-      await measurement(
-        "Transaction attachment download",
-        page.getByRole("button", { name: `Download ${attachmentName}` }),
+    await page.goto(`/transactions/${transactionId}`)
+    effectiveControls.push(
+      await effectiveTargetMeasurement(
+        "Transaction receipt actions",
+        page.getByRole("button", { name: "Receipt actions" }),
       ),
-      await measurement(
-        "Transaction attachment delete",
-        page.getByRole("button", { name: `Delete ${attachmentName}` }),
+      await effectiveTargetMeasurement(
+        "Transaction receipt preview",
+        page.getByRole("button", { name: `Open ${attachmentName}` }),
       ),
     )
-    await capture(page, "transaction-edit-attachment-actions.png", true)
+    await capture(page, "transaction-detail-receipt-actions.png", true)
 
     const categoriesResponse = await request.get("/api/categories?period=all")
     const categoriesPayload = (await categoriesResponse.json()) as {
@@ -424,12 +429,14 @@ test.describe("Mobile interaction audit evidence", () => {
     controls
       .filter((control) => control.label !== "Uncategorized row checkbox")
       .forEach(expectDirectTouchTarget)
+    effectiveControls.forEach(expectEffectiveTouchTarget)
     const inboxLabel = await inboxCheckbox.locator("xpath=ancestor::label").boundingBox()
     expect(inboxLabel?.width, "Uncategorized row checkbox label width").toBeGreaterThanOrEqual(44)
     expect(inboxLabel?.height, "Uncategorized row checkbox label height").toBeGreaterThanOrEqual(44)
     persist("compact-action-measurements", {
       viewport: page.viewportSize(),
       controls,
+      effectiveControls,
       transactionHeader,
       transactionCheckboxLabel,
       inboxCheckboxLabel: inboxLabel,
@@ -453,23 +460,11 @@ test.describe("Mobile interaction audit evidence", () => {
       `Audit target ${suffix}`,
     )
     const tagName = `Audit target tag ${suffix}`
-    const suggestionTagName = `Audit suggestion tag ${suffix}`
-    const secondSuggestionTagName = `Audit second suggestion tag ${suffix}`
     const tagResponse = await request.post("/api/tags", {
       headers: { "X-CSRF-Token": token },
       data: { name: tagName, is_hidden_from_budget: false },
     })
     expect(tagResponse.ok()).toBeTruthy()
-    const suggestionTagResponse = await request.post("/api/tags", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: suggestionTagName, is_hidden_from_budget: false },
-    })
-    expect(suggestionTagResponse.ok()).toBeTruthy()
-    const secondSuggestionTagResponse = await request.post("/api/tags", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: secondSuggestionTagName, is_hidden_from_budget: false },
-    })
-    expect(secondSuggestionTagResponse.ok()).toBeTruthy()
 
     const transactionId = await createTransaction(request, token, {
       date: new Date().toISOString().slice(0, 10),
@@ -515,60 +510,22 @@ test.describe("Mobile interaction audit evidence", () => {
     controls.push(
       await effectiveTargetMeasurement(
         "Active transaction type filter chip",
-        page.getByRole("button", { name: "Remove Type: expense" }),
+        page.getByRole("button", { name: "Clear type filter" }),
       ),
     )
     await capture(page, "active-filter-chip.png")
 
-    await page.goto(`/transactions/${transactionId}/edit`)
+    await page.goto(`/transactions/${transactionId}`)
     controls.push(
       await effectiveTargetMeasurement(
-        "Selected tag removal chip",
-        page.getByRole("button", { name: `Remove tag ${tagName}` }),
+        "Tag add button",
+        page.getByRole("button", { name: "Add tag" }),
       ),
       await effectiveTargetMeasurement(
-        "Tag suggestion add chip",
-        page.getByRole("button", { name: `Add tag ${suggestionTagName}` }),
-      ),
-      await effectiveTargetMeasurement(
-        "Second tag suggestion add chip",
-        page.getByRole("button", { name: `Add tag ${secondSuggestionTagName}` }),
-      ),
-      await effectiveTargetMeasurement(
-        "Transaction edit back button",
-        page.getByRole("link", { name: "Back", exact: true }),
+        "Transaction detail breadcrumb",
+        page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Transactions" }),
       ),
     )
-    const suggestionChipLayout = await Promise.all(
-      [suggestionTagName, secondSuggestionTagName].map((name) =>
-        page.getByRole("button", { name: `Add tag ${name}` }).evaluate((element) => {
-          const target = element.getBoundingClientRect()
-          const visual = element.firstElementChild?.getBoundingClientRect()
-          return {
-            target: {
-              left: target.left,
-              top: target.top,
-              right: target.right,
-              bottom: target.bottom,
-              width: target.width,
-              height: target.height,
-            },
-            visual: visual
-              ? { width: visual.width, height: visual.height }
-              : null,
-          }
-        }),
-      ),
-    )
-    const [firstSuggestion, secondSuggestion] = suggestionChipLayout
-    const suggestionsOverlap = !(
-      firstSuggestion.target.right <= secondSuggestion.target.left ||
-      secondSuggestion.target.right <= firstSuggestion.target.left ||
-      firstSuggestion.target.bottom <= secondSuggestion.target.top ||
-      secondSuggestion.target.bottom <= firstSuggestion.target.top
-    )
-    expect(suggestionsOverlap, "expanded suggestion-chip targets overlap").toBe(false)
-    expect(firstSuggestion.visual?.height, "compact suggestion visual height").toBeLessThan(44)
 
     await page.goto("/")
     controls.push(
@@ -648,8 +605,6 @@ test.describe("Mobile interaction audit evidence", () => {
     persist("mobile-effective-target-measurements", {
       viewport: page.viewportSize(),
       controls,
-      suggestionChipLayout,
-      suggestionsOverlap,
     })
     controls.forEach(expectEffectiveTouchTarget)
     await capture(page, "report-control-effective-targets.png", true)
@@ -740,28 +695,15 @@ test.describe("Mobile interaction audit evidence", () => {
       longitude: 13.404954,
     })
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(locationTitle)}`)
-    await page.getByRole("button", { name: /View location/ }).click()
-    const locationDialog = page.getByRole("dialog", { name: "Transaction location" })
+    await page.getByRole("listitem", { name: locationTitle }).click()
+    const locationMap = page.getByRole("group", { name: /^Map at / })
     controls.push(
       await effectiveTargetMeasurement(
-        "Transaction location dialog close",
-        locationDialog.getByRole("button", { name: "Close transaction location" }),
-      ),
-      await effectiveTargetMeasurement(
-        "Transaction location map zoom in",
-        locationDialog.locator(".leaflet-control-zoom-in"),
-      ),
-      await effectiveTargetMeasurement(
-        "Transaction location map zoom out",
-        locationDialog.locator(".leaflet-control-zoom-out"),
-      ),
-      await effectiveTargetMeasurement(
         "Transaction location map OpenStreetMap attribution",
-        locationDialog.getByRole("link", { name: "OpenStreetMap" }),
+        locationMap.getByRole("link", { name: "OpenStreetMap" }),
       ),
     )
-    await capture(page, "transaction-location-dialog-target.png")
-    await page.keyboard.press("Escape")
+    await capture(page, "transaction-location-map-target.png")
 
     await page.goto("/insights")
     await page.getByRole("tab", { name: "Net", exact: true }).click()
@@ -1009,7 +951,7 @@ test.describe("Mobile interaction audit evidence", () => {
     )
     expect(allocationResponse.ok()).toBeTruthy()
 
-    await page.goto(`/transactions/${reimbursementId}/edit`)
+    await page.goto(`/transactions/${reimbursementId}`)
     const removeAllocation = page.getByRole("button", { name: "Remove allocation" })
     const control = await effectiveTargetMeasurement(
       "Reimbursement allocation remove",

@@ -6,7 +6,7 @@ import { AppFrame } from "../components/ui/AppFrame"
 import { apiFetch } from "./api"
 import { useAuth } from "./auth"
 
-const AddTransactionSheet = lazy(() => import("./AddTransactionSheet"))
+const AddTransactionDialog = lazy(() => import("./AddTransactionDialog"))
 
 export type AppShellOutletContext = {
   openAddTransaction: () => void
@@ -26,11 +26,11 @@ function AppShell() {
   const navigate = useNavigate()
   const { user, llmEnabled, logout } = useAuth()
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
-  // Stays mounted after the first open so the dialog's exit animation can
-  // play; Radix only animates content that is still in the tree on close.
-  const [addTransactionMounted, setAddTransactionMounted] = useState(false)
+  // Each open mounts a fresh dialog under a new key; the dialog stays mounted after
+  // closing so its exit animation can play.
+  const [addTransactionKey, setAddTransactionKey] = useState(0)
   const openAddTransaction = () => {
-    setAddTransactionMounted(true)
+    setAddTransactionKey((key) => key + 1)
     setAddTransactionOpen(true)
   }
   const [utilityAction, setUtilityAction] = useState<AppShellUtilityAction | null>(null)
@@ -40,8 +40,9 @@ function AppShell() {
     queryFn: () => apiFetch<{ total: number }>("/api/transactions/uncategorized?period=all&limit=1"),
   })
 
-  const addTransactionAvailable =
-    location.pathname === "/" || location.pathname === "/transactions"
+  // Transactions has its own Add button in the header bar; the Dashboard keeps the
+  // legacy utility action until it moves to the kit.
+  const addTransactionAvailable = location.pathname === "/"
   const activeUtilityAction =
     utilityAction ??
     (addTransactionAvailable ? { label: "Add transaction", onClick: openAddTransaction } : null)
@@ -65,12 +66,9 @@ function AppShell() {
           utilityAction: activeUtilityAction,
         }}
       />
-      {addTransactionMounted ? (
+      {addTransactionKey > 0 ? (
         <Suspense fallback={null}>
-          <AddTransactionSheet
-            open={addTransactionOpen}
-            onClose={() => setAddTransactionOpen(false)}
-          />
+          <AddTransactionDialog key={addTransactionKey} open={addTransactionOpen} onClose={() => setAddTransactionOpen(false)} />
         </Suspense>
       ) : null}
     </AppFrame>

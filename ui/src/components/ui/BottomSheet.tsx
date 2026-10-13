@@ -12,6 +12,7 @@ export function BottomSheet({
   title,
   trigger,
   children,
+  form = false,
   onCloseAutoFocus,
 }: {
   open: boolean
@@ -19,6 +20,7 @@ export function BottomSheet({
   title: string
   trigger?: ReactElement
   children: ReactNode
+  form?: boolean
   onCloseAutoFocus?: (event: Event) => void
 }) {
   useBottomLayer(open)
@@ -38,7 +40,7 @@ export function BottomSheet({
             <div className={s.grabber} />
             <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
           </div>
-          <div className={s.sheetMenu}>{children}</div>
+          <div className={form ? s.sheetForm : s.sheetMenu}>{children}</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

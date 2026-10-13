@@ -57,7 +57,7 @@ test.describe("Route loading skeleton", () => {
     await expect(loader).toBeVisible()
     await expect(loader.getByRole("status")).toHaveText("Loading transactions…")
 
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
+    const row = page.getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
     await expect(loader).toHaveCount(0)
   })
@@ -98,7 +98,7 @@ test.describe("Route loading skeleton", () => {
 
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
 
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
+    const row = page.getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
     expect(await page.locator("html").getAttribute("data-route-loading-seen")).toBeNull()
   })

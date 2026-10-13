@@ -101,7 +101,7 @@ test.describe("Navigation (mobile)", () => {
     await expect(tabs).toBeVisible()
     await expect(tabs.getByRole("button", { name: "More" })).toBeFocused()
 
-    await page.getByRole("button", { name: "Search transactions" }).click()
+    await page.getByRole("button", { name: "Search", exact: true }).click()
     const search = page.getByRole("searchbox", { name: "Search transactions" })
     await expect(search).toBeFocused()
     await expect(tabs).toBeHidden()
@@ -113,7 +113,6 @@ test.describe("Navigation (mobile)", () => {
     test.setTimeout(90_000)
     const actionPages = [
       { path: "/", label: "Add transaction" },
-      { path: "/transactions", label: "Add transaction" },
       { path: "/budgets", label: "Add budget" },
       { path: "/recurring", label: "Add rule" },
       { path: "/templates", label: "Add template" },
@@ -128,6 +127,10 @@ test.describe("Navigation (mobile)", () => {
         page.getByTestId("app-shell-utility").getByRole("button"),
       ).toHaveAccessibleName(entry.label)
     }
+
+    await page.goto("/transactions")
+    await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toBeVisible()
+    await expect(page.getByTestId("app-shell-utility")).toHaveCount(0)
 
     for (const path of ["/insights", "/settings", "/reports/builder"]) {
       await page.goto(path)

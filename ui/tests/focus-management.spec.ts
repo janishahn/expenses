@@ -22,15 +22,11 @@ async function useTheme(page: Page, theme: "light" | "dark") {
 }
 
 test.describe("Focus management", () => {
-  test("search and controlled dialogs return focus to their openers", async ({
-    page,
-  }) => {
+  test("transaction search returns focus to its opener", async ({ page }) => {
     await useTheme(page, "light")
     await page.goto("/transactions")
 
-    const searchTrigger = page.getByRole("button", {
-      name: "Search transactions",
-    })
+    const searchTrigger = page.getByRole("button", { name: "Search", exact: true })
     await searchTrigger.focus()
     await searchTrigger.press("Enter")
     const searchInput = page.getByRole("searchbox", {
@@ -39,10 +35,13 @@ test.describe("Focus management", () => {
     await expect(searchInput).toBeFocused()
     await searchInput.press("Escape")
     await expect(searchTrigger).toBeFocused()
+  })
 
-    const addTrigger = page
-      .getByTestId("app-shell-utility")
-      .getByRole("button", { name: "Add transaction", exact: true })
+  test("controlled dialogs return focus to their openers", async ({ page }) => {
+    await useTheme(page, "light")
+    await page.goto("/transactions")
+
+    const addTrigger = page.getByRole("button", { name: "Add transaction", exact: true })
     await addTrigger.focus()
     await addTrigger.press("Enter")
     const addDialog = page.getByRole("dialog", { name: "Add transaction" })
@@ -50,7 +49,10 @@ test.describe("Focus management", () => {
     await page.keyboard.press("Escape")
     await expect(addDialog).toBeHidden()
     await expect(addTrigger).toBeFocused()
+  })
 
+  test("category dialog returns focus to its opener", async ({ page }) => {
+    await useTheme(page, "light")
     await page.goto("/categories")
     const categoryTrigger = page.getByRole("button", { name: "Add category" }).first()
     await categoryTrigger.focus()
@@ -114,6 +116,12 @@ test.describe("Focus management", () => {
       await page.mouse.click(320, 20)
       await expect(menu).toBeHidden()
       await expect(menuTrigger).toBeFocused()
+    })
+
+    test(`responsive add dialog returns focus to its opener in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 640, height: 400 })
+      await useTheme(page, theme)
+      await page.goto("/transactions")
 
       const addTrigger = page.getByRole("button", {
         name: "Add transaction",

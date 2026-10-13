@@ -44,6 +44,13 @@ export function Menu({
           sideOffset={4}
           collisionPadding={8}
           className={clsx(s.floatLayer, s.menu)}
+          // Radix can ignore Esc for a few hundred milliseconds after the menu opens on a busy page,
+          // so the focused menu closes itself. Stopping the event keeps an open peek open.
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return
+            event.stopPropagation()
+            setOpen(false)
+          }}
         >
           <MenuModeContext.Provider value={{ sheet: false, close: () => setOpen(false) }}>
             {children}

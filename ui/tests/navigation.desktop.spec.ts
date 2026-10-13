@@ -126,6 +126,8 @@ test.describe("Navigation", () => {
     await page.getByRole("button", { name: "Expenses", exact: true }).click()
     const menu = page.getByRole("menu")
     await expect(menu.getByRole("menuitem")).toHaveText(["Settings", "Admin", "Sign out"])
+    // Esc reaches the menu once it has focus.
+    await expect(menu).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(menu).toHaveCount(0)
   })
@@ -246,7 +248,7 @@ test.describe("Navigation", () => {
     await expect(page.getByRole("searchbox")).toHaveCount(0)
 
     await clickSidebarLink(page, "Transactions")
-    await page.getByRole("button", { name: "Search transactions" }).click()
+    await page.getByRole("button", { name: "Search", exact: true }).click()
     const search = page.getByRole("searchbox", { name: "Search transactions" })
     await search.fill("coffee beans")
     await expect(page).toHaveURL(/\/transactions\?period=last_month.*q=coffee/)

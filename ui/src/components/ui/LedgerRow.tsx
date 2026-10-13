@@ -11,19 +11,28 @@ import s from "./kit.module.css"
 // in-flow lists grow with their rows.
 export function List({
   children,
+  footer,
   scroll = true,
+  flat = false,
   hasSelection = false,
   label,
 }: {
   children: ReactNode
+  // Paging or an empty state below the rows; it stays outside the list role, which holds only rows and bands.
+  footer?: ReactNode
   scroll?: boolean
+  // Rows inside a card or peek: no surface of their own, since sheets never nest.
+  flat?: boolean
   // While any row is selected, every row shows its checkbox.
   hasSelection?: boolean
   label?: string
 }) {
   return (
-    <div role="list" aria-label={label} className={clsx(s.list, !scroll && s.listStatic, hasSelection && s.hasSel)}>
-      {children}
+    <div className={clsx(s.list, (!scroll || flat) && s.listStatic, flat && s.listFlat, hasSelection && s.hasSel)}>
+      <div role="list" aria-label={label}>
+        {children}
+      </div>
+      {footer}
     </div>
   )
 }
@@ -168,6 +177,7 @@ export function LedgerRow({
   amount,
   selected = false,
   checked = false,
+  selecting = false,
   onCheckedChange,
   onOpen,
 }: {
@@ -182,15 +192,16 @@ export function LedgerRow({
   amount: ReactNode
   selected?: boolean
   checked?: boolean
+  // Mobile selection mode: the checkbox takes the glyph's place and a tap toggles the row.
+  selecting?: boolean
   onCheckedChange: (checked: boolean) => void
   onOpen: () => void
 }) {
+  const checkbox = <Checkbox rowSelect checked={checked} onCheckedChange={onCheckedChange} label={`Select ${title}`} />
   return (
-    <Row {...LEDGER_COLUMNS} selected={selected || checked} onOpen={onOpen} label={title}>
-      <span className={s.hideMobile}>
-        <Checkbox rowSelect checked={checked} onCheckedChange={onCheckedChange} label={`Select ${title}`} />
-      </span>
-      {glyph}
+    <Row {...LEDGER_COLUMNS} selected={selected || checked} onOpen={selecting ? () => onCheckedChange(!checked) : onOpen} label={title}>
+      <span className={s.hideMobile}>{selecting ? null : checkbox}</span>
+      {selecting ? checkbox : glyph}
       <span className={s.title}>{title}</span>
       <Cell tone="muted" hide="mobile">
         {category}

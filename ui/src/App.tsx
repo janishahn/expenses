@@ -6,6 +6,7 @@ import {
   Routes,
   useLocation,
   useOutletContext,
+  useParams,
   useSearchParams,
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
@@ -40,7 +41,6 @@ const TagDetailPage = lazy(() => import("./pages/TagDetailPage"))
 const TagsPage = lazy(() => import("./pages/TagsPage"))
 const TemplatesPage = lazy(() => import("./pages/TemplatesPage"))
 const TransactionDetailPage = lazy(() => import("./pages/TransactionDetailPage"))
-const TransactionEditPage = lazy(() => import("./pages/TransactionEditPage"))
 const TransactionsPage = lazy(() => import("./pages/TransactionsPage"))
 const UncategorizedInboxPage = lazy(
   () => import("./pages/UncategorizedInboxPage")
@@ -205,6 +205,12 @@ function AdminRoute() {
   return <Outlet context={outletContext} />
 }
 
+// The edit page became inline editing in the full view; old links land there.
+function TransactionEditRedirect() {
+  const { transactionId } = useParams()
+  return <Navigate to={`/transactions/${transactionId}`} replace />
+}
+
 function AppRoutes() {
   const { llmEnabled } = useAuth()
   return (
@@ -215,13 +221,13 @@ function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
+          <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
+          <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
           <Route element={<LegacyLayout />}>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
             <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
-            <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
-            <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
             <Route
               path="/assistant"
               element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}

@@ -65,21 +65,16 @@ test.describe("Dashboard Page (mobile)", () => {
       height: window.visualViewport?.height ?? window.innerHeight,
       width: window.visualViewport?.width ?? window.innerWidth,
     }))
-    expect(
-      Math.abs(viewport.height / 2 - (dialogBounds.y + dialogBounds.height / 2))
-    ).toBeLessThan(24)
-    expect(
-      Math.abs(viewport.width / 2 - (dialogBounds.x + dialogBounds.width / 2))
-    ).toBeLessThan(24)
+    expect(viewport.height - (dialogBounds.y + dialogBounds.height)).toBeLessThanOrEqual(2)
+    expect(dialogBounds.width).toBeGreaterThanOrEqual(viewport.width - 2)
     expect(dialogBounds.y).toBeGreaterThanOrEqual(12)
-    expect(viewport.height - (dialogBounds.y + dialogBounds.height)).toBeGreaterThanOrEqual(12)
     await page.mouse.click(10, 10)
     await expect(dialog).toBeHidden()
   })
 
   test("quick adds a transaction from the mobile sheet", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Expense")
+    await ensureCategory(request, token, "expense", "E2E Expense")
     const tagName = `mobile-fab-${Date.now()}`
     const tagResponse = await request.post("/api/tags", {
       headers: { "X-CSRF-Token": token },
@@ -94,19 +89,19 @@ test.describe("Dashboard Page (mobile)", () => {
     await page.getByRole("button", { name: "Add transaction", exact: true }).click()
     const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByLabel("When")).toBeVisible()
 
     const title = `E2E Quick Add ${Date.now()}`
     await dialog.getByLabel("Amount").fill("12.34")
-    await dialog.getByLabel("Category").selectOption(String(categoryId))
+    await dialog.getByRole("button", { name: "Category", exact: true }).click()
+    await page.getByRole("option").nth(1).click()
     await dialog.getByLabel("Title").fill(title)
-    await dialog.getByLabel("Description").fill("Mobile description")
-    const scheduledChip = dialog.getByRole("button", {
-      name: `Remove tag ${tagName}`,
-    })
-    await expect(scheduledChip).toContainText("Auto")
-    await scheduledChip.click()
-    await expect(scheduledChip).toHaveCount(0)
+    await dialog.getByLabel("Notes").fill("Mobile description")
+    await dialog.getByRole("button", { name: tagName }).click()
+    const scheduledOption = page.getByRole("option", { name: tagName })
+    await expect(scheduledOption).toHaveAttribute("aria-selected", "true")
+    await scheduledOption.click()
+    await expect(scheduledOption).toHaveAttribute("aria-selected", "false")
+    await page.keyboard.press("Escape")
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/transactions") &&

@@ -36,6 +36,14 @@ export type TransactionTag = {
   name: string
 }
 
+export type TagOption = {
+  id: number
+  name: string
+  auto_attach_period: { start: string; end: string } | null
+}
+
+export type TagsResponse = { tags: TagOption[] }
+
 export type TransactionListItem = {
   id: number
   date: string
@@ -52,6 +60,25 @@ export type TransactionListItem = {
   longitude?: number | null
   tags: TransactionTag[]
   has_attachments?: boolean
+}
+
+export type TransactionsResponse = {
+  items: TransactionListItem[]
+  page: number
+  limit: number
+  has_more: boolean
+  total: number
+  period: { slug: string; start: string; end: string }
+  filters: {
+    type: string | null
+    category_id: number | null
+    tag_id: number | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
+    query: string | null
+  }
+  categories: CategorySummary[]
+  tags: TransactionTag[]
 }
 
 export type TransactionRouteState = {
@@ -74,13 +101,22 @@ export type ReceiptAttachment = {
   created_at: string
 }
 
+export type TransactionBankRow = {
+  id: number
+  account_label: string
+  booking_date: string
+}
+
 export type TransactionDetail = {
   id: number
   date: string
   occurred_at: string | null
   type: string
   amount_cents: number
-  category_id: number
+  net_amount_cents: number
+  reimbursed_total_cents: number
+  created_at: string
+  category_id: number | null
   category: CategorySummary | null
   title: string
   description: string | null
@@ -90,6 +126,7 @@ export type TransactionDetail = {
   tags: string[]
   durable_purchase: DurablePurchase | null
   attachments: ReceiptAttachment[]
+  bank_row: TransactionBankRow | null
 }
 
 export type ReimbursementTransactionSummary = {

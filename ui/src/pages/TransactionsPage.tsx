@@ -1,112 +1,58 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
-import { MapPinIcon } from "@phosphor-icons/react/MapPin"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowsDownUpIcon } from "@phosphor-icons/react/ArrowsDownUp"
+import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
+import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
+import { CheckSquareIcon } from "@phosphor-icons/react/CheckSquare"
+import { ChecksIcon } from "@phosphor-icons/react/Checks"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
+import { EraserIcon } from "@phosphor-icons/react/Eraser"
+import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
-import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
+import { MinusIcon } from "@phosphor-icons/react/Minus"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
+import { SwapIcon } from "@phosphor-icons/react/Swap"
+import { TagIcon } from "@phosphor-icons/react/Tag"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
-import { TrayIcon } from "@phosphor-icons/react/Tray"
 import { XIcon } from "@phosphor-icons/react/X"
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { useLocation, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import { formatCoordinate, formatCurrency, formatEuroDate } from "../app/format"
-import { mapTileAttribution, mapTileURL } from "../app/mapTiles"
-import { CategoryIcon } from "../components/CategoryIcon"
-import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
-import ActiveFilterChips from "../components/ActiveFilterChips"
+import type { TagsResponse, TransactionListItem, TransactionsResponse } from "../app/api-types"
+import type { AppShellOutletContext } from "../app/AppShell"
+import { dayLabel, dayNet, invalidateTransactionData } from "../app/transactions"
+import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
-import PageFilterBar from "../components/PageFilterBar"
-import PageFilterControl from "../components/PageFilterControl"
-import PageScopeHeader from "../components/PageScopeHeader"
-import PeriodPicker from "../components/PeriodPicker"
-import { FinancialPanel } from "../components/product/ProductSurfaces"
-import SegmentedControl from "../components/SegmentedControl"
-import TransactionDescription from "../components/TransactionDescription"
-import { AppButton } from "../components/legacy-ui/product-button"
-import { AppCard } from "../components/legacy-ui/product-card"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/legacy-ui/product-fields"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/legacy-ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/legacy-ui/dropdown-menu"
-import {
-  Sheet,
-  SheetContent,
-  SheetClose,
-  SheetHeader,
-  SheetTitle,
-} from "../components/legacy-ui/sheet"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  buildSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import { canonicalizeTagScope, serializeTagIds } from "../lib/tagFilters"
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png"
-import markerIcon from "leaflet/dist/images/marker-icon.png"
-import markerShadow from "leaflet/dist/images/marker-shadow.png"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import { TagPicker } from "../components/TagPicker"
+import { Amount } from "../components/ui/Amount"
+import { BulkBar } from "../components/ui/BulkBar"
+import { Button, IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { CheckboxField } from "../components/ui/Checkbox"
+import { DayBand } from "../components/ui/DayBand"
+import { Dialog } from "../components/ui/Dialog"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryChips } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { LedgerRow, List, ListFooter, NetPrefix } from "../components/ui/LedgerRow"
+import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { PeekLayout } from "../components/ui/Peek"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Pill } from "../components/ui/Pill"
+import { Popover } from "../components/ui/Popover"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { TagChip } from "../components/ui/TagChip"
+import { Field, FieldGrid, Select, TextField } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { buildSearchParams } from "../lib/searchParams"
+import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
+import { TransactionPeek } from "./TransactionRecord"
 
-type TransactionRow = {
-  id: number
-  date: string
-  occurred_at: string
-  type: string
-  amount_cents: number
-  net_amount_cents: number
-  reimbursed_total_cents: number
-  is_reimbursement: boolean
-  category: { id: number; name: string; type: string; icon: string | null } | null
-  title: string | null
-  description: string | null
-  latitude: number | null
-  longitude: number | null
-  tags: Array<{ id: number; name: string; archived_at?: string | null }>
-  has_attachments: boolean
-}
-
-type TransactionsResponse = {
-  items: TransactionRow[]
-  page: number
-  limit: number
-  has_more: boolean
-  period: { slug: string; start: string; end: string }
-  filters: {
-    type: string | null
-    category_id: number | null
-    tag_id: number | null
-    included_tag_ids: number[]
-    excluded_tag_ids: number[]
-    query: string | null
-  }
-  categories: Array<{ id: number; name: string; type: string; icon: string | null }>
-  tags: Array<{ id: number; name: string }>
-}
-
-type TransactionSummary = {
-  income_cents: number
-  expense_cents: number
-  net_cents: number
-  count: number
-}
+type TagMode = "include" | "exclude"
+type TypeFilter = "income" | "expense"
 
 type BulkOperation = {
   set_category_id: number | null
@@ -114,1502 +60,699 @@ type BulkOperation = {
   lifecycle: "none" | "soft_delete" | "restore"
 }
 
-type BulkPayload = {
-  selection:
-    | { mode: "ids"; transaction_ids: number[] }
-    | {
-        mode: "query"
-        query: {
-          period: string
-          start: string | null
-          end: string | null
-          type: "income" | "expense" | null
-          category: number | null
-          tag: number | null
-          tags: number[]
-          exclude_tags: number[]
-          q: string | null
-        }
-      }
-  operation: BulkOperation
-}
-
 type BulkResponse = {
   resolved_count: number
   eligible_count: number
   skipped_count: number
-  sample_ids?: number[]
-  changes: {
-    category_changed: number
-    tags_added: number
-    tags_removed: number
-    tags_replaced: number
-    deleted: number
-    restored: number
-  }
 }
 
-function parseTagInput(raw: string): string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const part of raw.split(",")) {
-    const clean = part.trim()
-    if (!clean) continue
-    const lower = clean.toLowerCase()
-    if (seen.has(lower)) continue
-    seen.add(lower)
-    out.push(clean)
-  }
-  return out
+// Every selected row, or every row matching the filters across pages.
+type Selection = { mode: "ids"; ids: number[] } | { mode: "query" }
+
+type TagPatchMode = "add" | "remove" | "replace"
+
+const LIST_KEYS = ["period", "start", "end", "type", "category", "tag", "tags", "exclude_tags", "q", "page"]
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+
+const TAG_PATCH_COPY: Record<TagPatchMode, { title: string; verb: string }> = {
+  add: { title: "Add tags", verb: "Add tags to" },
+  remove: { title: "Remove tags", verb: "Remove tags from" },
+  replace: { title: "Replace tags", verb: "Replace tags on" },
 }
 
-const transactionLocationMarkerIcon = L.icon({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  tooltipAnchor: [16, -28],
-  shadowSize: [41, 41],
-})
+function rowTitle(row: TransactionListItem): string {
+  return row.title || row.category?.name || "Untitled"
+}
 
-function TransactionLocationMap({
-  latitude,
-  longitude,
-  title,
+function countLabel(count: number): string {
+  return `${count} transaction${count === 1 ? "" : "s"}`
+}
+
+function TagFilterOptions({
+  tags,
+  mode,
+  ids,
+  onChange,
 }: {
-  latitude: number
-  longitude: number
-  title: string
+  tags: Array<{ id: number; name: string }>
+  mode: TagMode
+  ids: number[]
+  onChange: (mode: TagMode, ids: number[]) => void
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!containerRef.current) {
-      return
-    }
-
-    const map = L.map(containerRef.current, {
-      scrollWheelZoom: false,
-      zoomControl: true,
-    }).setView([latitude, longitude], 16)
-
-    if (mapTileURL) {
-      L.tileLayer(mapTileURL, {
-        maxZoom: 19,
-        attribution: mapTileAttribution,
-      }).addTo(map)
-    }
-
-    L.marker([latitude, longitude], {
-      title,
-      icon: transactionLocationMarkerIcon,
-    }).addTo(map)
-
-    const invalidateTimer = window.setTimeout(() => {
-      map.invalidateSize()
-    }, 0)
-
-    return () => {
-      window.clearTimeout(invalidateTimer)
-      map.remove()
-    }
-  }, [latitude, longitude, title])
-
   return (
-    <div
-      ref={containerRef}
-      data-testid="transaction-location-map"
-      className="expense-map h-full min-h-[18rem] w-full md:min-h-[28rem]"
-    />
-  )
-}
-
-function TransactionLocationDialog({
-  transaction,
-  onClose,
-}: {
-  transaction: TransactionRow
-  onClose: () => void
-}) {
-  if (transaction.latitude === null || transaction.longitude === null) {
-    return null
-  }
-
-  const isExpense = transaction.type === "expense"
-  const amount = isExpense ? transaction.net_amount_cents : transaction.amount_cents
-  const title = transaction.title || transaction.category?.name || "Untitled"
-
-  return (
-    <Dialog open onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent
-        aria-label="Transaction location"
-        className="max-h-[calc(100vh-1rem)] w-[calc(100%-1rem)] max-w-4xl p-4 md:max-h-[88vh] md:w-[calc(100%-2rem)]"
-      >
-        <DialogHeader>
-          <DialogTitle className="sr-only">Transaction location</DialogTitle>
-          <div className="min-w-0">
-            <h2 className="truncate font-head text-xl font-bold tracking-tight text-text">{title}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-              <span>{formatEuroDate(transaction.date)}</span>
-              <span aria-hidden="true">·</span>
-              <span>{transaction.category?.name ?? "Uncategorized"}</span>
-              <span aria-hidden="true">·</span>
-              <span
-                className={`font-mono font-semibold ${
-                  isExpense ? "text-semantic-red" : "text-semantic-green"
-                }`}
-              >
-                {isExpense ? "-" : "+"}
-                {formatCurrency(amount)} €
-              </span>
-            </div>
-          </div>
-          <DialogClose asChild>
-            <AppButton
-              tone="ghost"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border p-0 text-muted hover:border-border-hi hover:text-text"
-              aria-label="Close transaction location"
-            >
-              <XIcon className="h-4 w-4" />
-            </AppButton>
-          </DialogClose>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="overflow-hidden rounded-xl border border-border bg-surface-hi/55">
-            <TransactionLocationMap
-              latitude={transaction.latitude}
-              longitude={transaction.longitude}
-              title={title}
-            />
-          </div>
-          <p className="mt-3 font-mono text-xs text-muted">
-            {formatCoordinate(transaction.latitude)},{" "}
-            {formatCoordinate(transaction.longitude)}
-          </p>
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <AppButton type="button" onClick={onClose} tone="ghost">
-            Close
-          </AppButton>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <SegmentedControl
+        label="Tag filter mode"
+        fullWidth
+        value={mode}
+        options={[
+          { value: "include", label: "Only include" },
+          { value: "exclude", label: "Exclude" },
+        ]}
+        onChange={(next) => onChange(next, ids)}
+      />
+      {tags.map((tag) => (
+        <CheckboxField
+          key={tag.id}
+          checked={ids.includes(tag.id)}
+          onCheckedChange={(checked) =>
+            onChange(mode, checked ? [...ids, tag.id] : ids.filter((id) => id !== tag.id))
+          }
+        >
+          {tag.name}
+        </CheckboxField>
+      ))}
+    </>
   )
 }
 
 function TransactionsPage() {
+  const { openAddTransaction } = useOutletContext<AppShellOutletContext>()
   const queryClient = useQueryClient()
   const location = useLocation()
-  const navigate = useNavigate()
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
+  const peekId = Number(searchParams.get("peek")) || null
   const searchQuery = searchParams.get("q") ?? ""
-  const [draftPeriodSlug, setDraftPeriodSlug] = useState("all")
-  const [draftPeriodStart, setDraftPeriodStart] = useState("")
-  const [draftPeriodEnd, setDraftPeriodEnd] = useState("")
-  const [draftType, setDraftType] = useState("")
-  const [draftCategory, setDraftCategory] = useState("")
-  const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
-  const [draftTagIds, setDraftTagIds] = useState<number[]>([])
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
-  const [bulkSelectionMode, setBulkSelectionMode] = useState<"ids" | "query">("ids")
-  const [bulkCategoryId, setBulkCategoryId] = useState("")
-  const [bulkTagMode, setBulkTagMode] = useState<"none" | "add" | "remove" | "replace" | "clear">("none")
-  const [bulkTags, setBulkTags] = useState("")
-  const [bulkLifecycle, setBulkLifecycle] = useState<"none" | "soft_delete" | "restore">("none")
-  const [storedBulkPreview, setBulkPreview] = useState<BulkResponse | null>(null)
-  const [bulkPreviewScope, setBulkPreviewScope] = useState("")
-  const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const searchTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [tagPatch, setTagPatch] = useState<{ mode: TagPatchMode; tags: string[] } | null>(null)
+  const [bulkPending, setBulkPending] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
-  const searchContainerRef = useRef<HTMLDivElement | null>(null)
-  const [locationTransaction, setLocationTransaction] = useState<TransactionRow | null>(null)
-  const [isDesktop, setIsDesktop] = useState(() =>
-    window.matchMedia("(min-width: 861px)").matches
-  )
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  const returnTo = `${location.pathname}${location.search}`
+  // The server sees only the list's own parameters, never the open peek.
+  const listParams = useMemo(() => {
+    const params = new URLSearchParams()
+    for (const key of LIST_KEYS) {
+      const value = searchParams.get(key)
+      if (value) params.set(key, value)
+    }
+    const canonical = canonicalizeTagScope(params)
+    if (!canonical.get("period")) canonical.set("period", "all")
+    return canonical
+  }, [searchParams])
   const queryString = useMemo(() => {
-    const params = canonicalizeTagScope(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
-    }
-    if (!params.get("page")) {
-      params.set("page", "1")
-    }
+    const params = new URLSearchParams(listParams)
+    if (!params.get("page")) params.set("page", "1")
     return params.toString()
-  }, [searchParams])
-  const summaryQueryString = useMemo(() => {
-    const params = canonicalizeTagScope(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
-    }
-    params.delete("page")
-    params.delete("limit")
-    return params.toString()
-  }, [searchParams])
-  const bulkPreview =
-    bulkPreviewScope === queryString ? storedBulkPreview : null
+  }, [listParams])
 
   useEffect(() => {
-    const media = window.matchMedia("(min-width: 861px)")
-    const syncDesktop = () => setIsDesktop(media.matches)
-    syncDesktop()
-    media.addEventListener("change", syncDesktop)
-    return () => media.removeEventListener("change", syncDesktop)
-  }, [])
-
-  // Desktop keeps the bar open while a query is active (it shows the query inline).
-  // Mobile closes freely; the active-search chip below the toolbar carries the query.
-  const searchVisible = searchOpen || (isDesktop && Boolean(searchQuery))
-
-  useEffect(() => {
-    if (!searchVisible) return
-    const firstFocusFrame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => searchInputRef.current?.focus())
-    })
-    return () => cancelAnimationFrame(firstFocusFrame)
-  }, [searchVisible])
-
-  useEffect(() => {
-    if (
-      !searchParams.has("exclude_tags") ||
-      (!searchParams.has("tag") && !searchParams.has("tags"))
-    ) {
-      return
-    }
+    if (!searchParams.has("exclude_tags") || (!searchParams.has("tag") && !searchParams.has("tags"))) return
     setSearchParams(canonicalizeTagScope(searchParams), { replace: true })
   }, [searchParams, setSearchParams])
 
-  useEffect(() => {
-    if (!searchOpen) {
-      return
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const container = searchContainerRef.current
-      if (container && !container.contains(event.target as Node)) {
-        setSearchOpen(false)
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown)
-    return () => document.removeEventListener("pointerdown", handlePointerDown)
-  }, [searchOpen])
+  // A selection belongs to the filters and page it was made on; a change starts a new one.
+  const [selectionState, setSelectionState] = useState<{ query: string; selection: Selection }>({
+    query: queryString,
+    selection: { mode: "ids", ids: [] },
+  })
+  const selection: Selection = selectionState.query === queryString ? selectionState.selection : { mode: "ids", ids: [] }
+  const setSelection = (next: Selection) => setSelectionState({ query: queryString, selection: next })
+  // Mobile rows have no hover checkbox; Select in the ⋯ menu turns row taps into toggles.
+  const [selectMode, setSelectMode] = useState(false)
+  const selecting = selectMode && !isDesktop
+  // The URL holds no tag mode while no tag is chosen, so the chosen mode is kept here.
+  const [emptyTagMode, setEmptyTagMode] = useState<TagMode>("include")
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    isPlaceholderData: dataIsStale,
-    error,
-  } = useQuery({
+  const { data, isLoading, isFetching, isPlaceholderData, error } = useQuery({
     queryKey: ["transactions", queryString],
     queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${queryString}`),
   })
-  const {
-    data: summary,
-    isError: summaryUnavailable,
-    isFetching: summaryIsFetching,
-    isPlaceholderData: summaryIsStale,
-  } = useQuery({
-    queryKey: ["transactions", "summary", summaryQueryString],
-    queryFn: () =>
-      apiFetch<TransactionSummary>(
-        `/api/transactions/summary?${summaryQueryString}`,
-      ),
+  const { data: tagsData } = useQuery({
+    queryKey: ["tags", "all"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
   })
-  // Placeholder data is the previous filter's summary; query-wide bulk edits
-  // must only trust a count fetched for the current filters.
-  const settledSummary =
-    summaryIsStale || summaryIsFetching ? undefined : summary
-  const settledData = dataIsStale || isFetching ? undefined : data
+  // Query-wide bulk edits trust only a count fetched for the current filters.
+  const settled = isFetching || isPlaceholderData ? undefined : data
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiFetch(`/api/transactions/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-      queryClient.invalidateQueries({ queryKey: ["budgets"] })
-      queryClient.invalidateQueries({ queryKey: ["forecast"] })
-      queryClient.invalidateQueries({ queryKey: ["tag"] })
-    },
-  })
-
-  const bulkPreviewMutation = useMutation({
-    mutationFn: (payload: BulkPayload) =>
-      apiFetch<BulkResponse>("/api/transactions/bulk/preview", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (result) => {
-      setBulkPreview(result)
-      setBulkPreviewScope(queryString)
-    },
-  })
-
-  const bulkApplyMutation = useMutation({
-    mutationFn: (payload: BulkPayload) =>
-      apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (result) => {
-      setBulkPreview(result)
-      setBulkPreviewScope(queryString)
-      setSelectedIds([])
-      setBulkSelectionMode("ids")
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-      queryClient.invalidateQueries({ queryKey: ["budgets"] })
-      queryClient.invalidateQueries({ queryKey: ["forecast"] })
-      queryClient.invalidateQueries({ queryKey: ["tag"] })
-    },
-  })
-
-  const updateParam = (key: string, value: string | null) => {
-    setSearchParams(buildSearchParams(searchParams, { [key]: value, page: "1" }))
-  }
-
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(
-      buildPresetPeriodSearchParams(searchParams, value, { page: "1" })
-    )
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(
-      buildCustomPeriodSearchParams(searchParams, start, end, { page: "1" })
-    )
-
-  const setQuery = (value: string) => updateParam("q", value || null)
-
-  const setTagFilter = (mode: TagFilterMode, ids: number[]) => {
-    setSearchParams(
-      buildSearchParams(searchParams, {
-        tag: null,
-        tags: mode === "include" ? serializeTagIds(ids) : null,
-        exclude_tags: mode === "exclude" ? serializeTagIds(ids) : null,
-        page: "1",
-      })
-    )
-  }
-
-  const changePage = (nextPage: number) => {
-    setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
-  }
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus()
+  }, [searchOpen])
 
   if (isLoading) {
-    return <RouteLoading title="Transactions" label="Loading transactions…" />
+    return <PanelLoading title="Transactions" label="Loading transactions…" />
   }
   if (error || !data) {
-    return <RouteError title="Transactions" message="Unable to load transactions." />
+    return <PanelError title="Transactions" message="Unable to load transactions." />
   }
 
-  const { items, has_more, page, period, filters, categories, tags } = data
-  const categoriesById = new Map(categories.map((category) => [category.id, category]))
-  const categoryLabel = filters.category_id
-    ? categories.find((category) => category.id === filters.category_id)?.name
-    : null
-  const tagMode: TagFilterMode = filters.excluded_tag_ids.length ? "exclude" : "include"
-  const selectedTagIds =
-    tagMode === "exclude" ? filters.excluded_tag_ids : filters.included_tag_ids
-  const selectedTags = selectedTagIds.flatMap((id) => {
-    const tag = tags.find((item) => item.id === id)
-    return tag ? [tag] : []
-  })
-  const tagFilterLabel = selectedTagIds.length === 1 && selectedTags[0]
-    ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
-    : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
-  const activeFilters = [
-    filters.type
-      ? {
-          key: "type",
-          label: `Type: ${filters.type === "income" ? "Income" : "Expense"}`,
-          onRemove: () => updateParam("type", null),
-        }
-      : null,
-    categoryLabel
-      ? {
-          key: "category",
-          label: `Category: ${categoryLabel}`,
-          onRemove: () => updateParam("category", null),
-        }
-      : null,
-    selectedTagIds.length
-      ? {
-          key: "tags",
-          label: tagFilterLabel,
-          onRemove: () => setTagFilter(tagMode, []),
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    key: string
-    label: string
-    onRemove: () => void
-  }>
-  const mobilePeriodActive = !isDesktop && period.slug !== "all"
-  const mobilePeriodLabel = period.slug === "this_month"
-    ? "This month"
-    : period.slug === "last_month"
-      ? "Last month"
-      : "Custom period"
-  const visibleFilterChips = [
-    ...(mobilePeriodActive
-      ? [{ key: "period", label: mobilePeriodLabel, onRemove: () => setPresetPeriod("all") }]
-      : []),
-    ...activeFilters,
-    ...(!isDesktop && searchQuery
-      ? [{ key: "q", label: `Search: ${searchQuery}`, onRemove: () => setQuery("") }]
-      : []),
-  ]
-  const exportParams = new URLSearchParams(searchParams)
+  const { items, has_more, page, limit, total, categories, tags } = data
+  // Filters come from the URL, so controls show a change, and each tag tick builds on the last, before the list refetches.
+  const typeParam = listParams.get("type")
+  const typeFilter: TypeFilter | null = typeParam === "income" || typeParam === "expense" ? typeParam : null
+  const categoryId = Number(listParams.get("category")) || null
+  const categoryFilter = categoryId ? (categories.find((category) => category.id === categoryId) ?? null) : null
+  const includedTagIds = parseTagIds(listParams, ["tag", "tags"])
+  const excludedTagIds = parseTagIds(listParams, ["exclude_tags"])
+  const tagMode: TagMode = excludedTagIds.length ? "exclude" : includedTagIds.length ? "include" : emptyTagMode
+  const tagIds = tagMode === "exclude" ? excludedTagIds : includedTagIds
+  const filterCount = (typeFilter ? 1 : 0) + (categoryId ? 1 : 0) + (tagIds.length ? 1 : 0)
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const searchVisible = searchOpen || Boolean(searchQuery)
+
+  const updateList = (updates: Record<string, string | null>, replace = false) =>
+    setSearchParams(buildSearchParams(searchParams, { ...updates, page: "1" }), { replace })
+  const setTypeFilter = (value: TypeFilter | null) => updateList({ type: value })
+  const setCategoryFilter = (value: number | null) => updateList({ category: value ? String(value) : null })
+  const setTagFilter = (mode: TagMode, ids: number[]) => {
+    setEmptyTagMode(mode)
+    updateList({
+      tag: null,
+      tags: mode === "include" ? serializeTagIds(ids) : null,
+      exclude_tags: mode === "exclude" ? serializeTagIds(ids) : null,
+    })
+  }
+  const clearFilters = () =>
+    updateList({ type: null, category: null, tag: null, tags: null, exclude_tags: null, q: null })
+  const setPeriod = (next: PeriodSelection) => {
+    const params = writePeriodToSearch(searchParams, next)
+    params.set("page", "1")
+    setSearchParams(params)
+  }
+  const changePage = (nextPage: number) => setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
+
+  const openPeek = (id: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("peek", String(id))
+    setSearchParams(next, { replace: peekId !== null })
+  }
+  const closePeek = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete("peek")
+    setSearchParams(next, { replace: true })
+  }
+  // The full view's breadcrumb, and a delete there, return to the list without reopening the peek.
+  const listSearch = new URLSearchParams(searchParams)
+  listSearch.delete("peek")
+  const listHref = `${location.pathname}${listSearch.toString() ? `?${listSearch.toString()}` : ""}`
+  const peekLink = (id: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("peek", String(id))
+    return `${location.pathname}?${next.toString()}`
+  }
+
+  const exportParams = new URLSearchParams(listParams)
   exportParams.delete("page")
-  exportParams.delete("limit")
   const exportHref = `/api/transactions/export.csv?${exportParams.toString()}`
 
-  const openFilters = () => {
-    setDraftPeriodSlug(period.slug)
-    setDraftPeriodStart(period.start)
-    setDraftPeriodEnd(period.end)
-    setDraftType(filters.type ?? "")
-    setDraftCategory(filters.category_id ? String(filters.category_id) : "")
-    setDraftTagMode(tagMode)
-    setDraftTagIds(selectedTagIds)
+  // Selection
+  const selectionCount = selection.mode === "ids" ? selection.ids.length : total
+  const isChecked = (id: number) => selection.mode === "query" || selection.ids.includes(id)
+  const setChecked = (id: number, checked: boolean) => {
+    const current = selection.mode === "ids" ? selection.ids : items.map((row) => row.id)
+    setSelection({
+      mode: "ids",
+      ids: checked ? [...current.filter((value) => value !== id), id] : current.filter((value) => value !== id),
+    })
+  }
+  const clearSelection = () => {
+    setSelection({ mode: "ids", ids: [] })
+    setSelectMode(false)
   }
 
-  const clearFilterDraft = () => {
-    if (!isDesktop) {
-      setDraftPeriodSlug("all")
-      setDraftPeriodStart("")
-      setDraftPeriodEnd("")
+  const bulkPayload = (operation: BulkOperation) => {
+    if (selection.mode === "ids") {
+      return { selection: { mode: "ids", transaction_ids: selection.ids }, operation }
     }
-    setDraftType("")
-    setDraftCategory("")
-    setDraftTagIds([])
-  }
-
-  const clearSecondaryFilters = (clearSearch = false) => {
-    const params = new URLSearchParams(searchParams)
-    params.delete("type")
-    params.delete("category")
-    params.delete("tag")
-    params.delete("tags")
-    params.delete("exclude_tags")
-    if (!isDesktop) {
-      params.delete("period")
-      params.delete("start")
-      params.delete("end")
-    }
-    if (clearSearch) params.delete("q")
-    params.set("page", "1")
-    setSearchParams(params)
-  }
-
-  const applyFilters = () => {
-    const params = !isDesktop && draftPeriodSlug === "custom"
-      ? buildCustomPeriodSearchParams(
-          searchParams,
-          draftPeriodStart,
-          draftPeriodEnd,
-        )
-      : !isDesktop
-        ? buildPresetPeriodSearchParams(
-            searchParams,
-            draftPeriodSlug as PresetPeriod,
-          )
-        : new URLSearchParams(searchParams)
-    if (draftType) {
-      params.set("type", draftType)
-    } else {
-      params.delete("type")
-    }
-    if (draftCategory) {
-      params.set("category", draftCategory)
-    } else {
-      params.delete("category")
-    }
-    params.delete("tag")
-    params.delete("tags")
-    params.delete("exclude_tags")
-    const serializedTags = serializeTagIds(draftTagIds)
-    if (serializedTags) {
-      params.set(draftTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
-    }
-    params.set("page", "1")
-    setSearchParams(params)
-  }
-
-  const allPageSelected =
-    items.length > 0 && items.every((txn) => selectedIds.includes(txn.id))
-
-  const toggleSelected = (id: number) => {
-    const nextSelectedIds = selectedIds.includes(id)
-      ? selectedIds.filter((value) => value !== id)
-      : [...selectedIds, id]
-    setSelectedIds(nextSelectedIds)
-    setBulkPreview(null)
-    if (!nextSelectedIds.length) {
-      setBulkSelectionMode("ids")
-      setBulkActionsOpen(false)
-    }
-  }
-
-  const toggleSelectAllPage = () => {
-    setBulkPreview(null)
-    if (allPageSelected) {
-      const pageIds = new Set(items.map((txn) => txn.id))
-      const nextSelectedIds = selectedIds.filter((id) => !pageIds.has(id))
-      setSelectedIds(nextSelectedIds)
-      if (!nextSelectedIds.length) {
-        setBulkSelectionMode("ids")
-        setBulkActionsOpen(false)
-      }
-      return
-    }
-    const merged = new Set(selectedIds)
-    for (const item of items) {
-      merged.add(item.id)
-    }
-    setSelectedIds(Array.from(merged))
-  }
-
-  const shouldIgnoreRowNavigation = (
-    event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>
-  ) => {
-    if (!(event.target instanceof Element)) {
-      return false
-    }
-    const interactiveAncestor = event.target.closest(
-      "a, button, input, label, select, textarea, summary, [role='button'], [role='link']"
-    )
-    return interactiveAncestor !== null && interactiveAncestor !== event.currentTarget
-  }
-
-  const openTransactionDetail = (transactionId: number) => {
-    navigate(`/transactions/${transactionId}`, { state: { returnTo } })
-  }
-
-  const operationValid =
-    bulkLifecycle !== "none" ||
-    bulkCategoryId !== "" ||
-    bulkTagMode !== "none"
-  const bulkScopeCountReady =
-    bulkSelectionMode === "ids" ||
-    (settledSummary !== undefined && settledData !== undefined)
-
-  const buildBulkPayload = (): BulkPayload | null => {
-    if (!operationValid) {
-      return null
-    }
-
-    const operation: BulkOperation = {
-      set_category_id: bulkCategoryId ? Number(bulkCategoryId) : null,
-      tag_patch:
-        bulkTagMode === "none"
-          ? null
-          : {
-              mode: bulkTagMode,
-              tags: parseTagInput(bulkTags),
-            },
-      lifecycle: bulkLifecycle,
-    }
-
-    if (bulkLifecycle !== "none") {
-      operation.set_category_id = null
-      operation.tag_patch = null
-    }
-
-    if (bulkSelectionMode === "ids") {
-      if (!selectedIds.length) {
-        return null
-      }
-      return {
-        selection: {
-          mode: "ids",
-          transaction_ids: selectedIds,
-        },
-        operation,
-      }
-    }
-
-    if (!settledSummary || !settledData) {
-      return null
-    }
-
-    const settledFilters = settledData.filters
-    const settledTagMode: TagFilterMode = settledFilters.excluded_tag_ids.length
-      ? "exclude"
-      : "include"
-    const settledTagIds =
-      settledTagMode === "exclude"
-        ? settledFilters.excluded_tag_ids
-        : settledFilters.included_tag_ids
-
+    if (!settled) return null
+    const settledTagMode: TagMode = settled.filters.excluded_tag_ids.length ? "exclude" : "include"
     return {
       selection: {
         mode: "query",
         query: {
-          period: settledData.period.slug,
-          start:
-            settledData.period.slug === "custom" ? settledData.period.start : null,
-          end: settledData.period.slug === "custom" ? settledData.period.end : null,
-          type:
-            settledFilters.type === "income" || settledFilters.type === "expense"
-              ? settledFilters.type
-              : null,
-          category: settledFilters.category_id,
+          period: settled.period.slug,
+          start: settled.period.slug === "custom" ? settled.period.start : null,
+          end: settled.period.slug === "custom" ? settled.period.end : null,
+          type: settled.filters.type === "income" || settled.filters.type === "expense" ? settled.filters.type : null,
+          category: settled.filters.category_id,
           tag: null,
-          tags: settledTagMode === "include" ? settledTagIds : [],
-          exclude_tags: settledFilters.excluded_tag_ids,
-          q: settledFilters.query || null,
+          tags: settledTagMode === "include" ? settled.filters.included_tag_ids : [],
+          exclude_tags: settled.filters.excluded_tag_ids,
+          q: settled.filters.query || null,
         },
       },
       operation,
     }
   }
 
-  const runBulkPreview = () => {
-    const payload = buildBulkPayload()
-    if (!payload) {
-      setBulkPreview(null)
-      return
+  // Previews the change, confirms it with the affected count, then applies it.
+  const runBulk = async (operation: BulkOperation, verb: string, confirmLabel: string): Promise<boolean> => {
+    const payload = bulkPayload(operation)
+    if (!payload) return false
+    setBulkPending(true)
+    try {
+      const preview = await apiFetch<BulkResponse>("/api/transactions/bulk/preview", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      const confirmed = await confirmDialog({
+        title: `${verb} ${countLabel(preview.eligible_count)}?`,
+        description: preview.skipped_count ? `${countLabel(preview.skipped_count)} will be skipped.` : undefined,
+        tone: operation.lifecycle === "soft_delete" ? "danger" : "primary",
+        confirmLabel,
+      })
+      if (!confirmed) return false
+      const result = await apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      clearSelection()
+      invalidateTransactionData(queryClient)
+      void queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
+      showToast({
+        message:
+          operation.lifecycle === "soft_delete"
+            ? `Moved ${countLabel(result.eligible_count)} to Trash`
+            : `Updated ${countLabel(result.eligible_count)}`,
+      })
+      return true
+    } catch (failure) {
+      showToast({ message: getApiErrorMessage(failure, "Unable to apply the bulk change.") })
+      return false
+    } finally {
+      setBulkPending(false)
     }
-    bulkPreviewMutation.mutate(payload)
+  }
+  const bulkCategory = (categoryId: number | null) =>
+    void runBulk({ set_category_id: categoryId, tag_patch: null, lifecycle: "none" }, "Change the category of", "Apply")
+  const bulkClearTags = () =>
+    void runBulk({ set_category_id: null, tag_patch: { mode: "clear", tags: [] }, lifecycle: "none" }, "Clear tags on", "Clear tags")
+  const bulkDelete = () =>
+    void runBulk({ set_category_id: null, tag_patch: null, lifecycle: "soft_delete" }, "Delete", "Delete")
+  const applyTagPatch = async () => {
+    if (!tagPatch) return
+    const applied = await runBulk(
+      { set_category_id: null, tag_patch: { mode: tagPatch.mode, tags: tagPatch.tags }, lifecycle: "none" },
+      TAG_PATCH_COPY[tagPatch.mode].verb,
+      "Apply"
+    )
+    if (applied) setTagPatch(null)
   }
 
-  const runBulkApply = async () => {
-    const payload = buildBulkPayload()
-    if (!payload) {
-      return
-    }
-    const confirmed = await confirmDialog({
-      title: "Apply bulk changes to selected transactions?",
-      tone: "primary",
-      confirmLabel: "Apply",
-    })
-    if (!confirmed) {
-      return
-    }
-    bulkApplyMutation.mutate(payload)
+  // Rows by day. A band at a page edge may continue on the next or previous page, so it
+  // shows no net rather than a partial one.
+  const groups: Array<{ date: string; rows: TransactionListItem[] }> = []
+  for (const row of items) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === row.date) last.rows.push(row)
+    else groups.push({ date: row.date, rows: [row] })
+  }
+  const bandNet = (index: number): ReactNode => {
+    if ((index === 0 && page > 1) || (index === groups.length - 1 && has_more)) return null
+    return <Amount cents={dayNet(groups[index].rows)} kind="signed" />
   }
 
-  const dismissBulkPreview = () => {
-    setBulkPreview(null)
-    if (!selectedIds.length) {
-      setBulkActionsOpen(false)
-    }
-  }
+  const searchField = searchVisible ? (
+    <TextField
+      ref={searchInputRef}
+      type="search"
+      icon={MagnifyingGlassIcon}
+      aria-label="Search transactions"
+      placeholder="Search"
+      value={searchQuery}
+      onChange={(event) => updateList({ q: event.target.value || null }, true)}
+      onBlur={() => setSearchOpen(false)}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return
+        event.preventDefault()
+        if (searchQuery) {
+          // The first Esc clears; the field stays open for a second Esc, even when the query came from the URL.
+          setSearchOpen(true)
+          updateList({ q: null }, true)
+        } else {
+          setSearchOpen(false)
+          searchButtonRef.current?.focus()
+        }
+      }}
+    />
+  ) : null
 
-  const filterControl = (
-    <PageFilterControl
-      title="Filter transactions"
-      activeCount={activeFilters.length + (mobilePeriodActive ? 1 : 0)}
-      isDesktop={isDesktop}
-      onOpen={openFilters}
-      onClear={clearFilterDraft}
-      onApply={applyFilters}
-    >
-      {!isDesktop ? (
-        <div className="form-label">
-          <span>Date range</span>
-          <PeriodPicker
-            key={`${draftPeriodSlug}:${draftPeriodStart}:${draftPeriodEnd}`}
-            periodSlug={draftPeriodSlug}
-            start={draftPeriodStart}
-            end={draftPeriodEnd}
-            onSetPreset={(value) => {
-              setDraftPeriodSlug(value)
-              setDraftPeriodStart("")
-              setDraftPeriodEnd("")
-            }}
-            onApplyCustom={(start, end) => {
-              setDraftPeriodSlug("custom")
-              setDraftPeriodStart(start)
-              setDraftPeriodEnd(end)
-            }}
-          />
-        </div>
-      ) : null}
-      <AppFieldLabel>
-        <span>Transaction type</span>
-        <SegmentedControl
-          value={draftType}
-          ariaLabel="Transaction type"
-          equalWidth
-          items={[
-            { value: "", label: "All" },
-            { value: "income", label: "Income" },
-            { value: "expense", label: "Expense" },
-          ]}
-          onValueChange={setDraftType}
-        />
-      </AppFieldLabel>
-      <AppFieldLabel>
-        <span>Category</span>
-        <AppNativeSelect
-          value={draftCategory}
-          onChange={(event) => setDraftCategory(event.target.value)}
+  const typePill = (
+    <Menu
+      label="Type"
+      align="start"
+      trigger={
+        <Pill
+          icon={ArrowsDownUpIcon}
+          set={Boolean(typeFilter)}
+          onClear={typeFilter ? () => setTypeFilter(null) : undefined}
+          clearLabel="Clear type filter"
         >
-          <option value="">All categories</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name} ({category.type})
-            </option>
-          ))}
-        </AppNativeSelect>
-      </AppFieldLabel>
-      <TagFilterPicker
-        tags={tags}
-        mode={draftTagMode}
-        selectedIds={draftTagIds}
-        onModeChange={setDraftTagMode}
-        onChange={setDraftTagIds}
-      />
-    </PageFilterControl>
+          {typeFilter === "income" ? "Income" : typeFilter === "expense" ? "Expense" : "Type"}
+        </Pill>
+      }
+    >
+      <MenuItem checked={typeFilter === null} onSelect={() => setTypeFilter(null)}>
+        All types
+      </MenuItem>
+      <MenuItem checked={typeFilter === "expense"} onSelect={() => setTypeFilter("expense")}>
+        Expense
+      </MenuItem>
+      <MenuItem checked={typeFilter === "income"} onSelect={() => setTypeFilter("income")}>
+        Income
+      </MenuItem>
+    </Menu>
   )
-  const periodPicker = (
-    <PeriodPicker
-      periodSlug={period.slug}
-      start={period.start}
-      end={period.end}
-      onSetPreset={setPresetPeriod}
-      onApplyCustom={applyCustomPeriod}
+  const categoryPill = (
+    <CategoryPicker
+      grouped
+      label="Category filter"
+      categories={categories}
+      selectedId={categoryId}
+      onSelect={setCategoryFilter}
+      trigger={
+        <Pill
+          icon={categoryFilter ? undefined : ShapesIcon}
+          leading={
+            categoryFilter ? (
+              <CategoryGlyph categoryId={categoryFilter.id} icon={categoryFilter.icon} name={categoryFilter.name} />
+            ) : undefined
+          }
+          set={Boolean(categoryFilter)}
+          onClear={categoryFilter ? () => setCategoryFilter(null) : undefined}
+          clearLabel="Clear category filter"
+        >
+          {categoryFilter?.name ?? "Category"}
+        </Pill>
+      }
     />
   )
-  const searchControl = (
-    <div
-      ref={searchContainerRef}
-      data-open={searchVisible}
-      className="transaction-search"
-    >
-      <AppButton
-        ref={searchTriggerRef}
-        type="button"
-        onClick={() => {
-          if (!searchVisible) {
-            setSearchOpen(true)
-          } else if (isDesktop && searchQuery) {
-            searchInputRef.current?.focus()
-          } else {
-            setSearchOpen(false)
-          }
-        }}
-        tone="ghost"
-        className="transaction-search-trigger relative z-40 h-11 w-11 shrink-0 p-0 text-text"
-        aria-label="Search transactions"
-        aria-controls="transaction-search"
-        aria-expanded={searchVisible}
-      >
-        <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
-      </AppButton>
-      <div
-        id="transaction-search"
-        aria-hidden={!searchVisible}
-        className="transaction-search-field absolute z-30"
-      >
-        <div className="transaction-search-row">
-          <AppInput
-            ref={searchInputRef}
-            type="search"
-            aria-label="Search transactions"
-            disabled={!searchVisible}
-            value={searchQuery}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault()
-                if (searchQuery) {
-                  setQuery("")
-                } else {
-                  setSearchOpen(false)
-                  requestAnimationFrame(() => searchTriggerRef.current?.focus())
-                }
-              }
-            }}
-            placeholder="Search titles and descriptions…"
-            className="min-w-0 flex-1"
-          />
-          {searchQuery ? (
-            <AppButton
-              type="button"
-              onClick={() => {
-                setSearchOpen(true)
-                setQuery("")
-                searchInputRef.current?.focus()
-              }}
-              tone="ghost"
-              className="h-11 w-11 shrink-0 p-0 desk:h-9 desk:min-h-0 desk:w-9"
-              aria-label="Clear search"
-            >
-              <XIcon className="h-4 w-4" aria-hidden="true" />
-            </AppButton>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-  const secondaryActions = (
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        <AppButton
-          tone="ghost"
-          className="h-11 w-11 shrink-0 p-0 text-text"
-          aria-label="More actions"
+  const tagLabel =
+    tagIds.length === 1
+      ? `${tagMode === "include" ? "Only" : "Excluding"}: ${tags.find((tag) => tag.id === tagIds[0])?.name ?? "1 tag"}`
+      : `${tagMode === "include" ? "Only" : "Excluding"}: ${tagIds.length} tags`
+  const tagPill = (
+    <Popover
+      form
+      label="Tag filter"
+      trigger={
+        <Pill
+          icon={TagIcon}
+          set={tagIds.length > 0}
+          onClear={tagIds.length ? () => setTagFilter(tagMode, []) : undefined}
+          clearLabel="Clear tag filter"
         >
-          <DotsThreeIcon weight="bold" className="h-5 w-5" aria-hidden="true" />
-        </AppButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link to="/transactions/inbox">
-            <TrayIcon className="h-4 w-4" aria-hidden="true" />
-            Inbox
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/transactions/deleted">
-            <TrashIcon className="h-4 w-4" aria-hidden="true" />
-            Trash
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href={exportHref}>
-            <DownloadSimpleIcon className="h-4 w-4" aria-hidden="true" />
-            Export CSV
-          </a>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {tagIds.length ? tagLabel : "Tag"}
+        </Pill>
+      }
+    >
+      <TagFilterOptions tags={tags} mode={tagMode} ids={tagIds} onChange={setTagFilter} />
+    </Popover>
   )
+  const filterSheet = (
+    <Popover
+      form
+      label="Filter"
+      align="end"
+      trigger={
+        <Pill icon={FunnelIcon} set={filterCount > 0}>
+          {filterCount ? `Filter · ${filterCount}` : "Filter"}
+        </Pill>
+      }
+    >
+      <FieldGrid narrow>
+        <Field label="Type">
+          <SegmentedControl
+            label="Type"
+            fullWidth
+            value={typeFilter ?? "all"}
+            options={[
+              { value: "all", label: "All" },
+              { value: "expense", label: "Expense" },
+              { value: "income", label: "Income" },
+            ]}
+            onChange={(next) => setTypeFilter(next === "all" ? null : next)}
+          />
+        </Field>
+        <Field label="Category">
+          <Select
+            value={categoryId ?? ""}
+            onChange={(event) => setCategoryFilter(event.target.value ? Number(event.target.value) : null)}
+          >
+            <option value="">All categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
+      <TagFilterOptions tags={tags} mode={tagMode} ids={tagIds} onChange={setTagFilter} />
+    </Popover>
+  )
+
+  const first = (page - 1) * limit + 1
+  const tagOptions = (tagsData?.tags ?? []).map((tag) => tag.name)
 
   return (
-    <section className="min-w-0 space-y-3 md:space-y-4">
-      <PageScopeHeader
-        title="Transactions"
-        titleAccessory={
-          isDesktop
-            ? isFetching
-              ? <span className="loading-hint">Updating…</span>
-              : null
-            : secondaryActions
-        }
-        titleAccessoryAlign={isDesktop ? "inline" : "end"}
-        controlsTestId="transactions-control-zone"
-        controls={
-          isDesktop ? (
-            <div className="flex min-w-0 flex-wrap justify-end gap-2.5">
-              {searchControl}
-              <PageFilterBar
-                period={periodPicker}
-                filters={filterControl}
-                className="min-w-0 flex-none"
-              />
-              {secondaryActions}
-            </div>
-          ) : (
-            <div className="transaction-toolbar">
-              {searchControl}
-              <div className="transaction-toolbar-actions">{filterControl}</div>
-            </div>
-          )
-        }
-      />
-
-      <ActiveFilterChips
-        filters={visibleFilterChips}
-        onClear={() => clearSecondaryFilters(!isDesktop && Boolean(searchQuery))}
-      />
-
-      <FinancialPanel
-        role="ledger"
-        data-testid="transactions-register"
-        className="min-w-0"
-      >
-        <div
-          data-testid="transactions-selection-controls"
-          className="flex min-h-14 items-center gap-2 border-b border-border bg-faint/70 px-3 py-1.5 md:px-4"
-        >
-          <label className="-ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center">
-            <input
-              type="checkbox"
-              aria-label={allPageSelected ? "Unselect current page" : "Select current page"}
-              checked={allPageSelected}
-              disabled={!items.length}
-              onChange={toggleSelectAllPage}
-              className="control-check disabled:opacity-40"
-            />
-          </label>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted">
-            {selectedIds.length
-              ? `${selectedIds.length} selected`
-              : summary
-                ? `${summary.count} matching transactions`
-                : summaryUnavailable
-                  ? "Matching count unavailable"
-                  : "Counting matching transactions…"}
-          </span>
-
-          {selectedIds.length ? (
+    <Panel
+      title="Transactions"
+      peekOpen={peekId !== null}
+      layout="fill"
+      actions={
+        <>
+          <IconButton
+            icon={MagnifyingGlassIcon}
+            ref={searchButtonRef}
+            label="Search"
+            aria-expanded={searchVisible}
+            onClick={() => {
+              setSearchOpen(true)
+              searchInputRef.current?.focus()
+            }}
+          />
+          <Button variant="primary" icon={PlusIcon} aria-label="Add transaction" onClick={openAddTransaction}>
+            {isDesktop ? "Add transaction" : "Add"}
+          </Button>
+          <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+            {isDesktop ? null : (
+              <MenuItem icon={CheckSquareIcon} onSelect={() => setSelectMode(true)}>
+                Select
+              </MenuItem>
+            )}
+            <MenuLink to="/transactions/deleted" icon={TrashIcon}>
+              Trash
+            </MenuLink>
+            <MenuItem icon={DownloadSimpleIcon} onSelect={() => window.location.assign(exportHref)}>
+              Export CSV
+            </MenuItem>
+          </Menu>
+        </>
+      }
+      viewRow={
+        <ViewRow end={isDesktop ? null : filterSheet}>
+          {searchField}
+          <PeriodControl value={period} onChange={setPeriod} />
+          {isDesktop ? (
             <>
-              <div className="hidden flex-wrap items-center gap-2 text-xs desk:flex">
-                <SegmentedControl
-                  value={bulkSelectionMode}
-                  ariaLabel="Bulk edit scope"
-                  className="[&_.segmented-control-button]:min-h-9 [&_.segmented-control-button]:px-3"
-                  items={[
-                    { value: "ids", label: "Selected only" },
-                    {
-                      value: "query",
-                      label: bulkScopeCountReady && settledSummary
-                        ? `All ${settledSummary.count} filtered`
-                        : "Counting filtered…",
-                      disabled: !bulkScopeCountReady,
-                    },
-                  ]}
-                  onValueChange={(value) => {
-                    setBulkSelectionMode(value)
-                    setBulkPreview(null)
-                  }}
-                />
-                <AppButton
-                  type="button"
-                  onClick={() => setBulkActionsOpen((prev) => !prev)}
-                  tone="primary"
-                  aria-expanded={bulkActionsOpen}
-                >
-                  Bulk edit
-                </AppButton>
-                <AppButton
-                  type="button"
-                  onClick={() => {
-                    setSelectedIds([])
-                    setBulkSelectionMode("ids")
-                    setBulkPreview(null)
-                    setBulkActionsOpen(false)
-                  }}
-                  tone="ghost"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full p-0 text-muted"
-                  aria-label="Clear selection"
-                >
-                  <XIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5 desk:hidden">
-                <AppButton
-                  type="button"
-                  onClick={() => setBulkActionsOpen(true)}
-                  tone="primary"
-                >
-                  Bulk edit
-                </AppButton>
-                <AppButton
-                  type="button"
-                  onClick={() => {
-                    setSelectedIds([])
-                    setBulkSelectionMode("ids")
-                    setBulkPreview(null)
-                    setBulkActionsOpen(false)
-                  }}
-                  tone="ghost"
-                  className="h-11 w-11 p-0"
-                  aria-label="Clear selection"
-                >
-                  <XIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-              </div>
+              {typePill}
+              {categoryPill}
+              {tagPill}
+              {filterCount || searchQuery ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear
+                </Button>
+              ) : null}
             </>
           ) : (
-            <span className="shrink-0 text-xs text-muted">Page {page}</span>
+            <>
+              {typeFilter ? typePill : null}
+              {categoryFilter ? categoryPill : null}
+              {tagIds.length ? tagPill : null}
+            </>
           )}
-        </div>
-
-        {bulkActionsOpen && (selectedIds.length > 0 || bulkPreview !== null) && (
-          <div className="hidden border-b border-border p-4 desk:block">
-          {selectedIds.length > 0 && (
-          <>
-          <div className="grid gap-3 desk:grid-cols-4">
-            <AppFieldLabel>
-              <span>Lifecycle</span>
-              <AppNativeSelect
-                value={bulkLifecycle}
-                onChange={(event) => {
-                  setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")
-                  setBulkPreview(null)
-                }}
-              >
-                <option value="none">None</option>
-                <option value="soft_delete">Soft delete</option>
-                <option value="restore">Restore</option>
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <AppFieldLabel>
-              <span>Set category</span>
-              <AppNativeSelect
-                value={bulkCategoryId}
-                disabled={bulkLifecycle !== "none"}
-                onChange={(event) => {
-                  setBulkCategoryId(event.target.value)
-                  setBulkPreview(null)
-                }}
-              >
-                <option value="">No change</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name} ({category.type})
-                  </option>
-                ))}
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <AppFieldLabel>
-              <span>Tag patch</span>
-              <AppNativeSelect
-                value={bulkTagMode}
-                disabled={bulkLifecycle !== "none"}
-                onChange={(event) => {
-                  setBulkTagMode(
-                    event.target.value as "none" | "add" | "remove" | "replace" | "clear"
-                  )
-                  setBulkPreview(null)
-                }}
-              >
-                <option value="none">No change</option>
-                <option value="add">Add tags</option>
-                <option value="remove">Remove tags</option>
-                <option value="replace">Replace tags</option>
-                <option value="clear">Clear tags</option>
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <AppFieldLabel>
-              <span>Tags (comma)</span>
-              <AppInput
-                type="text"
-                value={bulkTags}
-                disabled={bulkLifecycle !== "none" || bulkTagMode === "none" || bulkTagMode === "clear"}
-                onChange={(event) => {
-                  setBulkTags(event.target.value)
-                  setBulkPreview(null)
-                }}
-              />
-            </AppFieldLabel>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <AppButton
-              type="button"
-              onClick={runBulkPreview}
-              disabled={
-                bulkPreviewMutation.isPending ||
-                !operationValid ||
-                !bulkScopeCountReady
-              }
-              tone="ghost"
-            >
-              {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
-            </AppButton>
-            <AppButton
-              type="button"
-              onClick={runBulkApply}
-              disabled={
-                bulkApplyMutation.isPending ||
-                !operationValid ||
-                !bulkScopeCountReady
-              }
-            >
-              {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
-            </AppButton>
-            {(bulkPreviewMutation.error || bulkApplyMutation.error) && (
-              <span className="text-xs text-semantic-red">
-                {getApiErrorMessage(
-                  bulkPreviewMutation.error || bulkApplyMutation.error,
-                  "Unable to apply the bulk change.",
-                )}
-              </span>
-            )}
-          </div>
-          </>
-          )}
-          {bulkPreview && (
-            <div
-              className={`${selectedIds.length ? "mt-3 " : ""}rounded-lg border border-border bg-surface-hi/55 p-3 text-xs text-muted`}
-            >
-              <p>
-                Resolved {bulkPreview.resolved_count}, skipped {bulkPreview.skipped_count}
-              </p>
-              <p>
-                Category {bulkPreview.changes.category_changed}, tags +
-                {bulkPreview.changes.tags_added}/-{bulkPreview.changes.tags_removed}, replaced{" "}
-                {bulkPreview.changes.tags_replaced}
-              </p>
-              <p>
-                Deleted {bulkPreview.changes.deleted}, restored {bulkPreview.changes.restored}
-              </p>
-              <AppButton
-                type="button"
-                tone="inline"
-                className="mt-2"
-                onClick={dismissBulkPreview}
-              >
-                Dismiss
-              </AppButton>
-            </div>
-          )}
-          </div>
-        )}
-
-        {bulkActionsOpen && (selectedIds.length > 0 || bulkPreview !== null) && !isDesktop ? (
-        <Sheet open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
-          <SheetContent aria-label="Bulk edit" side="bottom" className="max-h-[88vh]">
-            <SheetHeader>
-              <SheetTitle className="text-sm">Bulk edit</SheetTitle>
-              <SheetClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border p-0 text-muted hover:border-border-hi hover:text-text"
-                  aria-label="Close bulk edit"
-                >
-                  <XIcon className="h-4 w-4" />
-                </AppButton>
-              </SheetClose>
-            </SheetHeader>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
-              {selectedIds.length > 0 && (
-              <>
-              <AppFieldLabel>
-                <span>Apply to</span>
-                <SegmentedControl
-                  value={bulkSelectionMode}
-                  ariaLabel="Bulk edit scope"
-                  equalWidth
-                  items={[
-                    { value: "ids", label: `${selectedIds.length} selected` },
-                    {
-                      value: "query",
-                      label: settledSummary
-                        ? `All ${settledSummary.count} matching`
-                        : summaryUnavailable
-                          ? "Count unavailable"
-                          : "Counting matching…",
-                      disabled: !settledSummary,
-                    },
-                  ]}
-                  onValueChange={(value) => {
-                    setBulkSelectionMode(value as "ids" | "query")
-                    setBulkPreview(null)
-                  }}
-                />
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Lifecycle</span>
-                <AppNativeSelect
-                  value={bulkLifecycle}
-                  onChange={(event) => {
-                    setBulkLifecycle(event.target.value as "none" | "soft_delete" | "restore")
-                    setBulkPreview(null)
-                  }}
-                >
-                  <option value="none">None</option>
-                  <option value="soft_delete">Soft delete</option>
-                  <option value="restore">Restore</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Set category</span>
-                <AppNativeSelect
-                  value={bulkCategoryId}
-                  disabled={bulkLifecycle !== "none"}
-                  onChange={(event) => {
-                    setBulkCategoryId(event.target.value)
-                    setBulkPreview(null)
-                  }}
-                >
-                  <option value="">No change</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.type})
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Tag patch</span>
-                <AppNativeSelect
-                  value={bulkTagMode}
-                  disabled={bulkLifecycle !== "none"}
-                  onChange={(event) => {
-                    setBulkTagMode(
-                      event.target.value as "none" | "add" | "remove" | "replace" | "clear"
+        </ViewRow>
+      }
+    >
+      <PeekLayout
+        main={
+          <List
+            label="Transactions"
+            hasSelection={selectionCount > 0 || selecting}
+            footer={
+              items.length ? (
+                <ListFooter>
+                  {first}–{first + items.length - 1} of {total}
+                  <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
+                  <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                </ListFooter>
+              ) : filterCount || searchQuery || period.slug !== "all" ? (
+                <EmptyState
+                  action={
+                    filterCount || searchQuery ? (
+                      <Button variant="quiet" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    ) : (
+                      <Button variant="quiet" onClick={() => setPeriod(DEFAULT_PERIOD)}>
+                        Show all time
+                      </Button>
                     )
-                    setBulkPreview(null)
-                  }}
+                  }
                 >
-                  <option value="none">No change</option>
-                  <option value="add">Add tags</option>
-                  <option value="remove">Remove tags</option>
-                  <option value="replace">Replace tags</option>
-                  <option value="clear">Clear tags</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <AppFieldLabel>
-                <span>Tags (comma)</span>
-                <AppInput
-                  type="text"
-                  value={bulkTags}
-                  disabled={bulkLifecycle !== "none" || bulkTagMode === "none" || bulkTagMode === "clear"}
-                  onChange={(event) => {
-                    setBulkTags(event.target.value)
-                    setBulkPreview(null)
-                  }}
-                />
-              </AppFieldLabel>
-              </>
-              )}
-              {bulkPreview && (
-                <div className="rounded-lg border border-border bg-surface-hi/55 p-3 text-xs text-muted">
-                  <p>
-                    Resolved {bulkPreview.resolved_count}, skipped {bulkPreview.skipped_count}
-                  </p>
-                  <p>
-                    Category {bulkPreview.changes.category_changed}, tags +
-                    {bulkPreview.changes.tags_added}/-{bulkPreview.changes.tags_removed}, replaced{" "}
-                    {bulkPreview.changes.tags_replaced}
-                  </p>
-                  <p>
-                    Deleted {bulkPreview.changes.deleted}, restored {bulkPreview.changes.restored}
-                  </p>
-                </div>
-              )}
-              {(bulkPreviewMutation.error || bulkApplyMutation.error) && (
-                <p className="text-xs text-semantic-red">
-                  {getApiErrorMessage(
-                    bulkPreviewMutation.error || bulkApplyMutation.error,
-                    "Unable to apply the bulk change.",
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="mt-1 flex shrink-0 gap-2 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
-              {selectedIds.length > 0 ? (
-                <>
-                  <AppButton
-                    type="button"
-                    onClick={runBulkPreview}
-                    disabled={
-                      bulkPreviewMutation.isPending ||
-                      !operationValid ||
-                      !bulkScopeCountReady
-                    }
-                    tone="ghost"
-                  >
-                    {bulkPreviewMutation.isPending ? "Previewing…" : "Preview"}
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    onClick={() => setBulkActionsOpen(false)}
-                    tone="ghost"
-                  >
-                    Cancel
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    onClick={runBulkApply}
-                    disabled={
-                      bulkApplyMutation.isPending ||
-                      !operationValid ||
-                      !bulkScopeCountReady
-                    }
-                    className="flex-1"
-                  >
-                    {bulkApplyMutation.isPending ? "Applying…" : "Apply"}
-                  </AppButton>
-                </>
+                  No matching transactions
+                </EmptyState>
               ) : (
-                <AppButton
-                  type="button"
-                  onClick={dismissBulkPreview}
-                  className="flex-1"
-                >
-                  Done
-                </AppButton>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
-      ) : null}
-
-      {locationTransaction ? (
-        <TransactionLocationDialog
-          transaction={locationTransaction}
-          onClose={() => setLocationTransaction(null)}
-        />
-      ) : null}
-
-        <div className="divide-y divide-border">
-          {items.length ? (
-            items.map((txn) => {
-            const isExpense = txn.type === "expense"
-            const amount = isExpense ? txn.net_amount_cents : txn.amount_cents
-            const category = txn.category
-              ? (categoriesById.get(txn.category.id) ?? txn.category)
-              : null
-            return (
-                <AppCard
-                  key={txn.id}
-                  role="link"
-                  tabIndex={0}
-                  data-testid={`transaction-row-${txn.id}`}
-                onClick={(event) => {
-                  if (
-                    event.button !== 0 ||
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.altKey ||
-                    event.shiftKey ||
-                    shouldIgnoreRowNavigation(event)
-                  ) {
-                    return
-                  }
-                  openTransactionDetail(txn.id)
-                }}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget || event.key !== "Enter") {
-                    return
-                  }
-                  event.preventDefault()
-                  openTransactionDetail(txn.id)
-                }}
-                  className="group grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 !rounded-none !bg-transparent px-3 py-3 !shadow-none transition-colors hover:bg-surface-hi/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/35 md:px-4"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                  <label className="-my-2 -ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center desk:w-9">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select transaction ${txn.id}`}
-                      checked={selectedIds.includes(txn.id)}
-                      onChange={() => toggleSelected(txn.id)}
-                      className={`control-check transition-opacity ${
-                        selectedIds.includes(txn.id) || selectedIds.length
-                          ? "opacity-100"
-                          : "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100"
-                      }`}
-                    />
-                  </label>
-                  <CategoryIcon icon={category?.icon ?? null} label={category?.name} />
-                    <div className="min-w-0">
-                    <p className="truncate font-semibold text-text">
-                      {txn.title || category?.name || "Untitled"}
-                    </p>
-                    <TransactionDescription
-                      markdown={txn.description}
-                      compact
-                      clamp
-                      className="mt-1"
-                    />
-                    <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted">
-                      <span className="font-mono tabular-nums">{formatEuroDate(txn.date)}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="truncate">{category?.name ?? "Uncategorized"}</span>
-                    </p>
-                    {(txn.latitude !== null && txn.longitude !== null) || txn.has_attachments ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        {txn.latitude !== null && txn.longitude !== null ? (
-                          <AppButton
-                            type="button"
-                            onClick={() => setLocationTransaction(txn)}
-                            tone="inline"
-                            aria-label={`View location for ${txn.title || category?.name || "Untitled"}`}
-                          >
-                            <MapPinIcon className="h-3.5 w-3.5" />
-                            Location
-                          </AppButton>
-                        ) : null}
-                        {txn.has_attachments ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-muted">
-                            <PaperclipIcon className="h-3 w-3" />
-                            Receipt
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {txn.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {txn.tags.map((tag) => (
-                          <span key={tag.id} className="chip">
-                            {tag.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    </div>
-                  </div>
-                  <div className="min-w-[5.75rem] text-right">
-                  <p
-                    className={`amount-text whitespace-nowrap text-sm ${
-                      isExpense ? "text-semantic-red" : "text-semantic-green"
-                    }`}
-                  >
-                    {isExpense ? "-" : "+"}
-                    {formatCurrency(amount)} €
-                  </p>
-                  {isExpense && txn.reimbursed_total_cents > 0 && (
-                    <p className="font-mono text-xs text-semantic-green">
-                      Reimb {formatCurrency(txn.reimbursed_total_cents)} €
-                    </p>
-                  )}
-                  <div className="mt-1 flex items-center justify-end">
-                    <AppButton
-                      type="button"
-                      onClick={async () => {
-                        if (!(await confirmDialog({ title: "Delete this transaction?" }))) {
-                          return
-                        }
-                        deleteMutation.mutate(txn.id)
-                      }}
-                      disabled={deleteMutation.isPending}
-                      tone="inlineDanger"
-                      className="hidden px-2.5 desk:inline-flex"
-                    >
-                      <TrashIcon className="h-3.5 w-3.5" />
-                      Delete
-                    </AppButton>
-                  </div>
-                  </div>
-                </AppCard>
+                <EmptyState>No transactions yet</EmptyState>
               )
-            })
-          ) : (
-            <AppCard className="p-6 text-center text-sm text-muted !rounded-none !bg-transparent !shadow-none">
-              No transactions found.
-            </AppCard>
-          )}
-        </div>
-      </FinancialPanel>
-
-      <div className="flex items-center justify-between">
-        <AppButton
-          type="button"
-          onClick={() => changePage(Math.max(1, page - 1))}
-          disabled={page <= 1}
-          tone="ghost"
-          className="px-4 py-2 text-xs text-muted disabled:opacity-40"
+            }
+          >
+            {groups.map((group, index) => (
+              <Fragment key={`${group.date}-${index}`}>
+                <DayBand ledger label={dayLabel(group.date)} end={bandNet(index)} />
+                {group.rows.map((row) => {
+                  const isExpense = row.type === "expense"
+                  const reimbursed = isExpense && row.reimbursed_total_cents > 0
+                  return (
+                    <LedgerRow
+                      key={row.id}
+                      glyph={<CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />}
+                      title={rowTitle(row)}
+                      category={row.category?.name ?? "Uncategorized"}
+                      tags={row.tags.map((tag) => tag.name)}
+                      receipt={Boolean(row.has_attachments)}
+                      location={row.latitude != null && row.longitude != null}
+                      reimbursed={reimbursed}
+                      amount={
+                        isExpense ? (
+                          <>
+                            {reimbursed ? (
+                              <NetPrefix>
+                                <Amount cents={row.net_amount_cents} kind="expense" />
+                              </NetPrefix>
+                            ) : null}
+                            <Amount cents={row.amount_cents} kind="expense" />
+                          </>
+                        ) : (
+                          <Amount cents={row.amount_cents} kind="income" />
+                        )
+                      }
+                      selected={row.id === peekId}
+                      checked={isChecked(row.id)}
+                      selecting={selecting}
+                      onCheckedChange={(checked) => setChecked(row.id, checked)}
+                      onOpen={() => openPeek(row.id)}
+                    />
+                  )
+                })}
+              </Fragment>
+            ))}
+          </List>
+        }
+        peek={
+          peekId ? (
+            <TransactionPeek
+              key={peekId}
+              id={peekId}
+              onClose={closePeek}
+              linkTo={peekLink}
+              fullViewTo={`/transactions/${peekId}`}
+              fullViewState={{ returnTo: listHref }}
+            />
+          ) : null
+        }
+      />
+      <BulkBar
+        count={selectionCount}
+        active={selecting}
+        onClear={clearSelection}
+        selectionMenu={
+          <>
+            {selection.mode === "ids" && total > selectionCount ? (
+              <MenuItem icon={ChecksIcon} disabled={!settled} onSelect={() => setSelection({ mode: "query" })}>
+                Select all {total} matching
+              </MenuItem>
+            ) : null}
+            <MenuItem icon={XIcon} onSelect={clearSelection}>
+              Clear selection
+            </MenuItem>
+          </>
+        }
+      >
+        <CategoryPicker
+          allowNone
+          grouped
+          label="Set category"
+          categories={categories}
+          selectedId={undefined}
+          onSelect={bulkCategory}
+          trigger={
+            <Button icon={ShapesIcon} aria-label="Category" disabled={bulkPending || selectionCount === 0}>
+              {isDesktop ? "Category" : null}
+            </Button>
+          }
+        />
+        <Menu
+          label="Tags"
+          align="start"
+          trigger={
+            <Button icon={TagIcon} aria-label="Tags" disabled={bulkPending || selectionCount === 0}>
+              {isDesktop ? "Tags" : null}
+            </Button>
+          }
         >
-          Previous
-        </AppButton>
-        <p className="text-xs text-muted">Page {page}</p>
-        <AppButton
-          type="button"
-          onClick={() => changePage(page + 1)}
-          disabled={!has_more}
-          tone="ghost"
-          className="px-4 py-2 text-xs text-muted disabled:opacity-40"
-        >
-          Next
-        </AppButton>
-      </div>
-    </section>
+          <MenuItem icon={PlusIcon} onSelect={() => setTagPatch({ mode: "add", tags: [] })}>
+            Add tags
+          </MenuItem>
+          <MenuItem icon={MinusIcon} onSelect={() => setTagPatch({ mode: "remove", tags: [] })}>
+            Remove tags
+          </MenuItem>
+          <MenuItem icon={SwapIcon} onSelect={() => setTagPatch({ mode: "replace", tags: [] })}>
+            Replace tags
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={EraserIcon} onSelect={bulkClearTags}>
+            Clear tags
+          </MenuItem>
+        </Menu>
+        <Button icon={TrashIcon} aria-label="Delete" disabled={bulkPending || selectionCount === 0} onClick={bulkDelete}>
+          {isDesktop ? "Delete" : null}
+        </Button>
+      </BulkBar>
+      <Dialog
+        open={tagPatch !== null}
+        onOpenChange={(open) => {
+          if (!open) setTagPatch(null)
+        }}
+        title={tagPatch ? TAG_PATCH_COPY[tagPatch.mode].title : "Tags"}
+        size="narrow"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setTagPatch(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!tagPatch?.tags.length || bulkPending}
+              onClick={() => void applyTagPatch()}
+            >
+              Apply
+            </Button>
+          </>
+        }
+      >
+        {tagPatch ? (
+          <EntryChips>
+            {tagPatch.tags.map((name) => (
+              <TagChip
+                key={name}
+                onRemove={() => setTagPatch({ ...tagPatch, tags: tagPatch.tags.filter((entry) => entry !== name) })}
+              >
+                {name}
+              </TagChip>
+            ))}
+            <TagPicker
+              options={tagOptions}
+              selected={tagPatch.tags}
+              onChange={(next) => setTagPatch({ ...tagPatch, tags: next })}
+              trigger={<Pill icon={TagIcon}>Choose tags</Pill>}
+            />
+          </EntryChips>
+        ) : null}
+      </Dialog>
+    </Panel>
   )
 }
 
