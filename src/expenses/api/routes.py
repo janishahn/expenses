@@ -3470,10 +3470,10 @@ def api_accept_bank_row_suggestions(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    accepted = BankReconciliationService(db, user_id=user_id).accept_suggestions(
+    row_ids = BankReconciliationService(db, user_id=user_id).accept_suggestions(
         data.row_ids
     )
-    return {"accepted": accepted}
+    return {"row_ids": row_ids}
 
 
 @router.post(

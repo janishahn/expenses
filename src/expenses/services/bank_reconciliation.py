@@ -90,6 +90,10 @@ PURPOSE_HEADERS = {"verwendungszweck", "beschreibung", "details", "purpose"}
 ACCOUNT_HEADERS = {"auftragskonto", "konto", "kontonummer", "iban", "account"}
 
 
+def _row_transaction_type(row: BankStatementRow) -> TransactionType:
+    return TransactionType.income if row.amount_cents > 0 else TransactionType.expense
+
+
 def _decode_csv(content: bytes) -> str:
     try:
         return content.decode("utf-8-sig")
@@ -474,6 +478,7 @@ class BankReconciliationService:
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
+                Transaction.type == _row_transaction_type(row),
             )
             .order_by(
                 func.abs(
@@ -509,7 +514,7 @@ class BankReconciliationService:
         self._resolve_matched(row, candidates[0].id)
         self.session.commit()
 
-    def accept_suggestions(self, row_ids: list[int]) -> int:
+    def accept_suggestions(self, row_ids: list[int]) -> list[int]:
         reserved_transaction_ids = self._reserved_transaction_ids()
         rows = self.session.scalars(
             select(BankStatementRow)
@@ -519,7 +524,7 @@ class BankReconciliationService:
             )
             .order_by(BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
         ).all()
-        accepted = 0
+        accepted: list[int] = []
         for row in rows:
             if not self._is_unresolved(row):
                 continue
@@ -528,7 +533,7 @@ class BankReconciliationService:
                 continue
             self._resolve_matched(row, candidates[0].id)
             reserved_transaction_ids.add(candidates[0].id)
-            accepted += 1
+            accepted.append(row.id)
         self.session.commit()
         return accepted
 
@@ -546,6 +551,8 @@ class BankReconciliationService:
         )
         if txn is None:
             raise ValueError("Transaction not found")
+        if txn.type != _row_transaction_type(row):
+            raise ValueError("Transaction type differs from the bank row")
         if transaction_id in self._reserved_transaction_ids(exclude_row_id=row.id):
             raise ValueError("Transaction is already matched to another bank row")
         if update_amount_to_bank:
@@ -610,14 +617,11 @@ class BankReconciliationService:
         )
         if len(tag_names) != len(tag_ids):
             raise ValueError("Tag not found")
-        txn_type = (
-            TransactionType.income if row.amount_cents > 0 else TransactionType.expense
-        )
         txn = TransactionService(self.session, self.user_id).create(
             TransactionIn(
                 date=transaction_date,
                 occurred_at=datetime.combine(transaction_date, time(12, 0)),
-                type=txn_type,
+                type=_row_transaction_type(row),
                 amount_cents=abs(row.amount_cents),
                 category_id=category_id,
                 title=title,
@@ -643,11 +647,6 @@ class BankReconciliationService:
         row.ignore_reason = None
 
     def _set_amount_to_bank(self, txn: Transaction, row: BankStatementRow) -> None:
-        expected_type = (
-            TransactionType.income if row.amount_cents > 0 else TransactionType.expense
-        )
-        if txn.type != expected_type:
-            raise ValueError("Transaction type differs from the bank row")
         amount_cents = abs(row.amount_cents)
         reimbursements = ReimbursementService(self.session, self.user_id)
         if txn.type == TransactionType.expense:
@@ -717,9 +716,6 @@ class BankReconciliationService:
     def _candidate_transactions(
         self, row: BankStatementRow, reserved_ids: set[int]
     ) -> list[Transaction]:
-        txn_type = (
-            TransactionType.income if row.amount_cents > 0 else TransactionType.expense
-        )
         start = row.booking_date - timedelta(days=MATCH_WINDOW_DAYS)
         end = row.booking_date + timedelta(days=MATCH_WINDOW_DAYS)
         stmt = (
@@ -728,7 +724,7 @@ class BankReconciliationService:
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.type == txn_type,
+                Transaction.type == _row_transaction_type(row),
                 Transaction.amount_cents == abs(row.amount_cents),
                 Transaction.date >= start,
                 Transaction.date <= end,

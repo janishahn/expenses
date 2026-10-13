@@ -674,21 +674,28 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
         _csv_bytes(
             [
                 "06.05.2026;06.05.2026;Karte;Cafe;-12,00;EUR;",
+                "07.05.2026;07.05.2026;Karte;Cafe again;-12,00;EUR;",
                 "10.05.2026;10.05.2026;Karte;Shop;-20,00;EUR;",
                 "20.05.2026;20.05.2026;Karte;Gym;-30,00;EUR;",
                 "25.05.2026;25.05.2026;Karte;Nothing;-99,00;EUR;",
             ]
         ),
     )
-    row_ids = [row["id"] for row in _rows(api_client).values()]
+    rows = _rows(api_client)
+    row_ids = [row["id"] for row in rows.values()]
 
     response = _post(
         api_client, csrf_headers, "accept-suggestions", {"row_ids": [*row_ids, 999_999]}
     )
 
-    assert response.json() == {"accepted": 2}
+    # Both cafe rows suggest the same transaction; the newer row takes it.
+    assert response.json() == {
+        "row_ids": [rows["Shop"]["id"], rows["Cafe again"]["id"]]
+    }
     after = _rows(api_client)
-    assert [after[name]["status"] for name in ("Cafe", "Shop", "Gym", "Nothing")] == [
+    names = ("Cafe", "Cafe again", "Shop", "Gym", "Nothing")
+    assert [after[name]["status"] for name in names] == [
+        "missing",
         "matched",
         "matched",
         "ambiguous",
@@ -697,7 +704,7 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
     repeated = _post(
         api_client, csrf_headers, "accept-suggestions", {"row_ids": row_ids}
     )
-    assert repeated.json() == {"accepted": 0}
+    assert repeated.json() == {"row_ids": []}
 
 
 def test_candidate_search_ignores_amount_and_skips_transactions_matched_elsewhere(
@@ -714,6 +721,15 @@ def test_candidate_search_ignores_amount_and_skips_transactions_matched_elsewher
             ("2026-05-06", 1_200, "Bakery"),
         )
     }
+    # Income never matches a debit row.
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        date="2026-05-06",
+        amount_cents=7_700,
+        title="Cafe refund",
+        txn_type="income",
+    )
     _upload_csv(
         api_client,
         csrf_headers,
@@ -796,15 +812,12 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
 
     plain = match("One", keep_amount)
     updated = match("Two", adjust_amount, update_amount_to_bank=True)
-    wrong_type = match("Three", income, update_amount_to_bank=True)
+    wrong_type = match("Three", income)
+    wrong_type_updated = match("Three", income, update_amount_to_bank=True)
     missing = match("Three", 999_999)
 
-    assert [r.status_code for r in (plain, updated, wrong_type, missing)] == [
-        200,
-        200,
-        400,
-        400,
-    ]
+    statuses = [plain, updated, wrong_type, wrong_type_updated, missing]
+    assert [r.status_code for r in statuses] == [200, 200, 400, 400, 400]
 
     def amount(transaction_id: int) -> int:
         return api_client.get(f"/api/transactions/{transaction_id}").json()[

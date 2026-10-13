@@ -447,18 +447,21 @@ function ReconciliationPage() {
     )
   }
   const matchAll = async (band: BankStatementRow[]) => {
+    // The server skips rows that no longer have exactly one candidate; Undo leaves them as they are.
+    let matched: BankStatementRow[] = []
     reportFailure(
       await act({
         row: band.find((row) => row.id === peekId) ?? null,
         run: async () => {
-          const result = await apiFetch<{ accepted: number }>("/api/reconciliation/bank-rows/accept-suggestions", {
+          const result = await apiFetch<{ row_ids: number[] }>("/api/reconciliation/bank-rows/accept-suggestions", {
             method: "POST",
             body: JSON.stringify({ row_ids: band.map((row) => row.id) }),
           })
-          return `Matched ${plural(result.accepted, "row")}`
+          matched = band.filter((row) => result.row_ids.includes(row.id))
+          return `Matched ${plural(matched.length, "row")}`
         },
         message: "Matched",
-        undo: () => Promise.all(band.map((row) => reopen(row))),
+        undo: () => Promise.all(matched.map((row) => reopen(row))),
       })
     )
   }

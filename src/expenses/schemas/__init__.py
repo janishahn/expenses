@@ -721,7 +721,8 @@ class BankAcceptSuggestionsIn(BaseModel):
 
 
 class BankAcceptSuggestionsOut(BaseModel):
-    accepted: int
+    # The rows matched by this request; rows without exactly one candidate are skipped.
+    row_ids: list[int]
 
 
 class BankRowCandidatesOut(BaseModel):

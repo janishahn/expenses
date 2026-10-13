@@ -855,13 +855,16 @@
       },
       "BankAcceptSuggestionsOut": {
         "properties": {
-          "accepted": {
-            "title": "Accepted",
-            "type": "integer"
+          "row_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Row Ids",
+            "type": "array"
           }
         },
         "required": [
-          "accepted"
+          "row_ids"
         ],
         "title": "BankAcceptSuggestionsOut",
         "type": "object"
