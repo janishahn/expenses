@@ -129,12 +129,14 @@ export function useTransactionRecord(id: number) {
     void queryClient.invalidateQueries({ queryKey: key })
     void queryClient.invalidateQueries({ queryKey: ["transactions"] })
   }
-  const uploadReceipt = async (file: File): Promise<boolean> => {
+  // A replacement swaps the file in one request, so it also works at the attachment limit.
+  const uploadReceipt = async (file: File, replaces?: ReceiptFile): Promise<boolean> => {
     setReceiptError(null)
     setUploading(true)
     try {
       const form = new FormData()
       form.append("file", file)
+      if (replaces) form.append("replaces_attachment_id", String(replaces.id))
       await apiFetchFormData<ReceiptAttachment>(`/api/transactions/${id}/attachments`, { method: "POST", body: form })
       refreshReceipts()
       return true
@@ -146,13 +148,7 @@ export function useTransactionRecord(id: number) {
     }
   }
   const replaceReceipt = async (target: ReceiptFile, file: File) => {
-    if (!(await uploadReceipt(file))) return
-    try {
-      await apiFetch(`/api/attachments/${target.id}`, { method: "DELETE" })
-    } catch (error) {
-      setReceiptError(getApiErrorMessage(error, "The new file was added, but the old one could not be removed."))
-    }
-    refreshReceipts()
+    await uploadReceipt(file, target)
   }
   const removeReceipt = async (target: ReceiptFile) => {
     if (!(await confirmDialog({ title: "Remove this receipt?", description: target.name, confirmLabel: "Remove" }))) return

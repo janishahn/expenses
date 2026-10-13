@@ -1131,3 +1131,48 @@ def test_receipt_attachment_endpoints_and_permanent_delete_cleanup(
 
     response = api_client.get(f"/api/attachments/{second_attachment_id}/download")
     assert response.status_code == 404
+
+
+def test_receipt_replace_works_at_the_attachment_limit(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Bills", "expense")
+    txn_id = _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date.today(),
+        txn_type="expense",
+        amount_cents=4_200,
+        category_id=category_id,
+        title="Utility bill",
+        tags=[],
+    )
+
+    def upload(name: str, **data: str):
+        return api_client.post(
+            f"/api/transactions/{txn_id}/attachments",
+            headers=csrf_headers,
+            files={"file": (name, f"%PDF-1.4 {name}".encode(), "application/pdf")},
+            data=data,
+        )
+
+    ids = [int(upload(f"bill{index}.pdf").json()["id"]) for index in range(5)]
+    assert upload("extra.pdf").status_code == 400
+
+    replaced = upload("new.pdf", replaces_attachment_id=str(ids[0]))
+
+    assert replaced.status_code == 200
+    names = [
+        item["original_filename"]
+        for item in api_client.get(f"/api/transactions/{txn_id}/attachments").json()[
+            "attachments"
+        ]
+    ]
+    assert sorted(names) == [
+        "bill1.pdf",
+        "bill2.pdf",
+        "bill3.pdf",
+        "bill4.pdf",
+        "new.pdf",
+    ]
+    assert upload("x.pdf", replaces_attachment_id="999999").status_code == 404

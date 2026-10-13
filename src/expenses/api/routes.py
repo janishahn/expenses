@@ -4101,6 +4101,7 @@ async def api_upload_transaction_attachment(
     transaction_id: int,
     request: Request,
     file: UploadFile = File(...),
+    replaces_attachment_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
@@ -4111,7 +4112,20 @@ async def api_upload_transaction_attachment(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     service = ReceiptAttachmentService(db, user_id=user_id)
+    # A replacement takes its target's slot, so it works at the attachment limit.
+    if replaces_attachment_id is not None:
+        try:
+            replaced = service.get(replaces_attachment_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if replaced.transaction_id != transaction_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Attachment belongs to another transaction",
+            )
     current_count = service.count_for_transaction(transaction_id)
+    if replaces_attachment_id is not None:
+        current_count -= 1
     if current_count >= service.MAX_ATTACHMENTS_PER_TRANSACTION:
         raise HTTPException(
             status_code=400,
@@ -4164,6 +4178,8 @@ async def api_upload_transaction_attachment(
         size_bytes=size_bytes,
         sha256_hex=digest.hexdigest(),
     )
+    if replaces_attachment_id is not None:
+        service.delete(replaces_attachment_id)
     return ReceiptAttachmentOut(
         id=attachment.id,
         transaction_id=attachment.transaction_id,

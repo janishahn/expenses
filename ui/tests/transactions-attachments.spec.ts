@@ -79,6 +79,47 @@ test.describe("Transaction receipts and location", () => {
     expect(((await detail.json()) as { attachments: unknown[] }).attachments).toHaveLength(0)
   })
 
+  test("replaces a receipt when the transaction has the most attachments allowed", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Receipt")
+    const title = `E2E Receipt full ${Date.now()}`
+    const id = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T08:25:00",
+      type: "expense",
+      amount_cents: 3210,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    for (let index = 0; index < 5; index += 1) {
+      await uploadAttachment(request, token, id, { name: `full-${index}.png`, mimeType: "image/png", buffer: onePixelPng })
+    }
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${id}`)
+    const peek = page.getByRole("complementary", { name: title })
+    const shown = peek.getByRole("button", { name: /^Open full-\d\.png$/ })
+    await expect(shown).toBeVisible()
+    const replaced = ((await shown.getAttribute("aria-label")) ?? "").replace("Open ", "")
+    await peek.getByRole("button", { name: "Receipt actions" }).click()
+    const chooserPromise = page.waitForEvent("filechooser")
+    await page.getByRole("menuitem", { name: "Replace" }).click()
+    const chooser = await chooserPromise
+    const uploaded = page.waitForResponse(
+      (response) => response.url().includes(`/api/transactions/${id}/attachments`) && response.request().method() === "POST"
+    )
+    await chooser.setFiles({ name: "replacement.png", mimeType: "image/png", buffer: onePixelPng })
+
+    expect((await uploaded).status()).toBe(200)
+    await expect(peek.getByRole("button", { name: "replacement.png", exact: true })).toBeVisible()
+    const detail = await request.get(`/api/transactions/${id}`)
+    const names = ((await detail.json()) as { attachments: Array<{ original_filename: string }> }).attachments.map(
+      (attachment) => attachment.original_filename
+    )
+    const kept = ["full-0.png", "full-1.png", "full-2.png", "full-3.png", "full-4.png"].filter((name) => name !== replaced)
+    expect(names.sort()).toEqual([...kept, "replacement.png"])
+  })
+
   test("shows the location map and existing receipt in the full view", async ({
     page,
     request,
