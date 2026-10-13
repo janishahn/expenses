@@ -62,6 +62,8 @@ metadata references receipt binaries by `archive_path`, relative to the ZIP root
 
 A non-null `auto_category_confidence` marks an unreviewed automatic category
 assignment. Preserve it so predictions are not treated as confirmed training data.
+`category_suggestion_dismissed_id` is a category the user rejected as a suggestion
+for that transaction; it should not be suggested again.
 """
 
 
@@ -133,6 +135,7 @@ class TransactionExport(ExportModel):
     fx_fetched_at: datetime | None
     category_id: int
     auto_category_confidence: float | None
+    category_suggestion_dismissed_id: int | None = None
     title: str | None
     description: str | None
     latitude: Decimal | None
@@ -528,6 +531,7 @@ class PortableExportService:
                 fx_fetched_at=row.fx_fetched_at,
                 category_id=row.category_id,
                 auto_category_confidence=row.auto_category_confidence,
+                category_suggestion_dismissed_id=row.category_suggestion_dismissed_id,
                 title=row.title,
                 description=row.description,
                 latitude=row.latitude,
