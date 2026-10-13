@@ -5,7 +5,8 @@ import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import type { CategoriesResponse } from "../app/api-types"
-import { formatAmount } from "../app/format"
+import { formatAmount, formatAmountPrivate } from "../app/format"
+import { usePrivacy } from "../app/privacy"
 import { Amount } from "../components/ui/Amount"
 import { IconButton, LinkButton } from "../components/ui/Button"
 import { CategoryGlyph } from "../components/ui/CategoryGlyph"
@@ -95,6 +96,8 @@ function monthAt(months: ForecastMonth[], count: number): string {
 }
 
 function ForecastPage() {
+  // Re-renders the info label when privacy mode changes.
+  usePrivacy()
   const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
   const horizonParam = searchParams.get("horizon")
@@ -149,7 +152,7 @@ function ForecastPage() {
     data.model.method === "recurring_only"
       ? "Recurring commitments only."
       : `${data.model.method === "seasonal_median" ? "Seasonal median" : "Recent median"} of ${data.model.history_months} months of history.`
-  const expectedNote = `Includes ${formatAmount(data.current_month_net_cents, "signed")} still expected this month.`
+  const expectedNote = `Includes ${formatAmountPrivate(data.current_month_net_cents, "signed")} still expected this month.`
 
   const belowZero: Metric = (() => {
     if (summary.months_until_negative !== null) {
