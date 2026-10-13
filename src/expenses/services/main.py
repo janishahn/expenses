@@ -2724,7 +2724,12 @@ class ReceiptAttachmentService:
                 self.thumbnail_path_for(replaces),
             ]
             self.session.delete(replaces)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except Exception:
+            # Without its row the new file would be orphaned.
+            self.path_for_storage_key(storage_key).unlink(missing_ok=True)
+            raise
         self.session.refresh(attachment)
         for path in replaced_files:
             path.unlink(missing_ok=True)

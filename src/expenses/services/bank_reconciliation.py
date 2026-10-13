@@ -779,6 +779,14 @@ class BankReconciliationService:
     ) -> list[Transaction]:
         start = row.booking_date - timedelta(days=MATCH_WINDOW_DAYS)
         end = row.booking_date + timedelta(days=MATCH_WINDOW_DAYS)
+        # Transaction amounts are euros; a foreign row matches the amount entered in its currency.
+        if row.currency == "EUR":
+            same_amount = Transaction.amount_cents == abs(row.amount_cents)
+        else:
+            same_amount = and_(
+                Transaction.source_currency_code == row.currency,
+                Transaction.source_amount_cents == abs(row.amount_cents),
+            )
         stmt = (
             select(Transaction)
             .options(joinedload(Transaction.category))
@@ -786,7 +794,7 @@ class BankReconciliationService:
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.type == _row_transaction_type(row),
-                Transaction.amount_cents == abs(row.amount_cents),
+                same_amount,
                 Transaction.date >= start,
                 Transaction.date <= end,
             )

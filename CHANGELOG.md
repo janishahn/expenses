@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings and Admin are sections with their own URLs, and changes save at once. Admin asks for your password in place before showing server sections.
 - Reconcile reviews statement rows in suggested, several-match, and no-match groups, with Match all, a search for any transaction, ignore reasons, create and match, Undo for every action, and a Resolved view filtered by outcome and account.
 - Bank rows matched to a transaction that is later moved to the trash are open for reconciliation again.
+- Reconcile suggests a match for a non-EUR bank row only from a transaction entered in that currency with the same amount, not from a euro transaction with the same number.
 - Upgrading backfills existing bank rows as ignored (if reviewed) or matched. Rows created from a statement before this release are marked matched, because they cannot be told apart from matched rows.
 
 ### Removed

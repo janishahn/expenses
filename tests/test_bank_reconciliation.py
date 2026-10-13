@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from expenses.core.config import get_settings
+from expenses.db.models import CurrencyCode, Transaction
 from expenses.services.bank_reconciliation import parse_commerzbank_csv
 
 
@@ -786,6 +788,47 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
         api_client, csrf_headers, "accept-suggestions", {"row_ids": row_ids}
     )
     assert repeated.json() == {"matches": []}
+
+
+def test_foreign_rows_suggest_only_the_amount_entered_in_their_currency(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    euros = _create_transaction(
+        api_client, csrf_headers, date="2026-05-06", amount_cents=1_200, title="Euros"
+    )
+    dollars = _create_transaction(
+        api_client, csrf_headers, date="2026-05-06", amount_cents=1_100, title="Dollars"
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == dollars)
+        .values(source_currency_code=CurrencyCode.usd, source_amount_cents=1_200)
+    )
+    db_session.commit()
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(
+            [
+                "06.05.2026;06.05.2026;Karte;Card USD;-12,00;USD;",
+                "06.05.2026;06.05.2026;Karte;Card EUR;-12,00;EUR;",
+            ]
+        ),
+    )
+    rows = _rows(api_client)
+
+    response = _post(
+        api_client,
+        csrf_headers,
+        "accept-suggestions",
+        {"row_ids": [row["id"] for row in rows.values()]},
+    )
+
+    # USD 12.00 is not EUR 12.00; it matches the transaction entered as USD 12.00.
+    assert {
+        (match["row_id"], match["transaction_id"])
+        for match in response.json()["matches"]
+    } == {(rows["Card USD"]["id"], dollars), (rows["Card EUR"]["id"], euros)}
 
 
 def test_candidate_search_ignores_amount_and_skips_transactions_matched_elsewhere(

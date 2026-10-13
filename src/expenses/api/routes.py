@@ -4192,20 +4192,15 @@ async def api_upload_transaction_attachment(
         full_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Attachment is empty")
 
-    try:
-        attachment = service.create_metadata(
-            transaction_id=transaction_id,
-            storage_key=storage_key,
-            original_filename=original_filename,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            sha256_hex=digest.hexdigest(),
-            replaces=replaced,
-        )
-    except Exception:
-        # Without its row the new file would be orphaned.
-        full_path.unlink(missing_ok=True)
-        raise
+    attachment = service.create_metadata(
+        transaction_id=transaction_id,
+        storage_key=storage_key,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        size_bytes=size_bytes,
+        sha256_hex=digest.hexdigest(),
+        replaces=replaced,
+    )
     return ReceiptAttachmentOut(
         id=attachment.id,
         transaction_id=attachment.transaction_id,
