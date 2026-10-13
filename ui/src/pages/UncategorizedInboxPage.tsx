@@ -9,7 +9,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { XIcon } from "@phosphor-icons/react/X"
-import { useLocation, useSearchParams } from "react-router-dom"
+import { Navigate, useLocation, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { CategorySummary, TransactionListItem, TransactionsResponse } from "../app/api-types"
 import { dayLabel, invalidateTransactionData } from "../app/transactions"
@@ -134,6 +134,15 @@ function UncategorizedInboxPage() {
   }
 
   const { items, has_more, page, limit, total, categories, definition } = data
+  // Categorizing the last rows of a later page moves to the last page that has rows.
+  if (!items.length && page > 1 && total > 0 && !isPlaceholderData) {
+    return (
+      <>
+        <Navigate replace to={{ search: buildSearchParams(searchParams, { page: String(Math.ceil(total / limit)) }).toString() }} />
+        <PanelLoading title="Uncategorized" label="Loading uncategorized transactions…" />
+      </>
+    )
+  }
   const suggestionsOn = autoCategorization.data?.enabled === true
   const columns = suggestionsOn ? SUGGESTION_COLUMNS : CATEGORY_COLUMNS
   // Moving a row to Uncategorized would leave it here, so pickers never offer it.
@@ -360,7 +369,7 @@ function UncategorizedInboxPage() {
                   <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
                   <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
                 </ListFooter>
-              ) : filtered ? (
+              ) : isPlaceholderData ? null : filtered ? (
                 <EmptyState
                   action={
                     searchQuery ? (

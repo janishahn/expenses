@@ -5259,6 +5259,26 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         tag_ids=tag_ids,
         excluded_tag_ids=excluded_tag_ids,
     )
+    totals = MetricsService(db, user_id=user_id).kpis(
+        period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+    )
+    first_day = period.start
+    if period.slug == "all":
+        first_day = (
+            db.scalar(
+                select(func.min(Transaction.date)).where(
+                    Transaction.user_id == user_id, Transaction.deleted_at.is_(None)
+                )
+            )
+            or period.end
+        )
+    month_count = max(
+        0,
+        (period.end.year - first_day.year) * 12
+        + period.end.month
+        - first_day.month
+        + 1,
+    )
     expense_breakdown = MetricsService(db, user_id=user_id).category_breakdown(
         period,
         TransactionType.expense,
@@ -5375,6 +5395,9 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         ).get((True,), 0),
+        "income_cents": totals["income"],
+        "expense_cents": totals["expenses"],
+        "month_count": month_count,
     }
 
 

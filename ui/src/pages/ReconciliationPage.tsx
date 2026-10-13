@@ -20,7 +20,7 @@ import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
 import { PlusCircleIcon } from "@phosphor-icons/react/PlusCircle"
 import { SealCheckIcon } from "@phosphor-icons/react/SealCheck"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
-import { useSearchParams } from "react-router-dom"
+import { Navigate, useSearchParams } from "react-router-dom"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import type {
   BankAccount,
@@ -359,6 +359,17 @@ function ReconciliationPage() {
   }
 
   const { items, total } = rows.data
+  // Resolving the last rows of a later page moves to the last page that has rows.
+  if (!items.length && page > 1 && total > 0 && !rows.isPlaceholderData) {
+    const next = new URLSearchParams(searchParams)
+    next.set("page", String(Math.ceil(total / PAGE_SIZE)))
+    return (
+      <>
+        <Navigate replace to={{ search: next.toString() }} />
+        <PanelLoading title="Reconcile" label="Loading bank rows…" />
+      </>
+    )
+  }
   const accounts = accountsQuery.data.accounts
   const openTotal = view === "open" ? total : openCount.data?.total
   const latestImport = [...accounts]
@@ -576,7 +587,7 @@ function ReconciliationPage() {
         />
       </ListFooter>
     ) : null
-  ) : accounts.length === 0 ? (
+  ) : rows.isPlaceholderData ? null : accounts.length === 0 ? (
     <EmptyState
       icon={BankIcon}
       action={

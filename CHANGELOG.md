@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- API fields and endpoints for the redesigned web UI: a transaction list `total`; net and reimbursed amounts, `created_at`, and the linked bank row on transaction detail; paged Trash with bulk restore and permanent delete; an admin purge preview; month-end balance history; period totals on categories and tags; tag `created_at`; `category_id` on breakdown items; a 6- or 12-month category breakdown; and Insights month grids, recurring split, a 53-week day calendar, budget history, and `recurring_cents`.
+- API fields and endpoints for the redesigned web UI: a transaction list `total`; net and reimbursed amounts, `created_at`, and the linked bank row on transaction detail; paged Trash with bulk restore and permanent delete; an admin purge preview; month-end balance history; period totals on categories and tags; tag `created_at`; `category_id` on breakdown items; a 6- or 12-month category breakdown; and Insights month grids, recurring split, a 53-week day calendar, budget history, `recurring_cents`, and income and expense totals for the exact period with its month count.
 - An optional `rule_anchor_date` on the recurring preview, so a saved rule previewed from its next occurrence keeps its original schedule, and the transaction `type` on Digest auto-posted items.
 - Uncategorized transactions show local-model category suggestions while automatic categorization is on and trained. A rejected suggestion is remembered per transaction, follows its category through a merge, and is kept in portable exports.
 - `GET /api/settings/auto-categorization`, and the minimum training history (`min_history`) in automatic categorization settings.

@@ -145,8 +145,10 @@ export function InlineText({
       setDraft(null)
       return
     }
-    const result = await onSave(draft)
-    if (result !== false) setDraft(null)
+    const submitted = draft
+    const result = await onSave(submitted)
+    // Text typed while the save ran stays open for its own save.
+    if (result !== false) setDraft((current) => (current === submitted ? null : current))
   }
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key === "Escape") {

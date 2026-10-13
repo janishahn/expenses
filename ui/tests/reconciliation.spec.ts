@@ -332,6 +332,28 @@ test.describe("Reconcile", () => {
     await expect(rowItem(list, "ODD CHARGE")).toBeVisible()
   })
 
+  test("moves to the last page with rows when a later page empties", async ({ page }) => {
+    const user = await signIn(page)
+    await importRows(
+      user,
+      Array.from({ length: 51 }, (_, index) => ({
+        date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`,
+        payee: `SHOP ${index}`,
+        cents: -(1000 + index),
+      }))
+    )
+    await page.goto("/reconciliation?page=2")
+
+    const ignoreButtons = openList(page).getByRole("button", { name: "Ignore" })
+    await expect(ignoreButtons).toHaveCount(1)
+    await ignoreButtons.click()
+    await page.getByRole("menuitem", { name: "Cash withdrawal" }).click()
+
+    await expect(page).toHaveURL(/page=1/)
+    await expect(ignoreButtons).toHaveCount(50)
+    await expect(page.getByText("Nothing to review")).toHaveCount(0)
+  })
+
   test("creates and matches a transaction from a row with no match", async ({ page }) => {
     const user = await signIn(page)
     const groceries = await createCategory(user.request, user.csrfToken, "expense", "Groceries")

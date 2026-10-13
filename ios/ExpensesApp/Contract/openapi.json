@@ -5684,6 +5684,10 @@
             "title": "Expense Breakdown",
             "type": "array"
           },
+          "expense_cents": {
+            "title": "Expense Cents",
+            "type": "integer"
+          },
           "filters": {
             "$ref": "#/components/schemas/InsightsFiltersOut"
           },
@@ -5693,6 +5697,14 @@
             },
             "title": "Income Breakdown",
             "type": "array"
+          },
+          "income_cents": {
+            "title": "Income Cents",
+            "type": "integer"
+          },
+          "month_count": {
+            "title": "Month Count",
+            "type": "integer"
           },
           "period": {
             "$ref": "#/components/schemas/PeriodOut"
@@ -5755,7 +5767,10 @@
           "budget_month",
           "budget_effective",
           "budget_progress",
-          "recurring_cents"
+          "recurring_cents",
+          "income_cents",
+          "expense_cents",
+          "month_count"
         ],
         "title": "InsightsResponseOut",
         "type": "object"

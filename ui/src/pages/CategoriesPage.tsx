@@ -271,7 +271,7 @@ function CategoryPeek({
           <IconPickerPopover
             value={category.icon}
             onChange={(icon) => {
-              if (icon !== category.icon) void save("icon", { icon })
+              if (icon !== category.icon || errors.icon) void save("icon", { icon })
             }}
             trigger={
               <PropertyButton>

@@ -511,6 +511,12 @@ class InsightsResponseOut(BaseModel):
     budget_effective: list[InsightsBudgetEffectiveOut]
     budget_progress: dict[str, InsightsBudgetProgressOut]
     recurring_cents: int
+    # Totals for the exact period, net of reimbursements. `series` covers whole
+    # months and at most 12 of them.
+    income_cents: int
+    expense_cents: int
+    # Calendar months the period spans; all time starts at the first transaction.
+    month_count: int
 
 
 class InsightsMonthGridRowOut(BaseModel):

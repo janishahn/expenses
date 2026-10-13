@@ -551,7 +551,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
             categories={data.categories.filter((entry) => entry.type === rule.type)}
             selectedId={rule.category_id}
             onSelect={(categoryId) => {
-              if (categoryId !== null && categoryId !== rule.category_id) void save("category", { category_id: categoryId })
+              if (categoryId !== null && (categoryId !== rule.category_id || errors.category)) void save("category", { category_id: categoryId })
             }}
             trigger={
               <PropertyButton empty={!category}>
@@ -602,7 +602,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
           <CurrencyMenu
             value={rule.currency_code}
             onSelect={(next) => {
-              if (next !== rule.currency_code) void save("currency", { currency_code: next })
+              if (next !== rule.currency_code || errors.currency) void save("currency", { currency_code: next })
             }}
             trigger={<PropertyButton>{rule.currency_code === "USD" ? "US dollar ($)" : "Euro (€)"}</PropertyButton>}
           />

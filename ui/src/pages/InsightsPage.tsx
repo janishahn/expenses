@@ -29,6 +29,10 @@ type InsightsResponse = {
   period: { slug: string; start: string; end: string }
   tags: Array<{ id: number; name: string }>
   series: Array<{ year: number; month: number; income_cents: number; expense_cents: number }>
+  // Totals for the exact period; the series covers whole months, at most 12.
+  income_cents: number
+  expense_cents: number
+  month_count: number
 }
 
 type GridKind = "expense" | "income" | "tag"
@@ -178,8 +182,9 @@ function InsightsPage() {
 
   // Strip and the income and expenses chart follow the period and Filter.
   const series = data.series
-  const income = sum(series.map((point) => point.income_cents))
-  const spent = sum(series.map((point) => point.expense_cents))
+  const income = data.income_cents
+  const spent = data.expense_cents
+  const months = data.month_count
   const saved = income - spent
   const seriesMonths = series.map((point) => `${point.year}-${String(point.month).padStart(2, "0")}`)
   const seriesLabels = axisLabels(seriesMonths)
@@ -191,15 +196,15 @@ function InsightsPage() {
     {
       label: "Income",
       value: <Amount cents={income} />,
-      detail: series.length > 1 ? `${series.length} months` : undefined,
+      detail: months > 1 ? `${months} months` : undefined,
     },
     {
       label: "Spent",
       value: <Amount cents={spent} />,
       detail:
-        series.length > 1 ? (
+        months > 1 ? (
           <>
-            <Amount cents={Math.round(spent / series.length)} /> per month
+            <Amount cents={Math.round(spent / months)} /> per month
           </>
         ) : undefined,
     },

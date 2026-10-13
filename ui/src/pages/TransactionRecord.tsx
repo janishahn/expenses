@@ -111,7 +111,8 @@ function DateProperty({ record }: { record: TransactionRecordState }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setOpen(false)
-    if (draft && draft !== current) void record.save("date", { occurred_at: draft })
+    // A failed value stays shown with its error, so choosing it again retries.
+    if (draft && (draft !== current || record.errors.date)) void record.save("date", { occurred_at: draft })
   }
   return (
     <Property label="Date" editable error={record.errors.date}>
@@ -296,7 +297,7 @@ export function TransactionProperties({
           <MenuItem
             checked={isExpense}
             onSelect={() => {
-              if (!isExpense) void record.save("type", { type: "expense", category_id: null, is_reimbursement: false })
+              if (!isExpense || record.errors.type) void record.save("type", { type: "expense", category_id: null, is_reimbursement: false })
             }}
           >
             Expense
@@ -304,7 +305,7 @@ export function TransactionProperties({
           <MenuItem
             checked={!isExpense}
             onSelect={() => {
-              if (isExpense) void record.save("type", { type: "income", category_id: null })
+              if (isExpense || record.errors.type) void record.save("type", { type: "income", category_id: null })
             }}
           >
             Income
@@ -318,7 +319,7 @@ export function TransactionProperties({
           categories={pickable}
           selectedId={view.category_id}
           onSelect={(categoryId) => {
-            if (categoryId !== view.category_id) void record.save("category", { category_id: categoryId })
+            if (categoryId !== view.category_id || record.errors.category) void record.save("category", { category_id: categoryId })
           }}
           trigger={
             <PropertyButton empty={!category}>

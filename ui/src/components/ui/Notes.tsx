@@ -26,6 +26,7 @@ export function Notes({
   // The editor blurs as it unmounts after Esc or a save; only a blur during an open edit may save.
   const open = useRef(false)
 
+  // Typing also reopens the edit, so text typed while a save runs can be saved in turn.
   const edit = (text: string) => {
     open.current = true
     setDraft(text)
@@ -40,10 +41,12 @@ export function Notes({
       close()
       return
     }
+    const submitted = draft
     open.current = false
-    const result = await onSave(draft.trim())
+    const result = await onSave(submitted.trim())
     if (result === false) open.current = true
-    else close()
+    // Text typed while the save ran stays open for its own save.
+    else setDraft((current) => (current === submitted ? null : current))
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
@@ -73,7 +76,7 @@ export function Notes({
       {editing ? (
         <div className={clsx(s.notes, s.notesEditing)} onKeyDown={onKeyDown}>
           <Suspense fallback={<div className={s.md}>{draft}</div>}>
-            <NotesEditor value={draft} label="Notes" onChange={setDraft} onBlur={() => void commit()} />
+            <NotesEditor value={draft} label="Notes" onChange={edit} onBlur={() => void commit()} />
           </Suspense>
         </div>
       ) : value ? (

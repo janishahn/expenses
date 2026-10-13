@@ -722,7 +722,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RuleRow; data: RulesR
               appliesTo={rule.transaction_type}
               selectedId={rule.set_category_id}
               onSelect={(categoryId) => {
-                if (categoryId !== rule.set_category_id) void save("category", { set_category_id: categoryId })
+                if (categoryId !== rule.set_category_id || errors.category) void save("category", { set_category_id: categoryId })
               }}
               trigger={
                 <PropertyButton empty={!category}>
@@ -758,7 +758,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RuleRow; data: RulesR
                 tags={hiddenTags}
                 selectedId={rule.budget_exclude_tag_id}
                 onSelect={(tagId) => {
-                  if (tagId !== rule.budget_exclude_tag_id) void save("budgets", { budget_exclude_tag_id: tagId })
+                  if (tagId !== rule.budget_exclude_tag_id || errors.budgets) void save("budgets", { budget_exclude_tag_id: tagId })
                 }}
                 trigger={
                   <PropertyButton empty={!budgetTag}>

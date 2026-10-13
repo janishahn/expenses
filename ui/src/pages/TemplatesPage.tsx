@@ -302,7 +302,7 @@ function TemplatePeek({
             categories={categories.filter((entry) => entry.type === template.type)}
             selectedId={template.category_id}
             onSelect={(categoryId) => {
-              if (categoryId !== null && categoryId !== template.category_id) void save("category", { category_id: categoryId })
+              if (categoryId !== null && (categoryId !== template.category_id || errors.category)) void save("category", { category_id: categoryId })
             }}
             trigger={
               <PropertyButton empty={!category}>
