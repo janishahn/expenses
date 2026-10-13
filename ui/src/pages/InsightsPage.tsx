@@ -1,142 +1,173 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link, useSearchParams } from "react-router-dom"
+import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
+import { FunnelIcon } from "@phosphor-icons/react/Funnel"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import ActiveFilterChips from "../components/ActiveFilterChips"
-import TagFilterPicker, { type TagFilterMode } from "../components/TagFilterPicker"
-import BarChart from "../components/charts/BarChart"
-import LineChart from "../components/charts/LineChart"
-import { palette } from "../components/charts/palette"
-import WaterfallChart, { type FlowNode } from "../components/charts/WaterfallChart"
-import PeriodPicker from "../components/PeriodPicker"
-import PageFilterBar from "../components/PageFilterBar"
-import PageFilterControl from "../components/PageFilterControl"
-import PageScopeHeader from "../components/PageScopeHeader"
-import { PageTabPanel, PageTabs } from "../components/PageTabs"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppFieldLabel, AppInput, AppNativeSelect } from "../components/ui/product-fields"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  buildSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import { canonicalizeTagScope, serializeTagIds } from "../lib/tagFilters"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
-
-type MonthlySeriesPoint = {
-  year: number
-  month: number
-  label: string
-  income_cents: number
-  expense_cents: number
-  net_cents: number
-}
-
-type BreakdownItem = {
-  name: string
-  amount_cents: number
-  percent: number
-}
-
-type DeltaItem = {
-  category_id: number
-  category_name: string
-  current_cents: number
-  previous_cents: number
-  delta_cents: number
-}
-
-type BudgetEffective = {
-  scope_category_id: number | null
-  scope_label: string
-  amount_cents: number
-  source: string
-  source_id: number
-}
+import { formatAmount } from "../app/format"
+import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
+import { Amount } from "../components/ui/Amount"
+import { IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip, TableLink, type LegendEntry } from "../components/ui/ChartCard"
+import { CardRow, ChartWithAside, ColumnChart, LineChart, WeekdayBars } from "../components/ui/Charts"
+import { BudgetGrid, DayCalendar, MonthGrid, type BudgetGridRow, type CalendarLevel, type MonthGridRow } from "../components/ui/Grids"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Pill } from "../components/ui/Pill"
+import { Popover } from "../components/ui/Popover"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { MetricStrip, type Metric } from "../components/ui/Sheet"
+import { TagChip } from "../components/ui/TagChip"
+import { categoryColor } from "../components/ui/tokens"
+import { buildSearchParams } from "../lib/searchParams"
+import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 
 type InsightsResponse = {
   period: { slug: string; start: string; end: string }
-  filters: {
-    tag_id: number | null
-    included_tag_ids: number[]
-    excluded_tag_ids: number[]
-  }
-  tags: Array<{ id: number; name: string; archived_at?: string | null }>
-  categories: Array<{ id: number; name: string; type: string; icon: string | null }>
-  series: MonthlySeriesPoint[]
-  expense_breakdown: BreakdownItem[]
-  income_breakdown: BreakdownItem[]
-  deltas: { increases: DeltaItem[]; decreases: DeltaItem[] }
-  top_tags: Array<{ id: number; name: string; amount_cents: number }>
-  trend_category_id: number | null
-  trend: Array<{ year: number; month: number; label: string; amount_cents: number }>
-  budget_month: string
-  budget_effective: BudgetEffective[]
-  budget_progress: Record<string, { spent_cents: number; remaining_cents: number }>
+  tags: Array<{ id: number; name: string }>
+  series: Array<{ year: number; month: number; income_cents: number; expense_cents: number }>
+  // Totals for the exact period; the series covers whole months, at most 12.
+  income_cents: number
+  expense_cents: number
+  recurring_cents: number
+  month_count: number
 }
 
-type InsightsFlowResponse = {
-  period: { slug: string; start: string; end: string }
-  filters: {
-    tag_id: number | null
-    included_tag_ids: number[]
-    excluded_tag_ids: number[]
-  }
-  nodes: FlowNode[]
-  links: Array<{ from: string; to: string; amount_cents: number }>
+type GridKind = "expense" | "income" | "tag"
+
+type MonthGridResponse = {
+  months: string[]
+  current_month: string
+  rows: Array<{ id: number | null; name: string; icon: string | null; values_cents: number[] }>
+}
+
+type RecurringSplitResponse = {
+  months: string[]
+  rows: Array<{ month: string; recurring_cents: number; other_cents: number }>
+}
+
+type DayCalendarResponse = {
+  start: string
+  end: string
+  days: Array<{ date: string; amount_cents: number }>
+  weekday_avg_cents: number[]
+  weekend_share: number
+}
+
+type BudgetHistoryResponse = {
+  months: string[]
+  current_month: string
+  rows: Array<{
+    category_id: number | null
+    name: string
+    icon: string | null
+    cells: Array<{ month: string; budget_cents: number | null; spent_cents: number }>
+  }>
+}
+
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+const MONTH_YEAR = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+const DAY_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+const DAY_LEVELS = ["None", "Under 25 €", "25–60 €", "60–120 €", "120 € or more"]
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function monthDate(month: string): Date {
+  return new Date(`${month}-01T00:00:00Z`)
+}
+
+// The ledger scoped to a chart slice, with Insights as the way back.
+function ledgerUrl(range: { start: string; end: string }, scope?: { key: "category" | "tags"; id: number }): string {
+  const params = new URLSearchParams({ period: "custom", start: range.start, end: range.end })
+  if (scope) params.set(scope.key, String(scope.id))
+  params.set("from", "insights")
+  return `/transactions?${params.toString()}`
+}
+
+function monthBounds(month: string): { start: string; end: string } {
+  const start = monthDate(month)
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
+  return { start: `${month}-01`, end: end.toISOString().slice(0, 10) }
+}
+
+// Grid column heads: the year only where it changes, so the first and current October differ.
+function monthLabels(months: string[]): string[] {
+  return months.map((month, index) => {
+    const date = monthDate(month)
+    return index === 0 || date.getUTCMonth() === 0 ? MONTH_YEAR.format(date) : SHORT_MONTH.format(date)
+  })
+}
+
+// Chart axes have less room: month names for a year or so, month and year for longer spans.
+function axisLabels(months: string[]): string[] {
+  const format = months.length > 13 ? MONTH_YEAR : SHORT_MONTH
+  return months.map((month) => format.format(monthDate(month)))
+}
+
+function percentChange(ratio: number): string {
+  const rounded = Math.round(ratio * 100)
+  return rounded === 0 ? "0 %" : `${rounded > 0 ? "+" : "−"} ${Math.abs(rounded)} %`
+}
+
+function dayLevel(cents: number): CalendarLevel {
+  return cents <= 0 ? 0 : cents < 2500 ? 1 : cents < 6000 ? 2 : cents < 12000 ? 3 : 4
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0)
 }
 
 function InsightsPage() {
+  const navigate = useNavigate()
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [draftTagMode, setDraftTagMode] = useState<TagFilterMode>("include")
-  const [draftTagIds, setDraftTagIds] = useState<number[]>([])
-  const [isDesktop, setIsDesktop] = useState(() =>
-    window.matchMedia("(min-width: 861px)").matches
-  )
-  const activeView = searchParams.get("view") === "net" ? "net" : "charts"
+  const [gridKind, setGridKind] = useState<GridKind>("expense")
+  const [emptyTagMode, setEmptyTagMode] = useState<TagMode>("include")
+
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const includedTagIds = parseTagIds(searchParams, ["tag", "tags"])
+  const excludedTagIds = parseTagIds(searchParams, ["exclude_tags"])
+  const tagMode: TagMode = excludedTagIds.length ? "exclude" : includedTagIds.length ? "include" : emptyTagMode
+  const tagIds = tagMode === "exclude" ? excludedTagIds : includedTagIds
   const queryString = useMemo(() => {
     const params = canonicalizeTagScope(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
-    }
+    if (!params.get("period")) params.set("period", "all")
     params.delete("type")
     return params.toString()
   }, [searchParams])
 
-  const { data, isLoading, isFetching, error } = useQuery({
+  const insights = useQuery({
     queryKey: ["insights", queryString],
     queryFn: () => apiFetch<InsightsResponse>(`/api/insights?${queryString}`),
   })
-  const {
-    data: flowData,
-    isFetching: flowFetching,
-    error: flowError,
-    refetch: refetchFlow,
-  } = useQuery({
-    queryKey: ["insights", "flow", queryString],
-    queryFn: () => apiFetch<InsightsFlowResponse>(`/api/insights/flow?${queryString}`),
-    enabled: activeView === "net",
+  const split = useQuery({
+    queryKey: ["insights", "recurring-split"],
+    queryFn: () => apiFetch<RecurringSplitResponse>("/api/insights/recurring-split"),
+  })
+  const grid = useQuery({
+    queryKey: ["insights", "month-grid", gridKind],
+    queryFn: () => apiFetch<MonthGridResponse>(`/api/insights/month-grid?kind=${gridKind}`),
+  })
+  const calendar = useQuery({
+    queryKey: ["insights", "day-calendar"],
+    queryFn: () => apiFetch<DayCalendarResponse>("/api/insights/day-calendar"),
+  })
+  const budgets = useQuery({
+    queryKey: ["insights", "budget-history"],
+    queryFn: () => apiFetch<BudgetHistoryResponse>("/api/insights/budget-history"),
   })
 
-  const updateParam = (key: string, value: string | null) => {
-    setSearchParams(buildSearchParams(searchParams, { [key]: value }))
-  }
+  if (insights.isLoading) return <PanelLoading title="Insights" label="Loading insights…" />
+  if (insights.error || !insights.data) return <PanelError title="Insights" message="Unable to load insights." />
+  const data = insights.data
 
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(buildPresetPeriodSearchParams(searchParams, value))
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-  const setTagFilter = (mode: TagFilterMode, ids: number[]) => {
+  const setPeriod = (next: PeriodSelection) => setSearchParams(writePeriodToSearch(searchParams, next))
+  const setTagFilter = (mode: TagMode, ids: number[]) => {
+    setEmptyTagMode(mode)
     setSearchParams(
       buildSearchParams(searchParams, {
         tag: null,
@@ -145,558 +176,493 @@ function InsightsPage() {
       })
     )
   }
-  const setTrendCategory = (value: string) =>
-    updateParam("trend_category", value || null)
-  const setBudgetMonth = (value: string) =>
-    updateParam("budget_month", value || null)
-  const setView = (view: "charts" | "net") =>
-    setSearchParams(
-      buildSearchParams(searchParams, { view: view === "net" ? "net" : null })
-    )
+  // Chart marks open the ledger scoped to their slice, with Insights as the way back.
+  const openLedger = (range: { start: string; end: string }, scope?: { key: "category" | "tags"; id: number }) =>
+    navigate(ledgerUrl(range, scope))
+  const amountTick = (cents: number) => formatAmount(cents, "balance", false)
 
-  useEffect(() => {
-    const media = window.matchMedia("(min-width: 861px)")
-    const syncDesktop = () => setIsDesktop(media.matches)
-    syncDesktop()
-    media.addEventListener("change", syncDesktop)
-    return () => media.removeEventListener("change", syncDesktop)
-  }, [])
+  // Strip and the income and expenses chart follow the period and Filter.
+  const series = data.series
+  const income = data.income_cents
+  const spent = data.expense_cents
+  const months = data.month_count
+  const saved = income - spent
+  const recurring = data.recurring_cents
+  const seriesMonths = series.map((point) => `${point.year}-${String(point.month).padStart(2, "0")}`)
+  const seriesLabels = axisLabels(seriesMonths)
+  const splitFull = split.data?.rows.slice(0, -1) ?? []
+  const recurringFull = sum(splitFull.map((row) => row.recurring_cents))
+  const spentFull = recurringFull + sum(splitFull.map((row) => row.other_cents))
 
-  useEffect(() => {
-    const hasContradictoryTagScope =
-      searchParams.has("exclude_tags") &&
-      (searchParams.has("tag") || searchParams.has("tags"))
-    if (!searchParams.has("type") && !hasContradictoryTagScope) return
-    const params = canonicalizeTagScope(searchParams)
-    params.delete("type")
-    setSearchParams(params, { replace: true })
-  }, [searchParams, setSearchParams])
+  const metrics: Metric[] = [
+    {
+      label: "Income",
+      value: <Amount cents={income} />,
+      detail: months > 1 ? `${months} months` : undefined,
+    },
+    {
+      label: "Spent",
+      value: <Amount cents={spent} />,
+      detail:
+        months > 1 ? (
+          <>
+            <Amount cents={Math.round(spent / months)} /> per month
+          </>
+        ) : undefined,
+    },
+    {
+      label: "Saved",
+      value: <Amount cents={saved} tone={saved > 0 ? "income" : undefined} />,
+      detail: income > 0 ? `${Math.round((saved / income) * 100)} % of income` : undefined,
+    },
+    {
+      label: "Recurring",
+      value: spent ? `${Math.round((recurring / spent) * 100)} %` : "–",
+      detail: "of spending",
+    },
+  ]
 
-  if (isLoading) {
-    return <RouteLoading title="Insights" label="Loading insights…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Insights" message="Unable to load insights." />
-  }
+  const flowLegend: LegendEntry[] = [
+    { key: "income", label: "Income", color: "var(--income)", mark: "line" },
+    { key: "expenses", label: "Expenses", color: "var(--ink)", mark: "line" },
+    { key: "saved", label: "Saved", color: "var(--saved)", mark: "area" },
+  ]
+  const flowEvery = seriesLabels.length <= 13 ? (isDesktop ? 1 : 3) : Math.ceil(seriesLabels.length / (isDesktop ? 6 : 3))
 
-  const {
-    period,
-    filters,
-    tags,
-    categories,
-    series,
-    expense_breakdown,
-    income_breakdown,
-    deltas,
-    top_tags,
-    trend,
-    trend_category_id,
-    budget_month,
-    budget_effective,
-    budget_progress,
-  } = data
-  const expenseCategories = categories.filter((category) => category.type === "expense")
-  const expenseIconMap = Object.fromEntries(
-    expenseCategories
-      .map((category) => [category.name, category.icon])
-  )
-  const incomeIconMap = Object.fromEntries(
-    categories
-      .filter((category) => category.type === "income")
-      .map((category) => [category.name, category.icon])
-  )
+  // Rolling windows: the last 12 full months and the month in progress.
+  const splitLabels = axisLabels(split.data?.months ?? [])
+  const splitShort = (split.data?.months ?? []).map((month) => SHORT_MONTH.format(monthDate(month)).slice(0, 1))
 
-  const seriesLabels = series.map((row) => row.label)
-  const trendLabels = trend.map((row) =>
-    new Date(
-      `${row.year}-${String(row.month).padStart(2, "0")}-01T00:00:00`
-    ).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
-  )
-  const tagMode: TagFilterMode = filters.excluded_tag_ids.length ? "exclude" : "include"
-  const selectedTagIds =
-    tagMode === "exclude" ? filters.excluded_tag_ids : filters.included_tag_ids
-  const selectedTags = selectedTagIds.flatMap((id) => {
-    const tag = tags.find((item) => item.id === id)
-    return tag ? [tag] : []
+  const gridMonths = grid.data?.months ?? []
+  const gridLabels = monthLabels(gridMonths)
+  const gridShort = gridMonths.map((month) => SHORT_MONTH.format(monthDate(month)).slice(0, 1))
+  const lastFull = gridMonths.length > 1 ? gridMonths[gridMonths.length - 2] : null
+  const gridRows: MonthGridRow[] = (grid.data?.rows ?? []).map((row) => {
+    const full = row.values_cents.slice(0, -1)
+    const average = sum(full) / (full.length || 1)
+    const regular = full.filter((value) => value > 0).length >= 6
+    return {
+      key: String(row.id),
+      label:
+        gridKind === "tag" ? (
+          <TagChip>{row.name}</TagChip>
+        ) : (
+          <>
+            <CategoryGlyph categoryId={row.id} icon={row.icon} name={row.name} inline />
+            {row.name}
+          </>
+        ),
+      values: row.values_cents,
+      color: gridKind === "tag" ? "var(--ink-2)" : categoryColor(row.id),
+      total: <Amount cents={sum(row.values_cents)} decimals={false} />,
+      change: regular && average ? percentChange((full[full.length - 1] - average) / average) : "–",
+    }
   })
-  const selectedTrendCategory = trend_category_id
-    ? expenseCategories.find((category) => category.id === trend_category_id)?.name
-    : null
-  const trendHasSpend = trend.some((row) => row.amount_cents > 0)
-  const trendWindowEndLabel = new Date(`${period.end}T00:00:00`).toLocaleDateString(
-    "en-GB",
-    { month: "short", year: "numeric" }
-  )
-  const tagFilterLabel = selectedTagIds.length === 1 && selectedTags[0]
-    ? `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTags[0].name}`
-    : `${tagMode === "include" ? "Only" : "Excluding"}: ${selectedTagIds.length} tags`
-  const activeFilters = [
-    selectedTagIds.length
-      ? {
-          key: "tags",
-          label: tagFilterLabel,
-          onRemove: () => setTagFilter(tagMode, []),
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    key: string
-    label: string
-    onRemove: () => void
-  }>
-  const incomeColor = "rgb(var(--semantic-green))"
-  const expenseColor = "rgb(var(--semantic-red))"
-  const trendColor = "rgb(var(--accent))"
-  const flowPeriodLabel =
-    period.slug === "all"
-      ? "All time"
-      : `${formatEuroDate(period.start)} → ${formatEuroDate(period.end)}`
+  const gridNames = new Map((grid.data?.rows ?? []).map((row) => [String(row.id), row]))
 
-  const openFilters = () => {
-    setDraftTagMode(tagMode)
-    setDraftTagIds(selectedTagIds)
-  }
-
-  const clearFilterDraft = () => {
-    setDraftTagIds([])
-  }
-
-  const clearFilters = () => {
-    const params = new URLSearchParams(searchParams)
-    params.delete("tag")
-    params.delete("tags")
-    params.delete("exclude_tags")
-    setSearchParams(params)
-  }
-
-  const applyFilters = () => {
-    const params = new URLSearchParams(searchParams)
-    params.delete("tag")
-    params.delete("tags")
-    params.delete("exclude_tags")
-    const serializedTags = serializeTagIds(draftTagIds)
-    if (serializedTags) {
-      params.set(draftTagMode === "include" ? "tags" : "exclude_tags", serializedTags)
+  const days = (() => {
+    if (!calendar.data) return null
+    const start = new Date(`${calendar.data.start}T00:00:00Z`)
+    const end = new Date(`${calendar.data.end}T00:00:00Z`)
+    const offset = (start.getUTCDay() + 6) % 7
+    const first = new Date(start.getTime() - offset * DAY_MS)
+    const count = Math.ceil((offset + Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1) / 7) * 7
+    const amounts = new Map(calendar.data.days.map((day) => [day.date, day.amount_cents]))
+    const dates = Array.from({ length: count }, (_, index) => new Date(first.getTime() + index * DAY_MS))
+    const months: Array<{ week: number; label: string }> = []
+    dates.forEach((date, index) => {
+      if (date.getUTCDate() === 1 && date >= start) months.push({ week: Math.floor(index / 7), label: SHORT_MONTH.format(date) })
+    })
+    return {
+      dates,
+      months,
+      amounts: dates.map((date) => amounts.get(date.toISOString().slice(0, 10)) ?? 0),
+      levels: dates.map((date) =>
+        date < start || date > end ? null : dayLevel(amounts.get(date.toISOString().slice(0, 10)) ?? 0)
+      ),
     }
-    setSearchParams(params)
-  }
+  })()
 
-  const goToCategoryTransactions = (categoryId: number) => {
-    const params = new URLSearchParams()
-    params.set("period", period.slug)
-    if (period.slug === "custom") {
-      params.set("start", period.start)
-      params.set("end", period.end)
-    }
-    params.set("type", "expense")
-    params.set("category", String(categoryId))
-    const serializedTags = serializeTagIds(selectedTagIds)
-    if (serializedTags) {
-      params.set(tagMode === "include" ? "tags" : "exclude_tags", serializedTags)
-    }
-    window.location.assign(`/transactions?${params.toString()}`)
-  }
-
-  const filterControl = (
-    <PageFilterControl
-      title="Insights filters"
-      activeCount={activeFilters.length}
-      isDesktop={isDesktop}
-      onOpen={openFilters}
-      onClear={clearFilterDraft}
-      onApply={applyFilters}
-    >
-      <TagFilterPicker
-        tags={tags}
-        mode={draftTagMode}
-        selectedIds={draftTagIds}
-        onModeChange={setDraftTagMode}
-        onChange={setDraftTagIds}
-      />
-    </PageFilterControl>
-  )
+  const budgetMonths = budgets.data?.months ?? []
+  const budgetSources = new Map((budgets.data?.rows ?? []).map((row) => [String(row.category_id), row]))
+  const budgetRows: BudgetGridRow[] = (budgets.data?.rows ?? []).map((row) => {
+      const full = row.cells.slice(0, -1).filter((cell) => cell.budget_cents !== null)
+      const within = full.filter((cell) => cell.spent_cents <= (cell.budget_cents as number)).length
+      return {
+        key: String(row.category_id),
+        label: (
+          <>
+            {row.category_id === null ? null : <CategoryGlyph categoryId={row.category_id} icon={row.icon} name={row.name} inline />}
+            {row.name}
+          </>
+        ),
+        cells: row.cells.map((cell) => ({
+          state: cell.budget_cents === null ? "none" : cell.spent_cents > cell.budget_cents ? "over" : "within",
+          current: cell.month === budgets.data?.current_month,
+        })),
+        total: `${within} of ${full.length}`,
+      }
+    })
 
   return (
-    <section className="space-y-4 md:space-y-5">
-      <PageScopeHeader
-        title="Insights"
-        titleAccessory={
-          isFetching || flowFetching ? <span className="loading-hint">Updating…</span> : null
-        }
-        titleAccessoryAlign="end"
-        controls={
-          <PageFilterBar
-            period={
-              <PeriodPicker
-                periodSlug={period.slug}
-                start={period.start}
-                end={period.end}
-                onSetPreset={setPresetPeriod}
-                onApplyCustom={applyCustomPeriod}
-              />
-            }
-            filters={filterControl}
-          />
-        }
-      />
-
-      <PageTabs
-        value={activeView}
-        ariaLabel="Insights views"
-        items={[
-          { value: "charts", label: "Analysis" },
-          { value: "net", label: "Net" },
-        ]}
-        onValueChange={(value) => setView(value as "charts" | "net")}
-        className="space-y-4 md:space-y-5"
-      >
-        <ActiveFilterChips
-          filters={activeFilters}
-          onClear={clearFilters}
-        />
-
-        <PageTabPanel value="charts" className="space-y-4 md:space-y-5">
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <FinancialPanel role="chart">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Monthly income vs expenses</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                Net after reimbursements · {series.length} months
-              </p>
-            </div>
-          </SectionHeading>
-          <div className="p-4 md:p-5">
+    <Panel
+      title="Insights"
+      viewRow={
+        <ViewRow
+          end={
+            <Popover
+              form
+              label="Filter"
+              align="end"
+              trigger={
+                <Pill icon={FunnelIcon} set={tagIds.length > 0}>
+                  {tagIds.length ? `Filter · ${tagIds.length}` : "Filter"}
+                </Pill>
+              }
+            >
+              <TagFilterOptions tags={data.tags} mode={tagMode} ids={tagIds} onChange={setTagFilter} />
+            </Popover>
+          }
+        >
+          <PeriodControl value={period} onChange={setPeriod} />
+        </ViewRow>
+      }
+    >
+      <MetricStrip metrics={metrics} />
+      <CardRow>
+        <ChartCard
+          title="Income and expenses"
+          meta={income > 0 ? `${Math.round((saved / income) * 100)} % saved` : undefined}
+          legend={flowLegend}
+          empty={series.length ? undefined : "No transactions in this period."}
+          table={
+            <ChartTable
+              label="Income and expenses by month"
+              columns={["Month", "Income", "Expenses", "Saved"]}
+              rows={series.map((point, index) => ({
+                key: seriesMonths[index],
+                cells: [
+                  MONTH_YEAR.format(monthDate(seriesMonths[index])),
+                  <Amount cents={point.income_cents} />,
+                  <Amount cents={point.expense_cents} />,
+                  <Amount cents={point.income_cents - point.expense_cents} />,
+                ],
+              }))}
+            />
+          }
+        >
+          {(focus) => (
             <LineChart
-              ariaLabel="Monthly income compared with expenses"
               labels={seriesLabels}
+              height={150}
+              yAxis
+              zero
+              formatY={amountTick}
+              xEvery={flowEvery}
+              focus={focus}
               series={[
+                { key: "income", values: series.map((point) => point.income_cents), color: "var(--income)" },
+                { key: "expenses", values: series.map((point) => point.expense_cents) },
+              ]}
+              bands={[
                 {
-                  label: "Income",
-                  data: series.map((row) => row.income_cents),
-                  color: incomeColor,
-                  fill: true,
-                },
-                {
-                  label: "Expenses",
-                  data: series.map((row) => row.expense_cents),
-                  color: expenseColor,
-                  fill: true,
+                  key: "saved",
+                  lo: series.map((point) => point.expense_cents),
+                  hi: series.map((point) => point.income_cents),
+                  fill: "var(--saved)",
                 },
               ]}
-            />
-          </div>
-        </FinancialPanel>
-
-        <FinancialPanel role="chart">
-          <SectionHeading className="flex-wrap items-start">
-            <div className="min-w-0">
-              <h2 className="truncate font-head text-lg font-bold">
-                {selectedTrendCategory
-                  ? `Category trend: ${selectedTrendCategory}`
-                  : "Category trend"}
-              </h2>
-              {selectedTrendCategory ? (
-                <p className="mt-0.5 text-xs text-muted">
-                  {trendHasSpend
-                    ? `${trend.length} months ending ${trendWindowEndLabel}`
-                    : `No spend ending ${trendWindowEndLabel}`}
-                </p>
-              ) : null}
-            </div>
-            <AppFieldLabel className="w-full shrink-0 sm:w-44">
-              <span>Trend category</span>
-              <AppNativeSelect
-                className="h-10 py-1.5 text-sm"
-                value={trend_category_id ?? ""}
-                onChange={(event) => setTrendCategory(event.target.value)}
-                disabled={expenseCategories.length === 0}
-              >
-                {expenseCategories.length ? (
-                  expenseCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No expense categories</option>
-                )}
-              </AppNativeSelect>
-            </AppFieldLabel>
-          </SectionHeading>
-          <div className="flex min-h-[16rem] items-center p-4 md:p-5">
-            {selectedTrendCategory && trendHasSpend ? (
-              <div className="w-full">
-                <BarChart
-                  ariaLabel={`Monthly net spending for ${selectedTrendCategory}`}
-                  labels={trendLabels}
-                  series={[
-                    {
-                      label: "Net spend",
-                      data: trend.map((row) => row.amount_cents),
-                      color: trendColor,
-                    },
-                  ]}
-                  height={220}
-                />
-              </div>
-            ) : (
-              <p className="mx-auto max-w-xs text-center text-sm text-muted">
-                {selectedTrendCategory
-                  ? "No spending in this category during the selected trend window."
-                  : "Create an expense category to start a category trend."}
-              </p>
-            )}
-          </div>
-        </FinancialPanel>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <FinancialPanel>
-          <SectionHeading>
-            <h2 className="font-head text-lg font-bold">Top categories</h2>
-          </SectionHeading>
-          <div className="grid gap-3 p-3 sm:grid-cols-2 md:p-4">
-            <MetricLane tone="expense">
-              <p className="text-sm font-semibold text-text">Expenses</p>
-              {expense_breakdown.length ? (
-                <div className="mt-3 space-y-3">
-                  {expense_breakdown.map((row, index) => (
-                    <div key={row.name} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="flex min-w-0 items-center gap-2 text-text">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: palette[index % palette.length] }}
-                          />
-                          <CategoryIcon
-                            icon={expenseIconMap[row.name] ?? null}
-                            label={row.name}
-                          />
-                          <span className="truncate">{row.name}</span>
-                        </span>
-                        <span className="amount-text shrink-0 text-semantic-red">
-                          {formatCurrency(row.amount_cents)} €
-                        </span>
-                      </div>
-                      <div className="h-[5px] rounded-full bg-surface/70">
-                        <div
-                          className="h-[5px] rounded-full bg-semantic-red"
-                          style={{ width: `${row.percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-muted">No expenses in this period.</p>
-              )}
-            </MetricLane>
-            <MetricLane tone="income">
-              <p className="text-sm font-semibold text-text">Income</p>
-              {income_breakdown.length ? (
-                <div className="mt-3 space-y-3">
-                  {income_breakdown.map((row, index) => (
-                    <div key={row.name} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="flex min-w-0 items-center gap-2 text-text">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: palette[index % palette.length] }}
-                          />
-                          <CategoryIcon
-                            icon={incomeIconMap[row.name] ?? null}
-                            label={row.name}
-                          />
-                          <span className="truncate">{row.name}</span>
-                        </span>
-                        <span className="amount-text shrink-0 text-semantic-green">
-                          {formatCurrency(row.amount_cents)} €
-                        </span>
-                      </div>
-                      <div className="h-[5px] rounded-full bg-surface/70">
-                        <div
-                          className="h-[5px] rounded-full bg-semantic-green"
-                          style={{ width: `${row.percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-muted">No income in this period.</p>
-              )}
-            </MetricLane>
-          </div>
-        </FinancialPanel>
-
-        <FinancialPanel role="ledger">
-          <SectionHeading className="flex-wrap items-start">
-            <div>
-              <h2 className="font-head text-lg font-bold">Budget vs actual</h2>
-            </div>
-            <AppFieldLabel className="w-full shrink-0 sm:w-40">
-              <span>Budget month</span>
-              <AppInput
-                className="h-10 py-1.5 text-sm"
-                type="month"
-                value={budget_month}
-                onChange={(event) => setBudgetMonth(event.target.value)}
-              />
-            </AppFieldLabel>
-          </SectionHeading>
-          <div className="divide-y divide-border px-4">
-            {budget_effective.length ? (
-              budget_effective.map((row) => {
-                const progress =
-                  budget_progress[String(row.scope_category_id ?? "null")] ??
-                  budget_progress[String(row.scope_category_id ?? "")] ??
-                  { spent_cents: 0, remaining_cents: row.amount_cents }
-                const spent = progress.spent_cents
-                const remaining = progress.remaining_cents
-                const over = remaining < 0
-                const pct = row.amount_cents
-                  ? Math.min(100, (spent / row.amount_cents) * 100)
-                  : 0
-                const budgetCategory = expenseCategories.find(
-                  (category) => category.id === row.scope_category_id
-                )
+              tooltip={(index) => {
+                const point = series[index]
+                const pointSaved = point.income_cents - point.expense_cents
                 return (
-                  <div key={`${row.scope_label}-${row.source_id}`} className="py-3.5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <CategoryIcon
-                          icon={budgetCategory?.icon ?? null}
-                          label={row.scope_label}
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-text">{row.scope_label}</p>
-                          <p className="text-xs text-muted">
-                            {row.source} · {formatCurrency(row.amount_cents)} € planned
-                          </p>
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="mono-meta text-muted">Spent {formatCurrency(spent)} €</p>
-                        <p
-                          className={`amount-text text-sm ${
-                            over ? "text-semantic-red" : "text-semantic-green"
-                          }`}
-                        >
-                          {over ? "Over" : "Left"} {formatCurrency(Math.abs(remaining))} €
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 h-[5px] rounded-full bg-faint">
-                      <div
-                        className={`h-[5px] rounded-full ${
-                          over ? "bg-semantic-red" : "bg-semantic-green"
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
+                  <ChartTooltip
+                    title={MONTH_YEAR.format(monthDate(seriesMonths[index]))}
+                    rows={[
+                      { key: "income", label: "Income", value: <Amount cents={point.income_cents} />, color: "var(--income)", mark: "line" },
+                      { key: "expenses", label: "Expenses", value: <Amount cents={point.expense_cents} />, color: "var(--ink)", mark: "line" },
+                      {
+                        key: "saved",
+                        label: point.income_cents > 0 ? `Saved (${Math.round((pointSaved / point.income_cents) * 100)} %)` : "Saved",
+                        value: <Amount cents={pointSaved} />,
+                      },
+                    ]}
+                  />
                 )
-              })
-            ) : (
-              <p className="py-5 text-sm text-muted">No budgets set.</p>
-            )}
-          </div>
-        </FinancialPanel>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <FinancialPanel>
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Biggest deltas</h2>
-              <p className="mt-0.5 text-xs text-muted">Largest changes from the prior period</p>
-            </div>
-          </SectionHeading>
-          <div className="grid gap-3 p-3 sm:grid-cols-2 md:p-4">
-            <MetricLane tone="expense">
-              <p className="text-sm font-semibold text-text">Increases</p>
-              <div className="mt-3 space-y-2">
-                {deltas.increases.length ? (
-                  deltas.increases.map((item) => (
-                    <div key={item.category_id} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-text">{item.category_name}</span>
-                      <span className="amount-text shrink-0 text-semantic-red">
-                        +{formatCurrency(item.delta_cents)} €
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted">No increases.</p>
-                )}
-              </div>
-            </MetricLane>
-            <MetricLane tone="income">
-              <p className="text-sm font-semibold text-text">Decreases</p>
-              <div className="mt-3 space-y-2">
-                {deltas.decreases.length ? (
-                  deltas.decreases.map((item) => (
-                    <div key={item.category_id} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-text">{item.category_name}</span>
-                      <span className="amount-text shrink-0 text-semantic-green">
-                        {formatCurrency(item.delta_cents)} €
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted">No decreases.</p>
-                )}
-              </div>
-            </MetricLane>
-          </div>
-        </FinancialPanel>
-
-        <FinancialPanel role="ledger">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Top tags</h2>
-              <p className="mt-0.5 text-xs text-muted">Highest tagged expense totals</p>
-            </div>
-          </SectionHeading>
-          <div className="divide-y divide-border px-4">
-            {top_tags.length ? (
-              top_tags.map((tag) => (
-                <Link
-                  key={tag.id}
-                  to={`/tags/${tag.id}`}
-                  className="flex min-h-12 items-center justify-between gap-3 py-3 text-sm transition-colors hover:text-accent"
-                >
-                  <span className="font-semibold text-text">{tag.name}</span>
-                  <span className="amount-text text-muted">
-                    {formatCurrency(tag.amount_cents)} €
-                  </span>
-                </Link>
-              ))
-            ) : (
-              <p className="py-5 text-sm text-muted">No tags to display.</p>
-            )}
-          </div>
-        </FinancialPanel>
-      </div>
-        </PageTabPanel>
-        <PageTabPanel value="net">
-          {flowError ? (
-            <div className="flex flex-wrap items-center gap-2 py-5 text-sm text-semantic-red">
-              <span>Unable to load income and spending.</span>
-              <AppButton type="button" tone="inline" onClick={() => void refetchFlow()}>
-                Retry
-              </AppButton>
-            </div>
-          ) : (
-            <WaterfallChart
-              key={queryString}
-              nodes={flowData?.nodes ?? []}
-              periodLabel={flowPeriodLabel}
-              onCategoryClick={goToCategoryTransactions}
+              }}
             />
           )}
-        </PageTabPanel>
-      </PageTabs>
-    </section>
+        </ChartCard>
+        <ChartCard
+          title="Recurring and other spending"
+          meta={spentFull ? `${Math.round((recurringFull / spentFull) * 100)} % recurring` : undefined}
+          legend={[
+            { key: "recurring", label: "Recurring", color: "var(--rec)" },
+            { key: "other", label: "Other", color: "var(--ink-2)" },
+          ]}
+          empty={split.isError ? "Recurring spending is unavailable." : split.data ? undefined : "Loading…"}
+          table={
+            <ChartTable
+              label="Recurring and other spending by month"
+              columns={["Month", "Recurring", "Other"]}
+              rows={(split.data?.rows ?? []).map((row) => ({
+                key: row.month,
+                cells: [MONTH_YEAR.format(monthDate(row.month)), <Amount cents={row.recurring_cents} />, <Amount cents={row.other_cents} />],
+              }))}
+            />
+          }
+        >
+          {(focus) =>
+            split.data ? (
+              <ColumnChart
+                labels={splitLabels}
+                shortLabels={splitShort}
+                formatY={amountTick}
+                focus={focus}
+                series={[
+                  { key: "other", values: split.data.rows.map((row) => row.other_cents), color: "var(--ink-2)" },
+                  { key: "recurring", values: split.data.rows.map((row) => row.recurring_cents), color: "var(--rec)" },
+                ]}
+                tooltip={(index) => {
+                  const row = split.data.rows[index]
+                  return (
+                    <ChartTooltip
+                      title={`${MONTH_YEAR.format(monthDate(row.month))}${index === split.data.rows.length - 1 ? " so far" : ""}`}
+                      rows={[
+                        { key: "recurring", label: "Recurring", value: <Amount cents={row.recurring_cents} />, color: "var(--rec)" },
+                        { key: "other", label: "Other", value: <Amount cents={row.other_cents} />, color: "var(--ink-2)" },
+                      ]}
+                    />
+                  )
+                }}
+              />
+            ) : null
+          }
+        </ChartCard>
+      </CardRow>
+      <ChartCard
+        title="By month"
+        controls={
+          <SegmentedControl
+            label="Rows"
+            value={gridKind}
+            options={[
+              { value: "expense", label: "Expenses" },
+              { value: "income", label: "Income" },
+              { value: "tag", label: "Tags" },
+            ]}
+            onChange={setGridKind}
+          />
+        }
+        empty={
+          grid.isError
+            ? "The month grid is unavailable."
+            : !grid.data
+              ? "Loading…"
+              : gridRows.length
+                ? undefined
+                : gridKind === "tag"
+                  ? "No tagged spending in these months."
+                  : "Nothing in these months."
+        }
+        table={
+          <ChartTable
+            label="Amounts by month"
+            columns={[gridKind === "tag" ? "Tag" : "Category", ...gridMonths.map((month) => MONTH_YEAR.format(monthDate(month))), "Total"]}
+            rows={(grid.data?.rows ?? []).map((row) => ({
+              key: String(row.id),
+              cells: [
+                row.name,
+                ...row.values_cents.map((value, index) =>
+                  row.id === null ? (
+                    <Amount key={index} cents={value} decimals={false} />
+                  ) : (
+                    <TableLink
+                      key={index}
+                      to={ledgerUrl(monthBounds(gridMonths[index]), { key: gridKind === "tag" ? "tags" : "category", id: row.id })}
+                    >
+                      <Amount cents={value} decimals={false} />
+                    </TableLink>
+                  )
+                ),
+                <Amount cents={sum(row.values_cents)} decimals={false} />,
+              ],
+            }))}
+          />
+        }
+      >
+        {() => (
+          <MonthGrid
+            months={gridLabels}
+            shortMonths={gridShort}
+            rows={gridRows}
+            totalLabel="Total"
+            changeLabel={lastFull ? `${SHORT_MONTH.format(monthDate(lastFull))} vs avg` : undefined}
+            tooltip={(row, index) => {
+              const source = gridNames.get(row.key)
+              const current = index === gridMonths.length - 1
+              return (
+                <ChartTooltip
+                  title={`${source?.name} · ${MONTH_YEAR.format(monthDate(gridMonths[index]))}${current ? " so far" : ""}`}
+                  rows={[{ key: "amount", label: gridKind === "income" ? "Received" : "Spent", value: <Amount cents={row.values[index]} /> }]}
+                />
+              )
+            }}
+            onSelect={(row, index) => {
+              const source = gridNames.get(row.key)
+              if (source?.id == null) return
+              openLedger(monthBounds(gridMonths[index]), { key: gridKind === "tag" ? "tags" : "category", id: source.id })
+            }}
+          />
+        )}
+      </ChartCard>
+      <ChartCard
+        title="Daily spending"
+        meta="without recurring"
+        empty={calendar.isError ? "Daily spending is unavailable." : days ? undefined : "Loading…"}
+        table={
+          calendar.data && days ? (
+            <>
+              <ChartTable
+                label="Average spending by weekday"
+                columns={["Weekday", "Average"]}
+                rows={calendar.data.weekday_avg_cents.map((value, index) => ({
+                  key: WEEKDAYS[index],
+                  cells: [WEEKDAYS[index], <Amount cents={value} />],
+                }))}
+              />
+              <ChartTable
+                label="Spending by day"
+                columns={["Day", "Spent"]}
+                rows={calendar.data.days.map((day) => ({
+                  key: day.date,
+                  cells: [
+                    <TableLink to={ledgerUrl({ start: day.date, end: day.date })}>
+                      {DAY_LABEL.format(new Date(`${day.date}T00:00:00Z`))}
+                    </TableLink>,
+                    <Amount cents={day.amount_cents} />,
+                  ],
+                }))}
+              />
+            </>
+          ) : null
+        }
+      >
+        {() =>
+          calendar.data && days ? (
+            <ChartWithAside
+              chart={
+                <DayCalendar
+                  days={days.levels}
+                  months={days.months}
+                  scale={DAY_LEVELS}
+                  tooltip={(index) => (
+                    <ChartTooltip
+                      title={DAY_LABEL.format(days.dates[index])}
+                      rows={[
+                        {
+                          key: "spent",
+                          label: "Spent",
+                          value: days.amounts[index] ? <Amount cents={days.amounts[index]} /> : "Nothing",
+                        },
+                      ]}
+                    />
+                  )}
+                  onSelect={(index) => {
+                    const day = days.dates[index].toISOString().slice(0, 10)
+                    openLedger({ start: day, end: day })
+                  }}
+                />
+              }
+              aside={
+                <WeekdayBars
+                  values={calendar.data.weekday_avg_cents}
+                  labels={["M", "T", "W", "T", "F", "S", "S"]}
+                  marked={[5, 6]}
+                  heading="Average by weekday"
+                  summary={
+                    <>
+                      Weekends <b>{Math.round(calendar.data.weekend_share * 100)} %</b>
+                    </>
+                  }
+                  tooltip={(index) => (
+                    <ChartTooltip
+                      title={WEEKDAYS[index]}
+                      rows={[{ key: "average", label: "Average", value: <Amount cents={calendar.data.weekday_avg_cents[index]} /> }]}
+                    />
+                  )}
+                />
+              }
+            />
+          ) : null
+        }
+      </ChartCard>
+      <ChartCard
+        title="Budget history"
+        controls={<IconButton icon={ArrowRightIcon} label="Open budgets" onClick={() => navigate("/budgets")} />}
+        empty={
+          budgets.isError ? "Budget history is unavailable." : !budgets.data ? "Loading…" : budgetRows.length ? undefined : "No budgets yet."
+        }
+        table={
+          <ChartTable
+            label="Budget history by month"
+            columns={["Budget", ...budgetMonths.map((month) => MONTH_YEAR.format(monthDate(month))), "Within"]}
+            rows={budgetRows.map((row) => ({
+              key: row.key,
+              cells: [
+                budgetSources.get(row.key)?.name,
+                ...(budgetSources.get(row.key)?.cells ?? []).map((cell) =>
+                  cell.budget_cents === null ? (
+                    "–"
+                  ) : (
+                    <TableLink to={`/budgets?month=${cell.month}`}>
+                      <Amount cents={cell.spent_cents} decimals={false} /> of <Amount cents={cell.budget_cents} decimals={false} />
+                    </TableLink>
+                  )
+                ),
+                row.total,
+              ],
+            }))}
+          />
+        }
+      >
+        {() => (
+          <BudgetGrid
+            months={monthLabels(budgetMonths)}
+            shortMonths={budgetMonths.map((month) => SHORT_MONTH.format(monthDate(month)).slice(0, 1))}
+            rows={budgetRows}
+            totalLabel="Within"
+            tooltip={(row, index) => {
+              const source = budgetSources.get(row.key)
+              const cell = source?.cells[index]
+              const current = budgetMonths[index] === budgets.data?.current_month
+              const title = `${source?.name} · ${MONTH_YEAR.format(monthDate(budgetMonths[index]))}${current ? " so far" : ""}`
+              return (
+                <ChartTooltip
+                  title={title}
+                  rows={
+                    cell?.budget_cents == null
+                      ? [{ key: "none", label: "No budget", value: "" }]
+                      : [
+                          {
+                            key: "spent",
+                            label: `${Math.round((cell.spent_cents / (cell.budget_cents || 1)) * 100)} % used`,
+                            value: (
+                              <>
+                                <Amount cents={cell.spent_cents} decimals={false} /> of <Amount cents={cell.budget_cents} decimals={false} />
+                              </>
+                            ),
+                          },
+                        ]
+                  }
+                />
+              )
+            }}
+            onSelect={(_, index) => navigate(`/budgets?month=${budgetMonths[index]}`)}
+          />
+        )}
+      </ChartCard>
+    </Panel>
   )
 }
 

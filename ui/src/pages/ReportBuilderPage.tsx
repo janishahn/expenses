@@ -1,218 +1,170 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
+import { FilePdfIcon } from "@phosphor-icons/react/FilePdf"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch, apiFetchBlob, getApiErrorMessage } from "../app/api"
 import type { CategoriesResponse } from "../app/api-types"
-import { Toggle } from "../components/Toggle"
-import PageIntro from "../components/PageIntro"
-import TransactionDateTimeField from "../components/TransactionDateTimeField"
-import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  AppFieldLabel,
-  AppNativeSelect,
-  AppTextarea,
-} from "../components/ui/product-fields"
+import { formatDateRange } from "../app/format"
+import { FormPopover } from "../components/FormPopover"
+import { Button } from "../components/ui/Button"
+import { CheckboxField, CheckGroup } from "../components/ui/Checkbox"
+import { Combobox } from "../components/ui/Combobox"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel } from "../components/ui/Panel"
+import { PeekSection } from "../components/ui/Peek"
+import { Pill } from "../components/ui/Pill"
+import { Property, PropertyButton, PropertyList } from "../components/ui/PropertyList"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { FileRow, FormCard } from "../components/ui/Sheet"
+import { Switch } from "../components/ui/Switch"
+import { Field, FieldError, TextArea, TextField } from "../components/ui/TextField"
 
-function toLocalDateInputValue(value: Date): string {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+type ReportTag = { id: number; name: string; is_hidden_from_filters: boolean; archived_at: string | null }
+type SectionKey = "summary" | "category_breakdown" | "top_categories" | "trend" | "recent_transactions" | "recurring_upcoming"
+type DateRange = { start: string; end: string }
+type GeneratedFile = { url: string; filename: string; at: Date }
+
+const SECTIONS: ReadonlyArray<{ key: SectionKey; label: string }> = [
+  { key: "summary", label: "Summary" },
+  { key: "category_breakdown", label: "Category breakdown" },
+  { key: "top_categories", label: "Top categories" },
+  { key: "trend", label: "Trend" },
+  { key: "recent_transactions", label: "Transactions" },
+  { key: "recurring_upcoming", label: "Upcoming recurring" },
+]
+const DEFAULT_SECTIONS: ReadonlyArray<SectionKey> = ["summary", "category_breakdown", "recent_transactions"]
+const TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" })
+
+function isoDate(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`
 }
 
 function isIsoDate(value: string | null): value is string {
   return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
-type ReportTag = {
-  id: number
-  name: string
-  is_hidden_from_filters: boolean
-  archived_at: string | null
+// This month, unless the link names a range (start and end).
+function initialRange(params: URLSearchParams): DateRange {
+  const start = params.get("start")
+  const end = params.get("end")
+  if (isIsoDate(start) && isIsoDate(end)) return { start, end }
+  const today = new Date()
+  return {
+    start: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)),
+    end: isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+  }
 }
 
-type TagsResponse = {
-  tags: ReportTag[]
+function RangePopover({ value, onSave }: { value: DateRange; onSave: (next: DateRange) => void }) {
+  const [draft, setDraft] = useState(value)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <FormPopover
+      label="Date range"
+      error={error}
+      onOpen={() => {
+        setDraft(value)
+        setError(null)
+      }}
+      onSubmit={() => {
+        if (!draft.start || !draft.end) {
+          setError("Choose a start and an end date.")
+          return false
+        }
+        if (draft.end < draft.start) {
+          setError("The end must not be before the start.")
+          return false
+        }
+        onSave(draft)
+        return true
+      }}
+      trigger={<PropertyButton>{formatDateRange(value.start, value.end)}</PropertyButton>}
+    >
+      <Field label="From">
+        <TextField type="date" autoFocus value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
+      </Field>
+      <Field label="Until">
+        <TextField type="date" value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
+      </Field>
+    </FormPopover>
+  )
 }
 
 function ReportBuilderPage() {
+  const isDesktop = useIsDesktop()
   const [searchParams] = useSearchParams()
-  const today = new Date()
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-  const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-
-  const defaultStartDate = toLocalDateInputValue(firstOfMonth)
-  const defaultEndDate = toLocalDateInputValue(lastOfMonth)
-  const queryStartDate = searchParams.get("start")
-  const queryEndDate = searchParams.get("end")
-
-  const [startDate, setStartDate] = useState(
-    isIsoDate(queryStartDate) ? queryStartDate : defaultStartDate
-  )
-  const [endDate, setEndDate] = useState(
-    isIsoDate(queryEndDate) ? queryEndDate : defaultEndDate
-  )
-  const [sections, setSections] = useState<Record<string, boolean>>({
-    summary: true,
-    category_breakdown: true,
-    top_categories: false,
-    trend: false,
-    recent_transactions: true,
-    recurring_upcoming: false,
-  })
-  const [transactionType, setTransactionType] = useState("")
-  const [transactionsSort, setTransactionsSort] = useState<"newest" | "oldest">(
-    "newest"
-  )
-  const [showRunningBalance, setShowRunningBalance] = useState(false)
-  const [includeCategorySubtotals, setIncludeCategorySubtotals] = useState(false)
+  const [range, setRange] = useState(() => initialRange(searchParams))
+  const [sections, setSections] = useState<ReadonlyArray<SectionKey>>(DEFAULT_SECTIONS)
+  const [transactionType, setTransactionType] = useState<"all" | "income" | "expense">("all")
+  const [sort, setSort] = useState<"newest" | "oldest">("newest")
+  const [runningBalance, setRunningBalance] = useState(false)
+  const [categorySubtotals, setCategorySubtotals] = useState(false)
   const [includeCents, setIncludeCents] = useState(true)
   const [notes, setNotes] = useState("")
   const [categoryMode, setCategoryMode] = useState<"all" | "selected">("all")
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([])
+  const [categoryIds, setCategoryIds] = useState<number[]>([])
   const [tagMode, setTagMode] = useState<"all" | "include" | "exclude">("all")
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+  const [tagIds, setTagIds] = useState<number[]>([])
   const [generating, setGenerating] = useState(false)
-  const [generateError, setGenerateError] = useState("")
-  const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null)
-  const [lastPdfFilename, setLastPdfFilename] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [file, setFile] = useState<GeneratedFile | null>(null)
 
-  const { data: categoriesData } = useQuery({
+  const categories = useQuery({
     queryKey: ["categories"],
-    queryFn: () =>
-      apiFetch<CategoriesResponse>("/api/categories").then((res) => res.categories),
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories").then((response) => response.categories),
   })
-
-  const { data: tagsData } = useQuery({
+  const tags = useQuery({
     queryKey: ["tags", "report-builder"],
-    queryFn: () =>
-      apiFetch<TagsResponse>("/api/tags?period=all&include_archived=1"),
+    queryFn: () => apiFetch<{ tags: ReportTag[] }>("/api/tags?period=all&include_archived=1"),
   })
-
-  const filterTags = useMemo(
-    () =>
-      (tagsData?.tags ?? [])
-        .filter((tag) => !tag.is_hidden_from_filters)
-        .sort((left, right) => {
-          const leftArchived = Boolean(left.archived_at)
-          const rightArchived = Boolean(right.archived_at)
-          if (leftArchived !== rightArchived) return leftArchived ? 1 : -1
-          return left.name.localeCompare(right.name)
-        }),
-    [tagsData],
-  )
-
-  const activeCategories = useMemo(
-    () => (categoriesData || []).filter((category) => category.archived_at === null),
-    [categoriesData]
-  )
-
-  const categoriesByType = useMemo(() => {
-    return {
-      income: activeCategories.filter((category) => category.type === "income"),
-      expense: activeCategories.filter((category) => category.type === "expense"),
-    }
-  }, [activeCategories])
-
-  const handleSectionToggle = (section: string) => {
-    setSections((prev) => ({ ...prev, [section]: !prev[section] }))
-  }
-
-  const handleCategoryToggle = (categoryId: number) => {
-    setSelectedCategoryIds((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((id) => id !== categoryId)
-        : [...prev, categoryId]
-    )
-  }
-
-  const handleTagToggle = (tagId: number) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(tagId)
-        ? prev.filter((id) => id !== tagId)
-        : [...prev, tagId].sort((left, right) => left - right)
-    )
-  }
-
   useEffect(() => {
     return () => {
-      if (lastPdfUrl) {
-        URL.revokeObjectURL(lastPdfUrl)
-      }
+      if (file) URL.revokeObjectURL(file.url)
     }
-  }, [lastPdfUrl])
+  }, [file])
 
-  const handleGenerate = async () => {
-    setGenerateError("")
-    if (!startDate || !endDate) {
-      setGenerateError("Select a start and end date.")
-      return
-    }
-    if (endDate < startDate) {
-      setGenerateError("End date must be after start date.")
-      return
-    }
+  const activeCategories = (categories.data ?? []).filter((category) => category.archived_at === null)
+  // Archived tags stay choosable for past periods; they sort last.
+  const filterTags = (tags.data?.tags ?? [])
+    .filter((tag) => !tag.is_hidden_from_filters)
+    .sort((a, b) => Number(Boolean(a.archived_at)) - Number(Boolean(b.archived_at)) || a.name.localeCompare(b.name))
+  const toggle = <T,>(values: ReadonlyArray<T>, value: T): T[] =>
+    values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
 
-    const enabledSections = Object.entries(sections)
-      .filter(([, enabled]) => enabled)
-      .map(([name]) => name)
-
-    if (!enabledSections.length) {
-      setGenerateError("Select at least one report section.")
-      return
-    }
-
-    const sort = showRunningBalance ? "oldest" : transactionsSort
-    const activeCategoryIds = activeCategories.map((category) => category.id)
-    const selectedActiveCategoryIds = selectedCategoryIds.filter((id) =>
-      activeCategoryIds.includes(id)
-    )
-    const categoryIds =
-      categoryMode === "selected" &&
-      selectedActiveCategoryIds.length > 0 &&
-      selectedActiveCategoryIds.length < activeCategoryIds.length
-        ? selectedActiveCategoryIds
-        : null
-    const availableTagIds = (tagsData?.tags || []).map((tag) => tag.id)
-    const activeTagIds = selectedTagIds.filter((id) => availableTagIds.includes(id))
-    if (tagMode !== "all" && activeTagIds.length === 0) {
-      setGenerateError("Select at least one tag.")
-      return
-    }
-
+  const generate = async () => {
+    setError(null)
+    if (!sections.length) return setError("Select at least one report section.")
+    const activeIds = activeCategories.map((category) => category.id)
+    const chosenCategories = categoryIds.filter((id) => activeIds.includes(id))
+    const chosenTags = tagIds.filter((id) => filterTags.some((tag) => tag.id === id))
+    if (tagMode !== "all" && !chosenTags.length) return setError("Select at least one tag.")
+    // Opened before the request so the browser treats it as a response to the click.
     const popup = window.open("about:blank", "_blank")
-    if (popup) {
-      popup.opener = null
-    }
+    if (popup) popup.opener = null
     setGenerating(true)
     try {
       const { blob, filename } = await apiFetchBlob("/api/reports/pdf", {
         method: "POST",
         body: JSON.stringify({
-          start: startDate,
-          end: endDate,
-          sections: enabledSections,
+          start: range.start,
+          end: range.end,
+          sections: SECTIONS.map((section) => section.key).filter((key) => sections.includes(key)),
           include_cents: includeCents,
           notes: notes.trim() || null,
-          transaction_type: transactionType || null,
-          category_ids: categoryIds && categoryIds.length ? categoryIds : null,
-          tag_ids: tagMode === "include" ? activeTagIds : [],
-          excluded_tag_ids: tagMode === "exclude" ? activeTagIds : [],
-          transactions_sort: sort,
-          show_running_balance: showRunningBalance,
-          include_category_subtotals: includeCategorySubtotals,
+          transaction_type: transactionType === "all" ? null : transactionType,
+          category_ids:
+            categoryMode === "selected" && chosenCategories.length && chosenCategories.length < activeIds.length ? chosenCategories : null,
+          tag_ids: tagMode === "include" ? chosenTags : [],
+          excluded_tag_ids: tagMode === "exclude" ? chosenTags : [],
+          transactions_sort: runningBalance ? "oldest" : sort,
+          show_running_balance: runningBalance,
+          include_category_subtotals: categorySubtotals,
         }),
       })
-
-      if (lastPdfUrl) {
-        URL.revokeObjectURL(lastPdfUrl)
-      }
-
       const url = URL.createObjectURL(blob)
-      setLastPdfUrl(url)
-      setLastPdfFilename(filename)
-
+      setFile({ url, filename: filename ?? "expense_report.pdf", at: new Date() })
       if (popup) {
         popup.location.href = url
       } else {
@@ -224,328 +176,178 @@ function ReportBuilderPage() {
         link.click()
         link.remove()
       }
-    } catch (error) {
+    } catch (failure) {
       popup?.close()
-      setGenerateError(getApiErrorMessage(error, "Unable to generate report."))
+      setError(getApiErrorMessage(failure, "Unable to generate report."))
     } finally {
       setGenerating(false)
     }
   }
 
-  const sectionLabels: Record<string, string> = {
-    summary: "Summary",
-    category_breakdown: "Category breakdown",
-    top_categories: "Top categories",
-    trend: "Trend",
-    recent_transactions: "Transactions",
-    recurring_upcoming: "Recurring upcoming",
+  const download = () => {
+    if (!file) return
+    const link = document.createElement("a")
+    link.href = file.url
+    link.download = file.filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
   }
 
   return (
-    <section className="space-y-4">
-      <PageIntro title="PDF Report Builder" />
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <FinancialPanel role="inspector" className="divide-y divide-border overflow-hidden">
-          <section className="p-5">
-            <h2 className="mb-4 font-head text-lg font-bold">Date range</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TransactionDateTimeField
-                label="Start date"
-                type="date"
-                value={startDate}
-                onChange={setStartDate}
-              />
-              <TransactionDateTimeField
-                label="End date"
-                type="date"
-                value={endDate}
-                onChange={setEndDate}
-              />
-            </div>
-          </section>
-
-          <section className="p-5">
-            <h2 className="mb-4 font-head text-lg font-bold">Transactions</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <AppFieldLabel>
-                Type
-                <AppNativeSelect
-                  value={transactionType}
-                  onChange={(event) => setTransactionType(event.target.value)}
-                  className="mt-1"
-                >
-                  <option value="">All</option>
-                  <option value="income">Income</option>
-                  <option value="expense">Expense</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-
-              <AppFieldLabel>
-                Sort
-                <AppNativeSelect
-                  value={showRunningBalance ? "oldest" : transactionsSort}
-                  onChange={(event) =>
-                    setTransactionsSort(event.target.value as "newest" | "oldest")
+    <Panel
+      title="Reports"
+      actions={
+        <Button variant="primary" icon={FilePdfIcon} aria-label="Generate PDF" disabled={generating} onClick={() => void generate()}>
+          {generating ? "Generating…" : isDesktop ? "Generate PDF" : "Generate"}
+        </Button>
+      }
+    >
+      <FormCard
+        top={
+          file || error ? (
+            <>
+              {file ? (
+                <FileRow
+                  icon={FilePdfIcon}
+                  name={file.filename}
+                  meta={`Generated ${TIME.format(file.at)}`}
+                  action={
+                    <Button variant="ghost" size="small" icon={DownloadSimpleIcon} onClick={download}>
+                      Download
+                    </Button>
                   }
-                  className="mt-1"
-                  disabled={showRunningBalance}
-                >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-            </div>
-
-            <div className="mt-4 grid gap-2 md:grid-cols-2">
-              <label className="flex items-start gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
-                <Toggle on={showRunningBalance} onChange={setShowRunningBalance} />
-                <span>
-                  <span className="font-semibold">Show running balance</span>
-                  <span className="mt-1 block text-[11px] text-muted">
-                    Forces oldest-first sorting.
-                  </span>
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted">
-                <Toggle on={includeCategorySubtotals} onChange={setIncludeCategorySubtotals} />
-                <span>
-                  <span className="font-semibold">Include category subtotals</span>
-                  <span className="mt-1 block text-[11px] text-muted">
-                    Adds a totals table after transactions.
-                  </span>
-                </span>
-              </label>
-            </div>
-          </section>
-
-          <section className="p-5">
-            <h2 className="mb-4 font-head text-lg font-bold">Report sections</h2>
-            <div className="space-y-2">
-              {Object.entries(sections).map(([section, enabled]) => (
-                <label
-                  key={section}
-                  className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
-                >
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={() => handleSectionToggle(section)}
-                    className="control-check"
-                  />
-                  {sectionLabels[section] ||
-                    section
-                      .replace(/_/g, " ")
-                      .replace(/\b\w/g, (letter) => letter.toUpperCase())}
-                </label>
-              ))}
-            </div>
-          </section>
-
-          {activeCategories.length > 0 ? (
-            <section className="p-5">
-              <h2 className="mb-4 font-head text-lg font-bold">Categories</h2>
-              <div
-                role="radiogroup"
-                aria-label="Category scope"
-                className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted"
-              >
-                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
-                  <input
-                    type="radio"
-                    name="categoryMode"
-                    checked={categoryMode === "all"}
-                    onChange={() => setCategoryMode("all")}
-                    className="control-check"
-                  />
-                  All
-                </label>
-                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
-                  <input
-                    type="radio"
-                    name="categoryMode"
-                    checked={categoryMode === "selected"}
-                    onChange={() => setCategoryMode("selected")}
-                    className="control-check"
-                  />
-                  Selected
-                </label>
-              </div>
-
-              {categoryMode === "selected" ? (
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Income
-                    </p>
-                    <div className="grid gap-2">
-                      {categoriesByType.income.map((category) => (
-                        <label
-                          key={category.id}
-                          className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedCategoryIds.includes(category.id)}
-                            onChange={() => handleCategoryToggle(category.id)}
-                            className="control-check"
-                          />
-                          {category.name}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Expense
-                    </p>
-                    <div className="grid gap-2">
-                      {categoriesByType.expense.map((category) => (
-                        <label
-                          key={category.id}
-                          className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedCategoryIds.includes(category.id)}
-                            onChange={() => handleCategoryToggle(category.id)}
-                            className="control-check"
-                          />
-                          {category.name}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                />
               ) : null}
-            </section>
-          ) : null}
-
-          {tagsData?.tags.length ? (
-            <section className="p-5">
-              <h2 className="mb-4 font-head text-lg font-bold">Tags</h2>
-              <div
-                role="radiogroup"
-                aria-label="Tag scope"
-                className="flex flex-wrap items-center gap-3 text-xs font-semibold text-muted"
-              >
-                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
-                  <input
-                    type="radio"
-                    name="tagMode"
-                    checked={tagMode === "all"}
-                    onChange={() => setTagMode("all")}
-                    className="control-check"
+              {error ? <FieldError>{error}</FieldError> : null}
+            </>
+          ) : undefined
+        }
+        main={
+          <PropertyList wide>
+            <Property label="Date range" editable>
+              <RangePopover value={range} onSave={setRange} />
+            </Property>
+            <Property label="Type">
+              <SegmentedControl
+                label="Type"
+                value={transactionType}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "income", label: "Income" },
+                  { value: "expense", label: "Expense" },
+                ]}
+                onChange={setTransactionType}
+              />
+            </Property>
+            {runningBalance ? (
+              <Property label="Sort">Oldest first, for the running balance</Property>
+            ) : (
+              <Property label="Sort" editable>
+                <Menu label="Sort" align="start" trigger={<PropertyButton>{sort === "newest" ? "Newest first" : "Oldest first"}</PropertyButton>}>
+                  <MenuItem checked={sort === "newest"} onSelect={() => setSort("newest")}>
+                    Newest first
+                  </MenuItem>
+                  <MenuItem checked={sort === "oldest"} onSelect={() => setSort("oldest")}>
+                    Oldest first
+                  </MenuItem>
+                </Menu>
+              </Property>
+            )}
+            <Property label="Running balance">
+              <Switch label="Running balance" checked={runningBalance} onCheckedChange={setRunningBalance} />
+            </Property>
+            <Property label="Category subtotals">
+              <Switch label="Category subtotals" checked={categorySubtotals} onCheckedChange={setCategorySubtotals} />
+            </Property>
+            <Property label="Cents in tables">
+              <Switch label="Cents in tables" checked={includeCents} onCheckedChange={setIncludeCents} />
+            </Property>
+          </PropertyList>
+        }
+        side={
+          <>
+            <PeekSection title="Sections">
+              <CheckGroup label="Sections">
+                {SECTIONS.map((section) => (
+                  <CheckboxField
+                    key={section.key}
+                    checked={sections.includes(section.key)}
+                    onCheckedChange={() => setSections(toggle(sections, section.key))}
+                  >
+                    {section.label}
+                  </CheckboxField>
+                ))}
+              </CheckGroup>
+            </PeekSection>
+            <PeekSection title="Scope">
+              <PropertyList wide>
+                <Property label="Categories">
+                  <SegmentedControl
+                    label="Categories"
+                    value={categoryMode}
+                    options={[
+                      { value: "all", label: "All" },
+                      { value: "selected", label: "Selected" },
+                    ]}
+                    onChange={setCategoryMode}
                   />
-                  All
-                </label>
-                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
-                  <input
-                    type="radio"
-                    name="tagMode"
-                    checked={tagMode === "include"}
-                    onChange={() => setTagMode("include")}
-                    className="control-check"
+                  {categoryMode === "selected" ? (
+                    <Combobox
+                      multiple
+                      label="Categories"
+                      selected={categoryIds}
+                      onSelect={(id) => setCategoryIds(toggle(categoryIds, id))}
+                      options={activeCategories.map((category) => ({
+                        value: category.id,
+                        label: category.name,
+                        group: category.type === "income" ? "Income" : "Expense",
+                      }))}
+                      trigger={
+                        <Pill set={categoryIds.length > 0} aria-label={`Choose categories, ${categoryIds.length} chosen`}>
+                          {categoryIds.length ? `${categoryIds.length} chosen` : "Choose"}
+                        </Pill>
+                      }
+                    />
+                  ) : null}
+                </Property>
+                <Property label="Tags">
+                  <SegmentedControl
+                    label="Tags"
+                    value={tagMode}
+                    options={[
+                      { value: "all", label: "All" },
+                      { value: "include", label: "Only include" },
+                      { value: "exclude", label: "Exclude" },
+                    ]}
+                    onChange={setTagMode}
                   />
-                  Only include
-                </label>
-                <label className="inline-flex min-h-11 min-w-11 items-center gap-2 desk:min-h-0 desk:min-w-0">
-                  <input
-                    type="radio"
-                    name="tagMode"
-                    checked={tagMode === "exclude"}
-                    onChange={() => setTagMode("exclude")}
-                    className="control-check"
-                  />
-                  Exclude
-                </label>
-              </div>
-
-              {tagMode !== "all" ? (
-                <div className="mt-4 grid gap-2 md:grid-cols-2">
-                  {filterTags.map((tag) => (
-                    <label
-                      key={tag.id}
-                      className="flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-sm text-muted desk:min-h-0"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTagIds.includes(tag.id)}
-                        onChange={() => handleTagToggle(tag.id)}
-                        className="control-check"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{tag.name}</span>
-                      {tag.archived_at ? (
-                        <span className="shrink-0 text-xs text-muted">Archived</span>
-                      ) : null}
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          <section className="p-5">
-            <h2 className="mb-4 font-head text-lg font-bold">Notes</h2>
-            <AppTextarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              aria-label="Notes"
-            />
-          </section>
-        </FinancialPanel>
-
-        <FinancialPanel role="inspector" className="self-start p-5 lg:sticky lg:top-20">
-          <h2 className="mb-4 font-head text-lg font-bold">Generate</h2>
-          <p className="mb-4 text-sm text-muted">
-            The report will open in a new tab.
-          </p>
-
-          <label className="mb-4 flex min-h-11 items-center gap-3 rounded-md bg-surface-hi/65 px-3 py-2.5 text-xs text-muted desk:min-h-0">
-            <Toggle on={includeCents} onChange={setIncludeCents} />
-            Include cents in tables
-          </label>
-
-          {generateError ? (
-            <p className="mb-4 text-xs text-semantic-red">{generateError}</p>
-          ) : null}
-
-          <AppButton
-            type="button"
-            onClick={handleGenerate}
-            disabled={generating}
-            className="w-full px-4 py-3"
-          >
-            {generating ? "Generating..." : "Generate PDF Report"}
-          </AppButton>
-
-          {lastPdfUrl ? (
-            <div className="mt-3 space-y-2">
-              <AppButton
-                tone="ghost"
-                asChild
-                className="block w-full px-4 py-2 text-center"
-              >
-                <a href={lastPdfUrl} download={lastPdfFilename || "expense_report.pdf"}>
-                  Download latest PDF
-                </a>
-              </AppButton>
-              <p
-                data-testid="report-latest-pdf"
-                className="rounded-md bg-surface-hi/65 px-3 py-2 text-xs text-muted"
-              >
-                Latest PDF ready:{" "}
-                <span className="font-semibold text-text">
-                  {lastPdfFilename || "expense_report.pdf"}
-                </span>
-              </p>
-            </div>
-          ) : null}
-
-        </FinancialPanel>
-      </div>
-    </section>
+                  {tagMode === "all" ? null : (
+                    <Combobox
+                      multiple
+                      label="Tags"
+                      selected={tagIds}
+                      onSelect={(id) => setTagIds(toggle(tagIds, id))}
+                      options={filterTags.map((tag) => ({ value: tag.id, label: tag.name, end: tag.archived_at ? "Archived" : undefined }))}
+                      trigger={
+                        <Pill set={tagIds.length > 0} aria-label={`Choose tags, ${tagIds.length} chosen`}>
+                          {tagIds.length ? `${tagIds.length} chosen` : "Choose"}
+                        </Pill>
+                      }
+                    />
+                  )}
+                </Property>
+              </PropertyList>
+            </PeekSection>
+          </>
+        }
+        wide={
+          <PeekSection title="Notes">
+            <TextArea aria-label="Notes" placeholder="Shown at the top of the report" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </PeekSection>
+        }
+      />
+    </Panel>
   )
 }
 

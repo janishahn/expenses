@@ -1,24 +1,23 @@
-import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeftIcon } from "@phosphor-icons/react/ArrowLeft"
 import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
-import { TrendUpIcon } from "@phosphor-icons/react/TrendUp"
-import { useSearchParams } from "react-router-dom"
+import { ArrowUpRightIcon } from "@phosphor-icons/react/ArrowUpRight"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
-import { palette } from "../components/charts/palette"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-  WorkspaceToolbar,
-} from "../components/product/ProductSurfaces"
-import TransactionDescription from "../components/TransactionDescription"
-import { AppButton } from "../components/ui/product-button"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import type { CategoriesResponse } from "../app/api-types"
+import { formatDateRange } from "../app/format"
+import { Amount } from "../components/ui/Amount"
+import { IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip } from "../components/ui/ChartCard"
+import { BudgetBar, CardRow, ShareBar, type DonutItem } from "../components/ui/Charts"
+import { EmptyState } from "../components/ui/EmptyState"
+import { AmountCell, Cell, List, Row, type Columns } from "../components/ui/LedgerRow"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { WeekStepper } from "../components/ui/PeriodControl"
+import { MetricStrip, Sheet } from "../components/ui/Sheet"
+import { categoryColor } from "../components/ui/tokens"
+
+type CategoryRef = { id: number; name: string; icon: string | null }
 
 type DigestCategory = {
   category_id: number
@@ -35,9 +34,7 @@ type DigestBudgetPulse = {
   scope_label: string
   amount_cents: number
   spent_cents: number
-  used_percent: number
   days_left: number
-  velocity_ratio: number
   pace_state: "under" | "on" | "over"
 }
 
@@ -47,8 +44,7 @@ type DigestUnusual = {
   title: string
   amount_cents: number
   trailing_avg_cents: number
-  category: { id: number; name: string; icon: string | null } | null
-  description?: string | null
+  category: CategoryRef | null
 }
 
 type DigestRecurring = {
@@ -56,8 +52,9 @@ type DigestRecurring = {
   rule_id: number | null
   rule_name: string
   date: string
+  type: "expense" | "income"
   amount_cents: number
-  category: { id: number; name: string; icon: string | null } | null
+  category: CategoryRef | null
 }
 
 type DigestResponse = {
@@ -75,404 +72,274 @@ type DigestResponse = {
   recurring_postings: DigestRecurring[]
 }
 
-function formatWeekRange(startIso: string, endIso: string): string {
-  const start = new Date(`${startIso}T00:00:00`)
-  const end = new Date(`${endIso}T00:00:00`)
-  const startLabel = start.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-  })
-  const endLabel = end.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })
-  return `${startLabel} - ${endLabel}`
+const TOP_COLUMNS: Columns = {
+  columns: "18px 96px minmax(0, 1fr) 84px 96px",
+  mobileColumns: "18px minmax(0, 1fr) 72px 84px",
+}
+const BUDGET_COLUMNS: Columns = {
+  columns: "18px 110px minmax(0, 1fr) 110px",
+  mobileColumns: "18px 92px minmax(0, 1fr) 84px",
+}
+const ROW_COLUMNS = "18px minmax(0, 1fr) auto auto"
+const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" })
+// en-US, because en-GB writes September as "Sept".
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+
+function shiftDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
-function shiftWeekMonday(weekStartIso: string, deltaDays: number): string {
-  const base = new Date(`${weekStartIso}T00:00:00`)
-  const shifted = new Date(base)
-  shifted.setDate(shifted.getDate() + deltaDays)
-  const year = shifted.getFullYear()
-  const month = String(shifted.getMonth() + 1).padStart(2, "0")
-  const day = String(shifted.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+function dayLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  return `${WEEKDAY.format(date)} ${date.getUTCDate()} ${SHORT_MONTH.format(date)}`
 }
 
-function deltaClass(value: number): string {
-  if (value > 0) return "text-semantic-red"
-  if (value < 0) return "text-semantic-green"
-  return "text-muted"
-}
-
-function deltaTone(value: number): "income" | "expense" | "neutral" {
-  if (value > 0) return "expense"
-  if (value < 0) return "income"
-  return "neutral"
-}
-
-function paceDotClass(state: DigestBudgetPulse["pace_state"]): string {
-  if (state === "under") return "bg-semantic-green"
-  if (state === "over") return "bg-semantic-red"
-  return "bg-accent-soft"
+function share(part: number, total: number): string {
+  return `${total ? Math.round((part / total) * 100) : 0} %`
 }
 
 function DigestPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    const weekOf = params.get("week_of")
-    if (!weekOf) {
-      return ""
-    }
-    return params.toString()
-  }, [searchParams])
-
+  const weekOf = searchParams.get("week_of")
   const { data, isLoading, error } = useQuery({
-    queryKey: ["digest", queryString],
-    queryFn: () =>
-      apiFetch<DigestResponse>(
-        queryString ? `/api/digest?${queryString}` : "/api/digest"
-      ),
+    queryKey: ["digest", weekOf ?? ""],
+    queryFn: () => apiFetch<DigestResponse>(weekOf ? `/api/digest?week_of=${weekOf}` : "/api/digest"),
+  })
+  // Budget rows carry no icon, so their glyphs come from the category list.
+  const categories = useQuery({
+    queryKey: ["categories", "all"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
   })
 
-  const setWeekOf = (weekStart: string, direction: "prev" | "next") => {
-    const params = new URLSearchParams(searchParams)
-    params.set("week_of", shiftWeekMonday(weekStart, direction === "prev" ? -7 : 7))
-    setSearchParams(params)
+  if (isLoading) return <PanelLoading title="Digest" label="Loading digest…" />
+  if (error || !data) return <PanelError title="Digest" message="Unable to load digest." />
+
+  const { headline } = data
+  const openLedger = (categoryId: number) => {
+    const params = new URLSearchParams({
+      category: String(categoryId),
+      period: "custom",
+      start: data.week_start,
+      end: data.week_end,
+      from: "digest",
+    })
+    navigate(`/transactions?${params.toString()}`)
   }
 
-  if (isLoading) {
-    return <RouteLoading title="Digest" label="Loading digest…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Digest" message="Unable to load digest." />
-  }
-
-  const topCategoryTotal = data.top_categories.reduce(
-    (total, category) => total + category.amount_cents,
-    0
-  )
-  const compositionTotal = Math.max(
-    data.headline.total_spent_cents,
-    topCategoryTotal
-  )
-  const otherCents = Math.max(0, compositionTotal - topCategoryTotal)
-  const composition = [
-    ...data.top_categories.map((category, index) => ({
+  // The week's spending: the top categories, then everything else as Other.
+  const topTotal = data.top_categories.reduce((sum, category) => sum + category.amount_cents, 0)
+  const weekTotal = Math.max(headline.total_spent_cents, topTotal)
+  const otherCents = weekTotal - topTotal
+  const weekItems: DonutItem[] = [
+    ...data.top_categories.map((category) => ({
       key: String(category.category_id),
-      name: category.name,
-      icon: category.icon,
-      amountCents: category.amount_cents,
-      color: palette[index % palette.length],
+      label: category.name,
+      value: category.amount_cents,
+      color: categoryColor(category.category_id),
+      amount: <Amount cents={category.amount_cents} />,
+      share: share(category.amount_cents, weekTotal),
     })),
     ...(otherCents > 0
-      ? [{
-          key: "other",
-          name: "Other",
-          icon: null,
-          amountCents: otherCents,
-          color: "rgb(var(--border-hi))",
-        }]
+      ? [{ key: "other", label: "Other", value: otherCents, color: categoryColor(null), amount: <Amount cents={otherCents} />, share: share(otherCents, weekTotal) }]
       : []),
   ]
 
+  // Budgets of the month the week ends in, with even pace as of the week's last day.
+  const weekEnd = new Date(`${data.week_end}T00:00:00Z`)
+  const pace = weekEnd.getUTCDate() / new Date(Date.UTC(weekEnd.getUTCFullYear(), weekEnd.getUTCMonth() + 1, 0)).getUTCDate()
+  const overPace = data.budget_pulse.filter((budget) => budget.pace_state === "over").length
+  const categoryIcons = new Map((categories.data?.categories ?? []).map((category) => [category.id, category.icon]))
+
   return (
-    <section className="space-y-4 md:space-y-5">
-      <PageIntro title="Digest" />
-
-      <WorkspaceToolbar
-        className="period-navigator"
-        data-testid="digest-period-navigation"
+    <Panel
+      title="Digest"
+      viewRow={
+        <ViewRow>
+          <WeekStepper
+            label={formatDateRange(data.week_start, data.week_end)}
+            onStep={(direction) => {
+              const params = new URLSearchParams(searchParams)
+              params.set("week_of", shiftDays(data.week_start, direction * 7))
+              setSearchParams(params)
+            }}
+          />
+        </ViewRow>
+      }
+    >
+      <MetricStrip
+        metrics={[
+          {
+            label: "Spent",
+            value: <Amount cents={headline.total_spent_cents} />,
+            detail: headline.transaction_count === 1 ? "1 transaction" : `${headline.transaction_count} transactions`,
+          },
+          {
+            label: "vs last week",
+            value: <Amount cents={headline.vs_last_week_cents} kind="signed" />,
+            detail: (
+              <>
+                <Amount cents={headline.total_spent_cents - headline.vs_last_week_cents} /> last week
+              </>
+            ),
+          },
+          {
+            label: "vs 4-week average",
+            value: <Amount cents={headline.vs_four_week_avg_cents} kind="signed" />,
+            detail: (
+              <>
+                <Amount cents={headline.total_spent_cents - headline.vs_four_week_avg_cents} /> average
+              </>
+            ),
+          },
+          {
+            label: "Budgets on pace",
+            value: data.budget_pulse.length ? `${data.budget_pulse.length - overPace} of ${data.budget_pulse.length}` : "None",
+            detail: data.budget_pulse.length ? `${overPace} over pace` : undefined,
+          },
+        ]}
+      />
+      <ChartCard
+        title="Week"
+        empty={weekItems.length ? undefined : "No spending this week."}
+        table={
+          <ChartTable
+            label="Spending this week by category"
+            columns={["Category", "Amount", "Share"]}
+            rows={weekItems.map((item) => ({ key: item.key, cells: [item.label, item.amount, item.share] }))}
+          />
+        }
       >
-        <div className="period-navigator-controls">
-          <AppButton
-            type="button"
-            onClick={() => setWeekOf(data.week_start, "prev")}
-            tone="ghost"
-            className="h-11 w-11 px-0 py-0 text-muted"
-            aria-label="Previous week"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-          </AppButton>
-          <p className="period-navigator-label">
-            {formatWeekRange(data.week_start, data.week_end)}
-          </p>
-          <AppButton
-            type="button"
-            onClick={() => setWeekOf(data.week_start, "next")}
-            tone="ghost"
-            className="h-11 w-11 px-0 py-0 text-muted"
-            aria-label="Next week"
-          >
-            <ArrowRightIcon className="h-4 w-4" />
-          </AppButton>
-        </div>
-      </WorkspaceToolbar>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricLane tone="expense">
-          <p className="text-sm font-semibold text-text">Total spent</p>
-          <p className="amount-text mt-2 text-2xl text-semantic-red">
-            {formatCurrency(data.headline.total_spent_cents)} €
-          </p>
-        </MetricLane>
-        <MetricLane tone={deltaTone(data.headline.vs_last_week_cents)}>
-          <p className="text-sm font-semibold text-text">vs. last week</p>
-          <p className={`amount-text mt-2 text-xl ${deltaClass(data.headline.vs_last_week_cents)}`}>
-            {data.headline.vs_last_week_cents > 0 ? "+" : ""}
-            {formatCurrency(data.headline.vs_last_week_cents)} €
-          </p>
-        </MetricLane>
-        <MetricLane tone={deltaTone(data.headline.vs_four_week_avg_cents)}>
-          <p className="text-sm font-semibold text-text">vs. 4-week avg</p>
-          <p className={`amount-text mt-2 text-xl ${deltaClass(data.headline.vs_four_week_avg_cents)}`}>
-            {data.headline.vs_four_week_avg_cents > 0 ? "+" : ""}
-            {formatCurrency(data.headline.vs_four_week_avg_cents)} €
-          </p>
-        </MetricLane>
-        <MetricLane tone="neutral">
-          <p className="text-sm font-semibold text-text">Transactions</p>
-          <p className="amount-text mt-2 text-2xl text-text">
-            {data.headline.transaction_count}
-          </p>
-        </MetricLane>
-      </div>
-
-      {compositionTotal > 0 ? (
-        <FinancialPanel role="chart" data-testid="digest-weekly-composition">
-          <SectionHeading>
-            <h2 className="font-head text-lg font-bold">This week at a glance</h2>
-            <span className="amount-text text-sm text-semantic-red">
-              {formatCurrency(compositionTotal)} €
-            </span>
-          </SectionHeading>
-          <div className="p-4 md:p-5">
-            <div
-              role="img"
-              aria-label={`Weekly spending composition. ${composition
-                .map(
-                  (segment) =>
-                    `${segment.name} ${formatCurrency(segment.amountCents)} euros`
-                )
-                .join(", ")}`}
-              className="flex h-14 overflow-hidden rounded-lg bg-faint"
-            >
-              {composition.map((segment) => {
-                const percent = (segment.amountCents / compositionTotal) * 100
+        {(focus) => (
+          <ShareBar
+            focus={focus}
+            items={weekItems}
+            tooltip={(item) => <ChartTooltip rows={[{ key: item.key, label: item.label, value: item.amount, color: item.color }]} />}
+            onSelect={(item) => {
+              if (item.key !== "other") openLedger(Number(item.key))
+            }}
+          />
+        )}
+      </ChartCard>
+      <CardRow>
+        <Sheet title="Top categories">
+          {data.top_categories.length ? (
+            <List flat label="Top categories">
+              {data.top_categories.map((category) => (
+                <Row key={category.category_id} {...TOP_COLUMNS} label={category.name} onOpen={() => openLedger(category.category_id)}>
+                  <CategoryGlyph categoryId={category.category_id} icon={category.icon} name={category.name} />
+                  <Cell>{category.name}</Cell>
+                  <Cell hide="mobile">
+                    <BudgetBar ratio={category.bar_percent / 100} />
+                  </Cell>
+                  <AmountCell>
+                    <Amount cents={category.amount_cents} decimals={false} />
+                  </AmountCell>
+                  <Cell align="right" tone="faint">
+                    {category.is_above_trailing_50 ? <ArrowUpRightIcon size={12} role="img" aria-label="Above its average" /> : null} avg{" "}
+                    <Amount cents={category.trailing_weekly_avg_cents} decimals={false} />
+                  </Cell>
+                </Row>
+              ))}
+            </List>
+          ) : (
+            <EmptyState inline>No spending this week.</EmptyState>
+          )}
+        </Sheet>
+        <Sheet
+          title="Budgets"
+         
+          actions={<IconButton icon={ArrowRightIcon} label="Open budgets" onClick={() => navigate("/budgets")} />}
+        >
+          {data.budget_pulse.length ? (
+            <List flat label="Budgets">
+              {data.budget_pulse.map((budget) => {
+                const remaining = budget.amount_cents - budget.spent_cents
                 return (
-                  <div
-                    key={segment.key}
-                    className="group relative flex min-w-[3px] items-center justify-center overflow-hidden transition-[filter] duration-150 hover:brightness-105"
-                    style={{
-                      width: `${percent}%`,
-                      backgroundColor: segment.color,
-                    }}
-                    title={`${segment.name}: ${formatCurrency(segment.amountCents)} €`}
+                  <Row
+                    key={`${budget.scope_category_id ?? "overall"}-${budget.scope_label}`}
+                    {...BUDGET_COLUMNS}
+                    label={budget.scope_label}
+                    onOpen={() => navigate("/budgets")}
                   >
-                    {percent >= 13 ? (
-                      <span className="truncate px-2 text-xs font-bold text-white drop-shadow-sm">
-                        {segment.name}
-                      </span>
-                    ) : null}
-                  </div>
+                    <CategoryGlyph
+                      categoryId={budget.scope_category_id}
+                      icon={categoryIcons.get(budget.scope_category_id ?? 0)}
+                      name={budget.scope_label}
+                    />
+                    <Cell>{budget.scope_label}</Cell>
+                    <BudgetBar ratio={budget.spent_cents / budget.amount_cents} over={remaining < 0} pace={pace} />
+                    <Cell align="right" tone="muted">
+                      {remaining < 0 ? (
+                        <>
+                          <Amount cents={-remaining} decimals={false} tone="over" /> over
+                        </>
+                      ) : (
+                        <>
+                          <Amount cents={remaining} decimals={false} /> left
+                        </>
+                      )}
+                    </Cell>
+                  </Row>
                 )
               })}
-            </div>
-            <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
-              {composition.map((segment) => (
-                <div key={segment.key} className="flex min-w-0 items-center gap-2.5">
-                  {segment.icon ? (
-                    <CategoryIcon icon={segment.icon} label={segment.name} />
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      className="h-3 w-3 shrink-0 rounded-[3px]"
-                      style={{ backgroundColor: segment.color }}
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-text">
-                      {segment.name}
-                    </p>
-                    <p className="mono-meta text-muted">
-                      {Math.round((segment.amountCents / compositionTotal) * 100)}%
-                    </p>
-                  </div>
-                  <span className="amount-text shrink-0 text-xs text-text">
-                    {formatCurrency(segment.amountCents)} €
-                  </span>
-                </div>
+            </List>
+          ) : (
+            <EmptyState inline>No budgets this month.</EmptyState>
+          )}
+        </Sheet>
+      </CardRow>
+      <CardRow>
+        <Sheet title="Unusual">
+          {data.unusual_transactions.length ? (
+            <List flat label="Unusual transactions">
+              {data.unusual_transactions.map((item) => {
+                const title = item.title || item.category?.name || "Untitled"
+                return (
+                  <Row key={item.id} columns={ROW_COLUMNS} label={title} onOpen={() => navigate(`/transactions/${item.id}`)}>
+                    <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
+                    <Cell>{title}</Cell>
+                    <Cell tone="faint">
+                      avg <Amount cents={item.trailing_avg_cents} decimals={false} />
+                    </Cell>
+                    <AmountCell>
+                      <Amount cents={item.amount_cents} kind="expense" />
+                    </AmountCell>
+                  </Row>
+                )
+              })}
+            </List>
+          ) : (
+            <EmptyState inline>Nothing unusual this week.</EmptyState>
+          )}
+        </Sheet>
+        <Sheet title="Auto-posted">
+          {data.recurring_postings.length ? (
+            <List flat label="Auto-posted transactions">
+              {data.recurring_postings.map((item) => (
+                <Row
+                  key={item.transaction_id}
+                  columns={ROW_COLUMNS}
+                  label={item.rule_name || "Recurring"}
+                  onOpen={() => navigate(item.rule_id ? `/recurring?peek=${item.rule_id}` : `/transactions/${item.transaction_id}`)}
+                >
+                  <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
+                  <Cell>{item.rule_name || "Recurring"}</Cell>
+                  <Cell tone="faint">{dayLabel(item.date)}</Cell>
+                  <AmountCell>
+                    <Amount cents={item.amount_cents} kind={item.type} />
+                  </AmountCell>
+                </Row>
               ))}
-            </div>
-          </div>
-        </FinancialPanel>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <FinancialPanel role="chart">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Top 5 categories this week</h2>
-              <p className="mt-0.5 text-xs text-muted">Compared with trailing weekly averages</p>
-            </div>
-          </SectionHeading>
-          <div className="space-y-3 p-4">
-            {data.top_categories.length ? (
-              data.top_categories.map((row) => (
-                <div key={row.category_id} className="space-y-2">
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="flex min-w-0 items-center gap-3 text-text">
-                      <CategoryIcon icon={row.icon} label={row.name} />
-                      <span className="min-w-0">
-                        <span className="block truncate font-semibold">{row.name}</span>
-                        <span className="mono-meta text-muted">
-                          Avg {formatCurrency(row.trailing_weekly_avg_cents)} €
-                        </span>
-                      </span>
-                    </span>
-                    <span className="amount-text inline-flex shrink-0 items-center gap-1 text-semantic-red">
-                      {formatCurrency(row.amount_cents)} €
-                      {row.is_above_trailing_50 ? (
-                        <TrendUpIcon className="h-3.5 w-3.5" aria-label="Above trailing average" />
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="h-[5px] rounded-full bg-faint">
-                    <div
-                      className="h-[5px] rounded-full bg-semantic-red"
-                      style={{ width: `${Math.max(0, Math.min(100, row.bar_percent))}%` }}
-                    />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted">No spending in this week.</p>
-            )}
-          </div>
-        </FinancialPanel>
-
-        <FinancialPanel role="ledger">
-          <SectionHeading>
-            <h2 className="font-head text-lg font-bold">Budget status as of this week</h2>
-          </SectionHeading>
-          <div className="divide-y divide-border px-4">
-            {data.budget_pulse.length ? (
-              data.budget_pulse.map((row) => (
-                <div
-                  key={`${row.scope_category_id ?? "overall"}-${row.scope_label}`}
-                  className="py-3.5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-text">{row.scope_label}</p>
-                      <p className="mono-meta mt-0.5 text-muted">
-                        {formatCurrency(row.spent_cents)} € of {formatCurrency(row.amount_cents)} € · {row.days_left} days left
-                      </p>
-                    </div>
-                    <span className="amount-text shrink-0 text-sm text-text">
-                      {Math.round(row.used_percent)}%
-                    </span>
-                  </div>
-                  <div className="mt-2.5 h-[5px] rounded-full bg-faint">
-                    <div
-                      className={`h-[5px] rounded-full ${paceDotClass(row.pace_state)}`}
-                      style={{ width: `${Math.max(0, Math.min(100, row.used_percent))}%` }}
-                    />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="py-5 text-sm text-muted">No active budgets this month.</p>
-            )}
-          </div>
-        </FinancialPanel>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <FinancialPanel role="ledger">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Flagged this week</h2>
-              <p className="mt-0.5 text-xs text-muted">Transactions above their category norm</p>
-            </div>
-          </SectionHeading>
-          <div className="divide-y divide-border px-4">
-            {data.unusual_transactions.length ? (
-              data.unusual_transactions.map((row) => (
-                <div key={row.id} className="flex items-start justify-between gap-3 py-3.5">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <CategoryIcon
-                      icon={row.category?.icon ?? null}
-                      label={row.category?.name ?? "Uncategorized"}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-text">
-                        {row.title || row.category?.name || "Untitled"}
-                      </p>
-                      <TransactionDescription
-                        markdown={row.description}
-                        compact
-                        clamp
-                        className="mt-1"
-                      />
-                      <p className="mt-1 text-xs text-muted">
-                        {row.category?.name ?? "Category"} average · {formatCurrency(row.trailing_avg_cents)} €
-                      </p>
-                    </div>
-                  </div>
-                  <p className="amount-text shrink-0 text-sm text-semantic-red">
-                    {formatCurrency(row.amount_cents)} €
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p className="py-5 text-sm text-muted">Nothing unusual this week.</p>
-            )}
-          </div>
-        </FinancialPanel>
-
-        <FinancialPanel role="ledger">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Auto-posted this week</h2>
-              <p className="mt-0.5 text-xs text-muted">Commitments posted from recurring rules</p>
-            </div>
-          </SectionHeading>
-          <div className="divide-y divide-border px-4">
-            {data.recurring_postings.length ? (
-              data.recurring_postings.map((row) => (
-                <div
-                  key={row.transaction_id}
-                  className="flex items-center justify-between gap-3 py-3.5"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <CategoryIcon
-                      icon={row.category?.icon ?? null}
-                      label={row.category?.name ?? "Uncategorized"}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-text">
-                        {row.rule_name || "Recurring rule"}
-                      </p>
-                      <p className="mono-meta mt-0.5 text-muted">
-                        {row.category?.name ?? "Uncategorized"} · {formatEuroDate(row.date)}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="amount-text shrink-0 text-sm text-semantic-red">
-                    {formatCurrency(row.amount_cents)} €
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p className="py-5 text-sm text-muted">No recurring postings this week.</p>
-            )}
-          </div>
-        </FinancialPanel>
-      </div>
-    </section>
+            </List>
+          ) : (
+            <EmptyState inline>Nothing auto-posted this week.</EmptyState>
+          )}
+        </Sheet>
+      </CardRow>
+    </Panel>
   )
 }
 

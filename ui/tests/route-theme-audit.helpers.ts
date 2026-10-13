@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
@@ -82,7 +82,13 @@ async function seedDynamicSurfaces(request: APIRequestContext) {
   return { tagId, transactionId, recurringId }
 }
 
-async function captureSurface(
+// Computed colors of the theme tokens (canvas, panel, ink) in tokens.css.
+const THEME_COLORS = {
+  light: { canvas: "rgb(234, 234, 231)", panel: "rgb(245, 245, 243)", ink: "rgb(28, 28, 26)" },
+  dark: { canvas: "rgb(17, 16, 14)", panel: "rgb(24, 23, 21)", ink: "rgb(238, 235, 230)" },
+} as const
+
+async function checkSurface(
   page: Page,
   layout: AuditLayout,
   theme: AuditTheme,
@@ -111,146 +117,32 @@ async function captureSurface(
       )
       .toEqual({ coarse: true, maxTouchPoints: expectedMaxTouchPoints })
   }
-  if (!artifactRoot) return
 
-  const artifactDirectory = resolve(
-    artifactRoot,
-    layout,
-    theme,
-  )
-  mkdirSync(artifactDirectory, { recursive: true })
-  const basename = slug(name)
-
-  const manifest = await page.evaluate(() => {
-    const viewportWidth = document.documentElement.clientWidth
-    const viewportHeight = document.documentElement.clientHeight
-    const controls = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        "a[href], button, input, select, textarea, [role='button'], [role='link'], [role='tab'], [role='switch'], [role='menuitem']",
-      ),
-    )
-      .filter((element) => {
-        const style = window.getComputedStyle(element)
-        const rect = element.getBoundingClientRect()
-        return (
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          style.opacity !== "0" &&
-          style.pointerEvents !== "none" &&
-          rect.width > 0 &&
-          rect.height > 0
-        )
-      })
-      .map((element, index) => {
-        const rect = element.getBoundingClientRect()
-        const pseudoBox = (pseudo: "::before" | "::after") => {
-          const style = window.getComputedStyle(element, pseudo)
-          if (style.content === "none") return null
-          const number = (value: string) => {
-            const parsed = Number.parseFloat(value)
-            return Number.isFinite(parsed) ? parsed : 0
-          }
-          return {
-            width: Math.round(rect.width - number(style.left) - number(style.right)),
-            height: Math.round(rect.height - number(style.top) - number(style.bottom)),
-            inset: {
-              top: style.top,
-              right: style.right,
-              bottom: style.bottom,
-              left: style.left,
-            },
-          }
-        }
-        const labels = "labels" in element
-          ? Array.from((element as HTMLInputElement).labels ?? [])
-          : element.closest("label")
-            ? [element.closest("label")!]
-            : []
-        const labelBoxes = labels.map((label) => {
-          const labelRect = label.getBoundingClientRect()
-          return {
-            width: Math.round(labelRect.width),
-            height: Math.round(labelRect.height),
-          }
-        })
-        return {
-          index,
-          tag: element.tagName.toLowerCase(),
-          role: element.getAttribute("role"),
-          type: element.getAttribute("type"),
-          text: (element.innerText || "").trim().replace(/\s+/g, " ").slice(0, 160),
-          ariaLabel: element.getAttribute("aria-label"),
-          title: element.getAttribute("title"),
-          href: element.getAttribute("href"),
-          disabled:
-            element.hasAttribute("disabled") ||
-            element.getAttribute("aria-disabled") === "true",
-          checked: element.getAttribute("aria-checked"),
-          expanded: element.getAttribute("aria-expanded"),
-          selected: element.getAttribute("aria-selected"),
-          box: {
-            x: Math.round(rect.x),
-            y: Math.round(rect.y),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          },
-          generatedTargets: {
-            before: pseudoBox("::before"),
-            after: pseudoBox("::after"),
-          },
-          enclosingLabels: labelBoxes,
-          coarsePointer: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-        }
-      })
-    const overflowing = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
-      .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-      .filter(({ element, rect }) => {
-        const style = window.getComputedStyle(element)
-        return (
-          !element.closest(".sr-only") &&
-          !element.closest(".app-sidebar:not(.app-sidebar-open)") &&
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          style.opacity !== "0" &&
-          rect.width > 0 &&
-          (rect.right > viewportWidth + 1 || rect.left < -1)
-        )
-      })
-      .slice(0, 20)
-      .map(({ element, rect }) => ({
-        tag: element.tagName.toLowerCase(),
-        className: element.getAttribute("class") || "",
-        left: Math.round(rect.left),
-        right: Math.round(rect.right),
-        width: Math.round(rect.width),
-      }))
+  const rendered = await page.evaluate(() => {
+    const main = document.querySelector("main")!
+    const heading = main.querySelector("h1")
     return {
-      url: window.location.href,
-      title: document.title,
-      theme: document.documentElement.dataset.theme,
-      viewport: { width: viewportWidth, height: viewportHeight },
-      document: {
-        scrollWidth: document.documentElement.scrollWidth,
-        scrollHeight: document.documentElement.scrollHeight,
-      },
-      activeElement: document.activeElement?.tagName.toLowerCase() || null,
-      inputMedia: {
-        coarsePointer: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-        anyCoarsePointer: window.matchMedia("(any-hover: none) and (any-pointer: coarse)").matches,
-        maxTouchPoints: navigator.maxTouchPoints,
-      },
-      controls,
-      overflowing,
+      colorScheme: getComputedStyle(document.documentElement).colorScheme,
+      canvas: getComputedStyle(document.body).backgroundColor,
+      panel: getComputedStyle(main).backgroundColor,
+      ink: heading ? getComputedStyle(heading).color : null,
+      inShell: Boolean(document.querySelector('[data-testid="app-shell-root"]')),
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     }
   })
-  writeFileSync(
-    resolve(artifactDirectory, `${basename}.json`),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  )
-  await page.screenshot({
-    path: resolve(artifactDirectory, `${basename}.png`),
-    fullPage: true,
-  })
+  const expected = THEME_COLORS[theme]
+  const where = `${name} (${path}) in ${theme}`
+  expect(rendered.colorScheme, where).toBe(theme)
+  expect(rendered.canvas, where).toBe(expected.canvas)
+  if (rendered.inShell) expect(rendered.panel, where).toBe(expected.panel)
+  expect(rendered.ink, where).toBe(expected.ink)
+  expect(rendered.overflow, where).toBeLessThanOrEqual(0)
+
+  if (artifactRoot) {
+    const directory = resolve(artifactRoot, layout, theme)
+    mkdirSync(directory, { recursive: true })
+    await page.screenshot({ path: resolve(directory, `${slug(name)}.png`), fullPage: true })
+  }
 }
 
 export async function runRouteThemeAudit(
@@ -271,14 +163,14 @@ export async function runRouteThemeAudit(
       )
       .toEqual({ coarse: true, maxTouchPoints: expectedMaxTouchPoints })
   }
-  const captureIsolatedSurface = async (name: string, path: string) => {
+  const checkIsolatedSurface = async (name: string, path: string) => {
     const surfacePage = await page.context().newPage()
     await surfacePage.emulateMedia({ reducedMotion: "reduce", colorScheme: theme })
     await surfacePage.addInitScript((selectedTheme) => {
       window.localStorage.setItem("ew.theme.preference", selectedTheme)
     }, theme)
     try {
-      await captureSurface(surfacePage, layout, theme, name, path)
+      await checkSurface(surfacePage, layout, theme, name, path)
     } finally {
       await surfacePage.close()
     }
@@ -304,10 +196,10 @@ export async function runRouteThemeAudit(
   ]
 
   for (const surface of surfaces) {
-    await captureIsolatedSurface(surface.name, surface.path)
+    await checkIsolatedSurface(surface.name, surface.path)
   }
 
   await ensureElevatedAdmin(page)
-  await captureIsolatedSurface("Admin elevated", "/admin")
-  await captureIsolatedSurface("Admin import elevated", "/admin/import")
+  await checkIsolatedSurface("Admin elevated", "/admin")
+  await checkIsolatedSurface("Admin import elevated", "/admin/import")
 }

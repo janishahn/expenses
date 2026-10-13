@@ -45,7 +45,7 @@ Use Budgets when you want to plan, not only review. Set monthly or annual limits
 
 ![Insights](docs/screenshots/insights-light.png)
 
-Insights helps when totals alone do not tell the full story. Change the period or narrow the view by type and tags, then compare income with spending, inspect category trends, or open the Net view to see how each month changed the balance. Charts link back to the transactions behind them.
+Insights helps when totals alone do not tell the full story. Change the period or narrow the view by tags, then compare income with spending, separate recurring costs from everything else, follow each category or tag month by month, and see which days of the week you spend most. Charts link back to the transactions behind them.
 
 ### Recurring income and expenses
 
@@ -59,7 +59,7 @@ Add salary, rent, subscriptions, and other regular payments once. Expenses can p
 
 Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you enable LLM help, Expenses can suggest rules from your history; you still review them before they take effect.
 
-For local automatic categorization, enable **Settings → Automatic categorization**
+For local automatic categorization, enable **Automatic categorization** in **Settings → Categorization**
 (**Account → Automatic Categorization** on iOS). It is off by default for each user.
 The recommended minimum confidence is **80%**; a higher value leaves more
 expenses uncategorized. Confidence estimates can still be wrong.

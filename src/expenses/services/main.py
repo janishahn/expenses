@@ -11,7 +11,18 @@ from typing import Literal, Optional
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, delete, false, func, or_, select, tuple_, update
+from sqlalchemy import (
+    and_,
+    case,
+    delete,
+    false,
+    func,
+    literal_column,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
@@ -1061,6 +1072,15 @@ class CategoryService:
             ).rowcount
             or 0
         )
+        # A suggestion rejected for the source stays rejected for the target.
+        self.session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.category_suggestion_dismissed_id == source.id,
+            )
+            .values(category_suggestion_dismissed_id=target.id)
+        )
         updated_recurring_rules = int(
             self.session.execute(
                 update(RecurringRule)
@@ -1844,82 +1864,70 @@ class TransactionService:
         self.hydrate_reimbursement_totals(transactions)
         return transactions
 
-    def soft_delete(self, transaction_id: int) -> None:
+    def soft_delete(self, transaction_id: int, *, commit: bool = True) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
         if txn.deleted_at is not None:
             return
-        txn.deleted_at = datetime.utcnow()
-        self.session.flush()
+        self._set_deleted_at([txn], datetime.utcnow(), commit=commit)
 
-        months_to_recompute: set[tuple[int, int]] = {(txn.date.year, txn.date.month)}
-        if txn.type == TransactionType.income and txn.is_reimbursement:
-            expense_dates = self.session.execute(
-                select(Transaction.date)
-                .join(
-                    ReimbursementAllocation,
-                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                )
-            ).all()
-            for row in expense_dates:
-                d = row[0]
-                months_to_recompute.add((d.year, d.month))
-        for y, m in months_to_recompute:
-            recompute_monthly_rollup(self.session, self.user_id, y, m)
-
-        period = Period("transaction", txn.date, txn.date)
-        metrics = MetricsService(self.session, self.user_id)
-        metrics._invalidate_period_cache(period)
-        self.session.commit()
-        log_event(
-            logger,
-            logging.INFO,
-            "transaction_soft_deleted",
-            transaction_id=txn.id,
-            transaction_type=txn.type.value,
-        )
-
-    def restore(self, transaction_id: int) -> None:
+    def restore(self, transaction_id: int, *, commit: bool = True) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
         if txn.deleted_at is None:
             return
-        txn.deleted_at = None
+        self._set_deleted_at([txn], None, commit=commit)
+
+    # Moves transactions to the trash (a time) or restores them (None),
+    # recomputing each affected month once.
+    def _set_deleted_at(
+        self,
+        transactions: list[Transaction],
+        deleted_at: datetime | None,
+        *,
+        commit: bool,
+    ) -> None:
+        for txn in transactions:
+            txn.deleted_at = deleted_at
         self.session.flush()
-        months_to_recompute: set[tuple[int, int]] = {(txn.date.year, txn.date.month)}
-        if txn.type == TransactionType.income and txn.is_reimbursement:
-            expense_dates = self.session.execute(
-                select(Transaction.date)
-                .join(
-                    ReimbursementAllocation,
-                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                )
-            ).all()
-            for row in expense_dates:
-                d = row[0]
-                months_to_recompute.add((d.year, d.month))
+        months_to_recompute: set[tuple[int, int]] = set()
+        for txn in transactions:
+            months_to_recompute.add((txn.date.year, txn.date.month))
+            if txn.type == TransactionType.income and txn.is_reimbursement:
+                expense_dates = self.session.execute(
+                    select(Transaction.date)
+                    .join(
+                        ReimbursementAllocation,
+                        ReimbursementAllocation.expense_transaction_id
+                        == Transaction.id,
+                    )
+                    .where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                    )
+                ).all()
+                for row in expense_dates:
+                    d = row[0]
+                    months_to_recompute.add((d.year, d.month))
         for y, m in months_to_recompute:
             recompute_monthly_rollup(self.session, self.user_id, y, m)
         metrics = MetricsService(self.session, self.user_id)
-        metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
-        self.session.commit()
-        log_event(
-            logger,
-            logging.INFO,
-            "transaction_restored",
-            transaction_id=txn.id,
-            transaction_type=txn.type.value,
-        )
+        for txn in transactions:
+            metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
+        if commit:
+            self.session.commit()
+        for txn in transactions:
+            log_event(
+                logger,
+                logging.INFO,
+                "transaction_restored"
+                if deleted_at is None
+                else "transaction_soft_deleted",
+                transaction_id=txn.id,
+                transaction_type=txn.type.value,
+            )
 
     def permanent_delete(self, transaction_id: int) -> tuple[int, int]:
         deleted_transaction_id = self.session.execute(
@@ -1969,7 +1977,70 @@ class TransactionService:
         self.session.commit()
         return int(result.rowcount or 0), deleted_attachments
 
-    def deleted(self, limit: int = 200) -> list[Transaction]:
+    def soft_delete_many(self, transaction_ids: list[int]) -> int:
+        active = list(
+            self.session.scalars(
+                select(Transaction).where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.id.in_(transaction_ids),
+                    Transaction.deleted_at.is_(None),
+                )
+            )
+        )
+        if active:
+            self._set_deleted_at(active, datetime.utcnow(), commit=True)
+        return len(active)
+
+    def restore_many(self, transaction_ids: list[int]) -> int:
+        trashed = list(
+            self.session.scalars(
+                select(Transaction).where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.id.in_(transaction_ids),
+                    Transaction.deleted_at.isnot(None),
+                )
+            )
+        )
+        if trashed:
+            self._set_deleted_at(trashed, None, commit=True)
+        return len(trashed)
+
+    def permanent_delete_many(self, transaction_ids: list[int]) -> tuple[int, int]:
+        trashed_ids = self.session.scalars(
+            select(Transaction.id).where(
+                Transaction.user_id == self.user_id,
+                Transaction.id.in_(transaction_ids),
+                Transaction.deleted_at.isnot(None),
+            )
+        ).all()
+        if not trashed_ids:
+            return 0, 0
+        return self._delete_deleted_transactions(list(trashed_ids))
+
+    def count_deleted(self) -> int:
+        return int(
+            self.session.scalar(
+                select(func.count(Transaction.id)).where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.isnot(None),
+                )
+            )
+            or 0
+        )
+
+    def count_deleted_before(self, cutoff_date: datetime) -> int:
+        return int(
+            self.session.scalar(
+                select(func.count(Transaction.id)).where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.isnot(None),
+                    Transaction.deleted_at < cutoff_date,
+                )
+            )
+            or 0
+        )
+
+    def deleted(self, limit: int = 200, offset: int = 0) -> list[Transaction]:
         stmt = (
             select(Transaction)
             .options(
@@ -1981,6 +2052,7 @@ class TransactionService:
                 Transaction.user_id == self.user_id, Transaction.deleted_at.isnot(None)
             )
             .order_by(Transaction.deleted_at.desc(), Transaction.id.desc())
+            .offset(offset)
             .limit(limit)
         )
         return self.session.scalars(stmt).unique().all()
@@ -2621,6 +2693,7 @@ class ReceiptAttachmentService:
         mime_type: str,
         size_bytes: int,
         sha256_hex: str,
+        replaces: ReceiptAttachment | None = None,
     ) -> ReceiptAttachment:
         attachment = ReceiptAttachment(
             user_id=self.user_id,
@@ -2632,8 +2705,32 @@ class ReceiptAttachmentService:
             sha256_hex=sha256_hex,
         )
         self.session.add(attachment)
-        self.session.commit()
+        # A replacement swaps the two rows in one commit; its files go once that lands.
+        replaced_files: list[Path] = []
+        if replaces is not None:
+            replaced_id = replaces.id
+            replaced_files = [
+                self.path_for_storage_key(replaces.storage_key),
+                self.thumbnail_path_for(replaces),
+            ]
+            self.session.delete(replaces)
+        try:
+            self.session.commit()
+        except Exception:
+            # Without its row the new file would be orphaned.
+            self.path_for_storage_key(storage_key).unlink(missing_ok=True)
+            raise
         self.session.refresh(attachment)
+        for path in replaced_files:
+            path.unlink(missing_ok=True)
+        if replaces is not None:
+            log_event(
+                logger,
+                logging.INFO,
+                "attachment_deleted",
+                attachment_id=replaced_id,
+                transaction_id=attachment.transaction_id,
+            )
         log_event(
             logger,
             logging.INFO,
@@ -3039,6 +3136,41 @@ class BalanceAnchorService:
                     - int(row[expression_index * 2 + 1])
                 )
         return balances
+
+    def month_end_history(
+        self, *, months: int, now: datetime
+    ) -> list[tuple[date, int]]:
+        """Month-end balances for the last `months` months; the current month ends now.
+
+        Months that end before the first anchor (or the first transaction when
+        there is no anchor) are omitted.
+        """
+        current = month_start(now.year, now.month)
+        starts = [add_months(current, offset) for offset in range(1 - months, 1)]
+        targets = [
+            now
+            if start == current
+            else datetime.combine(month_end(start.year, start.month), time.max)
+            for start in starts
+        ]
+        first_data_at = self.session.scalar(
+            select(func.min(BalanceAnchor.as_of_at)).where(
+                BalanceAnchor.user_id == self.user_id
+            )
+        ) or self.session.scalar(
+            select(func.min(Transaction.occurred_at)).where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+            )
+        )
+        if first_data_at is None:
+            return []
+        balances = self.balances_as_of(targets)
+        return [
+            (start, balance)
+            for start, target, balance in zip(starts, targets, balances, strict=True)
+            if target >= first_data_at
+        ]
 
 
 class MetricsService:
@@ -4622,6 +4754,216 @@ class InsightsService:
         increases = sorted(deltas, key=lambda r: r["delta_cents"], reverse=True)[:limit]
         decreases = sorted(deltas, key=lambda r: r["delta_cents"])[:limit]
         return {"increases": increases, "decreases": decreases}
+
+    def grouped_amounts(
+        self,
+        kind: TransactionType,
+        start: date,
+        end: date,
+        dims,
+        *,
+        by_tag: bool = False,
+        recurring: Optional[bool] = None,
+        tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+    ) -> dict[tuple, int]:
+        """Sum amounts per `dims(Transaction)` key in SQL.
+
+        Expenses are net of reimbursement allocations and income excludes
+        reimbursements, matching the other insight queries. `dims` receives the
+        Transaction (or alias) and returns the grouping columns.
+        """
+
+        def scoped(stmt, txn):
+            stmt = stmt.where(
+                txn.user_id == self.user_id,
+                txn.deleted_at.is_(None),
+                txn.type == kind,
+                txn.date.between(start, end),
+            )
+            if recurring is not None:
+                stmt = stmt.where(
+                    txn.origin_rule_id.is_not(None)
+                    if recurring
+                    else txn.origin_rule_id.is_(None)
+                )
+            return _apply_transaction_tag_scope(
+                stmt, txn, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+            )
+
+        columns = dims(Transaction)
+        gross_stmt = select(*columns, func.sum(Transaction.amount_cents)).select_from(
+            Transaction
+        )
+        if by_tag:
+            gross_stmt = gross_stmt.join(
+                transaction_tags, transaction_tags.c.transaction_id == Transaction.id
+            )
+        gross_stmt = scoped(gross_stmt, Transaction).group_by(*columns)
+        if kind == TransactionType.income:
+            gross_stmt = gross_stmt.where(Transaction.is_reimbursement.is_(False))
+        gross = {
+            tuple(row[:-1]): int(row[-1] or 0)
+            for row in self.session.execute(gross_stmt)
+        }
+        if kind == TransactionType.income:
+            return gross
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        expense_columns = dims(ExpenseTxn)
+        reimbursed_stmt = (
+            select(*expense_columns, func.sum(ReimbursementAllocation.amount_cents))
+            .select_from(ReimbursementAllocation)
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+        )
+        if by_tag:
+            reimbursed_stmt = reimbursed_stmt.join(
+                transaction_tags, transaction_tags.c.transaction_id == ExpenseTxn.id
+            )
+        reimbursed_stmt = (
+            scoped(reimbursed_stmt, ExpenseTxn)
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(*expense_columns)
+        )
+        reimbursed = {
+            tuple(row[:-1]): int(row[-1] or 0)
+            for row in self.session.execute(reimbursed_stmt)
+        }
+        return {
+            key: max(0, amount - reimbursed.get(key, 0))
+            for key, amount in gross.items()
+        }
+
+    @staticmethod
+    def _month_column(txn):
+        return func.strftime(literal_column("'%Y-%m'"), txn.date)
+
+    @staticmethod
+    def grid_months(today: date) -> list[date]:
+        current = month_start(today.year, today.month)
+        return [add_months(current, offset) for offset in range(-12, 1)]
+
+    def month_grid(self, kind: str, *, today: date) -> dict[str, object]:
+        months = self.grid_months(today)
+        labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
+        start, end = months[0], month_end(today.year, today.month)
+        if kind == "tag":
+            amounts = self.grouped_amounts(
+                TransactionType.expense,
+                start,
+                end,
+                lambda txn: [self._month_column(txn), transaction_tags.c.tag_id],
+                by_tag=True,
+            )
+            tags = self.session.scalars(
+                select(Tag)
+                .where(
+                    Tag.user_id == self.user_id,
+                    Tag.is_hidden_from_filters.is_(False),
+                )
+                .order_by(Tag.name)
+            ).all()
+            entities = [(tag.id, tag.name, None, tag.archived_at) for tag in tags]
+        else:
+            category_type = TransactionType(kind)
+            amounts = self.grouped_amounts(
+                category_type,
+                start,
+                end,
+                lambda txn: [self._month_column(txn), txn.category_id],
+            )
+            categories = self.session.scalars(
+                select(Category)
+                .where(
+                    Category.user_id == self.user_id,
+                    Category.type == category_type,
+                )
+                .order_by(Category.name)
+            ).all()
+            entities = [
+                (category.id, category.name, category.icon, category.archived_at)
+                for category in categories
+            ]
+        rows = []
+        for entity_id, name, icon, archived_at in entities:
+            values = [amounts.get((label, entity_id), 0) for label in labels]
+            if archived_at is not None and not any(values):
+                continue
+            rows.append(
+                {"id": entity_id, "name": name, "icon": icon, "values_cents": values}
+            )
+        rows.sort(key=lambda row: (-sum(row["values_cents"]), row["name"]))
+        return {"months": labels, "current_month": labels[-1], "rows": rows}
+
+    def recurring_split(self, *, today: date) -> dict[str, object]:
+        months = self.grid_months(today)
+        labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
+        amounts = self.grouped_amounts(
+            TransactionType.expense,
+            months[0],
+            month_end(today.year, today.month),
+            lambda txn: [self._month_column(txn), txn.origin_rule_id.is_not(None)],
+        )
+        return {
+            "months": labels,
+            "current_month": labels[-1],
+            "rows": [
+                {
+                    "month": label,
+                    "recurring_cents": amounts.get((label, True), 0),
+                    "other_cents": amounts.get((label, False), 0),
+                }
+                for label in labels
+            ],
+        }
+
+    def day_calendar(self, *, today: date) -> dict[str, object]:
+        start = today - timedelta(days=53 * 7 - 1)
+        amounts = self.grouped_amounts(
+            TransactionType.expense,
+            start,
+            today,
+            lambda txn: [txn.date],
+            recurring=False,
+        )
+        weekday_totals = [0] * 7
+        weekday_counts = [0] * 7
+        for offset in range((today - start).days + 1):
+            weekday_counts[(start + timedelta(days=offset)).weekday()] += 1
+        for (day,), amount in amounts.items():
+            weekday_totals[day.weekday()] += amount
+        total = sum(weekday_totals)
+        return {
+            "start": start,
+            "end": today,
+            "days": [
+                {"date": day, "amount_cents": amount}
+                for (day,), amount in sorted(amounts.items())
+                if amount > 0
+            ],
+            "weekday_avg_cents": [
+                round(weekday_totals[index] / weekday_counts[index])
+                for index in range(7)
+            ],
+            "weekend_share": (
+                (weekday_totals[5] + weekday_totals[6]) / total if total else 0.0
+            ),
+        }
 
 
 class ForecastService:
@@ -7563,6 +7905,69 @@ class BudgetService:
             "items": rows[:3],
         }
 
+    def history(self, months: list[date]) -> list[dict[str, object]]:
+        """Budget and spend per scope for each month, using the monthly budget logic."""
+        labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
+        budgets: dict[Optional[int], dict[str, int]] = {}
+        spent: dict[str, dict[Optional[int], int]] = {}
+        for label, month in zip(labels, months, strict=True):
+            for row in self.effective_budgets_for_month(month.year, month.month):
+                budgets.setdefault(row.scope_category_id, {})[label] = row.amount_cents
+            spent[label] = self.spent_by_category_for_month(month.year, month.month)
+
+        first_months: dict[Optional[int], str] = {}
+        for category_id, starts_on in self.session.execute(
+            select(BudgetTemplate.category_id, func.min(BudgetTemplate.starts_on))
+            .where(
+                BudgetTemplate.user_id == self.user_id,
+                BudgetTemplate.frequency == BudgetFrequency.monthly,
+            )
+            .group_by(BudgetTemplate.category_id)
+        ):
+            first_months[category_id] = f"{starts_on.year:04d}-{starts_on.month:02d}"
+        for category_id, year, month in self.session.execute(
+            select(
+                BudgetOverride.category_id,
+                BudgetOverride.year,
+                func.min(BudgetOverride.month),
+            )
+            .where(BudgetOverride.user_id == self.user_id)
+            .group_by(BudgetOverride.category_id, BudgetOverride.year)
+        ):
+            label = f"{year:04d}-{month:02d}"
+            first_months[category_id] = min(first_months.get(category_id, label), label)
+
+        categories = {
+            category.id: category
+            for category in self.session.scalars(
+                select(Category).where(
+                    Category.user_id == self.user_id,
+                    Category.id.in_([key for key in budgets if key is not None]),
+                )
+            )
+        }
+        rows = []
+        for category_id, by_month in budgets.items():
+            category = categories.get(category_id)
+            rows.append(
+                {
+                    "category_id": category_id,
+                    "name": category.name if category else "Overall",
+                    "icon": category.icon if category else None,
+                    "first_month": first_months.get(category_id),
+                    "cells": [
+                        {
+                            "month": label,
+                            "budget_cents": by_month.get(label),
+                            "spent_cents": spent[label].get(category_id, 0),
+                        }
+                        for label in labels
+                    ],
+                }
+            )
+        rows.sort(key=lambda row: (row["category_id"] is not None, row["name"]))
+        return rows
+
     def yearly_budgets_for_year(
         self, year: int
     ) -> list["BudgetService.EffectiveBudget"]:
@@ -7821,6 +8226,7 @@ class DigestService:
                     "rule_id": txn.origin_rule_id,
                     "rule_name": txn.origin_rule.name if txn.origin_rule else "",
                     "date": txn.date.isoformat(),
+                    "type": txn.type.value,
                     "amount_cents": amount,
                     "category": {
                         "id": txn.category.id,

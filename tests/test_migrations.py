@@ -414,3 +414,85 @@ def test_mobile_auth_sessions_migration_adds_device_session_table(
     assert "ix_mobile_auth_sessions_user" in index_names
     assert "ix_mobile_auth_sessions_user_active" in index_names
     get_settings.cache_clear()
+
+
+def test_bank_row_resolution_and_suggestion_dismissal_migrations_backfill_and_roll_back(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "migration.db"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "202610111200")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            INSERT INTO users (id, username, password_hash, is_admin, created_at, updated_at)
+            VALUES (1, 'test', 'unused', 0, '2026-10-01', '2026-10-01')
+        """)
+        conn.execute("""
+            INSERT INTO categories (id, user_id, name, type, "order", created_at, updated_at)
+            VALUES (1, 1, 'Bakery', 'expense', 0, '2026-10-01', '2026-10-01')
+        """)
+        conn.execute("""
+            INSERT INTO transactions (id, user_id, date, occurred_at, type,
+                is_reimbursement, amount_cents, category_id, title, created_at, updated_at)
+            VALUES (1, 1, '2026-10-01', '2026-10-01 12:00:00', 'expense',
+                0, 550, 1, 'Corner bakery', '2026-10-01', '2026-10-01')
+        """)
+        for row_id, matched, reviewed in (
+            (1, 1, None),
+            (2, None, "2026-10-05 09:00:00"),
+            (3, None, None),
+        ):
+            conn.execute(
+                """
+                INSERT INTO bank_statement_rows (id, user_id, source, account_label,
+                    booking_date, amount_cents, currency, raw_description, import_hash,
+                    matched_transaction_id, reviewed_at, created_at, updated_at)
+                VALUES (?, 1, 'csv', 'Main', '2026-10-01', -550, 'EUR', 'row', ?,
+                    ?, ?, '2026-10-01', '2026-10-02 08:00:00')
+                """,
+                (row_id, f"hash{row_id}", matched, reviewed),
+            )
+
+    command.upgrade(cfg, "head")
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT id, resolution, resolved_at, ignore_reason "
+            "FROM bank_statement_rows ORDER BY id"
+        ).fetchall() == [
+            (1, "matched", "2026-10-02 08:00:00", None),
+            (2, "ignored", "2026-10-05 09:00:00", None),
+            (3, None, None, None),
+        ]
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("""
+            INSERT INTO categories (id, user_id, name, type, "order", created_at, updated_at)
+            VALUES (2, 1, 'Other', 'expense', 0, '2026-10-01', '2026-10-01')
+        """)
+        conn.execute(
+            "UPDATE transactions SET category_suggestion_dismissed_id = 2 WHERE id = 1"
+        )
+        conn.execute("DELETE FROM categories WHERE id = 2")
+        assert conn.execute(
+            "SELECT category_suggestion_dismissed_id FROM transactions"
+        ).fetchone() == (None,)
+
+    command.downgrade(cfg, "202610111200")
+    with sqlite3.connect(db_path) as conn:
+        bank_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(bank_statement_rows)")
+        }
+        transaction_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(transactions)")
+        }
+        assert not {"resolution", "resolved_at", "ignore_reason"} & bank_columns
+        assert "category_suggestion_dismissed_id" not in transaction_columns
+        assert conn.execute("SELECT COUNT(*) FROM bank_statement_rows").fetchone() == (
+            3,
+        )
+
+    command.upgrade(cfg, "head")
+    get_settings.cache_clear()

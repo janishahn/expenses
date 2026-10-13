@@ -1,687 +1,223 @@
-import { useMemo, useRef, useState } from "react"
-import { FloppyDiskIcon } from "@phosphor-icons/react/FloppyDisk"
-import { ArchiveIcon } from "@phosphor-icons/react/Archive"
-import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
-import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
-import { TrashIcon } from "@phosphor-icons/react/Trash"
-import { XIcon } from "@phosphor-icons/react/X"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { apiFetch, getApiErrorMessage, isApiErrorStatus } from "../app/api"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import { confirmDialog } from "../components/confirm"
-import DonutChart from "../components/charts/DonutChart"
-import type { BreakdownItem } from "../components/charts/DonutChart"
-import Sparkline from "../components/charts/Sparkline"
-import PageFilterBar from "../components/PageFilterBar"
-import PageScopeHeader from "../components/PageScopeHeader"
-import PeriodPicker from "../components/PeriodPicker"
-import TransactionDescription from "../components/TransactionDescription"
-import { Toggle } from "../components/Toggle"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog"
-import { AppFieldLabel, AppInput } from "../components/ui/product-fields"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import { apiFetch, isApiErrorStatus } from "../app/api"
+import type { TransactionListItem } from "../app/api-types"
+import { formatShortDate } from "../app/format"
+import { ValuePopover } from "../components/FormPopover"
+import { Amount } from "../components/ui/Amount"
+import { IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip } from "../components/ui/ChartCard"
+import { CardRow, CardStack, Donut } from "../components/ui/Charts"
+import { EmptyState } from "../components/ui/EmptyState"
+import { AmountCell, Cell, List, NetPrefix, Row, type Columns } from "../components/ui/LedgerRow"
+import { Menu } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Property, PropertyButton } from "../components/ui/PropertyList"
+import { MetricStrip, Sheet } from "../components/ui/Sheet"
+import { showToast } from "../components/ui/toast-store"
+import { categoryColor } from "../components/ui/tokens"
+import { useTagLifecycle, useTagSave, type TagRecord } from "./tag-record"
+import { TagMenuItems, TagMergeDialog, TagSettingsList } from "./TagSettings"
 
-type TransactionRow = {
-  id: number
-  date: string
-  occurred_at: string
-  type: string
-  amount_cents: number
-  net_amount_cents: number
-  reimbursed_total_cents: number
-  is_reimbursement: boolean
-  category: { id: number; name: string; type: string; icon: string | null } | null
-  title: string | null
-  description: string | null
-  tags: Array<{ id: number; name: string }>
-}
+type BreakdownItem = { id: number; name: string; amount_cents: number; percent: number }
 
 type TagDetailResponse = {
-  tag: {
-    id: number
-    name: string
-    color: string | null
-    is_hidden_from_budget: boolean
-    is_hidden_from_filters: boolean
-    auto_attach_period: { start: string; end: string } | null
-    archived_at: string | null
-  }
+  tag: TagRecord
   period: { slug: string; start: string; end: string }
   kpis: { income: number; expenses: number; balance: number }
-  sparklines: { income?: string; expenses?: string; balance?: string }
-  donut: {
-    mode: "both"
-    expense_breakdown: BreakdownItem[]
-    income_breakdown: BreakdownItem[]
-    has_any_transactions: boolean
-  }
-  transactions: TransactionRow[]
+  donut: { expense_breakdown: BreakdownItem[]; income_breakdown: BreakdownItem[] }
+  transactions: TransactionListItem[]
 }
 
-type TagSettingsEditorProps = {
-  tag: TagDetailResponse["tag"]
-  updatePending: boolean
-  deletePending: boolean
-  updateError: unknown
-  onUpdate: (payload: {
-    name: string
-    color: string | null
-    is_hidden_from_budget: boolean
-    is_hidden_from_filters: boolean
-    auto_attach_period: { start: string; end: string } | null
-  }) => void
-  onDelete: () => void
-  onClose: () => void
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const PARENTS = [{ label: "Tags", to: "/tags" }]
+const TRANSACTION_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) 96px auto",
+  mobileColumns: "18px minmax(0, 1fr) 84px auto",
 }
 
-function TagSettingsEditor({
-  tag,
-  updatePending,
-  deletePending,
-  updateError,
-  onUpdate,
-  onDelete,
-  onClose,
-}: TagSettingsEditorProps) {
-  const [name, setName] = useState(tag.name)
-  const [hidden, setHidden] = useState(tag.is_hidden_from_budget)
-  const [hiddenFromFilters, setHiddenFromFilters] = useState(
-    tag.is_hidden_from_filters,
+function BreakdownCard({ title, items, centerLabel, empty }: { title: string; items: BreakdownItem[]; centerLabel: string; empty: string }) {
+  const total = items.reduce((sum, item) => sum + item.amount_cents, 0)
+  return (
+    <ChartCard
+      title={title}
+      empty={items.length ? undefined : empty}
+      table={
+        <ChartTable
+          label={`${title} by category`}
+          columns={["Category", "Amount", "Share"]}
+          rows={items.map((item) => ({
+            key: String(item.id),
+            cells: [item.name, <Amount cents={item.amount_cents} />, `${Math.round(item.percent)} %`],
+          }))}
+        />
+      }
+    >
+      {(focus) => (
+        <Donut
+          focus={focus}
+          center={<Amount cents={total} decimals={false} />}
+          centerLabel={centerLabel}
+          items={items.map((item) => ({
+            key: String(item.id),
+            label: item.name,
+            value: item.amount_cents,
+            color: categoryColor(item.id),
+            amount: <Amount cents={item.amount_cents} />,
+            share: `${Math.round(item.percent)} %`,
+          }))}
+          tooltip={(item) => <ChartTooltip rows={[{ key: item.key, label: item.label, value: item.amount, color: item.color }]} />}
+        />
+      )}
+    </ChartCard>
   )
-  const [autoAttachEnabled, setAutoAttachEnabled] = useState(
-    tag.auto_attach_period !== null,
-  )
-  const [autoAttachStart, setAutoAttachStart] = useState(
-    tag.auto_attach_period?.start ?? "",
-  )
-  const [autoAttachEnd, setAutoAttachEnd] = useState(
-    tag.auto_attach_period?.end ?? "",
-  )
+}
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    onUpdate({
-      name: name.trim(),
-      color: tag.color,
-      is_hidden_from_budget: hidden,
-      is_hidden_from_filters: hiddenFromFilters,
-      auto_attach_period: autoAttachEnabled
-        ? { start: autoAttachStart, end: autoAttachEnd }
-        : null,
-    })
-  }
+function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; period: PeriodSelection; onPeriodChange: (next: PeriodSelection) => void }) {
+  const navigate = useNavigate()
+  const { tag, kpis, donut, transactions } = data
+  const [merging, setMerging] = useState(false)
+  const { view, errors, setError, save } = useTagSave(tag)
+  const { archive, restore, confirmDelete } = useTagLifecycle(tag, () => navigate("/tags", { replace: true }))
+  const tags = useQuery({
+    queryKey: ["tags", "all"],
+    queryFn: () => apiFetch<{ tags: TagRecord[] }>("/api/tags?period=all"),
+    enabled: merging,
+  })
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !updatePending && !deletePending) onClose()
-      }}
+    <Panel
+      title={tag.name}
+      parents={PARENTS}
+      actions={
+        <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+          <TagMenuItems
+            archived={Boolean(tag.archived_at)}
+            onMerge={() => setMerging(true)}
+            onArchive={archive}
+            onRestore={restore}
+            onDelete={() => void confirmDelete()}
+          />
+        </Menu>
+      }
+      viewRow={
+        <ViewRow>
+          <PeriodControl value={period} onChange={onPeriodChange} />
+        </ViewRow>
+      }
     >
-      <DialogContent
-        aria-label="Edit tag"
-        className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
-      >
-        <div className="-mr-5 overflow-y-auto pr-5">
-          <DialogHeader>
-            <DialogTitle>Edit tag</DialogTitle>
-            <DialogClose asChild>
-              <AppButton
-                tone="ghost"
-                className="h-9 w-9 rounded-full p-0"
-                aria-label="Close tag editor"
-                disabled={updatePending || deletePending}
-              >
-                <XIcon className="h-4 w-4" aria-hidden="true" />
-              </AppButton>
-            </DialogClose>
-          </DialogHeader>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <AppFieldLabel>
-              Name
-              <AppInput
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="mt-1"
-                autoFocus
-                required
-              />
-            </AppFieldLabel>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle on={hidden} onChange={setHidden} />
-              <span>Exclude from budgets</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle on={hiddenFromFilters} onChange={setHiddenFromFilters} />
-              <span>Hide from filter menus</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle
-                on={autoAttachEnabled}
-                onChange={setAutoAttachEnabled}
-              />
-              <span>Automatically add during a date range</span>
-            </label>
-            {autoAttachEnabled ? (
-              <div className="grid gap-3 rounded-md bg-faint p-3 sm:grid-cols-2">
-                <AppFieldLabel>
-                  Start date
-                  <AppInput
-                    type="date"
-                    value={autoAttachStart}
-                    onChange={(event) => setAutoAttachStart(event.target.value)}
-                    className="mt-1 max-md:p-0"
-                    required
+      <MetricStrip
+        metrics={[
+          { label: "Expenses", value: <Amount cents={kpis.expenses} /> },
+          { label: "Income", value: <Amount cents={kpis.income} /> },
+          { label: "Balance", value: <Amount cents={kpis.balance} /> },
+        ]}
+      />
+      <CardRow wide>
+        {transactions.length ? (
+          <List scroll={false} label="Transactions">
+            {transactions.map((item) => {
+              const title = item.title || item.category?.name || "Untitled"
+              const isExpense = item.type === "expense"
+              return (
+                <Row key={item.id} {...TRANSACTION_COLUMNS} label={title} onOpen={() => navigate(`/transactions/${item.id}`)}>
+                  <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
+                  <Cell strong>{title}</Cell>
+                  <Cell tone="muted">{formatShortDate(item.date)}</Cell>
+                  <AmountCell>
+                    {isExpense && item.reimbursed_total_cents > 0 ? (
+                      <NetPrefix>
+                        <Amount cents={item.net_amount_cents} kind="expense" />
+                      </NetPrefix>
+                    ) : null}
+                    <Amount cents={item.amount_cents} kind={isExpense ? "expense" : "income"} />
+                  </AmountCell>
+                </Row>
+              )
+            })}
+          </List>
+        ) : (
+          <Sheet>
+            <EmptyState inline>No transactions in this period.</EmptyState>
+          </Sheet>
+        )}
+        <CardStack>
+          <Sheet title="Settings">
+            <TagSettingsList
+              tag={view}
+              errors={errors}
+              save={save}
+              lead={
+                <Property label="Name" editable error={errors.name}>
+                  <ValuePopover
+                    label="Name"
+                    value={view.name}
+                    onSave={(next) => {
+                      if (!next.trim()) return "Enter a tag name."
+                      setError("name", null)
+                      void save("name", { name: next.trim() })
+                      return null
+                    }}
+                    trigger={<PropertyButton>{view.name}</PropertyButton>}
                   />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  End date
-                  <AppInput
-                    type="date"
-                    value={autoAttachEnd}
-                    min={autoAttachStart || undefined}
-                    onChange={(event) => setAutoAttachEnd(event.target.value)}
-                    className="mt-1 max-md:p-0"
-                    required
-                  />
-                </AppFieldLabel>
-              </div>
-            ) : null}
-            {Boolean(updateError) && (
-              <p className="text-xs text-semantic-red">
-                {getApiErrorMessage(updateError, "Unable to update tag.")}
-              </p>
-            )}
-            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <AppButton
-                type="button"
-                onClick={onDelete}
-                tone="danger"
-                disabled={updatePending || deletePending}
-              >
-                <TrashIcon className="h-4 w-4" aria-hidden="true" />
-                {deletePending ? "Deleting…" : "Delete tag"}
-              </AppButton>
-              <div className="grid grid-cols-2 gap-2 sm:flex">
-                <AppButton
-                  type="button"
-                  onClick={onClose}
-                  tone="ghost"
-                  disabled={updatePending || deletePending}
-                >
-                  Cancel
-                </AppButton>
-                <AppButton
-                  type="submit"
-                  disabled={updatePending || deletePending}
-                >
-                  <FloppyDiskIcon className="h-4 w-4" aria-hidden="true" />
-                  {updatePending ? "Saving…" : "Save"}
-                </AppButton>
-              </div>
-            </div>
-          </form>
-        </div>
-      </DialogContent>
-    </Dialog>
+                </Property>
+              }
+            >
+              <Property label="Created">{formatShortDate(tag.created_at)}</Property>
+              {tag.archived_at ? <Property label="Archived">{formatShortDate(tag.archived_at)}</Property> : null}
+            </TagSettingsList>
+          </Sheet>
+          <BreakdownCard title="Expenses" items={donut.expense_breakdown} centerLabel={tag.name} empty="No spending in this period." />
+          {donut.income_breakdown.length ? (
+            <BreakdownCard title="Income" items={donut.income_breakdown} centerLabel={tag.name} empty="No income in this period." />
+          ) : null}
+        </CardStack>
+      </CardRow>
+      {merging && tags.data ? (
+        <TagMergeDialog
+          source={tag}
+          targets={tags.data.tags.filter((entry) => entry.id !== tag.id)}
+          onClose={() => setMerging(false)}
+          onMerged={(target) => {
+            setMerging(false)
+            showToast({ message: `Merged ${tag.name} into ${target.name}.` })
+            navigate(`/tags/${target.id}`, { replace: true })
+          }}
+        />
+      ) : null}
+    </Panel>
   )
 }
 
 function TagDetailPage() {
   const { tagId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const editButtonRef = useRef<HTMLButtonElement>(null)
-
-  const closeEditor = () => {
-    setEditorOpen(false)
-    window.requestAnimationFrame(() => editButtonRef.current?.focus())
-  }
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
-    }
-    return params.toString()
-  }, [searchParams])
-
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const queryString = writePeriodToSearch(new URLSearchParams(), period).toString()
   const { data, isLoading, error } = useQuery({
-    queryKey: ["tag", tagId, queryString],
-    queryFn: () =>
-      apiFetch<TagDetailResponse>(`/api/tags/${tagId}?${queryString}`),
+    queryKey: ["tag", Number(tagId), queryString],
+    queryFn: () => apiFetch<TagDetailResponse>(`/api/tags/${tagId}?${queryString}`),
     enabled: Boolean(tagId),
   })
 
-  const updateMutation = useMutation({
-    mutationFn: (payload: {
-      name: string
-      color: string | null
-      is_hidden_from_budget: boolean
-      is_hidden_from_filters: boolean
-      auto_attach_period: { start: string; end: string } | null
-    }) =>
-      apiFetch(`/api/tags/${tagId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      closeEditor()
-      queryClient.invalidateQueries({ queryKey: ["tag", tagId] })
-      queryClient.invalidateQueries({ queryKey: ["tags"] })
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/tags/${tagId}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tags"] })
-      navigate("/tags")
-    },
-  })
-
-  const lifecycleMutation = useMutation({
-    mutationFn: (action: "archive" | "restore") =>
-      apiFetch(`/api/tags/${tagId}/${action}`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tag", tagId] })
-      queryClient.invalidateQueries({ queryKey: ["tags"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-    },
-  })
-
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(buildPresetPeriodSearchParams(searchParams, value))
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-
-  const openEditor = () => {
-    updateMutation.reset()
-    setEditorOpen(true)
-  }
-
-  const handleDelete = async () => {
-    const confirmed = await confirmDialog({
-      title: "Delete this tag?",
-      description: "This will remove it from transactions.",
-    })
-    if (!confirmed) {
-      return
-    }
-    deleteMutation.mutate()
-  }
-
   if (!tagId || isApiErrorStatus(error, 404)) {
-    return (
-      <RouteError
-        title="Tag"
-        message="Tag not found."
-        returnHref="/tags"
-        returnLabel="Back to tags"
-      />
-    )
+    return <PanelError title="Tag" parents={PARENTS} message="Tag not found." returnTo={{ label: "Back to tags", to: "/tags" }} />
   }
-  if (isLoading) {
-    return <RouteLoading title="Tag" label="Loading tag…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Tag" message="Unable to load tag." />
-  }
-
-  const { tag, period, kpis, sparklines, donut, transactions } = data
-  const now = new Date()
-  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
-  const today = new Date(now.getTime() - timezoneOffsetMs)
-    .toISOString()
-    .slice(0, 10)
-  const automaticStatus = !tag.auto_attach_period
-    ? "Off"
-    : today < tag.auto_attach_period.start
-      ? "Upcoming"
-      : today > tag.auto_attach_period.end
-        ? "Ended"
-        : "Active"
+  if (isLoading) return <PanelLoading title="Tag" parents={PARENTS} label="Loading tag…" />
+  if (error || !data) return <PanelError title="Tag" parents={PARENTS} message="Unable to load tag." />
 
   return (
-    <section className="space-y-4 md:space-y-5">
-      <PageScopeHeader
-        title={tag.name}
-        titleAccessory={
-          tag.archived_at || tag.is_hidden_from_budget ? (
-            <div className="flex flex-wrap gap-2">
-              {tag.archived_at ? (
-                <span className="rounded-full bg-faint px-2.5 py-1 text-xs font-semibold text-muted">
-                  Archived
-                </span>
-              ) : null}
-              {tag.is_hidden_from_budget ? (
-                <span className="rounded-full bg-signal-yellow-soft px-2.5 py-1 text-xs font-semibold text-text">
-                  Excluded from budgets
-                </span>
-              ) : null}
-            </div>
-          ) : null
-        }
-        backHref="/tags"
-        backLabel="← Tags"
-        controls={
-          <PageFilterBar
-            period={
-              <PeriodPicker
-                periodSlug={period.slug}
-                start={period.start}
-                end={period.end}
-                onSetPreset={setPresetPeriod}
-                onApplyCustom={applyCustomPeriod}
-              />
-            }
-          />
-        }
-      />
-
-      <FinancialPanel role="hero" className="space-y-5 p-5 md:p-6">
-        <div
-          data-testid="tag-detail-metrics"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-3"
-        >
-          {[
-            {
-              label: "Income",
-              value: kpis.income,
-              tone: "text-semantic-green",
-              points: sparklines.income,
-            },
-            {
-              label: "Expenses",
-              value: kpis.expenses,
-              tone: "text-semantic-red",
-              points: sparklines.expenses,
-            },
-            {
-              label: "Balance",
-              value: kpis.balance,
-              tone: kpis.balance >= 0 ? "text-semantic-green" : "text-semantic-red",
-              points: sparklines.balance,
-            },
-          ].map((item) => (
-            <MetricLane
-              key={item.label}
-              tone={
-                item.label === "Income"
-                  ? "income"
-                  : item.label === "Expenses"
-                    ? "expense"
-                    : "plan"
-              }
-              className="p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted">
-                    {item.label}
-                  </p>
-                  <p className={`whitespace-nowrap font-mono text-2xl font-semibold ${item.tone}`}>
-                    {formatCurrency(item.value)} €
-                  </p>
-                </div>
-                <Sparkline points={item.points} className={`h-10 w-24 ${item.tone}`} />
-              </div>
-            </MetricLane>
-          ))}
-        </div>
-      </FinancialPanel>
-
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
-        <FinancialPanel role="ledger" data-testid="tag-activity-ledger">
-          <SectionHeading>
-            <h2 className="font-head text-lg font-bold">Activity</h2>
-            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-              {transactions.length}
-            </span>
-          </SectionHeading>
-          <div className="divide-y divide-border">
-            {transactions.length ? (
-              transactions.map((txn) => {
-                const isExpense = txn.type === "expense"
-                const amount = isExpense
-                  ? txn.net_amount_cents
-                  : txn.amount_cents
-                return (
-                  <div
-                    key={txn.id}
-                    className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-faint/60 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex min-w-0 items-start gap-3">
-                      <CategoryIcon
-                        icon={txn.category?.icon ?? null}
-                        label={txn.category?.name}
-                      />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-text">
-                          {txn.title || txn.category?.name || "Untitled"}
-                        </p>
-                        <TransactionDescription
-                          markdown={txn.description}
-                          compact
-                          clamp
-                          className="mt-1"
-                        />
-                        <p className="text-xs text-muted">
-                          {formatEuroDate(txn.date)} · {txn.category?.name ?? "Uncategorized"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className={`font-mono text-sm font-semibold ${
-                          isExpense ? "text-semantic-red" : "text-semantic-green"
-                        }`}
-                      >
-                        {isExpense ? "-" : "+"}
-                        {formatCurrency(amount)} €
-                      </p>
-                      {isExpense && txn.reimbursed_total_cents > 0 && (
-                        <p className="font-mono text-xs text-semantic-green">
-                          Reimb {formatCurrency(txn.reimbursed_total_cents)} €
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            ) : (
-              <p className="px-4 py-8 text-sm text-muted">
-                No transactions in this period.
-              </p>
-            )}
-          </div>
-        </FinancialPanel>
-
-        <aside className="space-y-4">
-          <FinancialPanel role="inspector" data-testid="tag-settings-inspector">
-            <SectionHeading>
-              <h2 className="font-head text-lg font-bold">Tag settings</h2>
-              <div className="flex shrink-0 items-center gap-2">
-                <AppButton
-                  type="button"
-                  onClick={() =>
-                    lifecycleMutation.mutate(tag.archived_at ? "restore" : "archive")
-                  }
-                  tone={tag.archived_at ? "secondary" : "inline"}
-                  className={
-                    tag.archived_at
-                      ? "h-11 w-11 p-0"
-                      : "h-11 w-11 bg-transparent p-0 text-semantic-red shadow-none hover:bg-signal-red-soft hover:text-semantic-red"
-                  }
-                  aria-label={
-                    lifecycleMutation.isPending
-                      ? tag.archived_at
-                        ? "Restoring tag"
-                        : "Archiving tag"
-                      : tag.archived_at
-                        ? "Restore"
-                        : "Archive"
-                  }
-                  title={tag.archived_at ? "Restore tag" : "Archive tag"}
-                  disabled={lifecycleMutation.isPending}
-                >
-                  {tag.archived_at ? (
-                    <ArrowCounterClockwiseIcon className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <ArchiveIcon className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </AppButton>
-                <AppButton
-                  ref={editButtonRef}
-                  type="button"
-                  onClick={openEditor}
-                  tone="secondary"
-                  className="h-11 w-11 p-0"
-                  aria-label="Edit tag"
-                  title="Edit tag"
-                >
-                  <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-              </div>
-            </SectionHeading>
-            {lifecycleMutation.error ? (
-              <p className="px-5 pt-3 text-xs text-semantic-red">
-                {getApiErrorMessage(
-                  lifecycleMutation.error,
-                  tag.archived_at ? "Unable to restore tag." : "Unable to archive tag.",
-                )}
-              </p>
-            ) : null}
-            <dl className="divide-y divide-border px-5">
-              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
-                <dt className="text-xs font-semibold text-muted">Name</dt>
-                <dd className="min-w-0 break-words text-sm font-semibold text-text sm:text-right">
-                  {tag.name}
-                </dd>
-              </div>
-              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
-                <dt className="text-xs font-semibold text-muted">
-                  Budget treatment
-                </dt>
-                <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
-                  {tag.is_hidden_from_budget
-                    ? "Excluded from budgets"
-                    : "Included in budgets"}
-                </dd>
-              </div>
-              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
-                <dt className="text-xs font-semibold text-muted">
-                  Filter visibility
-                </dt>
-                <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
-                  {tag.is_hidden_from_filters
-                    ? "Hidden from filter menus"
-                    : "Available in filter menus"}
-                </dd>
-              </div>
-              {tag.archived_at ? (
-                <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
-                  <dt className="text-xs font-semibold text-muted">Lifecycle</dt>
-                  <dd className="min-w-0 text-sm font-semibold text-text sm:text-right">
-                    Archived {formatEuroDate(tag.archived_at.slice(0, 10))}
-                  </dd>
-                </div>
-              ) : null}
-              <div className="grid gap-1 py-3.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(0,1.3fr)] sm:gap-4">
-                <dt className="text-xs font-semibold text-muted">
-                  Automatic tagging
-                </dt>
-                <dd
-                  className={`min-w-0 text-sm font-semibold sm:text-right ${
-                    automaticStatus === "Active"
-                      ? "text-semantic-green"
-                      : automaticStatus === "Upcoming"
-                        ? "text-accent"
-                        : "text-text"
-                  }`}
-                >
-                  {automaticStatus}
-                  <span className="mt-0.5 block text-xs font-normal text-muted">
-                    {tag.auto_attach_period
-                      ? `${formatEuroDate(tag.auto_attach_period.start)}–${formatEuroDate(tag.auto_attach_period.end)}`
-                      : "New transactions are not preselected"}
-                  </span>
-                </dd>
-              </div>
-            </dl>
-          </FinancialPanel>
-
-          {donut.has_any_transactions ? (
-            <div className="space-y-6">
-              <DonutChart
-                title="Expenses"
-                breakdown={donut.expense_breakdown}
-                emptyMessage="No expenses in this period"
-                emptyGuidance="Add transactions with this tag."
-              />
-              <DonutChart
-                title="Income"
-                breakdown={donut.income_breakdown}
-                emptyMessage="No income in this period"
-                emptyGuidance="Add transactions with this tag."
-              />
-            </div>
-          ) : (
-            <FinancialPanel className="p-6 text-center">
-              <p className="font-head text-lg font-bold text-text">
-                No activity yet
-              </p>
-              <p className="text-sm text-muted">
-                Add transactions with this tag.
-              </p>
-            </FinancialPanel>
-          )}
-        </aside>
-      </div>
-
-      {editorOpen ? (
-        <TagSettingsEditor
-          tag={tag}
-          updatePending={updateMutation.isPending}
-          deletePending={deleteMutation.isPending}
-          updateError={updateMutation.error}
-          onUpdate={(payload) => updateMutation.mutate(payload)}
-          onDelete={handleDelete}
-          onClose={closeEditor}
-        />
-      ) : null}
-    </section>
+    <TagDetail
+      key={data.tag.id}
+      data={data}
+      period={period}
+      onPeriodChange={(next) => setSearchParams(writePeriodToSearch(searchParams, next))}
+    />
   )
 }
 

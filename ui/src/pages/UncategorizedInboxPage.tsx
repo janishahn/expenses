@@ -1,546 +1,541 @@
 import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
-import { XCircleIcon } from "@phosphor-icons/react/XCircle"
-import { useSearchParams } from "react-router-dom"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
+import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
+import { CheckIcon } from "@phosphor-icons/react/Check"
+import { CheckSquareIcon } from "@phosphor-icons/react/CheckSquare"
+import { ChecksIcon } from "@phosphor-icons/react/Checks"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
+import { XIcon } from "@phosphor-icons/react/X"
+import { Navigate, useLocation, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import { useAuth } from "../app/auth"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
+import type { CategorySummary, TransactionListItem, TransactionsResponse } from "../app/api-types"
+import { dayLabel, invalidateTransactionData } from "../app/transactions"
+import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
-import PageFilterBar from "../components/PageFilterBar"
-import PageScopeHeader from "../components/PageScopeHeader"
-import PeriodPicker from "../components/PeriodPicker"
-import TransactionDescription from "../components/TransactionDescription"
+import { Amount } from "../components/ui/Amount"
+import { BulkBar } from "../components/ui/BulkBar"
+import { Button, IconButton } from "../components/ui/Button"
+import { CategoryGlyph, UnknownGlyph } from "../components/ui/CategoryGlyph"
+import { EmptyState } from "../components/ui/EmptyState"
+import { useIsDesktop } from "../components/ui/layout-state"
 import {
-  FinancialPanel,
-  SectionHeading,
-  WorkspaceToolbar,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/ui/product-fields"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  buildSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+  AmountCell,
+  Cell,
+  List,
+  ListFooter,
+  ListHead,
+  Row,
+  RowActions,
+  RowLead,
+  type Columns,
+} from "../components/ui/LedgerRow"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { PeekLayout } from "../components/ui/Peek"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Pill } from "../components/ui/Pill"
+import { Confidence, SuggestionBox } from "../components/ui/SuggestionBox"
+import { TextField } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { buildSearchParams } from "../lib/searchParams"
+import { TransactionPeek } from "./TransactionRecord"
 
-type TransactionRow = {
-  id: number
-  date: string
-  occurred_at: string
-  type: string
-  amount_cents: number
-  net_amount_cents: number
-  reimbursed_total_cents: number
-  is_reimbursement: boolean
-  category: { id: number; name: string; type: string; icon: string | null } | null
-  title: string | null
-  description: string | null
-  tags: Array<{ id: number; name: string }>
-  has_attachments: boolean
+type Suggestion = { category_id: number; confidence: number }
+
+type InboxItem = TransactionListItem & { suggestion: Suggestion | null }
+
+type InboxResponse = Omit<TransactionsResponse, "items"> & {
+  items: InboxItem[]
+  definition: { category_name: string; matched_category_ids: number[] }
 }
 
-type UncategorizedResponse = {
-  items: TransactionRow[]
-  page: number
-  limit: number
-  has_more: boolean
-  total: number
-  definition: {
-    category_name: string
-    matched_category_ids: number[]
-  }
-  period: { slug: string; start: string; end: string }
-  filters: {
-    type: string | null
-    category_id: number | null
-    tag_id: number | null
-    query: string | null
-  }
-  categories: Array<{ id: number; name: string; type: string; icon: string | null }>
-  tags: Array<{ id: number; name: string }>
+type BulkResponse = { eligible_count: number; skipped_count: number }
+
+// Every selected row, or every row matching the search and period across pages.
+type Selection = { mode: "ids"; ids: number[] } | { mode: "query" }
+
+const LIST_KEYS = ["period", "start", "end", "q", "page"]
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+
+// Suggestions add the Confidence and accept/reject columns. A narrow list, usually beside the peek,
+// keeps only the glyph, title, confidence and amount; the peek holds the suggestion and its actions.
+const SUGGESTION_COLUMNS: Columns = {
+  columns: "14px 18px minmax(160px, 1fr) 80px 170px 76px 60px 110px",
+  narrowColumns: "14px 18px minmax(0, 1fr) 72px 110px",
+  mobileColumns: "18px minmax(0, 1fr) 72px auto",
+}
+const CATEGORY_COLUMNS: Columns = {
+  columns: "14px 18px minmax(160px, 1fr) 80px 170px 110px",
+  narrowColumns: "14px 18px minmax(0, 1fr) 110px",
+  mobileColumns: "18px minmax(0, 1fr) auto",
 }
 
-type BulkResponse = {
-  resolved_count: number
-  eligible_count: number
-  skipped_count: number
-  changes: {
-    category_changed: number
-    tags_added: number
-    tags_removed: number
-    tags_replaced: number
-    deleted: number
-    restored: number
-  }
+function rowTitle(row: InboxItem): string {
+  return row.title || "Untitled"
 }
 
-type TransactionSuggestion = {
-  id: number
-  transaction_id: number
-  status: string
-  category_id: number | null
-  category_name: string | null
-  clean_title: string | null
-  tags: string[]
-  confidence: number
-  reason: string
+function countLabel(count: number): string {
+  return `${count} transaction${count === 1 ? "" : "s"}`
 }
 
 function UncategorizedInboxPage() {
-  const { llmEnabled } = useAuth()
   const queryClient = useQueryClient()
+  const location = useLocation()
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
-  const [targetCategoryId, setTargetCategoryId] = useState("")
-  const [mode, setMode] = useState<"ids" | "query">("ids")
+  const peekId = Number(searchParams.get("peek")) || null
+  const searchQuery = searchParams.get("q") ?? ""
+  const [bulkPending, setBulkPending] = useState(false)
 
+  // The server sees only the list's own parameters, never the open peek.
   const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    if (!params.get("period")) {
-      params.set("period", "all")
+    const params = new URLSearchParams()
+    for (const key of LIST_KEYS) {
+      const value = searchParams.get(key)
+      if (value) params.set(key, value)
     }
-    if (!params.get("page")) {
-      params.set("page", "1")
-    }
+    if (!params.get("period")) params.set("period", "all")
+    if (!params.get("page")) params.set("page", "1")
     return params.toString()
   }, [searchParams])
 
-  const { data, isLoading, error, isFetching } = useQuery({
+  // A selection belongs to the search and page it was made on; a change starts a new one.
+  const [selectionState, setSelectionState] = useState<{ query: string; selection: Selection }>({
+    query: queryString,
+    selection: { mode: "ids", ids: [] },
+  })
+  const selection: Selection = selectionState.query === queryString ? selectionState.selection : { mode: "ids", ids: [] }
+  const setSelection = (next: Selection) => setSelectionState({ query: queryString, selection: next })
+  // Mobile rows have no hover checkbox; Select in the ⋯ menu turns row taps into toggles.
+  const [selectMode, setSelectMode] = useState(false)
+  const selecting = selectMode && !isDesktop
+
+  const { data, isLoading, isFetching, isPlaceholderData, error } = useQuery({
     queryKey: ["transactions", "uncategorized", queryString],
-    queryFn: () =>
-      apiFetch<UncategorizedResponse>(`/api/transactions/uncategorized?${queryString}`),
+    queryFn: () => apiFetch<InboxResponse>(`/api/transactions/uncategorized?${queryString}`),
   })
-
-  const suggestionsQuery = useQuery({
-    queryKey: ["ai", "transaction-suggestions"],
-    queryFn: () => apiFetch<TransactionSuggestion[]>("/api/ai/transaction-suggestions"),
-    enabled: llmEnabled,
+  // Suggestions come from local automatic categorization; while it is off, every row offers the Category pill.
+  const autoCategorization = useQuery({
+    queryKey: ["settings", "auto-categorization"],
+    queryFn: () => apiFetch<{ enabled: boolean }>("/api/settings/auto-categorization"),
   })
+  // Query-wide bulk edits trust only a count fetched for the current search.
+  const settled = isFetching || isPlaceholderData ? undefined : data
 
-  const bulkMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setSelectedIds([])
-      queryClient.invalidateQueries({ queryKey: ["transactions", "uncategorized"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-      queryClient.invalidateQueries({ queryKey: ["budgets"] })
-      queryClient.invalidateQueries({ queryKey: ["forecast"] })
-    },
-  })
-
-  const triageMutation = useMutation({
-    mutationFn: (transactionId: number) =>
-      apiFetch<TransactionSuggestion | null>(`/api/ai/transactions/${transactionId}/triage`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai", "transaction-suggestions"] })
-    },
-  })
-
-  const acceptSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: number) =>
-      apiFetch<{ id: number }>(`/api/ai/transaction-suggestions/${suggestionId}/accept`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai", "transaction-suggestions"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions", "uncategorized"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-      queryClient.invalidateQueries({ queryKey: ["budgets"] })
-      queryClient.invalidateQueries({ queryKey: ["forecast"] })
-    },
-  })
-
-  const rejectSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: number) =>
-      apiFetch<{ id: number }>(`/api/ai/transaction-suggestions/${suggestionId}/reject`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai", "transaction-suggestions"] })
-    },
-  })
-
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(
-      buildPresetPeriodSearchParams(searchParams, value, { page: "1" })
-    )
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(
-      buildCustomPeriodSearchParams(searchParams, start, end, { page: "1" })
-    )
-
-  const setQuery = (value: string) => {
-    setSearchParams(
-      buildSearchParams(searchParams, { q: value.trim() || null, page: "1" })
-    )
-  }
-
-  const changePage = (nextPage: number) =>
-    setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
-
-  if (isLoading) {
-    return <RouteLoading title="Uncategorized" label="Loading inbox…" />
+  if (isLoading || autoCategorization.isLoading) {
+    return <PanelLoading title="Uncategorized" label="Loading uncategorized transactions…" />
   }
   if (error || !data) {
+    return <PanelError title="Uncategorized" message="Unable to load uncategorized transactions." />
+  }
+
+  const { items, has_more, page, limit, total, categories, definition } = data
+  // Categorizing the last rows of a later page moves to the last page that has rows.
+  if (!items.length && page > 1 && total > 0 && !isPlaceholderData) {
     return (
-      <RouteError
-        title="Uncategorized"
-        message="Unable to load uncategorized inbox."
-      />
+      <>
+        <Navigate replace to={{ search: buildSearchParams(searchParams, { page: String(Math.ceil(total / limit)) }).toString() }} />
+        <PanelLoading title="Uncategorized" label="Loading uncategorized transactions…" />
+      </>
     )
   }
+  const suggestionsOn = autoCategorization.data?.enabled === true
+  const columns = suggestionsOn ? SUGGESTION_COLUMNS : CATEGORY_COLUMNS
+  // Moving a row to Uncategorized would leave it here, so pickers never offer it.
+  const targets = categories.filter((category) => !definition.matched_category_ids.includes(category.id))
+  const targetsFor = (row: InboxItem) => targets.filter((category) => category.type === row.type)
+  const suggestionFor = (row: InboxItem): { category: CategorySummary; confidence: number } | null => {
+    const category = row.suggestion ? targets.find((entry) => entry.id === row.suggestion?.category_id) : undefined
+    return row.suggestion && category ? { category, confidence: row.suggestion.confidence } : null
+  }
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
 
-  const allPageSelected =
-    data.items.length > 0 && data.items.every((txn) => selectedIds.includes(txn.id))
-  const categoryTypes = [...new Set(data.categories.map((c) => c.type))]
-  const searchQuery = searchParams.get("q") ?? ""
-  const suggestionsByTransaction = new Map(
-    (suggestionsQuery.data ?? []).map((suggestion) => [
-      suggestion.transaction_id,
-      suggestion,
-    ])
-  )
-  const runBulkRecategorize = async () => {
-    if (!targetCategoryId) {
+  const updateList = (updates: Record<string, string | null>, replace = false) =>
+    setSearchParams(buildSearchParams(searchParams, { ...updates, page: "1" }), { replace })
+  const setPeriod = (next: PeriodSelection) => {
+    const params = writePeriodToSearch(searchParams, next)
+    params.set("page", "1")
+    setSearchParams(params)
+  }
+  const changePage = (nextPage: number) => setSearchParams(buildSearchParams(searchParams, { page: String(nextPage) }))
+
+  const openPeek = (id: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("peek", String(id))
+    setSearchParams(next, { replace: peekId !== null })
+  }
+  const closePeek = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete("peek")
+    setSearchParams(next, { replace: true })
+  }
+  const peekLink = (id: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("peek", String(id))
+    return `${location.pathname}?${next.toString()}`
+  }
+  // The full view's breadcrumb returns to this list without reopening the peek.
+  const listSearch = new URLSearchParams(searchParams)
+  listSearch.delete("peek")
+  const listHref = `${location.pathname}${listSearch.toString() ? `?${listSearch.toString()}` : ""}`
+
+  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null = null) =>
+    apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
+      method: "POST",
+      body: JSON.stringify({
+        selection: { mode: "ids", transaction_ids: ids },
+        operation: {
+          set_category_id: categoryId,
+          tag_patch: null,
+          lifecycle: "none",
+          expected_category_id: expectedCategoryId,
+        },
+      }),
+    })
+
+  // Files one row under a category; Undo puts it back under Uncategorized unless it changed since.
+  const categorize = async (row: InboxItem, category: CategorySummary) => {
+    const previousId = row.category?.id
+    try {
+      await applyCategory([row.id], category.id)
+    } catch (failure) {
+      showToast({ message: getApiErrorMessage(failure, "Unable to categorize the transaction.") })
       return
     }
-    if (mode === "ids" && selectedIds.length === 0) {
-      return
-    }
-
-    const payload =
-      mode === "ids"
-        ? {
-            selection: {
-              mode: "ids",
-              transaction_ids: selectedIds,
-            },
-            operation: {
-              set_category_id: Number(targetCategoryId),
-              tag_patch: null,
-              lifecycle: "none",
-            },
-          }
-        : {
-            selection: {
-              mode: "query",
-              query: {
-                period: data.period.slug,
-                start: data.period.slug === "custom" ? data.period.start : null,
-                end: data.period.slug === "custom" ? data.period.end : null,
-                type: data.filters.type,
-                category: data.filters.category_id,
-                matched_category_ids: data.definition.matched_category_ids,
-                tag: data.filters.tag_id,
-                q: searchQuery || null,
+    if (peekId === row.id) closePeek()
+    invalidateTransactionData(queryClient)
+    showToast({
+      message: `Moved to ${category.name}`,
+      action:
+        previousId === undefined
+          ? undefined
+          : {
+              label: "Undo",
+              onClick: async () => {
+                let result: BulkResponse
+                try {
+                  result = await applyCategory([row.id], previousId, category.id)
+                } catch (failure) {
+                  showToast({ message: getApiErrorMessage(failure, "Unable to undo the change.") })
+                  return
+                }
+                invalidateTransactionData(queryClient)
+                if (result.skipped_count) {
+                  showToast({ message: "The transaction changed since, so it was left as it is." })
+                }
               },
             },
-            operation: {
-              set_category_id: Number(targetCategoryId),
-              tag_patch: null,
-              lifecycle: "none",
-            },
-          }
-
-    const confirmed = await confirmDialog({
-      title: "Apply bulk changes to selected transactions?",
-      tone: "primary",
-      confirmLabel: "Apply",
     })
-    if (!confirmed) {
+  }
+  // Keeps the row here and stops suggesting that category for it.
+  const reject = async (row: InboxItem, category: CategorySummary) => {
+    try {
+      await apiFetch(`/api/transactions/${row.id}/category-suggestion/dismiss`, {
+        method: "POST",
+        body: JSON.stringify({ category_id: category.id }),
+      })
+    } catch (failure) {
+      showToast({ message: getApiErrorMessage(failure, "Unable to reject the suggestion.") })
       return
     }
-    bulkMutation.mutate(payload)
+    void queryClient.invalidateQueries({ queryKey: ["transactions", "uncategorized"] })
   }
 
+  // Selection
+  const selectionCount = selection.mode === "ids" ? selection.ids.length : total
+  const isChecked = (id: number) => selection.mode === "query" || selection.ids.includes(id)
+  const setChecked = (id: number, checked: boolean) => {
+    const current = selection.mode === "ids" ? selection.ids : items.map((row) => row.id)
+    setSelection({
+      mode: "ids",
+      ids: checked ? [...current.filter((value) => value !== id), id] : current.filter((value) => value !== id),
+    })
+  }
+  const clearSelection = () => {
+    setSelection({ mode: "ids", ids: [] })
+    setSelectMode(false)
+  }
+  const bulkSelection = () => {
+    if (selection.mode === "ids") return { mode: "ids", transaction_ids: selection.ids }
+    if (!settled) return null
+    return {
+      mode: "query",
+      query: {
+        period: settled.period.slug,
+        start: settled.period.slug === "custom" ? settled.period.start : null,
+        end: settled.period.slug === "custom" ? settled.period.end : null,
+        type: null,
+        category: null,
+        matched_category_ids: settled.definition.matched_category_ids,
+        tag: null,
+        q: settled.filters.query || null,
+      },
+    }
+  }
+  // Previews the change, confirms it with the affected count, then applies it.
+  const bulkCategory = async (categoryId: number | null) => {
+    const bulk = bulkSelection()
+    if (categoryId === null || !bulk) return
+    const payload = { selection: bulk, operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" } }
+    setBulkPending(true)
+    try {
+      const preview = await apiFetch<BulkResponse>("/api/transactions/bulk/preview", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      const confirmed = await confirmDialog({
+        title: `Change the category of ${countLabel(preview.eligible_count)}?`,
+        description: preview.skipped_count ? `${countLabel(preview.skipped_count)} will be skipped.` : undefined,
+        tone: "primary",
+        confirmLabel: "Apply",
+      })
+      if (!confirmed) return
+      const result = await apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      clearSelection()
+      invalidateTransactionData(queryClient)
+      showToast({ message: `Updated ${countLabel(result.eligible_count)}` })
+    } catch (failure) {
+      showToast({ message: getApiErrorMessage(failure, "Unable to apply the bulk change.") })
+    } finally {
+      setBulkPending(false)
+    }
+  }
+
+  const categoryPill = (row: InboxItem, suggested: CategorySummary | null) => (
+    <CategoryPicker
+      grouped={false}
+      categories={targetsFor(row)}
+      selectedId={undefined}
+      onSelect={(categoryId) => {
+        const category = targets.find((entry) => entry.id === categoryId)
+        if (category) void categorize(row, category)
+      }}
+      trigger={
+        suggested ? (
+          <Pill
+            leading={<CategoryGlyph categoryId={suggested.id} icon={suggested.icon} name={suggested.name} inline />}
+            aria-label={`Suggested category ${suggested.name}, change`}
+          >
+            {suggested.name}
+          </Pill>
+        ) : (
+          <Pill icon={ShapesIcon}>Category</Pill>
+        )
+      }
+    />
+  )
+
+  const peekRow = items.find((row) => row.id === peekId)
+  const peekSuggestion = peekRow && suggestionsOn ? suggestionFor(peekRow) : null
+  const first = (page - 1) * limit + 1
+  const filtered = Boolean(searchQuery) || period.slug !== "all"
+
   return (
-    <section className="space-y-6">
-      <PageScopeHeader
-        title="Uncategorized"
-        backHref="/transactions"
-        backLabel="← Back to transactions"
-        controls={
-          <PageFilterBar
-            period={
-              <PeriodPicker
-                periodSlug={data.period.slug}
-                start={data.period.start}
-                end={data.period.end}
-                onSetPreset={setPresetPeriod}
-                onApplyCustom={applyCustomPeriod}
-              />
-            }
+    <Panel
+      title="Uncategorized"
+      parents={[{ label: "Transactions", to: "/transactions" }]}
+      peekOpen={peekId !== null}
+      layout="fill"
+      actions={
+        isDesktop ? null : (
+          <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+            <MenuItem icon={CheckSquareIcon} onSelect={() => setSelectMode(true)}>
+              Select
+            </MenuItem>
+          </Menu>
+        )
+      }
+      viewRow={
+        <ViewRow>
+          <PeriodControl value={period} onChange={setPeriod} />
+          <TextField
+            type="search"
+            icon={MagnifyingGlassIcon}
+            aria-label="Search uncategorized transactions"
+            placeholder="Search"
+            value={searchQuery}
+            onChange={(event) => updateList({ q: event.target.value || null }, true)}
           />
+        </ViewRow>
+      }
+    >
+      <PeekLayout
+        main={
+          <List
+            label="Uncategorized transactions"
+            hasSelection={selectionCount > 0 || selecting}
+            footer={
+              items.length ? (
+                <ListFooter>
+                  {first}–{first + items.length - 1} of {total}
+                  <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
+                  <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                </ListFooter>
+              ) : isPlaceholderData ? null : filtered ? (
+                <EmptyState
+                  action={
+                    searchQuery ? (
+                      <Button variant="quiet" onClick={() => updateList({ q: null })}>
+                        Clear search
+                      </Button>
+                    ) : (
+                      <Button variant="quiet" onClick={() => setPeriod(DEFAULT_PERIOD)}>
+                        Show all time
+                      </Button>
+                    )
+                  }
+                >
+                  No matching transactions
+                </EmptyState>
+              ) : (
+                <EmptyState>No uncategorized transactions</EmptyState>
+              )
+            }
+          >
+            {items.length ? (
+              <ListHead {...columns}>
+                <Cell hide="mobile" />
+                <span />
+                <span>Title</span>
+                <Cell hide="narrow">Date</Cell>
+                <Cell hide="narrow">{suggestionsOn ? "Suggestion" : "Category"}</Cell>
+                {suggestionsOn ? (
+                  <>
+                    <Cell align="right">Confidence</Cell>
+                    <Cell hide="narrow" />
+                  </>
+                ) : null}
+                <Cell align="right">Amount</Cell>
+              </ListHead>
+            ) : null}
+            {items.map((row) => {
+              const suggestion = suggestionsOn ? suggestionFor(row) : null
+              const title = rowTitle(row)
+              return (
+                <Row
+                  key={row.id}
+                  {...columns}
+                  label={title}
+                  selected={row.id === peekId || isChecked(row.id)}
+                  onOpen={selecting ? () => setChecked(row.id, !isChecked(row.id)) : () => openPeek(row.id)}
+                >
+                  <RowLead
+                    glyph={
+                      suggestion ? (
+                        <CategoryGlyph
+                          categoryId={suggestion.category.id}
+                          icon={suggestion.category.icon}
+                          name={suggestion.category.name}
+                        />
+                      ) : (
+                        <UnknownGlyph />
+                      )
+                    }
+                    title={title}
+                    checked={isChecked(row.id)}
+                    selecting={selecting}
+                    onCheckedChange={(checked) => setChecked(row.id, checked)}
+                  />
+                  <Cell strong>{title}</Cell>
+                  <Cell tone="muted" hide="narrow">
+                    {dayLabel(row.date)}
+                  </Cell>
+                  <Cell hide="narrow">{categoryPill(row, suggestion?.category ?? null)}</Cell>
+                  {suggestionsOn ? (
+                    <>
+                      <Confidence value={suggestion?.confidence ?? null} />
+                      <Cell hide="narrow">
+                        {suggestion ? (
+                          <RowActions>
+                            <IconButton icon={CheckIcon} label="Accept" onClick={() => void categorize(row, suggestion.category)} />
+                            <IconButton icon={XIcon} label="Reject" onClick={() => void reject(row, suggestion.category)} />
+                          </RowActions>
+                        ) : null}
+                      </Cell>
+                    </>
+                  ) : null}
+                  <AmountCell>
+                    <Amount cents={row.amount_cents} kind={row.type === "income" ? "income" : "expense"} />
+                  </AmountCell>
+                </Row>
+              )
+            })}
+          </List>
+        }
+        peek={
+          peekId ? (
+            <TransactionPeek
+              key={peekId}
+              id={peekId}
+              parent="Uncategorized"
+              onClose={closePeek}
+              linkTo={peekLink}
+              fullViewTo={`/transactions/${peekId}`}
+              fullViewState={{ returnTo: listHref, returnLabel: "Uncategorized" }}
+              lead={
+                peekRow && peekSuggestion ? (
+                  <SuggestionBox
+                    leading={
+                      <CategoryGlyph
+                        categoryId={peekSuggestion.category.id}
+                        icon={peekSuggestion.category.icon}
+                        name={peekSuggestion.category.name}
+                      />
+                    }
+                    name={peekSuggestion.category.name}
+                    confidence={peekSuggestion.confidence}
+                  >
+                    <Button variant="primary" icon={CheckIcon} onClick={() => void categorize(peekRow, peekSuggestion.category)}>
+                      Accept
+                    </Button>
+                    <Button variant="quiet" onClick={() => void reject(peekRow, peekSuggestion.category)}>
+                      Reject
+                    </Button>
+                  </SuggestionBox>
+                ) : null
+              }
+            />
+          ) : null
         }
       />
-
-      <WorkspaceToolbar className="block p-4">
-        <div className="mb-4 flex flex-col gap-1">
-          <h2 className="font-head text-lg font-bold text-text">Inbox triage</h2>
-          <p className="text-sm text-muted">
-            Suggestions are staged here first. Nothing is categorized until you accept it.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <AppFieldLabel>
-            <span>Search</span>
-            <AppInput
-              type="text"
-              value={searchQuery}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="tag:Work amount>20"
-            />
-          </AppFieldLabel>
-          <AppFieldLabel>
-            <span>Move selected to category</span>
-            <AppNativeSelect
-              value={targetCategoryId}
-              onChange={(event) => setTargetCategoryId(event.target.value)}
-            >
-              <option value="">Choose category</option>
-              {categoryTypes.map((type) => (
-                <optgroup key={type} label={type.charAt(0).toUpperCase() + type.slice(1)}>
-                  {data.categories.filter((c) => c.type === type).map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </AppNativeSelect>
-          </AppFieldLabel>
-          <div className="flex items-end gap-2">
-            <AppButton
-              type="button"
-              onClick={() => setMode("ids")}
-              tone="ghost"
-              className={`text-xs ${mode === "ids" ? "border-accent text-accent" : "text-muted"}`}
-            >
-              Selected
-            </AppButton>
-            <AppButton
-              type="button"
-              onClick={() => setMode("query")}
-              tone="ghost"
-              className={`text-xs ${mode === "query" ? "border-accent text-accent" : "text-muted"}`}
-            >
-              All filtered
-            </AppButton>
-            <AppButton
-              type="button"
-              onClick={runBulkRecategorize}
-              disabled={bulkMutation.isPending || !targetCategoryId || (mode === "ids" && selectedIds.length === 0)}
-            >
-              {bulkMutation.isPending ? "Applying…" : "Apply"}
-            </AppButton>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted">
-          <AppButton
-            type="button"
-            onClick={() => {
-              if (allPageSelected) {
-                const pageIds = new Set(data.items.map((txn) => txn.id))
-                setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)))
-              } else {
-                const merged = new Set(selectedIds)
-                for (const item of data.items) {
-                  merged.add(item.id)
-                }
-                setSelectedIds(Array.from(merged))
-              }
-            }}
-            tone="ghost"
-            className="px-2.5 py-1 text-xs"
-          >
-            {allPageSelected ? "Unselect page" : "Select page"}
-          </AppButton>
-          <span>{selectedIds.length} selected</span>
-          {isFetching ? <span className="loading-hint">Updating…</span> : null}
-          {bulkMutation.error && (
-            <span className="text-semantic-red">
-              {getApiErrorMessage(
-                bulkMutation.error,
-                "Unable to categorize the selected transactions.",
-              )}
-            </span>
-          )}
-        </div>
-      </WorkspaceToolbar>
-
-      <FinancialPanel role="ledger">
-        <SectionHeading>
-          <div>
-            <h2 className="font-head text-lg font-bold text-text">
-              {data.total} uncategorized {data.total === 1 ? "entry" : "entries"}
-            </h2>
-          </div>
-        </SectionHeading>
-        {data.items.length ? (
-          data.items.map((txn) => {
-            const suggestion = suggestionsByTransaction.get(txn.id)
-            return (
-              <article
-                key={txn.id}
-                data-testid={`uncategorized-row-${txn.id}`}
-                className="border-b border-border p-4 last:border-b-0 md:p-5"
-              >
-                <div className="flex items-start gap-3">
-                  <label className="-my-2 -ml-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center desk:my-0 desk:ml-0 desk:h-4 desk:w-4">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select transaction ${txn.id}`}
-                      checked={selectedIds.includes(txn.id)}
-                      onChange={() =>
-                        setSelectedIds((prev) =>
-                          prev.includes(txn.id)
-                            ? prev.filter((id) => id !== txn.id)
-                            : [...prev, txn.id]
-                        )
-                      }
-                      className="control-check"
-                    />
-                  </label>
-                  <CategoryIcon
-                    icon={txn.category?.icon ?? null}
-                    label={txn.category?.name ?? "Uncategorized"}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-text">
-                      {txn.title || txn.category?.name || "Untitled"}
-                    </p>
-                    <TransactionDescription
-                      markdown={txn.description}
-                      compact
-                      clamp
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-muted">
-                      {formatEuroDate(txn.date)} ·{" "}
-                      {txn.category?.name ?? "Uncategorized"}
-                    </p>
-                    {txn.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {txn.tags.map((tag) => (
-                          <span key={tag.id} className="chip">
-                            {tag.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <p className="font-mono text-sm font-semibold text-semantic-red">
-                    -{formatCurrency(txn.net_amount_cents)} €
-                  </p>
-                </div>
-                {suggestion ? (
-                  <div className="mt-3 rounded-lg bg-signal-blue-soft p-3 text-sm">
-                    <p className="font-semibold text-text">
-                      Suggested: {suggestion.category_name ?? "Uncategorized"}
-                    </p>
-                    {suggestion.clean_title ? (
-                      <p className="mt-1 text-xs text-muted">
-                        Title: {suggestion.clean_title}
-                      </p>
-                    ) : null}
-                    {suggestion.tags.length ? (
-                      <p className="mt-1 text-xs text-muted">
-                        Tags: {suggestion.tags.join(", ")}
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-muted">{suggestion.reason}</p>
-                    <div className="mt-2 flex justify-end gap-2">
-                      <AppButton
-                        type="button"
-                        tone="ghost"
-                        onClick={() =>
-                          rejectSuggestionMutation.mutate(suggestion.id)
-                        }
-                        disabled={rejectSuggestionMutation.isPending}
-                        className="text-xs"
-                      >
-                        <XCircleIcon className="mr-1 h-3.5 w-3.5" />
-                        Reject
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={() =>
-                          acceptSuggestionMutation.mutate(suggestion.id)
-                        }
-                        disabled={acceptSuggestionMutation.isPending}
-                        className="text-xs"
-                      >
-                        <CheckCircleIcon className="mr-1 h-3.5 w-3.5" />
-                        Accept
-                      </AppButton>
-                    </div>
-                  </div>
-                ) : llmEnabled ? (
-                  <div className="mt-3 flex justify-end">
-                    <AppButton
-                      type="button"
-                      onClick={() => triageMutation.mutate(txn.id)}
-                      disabled={triageMutation.isPending}
-                      tone="ghost"
-                      className="text-xs"
-                    >
-                      {triageMutation.isPending ? "Suggesting…" : "Suggest"}
-                    </AppButton>
-                  </div>
-                ) : null}
-              </article>
-            )
-          })
-        ) : (
-          <div className="p-10 text-center text-sm text-muted">
-            Inbox is empty.
-          </div>
-        )}
-      </FinancialPanel>
-
-      <div className="flex items-center justify-between">
-        <AppButton
-          type="button"
-          onClick={() => changePage(Math.max(1, data.page - 1))}
-          disabled={data.page <= 1}
-          tone="ghost"
-          className="px-4 py-2 text-xs text-muted disabled:opacity-40"
-        >
-          Previous
-        </AppButton>
-        <p className="text-xs text-muted">Page {data.page}</p>
-        <AppButton
-          type="button"
-          onClick={() => changePage(data.page + 1)}
-          disabled={!data.has_more}
-          tone="ghost"
-          className="px-4 py-2 text-xs text-muted disabled:opacity-40"
-        >
-          Next
-        </AppButton>
-      </div>
-    </section>
+      <BulkBar
+        count={selectionCount}
+        active={selecting}
+        onClear={clearSelection}
+        selectionMenu={
+          <>
+            {selection.mode === "ids" && total > selectionCount ? (
+              <MenuItem icon={ChecksIcon} disabled={!settled} onSelect={() => setSelection({ mode: "query" })}>
+                Select all {total} matching
+              </MenuItem>
+            ) : null}
+            <MenuItem icon={XIcon} onSelect={clearSelection}>
+              Clear selection
+            </MenuItem>
+          </>
+        }
+      >
+        <CategoryPicker
+          grouped
+          label="Set category"
+          categories={targets}
+          selectedId={undefined}
+          onSelect={(categoryId) => void bulkCategory(categoryId)}
+          trigger={
+            <Button icon={ShapesIcon} aria-label="Category" disabled={bulkPending || selectionCount === 0}>
+              {isDesktop ? "Category" : null}
+            </Button>
+          }
+        />
+      </BulkBar>
+    </Panel>
   )
 }
 

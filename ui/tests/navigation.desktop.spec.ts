@@ -1,4 +1,10 @@
 import { test, expect, type Page } from "./fixtures"
+import {
+  createTransaction,
+  getCsrfToken,
+  loginAsIsolatedUser,
+  waitForEntrance,
+} from "./helpers"
 
 test.describe.configure({ mode: "parallel" })
 
@@ -17,51 +23,53 @@ test.describe("Navigation", () => {
       name: "Application navigation",
     })
     await expect(sidebar).toBeVisible()
-    await sidebar.getByRole("link", { name }).click()
+    await sidebar.getByRole("link", { name, exact: true }).click()
   }
 
-  test("uses in-content page titles beneath the compact desktop utility bar", async ({
-    page,
-  }) => {
+  const chooseAppMenuItem = async (page: Page, name: string) => {
+    await page.getByRole("button", { name: "Expenses", exact: true }).click()
+    await page.getByRole("menuitem", { name }).click()
+  }
+
+  test("renders every page inside the inset panel", async ({ page }) => {
     const routes = [
       { path: "/", heading: "Dashboard" },
       { path: "/transactions", heading: "Transactions" },
-      { path: "/admin", heading: "Re-enter your password" },
-      { path: "/unknown-route-12345", heading: "Page not found" },
+      { path: "/admin", heading: "Health" },
+      { path: "/unknown-route-12345", heading: "This page does not exist" },
     ]
 
     for (const route of routes) {
       await page.goto(route.path)
       await expect(page.locator("main h1")).toContainText(route.heading)
-      await expect(page.getByTestId("app-shell-utility")).toBeVisible()
     }
   })
 
   test("distinguishes value selectors from page view tabs", async ({
     page,
   }) => {
-    const selectors = [
-      { path: "/", label: "Period" },
+    await page.goto("/")
+    await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
+
+    for (const selector of [
+      { path: "/settings/appearance", label: "Theme" },
       { path: "/forecast", label: "Forecast horizon" },
       { path: "/scenarios", label: "Scenario model" },
-      { path: "/settings", label: "Theme mode" },
-    ]
-
-    for (const selector of selectors) {
+    ]) {
       await page.goto(selector.path)
-      const group = page.getByRole("group", { name: selector.label })
+      const group = page.getByRole("radiogroup", { name: selector.label })
       await expect(group).toBeVisible()
-      await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
+      await expect(group.getByRole("radio", { checked: true })).toHaveCount(1)
     }
 
     await page.goto("/insights")
-    await expect(page.getByRole("tablist", { name: "Insights views" })).toBeVisible()
+    await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
     await page.goto("/recurring")
-    await expect(page.getByRole("tablist", { name: "Recurring views" })).toBeVisible()
+    await expect(page.getByRole("radiogroup", { name: "Recurring view" })).toBeVisible()
 
     await page.goto("/budgets")
     await expect(page.getByRole("group", { name: "Budget view" })).toHaveCount(0)
-    await expect(page.getByLabel("Budget month")).toBeVisible()
+    await expect(page.getByRole("group", { name: "Month" })).toBeVisible()
 
     await expect(page.getByLabel(/^Period:/)).toHaveCount(0)
   })
@@ -72,7 +80,7 @@ test.describe("Navigation", () => {
     await expect(page).toHaveTitle("Expenses")
   })
 
-  test("keeps every available desktop destination visible without an overflow menu", async ({
+  test("shows primary navigation, collapsible groups, and the app-name menu", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
@@ -82,15 +90,12 @@ test.describe("Navigation", () => {
       name: "Application navigation",
     })
     await expect(sidebar).toBeVisible()
-    await expect(page.getByTestId("app-shell-brand")).toHaveText("Expenses")
     for (const label of [
       "Dashboard",
       "Transactions",
       "Budgets",
-      "Forecast",
       "Insights",
-      "Digest",
-      "Assistant",
+      "Forecast",
       "Recurring",
       "Templates",
       "Rules",
@@ -99,56 +104,85 @@ test.describe("Navigation", () => {
       "What If",
       "Reconcile",
       "Reports",
-      "Settings",
-      "Admin",
+      "Digest",
+      "Assistant",
     ]) {
-      await expect(sidebar.getByRole("link", { name: label })).toBeVisible()
+      await expect(sidebar.getByRole("link", { name: label, exact: true })).toBeVisible()
     }
-    await expect(sidebar.getByRole("button", { name: /More/i })).toHaveCount(0)
-    await expect(sidebar.getByRole("link", { name: /More/i })).toHaveCount(0)
+    await expect(sidebar.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    )
+    await expect(sidebar.getByRole("link", { name: "Settings" })).toHaveCount(0)
+
+    const manage = sidebar.getByRole("button", { name: "Manage" })
+    await expect(manage).toHaveAttribute("aria-expanded", "true")
+    await manage.click()
+    await expect(manage).toHaveAttribute("aria-expanded", "false")
+    await expect(sidebar.getByRole("link", { name: "Recurring" })).toHaveCount(0)
+    await manage.click()
+    await expect(sidebar.getByRole("link", { name: "Recurring" })).toBeVisible()
+
+    await page.getByRole("button", { name: "Expenses", exact: true }).click()
+    const menu = page.getByRole("menu")
+    await expect(menu.getByRole("menuitem")).toHaveText(["Settings", "Admin", "Sign out"])
+    // Esc reaches the menu once it has focus.
+    await expect(menu).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(menu).toHaveCount(0)
   })
 
-  test("reserves the sidebar scroll gutter while hiding its idle thumb", async ({
+  test("shows Uncategorized under Transactions with its count", async ({
     page,
+    request,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 720 })
+    const token = await getCsrfToken(request)
+    const categoriesResponse = await request.get("/api/categories?period=all")
+    const { categories } = (await categoriesResponse.json()) as {
+      categories: Array<{ id: number; name: string; type: string; archived_at: string | null }>
+    }
+    let categoryId = categories.find(
+      (category) =>
+        category.type === "expense" &&
+        category.archived_at === null &&
+        category.name.toLowerCase() === "uncategorized",
+    )?.id
+    if (!categoryId) {
+      const created = await request.post("/api/categories", {
+        headers: { "X-CSRF-Token": token },
+        data: { name: "Uncategorized", type: "expense", order: 0 },
+      })
+      expect(created.ok()).toBeTruthy()
+      categoryId = ((await created.json()) as { id: number }).id
+    }
+    await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T09:15:00",
+      type: "expense",
+      amount_cents: 1250,
+      category_id: categoryId,
+      title: `E2E Uncategorized nav ${Date.now()}`,
+      tags: [],
+    })
+
     await page.goto("/")
+    const link = page
+      .getByRole("complementary", { name: "Application navigation" })
+      .getByRole("link", { name: /^Uncategorized/ })
+    await expect(link).toBeVisible()
+    await expect(link).toHaveText(/Uncategorized\s*[1-9]\d*/)
+    await link.click()
+    await expect(page).toHaveURL("/transactions/inbox")
+    await expect(link).toHaveAttribute("aria-current", "page")
+  })
 
-    const navigation = page.getByRole("navigation", { name: "Primary" })
-    await expect(navigation).toBeVisible()
-    await expect
-      .poll(() =>
-        navigation.evaluate((element) => {
-          const style = getComputedStyle(element)
-          return {
-            gutter: style.scrollbarGutter,
-            thumb: style.getPropertyValue("--sidebar-scrollbar-thumb").trim(),
-          }
-        })
-      )
-      .toEqual({ gutter: "stable", thumb: "transparent" })
-
-    await navigation.hover()
-    await expect
-      .poll(() =>
-        navigation.evaluate((element) =>
-          getComputedStyle(element)
-            .getPropertyValue("--sidebar-scrollbar-thumb")
-            .trim()
-        )
-      )
-      .not.toBe("transparent")
-
-    await page.locator("main h1").hover()
-    await expect
-      .poll(() =>
-        navigation.evaluate((element) =>
-          getComputedStyle(element)
-            .getPropertyValue("--sidebar-scrollbar-thumb")
-            .trim()
-        )
-      )
-      .toBe("transparent")
+  test("signs out from the app-name menu", async ({ page }) => {
+    await page.goto("/")
+    await loginAsIsolatedUser(page)
+    await page.goto("/")
+    await chooseAppMenuItem(page, "Sign out")
+    await expect(page).toHaveURL(/\/login(?:\?|$)/)
+    await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
   })
 
   test("keeps theme selection in Settings and removes the shell quick toggle", async ({
@@ -163,14 +197,18 @@ test.describe("Navigation", () => {
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
     await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
-    await clickSidebarLink(page, "Settings")
-    const themeControl = page.getByTestId("settings-theme-control")
-    await themeControl.getByRole("button", { name: "Dark" }).click()
+    await chooseAppMenuItem(page, "Settings")
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Appearance" })
+      .click()
+    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Dark" }).click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("dark")
     await expect.poll(() => readThemePreference(page)).toBe("dark")
 
+    await page.getByRole("link", { name: "Back to app" }).click()
     await clickSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
     await expect
@@ -183,7 +221,7 @@ test.describe("Navigation", () => {
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("dark")
 
-    await clickSidebarLink(page, "Admin")
+    await chooseAppMenuItem(page, "Admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
@@ -199,7 +237,8 @@ test.describe("Navigation", () => {
 
   test("should preserve period across primary navigation", async ({ page }) => {
     await page.goto("/")
-    await page.getByRole("button", { name: "This month" }).click()
+    await page.getByRole("button", { name: /^Period:/ }).click()
+    await page.getByRole("menuitemcheckbox", { name: "This month" }).click()
     await expect(page).toHaveURL(/period=this_month/)
 
     await clickSidebarLink(page, "Transactions")
@@ -214,7 +253,7 @@ test.describe("Navigation", () => {
     await expect(page.getByRole("searchbox")).toHaveCount(0)
 
     await clickSidebarLink(page, "Transactions")
-    await page.getByRole("button", { name: "Search transactions" }).click()
+    await page.getByRole("button", { name: "Search", exact: true }).click()
     const search = page.getByRole("searchbox", { name: "Search transactions" })
     await search.fill("coffee beans")
     await expect(page).toHaveURL(/\/transactions\?period=last_month.*q=coffee/)
@@ -233,11 +272,12 @@ test.describe("Navigation", () => {
       { label: "Assistant", path: "/assistant", heading: "Assistant" },
       { label: "Recurring", path: "/recurring", heading: "Recurring" },
       { label: "Templates", path: "/templates", heading: "Templates" },
-      { label: "Rules", path: "/rules", heading: "Categorization Rules" },
+      { label: "Rules", path: "/rules", heading: "Rules" },
       { label: "Categories", path: "/categories", heading: "Categories" },
       { label: "Tags", path: "/tags", heading: "Tags" },
-      { label: "Reports", path: "/reports/builder", heading: "Report Builder" },
+      { label: "Reports", path: "/reports/builder", heading: "Reports" },
       { label: "What If", path: "/scenarios", heading: "What If" },
+      { label: "Reconcile", path: "/reconciliation", heading: "Reconcile" },
     ]
 
     for (const route of routes) {
@@ -248,31 +288,30 @@ test.describe("Navigation", () => {
       ).toBeVisible()
     }
 
-    await clickSidebarLink(page, "Admin")
+    await chooseAppMenuItem(page, "Admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect(page.locator("main h1")).toContainText("Re-enter your password")
+    await expect(page.locator("main h1")).toContainText("Health")
+    await expect(page.getByRole("heading", { name: "Enter your password" })).toBeVisible()
   })
 
   test("uses page-specific desktop utility actions", async ({
     page,
   }) => {
-    for (const route of ["/", "/transactions"]) {
-      await page.goto(route)
-      await page.getByRole("button", { name: "Add transaction" }).click()
-      await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
-      await page.keyboard.press("Escape")
-    }
+    await page.goto("/transactions")
+    await page.getByRole("button", { name: "Add transaction" }).click()
+    await expect(page.getByRole("dialog", { name: "Add transaction" })).toBeVisible()
+    await page.keyboard.press("Escape")
 
     await page.goto("/insights")
     await expect(page.getByRole("button", { name: "Add transaction" })).toHaveCount(0)
 
     await page.goto("/budgets")
-    await page.getByRole("button", { name: "Add budget" }).click()
+    await page.getByRole("button", { name: "Add budget" }).first().click()
     await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
     await page.keyboard.press("Escape")
 
     await page.goto("/recurring")
-    await page.getByRole("button", { name: "Add rule" }).click()
+    await page.locator("main header").getByRole("button", { name: "Add rule" }).click()
     await expect(page.getByRole("dialog", { name: "Add rule" })).toBeVisible()
   })
 
@@ -283,16 +322,20 @@ test.describe("Navigation", () => {
 
     for (const entry of [
       {
-        path: "/",
-        action: "Add transaction",
+        path: "/transactions",
+        action: (page: Page) =>
+          page.getByRole("button", { name: "Add transaction", exact: true }),
         dialog: "Add transaction",
       },
-      { path: "/budgets", action: "Add budget", dialog: "Add budget" },
+      {
+        path: "/budgets",
+        action: (page: Page) =>
+          page.getByRole("button", { name: "Add budget", exact: true }).first(),
+        dialog: "Add budget",
+      },
     ]) {
       await page.goto(entry.path)
-      const action = page
-        .getByTestId("app-shell-utility")
-        .getByRole("button", { name: entry.action, exact: true })
+      const action = entry.action(page)
       await expect(action).toBeVisible()
 
       // Emulate a classic 15px desktop scrollbar so Radix's compensation is
@@ -304,7 +347,7 @@ test.describe("Navigation", () => {
         })
       })
 
-      const canvas = page.locator(".page-enter")
+      const canvas = page.locator("main")
       const beforeBox = await canvas.boundingBox()
       expect(beforeBox).not.toBeNull()
 
@@ -365,11 +408,13 @@ test.describe("Navigation", () => {
 
     await addButton.click()
     await expect(dialog).toBeVisible()
+    await waitForEntrance(dialog)
     await page.mouse.click(10, 10)
     await expect(dialog).toBeHidden()
 
     await addButton.click()
     await expect(dialog).toBeVisible()
+    await waitForEntrance(dialog)
     await page.keyboard.press("Escape")
     await expect(dialog).toBeHidden()
     await expect
@@ -386,13 +431,14 @@ test.describe("Navigation", () => {
   })
 
   test("should show 404 page for unknown routes", async ({ page }) => {
-    await page.goto("/unknown-route-12345")
-    await expect(page.locator("main h1")).toContainText("Page not found")
+    await page.goto("/unknown-route-12345?from=test")
+    await expect(page.locator("main h1")).toHaveText("This page does not exist")
+    await expect(page.locator("main")).toContainText("/unknown-route-12345?from=test")
   })
 
   test("recovers from unknown routes back to dashboard", async ({ page }) => {
     await page.goto("/unknown-route-12345")
-    await page.getByRole("link", { name: "Back to dashboard" }).click()
+    await page.getByRole("link", { name: "Go to dashboard" }).click()
     await expect(page).toHaveURL("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
   })

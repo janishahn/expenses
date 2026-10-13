@@ -1,113 +1,153 @@
+import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
-import { createTransaction, getCsrfToken } from "./helpers"
+import { loginAsIsolatedUser, provisionInsightsData } from "./helpers"
+
+test.describe.configure({ mode: "parallel" })
+
+// Amounts group thousands with a narrow space, so tests write them with a dot.
+function eur(text: string): RegExp {
+  return new RegExp(text.replace("+", "\\+").replace(/\./g, "[\\s.]").replace(/ /g, "\\s"))
+}
+
+// The label of a strip metric with its value and detail beneath.
+function metric(page: Page, label: string) {
+  return page.getByText(label, { exact: true }).first().locator("..")
+}
+
+async function showAsTable(page: Page, cardName: string) {
+  const card = page.getByRole("region", { name: cardName })
+  await card.getByRole("button", { name: "Chart options" }).tap()
+  await page.getByRole("menuitemcheckbox", { name: "Show as table" }).tap()
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  return card
+}
 
 test.describe("Insights Page (mobile)", () => {
-  test("applies filters from the mobile filter sheet", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const tagName = `Mobile insight filter ${Date.now()}`
-    const tagResponse = await request.post("/api/tags", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: tagName, is_hidden_from_budget: false },
-    })
-    expect(tagResponse.ok()).toBeTruthy()
+  test("renders the heading and every card without horizontal page scrolling", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
     await page.goto("/insights")
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const dialog = page.getByRole("dialog", { name: "Insights filters" })
-    await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole("group", { name: "Transaction type" })).toHaveCount(0)
-    await dialog.getByRole("button", { name: "Exclude", exact: true }).click()
-    await dialog.getByRole("checkbox", { name: tagName }).check()
-    await dialog.getByRole("button", { name: "Apply" }).click()
-    await expect(page).toHaveURL(/exclude_tags=/)
-  })
-
-  test("uses page tabs and renders single-month chart points", async ({
-    page,
-  }) => {
-    await page.goto("/insights?period=this_month")
-
-    const viewTabs = page.getByRole("tablist", { name: "Insights views" })
-    await expect(viewTabs).toBeVisible()
-    await expect(viewTabs.getByRole("tab")).toHaveCount(2)
-    await expect(page.getByText(/^Date:/)).toHaveCount(0)
-    await expect(page.getByText(/months? view$/)).toHaveCount(0)
-
-    const chartPanel = page
-      .locator('[data-financial-surface="chart"]')
-      .filter({ hasText: "Monthly income vs expenses" })
-      .first()
-    const chart = chartPanel.getByRole("img", {
-      name: "Monthly income compared with expenses",
-    })
-    await expect(chart.locator("svg")).toBeVisible()
-    await expect(
-      chart.locator('circle[fill="rgb(var(--semantic-green))"]'),
-    ).toHaveCount(1)
-    await expect(
-      chart.locator('circle[fill="rgb(var(--semantic-red))"]'),
-    ).toHaveCount(1)
-  })
-
-  test("renders an interactive net chart without horizontal page scrolling", async ({
-    page,
-    request,
-  }) => {
-    const csrfToken = await getCsrfToken(request)
-    const suffix = Date.now()
-    const incomeName = `Mobile Net Income ${suffix}`
-    const expenseName = `Mobile Net Expense ${suffix}`
-    const createCategory = async (name: string, type: "income" | "expense") => {
-      const response = await request.post("/api/categories", {
-        headers: { "X-CSRF-Token": csrfToken },
-        data: { name, type, order: 0 },
-      })
-      expect(response.ok()).toBeTruthy()
-      return ((await response.json()) as { id: number }).id
+    await expect(page.getByRole("heading", { name: "Insights", level: 1 })).toBeVisible()
+    for (const name of [
+      "Income and expenses",
+      "Recurring and other spending",
+      "By month",
+      "Daily spending",
+      "Budget history",
+    ]) {
+      const card = page.getByRole("region", { name })
+      await card.scrollIntoViewIfNeeded()
+      await expect(card).toBeVisible()
     }
-    const incomeCategoryID = await createCategory(incomeName, "income")
-    const expenseCategoryID = await createCategory(expenseName, "expense")
-    const now = new Date()
-
-    await createTransaction(request, csrfToken, {
-      date: now.toISOString().slice(0, 10),
-      occurred_at: now.toISOString(),
-      type: "income",
-      amount_cents: 99_000_000,
-      category_id: incomeCategoryID,
-      title: incomeName,
-      tags: [],
-    })
-    await createTransaction(request, csrfToken, {
-      date: now.toISOString().slice(0, 10),
-      occurred_at: now.toISOString(),
-      type: "expense",
-      amount_cents: 44_000_000,
-      category_id: expenseCategoryID,
-      title: expenseName,
-      tags: [],
-    })
-
-    await page.goto("/insights?view=net&period=this_month")
-    const chart = page.getByRole("group", { name: "Income and spending chart" })
-    await expect(chart).toBeVisible()
-    const expenseStep = chart.locator(
-      `[data-waterfall-step][aria-label^="${expenseName}:"]`
-    )
-    await expect(expenseStep).toBeVisible()
-    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
-
-    await expenseStep.click()
-    await expect(expenseStep).toHaveAttribute("data-selected", "")
-    await expect(page.getByTestId("waterfall-details")).toContainText(expenseName)
-
-    await page.getByRole("heading", { name: "Income & spending" }).click()
-    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+    await expect(page.getByText(/Unable to load|is unavailable/)).toHaveCount(0)
     await expect
       .poll(() =>
         page.evaluate(
-          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-        )
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        ),
       )
       .toBeLessThanOrEqual(0)
+  })
+
+  test("applies period and tag filters from the mobile controls", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { tagId } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    await expect(metric(page, "Spent")).toContainText(eur("620,00 €"))
+    await expect(metric(page, "Income")).toContainText(eur("2.000,00 €"))
+
+    await page.getByRole("button", { name: /^Period:/ }).tap()
+    await page.getByRole("menuitemcheckbox", { name: "Last month" }).tap()
+    await expect(page).toHaveURL(/period=last_month/)
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(metric(page, "Spent")).toContainText("500,00 €")
+    await expect(metric(page, "Saved")).toContainText(eur("1.500,00 €"))
+
+    await page.getByRole("button", { name: "Filter", exact: true }).tap()
+    const sheet = page.getByRole("dialog", { name: "Filter" })
+    await expect(sheet).toBeVisible()
+    await sheet.getByRole("radio", { name: "Exclude" }).tap()
+    await sheet.getByRole("checkbox", { name: "Trip" }).click()
+    await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagId}(?:&|$)`))
+    await expect(page).toHaveURL(/period=last_month/)
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(metric(page, "Spent")).toContainText("0,00 €")
+    await expect(metric(page, "Spent")).not.toContainText("500,00 €")
+    await page.keyboard.press("Escape")
+    await expect(sheet).toBeHidden()
+    await expect(page.getByRole("button", { name: "Filter · 1" })).toBeVisible()
+  })
+
+  test("lists the exact By month amounts and opens the ledger with the Insights breadcrumb", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { lastMonth, rentId } = await provisionInsightsData(
+      isolated.request,
+      isolated.csrfToken,
+    )
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = await showAsTable(page, "By month")
+    const table = card.getByRole("table", { name: "Amounts by month" })
+    await expect(table.getByRole("row", { name: /^Dining/ })).toContainText("120 €")
+    await card.getByRole("radio", { name: "Income" }).tap()
+    await expect(table.getByRole("row", { name: /^Salary/ })).toContainText(eur("2.000 €"))
+    await card.getByRole("radio", { name: "Tags" }).tap()
+    await expect(table.getByRole("row", { name: /^Trip/ })).toContainText("500 €")
+    await card.getByRole("radio", { name: "Expenses" }).tap()
+
+    await table.getByRole("row", { name: /^Rent/ }).getByRole("link", { name: "500 €", exact: true }).tap()
+    await expect(page).toHaveURL(
+      new RegExp(`/transactions\\?.*start=${lastMonth}-01.*category=${rentId}.*from=insights`),
+    )
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" })
+    await expect(breadcrumb).toContainText("Insights")
+    await expect(page.getByRole("listitem", { name: "Rent payment" })).toBeVisible()
+    await breadcrumb.getByRole("link", { name: "Insights" }).tap()
+    await expect(page.getByRole("heading", { name: "Insights", level: 1 })).toBeVisible()
+  })
+
+  test("opens a day of daily spending and the budget history month", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { thisMonth } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const daily = await showAsTable(page, "Daily spending")
+    const day = `${thisMonth}-01`
+    const dayLabel = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    })
+    await expect(
+      daily.getByRole("table", { name: "Spending by day" }).getByRole("row", { name: new RegExp(`^${dayLabel}`) }),
+    ).toContainText("120,00 €")
+    await daily.getByRole("link", { name: dayLabel }).tap()
+    await expect(page).toHaveURL(new RegExp(`start=${day}.*end=${day}.*from=insights`))
+    await expect(page.getByRole("listitem", { name: "Team dinner" })).toBeVisible()
+
+    await page.goto("/insights")
+    const budgets = await showAsTable(page, "Budget history")
+    await budgets
+      .getByRole("table", { name: "Budget history by month" })
+      .getByRole("row", { name: /^Dining/ })
+      .getByRole("link", { name: "120 € of 300 €" })
+      .tap()
+    await expect(page).toHaveURL(new RegExp(`/budgets\\?month=${thisMonth}`))
+    await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
   })
 })

@@ -5,14 +5,21 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from io import StringIO
+from typing import Literal
 
 from rapidfuzz import fuzz
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from expenses.db.models import BankStatementRow, Transaction, TransactionType
+from expenses.core.periods import Period
+from expenses.db.models import BankStatementRow, Tag, Transaction, TransactionType
 from expenses.schemas import BankTransactionCreateIn, TransactionIn
-from expenses.services.main import TransactionService
+from expenses.services.main import (
+    MetricsService,
+    ReimbursementService,
+    TransactionService,
+)
+from expenses.services.rollups import recompute_monthly_rollup_for_date
 
 
 COMMERZBANK_CSV_SOURCE = "commerzbank_csv"
@@ -24,6 +31,10 @@ class BankRowNotFoundError(ValueError):
 
 
 class BankRowAlreadyResolvedError(ValueError):
+    pass
+
+
+class BankRowChangedError(ValueError):
     pass
 
 
@@ -82,6 +93,10 @@ BOOKING_TEXT_HEADERS = {
 }
 PURPOSE_HEADERS = {"verwendungszweck", "beschreibung", "details", "purpose"}
 ACCOUNT_HEADERS = {"auftragskonto", "konto", "kontonummer", "iban", "account"}
+
+
+def _row_transaction_type(row: BankStatementRow) -> TransactionType:
+    return TransactionType.income if row.amount_cents > 0 else TransactionType.expense
 
 
 def _decode_csv(content: bytes) -> str:
@@ -381,54 +396,250 @@ class BankReconciliationService:
             "only_in_expenses": only_in_expenses["items"],
         }
 
-    def accept_suggestion(self, row_id: int) -> None:
-        row = self._get_row(row_id)
-        self._require_unresolved(row)
-        reserved_transaction_ids = set(
-            self.session.scalars(
-                select(BankStatementRow.matched_transaction_id).where(
-                    BankStatementRow.user_id == self.user_id,
-                    BankStatementRow.id != row.id,
-                    BankStatementRow.matched_transaction_id.is_not(None),
+    def list_rows(
+        self,
+        *,
+        view: str,
+        outcome: str | None,
+        account: str | None,
+        page: int,
+        limit: int,
+    ) -> dict[str, object]:
+        trashed_ids = select(Transaction.id).where(
+            Transaction.user_id == self.user_id, Transaction.deleted_at.is_not(None)
+        )
+        matched_to_trash = BankStatementRow.matched_transaction_id.in_(trashed_ids)
+        # Permanently deleting the transaction sets the row's key to NULL.
+        match_purged = and_(
+            BankStatementRow.resolution.in_(("matched", "created")),
+            BankStatementRow.matched_transaction_id.is_(None),
+        )
+        if view == "open":
+            conditions = [
+                or_(
+                    BankStatementRow.resolution.is_(None),
+                    matched_to_trash,
+                    match_purged,
+                )
+            ]
+            order = (BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
+        else:
+            conditions = [
+                BankStatementRow.resolution.is_not(None),
+                or_(
+                    BankStatementRow.matched_transaction_id.is_(None), ~matched_to_trash
+                ),
+                ~match_purged,
+            ]
+            order = (BankStatementRow.resolved_at.desc(), BankStatementRow.id.desc())
+        conditions.append(BankStatementRow.user_id == self.user_id)
+        if outcome is not None:
+            conditions.append(BankStatementRow.resolution == outcome)
+        if account is not None:
+            conditions.append(BankStatementRow.account_label == account)
+
+        total = int(
+            self.session.scalar(
+                select(func.count(BankStatementRow.id)).where(*conditions)
+            )
+            or 0
+        )
+        rows = self.session.scalars(
+            select(BankStatementRow)
+            .options(
+                joinedload(BankStatementRow.matched_transaction).joinedload(
+                    Transaction.category
                 )
             )
+            .where(*conditions)
+            .order_by(*order)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        ).all()
+        reserved_transaction_ids = self._reserved_transaction_ids()
+        items = []
+        for row in rows:
+            item, reserved_id = self._serialize_statement_row(
+                row, reserved_transaction_ids, trashed_match_is_open=True
+            )
+            if reserved_id is not None:
+                reserved_transaction_ids.add(reserved_id)
+            items.append(item)
+        return {"items": items, "total": total, "page": page, "limit": limit}
+
+    def accounts(self) -> dict[str, object]:
+        rows = self.session.execute(
+            select(
+                BankStatementRow.account_label,
+                func.count(BankStatementRow.id),
+                func.max(BankStatementRow.created_at),
+            )
+            .where(BankStatementRow.user_id == self.user_id)
+            .group_by(BankStatementRow.account_label)
+            .order_by(BankStatementRow.account_label)
+        ).all()
+        return {
+            "accounts": [
+                {"label": label, "row_count": int(count), "last_import_at": last}
+                for label, count, last in rows
+            ]
+        }
+
+    def search_candidates(
+        self, row_id: int, *, query: str, limit: int
+    ) -> list[dict[str, object]]:
+        row = self._get_row(row_id)
+        stmt = (
+            select(Transaction)
+            .options(joinedload(Transaction.category))
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == _row_transaction_type(row),
+            )
+            .order_by(
+                func.abs(
+                    func.julianday(Transaction.date)
+                    - func.julianday(row.booking_date.isoformat())
+                ),
+                Transaction.id,
+            )
+            .limit(limit)
         )
-        candidates = self._candidate_transactions(row, reserved_transaction_ids)
+        needle = query.strip()
+        if needle:
+            escaped = (
+                needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            stmt = stmt.where(Transaction.title.ilike(f"%{escaped}%", escape="\\"))
+        reserved_transaction_ids = self._reserved_transaction_ids(exclude_row_id=row.id)
+        if reserved_transaction_ids:
+            stmt = stmt.where(Transaction.id.not_in(reserved_transaction_ids))
+        return [
+            self._serialize_transaction(txn, row.booking_date)
+            for txn in self.session.scalars(stmt)
+        ]
+
+    def accept_suggestion(self, row_id: int) -> int:
+        row = self._get_row(row_id)
+        self._require_unresolved(row)
+        candidates = self._candidate_transactions(
+            row, self._reserved_transaction_ids(exclude_row_id=row.id)
+        )
         if len(candidates) != 1:
             raise ValueError("Bank row does not have exactly one suggested match")
-        row.matched_transaction_id = candidates[0].id
-        row.reviewed_at = None
+        self._resolve_matched(row, candidates[0].id)
         self.session.commit()
+        return candidates[0].id
 
-    def match_transaction(self, row_id: int, transaction_id: int) -> None:
-        row = self._get_row(row_id)
-        self._require_unresolved(row)
-        reserved_transaction_ids = set(
-            self.session.scalars(
-                select(BankStatementRow.matched_transaction_id).where(
-                    BankStatementRow.user_id == self.user_id,
-                    BankStatementRow.id != row.id,
-                    BankStatementRow.matched_transaction_id.is_not(None),
-                )
+    def accept_suggestions(self, row_ids: list[int]) -> list[tuple[int, int]]:
+        reserved_transaction_ids = self._reserved_transaction_ids()
+        rows = self.session.scalars(
+            select(BankStatementRow)
+            .where(
+                BankStatementRow.user_id == self.user_id,
+                BankStatementRow.id.in_(row_ids),
             )
-        )
-        candidates = self._candidate_transactions(row, reserved_transaction_ids)
-        if transaction_id not in {candidate.id for candidate in candidates}:
-            raise ValueError("Transaction is not an available match for this bank row")
-        row.matched_transaction_id = transaction_id
-        row.reviewed_at = None
+            .order_by(BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
+        ).all()
+        accepted: list[tuple[int, int]] = []
+        for row in rows:
+            if not self._is_unresolved(row):
+                continue
+            candidates = self._candidate_transactions(row, reserved_transaction_ids)
+            if len(candidates) != 1:
+                continue
+            self._resolve_matched(row, candidates[0].id)
+            reserved_transaction_ids.add(candidates[0].id)
+            accepted.append((row.id, candidates[0].id))
         self.session.commit()
+        return accepted
 
-    def mark_reviewed(self, row_id: int) -> None:
+    def match_transaction(
+        self,
+        row_id: int,
+        transaction_id: int,
+        *,
+        update_amount_to_bank: bool = False,
+        resolution: Literal["matched", "created"] = "matched",
+    ) -> int | None:
         row = self._get_row(row_id)
         self._require_unresolved(row)
-        row.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+        stmt = select(Transaction).where(
+            Transaction.user_id == self.user_id, Transaction.id == transaction_id
+        )
+        # Restoring a created row also takes its transaction back out of Trash.
+        if resolution == "matched":
+            stmt = stmt.where(Transaction.deleted_at.is_(None))
+        txn = self.session.scalar(stmt)
+        if txn is None:
+            raise ValueError("Transaction not found")
+        if txn.type != _row_transaction_type(row):
+            raise ValueError("Transaction type differs from the bank row")
+        if transaction_id in self._reserved_transaction_ids(exclude_row_id=row.id):
+            raise ValueError("Transaction is already matched to another bank row")
+        if txn.deleted_at is not None:
+            TransactionService(self.session, self.user_id).restore(txn.id, commit=False)
+        previous_amount_cents = txn.amount_cents
+        if update_amount_to_bank:
+            self._set_amount_to_bank(txn, row)
+        self._resolve_matched(row, transaction_id)
+        row.resolution = resolution
+        self.session.commit()
+        # The amount the bank amount replaced, so the match can be undone.
+        if txn.amount_cents == previous_amount_cents:
+            return None
+        return previous_amount_cents
+
+    def ignore(self, row_id: int, reason: str | None) -> None:
+        row = self._get_row(row_id)
+        self._require_unresolved(row)
+        now = datetime.now(UTC).replace(tzinfo=None)
+        row.matched_transaction_id = None
+        row.reviewed_at = now
+        row.resolution = "ignored"
+        row.resolved_at = now
+        row.ignore_reason = reason
         self.session.commit()
 
-    def reopen(self, row_id: int) -> None:
+    def reopen(
+        self,
+        row_id: int,
+        *,
+        trash_created_transaction: bool = False,
+        expected_resolution: str | None = None,
+        expected_transaction_id: int | None = None,
+        restore_amount_cents: int | None = None,
+    ) -> None:
         row = self._get_row(row_id)
+        if (
+            expected_resolution is not None and row.resolution != expected_resolution
+        ) or (
+            expected_transaction_id is not None
+            and row.matched_transaction_id != expected_transaction_id
+        ):
+            raise BankRowChangedError("Bank row changed since this action")
+        # An amount edited since the match stays as it is.
+        txn = row.matched_transaction
+        if (
+            restore_amount_cents is not None
+            and txn is not None
+            and txn.amount_cents == abs(row.amount_cents)
+        ):
+            self._set_amount(txn, restore_amount_cents)
+        if (
+            trash_created_transaction
+            and row.resolution == "created"
+            and row.matched_transaction_id is not None
+        ):
+            TransactionService(self.session, self.user_id).soft_delete(
+                row.matched_transaction_id, commit=False
+            )
         row.reviewed_at = None
         row.matched_transaction_id = None
+        row.resolution = None
+        row.resolved_at = None
+        row.ignore_reason = None
         self.session.commit()
 
     def create_transaction(
@@ -446,31 +657,82 @@ class BankReconciliationService:
         transaction_date = data.date if data is not None else row.booking_date
         category_id = data.category_id if data is not None else None
         description = (
-            data.description
+            (data.notes or data.description)
             if data is not None
             else f"Commerzbank CSV: {row.raw_description}"
         )
-        txn_type = (
-            TransactionType.income if row.amount_cents > 0 else TransactionType.expense
+        tag_ids = set(data.tag_ids) if data is not None else set()
+        tag_names = list(
+            self.session.scalars(
+                select(Tag.name)
+                .where(Tag.user_id == self.user_id, Tag.id.in_(tag_ids))
+                .order_by(Tag.name)
+            )
         )
+        if len(tag_names) != len(tag_ids):
+            raise ValueError("Tag not found")
         txn = TransactionService(self.session, self.user_id).create(
             TransactionIn(
                 date=transaction_date,
                 occurred_at=datetime.combine(transaction_date, time(12, 0)),
-                type=txn_type,
+                type=_row_transaction_type(row),
                 amount_cents=abs(row.amount_cents),
                 category_id=category_id,
                 title=title,
                 description=description,
-                tags=[],
+                tags=tag_names,
             ),
             source="reconciliation",
             commit=False,
         )
         row.matched_transaction_id = txn.id
         row.reviewed_at = None
+        row.resolution = "created"
+        row.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+        row.ignore_reason = None
         self.session.commit()
         return txn.id
+
+    def _resolve_matched(self, row: BankStatementRow, transaction_id: int) -> None:
+        row.matched_transaction_id = transaction_id
+        row.reviewed_at = None
+        row.resolution = "matched"
+        row.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+        row.ignore_reason = None
+
+    def _set_amount_to_bank(self, txn: Transaction, row: BankStatementRow) -> None:
+        # Transaction amounts are euros; other statement currencies would need FX.
+        if row.currency != "EUR":
+            raise ValueError(
+                "Only a EUR bank amount can replace the transaction amount"
+            )
+        self._set_amount(txn, abs(row.amount_cents))
+
+    def _set_amount(self, txn: Transaction, amount_cents: int) -> None:
+        reimbursements = ReimbursementService(self.session, self.user_id)
+        if txn.type == TransactionType.expense:
+            if amount_cents < reimbursements.reimbursed_total_for_expense(txn.id):
+                raise ValueError("Expense amount cannot be less than reimbursed total")
+        elif txn.is_reimbursement:
+            if amount_cents < reimbursements.allocated_total_for_reimbursement(txn.id):
+                raise ValueError(
+                    "Reimbursement amount cannot be less than allocated total"
+                )
+        txn.amount_cents = amount_cents
+        self.session.flush()
+        recompute_monthly_rollup_for_date(self.session, self.user_id, txn.date)
+        MetricsService(self.session, self.user_id)._invalidate_period_cache(
+            Period("transaction", txn.date, txn.date)
+        )
+
+    def _reserved_transaction_ids(self, exclude_row_id: int | None = None) -> set[int]:
+        stmt = select(BankStatementRow.matched_transaction_id).where(
+            BankStatementRow.user_id == self.user_id,
+            BankStatementRow.matched_transaction_id.is_not(None),
+        )
+        if exclude_row_id is not None:
+            stmt = stmt.where(BankStatementRow.id != exclude_row_id)
+        return set(self.session.scalars(stmt))
 
     def _existing_hashes(self, hashes: list[str]) -> set[str]:
         if not hashes:
@@ -497,8 +759,17 @@ class BankReconciliationService:
         return row
 
     @staticmethod
-    def _require_unresolved(row: BankStatementRow) -> None:
-        if row.matched_transaction_id is not None or row.reviewed_at is not None:
+    def _is_unresolved(row: BankStatementRow) -> bool:
+        if row.reviewed_at is not None:
+            return False
+        # A match to a trashed transaction no longer counts as resolved.
+        return row.matched_transaction_id is None or (
+            row.matched_transaction is not None
+            and row.matched_transaction.deleted_at is not None
+        )
+
+    def _require_unresolved(self, row: BankStatementRow) -> None:
+        if not self._is_unresolved(row):
             raise BankRowAlreadyResolvedError(
                 "Bank row is already resolved; reopen it before choosing another outcome"
             )
@@ -506,19 +777,24 @@ class BankReconciliationService:
     def _candidate_transactions(
         self, row: BankStatementRow, reserved_ids: set[int]
     ) -> list[Transaction]:
-        txn_type = (
-            TransactionType.income if row.amount_cents > 0 else TransactionType.expense
-        )
         start = row.booking_date - timedelta(days=MATCH_WINDOW_DAYS)
         end = row.booking_date + timedelta(days=MATCH_WINDOW_DAYS)
+        # Transaction amounts are euros; a foreign row matches the amount entered in its currency.
+        if row.currency == "EUR":
+            same_amount = Transaction.amount_cents == abs(row.amount_cents)
+        else:
+            same_amount = and_(
+                Transaction.source_currency_code == row.currency,
+                Transaction.source_amount_cents == abs(row.amount_cents),
+            )
         stmt = (
             select(Transaction)
             .options(joinedload(Transaction.category))
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.type == txn_type,
-                Transaction.amount_cents == abs(row.amount_cents),
+                Transaction.type == _row_transaction_type(row),
+                same_amount,
                 Transaction.date >= start,
                 Transaction.date <= end,
             )
@@ -553,9 +829,19 @@ class BankReconciliationService:
         }
 
     def _serialize_statement_row(
-        self, row: BankStatementRow, reserved_ids: set[int]
+        self,
+        row: BankStatementRow,
+        reserved_ids: set[int],
+        *,
+        trashed_match_is_open: bool = False,
     ) -> tuple[dict[str, object], int | None]:
-        if row.matched_transaction_id is not None and row.matched_transaction:
+        if (
+            row.matched_transaction_id is not None
+            and row.matched_transaction
+            and not (
+                trashed_match_is_open and row.matched_transaction.deleted_at is not None
+            )
+        ):
             return (
                 {
                     **self._serialize_bank_row_base(row),
@@ -629,6 +915,9 @@ class BankReconciliationService:
             "purpose": row.purpose,
             "raw_description": row.raw_description,
             "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+            "resolution": row.resolution,
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+            "ignore_reason": row.ignore_reason,
         }
 
     def _serialize_transaction(
@@ -645,6 +934,8 @@ class BankReconciliationService:
             "title": txn.title,
             "description": txn.description,
             "category": txn.category.name if txn.category else None,
+            "category_id": txn.category_id,
+            "category_icon": txn.category.icon if txn.category else None,
             "date_delta_days": (booking_date - txn.date).days,
         }
 

@@ -1,571 +1,394 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { TagIcon } from "@phosphor-icons/react/Tag"
-import { XIcon } from "@phosphor-icons/react/X"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link, useOutletContext, useSearchParams } from "react-router-dom"
+import { CalendarIcon } from "@phosphor-icons/react/Calendar"
+import { FunnelIcon } from "@phosphor-icons/react/Funnel"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ProhibitIcon } from "@phosphor-icons/react/Prohibit"
+import { TagIcon } from "@phosphor-icons/react/Tag"
+import { WalletIcon } from "@phosphor-icons/react/Wallet"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import { formatEuroDate } from "../app/format"
-import type { AppShellOutletContext } from "../app/AppShell"
-import PageFilterBar from "../components/PageFilterBar"
-import PageScopeHeader from "../components/PageScopeHeader"
-import PeriodPicker from "../components/PeriodPicker"
-import { Toggle } from "../components/Toggle"
+import { formatDateRange, formatShortDate } from "../app/format"
+import type { TransactionsResponse } from "../app/api-types"
+import { Amount } from "../components/ui/Amount"
+import { Button } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryChips, EntryDialog, EntryName } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { AmountCell, AmountPrefix, Cell, List, Row, RowFlags, type Columns } from "../components/ui/LedgerRow"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekHeadline, PeekLayout, PeekSection, PeekSubline } from "../components/ui/Peek"
+import { PeriodControl } from "../components/ui/PeriodControl"
+import { DEFAULT_PERIOD_PRESETS, periodFromSearch, periodLabel, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import { Pill } from "../components/ui/Pill"
+import { InlineText, Property } from "../components/ui/PropertyList"
+import { SortMenu, type SortDirection, type SortKey } from "../components/ui/SortMenu"
+import { TagChip } from "../components/ui/TagChip"
+import { showToast } from "../components/ui/toast-store"
+import { Tooltip } from "../components/ui/Tooltip"
+import { buildSearchParams } from "../lib/searchParams"
 import {
-  FinancialPanel,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/ui/product-fields"
-import {
-  buildCustomPeriodSearchParams,
-  buildPresetPeriodSearchParams,
-  type PresetPeriod,
-} from "../lib/searchParams"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+  autoAddStatus,
+  useTagLifecycle,
+  useTagSave,
+  type DateRange,
+  type TagRecord,
+} from "./tag-record"
+import { AutoAddPopover, TagMenuItems, TagMergeDialog, TagSettingsList } from "./TagSettings"
 
-type TagRow = {
-  id: number
-  name: string
-  color: string | null
-  is_hidden_from_budget: boolean
-  is_hidden_from_filters: boolean
-  auto_attach_period: { start: string; end: string } | null
-  archived_at: string | null
-  usage_count: number
+type TagRow = TagRecord & { usage_count: number; expense_cents: number; income_cents: number }
+type TagsResponse = { period: { slug: string; start: string; end: string }; tags: TagRow[] }
+type SortField = "spent" | "usage" | "name" | "created"
+
+const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const TAG_COLUMNS: Columns = {
+  columns: "minmax(0, 160px) minmax(0, 1fr) 24px 72px 190px",
+  narrowColumns: "minmax(0, 1fr) 24px auto",
+  mobileColumns: "minmax(0, 1fr) 24px auto",
+}
+const RECENT_COLUMNS = "18px minmax(0, 1fr) auto"
+const SORT_KEYS: ReadonlyArray<SortKey<SortField>> = [
+  { key: "spent", label: "Spent", directions: { asc: "Lowest first", desc: "Highest first" }, defaultDirection: "desc" },
+  { key: "usage", label: "Usage", directions: { asc: "Least used first", desc: "Most used first" }, defaultDirection: "desc" },
+  { key: "name", label: "Name", directions: { asc: "A to Z", desc: "Z to A" }, defaultDirection: "asc" },
+  { key: "created", label: "Date created", directions: { asc: "Oldest first", desc: "Newest first" }, defaultDirection: "asc" },
+]
+
+function usesText(count: number): string {
+  return count === 1 ? "1 use" : `${count} uses`
 }
 
-type TagMutationPayload = {
-  name: string
-  is_hidden_from_budget: boolean
-  is_hidden_from_filters: boolean
-  auto_attach_period: { start: string; end: string } | null
+function sortTags(rows: TagRow[], field: SortField, direction: SortDirection): TagRow[] {
+  const sign = direction === "asc" ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const order =
+      field === "spent"
+        ? a.expense_cents - b.expense_cents
+        : field === "usage"
+          ? a.usage_count - b.usage_count
+          : field === "created"
+            ? a.created_at.localeCompare(b.created_at)
+            : a.name.localeCompare(b.name)
+    return order ? sign * order : a.name.localeCompare(b.name)
+  })
 }
 
-type TagsResponse = {
-  period: { slug: string; start: string; end: string }
+// Spending in ink; income, when present, as a smaller + figure before it (desktop only), or alone.
+function TagAmount({ tag }: { tag: TagRow }) {
+  if (!tag.expense_cents && tag.income_cents) return <Amount cents={tag.income_cents} kind="income" />
+  return (
+    <>
+      {tag.income_cents ? (
+        <AmountPrefix>
+          <Amount cents={tag.income_cents} kind="income" />
+        </AmountPrefix>
+      ) : null}
+      <Amount cents={tag.expense_cents} />
+    </>
+  )
+}
+
+function AddTagDialog({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState("")
+  const [excluded, setExcluded] = useState(false)
+  const [hiddenFromFilters, setHiddenFromFilters] = useState(false)
+  const [autoAdd, setAutoAdd] = useState<DateRange | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const create = useMutation({
+    mutationFn: () =>
+      apiFetch<TagRecord>("/api/tags", {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          is_hidden_from_budget: excluded,
+          is_hidden_from_filters: hiddenFromFilters,
+          auto_attach_period: autoAdd,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["tags"] })
+      onClose()
+    },
+    onError: (failure) => setError(getApiErrorMessage(failure, "Unable to create tag.")),
+  })
+  const submit = () => {
+    setError(null)
+    if (!name.trim()) return setError("Enter a tag name.")
+    create.mutate()
+  }
+  return (
+    <EntryDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+      title="Add tag"
+      submitLabel="Add tag"
+      onSubmit={submit}
+      pending={create.isPending}
+      error={error}
+    >
+      <EntryName autoFocus aria-label="Name" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
+      <EntryChips>
+        <Pill icon={WalletIcon} set={excluded} aria-pressed={excluded} onClick={() => setExcluded(!excluded)}>
+          Exclude from budgets
+        </Pill>
+        <Pill icon={FunnelIcon} set={hiddenFromFilters} aria-pressed={hiddenFromFilters} onClick={() => setHiddenFromFilters(!hiddenFromFilters)}>
+          Hide from filters
+        </Pill>
+        <AutoAddPopover
+          value={autoAdd}
+          onSave={setAutoAdd}
+          trigger={
+            <Pill icon={CalendarIcon} set={autoAdd !== null} aria-label={`Auto-add ${autoAdd ? formatDateRange(autoAdd.start, autoAdd.end) : "off"}`}>
+              {autoAdd ? `Auto-add ${formatDateRange(autoAdd.start, autoAdd.end)}` : "Auto-add"}
+            </Pill>
+          }
+        />
+      </EntryChips>
+    </EntryDialog>
+  )
+}
+
+function TagPeek({
+  tag,
+  tags,
+  period,
+  onClose,
+  onMerged,
+}: {
+  tag: TagRow
   tags: TagRow[]
+  period: PeriodSelection
+  onClose: () => void
+  onMerged: (target: TagRecord) => void
+}) {
+  const navigate = useNavigate()
+  const [merging, setMerging] = useState(false)
+  const { view, errors, setError, save } = useTagSave(tag, ["name"])
+  const { archive, restore, confirmDelete } = useTagLifecycle(tag, onClose)
+  const periodParams = writePeriodToSearch(new URLSearchParams(), period)
+  const fullView = `/tags/${tag.id}?${periodParams.toString()}`
+  const recentParams = writePeriodToSearch(new URLSearchParams({ tags: String(tag.id), limit: "5" }), period)
+  const recent = useQuery({
+    queryKey: ["transactions", "tag-recent", tag.id, recentParams.toString()],
+    queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${recentParams.toString()}`),
+  })
+  const recentItems = recent.data?.items ?? []
+
+  return (
+    <Peek
+      parent="Tags"
+      title={tag.name}
+      onClose={onClose}
+      fullViewTo={fullView}
+      menu={
+        <TagMenuItems
+          archived={Boolean(tag.archived_at)}
+          onMerge={() => setMerging(true)}
+          onArchive={archive}
+          onRestore={restore}
+          onDelete={() => void confirmDelete()}
+        />
+      }
+    >
+      <InlineText
+        variant="title"
+        label="Name"
+        value={tag.name}
+        error={errors.name}
+        onCancel={() => setError("name", null)}
+        onSave={(next) => {
+          if (!next.trim()) {
+            setError("name", "Enter a tag name.")
+            return false
+          }
+          return save("name", { name: next.trim() })
+        }}
+      />
+      <PeekHeadline figure={<Amount cents={tag.expense_cents} />} detail="spent" />
+      {tag.income_cents ? (
+        <PeekSubline>
+          <Amount cents={tag.income_cents} kind="income" /> income
+        </PeekSubline>
+      ) : null}
+      <TagSettingsList tag={view} errors={errors} save={save}>
+        <Property label={periodLabel(period, DEFAULT_PERIOD_PRESETS)}>{usesText(tag.usage_count)}</Property>
+        <Property label="Created">{formatShortDate(tag.created_at)}</Property>
+        {tag.archived_at ? <Property label="Archived">{formatShortDate(tag.archived_at)}</Property> : null}
+      </TagSettingsList>
+      <PeekSection
+        title="Recent"
+        action={
+          // The tag page also has its totals and breakdown, and on mobile this is the only way there.
+          recent.data?.total ? (
+            <Button variant="ghost" size="small" onClick={() => navigate(fullView)}>
+              All {recent.data.total}
+            </Button>
+          ) : undefined
+        }
+      >
+        {recentItems.length ? (
+          <List flat label="Recent transactions">
+            {recentItems.map((item) => (
+              <Row
+                key={item.id}
+                columns={RECENT_COLUMNS}
+                label={item.title ?? "Untitled"}
+                onOpen={() => navigate(`/transactions/${item.id}`)}
+              >
+                <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
+                <Cell>{item.title ?? "Untitled"}</Cell>
+                <AmountCell>
+                  <Amount cents={item.amount_cents} kind={item.type === "income" ? "income" : "expense"} />
+                </AmountCell>
+              </Row>
+            ))}
+          </List>
+        ) : (
+          <EmptyState inline>{recent.isLoading ? "Loading…" : recent.isError ? "Unable to load transactions." : "None"}</EmptyState>
+        )}
+      </PeekSection>
+      {merging ? (
+        <TagMergeDialog
+          source={tag}
+          targets={tags.filter((entry) => entry.id !== tag.id && !entry.archived_at)}
+          onClose={() => setMerging(false)}
+          onMerged={(target) => {
+            setMerging(false)
+            onMerged(target)
+          }}
+        />
+      ) : null}
+    </Peek>
+  )
 }
 
 function TagsPage() {
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queryClient = useQueryClient()
-  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
-  const [createOpen, setCreateOpen] = useState(false)
-  const [mergeOpen, setMergeOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [hidden, setHidden] = useState(false)
-  const [hiddenFromFilters, setHiddenFromFilters] = useState(false)
-  const [autoAttachEnabled, setAutoAttachEnabled] = useState(false)
-  const [autoAttachStart, setAutoAttachStart] = useState("")
-  const [autoAttachEnd, setAutoAttachEnd] = useState("")
-  const [mergeSourceId, setMergeSourceId] = useState("")
-  const [mergeTargetId, setMergeTargetId] = useState("")
-  const [mergePreview, setMergePreview] = useState<Record<string, number> | null>(null)
-  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false)
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    if (!params.get("period")) params.set("period", "all")
-    params.set("include_archived", "1")
-    return params.toString()
-  }, [searchParams])
+  const [adding, setAdding] = useState(false)
+  const [sort, setSort] = useState<{ field: SortField; direction: SortDirection }>({ field: "spent", direction: "desc" })
+  const [now] = useState(() => new Date())
+  const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const peekId = Number(searchParams.get("peek")) || null
+  const queryParams = writePeriodToSearch(new URLSearchParams(), period)
+  queryParams.set("include_archived", "1")
+  const queryString = queryParams.toString()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["tags", queryString],
     queryFn: () => apiFetch<TagsResponse>(`/api/tags?${queryString}`),
   })
 
-  const openMergeEditor = () => {
-    setMergeSourceId("")
-    setMergeTargetId("")
-    setMergePreview(null)
-    setMergeConfirmOpen(false)
-    setMergeOpen(true)
-  }
+  if (isLoading) return <PanelLoading title="Tags" label="Loading tags…" />
+  if (error || !data) return <PanelError title="Tags" message="Unable to load tags." />
 
-  const createMutation = useMutation({
-    mutationFn: (payload: TagMutationPayload) =>
-      apiFetch<TagRow>("/api/tags", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setCreateOpen(false)
-      setName("")
-      setHidden(false)
-      setHiddenFromFilters(false)
-      setAutoAttachEnabled(false)
-      setAutoAttachStart("")
-      setAutoAttachEnd("")
-      queryClient.invalidateQueries({ queryKey: ["tags"] })
-    },
-  })
-  const resetCreateMutation = createMutation.reset
-  const openCreateEditor = useCallback(() => {
-    resetCreateMutation()
-    setName("")
-    setHidden(false)
-    setHiddenFromFilters(false)
-    setAutoAttachEnabled(false)
-    setAutoAttachStart("")
-    setAutoAttachEnd("")
-    setCreateOpen(true)
-  }, [resetCreateMutation])
+  const update = (values: Record<string, string | null>, replace = false) =>
+    setSearchParams(buildSearchParams(searchParams, values), { replace })
+  const bands = [
+    { label: "Active", rows: sortTags(data.tags.filter((tag) => !tag.archived_at), sort.field, sort.direction) },
+    { label: "Archived", rows: sortTags(data.tags.filter((tag) => tag.archived_at), "name", "asc") },
+  ].filter((band) => band.rows.length)
+  const peekTag = data.tags.find((tag) => tag.id === peekId)
+  const peek = peekTag ? (
+    <TagPeek
+      key={peekTag.id}
+      tag={peekTag}
+      tags={data.tags}
+      period={period}
+      onClose={() => update({ peek: null }, true)}
+      onMerged={(target) => {
+        showToast({ message: `Merged ${peekTag.name} into ${target.name}.` })
+        update({ peek: String(target.id) }, true)
+      }}
+    />
+  ) : null
 
-  useEffect(() => {
-    setUtilityAction({ label: "Add tag", onClick: openCreateEditor })
-    return () => setUtilityAction(null)
-  }, [openCreateEditor, setUtilityAction])
-
-  const mergePreviewMutation = useMutation({
-    mutationFn: (payload: { source_tag_id: number; target_tag_id: number }) =>
-      apiFetch<{ counts: Record<string, number> }>("/api/tags/merge/preview", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (result) => setMergePreview(result.counts),
-  })
-
-  const mergeApplyMutation = useMutation({
-    mutationFn: (payload: { source_tag_id: number; target_tag_id: number }) =>
-      apiFetch<{ counts: Record<string, number> }>("/api/tags/merge", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setMergeOpen(false)
-      setMergePreview(null)
-      setMergeSourceId("")
-      setMergeTargetId("")
-      setMergeConfirmOpen(false)
-      queryClient.invalidateQueries({ queryKey: ["tags"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-      queryClient.invalidateQueries({ queryKey: ["insights"] })
-    },
-  })
-
-  const setPresetPeriod = (value: PresetPeriod) =>
-    setSearchParams(buildPresetPeriodSearchParams(searchParams, value))
-
-  const applyCustomPeriod = (start: string, end: string) =>
-    setSearchParams(buildCustomPeriodSearchParams(searchParams, start, end))
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    createMutation.mutate({
-      name: name.trim(),
-      is_hidden_from_budget: hidden,
-      is_hidden_from_filters: hiddenFromFilters,
-      auto_attach_period: autoAttachEnabled
-        ? { start: autoAttachStart, end: autoAttachEnd }
-        : null,
-    })
-  }
-
-  if (isLoading) return <RouteLoading title="Tags" label="Loading tags…" />
-  if (error || !data) {
-    return <RouteError title="Tags" message="Unable to load tags." />
-  }
-
-  const activeTags = data.tags.filter((tag) => !tag.archived_at)
-  const archivedTags = data.tags.filter((tag) => tag.archived_at)
-  const mergeSource = data.tags.find((tag) => String(tag.id) === mergeSourceId)
-  const mergeTarget = data.tags.find((tag) => String(tag.id) === mergeTargetId)
-  const mergeTargets = mergeSource
-    ? activeTags.filter((tag) => tag.id !== mergeSource.id)
-    : []
-
-  const resetMergeSelection = () => {
-    setMergePreview(null)
-    setMergeConfirmOpen(false)
-    mergePreviewMutation.reset()
-    mergeApplyMutation.reset()
-  }
-  const now = new Date()
-  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
-  const today = new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
+  const main = bands.length ? (
+    <List label="Tags">
+      {bands.map((band) => [
+        <DayBand key={`band-${band.label}`} label={band.label} end={band.rows.length} />,
+        ...band.rows.map((tag) => (
+          <Row
+            key={tag.id}
+            {...TAG_COLUMNS}
+            label={tag.name}
+            dim={Boolean(tag.archived_at)}
+            selected={tag.id === peekId}
+            onOpen={() => update({ peek: String(tag.id) })}
+          >
+            <Cell>
+              <TagChip>{tag.name}</TagChip>
+            </Cell>
+            <Cell tone="muted" hide="narrow">
+              {tag.archived_at
+                ? `Archived ${formatShortDate(tag.archived_at)}`
+                : tag.auto_attach_period
+                  ? `Auto ${formatDateRange(tag.auto_attach_period.start, tag.auto_attach_period.end)} · ${autoAddStatus(tag.auto_attach_period, now)}`
+                  : null}
+            </Cell>
+            <RowFlags>
+              {tag.is_hidden_from_budget ? (
+                <Tooltip label="Excluded from budgets">
+                  <ProhibitIcon role="img" aria-label="Excluded from budgets" />
+                </Tooltip>
+              ) : null}
+            </RowFlags>
+            <Cell align="right" tone="muted" hide="narrow">
+              {usesText(tag.usage_count)}
+            </Cell>
+            <AmountCell>
+              <TagAmount tag={tag} />
+            </AmountCell>
+          </Row>
+        )),
+      ])}
+    </List>
+  ) : (
+    <EmptyState
+      icon={TagIcon}
+      action={
+        <Button variant="primary" icon={PlusIcon} onClick={() => setAdding(true)}>
+          Add tag
+        </Button>
+      }
+    >
+      No tags yet.
+    </EmptyState>
+  )
 
   return (
-    <section className="space-y-6">
-      <PageScopeHeader
-        title="Tags"
-        titleActions={
-          <div className="flex flex-wrap gap-2">
-            <AppButton type="button" onClick={openMergeEditor} tone="ghost">
-              Merge tags
-            </AppButton>
-          </div>
-        }
-        controls={
-          <PageFilterBar
-            period={
-              <PeriodPicker
-                periodSlug={data.period.slug}
-                start={data.period.start}
-                end={data.period.end}
-                onSetPreset={setPresetPeriod}
-                onApplyCustom={applyCustomPeriod}
-              />
-            }
-          />
-        }
-      />
-
-      <FinancialPanel role="ledger" data-testid="tag-library">
-        <SectionHeading>
-          <h2 className="font-head text-lg font-bold">Context library</h2>
-          <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-            {activeTags.length}
-          </span>
-        </SectionHeading>
-        {activeTags.length ? (
-          <div className="grid gap-2.5 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
-            {activeTags.map((tag) => (
-              <Link
-                key={tag.id}
-                to={`/tags/${tag.id}`}
-                className="group flex min-h-[5.75rem] items-start justify-between gap-3 rounded-lg bg-faint/80 p-3.5 text-inherit transition hover:bg-surface-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className="category-icon-tile"
-                    data-signal-tone={tag.is_hidden_from_budget ? "yellow" : "purple"}
-                  >
-                    <TagIcon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-text group-hover:text-accent">
-                      {tag.name}
-                    </p>
-                    <p className="mt-1 font-mono text-[11px] text-muted">
-                      {tag.usage_count} uses in period
-                    </p>
-                    {tag.auto_attach_period ? (
-                      <p className="mt-1 text-[11px] text-muted">
-                        Auto {formatEuroDate(tag.auto_attach_period.start)}–
-                        {formatEuroDate(tag.auto_attach_period.end)}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  {tag.auto_attach_period ? (
-                    <span className="rounded-full bg-signal-blue-soft px-2 py-1 text-[10px] font-semibold text-text">
-                      {today < tag.auto_attach_period.start
-                        ? "Upcoming"
-                        : today > tag.auto_attach_period.end
-                          ? "Ended"
-                          : "Active"}
-                    </span>
-                  ) : null}
-                  {tag.is_hidden_from_budget ? (
-                    <span className="rounded-full bg-signal-yellow-soft px-2 py-1 text-[10px] font-semibold text-text">
-                      Excluded
-                    </span>
-                  ) : null}
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="p-6 text-sm text-muted">
-            No active tags. Restore an archived tag or create a new one.
-          </div>
-        )}
-      </FinancialPanel>
-
-      {archivedTags.length ? (
-        <FinancialPanel role="ledger" data-testid="archived-tag-library">
-          <SectionHeading>
-            <h2 className="font-head text-lg font-bold">Archived tags</h2>
-            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-              {archivedTags.length}
-            </span>
-          </SectionHeading>
-          <div className="grid gap-2.5 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
-            {archivedTags.map((tag) => (
-              <Link
-                key={tag.id}
-                to={`/tags/${tag.id}`}
-                className="group flex min-h-[5.75rem] items-start justify-between gap-3 rounded-lg bg-faint/80 p-3.5 text-inherit transition hover:bg-surface-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="category-icon-tile" data-signal-tone="purple">
-                    <TagIcon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-text group-hover:text-accent">
-                      {tag.name}
-                    </p>
-                    <p className="mt-1 text-[11px] text-muted">
-                      Archived {formatEuroDate(tag.archived_at?.slice(0, 10) ?? "")}
-                    </p>
-                    <p className="mt-1 font-mono text-[11px] text-muted">
-                      {tag.usage_count} uses in period
-                    </p>
-                  </div>
-                </div>
-                <span className="shrink-0 rounded-full bg-surface-hi px-2 py-1 text-[10px] font-semibold text-muted">
-                  Archived
-                </span>
-              </Link>
-            ))}
-          </div>
-        </FinancialPanel>
-      ) : null}
-
-      <Dialog
-        open={createOpen}
-        onOpenChange={(open) => {
-          if (!open && !createMutation.isPending) setCreateOpen(false)
-        }}
-      >
-        <DialogContent aria-label="Add tag" className="p-5">
-          <DialogHeader>
-            <DialogTitle>Add tag</DialogTitle>
-            <DialogClose asChild>
-              <AppButton
-                tone="ghost"
-                className="h-9 w-9 rounded-full p-0"
-                aria-label="Close tag editor"
-                disabled={createMutation.isPending}
-              >
-                <XIcon className="h-4 w-4" aria-hidden="true" />
-              </AppButton>
-            </DialogClose>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4">
-            <AppFieldLabel>
-              Name
-              <AppInput
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="mt-1"
-                autoFocus
-                required
-              />
-            </AppFieldLabel>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle on={hidden} onChange={setHidden} />
-              <span>Exclude from budgets</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle on={hiddenFromFilters} onChange={setHiddenFromFilters} />
-              <span>Hide from filter menus</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-md bg-faint p-3 text-xs text-muted">
-              <Toggle on={autoAttachEnabled} onChange={setAutoAttachEnabled} />
-              <span>Automatically add during a date range</span>
-            </label>
-            {autoAttachEnabled ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AppFieldLabel>
-                  Start date
-                  <AppInput
-                    type="date"
-                    value={autoAttachStart}
-                    onChange={(event) => setAutoAttachStart(event.target.value)}
-                    className="mt-1 max-md:p-0"
-                    required
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  End date
-                  <AppInput
-                    type="date"
-                    value={autoAttachEnd}
-                    min={autoAttachStart || undefined}
-                    onChange={(event) => setAutoAttachEnd(event.target.value)}
-                    className="mt-1 max-md:p-0"
-                    required
-                  />
-                </AppFieldLabel>
-                <p className="text-xs text-muted sm:col-span-2">
-                  Both boundary dates are included.
-                </p>
-              </div>
-            ) : null}
-            {createMutation.error ? (
-              <p className="text-xs text-semantic-red">
-                {getApiErrorMessage(createMutation.error, "Unable to create tag.")}
-              </p>
-            ) : null}
-            <div className="flex gap-2 border-t border-border pt-4">
-              <AppButton type="submit" className="flex-1" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creating…" : "Add tag"}
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                tone="ghost"
-                disabled={createMutation.isPending}
-              >
-                Cancel
-              </AppButton>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={mergeOpen}
-        onOpenChange={(open) => {
-          if (!open && !mergeApplyMutation.isPending) setMergeOpen(false)
-        }}
-      >
-        <DialogContent aria-label="Merge tags" className="p-5">
-          <DialogHeader>
-            <div>
-              <DialogTitle>Merge tags</DialogTitle>
-              <p className="mt-1 text-xs text-muted">
-                Move links and rules from one tag to another.
-              </p>
-            </div>
-            <DialogClose asChild>
-              <AppButton
-                tone="ghost"
-                className="h-9 w-9 rounded-full p-0"
-                aria-label="Close tag merge"
-                disabled={mergeApplyMutation.isPending}
-              >
-                <XIcon className="h-4 w-4" aria-hidden="true" />
-              </AppButton>
-            </DialogClose>
-          </DialogHeader>
-          <div className="space-y-4">
-            <AppFieldLabel>
-              Source
-              <AppNativeSelect
-                className="mt-1"
-                value={mergeSourceId}
-                onChange={(event) => {
-                  setMergeSourceId(event.target.value)
-                  setMergeTargetId("")
-                  resetMergeSelection()
-                }}
-              >
-                <option value="">Choose source tag</option>
-                {data.tags.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.name}{tag.archived_at ? " (archived)" : ""}
-                  </option>
-                ))}
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <AppFieldLabel>
-              Target
-              <AppNativeSelect
-                className="mt-1"
-                value={mergeTargetId}
-                onChange={(event) => {
-                  setMergeTargetId(event.target.value)
-                  resetMergeSelection()
-                }}
-                disabled={!mergeSource}
-              >
-                <option value="">Choose target tag</option>
-                {mergeTargets.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.name}
-                  </option>
-                ))}
-              </AppNativeSelect>
-            </AppFieldLabel>
-            <div className="flex gap-2">
-              <AppButton
-                type="button"
-                onClick={() =>
-                  mergePreviewMutation.mutate({
-                    source_tag_id: Number(mergeSourceId),
-                    target_tag_id: Number(mergeTargetId),
-                  })
-                }
-                disabled={
-                  mergePreviewMutation.isPending || !mergeSourceId || !mergeTargetId
-                }
-                className="flex-1"
-                tone="ghost"
-              >
-                {mergePreviewMutation.isPending ? "Previewing…" : "Preview"}
-              </AppButton>
-              <AppButton
-                type="button"
-                onClick={() => setMergeConfirmOpen(true)}
-                disabled={
-                  mergeApplyMutation.isPending ||
-                  mergeConfirmOpen ||
-                  !mergeSourceId ||
-                  !mergeTargetId
-                }
-                className="flex-1"
-              >
-                {mergeConfirmOpen ? "Awaiting confirmation…" : "Merge"}
-              </AppButton>
-            </div>
-            {mergeConfirmOpen ? (
-              <div className="rounded-lg bg-signal-blue-soft p-3 text-xs">
-                <p className="text-muted">
-                  Merge <strong className="text-text">{mergeSource?.name}</strong> into{" "}
-                  <strong className="text-text">{mergeTarget?.name}</strong>?
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <AppButton
-                    type="button"
-                    tone="ghost"
-                    className="flex-1"
-                    onClick={() => setMergeConfirmOpen(false)}
-                    disabled={mergeApplyMutation.isPending}
-                  >
-                    Cancel
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    className="flex-1"
-                    onClick={() =>
-                      mergeApplyMutation.mutate({
-                        source_tag_id: Number(mergeSourceId),
-                        target_tag_id: Number(mergeTargetId),
-                      })
-                    }
-                    disabled={mergeApplyMutation.isPending}
-                  >
-                    {mergeApplyMutation.isPending ? "Merging…" : "Confirm merge"}
-                  </AppButton>
-                </div>
-              </div>
-            ) : null}
-            {mergePreviewMutation.error || mergeApplyMutation.error ? (
-              <p className="text-xs text-semantic-red">
-                {getApiErrorMessage(
-                  mergePreviewMutation.error || mergeApplyMutation.error,
-                  "Unable to merge tags.",
-                )}
-              </p>
-            ) : null}
-            {mergePreview ? (
-              <div className="rounded-md bg-faint p-3 text-xs text-muted">
-                <p>Transaction links: {mergePreview.transaction_links ?? 0}</p>
-                <p>Budget exclude rules: {mergePreview.budget_exclude_rules ?? 0}</p>
-                <p>Add-tags rules scanned: {mergePreview.add_tags_rules_scanned ?? 0}</p>
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
+    <Panel
+      title="Tags"
+      layout="fill"
+      peekOpen={peek !== null}
+      actions={
+        <Button variant="primary" icon={PlusIcon} aria-label="Add tag" onClick={() => setAdding(true)}>
+          {isDesktop ? "Add tag" : "Add"}
+        </Button>
+      }
+      viewRow={
+        <ViewRow
+          end={
+            <SortMenu
+              keys={SORT_KEYS}
+              value={sort.field}
+              direction={sort.direction}
+              onChange={(field, direction) => setSort({ field, direction })}
+            />
+          }
+        >
+          <PeriodControl value={period} onChange={(next) => setSearchParams(writePeriodToSearch(searchParams, next))} />
+        </ViewRow>
+      }
+    >
+      <PeekLayout peek={peek} main={main} />
+      {adding ? <AddTagDialog onClose={() => setAdding(false)} /> : null}
+    </Panel>
   )
 }
 

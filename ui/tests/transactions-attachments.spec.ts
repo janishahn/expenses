@@ -10,29 +10,124 @@ import {
 
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pfdvK0AAAAASUVORK5CYII=",
-  "base64"
+  "base64",
 )
 
-const samplePdf = Buffer.from(
-  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCA+PiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDQ0ID4+CnN0cmVhbQpCVCAvRjEgMTIgVGYgNzIgMTIwIFRkIChIZWxsbyBwZGYpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDEwIDAwMDAwIG4gCjAwMDAwMDAwNjIgMDAwMDAgbiAKMDAwMDAwMDExNyAwMDAwMCBuIAowMDAwMDAwMjI1IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNSAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKMzE5CiUlRU9G",
-  "base64"
-)
+test.describe("Transaction receipts and location", () => {
+  test("uploads a receipt from the peek, previews it and removes it", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Receipt")
+    const title = `E2E Receipt ${Date.now()}`
+    const id = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T08:25:00",
+      type: "expense",
+      amount_cents: 3210,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    const fileName = `receipt-${Date.now()}.png`
 
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${id}`)
+    const peek = page.getByRole("complementary", { name: title })
+    const chooserPromise = page.waitForEvent("filechooser")
+    await peek.getByRole("button", { name: "Drop a receipt or choose a file" }).click()
+    const chooser = await chooserPromise
+    const uploaded = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/transactions/${id}/attachments`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    )
+    await chooser.setFiles({ name: fileName, mimeType: "image/png", buffer: onePixelPng })
+    await uploaded
 
-test.describe("Transaction attachments and location", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/transactions")
+    const preview = peek.getByRole("button", { name: `Open ${fileName}` })
+    await expect(preview).toBeVisible()
+    await expect(peek.getByText(fileName)).toBeVisible()
+
+    // The list drops its markers while the peek is open.
+    await page.keyboard.press("Escape")
+    await expect(peek).toBeHidden()
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row.getByRole("img", { name: "Receipt" })).toBeVisible()
+    await row.click()
+
+    await preview.click()
+    const viewer = page.getByRole("dialog", { name: fileName })
+    await expect(viewer).toBeVisible()
+    await expect(viewer.getByRole("img", { name: fileName })).toBeVisible()
+    await viewer.getByRole("button", { name: "Close" }).click()
+    await expect(viewer).toBeHidden()
+
+    await peek.getByRole("button", { name: "Receipt actions" }).click()
+    await page.getByRole("menuitem", { name: "Remove" }).click()
+    const prompt = page.getByRole("dialog", { name: "Remove this receipt?" })
+    await prompt.getByRole("button", { name: "Cancel" }).click()
+    await expect(preview).toBeVisible()
+
+    await peek.getByRole("button", { name: "Receipt actions" }).click()
+    await page.getByRole("menuitem", { name: "Remove" }).click()
+    await page.getByRole("dialog", { name: "Remove this receipt?" }).getByRole("button", { name: "Remove" }).click()
+    await expect(peek.getByRole("button", { name: "Drop a receipt or choose a file" })).toBeVisible()
+    await expect(preview).toHaveCount(0)
+    const detail = await request.get(`/api/transactions/${id}`)
+    expect(((await detail.json()) as { attachments: unknown[] }).attachments).toHaveLength(0)
   })
 
-  test("renders inline location and attachment modules on detail with usable actions", async ({
+  test("replaces a receipt when the transaction has the most attachments allowed", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Receipt")
+    const title = `E2E Receipt full ${Date.now()}`
+    const id = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T08:25:00",
+      type: "expense",
+      amount_cents: 3210,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    for (let index = 0; index < 5; index += 1) {
+      await uploadAttachment(request, token, id, { name: `full-${index}.png`, mimeType: "image/png", buffer: onePixelPng })
+    }
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${id}`)
+    const peek = page.getByRole("complementary", { name: title })
+    const shown = peek.getByRole("button", { name: /^Open full-\d\.png$/ })
+    await expect(shown).toBeVisible()
+    const replaced = ((await shown.getAttribute("aria-label")) ?? "").replace("Open ", "")
+    await peek.getByRole("button", { name: "Receipt actions" }).click()
+    const chooserPromise = page.waitForEvent("filechooser")
+    await page.getByRole("menuitem", { name: "Replace" }).click()
+    const chooser = await chooserPromise
+    const uploaded = page.waitForResponse(
+      (response) => response.url().includes(`/api/transactions/${id}/attachments`) && response.request().method() === "POST"
+    )
+    await chooser.setFiles({ name: "replacement.png", mimeType: "image/png", buffer: onePixelPng })
+
+    expect((await uploaded).status()).toBe(200)
+    await expect(peek.getByRole("button", { name: "replacement.png", exact: true })).toBeVisible()
+    const detail = await request.get(`/api/transactions/${id}`)
+    const names = ((await detail.json()) as { attachments: Array<{ original_filename: string }> }).attachments.map(
+      (attachment) => attachment.original_filename
+    )
+    const kept = ["full-0.png", "full-1.png", "full-2.png", "full-3.png", "full-4.png"].filter((name) => name !== replaced)
+    expect(names.sort()).toEqual([...kept, "replacement.png"])
+  })
+
+  test("shows the location map and existing receipt in the full view", async ({
     page,
     request,
   }) => {
     await stubOsmTiles(page)
-
     const token = await getCsrfToken(request)
     const title = `E2E Detail Modules ${Date.now()}`
-    const transactionId = await createIngestTransaction(request, {
+    const id = await createIngestTransaction(request, {
       amount_cents: 1299,
       title,
       date: "2026-04-18",
@@ -40,57 +135,67 @@ test.describe("Transaction attachments and location", () => {
       latitude: 52.520008,
       longitude: 13.404954,
     })
-
     const imageName = `receipt-${Date.now()}.png`
-    const pdfName = `invoice-${Date.now()}.pdf`
-    const imageAttachmentId = await uploadAttachment(request, token, transactionId, {
+    await uploadAttachment(request, token, id, {
       name: imageName,
       mimeType: "image/png",
       buffer: onePixelPng,
     })
-    const pdfAttachmentId = await uploadAttachment(request, token, transactionId, {
-      name: pdfName,
-      mimeType: "application/pdf",
-      buffer: samplePdf,
-    })
 
-    await page.goto(`/transactions/${transactionId}`)
-
-    await expect(page.getByRole("heading", { name: "Location" })).toBeVisible()
-    await expect(page.getByTestId("transaction-detail-location-map")).toBeVisible()
-    await expect(page.locator("main")).toContainText("52.520008, 13.404954")
-    await expect(page.getByRole("heading", { name: "Attachments" })).toBeVisible()
-    await expect(page.getByRole("img", { name: imageName })).toBeVisible()
-    await expect(page.locator(`iframe[title="${pdfName}"]`)).toBeVisible()
-
-    const openResponse = page.waitForResponse(
-      (response) =>
-        response.url().includes(`/api/attachments/${imageAttachmentId}/download`) &&
-        response.request().method() === "GET" &&
-        response.status() === 200
-    )
-    await page.getByRole("button", { name: `Open ${imageName}` }).click()
-    await openResponse
-    await expect(page.locator("main")).not.toContainText("Unable to open attachment")
-
-    const downloadResponse = page.waitForResponse(
-      (response) =>
-        response.url().includes(`/api/attachments/${pdfAttachmentId}/download`) &&
-        response.request().method() === "GET" &&
-        response.status() === 200
-    )
-    await page.getByRole("button", { name: `Download ${pdfName}` }).click()
-    await downloadResponse
+    await page.goto(`/transactions/${id}`)
+    const main = page.getByRole("main")
+    await expect(main.getByRole("heading", { name: "Location" })).toBeVisible()
+    await expect(main.getByRole("group", { name: "Map at 52.520008, 13.404954" })).toBeVisible()
+    await expect(main.getByText("52.520008, 13.404954")).toBeVisible()
+    await expect(main.getByRole("heading", { name: "Receipts" })).toBeVisible()
+    await expect(main.getByRole("button", { name: `Open ${imageName}` })).toBeVisible()
   })
 
-  test("omits location and attachment modules cleanly when absent", async ({
+  test("marks located rows in the list and shows the map in the peek", async ({
     page,
     request,
   }) => {
+    await stubOsmTiles(page)
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E No Location")
+    const stamp = Date.now()
+    const marker = `locationx${stamp}x`
+    const locatedId = await createIngestTransaction(request, {
+      amount_cents: 1299,
+      title: `${marker} located`,
+      date: "2026-03-20",
+      category: "Food",
+      latitude: 52.520008,
+      longitude: 13.404954,
+    })
+    await createTransaction(request, token, {
+      date: "2026-03-20",
+      occurred_at: "2026-03-20T12:00:00",
+      type: "expense",
+      amount_cents: 4321,
+      category_id: categoryId,
+      title: `${marker} plain`,
+      tags: [],
+    })
+
+    await page.goto(`/transactions?q=${marker}`)
+    const located = page.getByRole("listitem", { name: `${marker} located` })
+    const plain = page.getByRole("listitem", { name: `${marker} plain` })
+    await expect(located.getByRole("img", { name: "Location" })).toBeVisible()
+    await expect(plain.getByRole("img", { name: "Location" })).toHaveCount(0)
+
+    await located.click()
+    await expect(page).toHaveURL(new RegExp(`peek=${locatedId}`))
+    const peek = page.getByRole("complementary", { name: `${marker} located` })
+    await expect(peek.getByRole("group", { name: "Map at 52.520008, 13.404954" })).toBeVisible()
+    await expect(peek.getByText("OpenStreetMap")).toBeVisible()
+  })
+
+  test("omits the location map and receipts cleanly when absent", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Detail No Modules")
     const title = `E2E Detail No Modules ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
+    const id = await createTransaction(request, token, {
       date: "2026-04-18",
       occurred_at: "2026-04-18T08:25:00",
       type: "expense",
@@ -100,92 +205,12 @@ test.describe("Transaction attachments and location", () => {
       tags: [],
     })
 
-    await page.goto(`/transactions/${transactionId}`)
-
-    await expect(page.getByRole("heading", { name: "Location" })).toHaveCount(0)
-    await expect(page.getByRole("heading", { name: "Attachments" })).toHaveCount(0)
-    await expect(page.getByRole("heading", { name: "Metadata" })).toHaveCount(0)
-    await expect(page.getByTestId("transaction-detail-location-map")).toHaveCount(0)
-
-    const summaryLayout = await page
-      .locator('[data-financial-surface="hero"]')
-      .evaluate((summaryCard) => {
-        const pageSection = summaryCard.parentElement
-        if (!pageSection) {
-          return null
-        }
-        return {
-          summaryWidth: summaryCard.getBoundingClientRect().width,
-          gridWidth: pageSection.getBoundingClientRect().width,
-        }
-      })
-
-    expect(summaryLayout).not.toBeNull()
-    if (!summaryLayout) {
-      return
-    }
-    expect(summaryLayout.summaryWidth / summaryLayout.gridWidth).toBeGreaterThanOrEqual(0.95)
-  })
-
-  test("should open a location dialog with an embedded map", async ({
-    page,
-    request,
-  }) => {
-    await stubOsmTiles(page)
-
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E No Location")
-    const locationTitle = `E2E Location ${Date.now()}`
-    const plainTitle = `E2E No Location ${Date.now()}`
-
-    await createIngestTransaction(request, {
-      amount_cents: 1299,
-      title: locationTitle,
-      date: "2026-03-20",
-      category: "Food",
-      latitude: 52.520008,
-      longitude: 13.404954,
-    })
-
-    await createTransaction(request, token, {
-      date: "2026-03-20",
-      occurred_at: new Date("2026-03-20T12:00:00Z").toISOString(),
-      type: "expense",
-      amount_cents: 4321,
-      category_id: categoryId,
-      title: plainTitle,
-      tags: [],
-    })
-
-    await page.goto("/transactions?period=all")
-
-    const locationRow = page.locator("div.surface-card").filter({ hasText: locationTitle }).first()
-    const plainRow = page.locator("div.surface-card").filter({ hasText: plainTitle }).first()
-
-    await expect(locationRow).toBeVisible()
-    await expect(plainRow).toBeVisible()
-    await expect(locationRow.getByRole("button", { name: /View location/ })).toBeVisible()
-    await expect(plainRow.getByRole("button", { name: /View location/ })).toHaveCount(0)
-    await expect(page.getByTestId("transaction-location-map")).toHaveCount(0)
-
-    await locationRow.getByRole("button", { name: /View location/ }).click()
-
-    const dialog = page.getByRole("dialog", { name: "Transaction location" })
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText(locationTitle)
-    await expect(dialog).toContainText("20.03.2026")
-    await expect(dialog).toContainText("Food")
-    await expect(dialog).toContainText("-12,99 €")
-    await expect(dialog).toContainText("52.520008, 13.404954")
-    await expect(dialog.getByTestId("transaction-location-map")).toBeVisible()
-    await expect(dialog).toContainText("OpenStreetMap")
-
-    await dialog.getByRole("button", { name: "Close transaction location" }).click()
-    await expect(dialog).toHaveCount(0)
-
-    await locationRow.getByRole("button", { name: /View location/ }).click()
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press("Escape")
-    await expect(dialog).toHaveCount(0)
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${id}`)
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.getByRole("heading", { name: "Receipts" })).toBeVisible()
+    await expect(peek.getByRole("button", { name: "Drop a receipt or choose a file" })).toBeVisible()
+    await expect(peek.getByRole("heading", { name: "Location" })).toHaveCount(0)
+    await expect(peek.getByRole("group", { name: /^Map at/ })).toHaveCount(0)
+    await expect(peek.getByText("None", { exact: true })).toBeVisible()
   })
 })

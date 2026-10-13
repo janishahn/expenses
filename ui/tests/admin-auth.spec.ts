@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures"
+import { expect, test, type Page } from "./fixtures"
 import {
   ADMIN_USER,
   ORDINARY_USER,
@@ -9,6 +9,19 @@ import {
 import { createTransaction, ensureCategory, getCsrfToken } from "./helpers"
 
 test.use({ storageState: { cookies: [], origins: [] } })
+
+async function expectAppMenu(page: Page, items: string[]): Promise<void> {
+  await page.goto("/")
+  await page.getByRole("button", { name: "Expenses", exact: true }).click()
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText(items)
+  await page.keyboard.press("Escape")
+}
+
+async function signOutFromSettings(page: Page): Promise<void> {
+  await page.goto("/settings")
+  await page.getByRole("button", { name: "Sign out" }).click()
+  await expect(page).toHaveURL(/\/login(?:\?|$)/)
+}
 
 test.describe.serial("Admin navigation and elevation guards", () => {
   test("hides admin navigation for ordinary users and blocks admin deep-links", async ({
@@ -22,12 +35,15 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     await loginWith(page, ORDINARY_USER)
     await expect(page).toHaveURL(/\/(\?|$)/)
+    await expect(page.locator("main h1")).toHaveText("Dashboard")
 
-    await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0)
+    await expectAppMenu(page, ["Settings", "Sign out"])
 
-    await page.goto("/admin")
-    await expect(page).not.toHaveURL(/\/admin/)
-    await expect(page.locator("main h1")).not.toContainText("Admin")
+    for (const path of ["/admin", "/admin/logs", "/admin/import"]) {
+      await page.goto(path)
+      await expect(page).toHaveURL("/")
+      await expect(page.locator("main h1")).toHaveText("Dashboard")
+    }
   })
 
   test("requires elevation for admin deep links and returns to the requested page", async ({
@@ -38,29 +54,44 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     await loginWith(page, ADMIN_USER)
     await expect(page).toHaveURL(/\/(\?|$)/)
+    await expectAppMenu(page, ["Settings", "Admin", "Sign out"])
 
     await page.goto("/admin/import")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=%2Fadmin%2Fimport/)
-    await expect(page.getByTestId("admin-elevation-form")).toBeVisible()
+    const adminSections = page.getByRole("navigation", { name: "Admin sections" })
+    await expect(adminSections.getByRole("link", { name: "Maintenance" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    )
+    await expect(page.getByRole("heading", { name: "Enter your password" })).toBeVisible()
+    await expect(page.getByLabel("SQLite database file")).toHaveCount(0)
 
-    await page.getByTestId("admin-elevation-password").fill("wrong-password")
-    await page.getByTestId("admin-elevation-submit").click()
+    await page.getByLabel("Password").fill("wrong-password")
+    await page.getByRole("button", { name: "Unlock" }).click()
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=%2Fadmin%2Fimport/)
-    await expect(page.getByTestId("admin-elevation-error")).toHaveText("Invalid password")
+    await expect(page.getByRole("alert")).toHaveText("Invalid password")
+    await expect(page.getByLabel("Password")).toHaveValue("")
 
-    await page.getByTestId("admin-elevation-password").fill(ADMIN_USER.password)
-    await page.getByTestId("admin-elevation-submit").click()
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
+    await page.getByRole("button", { name: "Unlock" }).click()
     await expect(page).toHaveURL("/admin/import")
-
-    await expect(page.locator("main h1")).toContainText("SQLite Import")
-    await expect(page.getByRole("button", { name: "Preview CSV" })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Import CSV" })).toHaveCount(0)
+    await expect(page.locator("main h1")).toHaveText("Legacy SQLite import")
+    await expect(page.getByLabel("SQLite database file")).toBeAttached()
 
     await page.goto("/admin")
     await expect(page).toHaveURL("/admin")
-    await expect(page.locator("main h1")).toContainText("Admin")
-    await expect(page.getByText("Appearance")).toHaveCount(0)
-    await expect(page.getByText("Balance Snapshots")).toHaveCount(0)
+    await expect(page.locator("main h1")).toHaveText("Health")
+  })
+
+  test("cancelling elevation returns to Settings", async ({ page, request }) => {
+    await ensureBootstrap(request)
+    await loginWith(page, ADMIN_USER)
+
+    await page.goto("/admin/logs")
+    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=%2Fadmin%2Flogs/)
+    await page.getByRole("link", { name: "Cancel" }).click()
+    await expect(page).toHaveURL("/settings")
+    await expect(page.locator("main h1")).toHaveText("Account")
   })
 
   test("same-browser user switching resets data scope and first mutation succeeds", async ({
@@ -86,35 +117,32 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     await loginWith(page, ADMIN_USER)
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(bootstrapOnlyTitle)}`)
-    await expect(page.locator("div.surface-card").filter({ hasText: bootstrapOnlyTitle }).first()).toBeVisible()
+    await expect(page.getByRole("listitem", { name: bootstrapOnlyTitle })).toBeVisible()
 
-    await page.goto("/settings")
-    await expect(page.getByTestId("settings-page")).toBeVisible()
-    await page.getByTestId("auth-logout").click()
-    await expect(page).toHaveURL(/\/login(?:\?|$)/)
+    await signOutFromSettings(page)
 
     await loginWith(page, ORDINARY_USER)
-    await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0)
+    await expectAppMenu(page, ["Settings", "Sign out"])
 
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(bootstrapOnlyTitle)}`)
-    await expect(page.locator("div.surface-card").filter({ hasText: bootstrapOnlyTitle })).toHaveCount(0)
+    await expect(page.getByRole("listitem", { name: bootstrapOnlyTitle })).toHaveCount(0)
 
     const memberCategoryName = `CrossFlow Member ${Date.now()}`
     await page.goto("/categories")
     await page.getByRole("button", { name: "Add category" }).first().click()
     const categoryDialog = page.getByRole("dialog", { name: "Add category" })
     await categoryDialog.getByRole("textbox", { name: "Name" }).fill(memberCategoryName)
-    await categoryDialog.getByLabel("Type").selectOption("expense")
 
     const createResponsePromise = page.waitForResponse(
       (response) =>
-        response.url().endsWith("/api/categories") &&
-        response.request().method() === "POST"
+        response.url().endsWith("/api/categories") && response.request().method() === "POST"
     )
     await categoryDialog.getByRole("button", { name: "Add category" }).click()
     const createResponse = await createResponsePromise
     expect(createResponse.status()).toBe(200)
-    await expect(page.locator("body")).toContainText(memberCategoryName)
+    await expect(
+      page.getByRole("list", { name: "Categories" }).getByRole("listitem", { name: memberCategoryName, exact: true })
+    ).toBeVisible()
   })
 
   test("switching from elevated admin to ordinary user relocks admin surfaces", async ({
@@ -127,25 +155,20 @@ test.describe.serial("Admin navigation and elevation guards", () => {
     await page.goto("/admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
 
-    await page.getByTestId("admin-elevation-password").fill(ADMIN_USER.password)
-    await page.getByTestId("admin-elevation-submit").click()
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
+    await page.getByRole("button", { name: "Unlock" }).click()
     await expect(page).toHaveURL("/admin")
-    await expect(page.locator("main h1")).toContainText("Admin")
+    await expect(page.locator("main h1")).toHaveText("Health")
 
-    await page.goto("/settings")
-    await expect(page.getByTestId("settings-page")).toBeVisible()
-    await page.getByTestId("auth-logout").click()
-    await expect(page).toHaveURL(/\/login(?:\?|$)/)
+    await signOutFromSettings(page)
 
     await loginWith(page, ORDINARY_USER)
-    await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0)
+    await expectAppMenu(page, ["Settings", "Sign out"])
 
-    await page.goto("/admin")
-    await expect(page).not.toHaveURL(/\/admin/)
-    await expect(page.locator("main h1")).not.toContainText("Admin")
-
-    await page.goto("/admin/import")
-    await expect(page).not.toHaveURL(/\/admin/)
-    await expect(page.locator("main h1")).not.toContainText("SQLite Import")
+    for (const path of ["/admin", "/admin/import"]) {
+      await page.goto(path)
+      await expect(page).toHaveURL("/")
+      await expect(page.locator("main h1")).toHaveText("Dashboard")
+    }
   })
 })

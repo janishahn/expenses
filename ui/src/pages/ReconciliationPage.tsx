@@ -1,887 +1,873 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState, type ReactElement } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import type { Icon } from "@phosphor-icons/react"
+import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
+import { ArrowsLeftRightIcon } from "@phosphor-icons/react/ArrowsLeftRight"
+import { BankIcon } from "@phosphor-icons/react/Bank"
+import { CaretDownIcon } from "@phosphor-icons/react/CaretDown"
+import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
+import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
 import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
+import { ChecksIcon } from "@phosphor-icons/react/Checks"
+import { CircleDashedIcon } from "@phosphor-icons/react/CircleDashed"
+import { EyeSlashIcon } from "@phosphor-icons/react/EyeSlash"
+import { FunnelIcon } from "@phosphor-icons/react/Funnel"
+import { GitForkIcon } from "@phosphor-icons/react/GitFork"
 import { LinkSimpleIcon } from "@phosphor-icons/react/LinkSimple"
-import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
+import { MoneyIcon } from "@phosphor-icons/react/Money"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { PlusCircleIcon } from "@phosphor-icons/react/PlusCircle"
+import { SealCheckIcon } from "@phosphor-icons/react/SealCheck"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
-import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
-import { XIcon } from "@phosphor-icons/react/X"
-import { Link } from "react-router-dom"
+import { Navigate, useSearchParams } from "react-router-dom"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import type {
-  BankReconciliationResponse,
+  BankAccount,
   BankReconciliationTransaction,
+  BankRowResolution,
+  BankRowsPage,
   BankStatementRow,
-  CategoriesResponse,
 } from "../app/api-types"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
-import RouteError from "../components/RouteError"
+import { formatShortDate } from "../app/format"
+import { invalidateTransactionData, shortDateLabel } from "../app/transactions"
+import { Amount } from "../components/ui/Amount"
+import { Button, IconButton } from "../components/ui/Button"
+import { CategoryGlyph, IconGlyph } from "../components/ui/CategoryGlyph"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { AmountCell, Cell, List, ListFooter, Row, RowActions, type Columns } from "../components/ui/LedgerRow"
+import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekHeadline, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { Pill } from "../components/ui/Pill"
+import { Property, PropertyLink, PropertyList } from "../components/ui/PropertyList"
+import { Radio, RadioGroup } from "../components/ui/Radio"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { Switch } from "../components/ui/Switch"
+import { TextField } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { bankRowTitle, candidateTitle, dayDistance } from "./bank-row"
 import {
-  FinancialPanel,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-  AppTextarea,
-} from "../components/ui/product-fields"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog"
+  CreateFromRowDialog,
+  IgnoreReasonDialog,
+  ImportStatementDialog,
+  ReopenCreatedDialog,
+  type CreateFromRowPayload,
+} from "./ReconcileDialogs"
 
-type CreateTransactionPayload = {
-  date: string
-  category_id: number | null
-  title: string
-  description: string | null
+type View = "open" | "resolved"
+type OpenStatus = "suggested" | "ambiguous" | "missing"
+
+const PAGE_SIZE = 50
+const IGNORE_REASONS: Array<{ label: string; icon: Icon }> = [
+  { label: "Cash withdrawal", icon: MoneyIcon },
+  { label: "Transfer between my accounts", icon: ArrowsLeftRightIcon },
+  { label: "Not something I track", icon: EyeSlashIcon },
+]
+const BANDS: Array<{ status: OpenStatus; label: string; icon: Icon }> = [
+  { status: "suggested", label: "Suggested match", icon: SealCheckIcon },
+  { status: "ambiguous", label: "Several matches", icon: GitForkIcon },
+  { status: "missing", label: "No match", icon: CircleDashedIcon },
+]
+const OUTCOMES: Record<BankRowResolution, { label: string; icon: Icon }> = {
+  matched: { label: "Matched", icon: LinkSimpleIcon },
+  created: { label: "Created", icon: PlusCircleIcon },
+  ignored: { label: "Ignored", icon: EyeSlashIcon },
 }
 
-type RowMutation =
-  | { kind: "accept"; rowId: number; notice: string }
-  | { kind: "match"; rowId: number; transactionId: number; notice: string }
-  | { kind: "create"; rowId: number; payload: CreateTransactionPayload; notice: string }
-  | { kind: "review"; rowId: number; notice: string }
-  | { kind: "reopen"; rowId: number }
+// The match cell and the row actions drop beside the peek; mobile rows show the icon, name, and amount.
+const OPEN_COLUMNS: Columns = {
+  columns: "18px minmax(0, 220px) 56px minmax(0, 1fr) auto 110px",
+  narrowColumns: "18px minmax(0, 1fr) 56px auto 110px",
+  mobileColumns: "18px minmax(0, 1fr) auto",
+}
+const RESOLVED_COLUMNS: Columns = {
+  columns: "18px minmax(0, 220px) 56px minmax(0, 1fr) 110px",
+  narrowColumns: "18px minmax(0, 1fr) 56px 110px",
+  mobileColumns: "18px minmax(0, 1fr) auto",
+}
+const CANDIDATE_COLUMNS: Columns = { columns: "16px 18px minmax(0, 1fr) auto auto" }
 
-type ActionNotice = {
-  message: string
-  undoRowId: number | null
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
+const rowKind = (row: BankStatementRow) => (row.amount_cents > 0 ? "income" : "expense")
+
+function BankAmount({ row }: { row: BankStatementRow }) {
+  return <Amount cents={Math.abs(row.amount_cents)} kind={rowKind(row)} currency={row.currency} />
 }
 
-function amountTone(amount: number) {
-  return amount >= 0 ? "text-semantic-green" : "text-semantic-red"
+function IgnoreMenu({
+  trigger,
+  onIgnore,
+  onOtherReason,
+}: {
+  trigger: ReactElement
+  onIgnore: (reason: string) => void
+  onOtherReason: () => void
+}) {
+  return (
+    <Menu label="Ignore" trigger={trigger}>
+      {IGNORE_REASONS.map((reason) => (
+        <MenuItem key={reason.label} icon={reason.icon} onSelect={() => onIgnore(reason.label)}>
+          {reason.label}
+        </MenuItem>
+      ))}
+      <MenuSeparator />
+      <MenuItem icon={PencilSimpleIcon} onSelect={onOtherReason}>
+        Other reason…
+      </MenuItem>
+    </Menu>
+  )
 }
 
-function transactionDateLabel(transaction: BankReconciliationTransaction) {
-  const dateDelta =
-    transaction.date_delta_days === 0
-      ? "same day"
-      : transaction.date_delta_days > 0
-        ? `${transaction.date_delta_days}d before booking`
-        : `${Math.abs(transaction.date_delta_days)}d after booking`
-  return `${formatEuroDate(transaction.date)} · ${dateDelta}`
+function ignoreTrigger(label = "Ignore") {
+  return (
+    <Button variant="ghost">
+      {label}
+      <CaretDownIcon aria-hidden="true" />
+    </Button>
+  )
 }
 
-function rowTitle(row: BankStatementRow) {
-  return row.payee || row.booking_text || row.purpose || "Bank transaction"
+// An open row: the candidates as radio rows, a search over every transaction, and the actions.
+// Picking a transaction with another amount offers to set it to the bank amount.
+function OpenRowPeek({
+  row,
+  pending,
+  onClose,
+  onMatch,
+  onCreate,
+  onIgnore,
+  onOtherReason,
+}: {
+  row: BankStatementRow
+  pending: boolean
+  onClose: () => void
+  onMatch: (transaction: BankReconciliationTransaction, setAmount: boolean) => void
+  onCreate: () => void
+  onIgnore: (reason: string) => void
+  onOtherReason: () => void
+}) {
+  const [selected, setSelected] = useState<BankReconciliationTransaction | null>(
+    row.status === "suggested" ? (row.candidates[0] ?? null) : null
+  )
+  const [query, setQuery] = useState("")
+  const [setAmount, setSetAmount] = useState(true)
+  const search = query.trim()
+  const results = useQuery({
+    queryKey: ["reconciliation", "candidates", row.id, search],
+    queryFn: () =>
+      apiFetch<{ items: BankReconciliationTransaction[] }>(
+        `/api/reconciliation/bank-rows/${row.id}/candidates?query=${encodeURIComponent(search)}&limit=8`
+      ),
+    enabled: search.length > 0,
+  })
+  const found = search ? (results.data?.items ?? []).filter((item) => !row.candidates.some((candidate) => candidate.id === item.id)) : []
+  const listed = [...row.candidates, ...found]
+  if (selected && !listed.some((item) => item.id === selected.id)) listed.unshift(selected)
+  const hasCandidates = row.candidates.length > 0
+  const bankCents = Math.abs(row.amount_cents)
+  // Transactions are kept in euros, so only a euro statement amount can replace theirs.
+  const canSetAmount =
+    selected !== null && selected.amount_cents !== bankCents && selected.type === rowKind(row) && row.currency === "EUR"
+  const title = bankRowTitle(row)
+
+  return (
+    <Peek
+      parent="Reconcile"
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            variant={hasCandidates ? "primary" : "quiet"}
+            disabled={!selected || pending}
+            onClick={() => selected && onMatch(selected, canSetAmount && setAmount)}
+          >
+            Match
+          </Button>
+          <Button variant={hasCandidates ? "quiet" : "primary"} disabled={pending} onClick={onCreate}>
+            Create…
+          </Button>
+        </>
+      }
+      footerEnd={<IgnoreMenu trigger={ignoreTrigger()} onIgnore={onIgnore} onOtherReason={onOtherReason} />}
+    >
+      <PeekHeadline title={title} figure={<BankAmount row={row} />} />
+      <PropertyList>
+        <Property label="Booked">{formatShortDate(row.booking_date)}</Property>
+        <Property label="Account">{row.account_label}</Property>
+        <Property label="Purpose">{row.purpose ?? row.raw_description}</Property>
+      </PropertyList>
+      <PeekSection title="Match">
+        {hasCandidates ? null : (
+          <EmptyState inline>
+            No transaction with <BankAmount row={row} /> within 5 days.
+          </EmptyState>
+        )}
+        <TextField
+          type="search"
+          icon={MagnifyingGlassIcon}
+          aria-label="Find a transaction"
+          placeholder={hasCandidates ? "Find another transaction" : "Find a transaction"}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {listed.length ? (
+          <RadioGroup
+            label="Transactions"
+            value={selected ? String(selected.id) : null}
+            onValueChange={(value) => setSelected(listed.find((item) => String(item.id) === value) ?? null)}
+          >
+            <List flat label="Transactions">
+              {listed.map((item) => (
+                <Row
+                  key={item.id}
+                  {...CANDIDATE_COLUMNS}
+                  label={candidateTitle(item)}
+                  selected={item.id === selected?.id}
+                  onOpen={() => setSelected(item)}
+                >
+                  <Radio value={String(item.id)} label={candidateTitle(item)} />
+                  <CategoryGlyph categoryId={item.category_id} icon={item.category_icon} name={item.category} />
+                  <Cell>{candidateTitle(item)}</Cell>
+                  <Cell tone="faint">{dayDistance(item.date_delta_days)}</Cell>
+                  <AmountCell>
+                    <Amount cents={item.amount_cents} kind={item.type} />
+                  </AmountCell>
+                </Row>
+              ))}
+            </List>
+          </RadioGroup>
+        ) : search && results.isSuccess ? (
+          <EmptyState inline>No matching transactions</EmptyState>
+        ) : null}
+        {selected && canSetAmount ? (
+          <PropertyList>
+            <Property label="Amount">
+              <Switch label="Set the amount to the bank amount" checked={setAmount} onCheckedChange={setSetAmount} />
+              Set to <BankAmount row={row} /> · was{" "}
+              <Amount cents={selected.amount_cents} kind={selected.type} tone="muted" />
+            </Property>
+          </PropertyList>
+        ) : null}
+      </PeekSection>
+    </Peek>
+  )
 }
 
+function ResolvedRowPeek({
+  row,
+  pending,
+  onClose,
+  onReopen,
+}: {
+  row: BankStatementRow
+  pending: boolean
+  onClose: () => void
+  onReopen: () => void
+}) {
+  const outcome = OUTCOMES[row.resolution ?? "matched"]
+  const transaction = row.suggested_transaction
+  const title = bankRowTitle(row)
+  return (
+    <Peek
+      parent="Reconcile"
+      title={title}
+      onClose={onClose}
+      footer={
+        <Button variant="quiet" icon={ArrowCounterClockwiseIcon} disabled={pending} onClick={onReopen}>
+          Reopen
+        </Button>
+      }
+    >
+      <PeekHeadline title={title} figure={<BankAmount row={row} />} />
+      <PropertyList>
+        <Property label="Booked">{formatShortDate(row.booking_date)}</Property>
+        <Property label="Account">{row.account_label}</Property>
+        <Property label="Outcome" icon={outcome.icon}>
+          {outcome.label}
+        </Property>
+        {row.resolution === "ignored" ? (
+          <Property label="Reason" empty={!row.ignore_reason}>
+            {row.ignore_reason ?? "None"}
+          </Property>
+        ) : transaction ? (
+          <Property label="Transaction">
+            <PropertyLink to={`/transactions/${transaction.id}`} end={<Amount cents={transaction.amount_cents} kind={transaction.type} />}>
+              {candidateTitle(transaction)}
+            </PropertyLink>
+          </Property>
+        ) : null}
+        {row.resolved_at ? <Property label="Resolved">{formatShortDate(row.resolved_at)}</Property> : null}
+        <Property label="Purpose">{row.purpose ?? row.raw_description}</Property>
+      </PropertyList>
+    </Peek>
+  )
+}
+
+// Bank statement rows checked one by one against tracked transactions. It never compares totals:
+// a statement covers one account, while the app may track several.
 function ReconciliationPage() {
   const queryClient = useQueryClient()
-  const removalTimer = useRef<number | null>(null)
-  const noticeTimer = useRef<number | null>(null)
-  const [accountLabel, setAccountLabel] = useState("StartKonto")
-  const [csvFile, setCsvFile] = useState<File | null>(null)
-  const [importMessage, setImportMessage] = useState("")
-  const [importError, setImportError] = useState("")
-  const [actionError, setActionError] = useState("")
-  const [leavingRowId, setLeavingRowId] = useState<number | null>(null)
-  const [createRow, setCreateRow] = useState<BankStatementRow | null>(null)
-  const [matchRow, setMatchRow] = useState<BankStatementRow | null>(null)
-  const [notice, setNotice] = useState<ActionNotice | null>(null)
+  const isDesktop = useIsDesktop()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view: View = searchParams.get("view") === "resolved" ? "resolved" : "open"
+  const account = searchParams.get("account")
+  const outcomeParam = searchParams.get("outcome")
+  const outcome = outcomeParam === "matched" || outcomeParam === "created" || outcomeParam === "ignored" ? outcomeParam : null
+  const page = Math.max(1, Number(searchParams.get("page")) || 1)
+  const peekId = Number(searchParams.get("peek")) || null
+  const [importing, setImporting] = useState(false)
+  const [creating, setCreating] = useState<BankStatementRow | null>(null)
+  const [ignoring, setIgnoring] = useState<BankStatementRow | null>(null)
+  const [reopening, setReopening] = useState<BankStatementRow | null>(null)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
-  useEffect(
-    () => () => {
-      if (removalTimer.current !== null) window.clearTimeout(removalTimer.current)
-      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
-    },
-    []
-  )
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["reconciliation"],
-    queryFn: () => apiFetch<BankReconciliationResponse>("/api/reconciliation"),
+  const listParams = (forView: View, forPage: number, limit: number) => {
+    const params = new URLSearchParams({ view: forView, page: String(forPage), limit: String(limit) })
+    if (account) params.set("account", account)
+    if (forView === "resolved" && outcome) params.set("outcome", outcome)
+    return params.toString()
+  }
+  const rowsParams = listParams(view, page, PAGE_SIZE)
+  const rows = useQuery({
+    queryKey: ["reconciliation", "rows", view, rowsParams],
+    queryFn: () => apiFetch<BankRowsPage>(`/api/reconciliation/bank-rows?${rowsParams}`),
+    // Filter and page changes keep the shown rows until the new ones arrive; a view change shows the loading state.
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === view ? previous : undefined),
+  })
+  // The To review count while Resolved is shown.
+  const openParams = listParams("open", 1, 1)
+  const openCount = useQuery({
+    queryKey: ["reconciliation", "rows", "open", openParams],
+    queryFn: () => apiFetch<BankRowsPage>(`/api/reconciliation/bank-rows?${openParams}`),
+    enabled: view === "resolved",
+  })
+  const accountsQuery = useQuery({
+    queryKey: ["reconciliation", "accounts"],
+    queryFn: () => apiFetch<{ accounts: BankAccount[] }>("/api/reconciliation/accounts"),
   })
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
-    enabled: createRow !== null,
-  })
-
-  const importMutation = useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append("account_label", accountLabel)
-      form.append("file", file)
-      return apiFetchFormData<{ imported_count: number; duplicate_count: number }>(
-        "/api/reconciliation/commerzbank-csv/commit",
-        { method: "POST", body: form }
-      )
-    },
-    onSuccess: (result) => {
-      setImportMessage(
-        `${result.imported_count} imported · ${result.duplicate_count} duplicate${result.duplicate_count === 1 ? "" : "s"} skipped`
-      )
-      setImportError("")
-      queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
-    },
-    onError: (mutationError) => {
-      setImportMessage("")
-      setImportError(getApiErrorMessage(mutationError, "Unable to reconcile this file."))
-    },
-  })
-
-  const invalidateReconciliation = (transactionCreated = false) => {
-    queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
-    if (!transactionCreated) return
-    queryClient.invalidateQueries({ queryKey: ["transactions"] })
-    queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-    queryClient.invalidateQueries({ queryKey: ["insights"] })
-    queryClient.invalidateQueries({ queryKey: ["budgets"] })
-    queryClient.invalidateQueries({ queryKey: ["forecast"] })
+  if (rows.isLoading || accountsQuery.isLoading) {
+    return <PanelLoading title="Reconcile" label="Loading bank rows…" />
+  }
+  if (rows.error || accountsQuery.error || !rows.data || !accountsQuery.data) {
+    return <PanelError title="Reconcile" message="Unable to load bank rows." />
   }
 
-  const rowMutation = useMutation({
-    mutationFn: (mutation: RowMutation) => {
-      if (mutation.kind === "accept") {
-        return apiFetch<{ status: string }>(
-          `/api/reconciliation/bank-rows/${mutation.rowId}/accept-suggestion`,
-          { method: "POST" }
-        )
-      }
-      if (mutation.kind === "match") {
-        return apiFetch<{ status: string; transaction_id: number }>(
-          `/api/reconciliation/bank-rows/${mutation.rowId}/match-transaction`,
-          {
-            method: "POST",
-            body: JSON.stringify({ transaction_id: mutation.transactionId }),
-          }
-        )
-      }
-      if (mutation.kind === "create") {
-        return apiFetch<{ status: string; transaction_id: number }>(
-          `/api/reconciliation/bank-rows/${mutation.rowId}/create-transaction`,
-          { method: "POST", body: JSON.stringify(mutation.payload) }
-        )
-      }
-      if (mutation.kind === "review") {
-        return apiFetch<{ status: string }>(
-          `/api/reconciliation/bank-rows/${mutation.rowId}/review`,
-          { method: "POST" }
-        )
-      }
-      return apiFetch<{ status: string }>(
-        `/api/reconciliation/bank-rows/${mutation.rowId}/reopen`,
-        { method: "POST" }
-      )
-    },
-    onSuccess: (_result, mutation) => {
-      setActionError("")
-      if (mutation.kind === "reopen") {
-        setNotice(null)
-        invalidateReconciliation()
-        return
-      }
-
-      setCreateRow(null)
-      setMatchRow(null)
-      setLeavingRowId(mutation.rowId)
-      setNotice({
-        message: mutation.notice,
-        undoRowId: mutation.kind === "create" ? null : mutation.rowId,
-      })
-      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
-      noticeTimer.current = window.setTimeout(() => setNotice(null), 5000)
-      removalTimer.current = window.setTimeout(() => {
-        queryClient.setQueryData<BankReconciliationResponse>(
-          ["reconciliation"],
-          (current) => {
-            if (!current) return current
-            const resolvedRow = current.rows.find((row) => row.id === mutation.rowId)
-            if (!resolvedRow) return current
-            return {
-              ...current,
-              summary: {
-                ...current.summary,
-                unresolved_count:
-                  current.summary.unresolved_count -
-                  (resolvedRow.status === "missing" || resolvedRow.status === "ambiguous"
-                    ? 1
-                    : 0),
-                suggested_count:
-                  current.summary.suggested_count -
-                  (resolvedRow.status === "suggested" ? 1 : 0),
-                matched_count:
-                  current.summary.matched_count + (mutation.kind === "review" ? 0 : 1),
-                reviewed_count:
-                  current.summary.reviewed_count + (mutation.kind === "review" ? 1 : 0),
-              },
-              rows: current.rows.filter((row) => row.id !== mutation.rowId),
-            }
-          }
-        )
-        removalTimer.current = null
-        setLeavingRowId(null)
-        invalidateReconciliation(mutation.kind === "create")
-      }, 180)
-    },
-    onError: (mutationError) => {
-      setActionError(
-        getApiErrorMessage(mutationError, "Unable to update this reconciliation item.")
-      )
-    },
-  })
-
-  const handleReconcile = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!csvFile) {
-      setImportError("Choose a Commerzbank CSV file first.")
-      return
-    }
-    setImportError("")
-    importMutation.mutate(csvFile)
-  }
-
-  const rows = data?.rows ?? []
-  const inboxRows = rows.filter(
-    (row) =>
-      row.status === "suggested" ||
-      row.status === "ambiguous" ||
-      row.status === "missing"
-  )
-  const matchedCount = data?.summary.matched_count ?? 0
-  const reviewedCount = data?.summary.reviewed_count ?? 0
-  const queueBusy = rowMutation.isPending || leavingRowId !== null
-
-  if (isLoading) {
+  const { items, total } = rows.data
+  // Resolving the last rows of a later page moves to the last page that has rows.
+  if (!items.length && page > 1 && total > 0 && !rows.isPlaceholderData) {
+    const next = new URLSearchParams(searchParams)
+    next.set("page", String(Math.ceil(total / PAGE_SIZE)))
     return (
-      <section className="space-y-6" data-testid="reconciliation-page">
-        <PageIntro title="Reconciliation" />
-        <div className="h-24 animate-pulse rounded-2xl bg-surface-hi/40" />
-        <div className="h-72 animate-pulse rounded-2xl bg-surface-hi/40" />
-      </section>
+      <>
+        <Navigate replace to={{ search: next.toString() }} />
+        <PanelLoading title="Reconcile" label="Loading bank rows…" />
+      </>
+    )
+  }
+  const accounts = accountsQuery.data.accounts
+  const openTotal = view === "open" ? total : openCount.data?.total
+  const latestImport = [...accounts]
+    .filter((entry) => entry.last_import_at && (!account || entry.label === account))
+    .sort((a, b) => (b.last_import_at ?? "").localeCompare(a.last_import_at ?? ""))[0]
+
+  const update = (changes: Record<string, string | null>, replace = false) => {
+    const next = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key)
+      else next.set(key, value)
+    }
+    setSearchParams(next, { replace })
+  }
+  const openPeek = (id: number) => update({ peek: String(id) }, peekId !== null)
+  const closePeek = () => update({ peek: null }, true)
+
+  const refresh = (transactions: boolean) => {
+    void queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
+    if (transactions) invalidateTransactionData(queryClient)
+  }
+  const post = (path: string, body?: unknown) =>
+    apiFetch<{ status: string; transaction_id?: number | null; previous_amount_cents?: number | null }>(
+      `/api/reconciliation/bank-rows/${path}`,
+      { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }
+    )
+  // An Undo passes the outcome it reverses, so the server leaves a row changed since then as it is.
+  // It also passes the amount a match replaced, which the server restores unless it was edited since.
+  const reopen = (
+    rowId: number,
+    reversing?: { resolution: BankRowResolution; transactionId?: number; restoreAmountCents?: number },
+    trashCreatedTransaction = false
+  ) =>
+    post(`${rowId}/reopen`, {
+      trash_created_transaction: trashCreatedTransaction,
+      expected_resolution: reversing?.resolution,
+      expected_transaction_id: reversing?.transactionId,
+      restore_amount_cents: reversing?.restoreAmountCents,
+    })
+
+  // Runs one row action, then confirms it in a toast whose Undo runs `undo`.
+  // Returns the error message when the action fails.
+  const act = async ({
+    row,
+    run,
+    message,
+    undo,
+    transactions = false,
+  }: {
+    row: BankStatementRow | null
+    run: () => Promise<string | void>
+    message: string
+    undo: (() => Promise<unknown>) | null
+    transactions?: boolean
+  }): Promise<string | null> => {
+    setPending(true)
+    let finalMessage = message
+    try {
+      finalMessage = (await run()) || message
+    } catch (failure) {
+      return getApiErrorMessage(failure, "Unable to update this bank row.")
+    } finally {
+      setPending(false)
+    }
+    if (row && peekId === row.id) closePeek()
+    refresh(transactions)
+    showToast({
+      message: finalMessage,
+      action: undo
+        ? {
+            label: "Undo",
+            onClick: async () => {
+              try {
+                await undo()
+              } catch (failure) {
+                showToast({ message: getApiErrorMessage(failure, "Unable to undo the change.") })
+              }
+              refresh(transactions)
+            },
+          }
+        : undefined,
+    })
+    return null
+  }
+  const reportFailure = (error: string | null) => {
+    if (error) showToast({ message: error })
+  }
+
+  const matchSuggestion = async (row: BankStatementRow) => {
+    const candidate = row.suggested_transaction ?? row.candidates[0]
+    let matchedId: number | undefined
+    reportFailure(
+      await act({
+        row,
+        run: async () => {
+          matchedId = (await post(`${row.id}/accept-suggestion`)).transaction_id ?? undefined
+        },
+        message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}`,
+        undo: () => reopen(row.id, { resolution: "matched", transactionId: matchedId }),
+      })
+    )
+  }
+  const matchAll = async (band: BankStatementRow[]) => {
+    // The server skips rows that no longer have exactly one candidate; Undo leaves them as they are.
+    let matches: Array<{ row_id: number; transaction_id: number }> = []
+    reportFailure(
+      await act({
+        row: band.find((row) => row.id === peekId) ?? null,
+        run: async () => {
+          const result = await apiFetch<{ matches: typeof matches }>("/api/reconciliation/bank-rows/accept-suggestions", {
+            method: "POST",
+            body: JSON.stringify({ row_ids: band.map((row) => row.id) }),
+          })
+          matches = result.matches
+          return `Matched ${plural(matches.length, "row")}`
+        },
+        message: "Matched",
+        undo: () =>
+          Promise.all(
+            matches.map((match) => reopen(match.row_id, { resolution: "matched", transactionId: match.transaction_id }))
+          ),
+      })
+    )
+  }
+  const matchTransaction = async (row: BankStatementRow, transaction: BankReconciliationTransaction, setAmount: boolean) => {
+    let replacedAmount: number | undefined
+    reportFailure(
+      await act({
+        row,
+        run: async () => {
+          const result = await post(`${row.id}/match-transaction`, {
+            transaction_id: transaction.id,
+            update_amount_to_bank: setAmount,
+          })
+          replacedAmount = result.previous_amount_cents ?? undefined
+        },
+        message: `Matched with ${candidateTitle(transaction)}`,
+        undo: () =>
+          reopen(row.id, { resolution: "matched", transactionId: transaction.id, restoreAmountCents: replacedAmount }),
+        transactions: setAmount,
+      })
+    )
+  }
+  const ignore = async (row: BankStatementRow, reason: string | null) =>
+    act({
+      row,
+      run: () => post(`${row.id}/ignore`, { reason }).then(() => undefined),
+      message: reason ? `Ignored · ${reason}` : "Ignored",
+      undo: () => reopen(row.id, { resolution: "ignored" }),
+    })
+  // Undoing a create moves the new transaction to Trash.
+  const createFromRow = async (row: BankStatementRow, payload: CreateFromRowPayload, receipt: File | null) => {
+    setDialogError(null)
+    let createdId: number | undefined
+    const error = await act({
+      row,
+      run: async () => {
+        const created = await post(`${row.id}/create-transaction`, payload)
+        createdId = created.transaction_id ?? undefined
+        if (!receipt || !created.transaction_id) return
+        try {
+          const form = new FormData()
+          form.append("file", receipt)
+          await apiFetchFormData(`/api/transactions/${created.transaction_id}/attachments`, { method: "POST", body: form })
+        } catch {
+          return `Created ${payload.title}, but the receipt could not be uploaded`
+        }
+      },
+      message: `Created ${payload.title}`,
+      undo: () => reopen(row.id, { resolution: "created", transactionId: createdId }, true),
+      transactions: true,
+    })
+    if (error) setDialogError(error)
+    else setCreating(null)
+  }
+  const reopenRow = async (row: BankStatementRow, trashCreatedTransaction: boolean) => {
+    const transaction = row.suggested_transaction
+    const { resolution, ignore_reason: reason } = row
+    const error = await act({
+      row,
+      // The shown outcome is passed too, so a row changed elsewhere since is left as it is.
+      run: () =>
+        reopen(row.id, resolution ? { resolution, transactionId: transaction?.id } : undefined, trashCreatedTransaction).then(
+          () => undefined
+        ),
+      message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash" : "Moved back to review",
+      undo:
+        resolution === "ignored"
+          ? () => post(`${row.id}/ignore`, { reason })
+          : resolution && transaction
+            ? () => post(`${row.id}/match-transaction`, { transaction_id: transaction.id, resolution })
+            : null,
+      transactions: trashCreatedTransaction,
+    })
+    reportFailure(error)
+    setReopening(null)
+  }
+  const startCreate = (row: BankStatementRow) => {
+    setDialogError(null)
+    setCreating(row)
+  }
+  const startIgnore = (row: BankStatementRow) => {
+    setDialogError(null)
+    setIgnoring(row)
+  }
+
+  const peekRow = items.find((row) => row.id === peekId) ?? null
+  const first = (page - 1) * PAGE_SIZE + 1
+  const footer = items.length ? (
+    total > items.length || page > 1 ? (
+      <ListFooter>
+        {first}–{first + items.length - 1} of {total}
+        <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => update({ page: String(page - 1), peek: null })} />
+        <IconButton
+          icon={CaretRightIcon}
+          label="Next page"
+          disabled={first + items.length - 1 >= total}
+          onClick={() => update({ page: String(page + 1), peek: null })}
+        />
+      </ListFooter>
+    ) : null
+  ) : rows.isPlaceholderData ? null : accounts.length === 0 ? (
+    <EmptyState
+      icon={BankIcon}
+      action={
+        <Button variant="quiet" icon={UploadSimpleIcon} onClick={() => setImporting(true)}>
+          Import statement
+        </Button>
+      }
+    >
+      Import a bank statement to check it against your transactions
+    </EmptyState>
+  ) : view === "open" ? (
+    <EmptyState
+      icon={CheckCircleIcon}
+      action={
+        <Button variant="quiet" onClick={() => update({ view: "resolved", page: null, peek: null })}>
+          Show resolved
+        </Button>
+      }
+    >
+      Nothing to review
+    </EmptyState>
+  ) : (
+    <EmptyState>{outcome ? `No ${OUTCOMES[outcome].label.toLowerCase()} rows` : "No resolved rows"}</EmptyState>
+  )
+
+  const openRow = (row: BankStatementRow, status: OpenStatus) => (
+    <Row key={row.id} {...OPEN_COLUMNS} label={bankRowTitle(row)} selected={row.id === peekId} onOpen={() => openPeek(row.id)}>
+      <IconGlyph icon={BANDS.find((band) => band.status === status)?.icon ?? CircleDashedIcon} />
+      <Cell strong>{bankRowTitle(row)}</Cell>
+      <Cell tone="muted" hide="mobile">
+        {shortDateLabel(row.booking_date)}
+      </Cell>
+      {status === "suggested" && row.suggested_transaction ? (
+        <Cell hide="narrow">
+          <CategoryGlyph
+            inline
+            categoryId={row.suggested_transaction.category_id}
+            icon={row.suggested_transaction.category_icon}
+            name={row.suggested_transaction.category}
+          />
+          {candidateTitle(row.suggested_transaction)} · {dayDistance(row.suggested_transaction.date_delta_days)}
+        </Cell>
+      ) : status === "ambiguous" ? (
+        <Cell tone="muted" hide="narrow">
+          {row.candidate_count} possible matches
+        </Cell>
+      ) : (
+        <Cell tone="faint" hide="narrow">
+          No transaction with this amount
+        </Cell>
+      )}
+      <Cell hide="mobile">
+        <RowActions>
+          <IgnoreMenu trigger={ignoreTrigger()} onIgnore={(reason) => void ignore(row, reason).then(reportFailure)} onOtherReason={() => startIgnore(row)} />
+          {status === "suggested" ? (
+            <Button variant="quiet" disabled={pending} onClick={() => void matchSuggestion(row)}>
+              Match
+            </Button>
+          ) : status === "ambiguous" ? (
+            <Button variant="quiet" onClick={() => openPeek(row.id)}>
+              Choose
+            </Button>
+          ) : (
+            <Button variant="quiet" onClick={() => startCreate(row)}>
+              Create…
+            </Button>
+          )}
+        </RowActions>
+      </Cell>
+      <AmountCell>
+        <BankAmount row={row} />
+      </AmountCell>
+    </Row>
+  )
+
+  const resolvedRow = (row: BankStatementRow) => {
+    const resolution = row.resolution ?? "matched"
+    const transaction = row.suggested_transaction
+    return (
+      <Row key={row.id} {...RESOLVED_COLUMNS} label={bankRowTitle(row)} selected={row.id === peekId} onOpen={() => openPeek(row.id)}>
+        <IconGlyph icon={OUTCOMES[resolution].icon} />
+        <Cell strong>{bankRowTitle(row)}</Cell>
+        <Cell tone="muted" hide="mobile">
+          {shortDateLabel(row.booking_date)}
+        </Cell>
+        {resolution === "ignored" || !transaction ? (
+          <Cell tone="muted" hide="narrow">
+            {row.ignore_reason ? `Ignored · ${row.ignore_reason}` : OUTCOMES[resolution].label}
+          </Cell>
+        ) : (
+          <Cell hide="narrow">
+            <CategoryGlyph inline categoryId={transaction.category_id} icon={transaction.category_icon} name={transaction.category} />
+            {candidateTitle(transaction)}
+          </Cell>
+        )}
+        <AmountCell>
+          <BankAmount row={row} />
+        </AmountCell>
+      </Row>
     )
   }
 
-  if (error) {
-    return <RouteError title="Reconciliation" message="Unable to load reconciliation." />
-  }
-
   return (
-    <section data-testid="reconciliation-page" className="space-y-4">
-      <PageIntro title="Reconciliation" />
-
-      <div
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-xs text-muted"
-        aria-label="Reconciliation summary"
-      >
-        <span><strong className="text-text">{data?.summary.row_count ?? 0}</strong> imported</span>
-        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
-        <span><strong className="text-text">{matchedCount + reviewedCount}</strong> cleared</span>
-        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
-        <span><strong className="text-text">{inboxRows.length}</strong> remaining</span>
-        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-border-hi" />
-        <span className={amountTone(data?.summary.bank_total_cents ?? 0)}>
-          <strong>{formatCurrency(data?.summary.bank_total_cents ?? 0)} €</strong> net
-        </span>
-      </div>
-
-      <FinancialPanel role="inspector" className="p-4">
-        <form
-          onSubmit={handleReconcile}
-          className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end"
-        >
-          <div className="space-y-1.5">
-            <AppFieldLabel htmlFor="reconciliation-account">Account label</AppFieldLabel>
-            <AppInput
-              id="reconciliation-account"
-              value={accountLabel}
-              onChange={(event) => setAccountLabel(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <AppFieldLabel htmlFor="reconciliation-file">CSV file</AppFieldLabel>
-            <input
-              id="reconciliation-file"
-              type="file"
-              accept=".csv,text/csv"
-              className="peer sr-only"
-              onChange={(event) => {
-                setCsvFile(event.target.files?.[0] ?? null)
-                setImportMessage("")
-                setImportError("")
-              }}
-            />
-            <label
-              htmlFor="reconciliation-file"
-              className="field flex min-h-11 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-surface-hi text-sm text-text transition-[border-color,box-shadow] hover:border-border-hi peer-focus-visible:border-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+    <Panel
+      title="Reconcile"
+      peekOpen={peekRow !== null}
+      layout="fill"
+      actions={
+        <Button variant="primary" icon={UploadSimpleIcon} aria-label="Import statement" onClick={() => setImporting(true)}>
+          {isDesktop ? "Import statement" : "Import"}
+        </Button>
+      }
+      viewRow={
+        <ViewRow end={isDesktop && latestImport?.last_import_at ? `Last import ${shortDateLabel(latestImport.last_import_at.slice(0, 10))} · ${latestImport.label}` : null}>
+          <SegmentedControl
+            label="Reconcile view"
+            value={view}
+            options={[
+              { value: "open", label: "To review", count: openTotal || undefined },
+              { value: "resolved", label: "Resolved" },
+            ]}
+            onChange={(next) => update({ view: next === "open" ? null : next, outcome: null, page: null, peek: null })}
+          />
+          {accounts.length ? (
+            <Menu
+              label="Account"
+              align="start"
+              trigger={
+                <Pill icon={BankIcon} set={account !== null}>
+                  {account ?? "All accounts"}
+                </Pill>
+              }
             >
-              <span className="flex min-h-11 shrink-0 items-center border-r border-border bg-faint px-3 font-semibold">
-                Choose file
-              </span>
-              <span className="min-w-0 truncate px-3 text-muted">
-                {csvFile?.name ?? "No file selected"}
-              </span>
-            </label>
-          </div>
-          <AppButton type="submit" disabled={importMutation.isPending}>
-            <UploadSimpleIcon data-icon="inline-start" className="h-4 w-4" />
-            {importMutation.isPending ? "Reconciling…" : "Reconcile"}
-          </AppButton>
-        </form>
-        {importMessage ? (
-          <p className="mt-3 text-sm font-semibold text-semantic-green" role="status">
-            {importMessage}
-          </p>
-        ) : null}
-        {importError ? (
-          <p className="mt-3 text-sm text-semantic-red" role="alert">{importError}</p>
-        ) : null}
-      </FinancialPanel>
-
-      <FinancialPanel role="ledger">
-        <SectionHeading>
-          <h2 className="font-head text-xl font-bold tracking-tight">
-            {inboxRows.length === 0
-              ? data?.summary.row_count
-                ? "Inbox cleared"
-                : "No bank rows imported"
-              : `${inboxRows.length} item${inboxRows.length === 1 ? "" : "s"} to reconcile`}
-          </h2>
-        </SectionHeading>
-
-        {actionError && !createRow && !matchRow ? (
-          <p
-            className="mx-4 mb-2 rounded-lg border border-semantic-red/25 bg-semantic-red/10 px-3 py-2 text-sm text-semantic-red"
-            role="alert"
-          >
-            {actionError}
-          </p>
-        ) : null}
-
-        {inboxRows.length > 0 ? (
-          <div className="divide-y divide-border">
-            {inboxRows.map((row) => (
-              <InboxRow
-                key={row.id}
-                row={row}
-                leaving={leavingRowId === row.id}
-                pending={rowMutation.isPending && rowMutation.variables?.rowId === row.id}
-                disabled={queueBusy}
-                onAccept={() =>
-                  rowMutation.mutate({
-                    kind: "accept",
-                    rowId: row.id,
-                    notice: `${rowTitle(row)} matched`,
-                  })
-                }
-                onChoose={() => {
-                  setActionError("")
-                  setMatchRow(row)
-                }}
-                onCreate={() => {
-                  setActionError("")
-                  setCreateRow(row)
-                }}
-                onReview={() =>
-                  rowMutation.mutate({
-                    kind: "review",
-                    rowId: row.id,
-                    notice: `${rowTitle(row)} marked reviewed`,
-                  })
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="p-10 text-center">
-            <CheckCircleIcon
-              className={`mx-auto h-10 w-10 ${data?.summary.row_count ? "text-semantic-green" : "text-muted"}`}
-              weight={data?.summary.row_count ? "fill" : "regular"}
-            />
-          </div>
-        )}
-      </FinancialPanel>
-
-      {notice ? (
-        <div
-          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[80] flex min-h-11 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-xl border border-border bg-text px-4 py-2 text-sm text-surface shadow-2xl"
-          role="status"
-        >
-          <CheckCircleIcon className="h-5 w-5 shrink-0 text-semantic-green" weight="fill" />
-          <span className="min-w-0 flex-1 truncate font-semibold">{notice.message}</span>
-          {notice.undoRowId !== null ? (
-            <button
-              type="button"
-              className="min-h-11 shrink-0 px-1 font-semibold text-surface underline underline-offset-4 transition-[opacity,transform] hover:opacity-75 active:scale-[0.96] desk:min-h-0"
-              onClick={() => {
-                if (removalTimer.current !== null) {
-                  window.clearTimeout(removalTimer.current)
-                  removalTimer.current = null
-                  setLeavingRowId(null)
-                }
-                rowMutation.mutate({ kind: "reopen", rowId: notice.undoRowId! })
-              }}
-              disabled={rowMutation.isPending}
-            >
-              Undo
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {createRow ? (
-        <CreateTransactionDialog
-          key={createRow.id}
-          row={createRow}
-          categories={categoriesData?.categories ?? []}
-          pending={rowMutation.isPending}
-          errorMessage={actionError}
-          onClose={() => {
-            if (!rowMutation.isPending) setCreateRow(null)
-          }}
-          onSubmit={(payload) =>
-            rowMutation.mutate({
-              kind: "create",
-              rowId: createRow.id,
-              payload,
-              notice: "Transaction created and matched",
-            })
-          }
-        />
-      ) : null}
-
-      {matchRow ? (
-        <MatchTransactionDialog
-          key={matchRow.id}
-          row={matchRow}
-          pending={rowMutation.isPending}
-          errorMessage={actionError}
-          onClose={() => {
-            if (!rowMutation.isPending) setMatchRow(null)
-          }}
-          onCreate={() => {
-            setMatchRow(null)
-            setCreateRow(matchRow)
-          }}
-          onSubmit={(transaction) =>
-            rowMutation.mutate({
-              kind: "match",
-              rowId: matchRow.id,
-              transactionId: transaction.id,
-              notice: `${rowTitle(matchRow)} matched`,
-            })
-          }
-        />
-      ) : null}
-    </section>
-  )
-}
-
-function InboxRow({
-  row,
-  leaving,
-  pending,
-  disabled,
-  onAccept,
-  onChoose,
-  onCreate,
-  onReview,
-}: {
-  row: BankStatementRow
-  leaving: boolean
-  pending: boolean
-  disabled: boolean
-  onAccept: () => void
-  onChoose: () => void
-  onCreate: () => void
-  onReview: () => void
-}) {
-  const suggestion = row.suggested_transaction
-  return (
-    <article
-      data-testid={`reconciliation-row-${row.id}`}
-      className={`px-4 py-5 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none sm:px-5 ${
-        leaving ? "translate-x-3 opacity-0 motion-reduce:translate-x-0" : "opacity-100"
-      }`}
-    >
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-muted">
-          <StatusLabel status={row.status} />
-          <span className="whitespace-nowrap">
-            {formatEuroDate(row.booking_date)} booked
-            {row.value_date ? ` · ${formatEuroDate(row.value_date)} value` : ""}
-          </span>
-        </div>
-        <div className="mt-2 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold leading-6 text-text">
-              {rowTitle(row)}
-            </h3>
-            <p className="mt-0.5 line-clamp-2 text-[13px] leading-5 text-muted">
-              {row.raw_description}
-            </p>
-          </div>
-          <strong className={`shrink-0 font-mono text-base font-semibold leading-6 ${amountTone(row.amount_cents)}`}>
-            {formatCurrency(row.amount_cents)} {row.currency}
-          </strong>
-        </div>
-      </div>
-
-      {suggestion ? (
-        <div className="mt-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg bg-semantic-green/10 px-3 py-2">
-            <LinkSimpleIcon className="h-4 w-4 shrink-0 text-semantic-green" weight="bold" />
-            <CandidateSummary transaction={suggestion} />
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <AppButton type="button" tone="ghost" onClick={onCreate} disabled={disabled}>
-              Create new
-            </AppButton>
-            <AppButton type="button" onClick={onAccept} disabled={disabled}>
-              {pending ? "Matching…" : "Match"}
-            </AppButton>
-          </div>
-        </div>
-      ) : row.status === "ambiguous" ? (
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold text-text">
-            <WarningCircleIcon className="h-4 w-4 text-text" weight="fill" />
-            <span>{row.candidate_count} possible matches</span>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <AppButton type="button" tone="ghost" onClick={onReview} disabled={disabled}>
-              Mark reviewed
-            </AppButton>
-            <AppButton type="button" tone="ghost" onClick={onCreate} disabled={disabled}>
-              Create new
-            </AppButton>
-            <AppButton type="button" onClick={onChoose} disabled={disabled}>
-              Choose match
-            </AppButton>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <strong className="text-sm font-semibold">No Expenses transaction found</strong>
-          <div className="flex flex-wrap justify-end gap-2">
-            <AppButton type="button" tone="ghost" onClick={onReview} disabled={disabled}>
-              Mark reviewed
-            </AppButton>
-            <AppButton type="button" onClick={onCreate} disabled={disabled}>
-              <PlusIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
-              Create new transaction
-            </AppButton>
-          </div>
-        </div>
-      )}
-    </article>
-  )
-}
-
-function StatusLabel({ status }: { status: BankStatementRow["status"] }) {
-  const copy =
-    status === "suggested"
-      ? "Suggested"
-      : status === "ambiguous"
-        ? "Choose match"
-        : "Not tracked"
-  const tone =
-    status === "suggested"
-      ? "bg-semantic-green/10 text-semantic-green"
-      : status === "ambiguous"
-        ? "bg-signal-yellow-soft text-text"
-        : "bg-semantic-red/10 text-semantic-red"
-  return (
-    <span className={`rounded-full px-2.5 py-1 font-sans text-[11px] font-semibold leading-none ${tone}`}>
-      {copy}
-    </span>
-  )
-}
-
-function CandidateSummary({
-  transaction,
-  showDescription = false,
-  linked = true,
-}: {
-  transaction: BankReconciliationTransaction
-  showDescription?: boolean
-  linked?: boolean
-}) {
-  const title = transaction.title || "Untitled transaction"
-  return (
-    <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
-      <span className="min-w-0">
-        {linked ? (
-          <Link
-            to={`/transactions/${transaction.id}`}
-            className="block truncate text-sm font-semibold text-text underline-offset-2 hover:underline"
-          >
-            {title}
-          </Link>
-        ) : (
-          <span className="block truncate text-sm font-semibold text-text">{title}</span>
-        )}
-        <span className="mt-0.5 block truncate text-xs text-muted">
-          {transactionDateLabel(transaction)}
-          {transaction.category ? ` · ${transaction.category}` : ""}
-        </span>
-        {showDescription && transaction.description ? (
-          <span className="mt-1 block truncate text-xs text-muted">{transaction.description}</span>
-        ) : null}
-      </span>
-      <strong className={`shrink-0 font-mono text-sm font-semibold ${amountTone(transaction.signed_amount_cents)}`}>
-        {formatCurrency(transaction.signed_amount_cents)} €
-      </strong>
-    </div>
-  )
-}
-
-function BankReference({ row }: { row: BankStatementRow }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-y border-border py-3">
-      <span className="min-w-0">
-        <strong className="block truncate text-sm">{rowTitle(row)}</strong>
-        <span className="font-mono text-xs text-muted">{formatEuroDate(row.booking_date)} booked</span>
-      </span>
-      <strong className={`shrink-0 font-mono ${amountTone(row.amount_cents)}`}>
-        {formatCurrency(row.amount_cents)} {row.currency}
-      </strong>
-    </div>
-  )
-}
-
-function CreateTransactionDialog({
-  row,
-  categories,
-  pending,
-  errorMessage,
-  onClose,
-  onSubmit,
-}: {
-  row: BankStatementRow
-  categories: CategoriesResponse["categories"]
-  pending: boolean
-  errorMessage: string
-  onClose: () => void
-  onSubmit: (payload: CreateTransactionPayload) => void
-}) {
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const [title, setTitle] = useState(rowTitle(row))
-  const [date, setDate] = useState(row.value_date ?? row.booking_date)
-  const [categoryId, setCategoryId] = useState("")
-  const [description, setDescription] = useState(row.purpose ?? row.raw_description)
-  const transactionType = row.amount_cents >= 0 ? "income" : "expense"
-  const availableCategories = categories.filter(
-    (category) => category.archived_at === null && category.type === transactionType
-  )
-  const selectedCategory = availableCategories.find(
-    (category) => String(category.id) === categoryId
-  )
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!title.trim()) return
-    onSubmit({
-      date,
-      category_id: categoryId ? Number(categoryId) : null,
-      title: title.trim(),
-      description: description.trim() || null,
-    })
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        aria-label="Create transaction"
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault()
-          titleInputRef.current?.focus()
-        }}
-      >
-        <DialogHeader>
-          <div>
-            <DialogTitle>Create transaction</DialogTitle>
-            <DialogDescription className="sr-only">
-              Edit the transaction details before creating and matching it.
-            </DialogDescription>
-          </div>
-          <DialogClose asChild>
-            <AppButton
-              type="button"
-              tone="ghost"
-              className="h-10 w-10 rounded-full p-0"
-              aria-label="Close"
-              disabled={pending}
-            >
-              <XIcon className="h-4 w-4" />
-            </AppButton>
-          </DialogClose>
-        </DialogHeader>
-
-        <BankReference row={row} />
-
-        <form onSubmit={submit} className="mt-4 space-y-3">
-          <AppFieldLabel>
-            <span>Title</span>
-            <AppInput
-              ref={titleInputRef}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              required
-            />
-          </AppFieldLabel>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AppFieldLabel>
-              <span>Transaction date</span>
-              <AppInput
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                required
-              />
-            </AppFieldLabel>
-            <AppFieldLabel>
-              <span>Category</span>
-              <div className="flex items-center gap-2">
-                <CategoryIcon
-                  icon={selectedCategory?.icon ?? null}
-                  label={selectedCategory?.name ?? "Uncategorized"}
-                />
-                <AppNativeSelect
-                  value={categoryId}
-                  onChange={(event) => setCategoryId(event.target.value)}
+              <MenuItem checked={account === null} onSelect={() => update({ account: null, page: null, peek: null })}>
+                All accounts
+              </MenuItem>
+              {accounts.map((entry) => (
+                <MenuItem
+                  key={entry.label}
+                  checked={account === entry.label}
+                  onSelect={() => update({ account: entry.label, page: null, peek: null })}
                 >
-                  <option value="">Uncategorized</option>
-                  {availableCategories.map((category) => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </AppNativeSelect>
-              </div>
-            </AppFieldLabel>
-          </div>
-
-          <AppFieldLabel>
-            <span>Description (optional)</span>
-            <AppTextarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={3}
-            />
-          </AppFieldLabel>
-
-          {errorMessage ? (
-            <p className="text-sm text-semantic-red" role="alert">{errorMessage}</p>
+                  {entry.label}
+                </MenuItem>
+              ))}
+            </Menu>
           ) : null}
-
-          <DialogFooter className="flex-col-reverse justify-end sm:flex-row">
-            <AppButton type="button" tone="ghost" onClick={onClose} disabled={pending}>
-              Cancel
-            </AppButton>
-            <AppButton type="submit" disabled={pending || !title.trim() || !date}>
-              <PlusIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
-              {pending ? "Creating…" : "Create and match"}
-            </AppButton>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function MatchTransactionDialog({
-  row,
-  pending,
-  errorMessage,
-  onClose,
-  onCreate,
-  onSubmit,
-}: {
-  row: BankStatementRow
-  pending: boolean
-  errorMessage: string
-  onClose: () => void
-  onCreate: () => void
-  onSubmit: (transaction: BankReconciliationTransaction) => void
-}) {
-  const [selectedId, setSelectedId] = useState(row.candidates[0]?.id ?? null)
-  const selected = row.candidates.find((candidate) => candidate.id === selectedId)
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        aria-label="Choose transaction"
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5"
-      >
-        <DialogHeader>
-          <div>
-            <DialogTitle>Choose transaction</DialogTitle>
-            <DialogDescription className="sr-only">
-              Select an existing transaction to match with this bank row.
-            </DialogDescription>
-          </div>
-          <DialogClose asChild>
-            <AppButton
-              type="button"
-              tone="ghost"
-              className="h-10 w-10 rounded-full p-0"
-              aria-label="Close"
-              disabled={pending}
+          {view === "resolved" ? (
+            <Menu
+              label="Outcome"
+              align="start"
+              trigger={
+                <Pill icon={FunnelIcon} set={outcome !== null} aria-label={`Outcome: ${outcome ? OUTCOMES[outcome].label : "All outcomes"}`}>
+                  {isDesktop || outcome ? (outcome ? OUTCOMES[outcome].label : "All outcomes") : null}
+                </Pill>
+              }
             >
-              <XIcon className="h-4 w-4" />
-            </AppButton>
-          </DialogClose>
-        </DialogHeader>
-
-        <BankReference row={row} />
-
-        <fieldset className="mt-4 space-y-2">
-          <legend className="sr-only">Possible transactions</legend>
-          {row.candidates.map((candidate) => (
-            <label
-              key={candidate.id}
-              className={`block w-full cursor-pointer rounded-xl border p-3.5 text-left transition-[border-color,background-color,transform] focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2 active:scale-[0.99] ${
-                selectedId === candidate.id
-                  ? "border-accent bg-accent/10"
-                  : "border-border bg-surface-hi hover:border-border-hi"
-              }`}
-            >
-              <input
-                type="radio"
-                name={`reconciliation-match-${row.id}`}
-                value={candidate.id}
-                checked={selectedId === candidate.id}
-                onChange={() => setSelectedId(candidate.id)}
-                className="sr-only"
-                disabled={pending}
+              <MenuItem checked={outcome === null} onSelect={() => update({ outcome: null, page: null, peek: null })}>
+                All outcomes
+              </MenuItem>
+              {(Object.keys(OUTCOMES) as BankRowResolution[]).map((key) => (
+                <MenuItem
+                  key={key}
+                  icon={OUTCOMES[key].icon}
+                  checked={outcome === key}
+                  onSelect={() => update({ outcome: key, page: null, peek: null })}
+                >
+                  {OUTCOMES[key].label}
+                </MenuItem>
+              ))}
+            </Menu>
+          ) : null}
+        </ViewRow>
+      }
+    >
+      <PeekLayout
+        main={
+          <List label={view === "open" ? "Bank rows to review" : "Resolved bank rows"} footer={footer}>
+            {view === "open"
+              ? BANDS.map((band) => {
+                  const bandRows = items.filter((row) => row.status === band.status)
+                  if (!bandRows.length) return null
+                  return [
+                    <DayBand
+                      key={band.status}
+                      label={band.label}
+                      count={bandRows.length}
+                      end={
+                        band.status === "suggested" ? (
+                          <Button variant="ghost" icon={ChecksIcon} disabled={pending} onClick={() => void matchAll(bandRows)}>
+                            Match all
+                          </Button>
+                        ) : undefined
+                      }
+                    />,
+                    ...bandRows.map((row) => openRow(row, band.status)),
+                  ]
+                })
+              : items.map(resolvedRow)}
+          </List>
+        }
+        peek={
+          peekRow ? (
+            view === "open" ? (
+              <OpenRowPeek
+                key={peekRow.id}
+                row={peekRow}
+                pending={pending}
+                onClose={closePeek}
+                onMatch={(transaction, setAmount) => void matchTransaction(peekRow, transaction, setAmount)}
+                onCreate={() => startCreate(peekRow)}
+                onIgnore={(reason) => void ignore(peekRow, reason).then(reportFailure)}
+                onOtherReason={() => startIgnore(peekRow)}
               />
-              <CandidateSummary transaction={candidate} showDescription linked={false} />
-            </label>
-          ))}
-        </fieldset>
-
-        {errorMessage ? (
-          <p className="mt-3 text-sm text-semantic-red" role="alert">{errorMessage}</p>
-        ) : null}
-
-        <DialogFooter className="flex-col-reverse justify-between sm:flex-row">
-          <AppButton type="button" tone="ghost" onClick={onCreate} disabled={pending}>
-            Create new instead
-          </AppButton>
-          <AppButton
-            type="button"
-            disabled={pending || !selected}
-            onClick={() => selected && onSubmit(selected)}
-          >
-            <LinkSimpleIcon data-icon="inline-start" className="h-4 w-4" weight="bold" />
-            {pending ? "Matching…" : "Match selected"}
-          </AppButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            ) : (
+              <ResolvedRowPeek
+                key={peekRow.id}
+                row={peekRow}
+                pending={pending}
+                onClose={closePeek}
+                onReopen={() => (peekRow.resolution === "created" ? setReopening(peekRow) : void reopenRow(peekRow, false))}
+              />
+            )
+          ) : null
+        }
+      />
+      {importing ? (
+        <ImportStatementDialog
+          accounts={accounts}
+          onClose={() => setImporting(false)}
+          onImported={(imported, duplicates) => {
+            setImporting(false)
+            void queryClient.invalidateQueries({ queryKey: ["reconciliation"] })
+            update({ view: null, outcome: null, page: null, peek: null })
+            showToast({
+              message: duplicates
+                ? `Imported ${plural(imported, "row")} · ${duplicates} already imported`
+                : `Imported ${plural(imported, "row")}`,
+            })
+          }}
+        />
+      ) : null}
+      {creating ? (
+        <CreateFromRowDialog
+          key={creating.id}
+          row={creating}
+          pending={pending}
+          error={dialogError}
+          onClose={() => setCreating(null)}
+          onSubmit={(payload, receipt) => void createFromRow(creating, payload, receipt)}
+        />
+      ) : null}
+      {ignoring ? (
+        <IgnoreReasonDialog
+          key={ignoring.id}
+          row={ignoring}
+          pending={pending}
+          error={dialogError}
+          onClose={() => setIgnoring(null)}
+          onSubmit={(reason) =>
+            void ignore(ignoring, reason).then((error) => {
+              if (error) setDialogError(error)
+              else setIgnoring(null)
+            })
+          }
+        />
+      ) : null}
+      {reopening ? (
+        <ReopenCreatedDialog
+          transactionTitle={reopening.suggested_transaction ? candidateTitle(reopening.suggested_transaction) : bankRowTitle(reopening)}
+          pending={pending}
+          onClose={() => setReopening(null)}
+          onReopen={(trash) => void reopenRow(reopening, trash)}
+        />
+      ) : null}
+    </Panel>
   )
 }
 

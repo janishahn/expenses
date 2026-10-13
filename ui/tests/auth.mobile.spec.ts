@@ -7,9 +7,9 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
   }) => {
     await page.goto("/")
     await expect(page).toHaveURL(/\/setup(?:\?|$)/)
-    await expect(page.getByTestId("setup-form")).toBeVisible()
-    await page.getByTestId("auth-username").fill(ADMIN_USER.username)
-    await page.getByTestId("auth-password").fill(ADMIN_USER.password)
+    await expect(page.getByRole("heading", { name: "Create the admin account" })).toBeVisible()
+    await page.getByLabel("Username").fill(ADMIN_USER.username)
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
 
     const width = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,
@@ -17,7 +17,7 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
     }))
     expect(width.scroll).toBeLessThanOrEqual(width.client)
 
-    await page.getByTestId("auth-submit").click()
+    await page.getByRole("button", { name: "Create account" }).click()
     await expect(page).toHaveURL(/\/(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
   })
@@ -25,14 +25,16 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
   test("signs up and logs in from the mobile auth surfaces", async ({ page }) => {
     const username = `mobile-user-${Date.now()}`
     await page.goto("/signup")
-    await page.getByTestId("auth-username").fill(username)
-    await page.getByTestId("auth-password").fill("hunter22")
-    await page.getByTestId("auth-submit").click()
+    await expect(page.getByRole("heading", { name: "Create account" })).toBeVisible()
+    await page.getByLabel("Username").fill(username)
+    await page.getByLabel("Password").fill("hunter22")
+    await page.getByRole("button", { name: "Create account" }).click()
     await expect(page).toHaveURL(/\/login/)
+    await expect(page.getByRole("status")).toHaveText("Account created. Sign in to continue.")
 
-    await page.getByTestId("auth-username").fill(username)
-    await page.getByTestId("auth-password").fill("hunter22")
-    await page.getByTestId("auth-submit").click()
+    await page.getByLabel("Username").fill(username)
+    await page.getByLabel("Password").fill("hunter22")
+    await page.getByRole("button", { name: "Sign in" }).click()
     await expect(page).toHaveURL(/\/(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
   })
@@ -42,20 +44,16 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
   }) => {
     await page.goto("/")
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
-    await page.getByTestId("auth-username").fill(ADMIN_USER.username)
-    await page.getByTestId("auth-password").fill(ADMIN_USER.password)
-    await page.getByTestId("auth-submit").click()
+    await page.getByLabel("Username").fill(ADMIN_USER.username)
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
+    await page.getByRole("button", { name: "Sign in" }).click()
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
 
-    await page.getByRole("button", { name: "Open menu" }).click()
-    const sidebar = page.getByRole("complementary", { name: "Application menu" })
-    await expect(sidebar).toBeVisible()
-    const settingsLink = sidebar.getByRole("link", { name: "Settings" })
-    await settingsLink.scrollIntoViewIfNeeded()
-    await settingsLink.click()
-    await expect(page.getByTestId("settings-page")).toBeVisible()
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "More" }).click()
+    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Settings" }).click()
+    await expect(page.locator("main h1")).toHaveText("Settings")
 
-    await page.getByTestId("auth-logout").click()
+    await page.getByRole("button", { name: "Sign out" }).click()
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
 
@@ -63,9 +61,13 @@ test.describe.serial("Authentication surfaces (mobile)", () => {
     await expect(page).toHaveURL(/\/login\?redirect=/)
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
 
-    await page.getByTestId("auth-username").fill(ADMIN_USER.username)
-    await page.getByTestId("auth-password").fill(ADMIN_USER.password)
-    await page.getByTestId("auth-submit").click()
+    await page.getByLabel("Username").fill(ADMIN_USER.username)
+    await page.getByLabel("Password").fill("wrong-password")
+    await page.getByRole("button", { name: "Sign in" }).click()
+    await expect(page.getByRole("alert")).toHaveText("Invalid username or password")
+
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
+    await page.getByRole("button", { name: "Sign in" }).click()
     await expect(page).toHaveURL(/\/transactions(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toBeVisible()
   })

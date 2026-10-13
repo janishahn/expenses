@@ -1,195 +1,140 @@
-import { useQuery } from "@tanstack/react-query"
-import { useParams } from "react-router-dom"
-import { apiFetch, isApiErrorStatus } from "../app/api"
-import { formatCurrency, formatEuroDate, formatEuroDateTime } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { useNavigate, useParams } from "react-router-dom"
+import { apiFetch, getApiErrorMessage, isApiErrorStatus } from "../app/api"
+import { confirmDialog } from "../components/confirm"
+import { Amount } from "../components/ui/Amount"
+import { IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { EmptyState } from "../components/ui/EmptyState"
+import { AmountCell, Cell, List, Row } from "../components/ui/LedgerRow"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading } from "../components/ui/Panel"
+import { MetricStrip, Sheet } from "../components/ui/Sheet"
+import { FieldError } from "../components/ui/TextField"
+import { fullDate, repeatsText, ruleLabel, type OccurrencesResponse } from "./recurring-rule"
 
-type OccurrenceRule = {
-  id: number
-  name: string | null
-  type: string
-  currency_code: string
-  amount_cents: number
-  category: { id: number; name: string; type: string; icon?: string | null } | null
-  interval_unit: string
-  interval_count: number
-  anchor_date: string
-  next_occurrence: string
-  end_date: string | null
-  auto_post: boolean
+const PARENTS = [{ label: "Recurring", to: "/recurring" }]
+const OCCURRENCE_COLUMNS = {
+  columns: "110px 18px minmax(0, 1fr) auto",
+  mobileColumns: "96px 18px minmax(0, 1fr) auto",
 }
 
-type OccurrenceRow = {
-  id: number
-  occurrence_date: string | null
-  amount_cents: number
-  category: { id: number; name: string } | null
-  title: string | null
-  created_at: string | null
-}
-
-type OccurrencesResponse = {
-  rule: OccurrenceRule
-  occurrences: OccurrenceRow[]
-}
-
+// Every transaction a recurring rule has posted, newest first.
 function RecurringOccurrencesPage() {
   const { ruleId } = useParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["recurring", ruleId, "occurrences"],
-    queryFn: () =>
-      apiFetch<OccurrencesResponse>(`/api/recurring/${ruleId}/occurrences`),
+    queryKey: ["recurring", Number(ruleId), "occurrences"],
+    queryFn: () => apiFetch<OccurrencesResponse>(`/api/recurring/${ruleId}/occurrences`),
     enabled: Boolean(ruleId),
+  })
+  const remove = useMutation({
+    mutationFn: () => apiFetch(`/api/recurring/${ruleId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recurring"] })
+      navigate("/recurring", { replace: true })
+    },
   })
 
   if (!ruleId || isApiErrorStatus(error, 404)) {
     return (
-      <RouteError
-        title="Occurrences"
+      <PanelError
+        title="Recurring rule"
+        parents={PARENTS}
         message="Rule not found."
-        returnHref="/recurring"
-        returnLabel="Back to recurring"
+        returnTo={{ label: "Back to recurring", to: "/recurring" }}
       />
     )
   }
-  if (isLoading) {
-    return <RouteLoading title="Occurrences" label="Loading occurrences…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Occurrences" message="Unable to load occurrences." />
-  }
+  if (isLoading) return <PanelLoading title="Recurring rule" parents={PARENTS} label="Loading occurrences…" />
+  if (error || !data) return <PanelError title="Recurring rule" parents={PARENTS} message="Unable to load occurrences." />
 
   const { rule, occurrences } = data
-  const symbol = rule.currency_code === "USD" ? "$" : "€"
+  const label = ruleLabel(rule)
+  const total = occurrences.reduce((sum, occurrence) => sum + occurrence.amount_cents, 0)
 
   return (
-    <section className="space-y-6">
-      <PageIntro
-        title={rule.name || `Rule #${rule.id}`}
-        backHref="/recurring"
-        backLabel="← Back to recurring"
+    <Panel
+      title={label}
+      parents={PARENTS}
+      actions={
+        <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+          <MenuItem
+            icon={TrashIcon}
+            danger
+            onSelect={async () => {
+              if (await confirmDialog({ title: `Delete recurring rule "${label}"?`, confirmLabel: "Delete", tone: "danger" })) {
+                remove.mutate()
+              }
+            }}
+          >
+            Delete rule
+          </MenuItem>
+        </Menu>
+      }
+    >
+      {remove.isError ? <FieldError>{getApiErrorMessage(remove.error, "Unable to delete the rule.")}</FieldError> : null}
+      <MetricStrip
+        metrics={[
+          {
+            label: "Amount",
+            value: <Amount cents={rule.amount_cents} kind={rule.type} currency={rule.currency_code} />,
+            detail: repeatsText(rule.interval_unit, rule.interval_count).toLowerCase(),
+          },
+          { label: "Next", value: fullDate(rule.next_occurrence), detail: `since ${fullDate(rule.anchor_date)}` },
+          {
+            label: "Posting",
+            value: rule.auto_post ? "Automatic" : "Manual",
+            detail: rule.end_date ? `until ${fullDate(rule.end_date)}` : "no end date",
+          },
+          {
+            label: "Posted",
+            value: String(occurrences.length),
+            detail: occurrences.length ? (
+              <>
+                <Amount cents={total} kind={rule.type} /> in total
+              </>
+            ) : (
+              "nothing yet"
+            ),
+          },
+        ]}
       />
-
-      <div
-        data-testid="recurring-occurrence-summary"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <MetricLane tone={rule.type === "income" ? "income" : "expense"}>
-          <p className="text-xs font-semibold text-muted">Commitment</p>
-          <p className="mt-3 font-mono text-2xl font-semibold tabular-nums text-text">
-            {formatCurrency(rule.amount_cents)} {symbol}
-          </p>
-          <p className="mt-1 capitalize text-xs text-muted">{rule.type}</p>
-        </MetricLane>
-        <MetricLane tone="plan">
-          <div className="flex items-center gap-2.5">
-            <CategoryIcon
-              icon={rule.category?.icon ?? null}
-              label={rule.category?.name}
-            />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-muted">Category</p>
-              <p className="truncate font-semibold text-text">
-                {rule.category?.name ?? "Uncategorized"}
-              </p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-muted">
-            Every {rule.interval_count} {rule.interval_unit}
-            {rule.interval_count > 1 ? "s" : ""}
-          </p>
-        </MetricLane>
-        <MetricLane tone="warning">
-          <p className="text-xs font-semibold text-muted">Next occurrence</p>
-          <p className="mt-3 font-mono text-lg font-semibold text-text">
-            {formatEuroDate(rule.next_occurrence)}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            Started {formatEuroDate(rule.anchor_date)}
-          </p>
-        </MetricLane>
-        <MetricLane tone="neutral">
-          <p className="text-xs font-semibold text-muted">Posting</p>
-          <p className="mt-3 font-semibold text-text">
-            {rule.auto_post ? "Automatic" : "Manual"}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            {rule.end_date
-              ? `Ends ${formatEuroDate(rule.end_date)}`
-              : "No end date"}
-          </p>
-        </MetricLane>
-      </div>
-
-      <FinancialPanel role="ledger" data-testid="recurring-occurrence-ledger">
-        <SectionHeading>
-          <h2 className="font-head text-lg font-bold">Posted transactions</h2>
-          <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-            {occurrences.length}
-          </span>
-        </SectionHeading>
-        <div className="overflow-x-auto">
-          {occurrences.length ? (
-            <table className="w-full text-sm">
-              <thead className="border-b border-border text-left text-xs uppercase text-muted">
-                <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {occurrences.map((txn) => (
-                  <tr key={txn.id} className="transition-colors hover:bg-faint/60">
-                    <td className="px-4 py-3 text-text">
-                      {txn.occurrence_date
-                        ? formatEuroDate(txn.occurrence_date)
-                        : "-"}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-text">
-                      {formatCurrency(txn.amount_cents)} {symbol}
-                    </td>
-                    <td className="px-4 py-3 text-muted">
-                      <span className="inline-flex items-center gap-2">
-                        <CategoryIcon
-                          icon={null}
-                          label={txn.category?.name}
-                          className="h-8 w-8"
-                        />
-                        {txn.category?.name ?? "Uncategorized"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted">
-                      {txn.title ?? "-"}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted">
-                      {txn.created_at
-                        ? formatEuroDateTime(txn.created_at)
-                        : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="px-4 py-6 text-center text-sm text-muted">
-              No occurrences posted yet.
-            </p>
-          )}
-        </div>
-      </FinancialPanel>
-    </section>
+      {occurrences.length ? (
+        <List scroll={false} label="Posted transactions">
+          {occurrences.map((occurrence) => {
+            const category = occurrence.category ?? rule.category
+            return (
+              <Row
+                key={occurrence.id}
+                {...OCCURRENCE_COLUMNS}
+                label={`${occurrence.title ?? label}, ${occurrence.occurrence_date ? fullDate(occurrence.occurrence_date) : "no date"}`}
+                onOpen={() => navigate(`/transactions/${occurrence.id}`)}
+              >
+                <Cell tone="muted">{occurrence.occurrence_date ? fullDate(occurrence.occurrence_date) : "–"}</Cell>
+                <CategoryGlyph
+                  categoryId={category?.id}
+                  icon={category?.id === rule.category?.id ? rule.category?.icon : null}
+                  name={category?.name}
+                />
+                <Cell>{occurrence.title ?? label}</Cell>
+                <AmountCell>
+                  <Amount cents={occurrence.amount_cents} kind={rule.type} />
+                </AmountCell>
+              </Row>
+            )
+          })}
+        </List>
+      ) : (
+        <Sheet>
+          <EmptyState inline>No occurrences posted yet.</EmptyState>
+        </Sheet>
+      )}
+    </Panel>
   )
 }
 

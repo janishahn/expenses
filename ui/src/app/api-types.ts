@@ -9,6 +9,9 @@ export type CategoryListItem = CategorySummary & {
   archived_at: string | null
   order?: number
   usage_count?: number
+  // Sums for the requested period.
+  expense_cents?: number
+  income_cents?: number
 }
 
 export type CategoriesResponse = {
@@ -36,6 +39,14 @@ export type TransactionTag = {
   name: string
 }
 
+export type TagOption = {
+  id: number
+  name: string
+  auto_attach_period: { start: string; end: string } | null
+}
+
+export type TagsResponse = { tags: TagOption[] }
+
 export type TransactionListItem = {
   id: number
   date: string
@@ -54,8 +65,29 @@ export type TransactionListItem = {
   has_attachments?: boolean
 }
 
+export type TransactionsResponse = {
+  items: TransactionListItem[]
+  page: number
+  limit: number
+  has_more: boolean
+  total: number
+  period: { slug: string; start: string; end: string }
+  filters: {
+    type: string | null
+    category_id: number | null
+    tag_id: number | null
+    included_tag_ids: number[]
+    excluded_tag_ids: number[]
+    query: string | null
+  }
+  categories: CategorySummary[]
+  tags: TransactionTag[]
+}
+
 export type TransactionRouteState = {
   returnTo?: string
+  // The breadcrumb name of returnTo; Transactions when unset.
+  returnLabel?: string
   hasOriginContext?: boolean
 }
 
@@ -74,13 +106,22 @@ export type ReceiptAttachment = {
   created_at: string
 }
 
+export type TransactionBankRow = {
+  id: number
+  account_label: string
+  booking_date: string
+}
+
 export type TransactionDetail = {
   id: number
   date: string
   occurred_at: string | null
   type: string
   amount_cents: number
-  category_id: number
+  net_amount_cents: number
+  reimbursed_total_cents: number
+  created_at: string
+  category_id: number | null
   category: CategorySummary | null
   title: string
   description: string | null
@@ -90,6 +131,7 @@ export type TransactionDetail = {
   tags: string[]
   durable_purchase: DurablePurchase | null
   attachments: ReceiptAttachment[]
+  bank_row: TransactionBankRow | null
 }
 
 export type ReimbursementTransactionSummary = {
@@ -152,12 +194,14 @@ export type ReimbursementExpenseSearchResponse = {
 export type BankReconciliationTransaction = {
   id: number
   date: string
-  type: string
+  type: "income" | "expense"
   amount_cents: number
   signed_amount_cents: number
   title: string | null
   description: string | null
   category: string | null
+  category_id: number | null
+  category_icon: string | null
   date_delta_days: number
 }
 
@@ -167,6 +211,8 @@ export type BankStatementRowStatus =
   | "ambiguous"
   | "missing"
   | "reviewed"
+
+export type BankRowResolution = "matched" | "created" | "ignored"
 
 export type BankStatementRow = {
   id: number
@@ -180,26 +226,26 @@ export type BankStatementRow = {
   purpose: string | null
   raw_description: string
   reviewed_at: string | null
+  resolution: BankRowResolution | null
+  resolved_at: string | null
+  ignore_reason: string | null
   status: BankStatementRowStatus
   candidate_count: number
   candidates: BankReconciliationTransaction[]
   suggested_transaction: BankReconciliationTransaction | null
 }
 
-export type BankReconciliationSummary = {
-  row_count: number
-  unresolved_count: number
-  suggested_count: number
-  matched_count: number
-  reviewed_count: number
-  bank_total_cents: number
-  only_in_expenses_count: number
+export type BankRowsPage = {
+  items: BankStatementRow[]
+  total: number
+  page: number
+  limit: number
 }
 
-export type BankReconciliationResponse = {
-  summary: BankReconciliationSummary
-  rows: BankStatementRow[]
-  only_in_expenses: BankReconciliationTransaction[]
+export type BankAccount = {
+  label: string
+  row_count: number
+  last_import_at: string | null
 }
 
 export type BankStatementPreviewRow = {

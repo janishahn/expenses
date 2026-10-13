@@ -80,6 +80,14 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             icon="arrow-u-up-left",
             order=3,
         )
+        dismissed_category = Category(
+            user_id=1,
+            name="Commute",
+            type=TransactionType.expense,
+            color="#345678",
+            icon="train",
+            order=4,
+        )
         tag = Tag(
             user_id=1,
             name="Client",
@@ -89,7 +97,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             auto_attach_start_date=date(2026, 1, 10),
             auto_attach_end_date=date(2026, 1, 20),
         )
-        session.add_all([expense_category, income_category, tag])
+        session.add_all([expense_category, income_category, dismissed_category, tag])
         session.flush()
 
         recurring = RecurringRule(
@@ -126,6 +134,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             fx_fetched_at=datetime(2026, 1, 11, 18, 0),
             category_id=expense_category.id,
             auto_category_confidence=0.91,
+            category_suggestion_dismissed_id=dismissed_category.id,
             title="Client train",
             description=None,
             latitude=Decimal("52.520008"),
@@ -221,6 +230,9 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                     import_hash="a" * 64,
                     matched_transaction_id=expense.id,
                     reviewed_at=datetime(2026, 1, 14, 8, 0),
+                    resolution="ignored",
+                    resolved_at=datetime(2026, 1, 14, 8, 0),
+                    ignore_reason="Duplicate of a card slip",
                 ),
                 TransactionClassificationEvent(
                     user_id=1,
@@ -297,6 +309,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                 "occurrence_date",
                 "tag_ids",
                 "auto_category_confidence",
+                "category_suggestion_dismissed_id",
             ):
                 assert field_name in transaction_properties
 
@@ -312,10 +325,19 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             assert expense_export["deleted_at"] is None
             assert expense_export["tag_ids"] == [tag.id]
             assert expense_export["auto_category_confidence"] == 0.91
+            assert (
+                expense_export["category_suggestion_dismissed_id"]
+                == dismissed_category.id
+            )
             reimbursement_export = next(
                 row for row in transactions if row["id"] == reimbursement.id
             )
             assert reimbursement_export["auto_category_confidence"] is None
+
+            bank_rows = _read_ndjson(archive, "data/bank_statement_rows.ndjson")
+            assert bank_rows[0]["resolution"] == "ignored"
+            assert bank_rows[0]["resolved_at"] == "2026-01-14T08:00:00"
+            assert bank_rows[0]["ignore_reason"] == "Duplicate of a card slip"
 
             tags = _read_ndjson(archive, "data/tags.ndjson")
             assert tags == [

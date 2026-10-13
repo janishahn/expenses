@@ -25,6 +25,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -58,7 +59,11 @@ from expenses.auth import (
     verify_password,
 )
 from expenses.ai.client import LLMDisabledError
-from expenses.services.auto_categorization import settings_for, train_user
+from expenses.services.auto_categorization import (
+    settings_for,
+    suggestions_for,
+    train_user,
+)
 from expenses.ai.schemas import (
     RuleSuggestionOut,
     TransactionSuggestionOut,
@@ -87,6 +92,7 @@ from expenses.exporters import PortableExportError, PortableExportService
 from expenses.importers.legacy_sqlite import LegacySQLiteImportService
 from expenses.db.models import (
     AutoCategorizationPreference,
+    BankStatementRow,
     Category,
     LLMJob,
     MobileAuthSession,
@@ -109,14 +115,23 @@ from expenses.schemas import (
     AdminLogsResponseOut,
     AdminPurgeDeletedIn,
     AdminPurgeDeletedOut,
+    AdminPurgeDeletedPreviewOut,
     AdminRebuildRollupsOut,
     AdminRecurringCatchUpOut,
     AdminSystemHealthOut,
     AIUsageSummaryOut,
     AuthCredentialsIn,
+    BalanceHistoryResponseOut,
+    BankAcceptSuggestionsIn,
+    BankAcceptSuggestionsOut,
+    BankAccountsResponseOut,
     BankReconciliationResponseOut,
     BankRowActionResponseOut,
+    BankRowCandidatesOut,
+    BankRowIgnoreIn,
     BankRowMatchIn,
+    BankRowReopenIn,
+    BankRowsPageOut,
     BankStatementImportResponseOut,
     BankStatementPreviewResponseOut,
     BankTransactionCreateIn,
@@ -129,6 +144,7 @@ from expenses.schemas import (
     BudgetTemplateIn,
     BudgetTemplateMutationOut,
     BudgetsResponseOut,
+    CategorySuggestionDismissIn,
     CategoryMergeIn,
     CategoryMergeResponseOut,
     CategoryIn,
@@ -146,7 +162,11 @@ from expenses.schemas import (
     IdOut,
     IngestTransactionIn,
     IngestTransactionOut,
+    InsightsBudgetHistoryResponseOut,
+    InsightsDayCalendarResponseOut,
     InsightsFlowResponseOut,
+    InsightsMonthGridResponseOut,
+    InsightsRecurringSplitResponseOut,
     InsightsResponseOut,
     CSVCommitResponseOut,
     CSVPreviewResponseOut,
@@ -188,7 +208,10 @@ from expenses.schemas import (
     TagsResponseOut,
     TransactionIn,
     TransactionDetailOut,
+    TransactionIdsIn,
+    TransactionsPurgedOut,
     TransactionsResponseOut,
+    TransactionsRestoredOut,
     TransactionTemplateOut,
     TemplatesResponseOut,
     TransactionTemplateIn,
@@ -221,6 +244,7 @@ from expenses.services import (
 from expenses.services.bank_reconciliation import (
     BankReconciliationService,
     BankRowAlreadyResolvedError,
+    BankRowChangedError,
     BankRowNotFoundError,
 )
 from expenses.reports.pdf_renderer import render_report_html
@@ -1297,6 +1321,7 @@ def _resolve_bulk_transactions(
     txn_service = TransactionService(db, user_id=user_id)
     lifecycle = payload.operation.lifecycle
     include_deleted = lifecycle == "restore"
+    expected_category_id = payload.operation.expected_category_id
 
     if payload.selection.mode == "ids":
         requested_ids = [int(i) for i in payload.selection.transaction_ids]
@@ -1318,6 +1343,8 @@ def _resolve_bulk_transactions(
             stmt = stmt.where(Transaction.deleted_at.isnot(None))
         else:
             stmt = stmt.where(Transaction.deleted_at.is_(None))
+        if expected_category_id is not None:
+            stmt = stmt.where(Transaction.category_id == expected_category_id)
         transactions = db.scalars(stmt).unique().all()
         return transactions, len(requested_ids) - len(transactions)
 
@@ -1347,6 +1374,9 @@ def _resolve_bulk_transactions(
             status_code=400,
             detail=f"Selection exceeds maximum of {max_items} transactions",
         )
+    if expected_category_id is not None:
+        kept = [row for row in rows if row.category_id == expected_category_id]
+        return kept, len(rows) - len(kept)
     return rows, 0
 
 
@@ -1444,16 +1474,42 @@ async def api_ingest(
     )
 
 
+def _months_param(request: Request, *, default: int) -> int:
+    raw = request.query_params.get("months")
+    if raw is None:
+        return default
+    if raw not in {"6", "12"}:
+        raise HTTPException(status_code=422, detail="months must be 6 or 12")
+    return int(raw)
+
+
+@router.get("/api/dashboard/balance-history", response_model=BalanceHistoryResponseOut)
+def api_dashboard_balance_history(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    months = _months_param(request, default=12)
+    now = datetime.now(ZoneInfo(get_settings().timezone)).replace(tzinfo=None)
+    history = BalanceAnchorService(db, user_id=user_id).month_end_history(
+        months=months, now=now
+    )
+    return {
+        "months": [
+            {"month": f"{start.year:04d}-{start.month:02d}", "balance_cents": balance}
+            for start, balance in history
+        ]
+    }
+
+
 @router.get("/api/category-breakdown")
 def api_category_breakdown(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
+    months = _months_param(request, default=6)
     if request.query_params.get("view") == "monthly":
         return {
             "months": InsightsService(db, user_id=user_id).monthly_category_bands(
                 end=period.end,
-                months_back=6,
+                months_back=months,
                 tag_ids=list(filters.included_tag_ids),
                 excluded_tag_ids=filters.excluded_tag_ids,
             )
@@ -1463,7 +1519,7 @@ def api_category_breakdown(request: Request, db: Session = Depends(get_db)):
         tag_ids=list(filters.included_tag_ids),
         excluded_tag_ids=filters.excluded_tag_ids,
     )
-    return data
+    return [{**item, "category_id": item["id"]} for item in data]
 
 
 @router.get("/api/categories", response_model=CategoriesResponseOut)
@@ -1488,6 +1544,20 @@ def api_categories(request: Request, db: Session = Depends(get_db)):
         )
     usage_rows = db.execute(usage_stmt).all()
     usage_map = {row.category_id: int(row.usage or 0) for row in usage_rows}
+    insights_service = InsightsService(db, user_id=user_id)
+    period_end = date.max if period.slug == "all" else period.end
+    expense_map = insights_service.grouped_amounts(
+        TransactionType.expense,
+        period.start,
+        period_end,
+        lambda txn: [txn.category_id],
+    )
+    income_map = insights_service.grouped_amounts(
+        TransactionType.income,
+        period.start,
+        period_end,
+        lambda txn: [txn.category_id],
+    )
     return {
         "period": {
             "slug": period.slug,
@@ -1505,6 +1575,8 @@ def api_categories(request: Request, db: Session = Depends(get_db)):
                     category.archived_at.isoformat() if category.archived_at else None
                 ),
                 "usage_count": int(usage_map.get(category.id, 0)),
+                "expense_cents": expense_map.get((category.id,), 0),
+                "income_cents": income_map.get((category.id,), 0),
             }
             for category in categories
         ],
@@ -1643,6 +1715,22 @@ def api_tags(
         )
     usage_rows = db.execute(usage_stmt).all()
     usage_map = {row.tag_id: int(row.usage or 0) for row in usage_rows}
+    insights_service = InsightsService(db, user_id=user_id)
+    period_end = date.max if period.slug == "all" else period.end
+    expense_map = insights_service.grouped_amounts(
+        TransactionType.expense,
+        period.start,
+        period_end,
+        lambda txn: [transaction_tags.c.tag_id],
+        by_tag=True,
+    )
+    income_map = insights_service.grouped_amounts(
+        TransactionType.income,
+        period.start,
+        period_end,
+        lambda txn: [transaction_tags.c.tag_id],
+        by_tag=True,
+    )
     return {
         "period": {
             "slug": period.slug,
@@ -1666,6 +1754,9 @@ def api_tags(
                 ),
                 "archived_at": tag.archived_at,
                 "usage_count": int(usage_map.get(tag.id, 0)),
+                "expense_cents": expense_map.get((tag.id,), 0),
+                "income_cents": income_map.get((tag.id,), 0),
+                "created_at": tag.created_at,
             }
             for tag in tags
         ],
@@ -1703,6 +1794,7 @@ def api_create_tag(data: TagIn, request: Request, db: Session = Depends(get_db))
             else None
         ),
         "archived_at": tag.archived_at,
+        "created_at": tag.created_at,
     }
 
 
@@ -1744,6 +1836,7 @@ def api_tag_detail(tag_id: int, request: Request, db: Session = Depends(get_db))
                 else None
             ),
             "archived_at": tag.archived_at,
+            "created_at": tag.created_at,
         },
         "period": {
             "slug": period.slug,
@@ -1823,6 +1916,7 @@ def api_update_tag(
             else None
         ),
         "archived_at": tag.archived_at,
+        "created_at": tag.created_at,
     }
 
 
@@ -3014,6 +3108,13 @@ def api_settings(request: Request, db: Session = Depends(get_db)):
     return _user_settings_payload(db, user_id)
 
 
+@router.get(
+    "/api/settings/auto-categorization", response_model=AutoCategorizationSettingsOut
+)
+def api_auto_categorization_settings(request: Request, db: Session = Depends(get_db)):
+    return settings_for(db, _require_current_user_id(request, db))
+
+
 @router.put(
     "/api/settings/auto-categorization", response_model=AutoCategorizationSettingsOut
 )
@@ -3141,6 +3242,22 @@ def api_purge_deleted(
         "count": deleted_count,
         "attachments_count": deleted_attachments,
     }
+
+
+@router.get(
+    "/api/admin/purge-deleted/preview", response_model=AdminPurgeDeletedPreviewOut
+)
+def api_purge_deleted_preview(
+    request: Request, days: int = Query(30, ge=1), db: Session = Depends(get_db)
+):
+    _require_elevated_admin_context(request, db)
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    count = db.scalar(
+        select(func.count(Transaction.id)).where(
+            Transaction.deleted_at.is_not(None), Transaction.deleted_at < cutoff_date
+        )
+    )
+    return {"count": int(count or 0)}
 
 
 @router.post("/api/admin/rebuild-rollups", response_model=AdminRebuildRollupsOut)
@@ -3308,6 +3425,69 @@ def api_bank_reconciliation(request: Request, db: Session = Depends(get_db)):
     return BankReconciliationService(db, user_id=user_id).reconciliation()
 
 
+@router.get("/api/reconciliation/bank-rows", response_model=BankRowsPageOut)
+def api_bank_rows(
+    request: Request,
+    view: Literal["open", "resolved"] = "open",
+    outcome: Optional[Literal["matched", "created", "ignored"]] = None,
+    account: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    return BankReconciliationService(db, user_id=user_id).list_rows(
+        view=view, outcome=outcome, account=account, page=page, limit=limit
+    )
+
+
+@router.get("/api/reconciliation/accounts", response_model=BankAccountsResponseOut)
+def api_bank_accounts(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    return BankReconciliationService(db, user_id=user_id).accounts()
+
+
+@router.get(
+    "/api/reconciliation/bank-rows/{row_id:int}/candidates",
+    response_model=BankRowCandidatesOut,
+)
+def api_bank_row_candidates(
+    row_id: int,
+    request: Request,
+    query: str = "",
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    try:
+        items = BankReconciliationService(db, user_id=user_id).search_candidates(
+            row_id, query=query, limit=limit
+        )
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"items": items}
+
+
+@router.post(
+    "/api/reconciliation/bank-rows/accept-suggestions",
+    response_model=BankAcceptSuggestionsOut,
+)
+def api_accept_bank_row_suggestions(
+    data: BankAcceptSuggestionsIn, request: Request, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    accepted = BankReconciliationService(db, user_id=user_id).accept_suggestions(
+        data.row_ids
+    )
+    return {
+        "matches": [
+            {"row_id": row_id, "transaction_id": transaction_id}
+            for row_id, transaction_id in accepted
+        ]
+    }
+
+
 @router.post(
     "/api/reconciliation/commerzbank-csv/preview",
     response_model=BankStatementPreviewResponseOut,
@@ -3400,14 +3580,16 @@ def api_accept_bank_row_suggestion(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).accept_suggestion(row_id)
+        transaction_id = BankReconciliationService(
+            db, user_id=user_id
+        ).accept_suggestion(row_id)
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BankRowAlreadyResolvedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok"}
+    return {"status": "ok", "transaction_id": transaction_id}
 
 
 @router.post(
@@ -3418,7 +3600,28 @@ def api_review_bank_row(row_id: int, request: Request, db: Session = Depends(get
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).mark_reviewed(row_id)
+        BankReconciliationService(db, user_id=user_id).ignore(row_id, None)
+    except BankRowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowAlreadyResolvedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.post(
+    "/api/reconciliation/bank-rows/{row_id:int}/ignore",
+    response_model=BankRowActionResponseOut,
+)
+def api_ignore_bank_row(
+    row_id: int,
+    data: BankRowIgnoreIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        BankReconciliationService(db, user_id=user_id).ignore(row_id, data.reason)
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BankRowAlreadyResolvedError as exc:
@@ -3430,13 +3633,29 @@ def api_review_bank_row(row_id: int, request: Request, db: Session = Depends(get
     "/api/reconciliation/bank-rows/{row_id:int}/reopen",
     response_model=BankRowActionResponseOut,
 )
-def api_reopen_bank_row(row_id: int, request: Request, db: Session = Depends(get_db)):
+def api_reopen_bank_row(
+    row_id: int,
+    request: Request,
+    payload: Optional[BankRowReopenIn] = None,
+    db: Session = Depends(get_db),
+):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).reopen(row_id)
+        payload = payload or BankRowReopenIn()
+        BankReconciliationService(db, user_id=user_id).reopen(
+            row_id,
+            trash_created_transaction=payload.trash_created_transaction,
+            expected_resolution=payload.expected_resolution,
+            expected_transaction_id=payload.expected_transaction_id,
+            restore_amount_cents=payload.restore_amount_cents,
+        )
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowChangedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -3453,8 +3672,13 @@ def api_match_bank_row_transaction(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
-        BankReconciliationService(db, user_id=user_id).match_transaction(
-            row_id, payload.transaction_id
+        previous_amount_cents = BankReconciliationService(
+            db, user_id=user_id
+        ).match_transaction(
+            row_id,
+            payload.transaction_id,
+            update_amount_to_bank=payload.update_amount_to_bank,
+            resolution=payload.resolution,
         )
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -3462,7 +3686,11 @@ def api_match_bank_row_transaction(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok", "transaction_id": payload.transaction_id}
+    return {
+        "status": "ok",
+        "transaction_id": payload.transaction_id,
+        "previous_amount_cents": previous_amount_cents,
+    }
 
 
 @router.post(
@@ -3669,11 +3897,17 @@ async def api_import_sqlite_commit(
 
 
 @router.get("/api/transactions/deleted", response_model=DeletedTransactionsResponseOut)
-def api_deleted_transactions(request: Request, db: Session = Depends(get_db)):
+def api_deleted_transactions(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
     user_id = _require_current_user_id(request, db)
     txn_service = TransactionService(db, user_id=user_id)
-    transactions = txn_service.deleted(limit=200)
+    transactions = txn_service.deleted(limit=limit, offset=(page - 1) * limit)
     return {
+        "total": txn_service.count_deleted(),
         "transactions": [
             {
                 "id": txn.id,
@@ -3694,8 +3928,32 @@ def api_deleted_transactions(request: Request, db: Session = Depends(get_db)):
                 "deleted_at": txn.deleted_at.isoformat() if txn.deleted_at else None,
             }
             for txn in transactions
-        ]
+        ],
     }
+
+
+@router.post(
+    "/api/transactions/deleted/restore", response_model=TransactionsRestoredOut
+)
+def api_restore_deleted_transactions(
+    data: TransactionIdsIn, request: Request, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    restored = TransactionService(db, user_id=user_id).restore_many(data.ids)
+    return {"restored": restored}
+
+
+@router.post("/api/transactions/deleted/purge", response_model=TransactionsPurgedOut)
+def api_purge_selected_deleted_transactions(
+    data: TransactionIdsIn, request: Request, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    deleted_count, _ = TransactionService(db, user_id=user_id).permanent_delete_many(
+        data.ids
+    )
+    return {"deleted": deleted_count}
 
 
 @router.post("/api/transactions/{transaction_id:int}/restore", response_model=StatusOut)
@@ -3747,12 +4005,34 @@ def api_get_transaction(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     durable = DurablePurchaseService(db, user_id=user_id).for_transaction(txn.id)
+    TransactionService(db, user_id=user_id).hydrate_reimbursement_totals([txn])
+    bank_row = db.scalar(
+        select(BankStatementRow)
+        .where(
+            BankStatementRow.user_id == user_id,
+            BankStatementRow.matched_transaction_id == txn.id,
+        )
+        .order_by(BankStatementRow.id)
+        .limit(1)
+    )
     return {
         "id": txn.id,
         "date": txn.date.isoformat(),
         "occurred_at": _occurred_at_iso(txn.occurred_at),
         "type": txn.type.value,
         "amount_cents": txn.amount_cents,
+        "net_amount_cents": txn.net_amount_cents,
+        "reimbursed_total_cents": txn.reimbursed_total_cents,
+        "created_at": txn.created_at,
+        "bank_row": (
+            {
+                "id": bank_row.id,
+                "account_label": bank_row.account_label,
+                "booking_date": bank_row.booking_date,
+            }
+            if bank_row
+            else None
+        ),
         "category_id": txn.category_id,
         "category": (
             {
@@ -3842,6 +4122,7 @@ async def api_upload_transaction_attachment(
     transaction_id: int,
     request: Request,
     file: UploadFile = File(...),
+    replaces_attachment_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
@@ -3852,7 +4133,21 @@ async def api_upload_transaction_attachment(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     service = ReceiptAttachmentService(db, user_id=user_id)
+    # A replacement takes its target's slot, so it works at the attachment limit.
+    replaced = None
+    if replaces_attachment_id is not None:
+        try:
+            replaced = service.get(replaces_attachment_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if replaced.transaction_id != transaction_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Attachment belongs to another transaction",
+            )
     current_count = service.count_for_transaction(transaction_id)
+    if replaced is not None:
+        current_count -= 1
     if current_count >= service.MAX_ATTACHMENTS_PER_TRANSACTION:
         raise HTTPException(
             status_code=400,
@@ -3904,6 +4199,7 @@ async def api_upload_transaction_attachment(
         mime_type=mime_type,
         size_bytes=size_bytes,
         sha256_hex=digest.hexdigest(),
+        replaces=replaced,
     )
     return ReceiptAttachmentOut(
         id=attachment.id,
@@ -4623,9 +4919,9 @@ def api_transactions_bulk_apply(
 
     txn_service = TransactionService(db, user_id=user_id)
     if operation.lifecycle == "soft_delete":
-        for txn in transactions:
-            txn_service.soft_delete(txn.id)
-            counts["deleted"] += 1
+        counts["deleted"] = txn_service.soft_delete_many(
+            [txn.id for txn in transactions]
+        )
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),
@@ -4634,9 +4930,7 @@ def api_transactions_bulk_apply(
             "changes": counts,
         }
     if operation.lifecycle == "restore":
-        for txn in transactions:
-            txn_service.restore(txn.id)
-            counts["restored"] += 1
+        counts["restored"] = txn_service.restore_many([txn.id for txn in transactions])
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),
@@ -4761,6 +5055,7 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
         "page": page,
         "limit": limit,
         "has_more": has_more,
+        "total": txn_service.count_for_period(period, filters),
         "period": {
             "slug": period.slug,
             "start": period.start.isoformat(),
@@ -4840,8 +5135,22 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
 
     categories = CategoryService(db, user_id=user_id).list_all()
     tags = TagService(db, user_id=user_id).list_all()
+    suggestions = suggestions_for(db, user_id, items)
     return {
-        "items": [_serialize_transaction_item(txn) for txn in items],
+        "items": [
+            {
+                **_serialize_transaction_item(txn),
+                "suggestion": (
+                    {
+                        "category_id": suggestions[txn.id].category_id,
+                        "confidence": suggestions[txn.id].confidence,
+                    }
+                    if txn.id in suggestions
+                    else None
+                ),
+            }
+            for txn in items
+        ],
         "page": page,
         "limit": limit,
         "has_more": has_more,
@@ -4876,6 +5185,68 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
     }
 
 
+@router.post(
+    "/api/transactions/{transaction_id:int}/category-suggestion/dismiss",
+    response_model=StatusOut,
+)
+def api_dismiss_category_suggestion(
+    transaction_id: int,
+    data: CategorySuggestionDismissIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        txn = TransactionService(db, user_id=user_id).get(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    category = db.get(Category, data.category_id)
+    if category is None or category.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Category not found")
+    txn.category_suggestion_dismissed_id = category.id
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/api/insights/month-grid", response_model=InsightsMonthGridResponseOut)
+def api_insights_month_grid(
+    request: Request,
+    kind: Literal["expense", "income", "tag"] = "expense",
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    return InsightsService(db, user_id=user_id).month_grid(kind, today=local_today())
+
+
+@router.get(
+    "/api/insights/recurring-split", response_model=InsightsRecurringSplitResponseOut
+)
+def api_insights_recurring_split(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    return InsightsService(db, user_id=user_id).recurring_split(today=local_today())
+
+
+@router.get("/api/insights/day-calendar", response_model=InsightsDayCalendarResponseOut)
+def api_insights_day_calendar(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    return InsightsService(db, user_id=user_id).day_calendar(today=local_today())
+
+
+@router.get(
+    "/api/insights/budget-history", response_model=InsightsBudgetHistoryResponseOut
+)
+def api_insights_budget_history(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    months = InsightsService.grid_months(local_today())
+    labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
+    return {
+        "months": labels,
+        "current_month": labels[-1],
+        "rows": BudgetService(db, user_id=user_id).history(months),
+    }
+
+
 @router.get("/api/insights", response_model=InsightsResponseOut)
 def api_insights(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -4891,6 +5262,26 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         months_back=12,
         tag_ids=tag_ids,
         excluded_tag_ids=excluded_tag_ids,
+    )
+    totals = MetricsService(db, user_id=user_id).kpis(
+        period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+    )
+    first_day = period.start
+    if period.slug == "all":
+        first_day = (
+            db.scalar(
+                select(func.min(Transaction.date)).where(
+                    Transaction.user_id == user_id, Transaction.deleted_at.is_(None)
+                )
+            )
+            or period.end
+        )
+    month_count = max(
+        0,
+        (period.end.year - first_day.year) * 12
+        + period.end.month
+        - first_day.month
+        + 1,
     )
     expense_breakdown = MetricsService(db, user_id=user_id).category_breakdown(
         period,
@@ -5000,6 +5391,17 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         "budget_month": budget_month,
         "budget_effective": budget_effective,
         "budget_progress": budget_progress,
+        "recurring_cents": insights.grouped_amounts(
+            TransactionType.expense,
+            period.start,
+            period.end,
+            lambda txn: [txn.origin_rule_id.is_not(None)],
+            tag_ids=tag_ids,
+            excluded_tag_ids=excluded_tag_ids,
+        ).get((True,), 0),
+        "income_cents": totals["income"],
+        "expense_cents": totals["expenses"],
+        "month_count": month_count,
     }
 
 

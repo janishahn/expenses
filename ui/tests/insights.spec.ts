@@ -1,333 +1,301 @@
-import { test, expect, type APIRequestContext } from "./fixtures"
-import { createTransaction, getCsrfToken } from "./helpers"
+import type { Page } from "@playwright/test"
+import { expect, test } from "./fixtures"
+import {
+  createCategory,
+  createTransaction,
+  loginAsIsolatedUser,
+  provisionInsightsData,
+} from "./helpers"
 
-const THEME_STORAGE_KEY = "ew.theme.preference"
+test.describe.configure({ mode: "parallel" })
 
-async function createCategory(
-  request: APIRequestContext,
-  csrfToken: string,
-  name: string,
-  type: "income" | "expense"
-): Promise<number> {
-  const response = await request.post("/api/categories", {
-    headers: { "X-CSRF-Token": csrfToken },
-    data: { name, type, order: 0 },
-  })
-  expect(response.ok()).toBeTruthy()
-  const payload = (await response.json()) as { id: number }
-  return payload.id
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+// "YYYY-MM" as the month label of the tables, e.g. "Sep 2026".
+function monthLabel(key: string): string {
+  return `${SHORT_MONTHS[Number(key.slice(5)) - 1]} ${key.slice(0, 4)}`
 }
 
-async function createTag(
-  request: APIRequestContext,
-  csrfToken: string,
-  name: string
-): Promise<number> {
-  const response = await request.post("/api/tags", {
-    headers: { "X-CSRF-Token": csrfToken },
-    data: { name, is_hidden_from_budget: false },
-  })
-  expect(response.ok()).toBeTruthy()
-  const payload = (await response.json()) as { id: number }
-  return payload.id
+// Amounts group thousands with a narrow space, so tests write them with a dot.
+function eur(text: string): RegExp {
+  return new RegExp(text.replace("+", "\\+").replace(/\./g, "[\\s.]").replace(/ /g, "\\s"))
+}
+
+// The label of a strip metric with its value and detail beneath.
+function metric(page: Page, label: string) {
+  return page.getByText(label, { exact: true }).first().locator("..")
+}
+
+async function showAsTable(page: Page, cardName: string) {
+  const card = page.getByRole("region", { name: cardName })
+  await card.getByRole("button", { name: "Chart options" }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Show as table" }).click()
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  return card
 }
 
 test.describe("Insights Page", () => {
-  test.beforeEach(async ({ page }) => {
+  test("renders the heading, strip and every card without errors", async ({ page }) => {
     await page.goto("/insights")
+    await expect(page.getByRole("heading", { name: "Insights", level: 1 })).toBeVisible()
+    for (const label of ["Income", "Spent", "Saved", "Recurring"]) {
+      await expect(metric(page, label)).toBeVisible()
+    }
+    for (const name of [
+      "Income and expenses",
+      "Recurring and other spending",
+      "By month",
+      "Daily spending",
+      "Budget history",
+    ]) {
+      await expect(page.getByRole("region", { name })).toBeVisible()
+    }
+    await expect(page.getByText(/Unable to load|is unavailable/)).toHaveCount(0)
+    await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0)
   })
 
-  test("should display insights heading", async ({ page }) => {
-    await expect(page.locator("main h1")).toContainText("Insights")
-  })
-
-  test("uses page tabs without repeating the selected period", async ({ page }) => {
-    await page.goto("/insights?period=this_month")
-    await expect(page.getByText(/^Date:/)).toHaveCount(0)
-    await expect(page.getByText(/months? view$/)).toHaveCount(0)
-    await expect(page.getByRole("tablist", { name: "Insights views" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Analysis" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    )
-  })
-
-  test("keeps the page canvas stable when tab content changes document height", async ({
+  test("shows the strip and exact monthly values for all time and follows period changes", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { lastMonth, thisMonth } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
     await page.goto("/insights")
-    await expect(
-      page.getByRole("heading", { name: "Monthly income vs expenses" }),
-    ).toBeVisible()
+    await expect(metric(page, "Income")).toContainText(eur("2.000,00 €"))
+    await expect(metric(page, "Spent")).toContainText(eur("620,00 €"))
+    await expect(metric(page, "Spent")).toContainText("per month")
+    await expect(metric(page, "Saved")).toContainText(eur("1.380,00 €"))
+    await expect(metric(page, "Saved")).toContainText("69 % of income")
 
-    const pageCanvas = page.locator(".page-enter")
-    const analysisBox = await pageCanvas.boundingBox()
-    const analysisLayout = await page.evaluate(() => ({
-      clientHeight: document.documentElement.clientHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-    }))
-    expect(analysisBox).not.toBeNull()
-    expect(analysisLayout.scrollHeight).toBeGreaterThan(analysisLayout.clientHeight)
+    const flow = await showAsTable(page, "Income and expenses")
+    const flowTable = flow.getByRole("table", { name: "Income and expenses by month" })
+    const lastRow = flowTable.getByRole("row", { name: new RegExp(`^${monthLabel(lastMonth)}`) })
+    await expect(lastRow).toContainText(eur("2.000,00 €"))
+    await expect(lastRow).toContainText("500,00 €")
+    await expect(lastRow).toContainText(eur("1.500,00 €"))
+    const thisRow = flowTable.getByRole("row", { name: new RegExp(`^${monthLabel(thisMonth)}`) })
+    await expect(thisRow).toContainText("120,00 €")
 
-    await page.getByRole("tab", { name: "Net" }).click()
-    await expect(page).toHaveURL(/view=net/)
-    await expect(page.getByRole("tab", { name: "Net" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    )
-    const netBox = await pageCanvas.boundingBox()
-    const netLayout = await page.evaluate(() => ({
-      clientHeight: document.documentElement.clientHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-      scrollbarGutter: getComputedStyle(document.documentElement).scrollbarGutter,
-      overflowY: getComputedStyle(document.documentElement).overflowY,
-    }))
-    expect(netBox).not.toBeNull()
-    expect(netLayout.scrollHeight).toBeLessThanOrEqual(netLayout.clientHeight)
-    expect(netLayout.scrollbarGutter).toBe("auto")
-    expect(netLayout.overflowY).toBe("scroll")
-    expect(Math.abs(netBox!.x - analysisBox!.x)).toBeLessThanOrEqual(0.5)
+    await page.getByRole("button", { name: /^Period:/ }).click()
+    await page.getByRole("menuitemcheckbox", { name: "Last month" }).click()
+    await expect(page).toHaveURL(/period=last_month/)
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(metric(page, "Income")).toContainText(eur("2.000,00 €"))
+    await expect(metric(page, "Spent")).toContainText("500,00 €")
+    await expect(metric(page, "Saved")).toContainText(eur("1.500,00 €"))
+    await expect(metric(page, "Saved")).toContainText("75 % of income")
+    await expect(flowTable.getByRole("row")).toHaveCount(2)
+
+    await page.getByRole("button", { name: /^Period:/ }).click()
+    await page.getByRole("menuitemcheckbox", { name: "This month" }).click()
+    await expect(page).toHaveURL(/period=this_month/)
+    await expect(metric(page, "Spent")).toContainText("120,00 €")
+    await expect(metric(page, "Income")).toContainText("0,00 €")
   })
 
-  test("should show analytics content", async ({ page }) => {
-    await page.waitForLoadState("networkidle")
-    await expect(
-      page.getByRole("heading", { name: "Monthly income vs expenses" })
-    ).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Top categories" })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Budget vs actual" })).toBeVisible()
-  })
-
-  test("should load without errors", async ({ page }) => {
-    await expect(page.locator("text=Unable to load")).not.toBeVisible()
-    await expect(page.getByTestId("app-loading-fallback")).toHaveCount(0, { timeout: 10000 })
-  })
-
-  test("should show filter controls at tablet viewport (768-1024px)", async ({
+  test("includes or excludes tags with the Filter and keeps the choice in the URL", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 900, height: 700 })
-    await page.goto("/insights")
-    await page.waitForLoadState("networkidle")
-    await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible()
-  })
-
-  test("should render net view", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const suffix = Date.now()
-    const incomeCategoryName = `E2E Net Income ${suffix}`
-    const expenseCategoryName = `E2E Net Expense ${suffix}`
-    const incomeCategory = await createCategory(request, token, incomeCategoryName, "income")
-    const expenseCategory = await createCategory(request, token, expenseCategoryName, "expense")
-
-    await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "income",
-      amount_cents: 150_000,
-      category_id: incomeCategory,
-      title: `E2E Net Income ${Date.now()}`,
-      tags: [],
-    })
-    await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 90_000,
-      category_id: expenseCategory,
-      title: `E2E Net Expense ${Date.now()}`,
-      tags: [],
-    })
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { tagId } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
 
     await page.goto("/insights")
-    await page.getByRole("tab", { name: "Net" }).click()
-    await expect(page).toHaveURL(/view=net/)
-    await expect(page.getByRole("heading", { name: "Income & spending" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "View chart data" })).toBeVisible()
-    await expect(
-      page.getByRole("group", { name: "Income and spending chart" }),
-    ).toBeVisible()
+    await expect(metric(page, "Spent")).toContainText("620,00 €")
+    await page.getByRole("button", { name: "Filter", exact: true }).click()
+    const filter = page.getByRole("dialog", { name: "Filter" })
+    await filter.getByRole("checkbox", { name: "Trip" }).click()
+    await expect(page).toHaveURL(new RegExp(`tags=${tagId}(?:&|$)`))
+    await expect(metric(page, "Spent")).toContainText("500,00 €")
+    await expect(metric(page, "Spent")).not.toContainText("620,00 €")
 
-    const expenseStep = page.locator(
-      `.net-chart-section svg [data-waterfall-step][aria-label^="${expenseCategoryName}:"]`
-    )
-    await expect(expenseStep).toBeVisible()
-    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
+    await filter.getByRole("radio", { name: "Exclude" }).click()
+    await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagId}(?:&|$)`))
+    await expect(page).not.toHaveURL(/[?&]tags=/)
+    await expect(metric(page, "Spent")).toContainText("120,00 €")
+    await expect(metric(page, "Spent")).not.toContainText("620,00 €")
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("button", { name: "Filter · 1" })).toBeVisible()
 
-    const incomeStep = page.locator(
-      `.net-chart-section svg [data-waterfall-step][aria-label^="${incomeCategoryName}:"]`
-    )
-    await expenseStep.hover()
-    await incomeStep.hover()
-    await expenseStep.hover()
-    await expect(page.getByRole("tooltip")).toContainText(expenseCategoryName)
-    await expect(page.getByRole("tooltip")).not.toBeEmpty()
+    await page.reload()
+    await expect(page.getByRole("button", { name: "Filter · 1" })).toBeVisible()
+    await expect(metric(page, "Spent")).toContainText("120,00 €")
 
-    await expenseStep.click()
-    await expect(expenseStep).toHaveAttribute("data-selected", "")
-    await expect(page.getByTestId("waterfall-details")).toContainText(expenseCategoryName)
-
-    await page.getByRole("heading", { name: "Income & spending" }).click()
-    expect(await expenseStep.getAttribute("data-selected")).toBeNull()
-
-    await expenseStep.click()
-    await page.getByTestId("waterfall-details").getByRole("button", { name: "Open transactions" }).click()
-    await expect(page).toHaveURL(/\/transactions\?/)
-    await expect(page).toHaveURL(/type=expense/)
+    await page.getByRole("button", { name: "Filter · 1" }).click()
+    await page.getByRole("dialog", { name: "Filter" }).getByRole("checkbox", { name: "Trip" }).click()
+    await expect(page).not.toHaveURL(/exclude_tags=/)
+    await expect(metric(page, "Spent")).toContainText("620,00 €")
   })
 
-  test("keeps insights drill-down detail/edit return context coherent", async ({
+  test("lists the exact amounts of the By month grid for expenses, income and tags", async ({
     page,
-    request,
   }) => {
-    const csrfToken = await getCsrfToken(request)
-    const suffix = Date.now()
-    const incomeCategoryId = await createCategory(
-      request,
-      csrfToken,
-      `E2E Cross Income ${suffix}`,
-      "income"
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = await showAsTable(page, "By month")
+    const table = card.getByRole("table", { name: "Amounts by month" })
+    await expect(table.getByRole("columnheader", { name: "Category" })).toBeVisible()
+    await expect(table.getByRole("row", { name: /^Rent/ })).toContainText("500 €")
+    await expect(table.getByRole("row", { name: /^Dining/ })).toContainText("120 €")
+    await expect(table.getByRole("row", { name: /^Salary/ })).toHaveCount(0)
+
+    await card.getByRole("radio", { name: "Income" }).click()
+    await expect(table.getByRole("row", { name: /^Salary/ })).toContainText(eur("2.000 €"))
+    await expect(table.getByRole("row", { name: /^Rent/ })).toHaveCount(0)
+
+    await card.getByRole("radio", { name: "Tags" }).click()
+    await expect(table.getByRole("columnheader", { name: "Tag" })).toBeVisible()
+    await expect(table.getByRole("row", { name: /^Trip/ })).toContainText("500 €")
+    await expect(table.getByRole("row", { name: /^Rent/ })).toHaveCount(0)
+
+    await card.getByRole("radio", { name: "Expenses" }).click()
+    await expect(table.getByRole("row", { name: /^Rent/ })).toBeVisible()
+  })
+
+  test("opens the ledger from a By month table link and returns with the breadcrumb", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { lastMonth, rentId, tagId } = await provisionInsightsData(
+      isolated.request,
+      isolated.csrfToken,
     )
-    const tagName = `E2E Cross Tag ${suffix}`
-    const tagId = await createTag(request, csrfToken, tagName)
-    const expenseCategoryName = `E2E Cross Expense ${suffix}`
-    const expenseCategoryId = await createCategory(
-      request,
-      csrfToken,
-      expenseCategoryName,
-      "expense"
-    )
-    const expenseTitle = `E2E Cross Drilldown ${suffix}`
+    await isolated.request.dispose()
 
-    await createTransaction(request, csrfToken, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "income",
-      amount_cents: 250_000,
-      category_id: incomeCategoryId,
-      title: `E2E Cross Income Txn ${suffix}`,
-      tags: [],
-    })
-    const expenseTxnId = await createTransaction(request, csrfToken, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 88_000,
-      category_id: expenseCategoryId,
-      title: expenseTitle,
-      tags: [tagName],
-    })
-
-    await page.addInitScript(([storageKey, value]) => {
-      window.localStorage.setItem(storageKey, value)
-    }, [THEME_STORAGE_KEY, "light"] as const)
-
-    await page.goto(`/insights?view=net&period=this_month&tag=${tagId}`)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-
-    const expenseStep = page.locator(
-      `.net-chart-section svg [data-waterfall-step][aria-label^="${expenseCategoryName}:"]`
-    )
-    await expect(expenseStep).toBeVisible()
-    await expenseStep.click()
-    await page.getByTestId("waterfall-details").getByRole("button", { name: "Open transactions" }).click()
-
+    await page.goto("/insights")
+    const card = await showAsTable(page, "By month")
+    const table = card.getByRole("table", { name: "Amounts by month" })
+    await table.getByRole("row", { name: /^Rent/ }).getByRole("link", { name: "500 €", exact: true }).click()
     await expect(page).toHaveURL(
-      new RegExp(
-        `/transactions\\?(?=.*period=this_month)(?=.*type=expense)(?=.*category=${expenseCategoryId})(?=.*tags=${tagId})`
-      )
+      new RegExp(`/transactions\\?.*period=custom.*start=${lastMonth}-01.*category=${rentId}.*from=insights`),
     )
-    const drilldownUrl = page.url()
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" })
+    await expect(breadcrumb).toContainText("Insights")
+    await expect(page.getByRole("listitem", { name: "Rent payment" })).toBeVisible()
+    await expect(page.getByRole("listitem", { name: "Salary payment" })).toHaveCount(0)
 
-    const row = page.locator("div.surface-card").filter({ hasText: expenseTitle }).first()
-    await expect(row).toBeVisible()
-    await row.click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${expenseTxnId}$`))
+    await breadcrumb.getByRole("link", { name: "Insights" }).click()
+    await expect(page.getByRole("heading", { name: "Insights", level: 1 })).toBeVisible()
 
-    await page.locator(`a[href="/transactions/${expenseTxnId}/edit"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${expenseTxnId}/edit$`))
-
-    await page.goBack()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${expenseTxnId}$`))
-
-    await page.locator(`a[href="/transactions/${expenseTxnId}/edit"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${expenseTxnId}/edit$`))
-
-    await page.locator(`a[href="/transactions/${expenseTxnId}"]`).first().click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${expenseTxnId}$`))
-
-    await page.getByRole("link", { name: "← Back" }).click()
-    await expect(page).toHaveURL(drilldownUrl)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
+    await showAsTable(page, "By month")
+    await page.getByRole("region", { name: "By month" }).getByRole("radio", { name: "Tags" }).click()
+    await page
+      .getByRole("table", { name: "Amounts by month" })
+      .getByRole("row", { name: /^Trip/ })
+      .getByRole("link", { name: "500 €", exact: true })
+      .click()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*tags=${tagId}.*from=insights`))
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Insights")
+    await expect(page.getByRole("listitem", { name: "Rent payment" })).toBeVisible()
   })
 
-  test("shows merged categories in insights net drill-downs", async ({
-    page,
-    request,
-  }) => {
-    const csrfToken = await getCsrfToken(request)
-    const suffix = Date.now()
-    const incomeCategoryId = await createCategory(
-      request,
-      csrfToken,
-      `E2E Merge Income ${suffix}`,
-      "income"
-    )
-    const sourceName = `E2E Merge Source ${suffix}`
-    const targetName = `E2E Merge Target ${suffix}`
-    const sourceCategoryId = await createCategory(request, csrfToken, sourceName, "expense")
-    const targetCategoryId = await createCategory(request, csrfToken, targetName, "expense")
+  test("opens the ledger when a By month grid cell is clicked", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { rentId } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
 
-    await createTransaction(request, csrfToken, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "income",
-      amount_cents: 210_000,
-      category_id: incomeCategoryId,
-      title: `E2E Merge Income Txn ${suffix}`,
-      tags: [],
-    })
-    const mergedExpenseTitle = `E2E Merge Expense Txn ${suffix}`
-    await createTransaction(request, csrfToken, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
+    await page.goto("/insights")
+    const row = page
+      .getByRole("region", { name: "By month" })
+      .locator('[class*="_hmRow_"]')
+      .filter({ hasText: "Rent" })
+    // The last cell is the month in progress; the one before it is last month.
+    await row.locator('[class*="_hmCell_"]').nth(11).click()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*category=${rentId}.*from=insights`))
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Insights")
+    await expect(page.getByRole("listitem", { name: "Rent payment" })).toBeVisible()
+  })
+
+  test("shows merged categories in the By month drill-down", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { lastMonth } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    const sourceId = await createCategory(isolated.request, isolated.csrfToken, "expense", "Merge Source")
+    const targetId = await createCategory(isolated.request, isolated.csrfToken, "expense", "Merge Target")
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: `${lastMonth}-15`,
+      occurred_at: `${lastMonth}-15T09:00:00`,
       type: "expense",
       amount_cents: 96_000,
-      category_id: sourceCategoryId,
-      title: mergedExpenseTitle,
+      category_id: sourceId,
+      title: "Merged expense",
       tags: [],
     })
-
-    const mergeResponse = await request.post("/api/categories/merge", {
-      headers: { "X-CSRF-Token": csrfToken },
-      data: {
-        source_category_id: sourceCategoryId,
-        target_category_id: targetCategoryId,
-      },
+    const merge = await isolated.request.post("/api/categories/merge", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { source_category_id: sourceId, target_category_id: targetId },
     })
-    expect(mergeResponse.ok()).toBeTruthy()
+    expect(merge.ok()).toBeTruthy()
+    await isolated.request.dispose()
 
-    await page.goto("/insights?view=net&period=this_month")
-    await page.getByRole("button", { name: "View chart data" }).click()
-    const dataDialog = page.getByRole("dialog", { name: "Chart data" })
-    const targetNodeButton = dataDialog.getByRole("button", {
-      name: `Open ${targetName} transactions`,
-    })
-    await expect(targetNodeButton).toBeVisible()
-    await expect(dataDialog.getByText(sourceName, { exact: true })).toHaveCount(0)
-
-    await targetNodeButton.click()
-    await expect(page).toHaveURL(
-      new RegExp(
-        `/transactions\\?(?=.*period=this_month)(?=.*type=expense)(?=.*category=${targetCategoryId})`
-      )
-    )
-    await expect(page.locator("body")).toContainText(mergedExpenseTitle)
+    await page.goto("/insights")
+    const card = await showAsTable(page, "By month")
+    const table = card.getByRole("table", { name: "Amounts by month" })
+    await expect(table.getByRole("row", { name: /^Merge Source/ })).toHaveCount(0)
+    await table.getByRole("row", { name: /^Merge Target/ }).getByRole("link", { name: /^960 €$/ }).click()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*category=${targetId}.*from=insights`))
+    await expect(page.getByRole("listitem", { name: "Merged expense" })).toBeVisible()
   })
 
+  test("lists daily spending and weekday averages and opens a day in the ledger", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { thisMonth } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = await showAsTable(page, "Daily spending")
+    const weekdays = card.getByRole("table", { name: "Average spending by weekday" })
+    await expect(weekdays.getByRole("row")).toHaveCount(8)
+    await expect(weekdays.getByRole("row", { name: /^Monday/ })).toBeVisible()
+    await expect(weekdays.getByRole("row", { name: /^Sunday/ })).toBeVisible()
+
+    const day = `${thisMonth}-01`
+    const dayLabel = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    })
+    const days = card.getByRole("table", { name: "Spending by day" })
+    await expect(days.getByRole("row")).toHaveCount(3)
+    await expect(days.getByRole("row", { name: new RegExp(`^${dayLabel}`) })).toContainText("120,00 €")
+    await days.getByRole("link", { name: dayLabel }).click()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*start=${day}.*end=${day}.*from=insights`))
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Insights")
+    await expect(page.getByRole("listitem", { name: "Team dinner" })).toBeVisible()
+    await expect(page.getByRole("listitem", { name: "Rent payment" })).toHaveCount(0)
+  })
+
+  test("links the budget history table to the budgets of that month", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const { thisMonth } = await provisionInsightsData(isolated.request, isolated.csrfToken)
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = await showAsTable(page, "Budget history")
+    const table = card.getByRole("table", { name: "Budget history by month" })
+    const row = table.getByRole("row", { name: /^Dining/ })
+    await expect(row).toContainText("0 € of 300 €")
+    await expect(row).toContainText("1 of 1")
+    await row.getByRole("link", { name: "120 € of 300 €" }).click()
+    await expect(page).toHaveURL(new RegExp(`/budgets\\?month=${thisMonth}`))
+    await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
+
+    await page.goto("/insights")
+    await page.getByRole("button", { name: "Open budgets" }).click()
+    await expect(page).toHaveURL(/\/budgets$/)
+  })
 })

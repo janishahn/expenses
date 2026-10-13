@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./fixtures"
+import { expect, test, type Locator, type Page } from "./fixtures"
 
 // Browser-side hook installed by installStreamHook to drive a real, chunk-by-chunk
 // streaming Response so tests can prove progressive rendering (route.fulfill sends
@@ -57,17 +57,26 @@ function happyTurn(
   ])
 }
 
-const assistantMessages = (page: Page) =>
-  page.locator('[data-testid="spending-assistant-message"][data-role="assistant"]')
-const userMessages = (page: Page) =>
-  page.locator('[data-testid="spending-assistant-message"][data-role="user"]')
+const thread = (page: Page) => page.getByRole("log", { name: "Conversation" })
+const assistantTurns = (page: Page) => page.getByRole("article", { name: "Assistant" })
+const userTurns = (page: Page) => page.getByRole("article", { name: "You" })
+const composer = (page: Page) =>
+  page.getByRole("textbox", { name: "Message the spending assistant" })
 
 async function sendQuestion(page: Page, text: string) {
-  const input = page.getByTestId("spending-assistant-input")
+  const input = composer(page)
   await input.click()
   await input.fill(text)
-  await page.getByTestId("spending-assistant-send").click()
+  await page.getByRole("button", { name: "Send" }).click()
 }
+
+// Distance from the top of the conversation log to the top of an article.
+const offsetInThread = (turn: Locator) =>
+  turn.evaluate(
+    (element) =>
+      element.getBoundingClientRect().top -
+      element.closest('[role="log"]')!.getBoundingClientRect().top
+  )
 
 // Replace fetch for the stream endpoint with a ReadableStream the test feeds one
 // line at a time. Other requests (CSRF, app data) fall through to the real fetch.
@@ -127,7 +136,7 @@ async function emitEvent(page: Page, event: StreamEvent) {
 }
 
 test.describe("Spending Assistant", () => {
-  test("streams an answer, shows the tool ticker, and never reveals raw tool or history data", async ({
+  test("streams an answer, lists tool activity, and never reveals raw tool or history data", async ({
     page,
   }) => {
     await page.route(STREAM_URL, async (route) => {
@@ -144,38 +153,38 @@ test.describe("Spending Assistant", () => {
     await expect(
       page.getByRole("heading", { name: "Assistant", level: 1 })
     ).toBeVisible()
-    await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
-    await expect(page.getByTestId("spending-assistant-composer")).toBeVisible()
-    await expect(page.getByTestId("spending-assistant-prompt").first()).toBeVisible()
-    await expect(page.getByTestId("spending-assistant-thread")).not.toHaveClass(
-      /financial-panel/
-    )
+    await expect(
+      page.getByRole("heading", { name: "Ask about your spending" })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "How much did I spend last month?" })
+    ).toBeVisible()
+    await expect(page.getByRole("button", { name: "New chat" })).toHaveCount(0)
 
     await sendQuestion(page, "How much did I spend last month?")
 
-    await expect(userMessages(page).last()).toContainText(
+    await expect(userTurns(page).last()).toContainText(
       "How much did I spend last month?"
     )
-    await expect(assistantMessages(page).last()).toContainText(
+    await expect(assistantTurns(page).last()).toContainText(
       "You spent €1,234.00 last month."
     )
-    await expect(page.getByTestId("spending-assistant-prompt")).toHaveCount(0)
+    await expect(
+      page.getByRole("heading", { name: "Ask about your spending" })
+    ).toHaveCount(0)
 
-    const ticker = page.getByTestId("spending-assistant-tool")
-    await expect(ticker).toContainText("Spending overview")
-    await expect(ticker).toContainText("2026-05-01 to 2026-05-31")
-    await expect(ticker).toHaveAttribute("data-status", "success")
-    await expect(ticker).not.toHaveAttribute("open", "")
-    await ticker.locator("summary").click()
-    await expect(page.getByTestId("spending-assistant-tool-detail")).toBeVisible()
-    await expect(page.getByTestId("spending-assistant-tool-summary")).toHaveText(
-      "€1,234.00 spent · €2,000.00 income"
-    )
+    // One tool collapses to its label; opening it lists the call and its summary.
+    const assistant = assistantTurns(page).last()
+    const toolSummary = assistant.getByText("Spending overview", { exact: true })
+    await expect(toolSummary).toBeVisible()
+    await expect(assistant.getByRole("img", { name: "Done" })).toBeHidden()
+    await toolSummary.click()
+    await expect(assistant.getByRole("img", { name: "Done" })).toBeVisible()
+    await expect(assistant).toContainText("1 – 31 May 2026")
+    await expect(assistant).toContainText("€1,234.00 spent · €2,000.00 income")
 
     // The bold markdown must render as emphasis, not literal asterisks.
-    await expect(assistantMessages(page).last().locator("strong")).toHaveText(
-      "€1,234.00"
-    )
+    await expect(assistant.locator("strong")).toHaveText("€1,234.00")
 
     await expect(page.locator("body")).not.toContainText(TOOL_PREVIEW_MARKER)
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
@@ -184,34 +193,78 @@ test.describe("Spending Assistant", () => {
     await page
       .context()
       .grantPermissions(["clipboard-read", "clipboard-write"])
-    await assistantMessages(page).last().hover()
-    const copyButton = page.getByTestId("spending-assistant-copy")
-    await copyButton.click()
-    await expect(copyButton).toHaveAccessibleName("Copied")
+    await assistant.hover()
+    await assistant.getByRole("button", { name: "Copy response" }).click()
+    await expect(
+      assistant.getByRole("button", { name: "Copied" })
+    ).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       "You spent **€1,234.00** last month."
     )
 
     // The sent question offers the same copy affordance.
-    await userMessages(page).last().hover()
-    const userCopyButton = page.getByTestId("spending-assistant-copy-user")
-    await userCopyButton.click()
-    await expect(userCopyButton).toHaveAccessibleName("Copied")
+    const question = userTurns(page).last()
+    await question.hover()
+    await question.getByRole("button", { name: "Copy message" }).click()
+    await expect(question.getByRole("button", { name: "Copied" })).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       "How much did I spend last month?"
     )
 
-    const newChat = page
-      .getByTestId("app-shell-utility")
-      .getByRole("button", { name: "New chat" })
+    const newChat = page.getByRole("button", { name: "New chat" })
     await expect(newChat).toBeVisible()
     await newChat.click()
-    await expect(userMessages(page)).toHaveCount(0)
-    await expect(page.getByTestId("spending-assistant-prompt").first()).toBeVisible()
+    await expect(userTurns(page)).toHaveCount(0)
+    await expect(
+      page.getByRole("button", { name: "How much did I spend last month?" })
+    ).toBeVisible()
     await expect(newChat).toHaveCount(0)
+    await expect(composer(page)).toBeFocused()
   })
 
-  test("shows query and type details in transaction search tool chips", async ({
+  test("masks amounts in the conversation in privacy mode", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("ew.privacy", "on"))
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: happyTurn("You spent €1,234.00 this month.", []),
+      })
+    })
+
+    await page.goto("/assistant")
+    await sendQuestion(page, "Did I spend more than €1,000?")
+
+    await expect(assistantTurns(page).last()).toContainText("You spent •••• this month.")
+    await expect(userTurns(page).last()).toContainText("Did I spend more than ••••?")
+    await expect(thread(page)).not.toContainText("1,234")
+  })
+
+  test("an empty-state prompt sends immediately", async ({ page }) => {
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: happyTurn("Housing led your spending.", []),
+      })
+    })
+
+    await page.goto("/assistant")
+    await page
+      .getByRole("button", {
+        name: "What were my top spending categories this month?",
+      })
+      .click()
+
+    await expect(userTurns(page).last()).toContainText(
+      "What were my top spending categories this month?"
+    )
+    await expect(assistantTurns(page).last()).toContainText(
+      "Housing led your spending."
+    )
+  })
+
+  test("shows query and type details in transaction search activity", async ({
     page,
   }) => {
     await page.route(STREAM_URL, async (route) => {
@@ -246,10 +299,68 @@ test.describe("Spending Assistant", () => {
     await page.goto("/assistant")
     await sendQuestion(page, "Find coffee expenses")
 
-    const ticker = page.getByTestId("spending-assistant-tool")
-    await expect(ticker).toContainText("Transaction search")
-    await expect(ticker).toContainText("coffee")
-    await expect(ticker).toContainText("expense")
+    const assistant = assistantTurns(page).last()
+    await assistant.getByText("Transaction search", { exact: true }).click()
+    await expect(assistant).toContainText("coffee · expense")
+  })
+
+  test("summarises several tool calls and flags a failed one", async ({
+    page,
+  }) => {
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: ndjson([
+          { type: "turn_started", turn_id: "turn-1" },
+          {
+            type: "tool_call_start",
+            tool_call_id: "call-1",
+            tool_name: "get_budget_context",
+            arguments: {},
+          },
+          {
+            type: "tool_call_end",
+            tool_call_id: "call-1",
+            tool_name: "get_budget_context",
+            result_preview: "display only",
+            success: true,
+          },
+          {
+            type: "tool_call_start",
+            tool_call_id: "call-2",
+            tool_name: "get_transaction_detail",
+            arguments: { transaction_id: 7 },
+          },
+          {
+            type: "tool_call_end",
+            tool_call_id: "call-2",
+            tool_name: "get_transaction_detail",
+            result_preview: "display only",
+            success: false,
+          },
+          { type: "text_chunk", content: "Partial answer." },
+          {
+            type: "result",
+            assistant_message: "Partial answer.",
+            message_history: [],
+          },
+          { type: "done" },
+        ]),
+      })
+    })
+
+    await page.goto("/assistant")
+    await sendQuestion(page, "Check my budgets")
+
+    const assistant = assistantTurns(page).last()
+    await expect(assistant).toContainText("Partial answer.")
+    await assistant
+      .getByText("Transaction detail failed", { exact: true })
+      .click()
+    await expect(assistant.getByRole("img", { name: "Done" })).toBeVisible()
+    await expect(assistant.getByRole("img", { name: "Failed" })).toBeVisible()
+    await expect(assistant).toContainText("transaction 7")
   })
 
   test("reuses prior message_history on the next turn and only sends the latest user message", async ({
@@ -285,10 +396,10 @@ test.describe("Spending Assistant", () => {
     await page.goto("/assistant")
 
     await sendQuestion(page, "First question")
-    await expect(page.getByTestId("spending-assistant-thread").getByText("First answer.")).toBeVisible()
+    await expect(thread(page).getByText("First answer.")).toBeVisible()
 
     await sendQuestion(page, "Second question")
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Second answer.")).toBeVisible()
+    await expect(thread(page).getByText("Second answer.")).toBeVisible()
 
     expect(posted).toHaveLength(2)
     expect(posted[0].messages).toEqual([
@@ -299,6 +410,7 @@ test.describe("Spending Assistant", () => {
       { role: "user", content: "Second question" },
     ])
     expect(posted[1].message_history).toEqual(firstHistory)
+    await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
   })
 
   test("surfaces a 503 configuration error and recovers via Try again", async ({
@@ -325,27 +437,24 @@ test.describe("Spending Assistant", () => {
     await page.goto("/assistant")
     await sendQuestion(page, "Am I over budget anywhere?")
 
-    await expect(page.getByTestId("spending-assistant-error")).toContainText(
+    await expect(assistantTurns(page).last()).toContainText(
       "LLM is not configured"
     )
-    await expect(userMessages(page).last()).toContainText(
+    await expect(userTurns(page).last()).toContainText(
       "Am I over budget anywhere?"
     )
-    await expect(page.getByTestId("spending-assistant-input")).toBeEnabled()
-    await expect(page.getByTestId("spending-assistant-send")).toBeVisible()
+    await expect(composer(page)).toBeEnabled()
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
 
     // Try again reruns the failed turn without duplicating the question.
-    await page.getByTestId("spending-assistant-retry").click()
-    await expect(assistantMessages(page).last()).toContainText(
-      "Recovered answer."
-    )
-    await expect(page.getByTestId("spending-assistant-error")).toHaveCount(0)
-    await expect(userMessages(page)).toHaveCount(1)
+    await page.getByRole("button", { name: "Try again" }).click()
+    await expect(assistantTurns(page).last()).toContainText("Recovered answer.")
+    await expect(page.getByText("LLM is not configured")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0)
+    await expect(userTurns(page)).toHaveCount(1)
   })
 
-  test("stops an in-flight response and returns to an idle composer", async ({
-    page,
-  }) => {
+  test("stops an in-flight response and offers Try again", async ({ page }) => {
     let release: () => void = () => {}
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -364,15 +473,15 @@ test.describe("Spending Assistant", () => {
     await page.goto("/assistant")
     await sendQuestion(page, "Summarize my spending")
 
-    const stopButton = page.getByTestId("spending-assistant-stop")
+    const stopButton = page.getByRole("button", { name: "Stop" })
     await expect(stopButton).toBeVisible()
     await stopButton.click()
 
-    await expect(page.getByTestId("spending-assistant-send")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
     await expect(stopButton).toHaveCount(0)
-    await expect(page.getByTestId("spending-assistant-input")).toBeEnabled()
-    await expect(assistantMessages(page).last()).toContainText("Stopped")
-    await expect(page.getByTestId("spending-assistant-retry")).toBeVisible()
+    await expect(composer(page)).toBeEnabled()
+    await expect(assistantTurns(page).last()).toContainText("Stopped")
+    await expect(page.getByRole("button", { name: "Try again" })).toBeVisible()
 
     release()
   })
@@ -389,20 +498,25 @@ test.describe("Spending Assistant", () => {
     })
 
     await page.goto("/assistant")
-    const input = page.getByTestId("spending-assistant-input")
+    const input = composer(page)
+    const send = page.getByRole("button", { name: "Send" })
+    await expect(send).toBeDisabled()
     await input.click()
     await input.pressSequentially("first line")
+    await expect(send).toBeEnabled()
     await input.press("Shift+Enter")
     await input.pressSequentially("second line")
 
     expect(await input.inputValue()).toContain("\n")
-    await expect(userMessages(page)).toHaveCount(0)
+    await expect(userTurns(page)).toHaveCount(0)
 
     await input.press("Enter")
-    await expect(userMessages(page).last()).toContainText("first line")
-    await expect(assistantMessages(page).last()).toContainText(
+    await expect(userTurns(page).last()).toContainText("first line")
+    await expect(userTurns(page).last()).toContainText("second line")
+    await expect(assistantTurns(page).last()).toContainText(
       "Here is your answer."
     )
+    await expect(input).toHaveValue("")
   })
 
   test("renders tool activity and answer text progressively as the stream arrives", async ({
@@ -415,28 +529,34 @@ test.describe("Spending Assistant", () => {
       () => window.__assistantStreamHook?.ready === true
     )
 
-    const assistant = assistantMessages(page).last()
-    const ticker = page.getByTestId("spending-assistant-tool")
-    const progress = page.getByTestId("spending-assistant-progress")
+    const assistant = assistantTurns(page).last()
 
     // Before any signal, the progress line idles on "Thinking…"; narration
     // replaces it, and a starting tool's verb phrase overrides the narration.
     await emitEvent(page, { type: "turn_started", turn_id: "turn-1" })
-    await expect(progress).toContainText("Thinking…")
+    await expect(assistant.getByText("Thinking…")).toBeVisible()
     await emitEvent(page, {
       type: "progress_narration",
       content: "Let me check your groceries.",
     })
-    await expect(progress).toContainText("Let me check your groceries.")
+    await expect(
+      assistant.getByText("Let me check your groceries.")
+    ).toBeVisible()
     await emitEvent(page, {
       type: "tool_call_start",
       tool_call_id: "call-1",
       tool_name: "get_spending_overview",
       arguments: { start: "2026-05-01", end: "2026-05-31" },
     })
-    await expect(progress).toContainText("Getting spending overview…")
-    await expect(ticker).toContainText("Spending overview")
-    await expect(ticker).toHaveAttribute("data-status", "running")
+    await expect(
+      assistant.getByText("Getting spending overview…")
+    ).toBeVisible()
+    const runningSummary = assistant.getByText("Spending overview…", {
+      exact: true,
+    })
+    await expect(runningSummary).toBeVisible()
+    await runningSummary.click()
+    await expect(assistant.getByRole("img", { name: "Running" })).toBeVisible()
     await expect(assistant).not.toContainText("You spent")
 
     await emitEvent(page, {
@@ -447,20 +567,21 @@ test.describe("Spending Assistant", () => {
       result_summary: "€1,234.00 spent · €0.00 income",
       success: true,
     })
-    await expect(ticker).toHaveAttribute("data-status", "success")
+    await expect(assistant.getByRole("img", { name: "Done" })).toBeVisible()
+    await expect(assistant).toContainText("€1,234.00 spent · €0.00 income")
 
     // A slow gap after the tool window falls back to the latest narration.
-    await expect(progress).toContainText("Let me check your groceries.", {
+    await expect(assistant.getByText("Let me check your groceries.")).toBeVisible({
       timeout: 10_000,
     })
 
     // The first chunk must render before the final result event arrives; the
-    // progress line yields to the streaming answer, which carries a live cursor.
+    // progress line yields to the streaming answer.
     await emitEvent(page, { type: "text_chunk", content: "You spent " })
     await expect(assistant).toContainText("You spent")
     await expect(assistant).not.toContainText("last month")
-    await expect(progress).toHaveCount(0)
-    await expect(page.locator(".assistant-markdown-streaming")).toBeVisible()
+    await expect(assistant.getByText("Let me check your groceries.")).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible()
 
     // A later chunk extends the same message in place.
     await emitEvent(page, { type: "text_chunk", content: "€1,234 last month." })
@@ -474,10 +595,11 @@ test.describe("Spending Assistant", () => {
     await emitEvent(page, { type: "done" })
     await page.evaluate(() => window.__assistantStreamHook?.close())
 
-    // Closing the stream returns the composer to its idle send state and
-    // retires the streaming cursor.
-    await expect(page.getByTestId("spending-assistant-send")).toBeVisible()
-    await expect(page.locator(".assistant-markdown-streaming")).toHaveCount(0)
+    // Closing the stream returns the composer to its idle send state.
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0)
+    await expect(assistant.getByRole("button", { name: "Copy response" })).toBeVisible()
+    await expect(assistantTurns(page)).toHaveCount(1)
   })
 
   test("keeps the reader's place during streaming and offers a return to the latest message", async ({
@@ -492,41 +614,53 @@ test.describe("Spending Assistant", () => {
 
     // Sending pins the question near the top of the thread so the reply
     // streams downward in reading position.
-    const thread = page.getByTestId("spending-assistant-thread")
-    const questionOffset = () =>
-      userMessages(page)
-        .last()
-        .evaluate(
-          (element) =>
-            element.getBoundingClientRect().top -
-            element
-              .closest('[data-testid="spending-assistant-thread"]')!
-              .getBoundingClientRect().top
-        )
-    await expect.poll(questionOffset).toBeLessThan(48)
+    await expect
+      .poll(() => offsetInThread(userTurns(page).last()))
+      .toBeLessThan(48)
+
+    // The reply reserves the room below the question before any text arrives.
+    const reserved = await page.evaluate(() => {
+      const log = document.querySelector('[role="log"]')!
+      const user = log.querySelector('[aria-label="You"]')!
+      const assistant = log.querySelector('[aria-label="Assistant"]')!
+      return {
+        needed: log.clientHeight - user.clientHeight - 64,
+        actual: assistant.getBoundingClientRect().height,
+      }
+    })
+    expect(reserved.actual).toBeGreaterThanOrEqual(reserved.needed - 1)
 
     const longAnswer = Array.from(
       { length: 80 },
       (_, index) => `Spending detail ${index + 1}.`
     ).join("\n\n")
     await emitEvent(page, { type: "text_chunk", content: longAnswer })
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 80.")).toBeAttached()
+    await expect(thread(page).getByText("Spending detail 80.")).toBeAttached()
 
     // Streaming never drags the reader; the return control appears once the
     // newest content extends below the viewport.
-    const scrollToLatest = page.getByTestId("spending-assistant-scroll-bottom")
+    const scrollToLatest = page.getByRole("button", {
+      name: "Scroll to latest message",
+    })
     await expect(scrollToLatest).toBeVisible()
-    const scrollTopBefore = await thread.evaluate(
-      (element) => element.scrollTop
-    )
+    // Let the send-time smooth scroll settle before measuring.
+    const scrollTopBefore = await thread(page).evaluate(async (element) => {
+      let last = -1
+      while (element.scrollTop !== last) {
+        last = element.scrollTop
+        await new Promise((resolve) => window.setTimeout(resolve, 100))
+      }
+      return last
+    })
     await emitEvent(page, { type: "text_chunk", content: "\n\nNewest detail." })
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Newest detail.")).toBeAttached()
+    await expect(thread(page).getByText("Newest detail.")).toBeAttached()
     await expect
-      .poll(() => thread.evaluate((element) => element.scrollTop))
+      .poll(() => thread(page).evaluate((element) => element.scrollTop))
       .toBe(scrollTopBefore)
 
     await scrollToLatest.click()
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Newest detail.")).toBeInViewport()
+    await expect(thread(page).getByText("Newest detail.")).toBeInViewport()
+    await expect(scrollToLatest).toHaveCount(0)
 
     await page.evaluate(() => window.__assistantStreamHook?.close())
   })
@@ -548,28 +682,17 @@ test.describe("Spending Assistant", () => {
 
     await page.goto("/assistant")
     await sendQuestion(page, "First question")
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 40.")).toBeAttached()
+    await expect(thread(page).getByText("Spending detail 40.")).toBeAttached()
     await sendQuestion(page, "Second question")
 
-    const thread = page.getByTestId("spending-assistant-thread")
     await expect
-      .poll(() =>
-        userMessages(page)
-          .last()
-          .evaluate(
-            (element) =>
-              element.getBoundingClientRect().top -
-              element
-                .closest('[data-testid="spending-assistant-thread"]')!
-                .getBoundingClientRect().top
-          )
-      )
+      .poll(() => offsetInThread(userTurns(page).last()))
       .toBeLessThan(48)
 
     // Earlier turns stay reachable by scrolling up.
-    await thread.evaluate((element) => {
+    await thread(page).evaluate((element) => {
       element.scrollTop = 0
     })
-    await expect(userMessages(page).first()).toBeInViewport()
+    await expect(userTurns(page).first()).toBeInViewport()
   })
 })

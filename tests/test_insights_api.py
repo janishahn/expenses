@@ -203,3 +203,39 @@ def test_insights_serializes_budget_progress_keys_as_strings(
     assert set(payload["budget_progress"]) == {"null", str(groceries_id)}
     assert payload["budget_progress"]["null"]["remaining_cents"] == 12_000
     assert payload["budget_progress"][str(groceries_id)]["remaining_cents"] == 12_000
+
+
+def test_insights_totals_cover_the_exact_period(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Exact period", "expense")
+    for day, amount_cents, title in (
+        ("2025-10-01", 100_000, "Rent"),
+        ("2025-10-11", 5_000, "Groceries"),
+        ("2024-01-15", 2_000, "First purchase"),
+    ):
+        response = api_client.post(
+            "/api/transactions",
+            headers=csrf_headers,
+            json={
+                "date": day,
+                "occurred_at": f"{day}T12:00:00",
+                "type": "expense",
+                "amount_cents": amount_cents,
+                "category_id": category_id,
+                "title": title,
+            },
+        )
+        assert response.status_code == 200
+
+    partial = api_client.get(
+        "/api/insights?period=custom&start=2025-10-10&end=2025-10-13"
+    ).json()
+    # The monthly series counts the whole month; the totals keep to the dates.
+    assert sum(point["expense_cents"] for point in partial["series"]) == 105_000
+    assert (partial["expense_cents"], partial["month_count"]) == (5_000, 1)
+
+    all_time = api_client.get("/api/insights?period=all").json()
+    today = date.today()
+    assert all_time["expense_cents"] == 107_000
+    assert all_time["month_count"] == (today.year - 2024) * 12 + today.month

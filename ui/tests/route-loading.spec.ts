@@ -21,9 +21,13 @@ test.describe("Route loading skeleton", () => {
     await page.goto("/budgets")
     await expect(page.getByTestId("route-loading")).toBeVisible()
     await expect(page.getByRole("button", { name: "Add budget" })).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
 
     releaseBudgets()
-    const addBudget = page.getByRole("button", { name: "Add budget" })
+    const addBudget = page
+      .getByRole("main")
+      .locator("header")
+      .getByRole("button", { name: "Add budget" })
     await expect(addBudget).toBeVisible()
     await addBudget.click()
     await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
@@ -57,7 +61,7 @@ test.describe("Route loading skeleton", () => {
     await expect(loader).toBeVisible()
     await expect(loader.getByRole("status")).toHaveText("Loading transactions…")
 
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
+    const row = page.getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
     await expect(loader).toHaveCount(0)
   })
@@ -98,7 +102,7 @@ test.describe("Route loading skeleton", () => {
 
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
 
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
+    const row = page.getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
     expect(await page.locator("html").getAttribute("data-route-loading-seen")).toBeNull()
   })

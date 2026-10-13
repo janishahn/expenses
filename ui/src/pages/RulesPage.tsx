@@ -1,64 +1,65 @@
-import { useCallback, useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
-import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
-import { XCircleIcon } from "@phosphor-icons/react/XCircle"
+import { useEffect, useState, type ReactElement, type ReactNode } from "react"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
+import { CheckIcon } from "@phosphor-icons/react/Check"
+import { CoinsIcon } from "@phosphor-icons/react/Coins"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { ListNumbersIcon } from "@phosphor-icons/react/ListNumbers"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
+import { SparkleIcon } from "@phosphor-icons/react/Sparkle"
+import { TagIcon } from "@phosphor-icons/react/Tag"
+import { TextAaIcon } from "@phosphor-icons/react/TextAa"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { WalletIcon } from "@phosphor-icons/react/Wallet"
 import { XIcon } from "@phosphor-icons/react/X"
-import { useOutletContext } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import type { AppShellOutletContext } from "../app/AppShell"
+import type { CategorySummary } from "../app/api-types"
 import { useAuth } from "../app/auth"
-import { formatCurrency } from "../app/format"
-import { Toggle } from "../components/Toggle"
+import { useQueuedSave } from "../app/queued-save"
+import { amountInput, parseAmountCents } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
-import { CategoryIcon } from "../components/CategoryIcon"
-import PageIntro from "../components/PageIntro"
-import {
-  FinancialPanel,
-  SectionHeading,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/ui/product-fields"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import { FormPopover, ValuePopover } from "../components/FormPopover"
+import { TagPicker } from "../components/TagPicker"
+import { Amount } from "../components/ui/Amount"
+import { Button, IconButton } from "../components/ui/Button"
+import { CategoryGlyph, IconGlyph } from "../components/ui/CategoryGlyph"
+import { Combobox } from "../components/ui/Combobox"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryChips, EntryDialog, EntryName, EntryPreview } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { AmountCell, Cell, List, ListHead, Row, RowActions, type Columns } from "../components/ui/LedgerRow"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading } from "../components/ui/Panel"
+import { Peek, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { Pill } from "../components/ui/Pill"
+import { InlineText, Property, PropertyButton, PropertyList } from "../components/ui/PropertyList"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { Sheet } from "../components/ui/Sheet"
+import { Switch } from "../components/ui/Switch"
+import { TagChip } from "../components/ui/TagChip"
+import { Field, FieldError, Select, TextField } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { buildSearchParams } from "../lib/searchParams"
 
-type RuleCategory = {
-  id: number
-  name: string
-  type: string
-  icon: string | null
-}
-
-type RuleTag = {
-  id: number
-  name: string
-  is_hidden_from_budget: boolean
-}
+type MatchType = "contains" | "starts_with" | "equals" | "regex"
+type AppliesTo = "any" | "expense" | "income"
+type RuleField = "name" | "enabled" | "priority" | "type" | "title" | "amount" | "category" | "tags" | "budgets"
 
 type RuleRow = {
   id: number
   name: string
   enabled: boolean
   priority: number
-  match_type: string
+  match_type: MatchType
   match_value: string
-  transaction_type: string | null
+  transaction_type: "income" | "expense" | null
   min_amount_cents: number | null
   max_amount_cents: number | null
   set_category_id: number | null
-  set_category: RuleCategory | null
+  set_category: CategorySummary | null
   add_tags: string[]
   budget_exclude_tag_id: number | null
   budget_exclude_tag: { id: number; name: string } | null
@@ -66,786 +67,929 @@ type RuleRow = {
 
 type RulesResponse = {
   rules: RuleRow[]
-  categories: RuleCategory[]
-  tags: RuleTag[]
+  categories: CategorySummary[]
+  tags: Array<{ id: number; name: string; is_hidden_from_budget: boolean }>
 }
 
-type RulePreviewSample = {
-  id: number
-  title: string | null
-  amount_cents: number
-  type: string
-  before_category: string
-  after_category: string
+// The body of POST /api/rules, PUT /api/rules/{id}, and POST /api/rules/preview.
+type RulePayload = {
+  name: string
+  enabled: boolean
+  priority: number
+  match_type: MatchType
+  match_value: string
+  transaction_type: "income" | "expense" | null
+  min_amount_cents: number | null
+  max_amount_cents: number | null
+  set_category_id: number | null
   add_tags: string[]
+  budget_exclude_tag_id: number | null
 }
 
 type RulePreview = {
   matches_count: number
-  sample: RulePreviewSample[]
+  sample: Array<{
+    id: number
+    title: string | null
+    amount_cents: number
+    type: string
+    before_category: string
+    after_category: string
+    add_tags: string[]
+  }>
 }
 
 type RuleSuggestion = {
   id: number
-  status: string
   name: string
-  match_type: string
+  match_type: MatchType
   match_value: string
   transaction_type: string | null
   set_category_name: string | null
   add_tags: string[]
   confidence: number
-  reason: string
-  preview_matches_count: number
 }
 
+const MATCH_TYPES: Array<{ value: MatchType; label: string; phrase: string }> = [
+  { value: "contains", label: "Contains", phrase: "contains" },
+  { value: "starts_with", label: "Starts with", phrase: "starts with" },
+  { value: "equals", label: "Equals", phrase: "equals" },
+  { value: "regex", label: "Regex", phrase: "matches" },
+]
+const RULE_COLUMNS: Columns = {
+  columns: "32px minmax(0, 170px) minmax(0, 1fr) minmax(0, 240px) 32px",
+  narrowColumns: "32px minmax(0, 1fr) minmax(0, 220px) 32px",
+  mobileColumns: "32px minmax(0, 1fr) minmax(0, 130px) 28px",
+}
+const SUGGESTION_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) minmax(0, 180px) 44px 64px",
+  mobileColumns: "18px minmax(0, 1fr) minmax(0, 110px) 64px",
+}
+const MATCH_COLUMNS = "minmax(0, 1fr) auto auto"
+// Category picker value for "leave the category unchanged".
+const KEEP = 0
+
+function rulePayload(rule: RuleRow): RulePayload {
+  return {
+    name: rule.name,
+    enabled: rule.enabled,
+    priority: rule.priority,
+    match_type: rule.match_type,
+    match_value: rule.match_value,
+    transaction_type: rule.transaction_type,
+    min_amount_cents: rule.min_amount_cents,
+    max_amount_cents: rule.max_amount_cents,
+    set_category_id: rule.set_category_id,
+    add_tags: rule.add_tags,
+    budget_exclude_tag_id: rule.budget_exclude_tag_id,
+  }
+}
+
+function phrase(matchType: MatchType): string {
+  return MATCH_TYPES.find((entry) => entry.value === matchType)?.phrase ?? matchType
+}
+
+// `contains "edeka"`
+function titleCondition(matchType: MatchType, value: string): string {
+  return `${phrase(matchType)} “${value}”`
+}
+
+function amountCondition(min: number | null, max: number | null): ReactNode {
+  if (min !== null && max !== null) {
+    return (
+      <>
+        <Amount cents={min} /> – <Amount cents={max} />
+      </>
+    )
+  }
+  if (min !== null) {
+    return (
+      <>
+        at least <Amount cents={min} />
+      </>
+    )
+  }
+  if (max !== null) {
+    return (
+      <>
+        at most <Amount cents={max} />
+      </>
+    )
+  }
+  return null
+}
+
+// `Title contains "amazon" · at most 30,00 € · expenses`
+function whenText(rule: RulePayload): ReactNode {
+  const amount = amountCondition(rule.min_amount_cents, rule.max_amount_cents)
+  return (
+    <>
+      Title {titleCondition(rule.match_type, rule.match_value)}
+      {amount ? <> · {amount}</> : null}
+      {rule.transaction_type ? ` · ${rule.transaction_type === "income" ? "income" : "expenses"} only` : null}
+    </>
+  )
+}
+
+// The tags a rule adds, including the one that keeps matches out of budgets.
+function addedTags(rule: RuleRow): string[] {
+  return rule.budget_exclude_tag ? [...rule.add_tags, rule.budget_exclude_tag.name] : rule.add_tags
+}
+
+// Empty fields leave a bound open.
+function parseBounds(min: string, max: string): { min: number | null; max: number | null } | { error: string } {
+  const minCents = min.trim() ? parseAmountCents(min) : null
+  const maxCents = max.trim() ? parseAmountCents(max) : null
+  if (min.trim() && minCents === null) return { error: "Invalid min amount." }
+  if (max.trim() && maxCents === null) return { error: "Invalid max amount." }
+  return { min: minCents, max: maxCents }
+}
+
+function parsePriority(raw: string): number | null {
+  const value = Number(raw.trim())
+  return raw.trim() && Number.isInteger(value) && value >= 0 && value <= 10_000 ? value : null
+}
+
+function useRulePreview(payload: RulePayload | null, key: unknown[]) {
+  return useQuery({
+    queryKey: ["rules", "preview", ...key],
+    queryFn: () => apiFetch<RulePreview>("/api/rules/preview", { method: "POST", body: JSON.stringify(payload) }),
+    enabled: payload !== null,
+    placeholderData: keepPreviousData,
+    retry: 0,
+  })
+}
+
+function RuleCategoryPicker({
+  categories,
+  appliesTo,
+  selectedId,
+  onSelect,
+  trigger,
+}: {
+  categories: CategorySummary[]
+  appliesTo: "income" | "expense" | null
+  selectedId: number | null
+  onSelect: (categoryId: number | null) => void
+  trigger: ReactElement
+}) {
+  const offered = appliesTo ? categories.filter((category) => category.type === appliesTo) : categories
+  const ordered = [...offered.filter((entry) => entry.type !== "income"), ...offered.filter((entry) => entry.type === "income")]
+  return (
+    <Combobox
+      label="Category"
+      trigger={trigger}
+      options={[
+        { value: KEEP, label: "Keep category" },
+        ...ordered.map((category) => ({
+          value: category.id,
+          label: category.name,
+          leading: <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} />,
+          group: appliesTo ? undefined : category.type === "income" ? "Income" : "Expense",
+        })),
+      ]}
+      selected={[selectedId ?? KEEP]}
+      onSelect={(value) => onSelect(value === KEEP ? null : value)}
+    />
+  )
+}
+
+function AmountPopover({
+  min,
+  max,
+  trigger,
+  onSave,
+}: {
+  min: number | null
+  max: number | null
+  trigger: ReactElement
+  onSave: (min: number | null, max: number | null) => void
+}) {
+  const [draft, setDraft] = useState({ min: "", max: "" })
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <FormPopover
+      label="Amount"
+      submitLabel="Done"
+      trigger={trigger}
+      error={error}
+      onOpen={() => {
+        setDraft({ min: min === null ? "" : amountInput(min), max: max === null ? "" : amountInput(max) })
+        setError(null)
+      }}
+      onSubmit={() => {
+        const bounds = parseBounds(draft.min, draft.max)
+        if ("error" in bounds) {
+          setError(bounds.error)
+          return false
+        }
+        if (bounds.min !== min || bounds.max !== max) onSave(bounds.min, bounds.max)
+        return true
+      }}
+    >
+      <Field label="At least">
+        <TextField
+          autoFocus
+          inputMode="decimal"
+          placeholder="Any"
+          value={draft.min}
+          onChange={(event) => setDraft({ ...draft, min: event.target.value })}
+        />
+      </Field>
+      <Field label="At most">
+        <TextField
+          inputMode="decimal"
+          placeholder="Any"
+          value={draft.max}
+          onChange={(event) => setDraft({ ...draft, max: event.target.value })}
+        />
+      </Field>
+    </FormPopover>
+  )
+}
+
+function PriorityPopover({ value, trigger, onSave }: { value: number; trigger: ReactElement; onSave: (value: number) => void }) {
+  return (
+    <ValuePopover
+      label="Priority"
+      inputMode="numeric"
+      submitLabel="Done"
+      value={String(value)}
+      trigger={trigger}
+      onSave={(raw) => {
+        const next = parsePriority(raw)
+        if (next === null) return "Enter a priority from 0 to 10000."
+        onSave(next)
+        return null
+      }}
+    />
+  )
+}
+
+function TitlePopover({
+  matchType,
+  value,
+  trigger,
+  onSave,
+}: {
+  matchType: MatchType
+  value: string
+  trigger: ReactElement
+  onSave: (matchType: MatchType, value: string) => void
+}) {
+  const [draft, setDraft] = useState({ matchType, value })
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <FormPopover
+      label="Title"
+      submitLabel="Done"
+      trigger={trigger}
+      error={error}
+      onOpen={() => {
+        setDraft({ matchType, value })
+        setError(null)
+      }}
+      onSubmit={() => {
+        if (!draft.value.trim()) {
+          setError("Enter a match value.")
+          return false
+        }
+        if (draft.matchType !== matchType || draft.value.trim() !== value) onSave(draft.matchType, draft.value.trim())
+        return true
+      }}
+    >
+      <Field label="Match">
+        <Select value={draft.matchType} onChange={(event) => setDraft({ ...draft, matchType: event.target.value as MatchType })}>
+          {MATCH_TYPES.map((entry) => (
+            <option key={entry.value} value={entry.value}>
+              {entry.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Title text">
+        <TextField autoFocus value={draft.value} onChange={(event) => setDraft({ ...draft, value: event.target.value })} />
+      </Field>
+    </FormPopover>
+  )
+}
+
+function BudgetsMenu({
+  tags,
+  selectedId,
+  trigger,
+  onSelect,
+}: {
+  tags: RulesResponse["tags"]
+  selectedId: number | null
+  trigger: ReactElement
+  onSelect: (tagId: number | null) => void
+}) {
+  return (
+    <Menu label="Budgets" align="start" trigger={trigger}>
+      <MenuItem checked={selectedId === null} onSelect={() => onSelect(null)}>
+        Included
+      </MenuItem>
+      {tags.map((tag) => (
+        <MenuItem key={tag.id} checked={selectedId === tag.id} onSelect={() => onSelect(tag.id)}>
+          Excluded with {tag.name}
+        </MenuItem>
+      ))}
+    </Menu>
+  )
+}
+
+function AddRuleDialog({ data, onClose }: { data: RulesResponse; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [appliesTo, setAppliesTo] = useState<AppliesTo>("any")
+  const [name, setName] = useState("")
+  const [matchType, setMatchType] = useState<MatchType>("contains")
+  const [matchValue, setMatchValue] = useState("")
+  const [bounds, setBounds] = useState<{ min: number | null; max: number | null }>({ min: null, max: null })
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [tags, setTags] = useState<string[]>([])
+  const [excludeTagId, setExcludeTagId] = useState<number | null>(null)
+  const [priority, setPriority] = useState(100)
+  const [enabled, setEnabled] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // The preview follows the match text after a pause in typing.
+  const [settledValue, setSettledValue] = useState("")
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledValue(matchValue.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [matchValue])
+
+  const category = data.categories.find((entry) => entry.id === categoryId)
+  const hiddenTags = data.tags.filter((tag) => tag.is_hidden_from_budget)
+  const excludeTag = hiddenTags.find((tag) => tag.id === excludeTagId)
+  const payload: RulePayload = {
+    name: name.trim(),
+    enabled,
+    priority,
+    match_type: matchType,
+    match_value: matchValue.trim(),
+    transaction_type: appliesTo === "any" ? null : appliesTo,
+    min_amount_cents: bounds.min,
+    max_amount_cents: bounds.max,
+    set_category_id: categoryId,
+    add_tags: tags,
+    budget_exclude_tag_id: excludeTagId,
+  }
+  const previewPayload = settledValue ? { ...payload, name: payload.name || settledValue, match_value: settledValue } : null
+  const preview = useRulePreview(previewPayload, [JSON.stringify(previewPayload)])
+
+  const create = useMutation({
+    mutationFn: (body: RulePayload) => apiFetch("/api/rules", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["rules"] })
+      onClose()
+    },
+    onError: (failure) => setError(getApiErrorMessage(failure, "Unable to create rule.")),
+  })
+
+  const submit = () => {
+    setError(null)
+    if (!payload.name) return setError("Enter a rule name.")
+    if (!payload.match_value) return setError("Enter a match value.")
+    create.mutate(payload)
+  }
+
+  const amount = amountCondition(bounds.min, bounds.max)
+  const matches = preview.data?.matches_count ?? 0
+
+  return (
+    <EntryDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+      title="Add rule"
+      direction={
+        <SegmentedControl
+          label="Applies to"
+          value={appliesTo}
+          options={[
+            { value: "any", label: "Any" },
+            { value: "expense", label: "Expenses" },
+            { value: "income", label: "Income" },
+          ]}
+          onChange={(next) => {
+            setAppliesTo(next)
+            if (next !== "any" && category && category.type !== next) setCategoryId(null)
+          }}
+        />
+      }
+      submitLabel="Add rule"
+      onSubmit={submit}
+      pending={create.isPending}
+      error={error}
+    >
+      <EntryName autoFocus aria-label="Name" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
+      <EntryName
+        aria-label="Title text"
+        placeholder={`Title ${phrase(matchType)}…`}
+        value={matchValue}
+        onChange={(event) => setMatchValue(event.target.value)}
+      />
+      <EntryChips>
+        <Menu
+          label="Match"
+          align="start"
+          trigger={
+            <Pill icon={TextAaIcon} aria-label={`Match ${phrase(matchType)}`}>
+              {MATCH_TYPES.find((entry) => entry.value === matchType)?.label}
+            </Pill>
+          }
+        >
+          {MATCH_TYPES.map((entry) => (
+            <MenuItem key={entry.value} checked={entry.value === matchType} onSelect={() => setMatchType(entry.value)}>
+              {entry.label}
+            </MenuItem>
+          ))}
+        </Menu>
+        <AmountPopover
+          min={bounds.min}
+          max={bounds.max}
+          onSave={(min, max) => setBounds({ min, max })}
+          trigger={
+            <Pill
+              icon={CoinsIcon}
+              set={amount !== null}
+              onClear={amount !== null ? () => setBounds({ min: null, max: null }) : undefined}
+              clearLabel="Clear amount condition"
+              aria-label="Amount condition"
+            >
+              {amount ?? "Any amount"}
+            </Pill>
+          }
+        />
+        <RuleCategoryPicker
+          categories={data.categories}
+          appliesTo={appliesTo === "any" ? null : appliesTo}
+          selectedId={categoryId}
+          onSelect={setCategoryId}
+          trigger={
+            <Pill
+              icon={category ? undefined : ShapesIcon}
+              leading={category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} /> : undefined}
+              set={Boolean(category)}
+              aria-label={`Set category ${category?.name ?? "none"}`}
+            >
+              {category?.name ?? "Keep category"}
+            </Pill>
+          }
+        />
+        <TagPicker
+          label="Add tags"
+          options={data.tags.filter((tag) => !tag.is_hidden_from_budget).map((tag) => tag.name)}
+          selected={tags}
+          onChange={setTags}
+          trigger={
+            <Pill icon={TagIcon} set={tags.length > 0} aria-label={tags.length ? `Add tags ${tags.join(", ")}` : "Add tags"}>
+              {tags.length ? tags.join(", ") : "Tags"}
+            </Pill>
+          }
+        />
+        {hiddenTags.length ? (
+          <BudgetsMenu
+            tags={hiddenTags}
+            selectedId={excludeTagId}
+            onSelect={setExcludeTagId}
+            trigger={
+              <Pill icon={WalletIcon} set={Boolean(excludeTag)} aria-label={`Budgets ${excludeTag ? "excluded" : "included"}`}>
+                {excludeTag ? `Excluded with ${excludeTag.name}` : "In budgets"}
+              </Pill>
+            }
+          />
+        ) : null}
+        <PriorityPopover
+          value={priority}
+          onSave={setPriority}
+          trigger={
+            <Pill icon={ListNumbersIcon} set={priority !== 100} aria-label={`Priority ${priority}`}>
+              Priority {priority}
+            </Pill>
+          }
+        />
+        <Pill icon={CheckIcon} set={enabled} aria-pressed={enabled} onClick={() => setEnabled(!enabled)}>
+          Enabled
+        </Pill>
+      </EntryChips>
+      <EntryPreview>
+        {!previewPayload
+          ? null
+          : preview.isError
+            ? getApiErrorMessage(preview.error, "Preview unavailable")
+            : preview.data
+              ? matches
+                ? `Matches ${matches} recent ${matches === 1 ? "transaction" : "transactions"}`
+                : "No recent matches"
+              : null}
+      </EntryPreview>
+    </EntryDialog>
+  )
+}
+
+function RulePeek({ rule: stored, data, onClose }: { rule: RuleRow; data: RulesResponse; onClose: () => void }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const {
+    view: rule,
+    errors,
+    setError,
+    save,
+  } = useQueuedSave<RuleRow, RulePayload, RuleField>({
+    url: `/api/rules/${stored.id}`,
+    source: stored,
+    toPayload: rulePayload,
+    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["rules"] }),
+    draftFields: ["name"],
+  })
+  const payload = rulePayload(rule)
+  const preview = useRulePreview(payload, [rule.id, JSON.stringify(payload)])
+  const remove = useMutation({
+    mutationFn: () => apiFetch(`/api/rules/${rule.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      onClose()
+      void queryClient.invalidateQueries({ queryKey: ["rules"] })
+    },
+  })
+  const category =
+    rule.set_category_id === null ? null : (data.categories.find((entry) => entry.id === rule.set_category_id) ?? rule.set_category)
+  const budgetTag =
+    rule.budget_exclude_tag_id === null ? null : (data.tags.find((tag) => tag.id === rule.budget_exclude_tag_id) ?? rule.budget_exclude_tag)
+  const hiddenTags = data.tags.filter((tag) => tag.is_hidden_from_budget)
+  const amount = amountCondition(rule.min_amount_cents, rule.max_amount_cents)
+  const matches = preview.data
+
+  return (
+    <Peek
+      parent="Rules"
+      title={rule.name}
+      onClose={onClose}
+      menu={
+        <MenuItem
+          icon={TrashIcon}
+          danger
+          onSelect={async () => {
+            if (await confirmDialog({ title: `Delete rule "${rule.name}"?`, confirmLabel: "Delete", tone: "danger" })) {
+              remove.mutate()
+            }
+          }}
+        >
+          Delete rule
+        </MenuItem>
+      }
+    >
+      <InlineText
+        variant="title"
+        label="Name"
+        value={rule.name}
+        error={errors.name}
+        onCancel={() => setError("name", null)}
+        onSave={(next) => {
+          if (!next.trim()) {
+            setError("name", "Enter a rule name.")
+            return false
+          }
+          return save("name", { name: next.trim() })
+        }}
+      />
+      {remove.isError ? <FieldError>{getApiErrorMessage(remove.error, "Unable to delete the rule.")}</FieldError> : null}
+      <PropertyList>
+        <Property label="Enabled" error={errors.enabled}>
+          <Switch label="Enabled" checked={rule.enabled} onCheckedChange={(checked) => void save("enabled", { enabled: checked })} />
+        </Property>
+        <Property label="Priority" editable error={errors.priority}>
+          <PriorityPopover
+            value={rule.priority}
+            onSave={(next) => void save("priority", { priority: next })}
+            trigger={<PropertyButton>{rule.priority}</PropertyButton>}
+          />
+        </Property>
+      </PropertyList>
+      <PeekSection title="When">
+        <PropertyList>
+          <Property label="Type" editable error={errors.type}>
+            <Menu
+              label="Type"
+              align="start"
+              trigger={
+                <PropertyButton empty={!rule.transaction_type}>
+                  {rule.transaction_type === "income" ? "Income" : rule.transaction_type === "expense" ? "Expense" : "Any"}
+                </PropertyButton>
+              }
+            >
+              {([null, "expense", "income"] as const).map((next) => (
+                <MenuItem
+                  key={next ?? "any"}
+                  checked={rule.transaction_type === next}
+                  onSelect={() => {
+                    if (rule.transaction_type === next) return
+                    // A category of the other type could never apply.
+                    const keepsCategory = !next || !category || category.type === next
+                    void save("type", { transaction_type: next, ...(keepsCategory ? {} : { set_category_id: null }) })
+                  }}
+                >
+                  {next === "income" ? "Income" : next === "expense" ? "Expense" : "Any"}
+                </MenuItem>
+              ))}
+            </Menu>
+          </Property>
+          <Property label="Title" editable error={errors.title}>
+            <TitlePopover
+              matchType={rule.match_type}
+              value={rule.match_value}
+              onSave={(matchType, value) => void save("title", { match_type: matchType, match_value: value })}
+              trigger={<PropertyButton>{titleCondition(rule.match_type, rule.match_value)}</PropertyButton>}
+            />
+          </Property>
+          <Property label="Amount" editable error={errors.amount}>
+            <AmountPopover
+              min={rule.min_amount_cents}
+              max={rule.max_amount_cents}
+              onSave={(min, max) => void save("amount", { min_amount_cents: min, max_amount_cents: max })}
+              trigger={<PropertyButton empty={amount === null}>{amount ? <span>{amount}</span> : "Any"}</PropertyButton>}
+            />
+          </Property>
+        </PropertyList>
+      </PeekSection>
+      <PeekSection title="Then">
+        <PropertyList>
+          <Property label="Category" editable error={errors.category}>
+            <RuleCategoryPicker
+              categories={data.categories}
+              appliesTo={rule.transaction_type}
+              selectedId={rule.set_category_id}
+              onSelect={(categoryId) => {
+                if (categoryId !== rule.set_category_id || errors.category) void save("category", { set_category_id: categoryId })
+              }}
+              trigger={
+                <PropertyButton empty={!category}>
+                  {category ? (
+                    <>
+                      <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} />
+                      {category.name}
+                    </>
+                  ) : (
+                    "Keep category"
+                  )}
+                </PropertyButton>
+              }
+            />
+          </Property>
+          <Property label="Add tags" error={errors.tags}>
+            {rule.add_tags.map((name) => (
+              <TagChip key={name} onRemove={() => void save("tags", { add_tags: rule.add_tags.filter((entry) => entry !== name) })}>
+                {name}
+              </TagChip>
+            ))}
+            <TagPicker
+              label="Add tags"
+              trigger={<IconButton icon={PlusIcon} label="Add tag" size="small" />}
+              options={data.tags.filter((tag) => !tag.is_hidden_from_budget).map((tag) => tag.name)}
+              selected={rule.add_tags}
+              onChange={(tags) => void save("tags", { add_tags: tags })}
+            />
+          </Property>
+          {hiddenTags.length || budgetTag ? (
+            <Property label="Budgets" editable error={errors.budgets}>
+              <BudgetsMenu
+                tags={hiddenTags}
+                selectedId={rule.budget_exclude_tag_id}
+                onSelect={(tagId) => {
+                  if (tagId !== rule.budget_exclude_tag_id || errors.budgets) void save("budgets", { budget_exclude_tag_id: tagId })
+                }}
+                trigger={
+                  <PropertyButton empty={!budgetTag}>
+                    {budgetTag ? `Excluded with ${budgetTag.name}` : "Included"}
+                  </PropertyButton>
+                }
+              />
+            </Property>
+          ) : (
+            <Property label="Budgets" empty>
+              Included
+            </Property>
+          )}
+        </PropertyList>
+      </PeekSection>
+      <PeekSection title="Matches" action={matches ? `${matches.matches_count} recent` : undefined}>
+        {preview.isError ? (
+          <FieldError>{getApiErrorMessage(preview.error, "Unable to preview this rule.")}</FieldError>
+        ) : matches?.sample.length ? (
+          <List flat label="Matches">
+            {matches.sample.map((match) => (
+              <Row
+                key={match.id}
+                columns={MATCH_COLUMNS}
+                label={match.title ?? "Untitled"}
+                onOpen={() => navigate(`/transactions/${match.id}`)}
+              >
+                <Cell>{match.title ?? "Untitled"}</Cell>
+                <Cell tone="muted">
+                  {match.before_category === match.after_category ? null : (
+                    <>
+                      {match.before_category} <ArrowRightIcon size={12} role="img" aria-label="to" /> {match.after_category}
+                    </>
+                  )}
+                </Cell>
+                <AmountCell>
+                  <Amount cents={match.amount_cents} kind={match.type === "income" ? "income" : "expense"} />
+                </AmountCell>
+              </Row>
+            ))}
+          </List>
+        ) : (
+          <EmptyState inline>{preview.isLoading ? "Loading…" : "No recent matches"}</EmptyState>
+        )}
+      </PeekSection>
+    </Peek>
+  )
+}
+
+function SuggestionRows({ suggestions, categories }: { suggestions: RuleSuggestion[]; categories: CategorySummary[] }) {
+  const queryClient = useQueryClient()
+  const accept = useMutation({
+    mutationFn: (id: number) => apiFetch<{ id: number }>(`/api/ai/rules/suggestions/${id}/accept`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] })
+      void queryClient.invalidateQueries({ queryKey: ["rules"] })
+    },
+    onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to accept the suggestion.") }),
+  })
+  const reject = useMutation({
+    mutationFn: (id: number) => apiFetch<{ id: number }>(`/api/ai/rules/suggestions/${id}/reject`, { method: "POST" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] }),
+    onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to reject the suggestion.") }),
+  })
+  return (
+    <>
+      <DayBand label="Suggestions" end={suggestions.length} />
+      {suggestions.map((suggestion) => {
+        const category = categories.find(
+          (entry) =>
+            entry.name === suggestion.set_category_name &&
+            (!suggestion.transaction_type || entry.type === suggestion.transaction_type)
+        )
+        return (
+          <Row key={suggestion.id} {...SUGGESTION_COLUMNS} label={suggestion.name}>
+            <IconGlyph icon={SparkleIcon} />
+            <Cell>Title {titleCondition(suggestion.match_type, suggestion.match_value)}</Cell>
+            <Cell>
+              {category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} inline /> : null}
+              {suggestion.set_category_name ?? <Cell tone="faint">Keep category</Cell>}
+            </Cell>
+            <Cell align="right" tone="faint" hide="mobile">
+              {Math.round(suggestion.confidence * 100)} %
+            </Cell>
+            <RowActions>
+              <IconButton
+                icon={CheckIcon}
+                label={`Accept ${suggestion.name}`}
+                disabled={accept.isPending || reject.isPending}
+                onClick={() => accept.mutate(suggestion.id)}
+              />
+              <IconButton
+                icon={XIcon}
+                label={`Reject ${suggestion.name}`}
+                disabled={accept.isPending || reject.isPending}
+                onClick={() => reject.mutate(suggestion.id)}
+              />
+            </RowActions>
+          </Row>
+        )
+      })}
+    </>
+  )
+}
+
+// Rules set a category or tags on new and imported transactions, in priority order.
 function RulesPage() {
   const { llmEnabled } = useAuth()
+  const isDesktop = useIsDesktop()
   const queryClient = useQueryClient()
-  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [name, setName] = useState("")
-  const [enabled, setEnabled] = useState(true)
-  const [priority, setPriority] = useState("100")
-  const [matchType, setMatchType] = useState("contains")
-  const [matchValue, setMatchValue] = useState("")
-  const [transactionType, setTransactionType] = useState("")
-  const [minAmount, setMinAmount] = useState("")
-  const [maxAmount, setMaxAmount] = useState("")
-  const [setCategoryId, setSetCategoryId] = useState("")
-  const [addTags, setAddTags] = useState<string[]>([])
-  const [budgetExcludeTagId, setBudgetExcludeTagId] = useState("")
-  const [formError, setFormError] = useState("")
-  const [preview, setPreview] = useState<RulePreview | null>(null)
-  const [previewError, setPreviewError] = useState("")
-  const [ruleMiningStatus, setRuleMiningStatus] = useState<"idle" | "none_found">("idle")
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [adding, setAdding] = useState(false)
+  const peekId = Number(searchParams.get("peek")) || null
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["rules"],
     queryFn: () => apiFetch<RulesResponse>("/api/rules"),
   })
-
   const suggestionsQuery = useQuery({
     queryKey: ["ai", "rule-suggestions"],
     queryFn: () => apiFetch<RuleSuggestion[]>("/api/ai/rules/suggestions"),
     enabled: llmEnabled,
   })
-
-  const createMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch("/api/rules", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-      setEditorOpen(false)
-      setEditingId(null)
-      setFormError("")
+  const mine = useMutation({
+    mutationFn: () => apiFetch<RuleSuggestion[]>("/api/ai/rules/mine", { method: "POST" }),
+    onSuccess: (found) => {
+      if (!found.length) showToast({ message: "No rule suggestions found." })
+      void queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] })
     },
+    onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to find rule suggestions.") }),
   })
 
-  const updateMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch(`/api/rules/${editingId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-      setEditorOpen(false)
-      setEditingId(null)
-      setFormError("")
-    },
-  })
+  if (isLoading) return <PanelLoading title="Rules" label="Loading rules…" />
+  if (error || !data) return <PanelError title="Rules" message="Unable to load rules." />
 
-  const toggleMutation = useMutation({
-    mutationFn: (payload: { id: number; enabled: boolean }) =>
-      apiFetch(`/api/rules/${payload.id}/toggle`, {
-        method: "POST",
-        body: JSON.stringify({ enabled: payload.enabled }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-    },
-  })
+  const suggestions = llmEnabled ? (suggestionsQuery.data ?? []) : []
+  const peekRule = data.rules.find((rule) => rule.id === peekId)
+  const closePeek = () => setSearchParams(buildSearchParams(searchParams, { peek: null }), { replace: true })
+  const peek = peekRule ? <RulePeek key={peekRule.id} rule={peekRule} data={data} onClose={closePeek} /> : null
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiFetch(`/api/rules/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-    },
-  })
-
-  const previewMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch<RulePreview>("/api/rules/preview", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (data) => {
-      setPreview(data)
-      setPreviewError("")
-    },
-    onError: (error) => {
-      setPreview(null)
-      setPreviewError(getApiErrorMessage(error, "Unable to preview this rule."))
-    },
-  })
-
-  const mineRulesMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<RuleSuggestion[]>("/api/ai/rules/mine", { method: "POST" }),
-    onMutate: () => {
-      setRuleMiningStatus("idle")
-    },
-    onSuccess: (suggestions) => {
-      setRuleMiningStatus(suggestions.length ? "idle" : "none_found")
-      queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] })
-    },
-    onError: () => {
-      setRuleMiningStatus("idle")
-    },
-  })
-
-  const acceptRuleSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: number) =>
-      apiFetch<{ id: number }>(`/api/ai/rules/suggestions/${suggestionId}/accept`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      setRuleMiningStatus("idle")
-      queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] })
-      queryClient.invalidateQueries({ queryKey: ["rules"] })
-    },
-  })
-
-  const rejectRuleSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: number) =>
-      apiFetch<{ id: number }>(`/api/ai/rules/suggestions/${suggestionId}/reject`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      setRuleMiningStatus("idle")
-      queryClient.invalidateQueries({ queryKey: ["ai", "rule-suggestions"] })
-    },
-  })
-
-  const handleEditRule = (rule: RuleRow) => {
-    setEditingId(rule.id)
-    setName(rule.name)
-    setEnabled(rule.enabled)
-    setPriority(String(rule.priority))
-    setMatchType(rule.match_type)
-    setMatchValue(rule.match_value)
-    setTransactionType(rule.transaction_type ?? "")
-    setMinAmount(
-      rule.min_amount_cents !== null
-        ? (rule.min_amount_cents / 100).toFixed(2)
-        : ""
+  const main =
+    data.rules.length || suggestions.length ? (
+      <List label="Rules">
+        {suggestions.length ? <SuggestionRows suggestions={suggestions} categories={data.categories} /> : null}
+        {suggestions.length ? <DayBand label="Rules" end={data.rules.length} /> : null}
+        <ListHead {...RULE_COLUMNS}>
+          <Cell align="right">#</Cell>
+          <span>Name</span>
+          <Cell hide="narrow">When</Cell>
+          <span>Then</span>
+          <span />
+        </ListHead>
+        {data.rules.map((rule) => {
+          const tags = addedTags(rule)
+          return (
+            <Row
+              key={rule.id}
+              {...RULE_COLUMNS}
+              label={rule.name}
+              dim={!rule.enabled}
+              selected={rule.id === peekId}
+              onOpen={() => setSearchParams(buildSearchParams(searchParams, { peek: String(rule.id) }))}
+            >
+              <Cell align="right" tone="faint">
+                {rule.priority}
+              </Cell>
+              <Cell strong>{rule.name}</Cell>
+              <Cell tone="muted" hide="narrow">
+                {whenText(rule)}
+              </Cell>
+              <Cell>
+                {rule.set_category ? (
+                  <>
+                    <CategoryGlyph
+                      categoryId={rule.set_category.id}
+                      icon={rule.set_category.icon}
+                      name={rule.set_category.name}
+                      inline
+                    />
+                    {rule.set_category.name}
+                  </>
+                ) : (
+                  <Cell tone="faint">Keep category</Cell>
+                )}
+                {tags.length ? <Cell tone="faint"> + {tags.join(", ")}</Cell> : null}
+              </Cell>
+              <Cell align="right" tone="faint">
+                {rule.enabled ? null : "Off"}
+              </Cell>
+            </Row>
+          )
+        })}
+      </List>
+    ) : (
+      <Sheet>
+        <EmptyState
+          inline
+          action={
+            <Button variant="primary" icon={PlusIcon} onClick={() => setAdding(true)}>
+              Add rule
+            </Button>
+          }
+        >
+          No rules yet.
+        </EmptyState>
+      </Sheet>
     )
-    setMaxAmount(
-      rule.max_amount_cents !== null
-        ? (rule.max_amount_cents / 100).toFixed(2)
-        : ""
-    )
-    setSetCategoryId(rule.set_category_id ? String(rule.set_category_id) : "")
-    setAddTags(rule.add_tags || [])
-    setBudgetExcludeTagId(
-      rule.budget_exclude_tag_id ? String(rule.budget_exclude_tag_id) : ""
-    )
-    setPreview(null)
-    setPreviewError("")
-    setEditorOpen(true)
-  }
-
-  const parseAmount = (raw: string) => {
-    if (!raw.trim()) return null
-    const normalized = raw.replace(/\s/g, "").replace(",", ".")
-    const value = Number(normalized)
-    if (!Number.isFinite(value) || value < 0) {
-      return null
-    }
-    return Math.round(value * 100)
-  }
-
-  const resetForm = useCallback(() => {
-    setEditingId(null)
-    setName("")
-    setEnabled(true)
-    setPriority("100")
-    setMatchType("contains")
-    setMatchValue("")
-    setTransactionType("")
-    setMinAmount("")
-    setMaxAmount("")
-    setSetCategoryId("")
-    setAddTags([])
-    setBudgetExcludeTagId("")
-    setFormError("")
-    setPreview(null)
-    setPreviewError("")
-  }, [])
-
-  const openCreateEditor = useCallback(() => {
-    resetForm()
-    setEditorOpen(true)
-  }, [resetForm])
-
-  useEffect(() => {
-    setUtilityAction({ label: "Add rule", onClick: openCreateEditor })
-    return () => setUtilityAction(null)
-  }, [openCreateEditor, setUtilityAction])
-
-  const buildPayload = () => {
-    if (!name.trim()) {
-      return { error: "Enter a rule name." }
-    }
-    if (!matchValue.trim()) {
-      return { error: "Enter a match value." }
-    }
-    const minCents = parseAmount(minAmount)
-    const maxCents = parseAmount(maxAmount)
-    if (minAmount && minCents === null) {
-      return { error: "Invalid min amount." }
-    }
-    if (maxAmount && maxCents === null) {
-      return { error: "Invalid max amount." }
-    }
-    return {
-      payload: {
-        name: name.trim(),
-        enabled,
-        priority: Number(priority) || 100,
-        match_type: matchType,
-        match_value: matchValue.trim(),
-        transaction_type: transactionType || null,
-        min_amount_cents: minCents,
-        max_amount_cents: maxCents,
-        set_category_id: setCategoryId ? Number(setCategoryId) : null,
-        add_tags: addTags,
-        budget_exclude_tag_id: budgetExcludeTagId
-          ? Number(budgetExcludeTagId)
-          : null,
-      },
-    }
-  }
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFormError("")
-    const built = buildPayload()
-    if (!built.payload) {
-      setFormError(built.error || "Fix the rule form.")
-      return
-    }
-    if (editingId) {
-      updateMutation.mutate(built.payload)
-      return
-    }
-    createMutation.mutate(built.payload)
-  }
-
-  const handlePreview = () => {
-    setFormError("")
-    const built = buildPayload()
-    if (!built.payload) {
-      setFormError(built.error || "Fix the rule form.")
-      return
-    }
-    previewMutation.mutate(built.payload)
-  }
-
-  if (isLoading) {
-    return <RouteLoading title="Categorization Rules" label="Loading rules…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Categorization Rules" message="Unable to load rules." />
-  }
-
-  const hiddenTags = data.tags.filter((t) => t.is_hidden_from_budget)
-  const ruleSuggestions = suggestionsQuery.data ?? []
 
   return (
-    <section className="space-y-6">
-      <PageIntro title="Categorization Rules" />
-
-      {llmEnabled ? (
-        <FinancialPanel className="p-4" data-testid="rule-suggestion-queue">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="font-head text-lg font-bold text-text">Rule suggestions</h2>
-              {ruleMiningStatus === "none_found" && !ruleSuggestions.length ? (
-                <span className="shrink-0 text-xs font-semibold text-muted">
-                  No suggestions
-                </span>
-              ) : null}
-            </div>
-            <AppButton
-              type="button"
-              onClick={() => mineRulesMutation.mutate()}
-              disabled={mineRulesMutation.isPending}
-              className="shrink-0"
-            >
-              {mineRulesMutation.isPending ? "Mining…" : "Mine rules"}
-            </AppButton>
-          </div>
-        </FinancialPanel>
-      ) : null}
-
-      {llmEnabled && ruleSuggestions.length ? (
-        <div className="space-y-2">
-          {ruleSuggestions.map((suggestion) => (
-            <div
-              key={suggestion.id}
-              className="rounded-lg bg-surface p-3.5 shadow-[var(--shadow-soft)]"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate font-semibold text-text">{suggestion.name}</p>
-                  <span className="shrink-0 text-xs tabular-nums text-muted">
-                    {Math.round(suggestion.confidence * 100)}%
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <AppButton
-                    type="button"
-                    tone="ghost"
-                    onClick={() => rejectRuleSuggestionMutation.mutate(suggestion.id)}
-                    disabled={rejectRuleSuggestionMutation.isPending}
-                    className="text-xs"
-                  >
-                    <XCircleIcon className="mr-1 h-3.5 w-3.5" />
-                    Reject
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    onClick={() => acceptRuleSuggestionMutation.mutate(suggestion.id)}
-                    disabled={acceptRuleSuggestionMutation.isPending}
-                    className="text-xs"
-                  >
-                    <CheckCircleIcon className="mr-1 h-3.5 w-3.5" />
-                    Accept
-                  </AppButton>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <FinancialPanel role="ledger" data-testid="automation-rules-board">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Automations</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                Conditions are evaluated in priority order
-              </p>
-            </div>
-            <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-              {data.rules.length}
-            </span>
-          </SectionHeading>
-          {data.rules.length ? (
-            <div className="divide-y divide-border">
-              {data.rules.map((rule) => (
-                <article
-                  key={rule.id}
-                  data-testid="automation-rule"
-                  className="p-4 transition-colors hover:bg-faint/35"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-text">{rule.name}</p>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            rule.enabled
-                              ? "bg-signal-green-soft text-semantic-green"
-                              : "bg-faint text-muted"
-                          }`}
-                        >
-                          {rule.enabled ? "Enabled" : "Disabled"}
-                        </span>
-                      </div>
-                      <p className="mt-1 font-mono text-[11px] text-muted">
-                        Priority {rule.priority}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Toggle
-                        on={rule.enabled}
-                        ariaLabel={`Toggle ${rule.name}`}
-                        onChange={(val) =>
-                          toggleMutation.mutate({ id: rule.id, enabled: val })
-                        }
-                      />
-                      <AppButton
-                        type="button"
-                        onClick={() => handleEditRule(rule)}
-                        tone="inline"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Edit ${rule.name}`}
-                      >
-                        <PencilSimpleIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                      <AppButton
-                        type="button"
-                        onClick={async () => {
-                          if (await confirmDialog({ title: `Delete rule "${rule.name}"?` })) {
-                            deleteMutation.mutate(rule.id)
-                          }
-                        }}
-                        tone="inlineDanger"
-                        className="h-9 w-9 p-0"
-                        aria-label={`Delete ${rule.name}`}
-                      >
-                        <TrashIcon className="h-4 w-4" aria-hidden="true" />
-                      </AppButton>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid gap-2.5 md:grid-cols-2">
-                    <div className="rounded-lg bg-faint/85 p-3">
-                      <p className="mono-meta text-muted">When</p>
-                      <p className="mt-2 text-sm font-medium text-text">
-                        Title {rule.match_type.replace("_", " ")} “{rule.match_value}”
-                      </p>
-                      <p className="mt-1 text-xs text-muted">
-                        {rule.transaction_type
-                          ? `${rule.transaction_type[0].toUpperCase()}${rule.transaction_type.slice(1)}`
-                          : "Any transaction type"}
-                        {rule.min_amount_cents !== null
-                          ? ` · at least ${formatCurrency(rule.min_amount_cents)} €`
-                          : ""}
-                        {rule.max_amount_cents !== null
-                          ? ` · at most ${formatCurrency(rule.max_amount_cents)} €`
-                          : ""}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-signal-blue-soft p-3">
-                      <p className="mono-meta text-muted">Then</p>
-                      <div className="mt-2 flex items-center gap-2 text-sm text-text">
-                        {rule.set_category ? (
-                          <>
-                            <CategoryIcon
-                              icon={rule.set_category.icon}
-                              label={rule.set_category.name}
-                              className="h-8 w-8"
-                            />
-                            <strong>{rule.set_category.name}</strong>
-                          </>
-                        ) : (
-                          <span>Keep the current category</span>
-                        )}
-                      </div>
-                      {(rule.add_tags.length > 0 || rule.budget_exclude_tag) && (
-                        <p className="mt-2 text-xs text-muted">
-                          {rule.add_tags.length > 0
-                            ? `Add ${rule.add_tags.join(", ")}`
-                            : ""}
-                          {rule.add_tags.length > 0 && rule.budget_exclude_tag
-                            ? " · "
-                            : ""}
-                          {rule.budget_exclude_tag
-                            ? `Exclude with ${rule.budget_exclude_tag.name}`
-                            : ""}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="p-10 text-center">
-              <p className="font-head text-lg font-bold text-text">No rules yet</p>
-            </div>
-          )}
-      </FinancialPanel>
-
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => {
-          if (!open && !createMutation.isPending && !updateMutation.isPending) {
-            setEditorOpen(false)
-          }
-        }}
-      >
-        <DialogContent
-          aria-label={editingId ? "Edit rule" : "Add rule"}
-          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
-        >
-          <div className="-mr-5 overflow-y-auto pr-5">
-            <DialogHeader>
-              <DialogTitle>{editingId ? "Edit rule" : "Add rule"}</DialogTitle>
-              <DialogClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="h-9 w-9 rounded-full p-0"
-                  aria-label="Close rule editor"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  <XIcon className="h-4 w-4" aria-hidden="true" />
-                </AppButton>
-              </DialogClose>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <AppFieldLabel>
-                Name
-                <AppInput
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  className="mt-1"
-                  autoFocus
-                  required
-                />
-              </AppFieldLabel>
-              <label className="flex items-center gap-3 rounded-md bg-faint px-3 py-2 text-xs text-muted">
-                <Toggle on={enabled} onChange={setEnabled} />
-                Apply this rule automatically
-              </label>
-              <AppFieldLabel>
-                Priority
-                <AppInput
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value)}
-                  className="mt-1"
-                />
-              </AppFieldLabel>
-              <AppFieldLabel>
-                Transaction type (optional)
-                <AppNativeSelect
-                  value={transactionType}
-                  onChange={(event) => setTransactionType(event.target.value)}
-                  className="mt-1"
-                >
-                  <option value="">Any</option>
-                  <option value="income">Income</option>
-                  <option value="expense">Expense</option>
-                </AppNativeSelect>
-              </AppFieldLabel>
-              <div className="rounded-lg bg-faint p-3">
-                <p className="mb-2 mono-meta text-muted">
-                  When
-                </p>
-                <div className="space-y-3">
-                  <AppFieldLabel>
-                    Match type
-                    <AppNativeSelect
-                      value={matchType}
-                      onChange={(event) => setMatchType(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="contains">Contains</option>
-                      <option value="starts_with">Starts with</option>
-                      <option value="equals">Equals</option>
-                      <option value="regex">Regex</option>
-                    </AppNativeSelect>
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                    Title text
-                    <AppInput
-                      value={matchValue}
-                      onChange={(event) => setMatchValue(event.target.value)}
-                      className="mt-1"
-                      required
-                    />
-                  </AppFieldLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    <AppFieldLabel>
-                      Min amount
-                      <AppInput
-                        value={minAmount}
-                        onChange={(event) => setMinAmount(event.target.value)}
-                        inputMode="decimal"
-                        className="mt-1"
-                        placeholder="5.00"
-                      />
-                    </AppFieldLabel>
-                    <AppFieldLabel>
-                      Max amount
-                      <AppInput
-                        value={maxAmount}
-                        onChange={(event) => setMaxAmount(event.target.value)}
-                        inputMode="decimal"
-                        className="mt-1"
-                        placeholder="50.00"
-                      />
-                    </AppFieldLabel>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg bg-signal-blue-soft p-3">
-                <p className="mb-2 mono-meta text-muted">
-                  Then
-                </p>
-                <div className="space-y-3">
-                  <AppFieldLabel>
-                    Set category (optional)
-                    <AppNativeSelect
-                      value={setCategoryId}
-                      onChange={(event) => setSetCategoryId(event.target.value)}
-                      className="mt-1"
-                    >
-                      <option value="">Leave unchanged</option>
-                      {data.categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.type} · {category.name}
-                        </option>
-                      ))}
-                    </AppNativeSelect>
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                    Add tags (comma-separated)
-                    <AppInput
-                      value={addTags.join(", ")}
-                      onChange={(event) =>
-                        setAddTags(
-                          event.target.value
-                            .split(",")
-                            .map((t) => t.trim())
-                            .filter(Boolean)
-                        )
-                      }
-                      className="mt-1"
-                    />
-                  </AppFieldLabel>
-                  <AppFieldLabel>
-                    Exclude from budget (optional)
-                    <AppNativeSelect
-                      value={budgetExcludeTagId}
-                      onChange={(event) =>
-                        setBudgetExcludeTagId(event.target.value)
-                      }
-                      className="mt-1"
-                    >
-                      <option value="">No</option>
-                      {hiddenTags.map((tag) => (
-                        <option key={tag.id} value={tag.id}>
-                          {tag.name}
-                        </option>
-                      ))}
-                    </AppNativeSelect>
-                  </AppFieldLabel>
-                </div>
-              </div>
-              {formError && (
-                <p className="text-xs text-semantic-red">{formError}</p>
-              )}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <AppButton
-                  type="button"
-                  onClick={handlePreview}
-                  tone="ghost"
-                  disabled={
-                    previewMutation.isPending ||
-                    createMutation.isPending ||
-                    updateMutation.isPending
-                  }
-                >
-                  {previewMutation.isPending ? "Previewing…" : "Preview matches"}
-                </AppButton>
-
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <AppButton
-                    type="button"
-                    onClick={() => setEditorOpen(false)}
-                    tone="ghost"
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                  >
-                    Cancel
-                  </AppButton>
-                  <AppButton
-                    type="submit"
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                  >
-                    {editingId
-                      ? updateMutation.isPending
-                        ? "Saving…"
-                        : "Save changes"
-                      : createMutation.isPending
-                        ? "Saving…"
-                        : "Add rule"}
-                  </AppButton>
-                </div>
-              </div>
-
-            {previewError ? (
-              <p className="text-xs text-semantic-red">{previewError}</p>
-            ) : null}
-
-            {preview ? (
-              <div className="rounded-lg bg-faint p-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-text">Preview</p>
-                  <span className="chip text-[11px] text-text">
-                    {preview.matches_count} match
-                    {preview.matches_count === 1 ? "" : "es"} in recent activity
-                  </span>
-                </div>
-
-                {preview.sample.length ? (
-                  <div className="overflow-x-auto rounded-lg bg-surface-hi">
-                    <table className="min-w-full text-xs">
-                      <thead className="bg-faint text-[11px] font-semibold uppercase tracking-wide text-muted">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Title</th>
-                          <th className="px-3 py-2 text-left">Type</th>
-                          <th className="px-3 py-2 text-right">Amount</th>
-                          <th className="px-3 py-2 text-left">Category</th>
-                          <th className="px-3 py-2 text-left">Tags to add</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border text-text">
-                        {preview.sample.map((row) => (
-                          <tr key={row.id}>
-                            <td className="max-w-[240px] truncate px-3 py-2 font-semibold text-text">
-                              {row.title || "—"}
-                            </td>
-                            <td className="px-3 py-2 capitalize">{row.type}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums">
-                              {formatCurrency(row.amount_cents)} €
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.before_category !== row.after_category ? (
-                                <span className="inline-flex flex-wrap items-center gap-1">
-                                  <span className="rounded-full bg-faint px-2 py-0.5 text-[11px] text-text">
-                                    {row.before_category}
-                                  </span>
-                                  <span className="text-muted">→</span>
-                                  <span className="rounded-full bg-faint px-2 py-0.5 text-[11px] text-text">
-                                    {row.after_category}
-                                  </span>
-                                </span>
-                              ) : (
-                                row.before_category
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.add_tags.length ? row.add_tags.join(", ") : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted">
-                    No recent transactions match this rule.
-                  </p>
-                )}
-              </div>
-            ) : null}
-            </form>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
+    <Panel
+      title="Rules"
+      layout="fill"
+      peekOpen={peek !== null}
+      actions={
+        <>
+          <Button variant="primary" icon={PlusIcon} aria-label="Add rule" onClick={() => setAdding(true)}>
+            {isDesktop ? "Add rule" : "Add"}
+          </Button>
+          {llmEnabled ? (
+            <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+              <MenuItem icon={SparkleIcon} disabled={mine.isPending} onSelect={() => mine.mutate()}>
+                {mine.isPending ? "Finding rule suggestions…" : "Find rule suggestions"}
+              </MenuItem>
+            </Menu>
+          ) : null}
+        </>
+      }
+    >
+      <PeekLayout peek={peek} main={main} />
+      {adding ? <AddRuleDialog data={data} onClose={() => setAdding(false)} /> : null}
+    </Panel>
   )
 }
 

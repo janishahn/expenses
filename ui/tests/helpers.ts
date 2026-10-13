@@ -1,137 +1,20 @@
 import { expect, request as playwrightRequest } from "@playwright/test"
-import type { APIRequestContext, Page } from "@playwright/test"
+import type { APIRequestContext, Locator, Page } from "@playwright/test"
 import { loginWith } from "./auth-helpers"
 
-type DashboardMockPayload = {
-  period: { slug: string; start: string; end: string }
-  filters: { type: string | null }
-  kpis: { income: number; expenses: number; balance: number }
-  sparklines: { income?: string; expenses?: string; balance?: string }
-  deltas: { income: number; expenses: number; balance: number } | null
-  donut: {
-    has_any_transactions: boolean
-    mode?: "both" | "expense-only" | "income-only"
-    expense_breakdown?: Array<{ name: string; amount_cents: number; percent: number }>
-    income_breakdown?: Array<{ name: string; amount_cents: number; percent: number }>
-  }
-  recent: Array<{
-    id: number
-    date: string
-    occurred_at: string
-    type: string
-    amount_cents: number
-    net_amount_cents: number
-    reimbursed_total_cents: number
-    is_reimbursement: boolean
-    category: { id: number; name: string; type: string; icon: string | null } | null
-    title: string | null
-    description?: string | null
-    tags: Array<{ id: number; name: string }>
-  }>
-  categories: Array<{ id: number; name: string; type: string; icon: string | null }>
-  budget_pace?: {
-    velocity_ratio: number
-    projected_cents: number
-    budget_cents: number
-    sparkline: string
-  }
-  category_budget_summary?: {
-    total: number
-    needs_attention: number
-    priority: {
-      scope_category_id: number
-      scope_label: string
-      amount_cents: number
-      spent_cents: number
-      remaining_cents: number
-      velocity_ratio: number
-    }
-  }
+// Radix starts handling outside presses and Escape a moment after a layer
+// mounts. Wait for the entrance and one timer tick before dismissing it.
+export async function waitForEntrance(layer: Locator): Promise<void> {
+  await layer.evaluate(async (node) => {
+    await Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+  })
 }
 
 export async function getCsrfToken(request: APIRequestContext): Promise<string> {
   const response = await request.get("/api/csrf")
   const payload = (await response.json()) as { token: string }
   return payload.token
-}
-
-export async function exerciseAutoCategorization(page: Page): Promise<void> {
-  await page.goto("/settings")
-  const { request, csrfToken } = await loginAsIsolatedUser(page)
-  const headers = { "X-CSRF-Token": csrfToken }
-  try {
-    const categories: number[] = []
-    for (const name of ["Bakery", "Transit"]) {
-      const response = await request.post("/api/categories", {
-        headers, data: { name, type: "expense", order: 0 },
-      })
-      expect(response.ok()).toBeTruthy()
-      categories.push((await response.json()).id)
-    }
-    for (let i = 0; i < 90; i++) {
-      const response = await request.post("/api/transactions", {
-        headers, data: {
-          date: "2026-01-01", occurred_at: "2026-01-01T12:00:00",
-          type: "expense", amount_cents: 500, category_id: categories[i % 2],
-          title: i % 2 === 0 ? "Corner bakery" : "City metro", tags: [],
-        },
-      })
-      expect(response.ok()).toBeTruthy()
-    }
-    await page.goto("/settings")
-    const panel = page.getByTestId("auto-categorization-settings")
-    const toggle = panel.getByRole("switch", { name: "Automatic categorization" })
-    const threshold = panel.getByLabel("Minimum confidence")
-    const save = panel.getByRole("button", { name: "Save", exact: true })
-    await expect(toggle).not.toBeChecked()
-    await expect(threshold).toHaveValue("80")
-    await expect(save).toBeDisabled()
-    await toggle.check()
-    await expect(panel.getByText("Unsaved changes")).toBeVisible()
-    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
-    await save.click()
-    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
-    await expect(panel.getByText("Training…", { exact: true })).toBeHidden()
-    await expect(panel.getByText("Active", { exact: true })).toHaveCount(0)
-    const response = await request.post("/api/transactions", {
-      headers, data: {
-        date: "2026-10-11", occurred_at: "2026-10-11T12:00:00",
-        type: "expense", amount_cents: 500, title: "Corner bakery", tags: [],
-      },
-    })
-    expect(response.ok()).toBeTruthy()
-    const detail = await request.get(`/api/transactions/${(await response.json()).id}`)
-    expect((await detail.json()).category_id).toBe(categories[0])
-    await threshold.fill("101")
-    await save.click()
-    await expect(panel.getByText("Enter a whole number from 0 to 100.")).toBeVisible()
-    await expect(threshold).toBeFocused()
-    await page.route("**/api/settings/auto-categorization", (route) => route.fulfill({
-      status: 503,
-      contentType: "application/json",
-      body: JSON.stringify({ detail: "Settings are temporarily unavailable." }),
-    }), { times: 1 })
-    await threshold.fill("90")
-    await save.click()
-    await expect(panel.getByRole("alert")).toHaveText("Settings are temporarily unavailable.")
-    await expect(threshold).toHaveValue("90")
-    await expect(toggle).toBeChecked()
-    await save.click()
-    await expect(panel.getByText("Saved", { exact: true })).toBeVisible()
-    const stored = await (await request.get("/api/settings")).json()
-    expect(stored.auto_categorization.threshold).toBe(0.9)
-    await page.reload()
-    await expect(toggle).toBeChecked()
-    await expect(threshold).toHaveValue("90")
-    await toggle.uncheck()
-    await save.click()
-    await expect(panel.getByText("Off", { exact: true })).toBeVisible()
-    await page.reload()
-    await expect(toggle).not.toBeChecked()
-    await expect(threshold).toHaveValue("90")
-  } finally {
-    await request.dispose()
-  }
 }
 
 // Signs the browser page in as a brand-new account so tests can assert exact
@@ -202,6 +85,20 @@ export async function ensureCategory(
   return created.id
 }
 
+export async function createCategory(
+  request: APIRequestContext,
+  csrfToken: string,
+  type: "income" | "expense",
+  name: string
+): Promise<number> {
+  const response = await request.post("/api/categories", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: { name, type, order: 0 },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
 export async function createTransaction(
   request: APIRequestContext,
   csrfToken: string,
@@ -225,7 +122,7 @@ export async function createTransaction(
   return body.id
 }
 
-export async function createIngestToken(
+async function createIngestToken(
   request: APIRequestContext
 ): Promise<string> {
   const csrfToken = await getCsrfToken(request)
@@ -299,178 +196,140 @@ export async function stubOsmTiles(page: Page): Promise<void> {
   )
 }
 
-export async function mockDashboardApi(
-  page: Page,
-  payload: DashboardMockPayload
-): Promise<void> {
-  await Promise.all([
-    page.route("**/api/dashboard?*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(payload),
-      }),
-    ),
-    page.route("**/api/durable-purchases*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ items: [] }),
-      }),
-    ),
-  ])
+export async function createUncategorizedExpense(
+  request: APIRequestContext,
+  csrfToken: string,
+  title: string,
+  amountCents = 1500
+): Promise<number> {
+  const response = await request.post("/api/transactions", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: amountCents,
+      title,
+      tags: [],
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
 }
 
-export async function mockVisualSupportingApi(page: Page): Promise<void> {
-  await Promise.all([
-    page.route("**/api/category-breakdown?*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          months: [
-            {
-              month: "2026-02",
-              balance_cents: 84_500,
-              total_cents: 72_000,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 72_000,
-                },
-              ],
-            },
-            {
-              month: "2026-03",
-              balance_cents: 91_200,
-              total_cents: 96_000,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 72_000,
-                },
-                {
-                  category_id: 1,
-                  name: "Food",
-                  icon: "fork-knife",
-                  amount_cents: 24_000,
-                },
-              ],
-            },
-            {
-              month: "2026-04",
-              balance_cents: 97_600,
-              total_cents: 108_000,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 72_000,
-                },
-                {
-                  category_id: 1,
-                  name: "Food",
-                  icon: "fork-knife",
-                  amount_cents: 36_000,
-                },
-              ],
-            },
-            {
-              month: "2026-05",
-              balance_cents: 103_900,
-              total_cents: 121_000,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 78_000,
-                },
-                {
-                  category_id: 1,
-                  name: "Food",
-                  icon: "fork-knife",
-                  amount_cents: 43_000,
-                },
-              ],
-            },
-            {
-              month: "2026-06",
-              balance_cents: 110_400,
-              total_cents: 134_000,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 84_000,
-                },
-                {
-                  category_id: 1,
-                  name: "Food",
-                  icon: "fork-knife",
-                  amount_cents: 50_000,
-                },
-              ],
-            },
-            {
-              month: "2026-07",
-              balance_cents: 116_700,
-              total_cents: 148_950,
-              segments: [
-                {
-                  category_id: 2,
-                  name: "Housing",
-                  icon: "house",
-                  amount_cents: 90_000,
-                },
-                {
-                  category_id: 1,
-                  name: "Food",
-                  icon: "fork-knife",
-                  amount_cents: 58_950,
-                },
-              ],
-            },
-          ],
-        }),
-      }),
-    ),
-    page.route("**/api/forecast?*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          start_balance_cents: 116_700,
-          months: [
-            { month: "2026-08", end_balance_cents: 122_000, end_balance_p10_cents: 116_000, end_balance_p90_cents: 128_000 },
-            { month: "2026-09", end_balance_cents: 129_000, end_balance_p10_cents: 118_000, end_balance_p90_cents: 140_000 },
-            { month: "2026-10", end_balance_cents: 136_000, end_balance_p10_cents: 120_000, end_balance_p90_cents: 152_000 },
-            { month: "2026-11", end_balance_cents: 141_000, end_balance_p10_cents: 120_000, end_balance_p90_cents: 162_000 },
-            { month: "2026-12", end_balance_cents: 149_000, end_balance_p10_cents: 123_000, end_balance_p90_cents: 175_000 },
-            { month: "2027-01", end_balance_cents: 158_000, end_balance_p10_cents: 127_000, end_balance_p90_cents: 189_000 },
-          ],
-        }),
-      }),
-    ),
-    page.route("**/api/templates", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ templates: [] }),
-      }),
-    ),
-    page.route("**/api/tags?period=all", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ tags: [] }),
-      }),
-    ),
-  ])
+// Signs the page in as a fresh account with a trained local category model:
+// 90 categorized "Corner bakery" / "City metro" expenses, then the setting
+// enabled. Create uncategorized rows before calling so they are suggested
+// rather than categorized on creation. The account is isolated, so the enabled
+// setting cannot leak into other tests.
+export async function loginWithTrainedSuggestions(
+  page: Page,
+  uncategorizedTitles: string[]
+): Promise<{
+  request: APIRequestContext
+  csrfToken: string
+  bakeryId: number
+  uncategorizedIds: number[]
+}> {
+  await page.goto("/settings")
+  const { request, csrfToken } = await loginAsIsolatedUser(page)
+  const headers = { "X-CSRF-Token": csrfToken }
+  const ids: number[] = []
+  for (const name of ["Bakery", "Transit"]) {
+    const response = await request.post("/api/categories", {
+      headers,
+      data: { name, type: "expense", order: 0 },
+    })
+    expect(response.ok()).toBeTruthy()
+    ids.push(((await response.json()) as { id: number }).id)
+  }
+  for (let index = 0; index < 90; index++) {
+    const response = await request.post("/api/transactions", {
+      headers,
+      data: {
+        date: "2026-01-01",
+        occurred_at: "2026-01-01T12:00:00",
+        type: "expense",
+        amount_cents: 500,
+        category_id: ids[index % 2],
+        title: index % 2 === 0 ? "Corner bakery" : "City metro",
+        tags: [],
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+  }
+  const uncategorizedIds: number[] = []
+  for (const title of uncategorizedTitles) {
+    uncategorizedIds.push(await createUncategorizedExpense(request, csrfToken, title))
+  }
+  const enabled = await request.put("/api/settings/auto-categorization", {
+    headers,
+    data: { enabled: true, threshold: 0.8 },
+  })
+  expect(enabled.ok()).toBeTruthy()
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (await request.get("/api/settings/auto-categorization")).json()) as {
+            training_status: string
+          }
+        ).training_status,
+      { timeout: 30_000 }
+    )
+    .toBe("ready")
+  return { request, csrfToken, bakeryId: ids[0], uncategorizedIds }
+}
+
+// Two months of Insights data for a fresh user: last month 2.000 € Salary income and a 500 €
+// Rent expense tagged Trip; this month a 120 € Dining expense with a 300 € monthly Dining budget.
+export async function provisionInsightsData(request: APIRequestContext, csrfToken: string) {
+  const now = new Date()
+  const key = (offset: number) => {
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}`
+  }
+  const lastMonth = key(-1)
+  const thisMonth = key(0)
+  const salaryId = await createCategory(request, csrfToken, "income", "Salary")
+  const rentId = await createCategory(request, csrfToken, "expense", "Rent")
+  const diningId = await createCategory(request, csrfToken, "expense", "Dining")
+  const tagResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: { name: "Trip", is_hidden_from_budget: false },
+  })
+  expect(tagResponse.ok()).toBeTruthy()
+  const tagId = ((await tagResponse.json()) as { id: number }).id
+  const add = (
+    date: string,
+    type: "income" | "expense",
+    amount_cents: number,
+    category_id: number,
+    title: string,
+    tags: string[] = []
+  ) =>
+    createTransaction(request, csrfToken, {
+      date,
+      occurred_at: `${date}T09:00:00`,
+      type,
+      amount_cents,
+      category_id,
+      title,
+      tags,
+    })
+  await add(`${lastMonth}-10`, "income", 200_000, salaryId, "Salary payment")
+  await add(`${lastMonth}-12`, "expense", 50_000, rentId, "Rent payment", ["Trip"])
+  await add(`${thisMonth}-01`, "expense", 12_000, diningId, "Team dinner")
+  const budgetResponse = await request.post("/api/budgets/templates", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      frequency: "monthly",
+      category_id: diningId,
+      amount_cents: 30_000,
+      starts_on: `${lastMonth}-01`,
+      ends_on: null,
+    },
+  })
+  expect(budgetResponse.ok()).toBeTruthy()
+  return { lastMonth, thisMonth, rentId, diningId, tagId }
 }

@@ -1,22 +1,30 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "react-router-dom"
+import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
+import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
+import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
+import { ThermometerHotIcon } from "@phosphor-icons/react/ThermometerHot"
+import { WarningIcon } from "@phosphor-icons/react/Warning"
+import { Navigate, useParams } from "react-router-dom"
 import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
-import { useAuth } from "../app/auth"
 import type { AIUsageSummary } from "../app/api-types"
-import { formatEuroDateTime, formatFileSize } from "../app/format"
-import Sparkline from "../components/charts/Sparkline"
+import { useAuth } from "../app/auth"
+import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
 import { confirmDialog } from "../components/confirm"
-import PageIntro from "../components/PageIntro"
-import SegmentedControl from "../components/SegmentedControl"
-import {
-  FinancialPanel,
-  MetricLane,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppInput } from "../components/ui/product-fields"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
+import { Button, LinkButton } from "../components/ui/Button"
+import { EmptyState, Status } from "../components/ui/EmptyState"
+import { Cell, List, ListFooter, Row, type Columns } from "../components/ui/LedgerRow"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { ErrorBody, LoadingBody, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekSection } from "../components/ui/Peek"
+import { Property, PropertyList } from "../components/ui/PropertyList"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { SettingRow, SettingsShell } from "../components/ui/SettingsShell"
+import { CodeBlock, MetricStrip, Sheet } from "../components/ui/Sheet"
+import { FieldError, TextField } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { ADMIN_SECTIONS, useSettingsGroups, type AdminSectionKey } from "./settings-nav"
 
 type AdminInfo = {
   app_version: string
@@ -71,844 +79,450 @@ type AdminLogsResponse = {
 
 type LogFilter = "errors" | "ingest" | "imports" | "scheduler" | "all"
 
-type SparklineMetric =
-  | "cpu_temp_celsius"
-  | "cpu_load_percent"
-  | "ram_percent"
-  | "disk_percent"
-
-type SparklineHistory = Record<SparklineMetric, number[]>
-type SparklinePoints = Record<SparklineMetric, string | undefined>
-type AdminActionMessage = {
-  tone: "success" | "error"
-  text: string
+const DECIMAL = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 })
+const GB = 1024 ** 3
+const LOG_COLUMNS: Columns = {
+  columns: "96px 64px minmax(0, 1fr) minmax(0, 200px)",
+  narrowColumns: "96px 64px minmax(0, 1fr)",
+  mobileColumns: "88px 56px minmax(0, 1fr)",
 }
-
-const SPARKLINE_HISTORY_LIMIT = 60
-
-function toSparklinePoints(values: number[]): string | undefined {
-  if (!values.length) {
-    return undefined
-  }
-  return values.join(",")
-}
-
-const INTEGER_FORMAT = new Intl.NumberFormat(undefined, {
-  maximumFractionDigits: 0,
-})
+const USAGE_PERIODS: Array<{ value: AIUsageSummary["period"]; label: string }> = [
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "all", label: "All time" },
+]
+const LOG_FILTERS: Array<{ value: LogFilter; label: string }> = [
+  { value: "errors", label: "Errors" },
+  { value: "ingest", label: "Ingest" },
+  { value: "imports", label: "Imports" },
+  { value: "scheduler", label: "Scheduler" },
+  { value: "all", label: "All" },
+]
+const HEALTH_STATUS = {
+  healthy: { label: "Healthy", tone: "ok", icon: CheckCircleIcon },
+  warm: { label: "Warm", tone: "neutral", icon: ThermometerHotIcon },
+  critical: { label: "Critical", tone: "bad", icon: WarningIcon },
+} as const
 
 function trimDecimal(value: string): string {
-  if (!value.includes(".")) {
-    return value
-  }
+  if (!value.includes(".")) return value
   return value.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "")
 }
 
 function formatCostAmount(decimal: string, unit: string | null): string {
   const value = trimDecimal(decimal)
-  if (unit === "openrouter_credits") {
-    return `${value} credits`
-  }
-  if (unit === "usd") {
-    return `$${value}`
-  }
-  if (unit === "mixed") {
-    return `${value} (mixed)`
-  }
+  if (unit === "openrouter_credits") return `${value} credits`
+  if (unit === "usd") return `$${value}`
+  if (unit === "mixed") return `${value} (mixed)`
   return unit ? `${value} ${unit}` : value
 }
 
-function AdminActionFeedback({ message }: { message: AdminActionMessage | null }) {
-  if (!message) {
-    return null
+const gigabytes = (bytes: number) => `${DECIMAL.format(bytes / GB)} GB`
+const SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"]
+function fileSize(bytes: number): string {
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < SIZE_UNITS.length - 1) {
+    value /= 1024
+    unit += 1
   }
+  return `${DECIMAL.format(value)} ${SIZE_UNITS[unit]}`
+}
+const levelLabel = (level: string) =>
+  level === "ERROR" || level === "CRITICAL" ? "Error" : level === "WARNING" ? "Warning" : level === "INFO" ? "Info" : level
+// "12 Oct 14:32"; the peek shows the full timestamp.
+const logTime = (iso: string) => `${formatShortDate(iso).replace(/ \d{4}$/, "")} ${iso.slice(11, 16)}`
+const sameEntry = (a: LogEntry, b: LogEntry) => a.timestamp === b.timestamp && a.event === b.event && a.request_id === b.request_id
+
+function HealthSection() {
+  const { data, error } = useQuery({
+    queryKey: ["admin", "system-health"],
+    queryFn: () => apiFetch<SystemHealth>("/api/admin/system-health"),
+    refetchInterval: 60_000,
+  })
+  if (error) return <ErrorBody message="Unable to load server health." />
+  if (!data) return <LoadingBody label="Loading server health…" />
+  const status = HEALTH_STATUS[data.status]
   return (
-    <p
-      role={message.tone === "error" ? "alert" : "status"}
-      className={`text-sm ${
-        message.tone === "error" ? "text-semantic-red" : "text-semantic-green"
-      }`}
-    >
-      {message.text}
-    </p>
+    <>
+      <MetricStrip
+        metrics={[
+          { label: "CPU temperature", value: data.cpu_temp_celsius === null ? "Not available" : `${DECIMAL.format(data.cpu_temp_celsius)} °C` },
+          { label: "Load", value: `${DECIMAL.format(data.cpu_load_percent)} %` },
+          { label: "Memory", value: gigabytes(data.ram_used_bytes), detail: `of ${gigabytes(data.ram_total_bytes)}` },
+          { label: "Disk", value: gigabytes(data.disk_used_bytes), detail: `of ${gigabytes(data.disk_total_bytes)}` },
+        ]}
+      />
+      <Sheet title="Status" body="flush">
+        <SettingRow label="Server">
+          <Status icon={status.icon} tone={status.tone}>
+            {status.label}
+          </Status>
+        </SettingRow>
+        <SettingRow label="Database">{fileSize(data.db_size_bytes)}</SettingRow>
+        <SettingRow label="Receipts">{fileSize(data.receipts_size_bytes)}</SettingRow>
+        <SettingRow label="Free disk space">{fileSize(data.disk_free_bytes)}</SettingRow>
+      </Sheet>
+    </>
+  )
+}
+
+function MaintenanceSection() {
+  const queryClient = useQueryClient()
+  const [days, setDays] = useState("30")
+  const validDays = /^\d{1,5}$/.test(days) && Number(days) >= 1
+  const preview = useQuery({
+    queryKey: ["admin", "purge-preview", days],
+    queryFn: () => apiFetch<{ count: number }>(`/api/admin/purge-deleted/preview?days=${days}`),
+    enabled: validDays,
+  })
+  const purge = useMutation({
+    mutationFn: (value: number) =>
+      apiFetch<{ count: number; attachments_count: number }>("/api/admin/purge-deleted", {
+        method: "POST",
+        body: JSON.stringify({ days: value }),
+      }),
+    onSuccess: (result) => {
+      showToast({ message: `Purged ${result.count} deleted transaction${result.count === 1 ? "" : "s"}.` })
+      void queryClient.invalidateQueries({ queryKey: ["admin", "purge-preview"] })
+      void queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    },
+  })
+  const rebuild = useMutation({
+    mutationFn: () => apiFetch("/api/admin/rebuild-rollups", { method: "POST" }),
+    onSuccess: () => showToast({ message: "Monthly totals rebuilt." }),
+  })
+  const catchUp = useMutation({
+    mutationFn: () => apiFetch<RecurringCatchUpResult>("/api/admin/recurring-catch-up", { method: "POST" }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["recurring"] })
+      void queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      const plural = (count: number) => (count === 1 ? "" : "s")
+      showToast({
+        message: result.updated
+          ? `Catch-up ran. Updated ${result.advanced_rules} rule${plural(result.advanced_rules)}.`
+          : result.overdue_rules > 0
+            ? `Catch-up ran. No updates. ${result.overdue_rules} overdue rule${plural(result.overdue_rules)} remain.`
+            : "Catch-up ran. No updates needed.",
+      })
+    },
+  })
+  const count = preview.data?.count
+  const error = rebuild.error
+    ? getApiErrorMessage(rebuild.error, "Unable to rebuild monthly totals.")
+    : catchUp.error
+      ? getApiErrorMessage(catchUp.error, "Catch-up failed.")
+      : null
+
+  return (
+    <>
+      <Sheet title="Maintenance" body="flush">
+        <SettingRow label="Database backup">
+          <LinkButton variant="quiet" icon={DownloadSimpleIcon} to="/api/admin/download-db" reloadDocument aria-label="Download database backup">
+            Download
+          </LinkButton>
+        </SettingRow>
+        <SettingRow label="All users’ transactions as CSV">
+          <LinkButton variant="quiet" icon={DownloadSimpleIcon} to="/api/admin/export-csv" reloadDocument aria-label="Download all users’ transactions as CSV">
+            Download
+          </LinkButton>
+        </SettingRow>
+        <SettingRow label="Rebuild monthly totals">
+          <Button
+            variant="quiet"
+            disabled={rebuild.isPending}
+            onClick={async () => {
+              if (await confirmDialog({ title: "Rebuild monthly totals now?", confirmLabel: "Rebuild", tone: "primary" })) {
+                catchUp.reset()
+                rebuild.mutate()
+              }
+            }}
+          >
+            {rebuild.isPending ? "Rebuilding…" : "Rebuild"}
+          </Button>
+        </SettingRow>
+        <SettingRow label="Post overdue recurring transactions">
+          <Button
+            variant="quiet"
+            disabled={catchUp.isPending}
+            onClick={() => {
+              rebuild.reset()
+              catchUp.mutate()
+            }}
+          >
+            {catchUp.isPending ? "Running…" : "Run"}
+          </Button>
+        </SettingRow>
+        <SettingRow label="Legacy SQLite import">
+          <LinkButton variant="quiet" to="/admin/import" aria-label="Open legacy SQLite import">
+            Open
+            <ArrowRightIcon aria-hidden="true" />
+          </LinkButton>
+        </SettingRow>
+        {error ? <SettingRow label={<FieldError>{error}</FieldError>} /> : null}
+      </Sheet>
+      <Sheet title="Purge deleted transactions" body="flush">
+        <SettingRow
+          label={<label htmlFor="purge-days">Older than</label>}
+          detail={validDays && count !== undefined ? `${count} transaction${count === 1 ? "" : "s"}` : undefined}
+        >
+          <TextField
+            id="purge-days"
+            short
+            inputMode="numeric"
+            suffix="days"
+            value={days}
+            invalid={!validDays}
+            onChange={(event) => {
+              setDays(event.target.value)
+              purge.reset()
+            }}
+          />
+          <Button
+            variant="danger"
+            disabled={!validDays || !count || purge.isPending}
+            onClick={async () => {
+              const confirmed = await confirmDialog({
+                title: `Purge ${count} deleted transaction${count === 1 ? "" : "s"}?`,
+                description: `Deleted more than ${days} days ago. This cannot be undone.`,
+                confirmLabel: "Purge",
+                tone: "danger",
+              })
+              if (confirmed) purge.mutate(Number(days))
+            }}
+          >
+            Purge
+          </Button>
+        </SettingRow>
+        {!validDays ? <SettingRow label={<FieldError>Enter a whole number of days, at least 1.</FieldError>} /> : null}
+        {purge.error ? (
+          <SettingRow label={<FieldError>{getApiErrorMessage(purge.error, "Unable to purge deleted transactions.")}</FieldError>} />
+        ) : null}
+      </Sheet>
+    </>
+  )
+}
+
+function UsageSection({ period }: { period: AIUsageSummary["period"] }) {
+  const usage = useQuery({
+    queryKey: ["ai-usage-summary", "spending_chat", period],
+    queryFn: () => fetchAIUsageSummary(period),
+    staleTime: 60_000,
+  })
+  if (usage.isPending) return <LoadingBody label="Loading usage…" />
+  if (usage.error) return <ErrorBody message="Usage is unavailable right now." />
+  const data = usage.data
+  if (data.total_chats === 0) return <EmptyState>No assistant usage in this period.</EmptyState>
+  return (
+    <MetricStrip
+      metrics={[
+        {
+          label: "Cost",
+          value: data.costed_chats > 0 ? formatCostAmount(data.total_cost_decimal, data.cost_unit) : "Not billed",
+          detail: data.costed_chats > 0 ? `${formatCostAmount(data.average_cost_decimal, data.cost_unit)} per chat` : undefined,
+        },
+        {
+          label: "Tokens",
+          value: formatCount(data.total_tokens),
+          detail: `${formatCount(data.cached_input_tokens)} cached · ${formatCount(data.reasoning_tokens)} reasoning`,
+        },
+        {
+          label: "Chats",
+          value: formatCount(data.total_chats),
+          detail: `${formatCount(data.completed_chats)} completed · ${formatCount(data.failed_chats)} failed`,
+        },
+        {
+          label: "Per chat",
+          value: `${formatCount(data.average_total_tokens)} tokens`,
+          detail: data.p95_duration_ms != null ? `${formatCount(data.p95_duration_ms)} ms p95` : undefined,
+        },
+      ]}
+    />
+  )
+}
+
+function useLogs(filter: LogFilter, search: string, cursor: string | null) {
+  const params = new URLSearchParams({ limit: "40" })
+  if (cursor) params.set("cursor", cursor)
+  if (filter === "ingest") params.set("path", "/api/ingest")
+  else if (filter === "imports") params.set("q", "import_")
+  else if (filter === "scheduler") params.set("q", "scheduler_")
+  else if (filter === "errors") params.set("error_only", "true")
+  if (search.trim()) params.set("q", search.trim())
+  return useQuery({
+    queryKey: ["admin", "logs", filter, search, cursor],
+    queryFn: () => apiFetch<AdminLogsResponse>(`/api/admin/logs?${params.toString()}`),
+    refetchInterval: cursor === null ? 30_000 : false,
+  })
+}
+
+function LogPeek({ entry, onClose }: { entry: LogEntry; onClose: () => void }) {
+  return (
+    <Peek parent="Logs" title={entry.event} onClose={onClose}>
+      <PropertyList wide>
+        <Property label="Time">{entry.timestamp}</Property>
+        <Property label="Level">{levelLabel(entry.level)}</Property>
+        <Property label="Logger">{entry.logger}</Property>
+        <Property label="Request ID" empty={!entry.request_id}>
+          {entry.request_id ?? "None"}
+        </Property>
+        {entry.method || entry.path ? <Property label="Request">{[entry.method, entry.path].filter(Boolean).join(" ")}</Property> : null}
+        {entry.status_code !== undefined ? <Property label="Status">{entry.status_code}</Property> : null}
+        {entry.duration_ms !== undefined ? <Property label="Duration">{`${formatCount(entry.duration_ms)} ms`}</Property> : null}
+      </PropertyList>
+      {typeof entry.raw_body === "string" ? (
+        <PeekSection title="Captured body">
+          <CodeBlock label="Captured body">{entry.raw_body}</CodeBlock>
+        </PeekSection>
+      ) : null}
+      <PeekSection title="Payload">
+        <CodeBlock label="Structured payload">{JSON.stringify(entry, null, 2)}</CodeBlock>
+      </PeekSection>
+    </Peek>
+  )
+}
+
+function LogsSection({ selected, onSelect }: { selected: LogEntry | null; onSelect: (entry: LogEntry | null) => void }) {
+  const isDesktop = useIsDesktop()
+  const [filter, setFilter] = useState<LogFilter>("errors")
+  const [search, setSearch] = useState("")
+  const [cursor, setCursor] = useState<string | null>(null)
+  const logs = useLogs(filter, search, cursor)
+  const entries = logs.data?.entries ?? []
+  const reset = () => {
+    setCursor(null)
+    onSelect(null)
+  }
+  const searchField = (
+    <TextField
+      type="search"
+      icon={MagnifyingGlassIcon}
+      aria-label="Search logs"
+      placeholder="Request ID, event, text"
+      value={search}
+      onChange={(event) => {
+        setSearch(event.target.value)
+        reset()
+      }}
+    />
+  )
+
+  return (
+    <>
+      {isDesktop ? null : searchField}
+      <ViewRow>
+        {isDesktop ? searchField : null}
+        <SegmentedControl
+          label="Log type"
+          value={filter}
+          options={LOG_FILTERS}
+          onChange={(value) => {
+            setFilter(value)
+            reset()
+          }}
+        />
+      </ViewRow>
+      {logs.error ? (
+        <ErrorBody message="Unable to load logs." />
+      ) : logs.isPending ? (
+        <LoadingBody label="Loading logs…" />
+      ) : (
+        <List
+          scroll={false}
+          label="Log entries"
+          footer={
+            entries.length === 0 ? (
+              <EmptyState inline>No matching log entries.</EmptyState>
+            ) : logs.data.next_cursor ? (
+              <ListFooter>
+                <Button variant="ghost" onClick={() => setCursor(logs.data.next_cursor)}>
+                  Load older
+                </Button>
+              </ListFooter>
+            ) : null
+          }
+        >
+          {entries.map((entry, index) => {
+            const isError = entry.level === "ERROR" || entry.level === "CRITICAL"
+            return (
+              <Row
+                key={`${entry.timestamp}-${entry.event}-${entry.request_id ?? index}`}
+                {...LOG_COLUMNS}
+                label={`${levelLabel(entry.level)} ${entry.event} at ${logTime(entry.timestamp)}`}
+                selected={selected !== null && sameEntry(selected, entry)}
+                onOpen={() => onSelect(entry)}
+              >
+                <Cell tone="muted">{logTime(entry.timestamp)}</Cell>
+                <Cell tone={isError ? undefined : "muted"}>{isError ? <Status tone="bad">Error</Status> : levelLabel(entry.level)}</Cell>
+                <Cell>{entry.event}</Cell>
+                <Cell tone="muted" hide="narrow">
+                  {entry.path}
+                </Cell>
+              </Row>
+            )
+          })}
+        </List>
+      )}
+    </>
+  )
+}
+
+function SystemSection() {
+  const { data, error } = useQuery({
+    queryKey: ["admin", "info"],
+    queryFn: () => apiFetch<AdminInfo>("/api/admin/info"),
+  })
+  if (error) return <ErrorBody message="Unable to load admin info." />
+  if (!data) return <LoadingBody label="Loading admin info…" />
+  return (
+    <Sheet title="System">
+      <PropertyList wide>
+        <Property label="Version">{data.app_version}</Property>
+        <Property label="Environment">{data.environment}</Property>
+        <Property label="Database">{`${data.db_path} · ${DECIMAL.format(data.db_size_mb)} MB`}</Property>
+        <Property label="Modified" empty={!data.db_modified}>
+          {data.db_modified ? formatShortDateTime(data.db_modified) : "Unknown"}
+        </Property>
+        <Property label="Logs">
+          {`${data.log_path} · ${DECIMAL.format(data.log_size_mb)} MB · ${data.log_retained_files} file${data.log_retained_files === 1 ? "" : "s"}`}
+        </Property>
+        <Property label="Logs modified" empty={!data.log_modified}>
+          {data.log_modified ? formatShortDateTime(data.log_modified) : "Unknown"}
+        </Property>
+      </PropertyList>
+    </Sheet>
   )
 }
 
 function AdminPage() {
+  const { section = "health" } = useParams()
   const { llmEnabled } = useAuth()
-  const queryClient = useQueryClient()
-  const [purgeDays, setPurgeDays] = useState("30")
-  const [recurringCatchUpMessage, setRecurringCatchUpMessage] =
-    useState<AdminActionMessage | null>(null)
-  const [purgeMessage, setPurgeMessage] = useState<AdminActionMessage | null>(null)
-  const [rebuildMessage, setRebuildMessage] =
-    useState<AdminActionMessage | null>(null)
-  const [logFilter, setLogFilter] = useState<LogFilter>("errors")
-  const [logSearch, setLogSearch] = useState("")
-  const [logCursor, setLogCursor] = useState<string | null>(null)
+  const groups = useSettingsGroups()
+  const [usagePeriod, setUsagePeriod] = useState<AIUsageSummary["period"]>("week")
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
-  const [usagePeriod, setUsagePeriod] =
-    useState<AIUsageSummary["period"]>("week")
-  const [isPageVisible, setIsPageVisible] = useState(() => !document.hidden)
-  const sparklineHistoryRef = useRef<SparklineHistory>({
-    cpu_temp_celsius: [],
-    cpu_load_percent: [],
-    ram_percent: [],
-    disk_percent: [],
-  })
-  const [sparklinePoints, setSparklinePoints] = useState<SparklinePoints>({
-    cpu_temp_celsius: undefined,
-    cpu_load_percent: undefined,
-    ram_percent: undefined,
-    disk_percent: undefined,
-  })
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["admin", "info"],
-    queryFn: () => apiFetch<AdminInfo>("/api/admin/info"),
-  })
-  const { data: systemHealth } = useQuery({
-    queryKey: ["admin", "system-health"],
-    queryFn: () => apiFetch<SystemHealth>("/api/admin/system-health"),
-    enabled: isPageVisible,
-    refetchInterval: isPageVisible ? 60_000 : false,
-  })
-  const usageQuery = useQuery({
-    queryKey: ["ai-usage-summary", "spending_chat", usagePeriod],
-    queryFn: () => fetchAIUsageSummary(usagePeriod),
-    staleTime: 60_000,
-    enabled: llmEnabled,
-  })
-  const logQueryParams = new URLSearchParams({ limit: "40" })
-  if (logCursor) {
-    logQueryParams.set("cursor", logCursor)
+  if (!ADMIN_SECTIONS.includes(section as AdminSectionKey) || (section === "usage" && !llmEnabled)) {
+    return <Navigate to="/admin" replace />
   }
-  if (logFilter === "ingest") {
-    logQueryParams.set("path", "/api/ingest")
-  } else if (logFilter === "imports") {
-    logQueryParams.set("q", "import_")
-  } else if (logFilter === "scheduler") {
-    logQueryParams.set("q", "scheduler_")
-  } else if (logFilter === "errors") {
-    logQueryParams.set("error_only", "true")
-  }
-  if (logSearch.trim()) {
-    logQueryParams.set("q", logSearch.trim())
-  }
-  const logQuery = `/api/admin/logs?${logQueryParams.toString()}`
-  const { data: logsData, isLoading: logsLoading } = useQuery({
-    queryKey: ["admin", "logs", logFilter, logSearch, logCursor],
-    queryFn: () => apiFetch<AdminLogsResponse>(logQuery),
-    enabled: isPageVisible,
-    refetchInterval: isPageVisible && logCursor === null ? 30_000 : false,
-  })
-  const visibleLogs = logsData?.entries || []
-  const nextLogCursor = logsData?.next_cursor || null
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      setIsPageVisible(!document.hidden)
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange)
-    return () =>
-      document.removeEventListener("visibilitychange", onVisibilityChange)
-  }, [])
-
-  useEffect(() => {
-    if (!systemHealth) {
-      return
-    }
-    const nextRamPercent =
-      systemHealth.ram_total_bytes > 0
-        ? (systemHealth.ram_used_bytes / systemHealth.ram_total_bytes) * 100
-        : 0
-    const nextDiskPercent =
-      systemHealth.disk_total_bytes > 0
-        ? (systemHealth.disk_used_bytes / systemHealth.disk_total_bytes) * 100
-        : 0
-    const history = sparklineHistoryRef.current
-    const nextMetrics = {
-      cpu_temp_celsius: systemHealth.cpu_temp_celsius,
-      cpu_load_percent: systemHealth.cpu_load_percent,
-      ram_percent: nextRamPercent,
-      disk_percent: nextDiskPercent,
-    } satisfies Record<SparklineMetric, number | null>
-
-    for (const [metric, value] of Object.entries(nextMetrics) as Array<
-      [SparklineMetric, number | null]
-    >) {
-      if (value === null) {
-        continue
-      }
-      history[metric].push(value)
-      if (history[metric].length > SPARKLINE_HISTORY_LIMIT) {
-        history[metric].shift()
-      }
-    }
-
-    setSparklinePoints({
-      cpu_temp_celsius: toSparklinePoints(history.cpu_temp_celsius),
-      cpu_load_percent: toSparklinePoints(history.cpu_load_percent),
-      ram_percent: toSparklinePoints(history.ram_percent),
-      disk_percent: toSparklinePoints(history.disk_percent),
-    })
-  }, [systemHealth])
-
-  const purgeMutation = useMutation({
-    mutationFn: (days: number) =>
-      apiFetch("/api/admin/purge-deleted", {
-        method: "POST",
-        body: JSON.stringify({ days }),
-    }),
-    onSuccess: () => {
-      setPurgeMessage({
-        tone: "success",
-        text: "Deleted transactions purged successfully.",
-      })
-    },
-    onError: (error) => {
-      setPurgeMessage({
-        tone: "error",
-        text: getApiErrorMessage(error, "Unable to purge deleted transactions."),
-      })
-    },
-  })
-
-  const rebuildMutation = useMutation({
-    mutationFn: () =>
-      apiFetch("/api/admin/rebuild-rollups", { method: "POST" }),
-    onSuccess: () => {
-      setRebuildMessage({
-        tone: "success",
-        text: "Monthly rollups rebuilt successfully.",
-      })
-    },
-    onError: (error) => {
-      setRebuildMessage({
-        tone: "error",
-        text: getApiErrorMessage(error, "Unable to rebuild monthly rollups."),
-      })
-    },
-  })
-
-  const recurringCatchUpMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<RecurringCatchUpResult>("/api/admin/recurring-catch-up", {
-        method: "POST",
-      }),
-    onSuccess: (payload) => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-      queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      if (payload.updated) {
-        const suffix = payload.advanced_rules === 1 ? "" : "s"
-        setRecurringCatchUpMessage({
-          tone: "success",
-          text: `Catch-up ran. Updated ${payload.advanced_rules} rule${suffix}.`,
-        })
-        return
-      }
-      if (payload.overdue_rules > 0) {
-        const suffix = payload.overdue_rules === 1 ? "" : "s"
-        setRecurringCatchUpMessage({
-          tone: "error",
-          text: `Catch-up ran. No updates. ${payload.overdue_rules} overdue rule${suffix} remain.`,
-        })
-        return
-      }
-      setRecurringCatchUpMessage({
-        tone: "success",
-        text: "Catch-up ran. No updates needed.",
-      })
-    },
-    onError: (error) => {
-      setRecurringCatchUpMessage({
-        tone: "error",
-        text: getApiErrorMessage(error, "Catch-up failed."),
-      })
-    },
-  })
-
-  const handlePurge = async () => {
-    const confirmed = await confirmDialog({
-      title: `Purge deleted transactions older than ${purgeDays} days?`,
-      confirmLabel: "Purge",
-    })
-    if (!confirmed) {
-      return
-    }
-    setPurgeMessage(null)
-    purgeMutation.mutate(Number(purgeDays) || 30)
-  }
-
-  const handleRebuild = async () => {
-    const confirmed = await confirmDialog({
-      title: "Rebuild monthly rollups now?",
-      tone: "primary",
-      confirmLabel: "Rebuild",
-    })
-    if (!confirmed) {
-      return
-    }
-    setRebuildMessage(null)
-    rebuildMutation.mutate()
-  }
-
-  const handleRecurringCatchUp = () => {
-    setRecurringCatchUpMessage(null)
-    recurringCatchUpMutation.mutate()
-  }
-  const handleLogFilterChange = (nextFilter: LogFilter) => {
-    setLogFilter(nextFilter)
-    setLogCursor(null)
-    setSelectedLog(null)
-  }
-  const levelTone = (level: string) => {
-    if (level === "ERROR" || level === "CRITICAL") {
-      return "border-semantic-red/40 bg-semantic-red/10 text-semantic-red"
-    }
-    if (level === "WARNING") {
-      return "border-accent/45 bg-accent/14 text-accent"
-    }
-    return "border-border bg-surface-hi text-text"
-  }
-
-  if (isLoading) {
-    return <RouteLoading title="Admin" label="Loading admin info…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Admin" message="Unable to load admin info." />
-  }
-
-  const ramUsagePercent =
-    systemHealth && systemHealth.ram_total_bytes > 0
-      ? (systemHealth.ram_used_bytes / systemHealth.ram_total_bytes) * 100
-      : 0
-  const diskFreePercent =
-    systemHealth && systemHealth.disk_total_bytes > 0
-      ? (systemHealth.disk_free_bytes / systemHealth.disk_total_bytes) * 100
-      : 0
-  const diskUsagePercent =
-    systemHealth && systemHealth.disk_total_bytes > 0
-      ? (systemHealth.disk_used_bytes / systemHealth.disk_total_bytes) * 100
-      : 0
-  const tempTone =
-    systemHealth?.cpu_temp_celsius === null || systemHealth?.cpu_temp_celsius === undefined
-      ? "text-muted"
-      : systemHealth.cpu_temp_celsius > 75
-        ? "text-semantic-red"
-        : systemHealth.cpu_temp_celsius >= 60
-          ? "text-accent"
-          : "text-semantic-green"
-  const usageTone = (percent: number) => {
-    if (percent > 90) {
-      return "text-semantic-red"
-    }
-    if (percent > 80) {
-      return "text-accent"
-    }
-    return "text-semantic-green"
-  }
-  const statusBadgeClass =
-    systemHealth?.status === "critical"
-      ? "border-semantic-red/40 bg-semantic-red/10 text-semantic-red"
-      : systemHealth?.status === "warm"
-        ? "border-accent/45 bg-accent/14 text-accent"
-        : "border-semantic-green/40 bg-semantic-green/10 text-semantic-green"
-  const statusLabel =
-    systemHealth?.status === "critical"
-      ? "Critical"
-      : systemHealth?.status === "warm"
-        ? "Warm"
-        : "Healthy"
-
-  const storageOtherBytes =
-    systemHealth === undefined
-      ? 0
-      : Math.max(
-          0,
-          systemHealth.disk_used_bytes -
-            systemHealth.db_size_bytes -
-            systemHealth.receipts_size_bytes
-        )
-
-  const usage = usageQuery.data
-  const usageTiles = usage
-    ? [
-        {
-          label: "Total cost",
-          value:
-            usage.costed_chats > 0
-              ? formatCostAmount(usage.total_cost_decimal, usage.cost_unit)
-              : "Not reported",
-          detail:
-            usage.costed_chats > 0
-              ? `Ø ${formatCostAmount(usage.average_cost_decimal, usage.cost_unit)} per chat`
-              : "No billed usage",
-        },
-        {
-          label: "Total tokens",
-          value: INTEGER_FORMAT.format(usage.total_tokens),
-          detail: `${INTEGER_FORMAT.format(usage.cached_input_tokens)} cached · ${INTEGER_FORMAT.format(usage.reasoning_tokens)} reasoning`,
-        },
-        {
-          label: "Chats",
-          value: INTEGER_FORMAT.format(usage.total_chats),
-          detail: `${INTEGER_FORMAT.format(usage.completed_chats)} completed · ${INTEGER_FORMAT.format(usage.failed_chats)} failed`,
-        },
-        {
-          label: "Avg / chat",
-          value: `${INTEGER_FORMAT.format(usage.average_total_tokens)} tok`,
-          detail:
-            usage.p95_duration_ms != null
-              ? `${INTEGER_FORMAT.format(usage.p95_duration_ms)} ms p95`
-              : "no latency yet",
-        },
-      ]
-    : []
+  const key = section as AdminSectionKey
 
   return (
-    <section className="space-y-4">
-      <PageIntro title="Admin" />
-
-      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
-        <FinancialPanel role="hero" className="p-5 lg:col-span-2">
-          <h2 className="font-head text-2xl font-bold tracking-tight">Pi health</h2>
-
-          <div className="mt-4 space-y-3">
-            <span
-              className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold ${statusBadgeClass}`}
-            >
-              {statusLabel}
-            </span>
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
-              <MetricLane tone="warning" className="p-3">
-                <p className="text-xs font-semibold text-muted">
-                  CPU temperature
-                </p>
-                <p className={`font-mono text-sm font-semibold md:text-base ${tempTone}`}>
-                  {systemHealth?.cpu_temp_celsius === null ||
-                  systemHealth?.cpu_temp_celsius === undefined
-                    ? "N/A"
-                    : `${Math.round(systemHealth.cpu_temp_celsius)}°C`}
-                </p>
-                {sparklinePoints.cpu_temp_celsius && (
-                  <Sparkline points={sparklinePoints.cpu_temp_celsius} className="mt-2 h-6 w-full text-text/55" />
-                )}
-              </MetricLane>
-              <MetricLane tone="plan" className="p-3">
-                <p className="text-xs font-semibold text-muted">
-                  CPU load
-                </p>
-                <p className="font-mono text-sm font-semibold text-text md:text-base">
-                  {systemHealth ? `${Math.round(systemHealth.cpu_load_percent)}%` : "—"}
-                </p>
-                {sparklinePoints.cpu_load_percent && (
-                  <Sparkline points={sparklinePoints.cpu_load_percent} className="mt-2 h-6 w-full text-text/55" />
-                )}
-              </MetricLane>
-              <MetricLane tone="income" className="min-w-0 p-3">
-                <p className="text-xs font-semibold text-muted">
-                  RAM
-                </p>
-                <p className={`truncate font-mono text-sm font-semibold md:text-base ${usageTone(ramUsagePercent)}`}>
-                  {systemHealth
-                    ? `${formatFileSize(systemHealth.ram_used_bytes)} / ${formatFileSize(systemHealth.ram_total_bytes)}`
-                    : "—"}
-                </p>
-                {sparklinePoints.ram_percent && (
-                  <Sparkline points={sparklinePoints.ram_percent} className="mt-2 h-6 w-full text-text/55" />
-                )}
-              </MetricLane>
-              <MetricLane tone="neutral" className="min-w-0 p-3">
-                <p className="text-xs font-semibold text-muted">
-                  Disk
-                </p>
-                <p className={`truncate font-mono text-sm font-semibold md:text-base ${usageTone(diskUsagePercent)}`}>
-                  {systemHealth
-                    ? `${formatFileSize(systemHealth.disk_used_bytes)} / ${formatFileSize(systemHealth.disk_total_bytes)}`
-                    : "—"}
-                </p>
-                {sparklinePoints.disk_percent && (
-                  <Sparkline points={sparklinePoints.disk_percent} className="mt-2 h-6 w-full text-text/55" />
-                )}
-              </MetricLane>
-            </div>
-          </div>
-
-          {systemHealth && diskFreePercent < 20 && (
-            <div className="mt-4 rounded-lg bg-signal-red-soft p-3">
-              <p className="text-sm font-semibold text-semantic-red">
-                Storage is running low. {formatFileSize(systemHealth.disk_free_bytes)} remaining.
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                Database: {formatFileSize(systemHealth.db_size_bytes)} · Receipts:{" "}
-                {formatFileSize(systemHealth.receipts_size_bytes)} · Other:{" "}
-                {formatFileSize(storageOtherBytes)}
-              </p>
-              <a href="#danger-zone" className="mt-2 inline-block text-xs text-semantic-red underline">
-                Purge deleted transactions
-              </a>
-            </div>
-          )}
-        </FinancialPanel>
-
-        <MetricLane tone="neutral" className="space-y-4">
-          <h2 className="text-xl font-head font-bold">Database backups</h2>
-          <p className="text-sm text-muted">
-            Download a complete SQLite dump.
-          </p>
-          <AppButton asChild className="block text-center">
-            <a href="/api/admin/download-db">Download backup</a>
-          </AppButton>
-        </MetricLane>
-
-        <MetricLane tone="neutral" className="space-y-4">
-          <h2 className="text-xl font-head font-bold">Export transactions</h2>
-          <p className="text-sm text-muted">
-            Grab a CSV of every transaction.
-          </p>
-          <AppButton asChild className="block w-full text-center">
-            <a href="/api/admin/export-csv">Export CSV</a>
-          </AppButton>
-        </MetricLane>
-
-        <MetricLane tone="neutral" className="space-y-4">
-          <h2 className="text-xl font-head font-bold">Import</h2>
-          <AppButton asChild className="block text-center">
-            <Link to="/admin/import">Open importer</Link>
-          </AppButton>
-        </MetricLane>
-
-        <MetricLane
-          tone="neutral"
-          id="danger-zone"
-          className="space-y-4"
-        >
-          <h2 className="text-xl font-head font-bold">Danger zone</h2>
-          <p className="text-sm text-muted">
-            Purge soft-deleted transactions older than a safe window.
-          </p>
-          <div className="flex gap-2">
-            <AppInput
-              type="number"
-              min={1}
-              max={365}
-              value={purgeDays}
-              onChange={(event) => {
-                setPurgeDays(event.target.value)
-                setPurgeMessage(null)
-              }}
-              className="w-24"
-              placeholder="30"
-            />
-            <AppButton
-              type="button"
-              onClick={handlePurge}
-              disabled={purgeMutation.isPending}
-              tone="danger"
-              className="flex-1"
-            >
-              {purgeMutation.isPending ? "Purging…" : "Purge now"}
-            </AppButton>
-          </div>
-          <AdminActionFeedback message={purgeMessage} />
-        </MetricLane>
-
-        <MetricLane tone="neutral" className="space-y-4">
-          <h2 className="text-xl font-head font-bold">Rebuild rollups</h2>
-          <p className="text-sm text-muted">
-            Recalculate monthly aggregates from the transaction ledger (use after
-            imports or large backfills).
-          </p>
-          <AppButton
-            type="button"
-            onClick={handleRebuild}
-            disabled={rebuildMutation.isPending}
-            className="w-full"
-          >
-            {rebuildMutation.isPending ? "Rebuilding…" : "Rebuild now"}
-          </AppButton>
-          <AdminActionFeedback message={rebuildMessage} />
-        </MetricLane>
-
-        <MetricLane tone="neutral" className="space-y-4">
-          <h2 className="text-xl font-head font-bold">Recurring catch-up</h2>
-          <AppButton
-            type="button"
-            onClick={handleRecurringCatchUp}
-            disabled={recurringCatchUpMutation.isPending}
-            className="w-full"
-          >
-            {recurringCatchUpMutation.isPending
-              ? "Posting…"
-              : "Post all overdue transactions"}
-          </AppButton>
-          <AdminActionFeedback message={recurringCatchUpMessage} />
-        </MetricLane>
-
-      </div>
-
-      <FinancialPanel role="inspector" className="overflow-hidden">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="font-head text-lg font-bold">System information</h2>
-        </div>
-        <div className="divide-y divide-border">
-          {[
-            { label: "App version", value: data.app_version },
-            { label: "Environment", value: data.environment },
-            { label: "Database path", value: data.db_path },
-            { label: "DB size", value: `${data.db_size_mb} MB` },
-            {
-              label: "DB modified",
-              value: data.db_modified
-                ? formatEuroDateTime(data.db_modified)
-                : "—",
-            },
-            { label: "Log path", value: data.log_path },
-            { label: "Log size", value: `${data.log_size_mb} MB` },
-            {
-              label: "Log modified",
-              value: data.log_modified
-                ? formatEuroDateTime(data.log_modified)
-                : "—",
-            },
-            {
-              label: "Retained log files",
-              value: String(data.log_retained_files),
-            },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center justify-between gap-3 px-4 py-3"
-            >
-              <span className="shrink-0 text-sm text-muted">{item.label}</span>
-              <span className="min-w-0 truncate font-mono text-sm text-text">{item.value}</span>
-            </div>
-          ))}
-        </div>
-      </FinancialPanel>
-
-      {llmEnabled ? (
-      <FinancialPanel data-testid="admin-ai-usage" className="overflow-hidden">
-        <div className="border-b border-border px-4 py-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-head text-lg font-bold">Assistant usage</h2>
-            </div>
-            <SegmentedControl
-              value={usagePeriod}
-              ariaLabel="Assistant usage period"
-              items={[
-                { value: "week", label: "Week" },
-                { value: "month", label: "Month" },
-                { value: "all", label: "All time" },
-              ] as Array<{ value: AIUsageSummary["period"]; label: string }>}
-              onValueChange={setUsagePeriod}
-            />
-          </div>
-        </div>
-        <div className="px-4 py-4">
-          {usageQuery.isLoading ? (
-            <p className="text-sm text-muted">Loading usage…</p>
-          ) : usageQuery.error || !usage ? (
-            <p className="text-sm text-muted">
-              Usage stats are unavailable right now.
-            </p>
-          ) : usage.total_chats === 0 ? (
-            <p className="text-sm text-muted">
-              No assistant usage recorded for this period.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
-                {usageTiles.map((tile) => (
-                  <div
-                    key={tile.label}
-                    className="min-w-0 rounded-md bg-surface-hi/70 p-2.5 md:p-3"
-                  >
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted md:text-[11px]">
-                      {tile.label}
-                    </p>
-                    <p className="mt-1 truncate font-mono text-sm font-semibold text-text md:text-base">
-                      {tile.value}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-muted">
-                      {tile.detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="min-h-4 text-xs text-muted">
-                {usage.started_at
-                  ? `Since ${formatEuroDateTime(usage.started_at)}`
-                  : null}
-              </p>
-            </div>
-          )}
-        </div>
-      </FinancialPanel>
-      ) : null}
-
-      <FinancialPanel role="ledger" className="overflow-hidden">
-        <div className="border-b border-border px-4 py-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-head text-lg font-bold">Application logs</h2>
-            </div>
-            <AppInput
-              value={logSearch}
-              onChange={(event) => {
-                setLogSearch(event.target.value)
-                setLogCursor(null)
-                setSelectedLog(null)
-              }}
-              placeholder="Search text, request id, event…"
-              className="md:max-w-sm"
-            />
-          </div>
-          <SegmentedControl
-            value={logFilter}
-            ariaLabel="Log type"
-            className="mt-3"
-            items={[
-              { value: "errors", label: "Errors" },
-              { value: "ingest", label: "Ingest" },
-              { value: "imports", label: "Imports" },
-              { value: "scheduler", label: "Scheduler" },
-              { value: "all", label: "All" },
-            ] as Array<{ value: LogFilter; label: string }>}
-            onValueChange={handleLogFilterChange}
-          />
-        </div>
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
-          <div className="min-w-0 border-b border-border lg:border-b-0 lg:border-r">
-            {logsLoading && !visibleLogs.length ? (
-              <div className="px-4 py-6 text-sm text-muted">Loading logs…</div>
-            ) : visibleLogs.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted">No matching log entries.</div>
-            ) : (
-              <div className="max-h-[34rem] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 border-b border-border bg-surface-hi text-left text-xs uppercase text-muted">
-                    <tr>
-                      <th className="px-4 py-2">Time</th>
-                      <th className="px-4 py-2">Level</th>
-                      <th className="px-4 py-2">Event</th>
-                      <th className="px-4 py-2">Path</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {visibleLogs.map((entry, index) => {
-                      const isSelected =
-                        selectedLog?.timestamp === entry.timestamp &&
-                        selectedLog?.event === entry.event &&
-                        selectedLog?.request_id === entry.request_id
-                      return (
-                        <tr
-                          key={`${entry.timestamp}-${entry.event}-${entry.request_id || index}`}
-                          className={`cursor-pointer ${
-                            isSelected ? "bg-accent/10" : "hover:bg-faint/70"
-                          }`}
-                          onClick={() => setSelectedLog(entry)}
-                        >
-                          <td className="whitespace-nowrap px-4 py-3 text-muted">
-                            {formatEuroDateTime(entry.timestamp)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${levelTone(entry.level)}`}
-                            >
-                              {entry.level}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-text">
-                            {entry.event}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted">
-                            <div className="flex min-w-0 items-center justify-between gap-3">
-                              <span className="min-w-0 truncate font-mono">
-                                {entry.path || "—"}
-                              </span>
-                              <AppButton
-                                type="button"
-                                tone="inline"
-                                aria-label={`Inspect ${entry.event} log entry from ${formatEuroDateTime(entry.timestamp)}`}
-                                aria-pressed={isSelected}
-                                className="shrink-0"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setSelectedLog(entry)
-                                }}
-                              >
-                                Inspect
-                              </AppButton>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {nextLogCursor && (
-              <div className="border-t border-border px-4 py-3">
-                <AppButton
-                  type="button"
-                  onClick={() => setLogCursor(nextLogCursor)}
-                  tone="ghost"
-                >
-                  Load older logs
-                </AppButton>
-              </div>
-            )}
-          </div>
-          <div className="min-w-0">
-            <div className="border-b border-border px-4 py-3">
-              <h3 className="font-head text-base font-bold">Entry details</h3>
-            </div>
-            {selectedLog ? (
-              <div className="space-y-3 px-4 py-4">
-                <div className="grid gap-2 text-sm md:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Event
-                    </p>
-                    <p className="font-mono text-xs text-text">{selectedLog.event}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Request ID
-                    </p>
-                    <p className="font-mono text-xs text-text">
-                      {selectedLog.request_id || "—"}
-                    </p>
-                  </div>
-                </div>
-                {"raw_body" in selectedLog && typeof selectedLog.raw_body === "string" && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Captured body
-                    </p>
-                    <pre className="mt-1 overflow-x-auto rounded-lg border border-border bg-surface-hi p-3 text-xs text-text">
-                      {selectedLog.raw_body}
-                    </pre>
-                  </div>
-                )}
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Structured payload
-                  </p>
-                  <pre className="mt-1 max-h-[24rem] overflow-auto rounded-lg border border-border bg-surface-hi p-3 text-xs text-text">
-                    {JSON.stringify(selectedLog, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </FinancialPanel>
-    </section>
+    <SettingsShell
+      title="Admin"
+      groups={groups}
+      current={key}
+      actions={
+        key === "usage" ? (
+          <SegmentedControl label="Assistant usage period" value={usagePeriod} options={USAGE_PERIODS} onChange={setUsagePeriod} />
+        ) : undefined
+      }
+      peek={key === "logs" ? selectedLog ? <LogPeek entry={selectedLog} onClose={() => setSelectedLog(null)} /> : null : undefined}
+    >
+      {key === "health" ? <HealthSection /> : null}
+      {key === "maintenance" ? <MaintenanceSection /> : null}
+      {key === "usage" ? <UsageSection period={usagePeriod} /> : null}
+      {key === "logs" ? <LogsSection selected={selectedLog} onSelect={setSelectedLog} /> : null}
+      {key === "system" ? <SystemSection /> : null}
+    </SettingsShell>
   )
 }
 

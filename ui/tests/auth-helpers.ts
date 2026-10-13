@@ -69,10 +69,10 @@ export async function loginWith(
     return
   }
 
-  await expect(page.getByTestId("login-form")).toBeVisible()
-  await page.getByTestId("auth-username").fill(credentials.username)
-  await page.getByTestId("auth-password").fill(credentials.password)
-  await page.getByTestId("auth-submit").click()
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
+  await page.getByLabel("Username").fill(credentials.username)
+  await page.getByLabel("Password").fill(credentials.password)
+  await page.getByRole("button", { name: "Sign in" }).click()
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/)
 }
 
@@ -101,5 +101,5 @@ export async function ensureElevatedAdmin(page: Page): Promise<void> {
 
   await page.goto("/admin")
   await expect(page).toHaveURL("/admin")
-  await expect(page.locator("main h1")).toContainText("Admin")
+  await expect(page.getByRole("navigation", { name: "Admin sections" })).toBeVisible()
 }

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./fixtures"
+import { expect, test, type Locator, type Page } from "./fixtures"
 
 const STREAM_URL = "**/api/ai/spending-chat/stream"
 const HISTORY_MARKER = "SECRET_HISTORY_DO_NOT_SHOW"
@@ -37,36 +37,66 @@ function happyTurn(assistantMessage: string): string {
   ])
 }
 
+const thread = (page: Page) => page.getByRole("log", { name: "Conversation" })
+const assistantTurns = (page: Page) => page.getByRole("article", { name: "Assistant" })
+const userTurns = (page: Page) => page.getByRole("article", { name: "You" })
+const composer = (page: Page) =>
+  page.getByRole("textbox", { name: "Message the spending assistant" })
+
 async function sendQuestion(page: Page, text: string) {
-  const input = page.getByTestId("spending-assistant-input")
+  const input = composer(page)
   await input.click()
   await input.fill(text)
-  await page.getByTestId("spending-assistant-send").click()
+  await page.getByRole("button", { name: "Send" }).click()
 }
 
+const offsetInThread = (turn: Locator) =>
+  turn.evaluate(
+    (element) =>
+      element.getBoundingClientRect().top -
+      element.closest('[role="log"]')!.getBoundingClientRect().top
+  )
+
 test.describe("Spending Assistant (mobile)", () => {
-  test("hides mobile Add and docks the composer on the assistant route", async ({
+  test("docks the composer above the tab bar and hides the tab bar while typing", async ({
     page,
   }) => {
     await page.goto("/assistant")
     await expect(page.locator("main h1")).toHaveText("Assistant")
-    const composer = page.getByTestId("spending-assistant-composer")
-    await expect(page.getByText(/Read-only.*inspect your ledger/)).toHaveCount(0)
-    await expect(composer).toBeVisible()
-    await expect(page.getByTestId("spending-assistant-input")).toBeVisible()
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
+    await expect(
+      page.getByRole("heading", { name: "Ask about your spending" })
+    ).toBeVisible()
+    await expect(composer(page)).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Add transaction" })
+    ).toHaveCount(0)
 
-    const composerBounds = await composer.boundingBox()
-    const viewport = page.viewportSize()
+    // The composer docks just above the tab bar.
+    const tabs = page.getByRole("navigation", { name: "Tabs" })
+    const composerBounds = await page
+      .locator("form")
+      .filter({ has: composer(page) })
+      .boundingBox()
+    const tabBarBounds = await tabs.boundingBox()
     expect(composerBounds).not.toBeNull()
-    expect(viewport).not.toBeNull()
-    if (composerBounds && viewport) {
-      expect(viewport.height - (composerBounds.y + composerBounds.height)).toBeLessThan(48)
+    expect(tabBarBounds).not.toBeNull()
+    if (composerBounds && tabBarBounds) {
+      const gap = tabBarBounds.y - (composerBounds.y + composerBounds.height)
+      expect(gap).toBeGreaterThanOrEqual(0)
+      expect(gap).toBeLessThan(48)
     }
 
-    // The dock action is route-specific: it must return on other mobile pages.
+    // Typing gives the bottom edge to the keyboard.
+    await composer(page).focus()
+    await expect(tabs).toBeHidden()
+    await composer(page).blur()
+    await expect(tabs).toBeVisible()
+
+    // The page action is route-specific: Add returns on other mobile pages.
     await page.goto("/transactions")
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Add transaction", exact: true })
+    ).toBeVisible()
   })
 
   test("streams an answer without horizontal overflow", async ({ page }) => {
@@ -81,20 +111,18 @@ test.describe("Spending Assistant (mobile)", () => {
     await page.goto("/assistant")
     await sendQuestion(page, "How much did I spend last month?")
 
-    const assistantMessage = page
-      .locator('[data-testid="spending-assistant-message"][data-role="assistant"]')
-      .last()
-    await expect(assistantMessage).toContainText("You spent €1,234.00 last month.")
-    await expect(page.getByTestId("spending-assistant-tool")).toContainText(
-      "Spending overview"
-    )
+    const assistant = assistantTurns(page).last()
+    await expect(assistant).toContainText("You spent €1,234.00 last month.")
+    await expect(assistant.getByText("Spending overview", { exact: true })).toBeVisible()
     // Touch layouts keep the copy affordances persistent instead of hover-revealed.
-    await expect(page.getByTestId("spending-assistant-copy")).toBeVisible()
-    await expect(page.getByTestId("spending-assistant-copy-user")).toBeVisible()
+    await expect(
+      assistant.getByRole("button", { name: "Copy response" })
+    ).toBeVisible()
+    await expect(
+      userTurns(page).last().getByRole("button", { name: "Copy message" })
+    ).toBeVisible()
     await expect(page.locator("body")).not.toContainText(HISTORY_MARKER)
-    await expect(page.getByTestId("app-shell-mobile-quiet-action")).toHaveAccessibleName(
-      "New chat",
-    )
+    await expect(page.getByRole("button", { name: "New chat" })).toBeVisible()
 
     const overflow = await page.evaluate(
       () =>
@@ -109,7 +137,7 @@ test.describe("Spending Assistant (mobile)", () => {
   }) => {
     const longAnswer = Array.from(
       { length: 60 },
-      (_, index) => `Spending detail ${index + 1}.`,
+      (_, index) => `Spending detail ${index + 1}.`
     ).join("\n\n")
     await page.route(STREAM_URL, async (route) => {
       await route.fulfill({
@@ -121,28 +149,17 @@ test.describe("Spending Assistant (mobile)", () => {
 
     await page.goto("/assistant")
     await sendQuestion(page, "Show me the full breakdown")
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 60.")).toBeAttached()
+    await expect(thread(page).getByText("Spending detail 60.")).toBeAttached()
 
     await expect
-      .poll(() =>
-        page
-          .locator(
-            '[data-testid="spending-assistant-message"][data-role="user"]',
-          )
-          .last()
-          .evaluate(
-            (element) =>
-              element.getBoundingClientRect().top -
-              element
-                .closest('[data-testid="spending-assistant-thread"]')!
-                .getBoundingClientRect().top,
-          ),
-      )
+      .poll(() => offsetInThread(userTurns(page).last()))
       .toBeLessThan(48)
 
-    const scrollToLatest = page.getByTestId("spending-assistant-scroll-bottom")
+    const scrollToLatest = page.getByRole("button", {
+      name: "Scroll to latest message",
+    })
     await expect(scrollToLatest).toBeVisible()
     await scrollToLatest.click()
-    await expect(page.getByTestId("spending-assistant-thread").getByText("Spending detail 60.")).toBeInViewport()
+    await expect(thread(page).getByText("Spending detail 60.")).toBeInViewport()
   })
 })

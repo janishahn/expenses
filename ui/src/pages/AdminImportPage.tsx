@@ -1,12 +1,19 @@
-import { useRef, useState } from "react"
-import { useMutation } from "@tanstack/react-query"
-import { DatabaseIcon } from "@phosphor-icons/react/Database"
+import { useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import PageIntro from "../components/PageIntro"
-import { FinancialPanel } from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import { AppNativeSelect } from "../components/ui/product-fields"
+import { formatDateRange, formatShortDate } from "../app/format"
+import { Amount } from "../components/ui/Amount"
+import { Button } from "../components/ui/Button"
+import { CheckboxField, CheckGroup } from "../components/ui/Checkbox"
+import { Status } from "../components/ui/EmptyState"
+import { FileDrop } from "../components/ui/FileDrop"
+import { AmountCell, Cell, List, ListHead, Row, type Columns } from "../components/ui/LedgerRow"
+import { SettingRow, SettingsShell } from "../components/ui/SettingsShell"
+import { MetricStrip, Sheet } from "../components/ui/Sheet"
+import { FieldError, Select } from "../components/ui/TextField"
+import { showToast } from "../components/ui/toast-store"
+import { useSettingsGroups } from "./settings-nav"
 
 type SqliteCategory = {
   id: number
@@ -56,421 +63,241 @@ type SqliteCommitResponse = {
   result: Record<string, number>
 }
 
+type ImportOptions = {
+  import_recurring_rules: boolean
+  recurring_auto_post: boolean
+  link_recurring_transactions: boolean
+  preserve_time_in_title: boolean
+}
+
+const MAPPING_COLUMNS: Columns = {
+  columns: "minmax(0, 1fr) 72px 110px minmax(0, 260px)",
+  mobileColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+}
+// The settings column is narrower than a list's narrow breakpoint, so cells drop only on mobile.
+const RECURRING_COLUMNS: Columns = {
+  columns: "minmax(0, 1fr) minmax(0, 120px) 84px 96px 96px 100px",
+  mobileColumns: "minmax(0, 1fr) auto",
+}
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
+
 function AdminImportPage() {
-  const sqliteInputRef = useRef<HTMLInputElement>(null)
-
-  const [sqliteFile, setSqliteFile] = useState<File | null>(null)
-  const [sqlitePreview, setSqlitePreview] = useState<SqlitePreviewResponse | null>(
-    null
-  )
-  const [sqliteStatus, setSqliteStatus] = useState<string>("")
-  const [sqliteError, setSqliteError] = useState("")
-  const [sqliteMapping, setSqliteMapping] = useState<Record<number, string>>({})
-  const [importRecurringRules, setImportRecurringRules] = useState(true)
-  const [recurringAutoPost, setRecurringAutoPost] = useState(false)
-  const [linkRecurringTransactions, setLinkRecurringTransactions] = useState(true)
-  const [preserveTimeInTitle, setPreserveTimeInTitle] = useState(false)
-
-  const sqlitePreviewMutation = useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append("file", file)
-      return apiFetchFormData<SqlitePreviewResponse>("/api/import/sqlite/preview", {
-        method: "POST",
-        body: form,
-      })
-    },
-    onSuccess: (data) => {
-      setSqlitePreview(data)
-      setSqliteStatus("")
-      setSqliteError("")
-
-      setImportRecurringRules(data.preview.recurring_count > 0)
-      setRecurringAutoPost(false)
-      setLinkRecurringTransactions(true)
-      setPreserveTimeInTitle(data.preview.non_midnight_transaction_times > 0)
-
-      const nextMapping: Record<number, string> = {}
-      for (const row of data.preview.mapping_rows) {
-        if (row.suggested_category_id) {
-          nextMapping[row.idx] = `existing:${row.suggested_category_id}`
-        } else {
-          nextMapping[row.idx] = "create"
-        }
-      }
-      setSqliteMapping(nextMapping)
-    },
-    onError: (error) => {
-      setSqlitePreview(null)
-      setSqliteStatus("")
-      setSqliteError(getApiErrorMessage(error, "Unable to inspect SQLite database."))
-    },
+  const groups = useSettingsGroups()
+  const queryClient = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [mapping, setMapping] = useState<Record<number, string>>({})
+  const [options, setOptions] = useState<ImportOptions>({
+    import_recurring_rules: true,
+    recurring_auto_post: false,
+    link_recurring_transactions: true,
+    preserve_time_in_title: false,
   })
 
-  const sqliteCommitMutation = useMutation({
-    mutationFn: async () => {
-      if (!sqlitePreview) {
-        throw new Error("Upload and preview a legacy database first.")
-      }
-
-      const mapping_targets = sqlitePreview.preview.mapping_rows.map((row) => {
-        const value = sqliteMapping[row.idx] || "create"
-        if (value === "discard") {
-          return {
-            legacy_type: row.legacy_type,
-            legacy_category: row.legacy_category,
-            target: "discard" as const,
-            existing_category_id: null,
-          }
-        }
-        if (value.startsWith("existing:")) {
-          const id = Number(value.split(":", 2)[1])
-          return {
-            legacy_type: row.legacy_type,
-            legacy_category: row.legacy_category,
-            target: "existing" as const,
-            existing_category_id: id,
-          }
-        }
-        return {
-          legacy_type: row.legacy_type,
-          legacy_category: row.legacy_category,
-          target: "create" as const,
-          existing_category_id: null,
-        }
+  const preview = useMutation({
+    mutationFn: (chosen: File) => {
+      const form = new FormData()
+      form.append("file", chosen)
+      return apiFetchFormData<SqlitePreviewResponse>("/api/import/sqlite/preview", { method: "POST", body: form })
+    },
+    onSuccess: (data) => {
+      setOptions({
+        import_recurring_rules: data.preview.recurring_count > 0,
+        recurring_auto_post: false,
+        link_recurring_transactions: true,
+        preserve_time_in_title: data.preview.non_midnight_transaction_times > 0,
       })
-
-      return apiFetch<SqliteCommitResponse>("/api/import/sqlite/commit", {
+      setMapping(
+        Object.fromEntries(
+          data.preview.mapping_rows.map((row) => [row.idx, row.suggested_category_id ? `existing:${row.suggested_category_id}` : "create"])
+        )
+      )
+    },
+  })
+  const commit = useMutation({
+    mutationFn: (data: SqlitePreviewResponse) =>
+      apiFetch<SqliteCommitResponse>("/api/import/sqlite/commit", {
         method: "POST",
         body: JSON.stringify({
-          token: sqlitePreview.token,
-          options: {
-            import_recurring_rules: importRecurringRules,
-            recurring_auto_post: recurringAutoPost,
-            link_recurring_transactions: linkRecurringTransactions,
-            preserve_time_in_title: preserveTimeInTitle,
-          },
-          mapping_targets,
+          token: data.token,
+          options,
+          mapping_targets: data.preview.mapping_rows.map((row) => {
+            const value = mapping[row.idx] || "create"
+            const base = { legacy_type: row.legacy_type, legacy_category: row.legacy_category }
+            if (value === "discard") return { ...base, target: "discard" as const, existing_category_id: null }
+            if (value.startsWith("existing:")) {
+              return { ...base, target: "existing" as const, existing_category_id: Number(value.split(":", 2)[1]) }
+            }
+            return { ...base, target: "create" as const, existing_category_id: null }
+          }),
         }),
-      })
-    },
+      }),
     onSuccess: (data) => {
       const entries = Object.entries(data.result)
-      const message = entries.length
-        ? entries.map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")
-        : "Import completed."
-      setSqliteStatus(message)
-      setSqliteError("")
-    },
-    onError: (error) => {
-      setSqliteStatus("")
-      setSqliteError(getApiErrorMessage(error, "Unable to import SQLite database."))
+      showToast({
+        message: entries.length ? `Imported. ${entries.map(([key, value]) => `${key.replace(/_/g, " ")}: ${value}`).join(" · ")}` : "Import completed.",
+      })
+      setFile(null)
+      preview.reset()
+      void queryClient.invalidateQueries()
     },
   })
-
-  const handleSqlitePreview = () => {
-    setSqliteStatus("")
-    setSqliteError("")
-    if (!sqliteFile) {
-      setSqliteError("Select a .db file first.")
-      return
-    }
-    sqlitePreviewMutation.mutate(sqliteFile)
-  }
-
-  const handleSqliteImport = () => {
-    setSqliteStatus("")
-    setSqliteError("")
-    sqliteCommitMutation.mutate()
-  }
+  const data = preview.data
+  const error = preview.error
+    ? getApiErrorMessage(preview.error, "Unable to inspect the SQLite database.")
+    : commit.error
+      ? getApiErrorMessage(commit.error, "Unable to import the SQLite database.")
+      : null
+  const setOption = (key: keyof ImportOptions) => (checked: boolean) => setOptions((previous) => ({ ...previous, [key]: checked }))
 
   return (
-    <section className="space-y-4">
-      <PageIntro
-        title="SQLite Import"
-        backHref="/admin"
-        backLabel="← Back to admin"
-      />
-
-      <FinancialPanel role="inspector" className="mx-auto w-full max-w-6xl p-5">
-          <h2 className="text-xl font-head font-bold">Legacy SQLite</h2>
-          <p className="mt-1 text-sm text-muted">
-            CSV import is available in Settings.
-          </p>
-
-          <div className="mt-4 space-y-3">
-            <input
-              type="file"
-              ref={sqliteInputRef}
-              className="hidden"
-              accept=".db"
-              aria-label="SQLite database file"
-              onChange={(event) => setSqliteFile(event.target.files?.[0] || null)}
-            />
-            <button
-              type="button"
-              onClick={() => sqliteInputRef.current?.click()}
-              className="w-full cursor-pointer rounded-md border-2 border-dashed border-border px-4 py-8 text-center transition hover:border-accent hover:bg-accent-dim"
-            >
-              <DatabaseIcon className="mx-auto h-8 w-8 text-muted" />
-              <p className="mt-2 text-sm font-semibold text-text">Upload a .db file</p>
-              {sqliteFile && <p className="mt-2 text-xs text-accent">{sqliteFile.name}</p>}
-            </button>
-
-            <AppButton
-              type="button"
-              onClick={handleSqlitePreview}
-              disabled={sqlitePreviewMutation.isPending || sqliteCommitMutation.isPending}
-              tone="ghost"
-              className="w-full"
-            >
-              {sqlitePreviewMutation.isPending ? "Previewing…" : "Preview SQLite"}
-            </AppButton>
-
-            {sqliteError ? (
-              <p className="text-xs text-semantic-red">{sqliteError}</p>
-            ) : null}
-            {sqliteStatus ? (
-              <p className="text-xs font-semibold text-semantic-green">
-                {sqliteStatus}
-              </p>
-            ) : null}
-
-            {sqlitePreview ? (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-surface-hi/65 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-text">Preview</p>
-                    <span className="chip text-[11px] text-text">
-                      {sqlitePreview.preview.transactions_count} txns ·{" "}
-                      {sqlitePreview.preview.recurring_count} recurring
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-md bg-surface p-3">
-                      <p className="text-xs font-semibold text-muted">
-                        Date range
-                      </p>
-                      <p className="text-sm font-semibold text-text">
-                        {sqlitePreview.preview.min_transaction_date
-                          ? formatEuroDate(
-                              sqlitePreview.preview.min_transaction_date
-                            )
-                          : "—"}{" "}
-                        →{" "}
-                        {sqlitePreview.preview.max_transaction_date
-                          ? formatEuroDate(
-                              sqlitePreview.preview.max_transaction_date
-                            )
-                          : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-md bg-surface p-3">
-                      <p className="text-xs font-semibold text-muted">
-                        Category groups
-                      </p>
-                      <p className="text-sm font-semibold text-text">
-                        {sqlitePreview.preview.mapping_rows.length}
-                      </p>
-                    </div>
-                    <div className="rounded-md bg-surface p-3">
-                      <p className="text-xs font-semibold text-muted">
-                        Non-midnight times
-                      </p>
-                      <p className="text-sm font-semibold text-text">
-                        {sqlitePreview.preview.non_midnight_transaction_times}
-                      </p>
-                    </div>
-                  </div>
-
-                  {sqlitePreview.preview.warnings.length ? (
-                    <ul className="mt-3 list-disc space-y-1 rounded-md border border-semantic-red/35 bg-semantic-red/10 px-5 py-2 text-xs text-semantic-red">
-                      {sqlitePreview.preview.warnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
+    <SettingsShell
+      title="Admin"
+      groups={groups}
+      current="maintenance"
+      page="Legacy SQLite import"
+      actions={
+        data ? (
+          <Button variant="primary" disabled={commit.isPending} onClick={() => commit.mutate(data)}>
+            {commit.isPending ? "Importing…" : "Import"}
+          </Button>
+        ) : undefined
+      }
+    >
+      <Sheet title="Database" meta={file?.name}>
+        <FileDrop
+          accept=".db"
+          label="SQLite database file"
+          disabled={preview.isPending || commit.isPending}
+          onFile={(chosen) => {
+            setFile(chosen)
+            commit.reset()
+            preview.mutate(chosen)
+          }}
+        >
+          {preview.isPending ? "Reading the database…" : file ? "Drop another .db file or choose one" : "Drop a .db file or choose one"}
+        </FileDrop>
+        {error ? <FieldError>{error}</FieldError> : null}
+      </Sheet>
+      {data ? (
+        <>
+          <MetricStrip
+            metrics={[
+              {
+                label: "Transactions",
+                value: data.preview.transactions_count,
+                detail: data.preview.non_midnight_transaction_times
+                  ? `${data.preview.non_midnight_transaction_times} with a time of day`
+                  : undefined,
+              },
+              { label: "Recurring rules", value: data.preview.recurring_count },
+              {
+                label: "Dates",
+                value:
+                  data.preview.min_transaction_date && data.preview.max_transaction_date
+                    ? formatDateRange(data.preview.min_transaction_date, data.preview.max_transaction_date)
+                    : "None",
+              },
+              { label: "Categories", value: data.preview.mapping_rows.length },
+            ]}
+          />
+          {data.preview.warnings.length ? (
+            <Sheet title="Warnings" body="flush">
+              {data.preview.warnings.map((warning) => (
+                <SettingRow
+                  key={warning}
+                  label={
+                    <Status icon={WarningIcon} tone="bad" wrap>
+                      {warning}
+                    </Status>
+                  }
+                />
+              ))}
+            </Sheet>
+          ) : null}
+          <Sheet title="Options">
+            <CheckGroup label="Options">
+              <CheckboxField checked={options.import_recurring_rules} onCheckedChange={setOption("import_recurring_rules")}>
+                Import recurring rules
+              </CheckboxField>
+              <CheckboxField checked={options.recurring_auto_post} onCheckedChange={setOption("recurring_auto_post")}>
+                Post imported rules automatically
+              </CheckboxField>
+              <CheckboxField checked={options.link_recurring_transactions} onCheckedChange={setOption("link_recurring_transactions")}>
+                Link “(Recurring)” transactions to rules
+              </CheckboxField>
+              <CheckboxField checked={options.preserve_time_in_title} onCheckedChange={setOption("preserve_time_in_title")}>
+                Add the time of day to titles
+              </CheckboxField>
+            </CheckGroup>
+            <Status icon={WarningIcon}>Running the import again can duplicate one-time transactions.</Status>
+          </Sheet>
+          <Sheet title="Category mapping" body="flush">
+            <List flat label="Category mapping">
+              {data.preview.mapping_rows.map((row) => (
+                <Row key={`${row.legacy_type}-${row.legacy_category}`} {...MAPPING_COLUMNS} label={row.legacy_category} controls>
+                  <Cell strong>{row.legacy_category}</Cell>
+                  <Cell tone="muted" hide="mobile">
+                    {row.legacy_type === "income" ? "Income" : "Expense"}
+                  </Cell>
+                  <Cell tone="muted">{plural(row.transaction_count, "transaction")}</Cell>
+                  <Select
+                    aria-label={`Map ${row.legacy_category}`}
+                    value={mapping[row.idx] || "create"}
+                    onChange={(event) => setMapping((previous) => ({ ...previous, [row.idx]: event.target.value }))}
+                  >
+                    <option value="discard">Discard all</option>
+                    <option value="create">Create “{row.legacy_category}”</option>
+                    {data.categories
+                      .filter((category) => category.type === row.legacy_type)
+                      .map((category) => (
+                        <option key={category.id} value={`existing:${category.id}`}>
+                          {category.name}
+                          {category.id === row.suggested_category_id ? " (suggested)" : ""}
+                        </option>
                       ))}
-                    </ul>
-                  ) : null}
-                </div>
-
-                <div className="rounded-lg bg-surface-hi/65 p-4">
-                  <p className="mb-2 text-sm font-semibold text-text">Options</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
-                      <input
-                        type="checkbox"
-                        checked={importRecurringRules}
-                        onChange={(event) =>
-                          setImportRecurringRules(event.target.checked)
-                        }
-                        className="control-check"
-                      />
-                      Import recurring rules
-                    </label>
-                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
-                      <input
-                        type="checkbox"
-                        checked={recurringAutoPost}
-                        onChange={(event) =>
-                          setRecurringAutoPost(event.target.checked)
-                        }
-                        className="control-check"
-                      />
-                      Enable auto-post for imported rules
-                    </label>
-                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
-                      <input
-                        type="checkbox"
-                        checked={linkRecurringTransactions}
-                        onChange={(event) =>
-                          setLinkRecurringTransactions(event.target.checked)
-                        }
-                        className="control-check"
-                      />
-                      Link "(Recurring)" transactions to rules
-                    </label>
-                    <label className="flex min-h-11 items-center gap-3 rounded-md bg-surface px-3 py-2.5 text-xs text-text desk:min-h-0">
-                      <input
-                        type="checkbox"
-                        checked={preserveTimeInTitle}
-                        onChange={(event) =>
-                          setPreserveTimeInTitle(event.target.checked)
-                        }
-                        className="control-check"
-                      />
-                      Append time-of-day to title (if present)
-                    </label>
-                  </div>
-                  <p className="mt-2 text-xs text-muted">
-                    Re-running this import can create duplicates for non-recurring
-                    transactions.
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-hi/65 p-4">
-                  <p className="mb-1 text-sm font-semibold text-text">
-                    Category mapping
-                  </p>
-
-                  <div className="space-y-2">
-                    {sqlitePreview.preview.mapping_rows.map((row) => {
-                      const cats = sqlitePreview.categories.filter(
-                        (cat) => cat.type === row.legacy_type
-                      )
-                      return (
-                        <div
-                          key={`${row.legacy_type}-${row.legacy_category}`}
-                          className="rounded-md bg-surface p-3"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-text">
-                                {row.legacy_category}
-                              </p>
-                              <p className="text-xs text-muted">
-                                <span className="capitalize">{row.legacy_type}</span>{" "}
-                                · {row.transaction_count} txns
-                              </p>
-                            </div>
-                            {row.suggested_category_name ? (
-                              <span className="chip text-[11px] text-text">
-                                Suggested: {row.suggested_category_name}
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <AppNativeSelect
-                            value={sqliteMapping[row.idx] || "create"}
-                            onChange={(event) =>
-                              setSqliteMapping((prev) => ({
-                                ...prev,
-                                [row.idx]: event.target.value,
-                              }))
-                            }
-                            className="mt-3"
-                          >
-                            <option value="discard">
-                              Discard all: {row.legacy_category}
-                            </option>
-                            <option value="create">
-                              Create new: {row.legacy_category}
-                            </option>
-                            {cats.map((cat) => (
-                              <option key={cat.id} value={`existing:${cat.id}`}>
-                                Map to: {cat.name}
-                              </option>
-                            ))}
-                          </AppNativeSelect>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {sqlitePreview.preview.recurring_rows.length ? (
-                  <div className="rounded-lg bg-surface-hi/65 p-4">
-                    <p className="mb-3 text-sm font-semibold text-text">
-                      Recurring rules (legacy)
-                    </p>
-                    <div className="overflow-x-auto rounded-lg border border-border">
-                      <table className="min-w-full text-xs">
-                        <thead className="bg-faint text-[11px] font-semibold uppercase tracking-wide text-muted">
-                          <tr>
-                            <th className="px-3 py-2 text-left">Name</th>
-                            <th className="px-3 py-2 text-left">Type</th>
-                            <th className="px-3 py-2 text-left">Category</th>
-                            <th className="px-3 py-2 text-right">Amount</th>
-                            <th className="px-3 py-2 text-left">Start</th>
-                            <th className="px-3 py-2 text-left">Recurrence</th>
-                            <th className="px-3 py-2 text-left">Next</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border text-text">
-                          {sqlitePreview.preview.recurring_rows.map((row) => (
-                            <tr
-                              key={`${row.description}-${row.legacy_type}-${row.legacy_category}-${row.amount_cents}`}
-                            >
-                              <td className="max-w-[240px] truncate px-3 py-2 font-semibold text-text">
-                                {row.description}
-                              </td>
-                              <td className="px-3 py-2 capitalize">
-                                {row.legacy_type}
-                              </td>
-                              <td className="px-3 py-2">{row.legacy_category}</td>
-                              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                                {formatCurrency(row.amount_cents)} €
-                              </td>
-                              <td className="px-3 py-2">
-                                {formatEuroDate(row.start_date)}
-                              </td>
-                              <td className="px-3 py-2">
-                                {row.recurrence_type} / {row.interval}
-                              </td>
-                              <td className="px-3 py-2">
-                                {row.computed_next_occurrence
-                                  ? formatEuroDate(row.computed_next_occurrence)
-                                  : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : null}
-
-                <AppButton
-                  type="button"
-                  onClick={handleSqliteImport}
-                  disabled={sqliteCommitMutation.isPending}
-                  className="w-full"
-                >
-                  {sqliteCommitMutation.isPending ? "Importing…" : "Import legacy DB"}
-                </AppButton>
-              </div>
-            ) : null}
-          </div>
-      </FinancialPanel>
-    </section>
+                  </Select>
+                </Row>
+              ))}
+            </List>
+          </Sheet>
+          {data.preview.recurring_rows.length ? (
+            <Sheet title="Recurring rules" meta={plural(data.preview.recurring_rows.length, "rule")} body="flush">
+              <List flat label="Recurring rules">
+                <ListHead {...RECURRING_COLUMNS}>
+                  <span>Name</span>
+                  <Cell hide="mobile">Category</Cell>
+                  <Cell hide="mobile">Repeats</Cell>
+                  <Cell hide="mobile">Starts</Cell>
+                  <Cell hide="mobile">Next</Cell>
+                  <span />
+                </ListHead>
+                {data.preview.recurring_rows.map((row) => (
+                  <Row key={`${row.description}-${row.legacy_type}-${row.legacy_category}-${row.amount_cents}`} {...RECURRING_COLUMNS}>
+                    <Cell>{row.description}</Cell>
+                    <Cell tone="muted" hide="mobile">
+                      {row.legacy_category}
+                    </Cell>
+                    <Cell tone="muted" hide="mobile">
+                      {row.interval === 1 ? row.recurrence_type : `${row.recurrence_type} / ${row.interval}`}
+                    </Cell>
+                    <Cell tone="muted" hide="mobile">
+                      {formatShortDate(row.start_date)}
+                    </Cell>
+                    <Cell tone="muted" hide="mobile">
+                      {row.computed_next_occurrence ? formatShortDate(row.computed_next_occurrence) : "None"}
+                    </Cell>
+                    <AmountCell>
+                      <Amount cents={row.amount_cents} kind={row.legacy_type === "income" ? "income" : "expense"} />
+                    </AmountCell>
+                  </Row>
+                ))}
+              </List>
+            </Sheet>
+          ) : null}
+        </>
+      ) : null}
+    </SettingsShell>
   )
 }
 

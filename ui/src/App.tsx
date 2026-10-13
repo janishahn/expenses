@@ -6,9 +6,12 @@ import {
   Routes,
   useLocation,
   useOutletContext,
+  useParams,
   useSearchParams,
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
+import { BareLoading } from "./components/ui/Bare"
+import { PanelLoading } from "./components/ui/Panel"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
 const AdminElevationPage = lazy(() => import("./pages/AdminElevationPage"))
@@ -39,22 +42,10 @@ const TagDetailPage = lazy(() => import("./pages/TagDetailPage"))
 const TagsPage = lazy(() => import("./pages/TagsPage"))
 const TemplatesPage = lazy(() => import("./pages/TemplatesPage"))
 const TransactionDetailPage = lazy(() => import("./pages/TransactionDetailPage"))
-const TransactionEditPage = lazy(() => import("./pages/TransactionEditPage"))
 const TransactionsPage = lazy(() => import("./pages/TransactionsPage"))
 const UncategorizedInboxPage = lazy(
   () => import("./pages/UncategorizedInboxPage")
 )
-
-function AuthLoadingFallback() {
-  return (
-    <div
-      data-testid="app-loading-fallback"
-      className="min-h-app-screen flex items-center justify-center bg-bg text-muted"
-    >
-      Loading…
-    </div>
-  )
-}
 
 function currentDestination({
   pathname,
@@ -78,7 +69,7 @@ function SetupRoute() {
   const [searchParams] = useSearchParams()
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
   if (setupRequired) {
     return <SetupPage />
@@ -99,7 +90,7 @@ function PublicAuthRoute({ mode }: { mode: "login" | "signup" }) {
   const [searchParams] = useSearchParams()
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
 
   const redirectTarget = searchParams.get("redirect")
@@ -133,7 +124,7 @@ function ProtectedRoute() {
   const redirectTarget = currentDestination(location)
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
 
   if (setupRequired) {
@@ -189,7 +180,7 @@ function AdminRoute() {
   }
 
   if (checking) {
-    return <AuthLoadingFallback />
+    return <PanelLoading title="Admin" label="Checking admin access…" />
   }
 
   if (requiresElevation) {
@@ -204,6 +195,12 @@ function AdminRoute() {
   return <Outlet context={outletContext} />
 }
 
+// The edit page became inline editing in the full view; old links land there.
+function TransactionEditRedirect() {
+  const { transactionId } = useParams()
+  return <Navigate to={`/transactions/${transactionId}`} replace />
+}
+
 function AppRoutes() {
   const { llmEnabled } = useAuth()
   return (
@@ -216,39 +213,33 @@ function AppRoutes() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
-          <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
-          <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
-          <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
-          <Route path="/transactions/:transactionId/edit" element={<TransactionEditPage />} />
-          <Route
-            path="/assistant"
-            element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
-          />
+          <Route path="/budgets" element={<BudgetsPage />} />
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
-          <Route path="/budgets" element={<BudgetsPage />} />
-          <Route path="/digest" element={<DigestPage />} />
+          <Route path="/scenarios" element={<ScenariosPage />} />
+          <Route path="/recurring" element={<RecurringRulesPage />} />
+          <Route path="/recurring/:ruleId/occurrences" element={<RecurringOccurrencesPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/rules" element={<RulesPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/tags" element={<TagsPage />} />
           <Route path="/tags/:tagId" element={<TagDetailPage />} />
-          <Route path="/recurring" element={<RecurringRulesPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route
-            path="/recurring/:ruleId/occurrences"
-            element={<RecurringOccurrencesPage />}
-          />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route path="/scenarios" element={<ScenariosPage />} />
-          <Route path="/reconciliation" element={<ReconciliationPage />} />
+          <Route path="/digest" element={<DigestPage />} />
           <Route path="/reports/builder" element={<ReportBuilderPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
+          <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
+          <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
+          <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
+          <Route path="/assistant" element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />} />
+          <Route path="/settings/:section?" element={<SettingsPage />} />
           <Route path="/admin/elevate" element={<AdminElevationPage />} />
           <Route element={<AdminRoute />}>
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/import" element={<AdminImportPage />} />
+            <Route path="/admin/:section?" element={<AdminPage />} />
           </Route>
-          <Route path="*" element={<NotFoundPage />} />
+          <Route path="/reconciliation" element={<ReconciliationPage />} />
         </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   )
@@ -257,7 +248,7 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Suspense fallback={<AuthLoadingFallback />}>
+      <Suspense fallback={<BareLoading />}>
         <AppRoutes />
       </Suspense>
     </AuthProvider>

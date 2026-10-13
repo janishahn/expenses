@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- API fields and endpoints for the redesigned web UI: a transaction list `total`; net and reimbursed amounts, `created_at`, and the linked bank row on transaction detail; paged Trash with bulk restore and permanent delete; an admin purge preview; month-end balance history; period totals on categories and tags; tag `created_at`; `category_id` on breakdown items; a 6- or 12-month category breakdown; and Insights month grids, recurring split, a 53-week day calendar, budget history, `recurring_cents`, and income and expense totals for the exact period with its month count.
+- An optional `rule_anchor_date` on the recurring preview, so a saved rule previewed from its next occurrence keeps its original schedule, and the transaction `type` on Digest auto-posted items.
+- Uncategorized transactions show local-model category suggestions while automatic categorization is on and trained. A rejected suggestion is remembered per transaction, follows its category through a merge, and is kept in portable exports.
+- `GET /api/settings/auto-categorization`, and the minimum training history (`min_history`) in automatic categorization settings.
+- Bulk transaction edits accept an optional `expected_category_id` and skip transactions in any other category, so undoing a category change leaves a transaction changed since as it is.
+- Attachment uploads accept an optional `replaces_attachment_id`, which swaps that attachment for the new file in one request, so a receipt can be replaced at the five-attachment limit.
+- Bank reconciliation records how each statement row was resolved (matched, created, or ignored) with an optional ignore reason. New endpoints list open and resolved rows by account with paging, list bank accounts, search all transactions of the row's direction for a match, accept suggested matches in bulk (accepting a suggestion returns the matched transaction), and optionally update the transaction amount to a EUR bank amount when matching, returning the replaced amount. Creating a transaction from a row accepts tags and notes. Reopening can move the created transaction to the trash, can require the row's expected outcome and transaction, returning 409 when the row changed, and can restore the amount a match replaced; matching can restore the created outcome, taking its transaction back out of the trash.
+
+### Changed
+- Redesigned the web app around one quiet visual system in light and dark. Desktop has a sidebar and an inset page panel; mobile has a tab bar with a More sheet. Every page, chart, dialog, and menu uses the same components, and charts can show their data as a table.
+- Transactions open in a side peek or a full view where every field saves as you edit it; a failed save keeps your entry and shows the error. `/transactions/:id/edit` now opens the transaction. Adding a transaction starts from the Transactions header on every layout.
+- Settings and Admin are sections with their own URLs, and changes save at once. Admin asks for your password in place before showing server sections.
+- Reconcile reviews statement rows in suggested, several-match, and no-match groups, with Match all, a search for any transaction, ignore reasons, create and match, Undo for every action, and a Resolved view filtered by outcome and account.
+- Bank rows matched to a transaction that is later moved to the trash are open for reconciliation again.
+- Reconcile suggests a match for a non-EUR bank row only from a transaction entered in that currency with the same amount, not from a euro transaction with the same number.
+- Upgrading backfills existing bank rows as ignored (if reviewed) or matched. Rows created from a statement before this release are marked matched, because they cannot be told apart from matched rows.
+
+### Removed
+- The separate transaction edit page, and the mobile navigation drawer and floating add button.
+
+### Dependencies
+- Replaced ESLint and its plugins with oxlint for web linting. `npm run lint` keeps the previous rules and adds design rules that keep pages on the shared component kit.
+- Removed Recharts, class-variance-authority, tailwind-merge, and the IBM Plex Mono font from the web app. Tailwind CSS now supplies only the CSS reset.
+
 ## [0.6.1] - 2026-10-12
 
 ### Dependencies

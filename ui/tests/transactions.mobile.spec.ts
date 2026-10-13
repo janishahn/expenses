@@ -1,9 +1,11 @@
 import { expect, test } from "./fixtures"
+import type { APIRequestContext, Page } from "@playwright/test"
 import {
   createIngestTransaction,
   createTransaction,
-  ensureCategory,
+  createUncategorizedExpense,
   getCsrfToken,
+  loginWithTrainedSuggestions,
   stubOsmTiles,
   uploadAttachment,
 } from "./helpers"
@@ -15,447 +17,429 @@ const onePixelPng = Buffer.from(
   "base64"
 )
 
-const samplePdf = Buffer.from(
-  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxIC9LaWRzIFszIDAgUl0gPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCA+PiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDQ0ID4+CnN0cmVhbQpCVCAvRjEgMTIgVGYgNzIgMTIwIFRkIChIZWxsbyBwZGYpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDEwIDAwMDAwIG4gCjAwMDAwMDAwNjIgMDAwMDAgbiAKMDAwMDAwMDExNyAwMDAwMCBuIAowMDAwMDAwMjI1IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNSAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKMzE5CiUlRU9G",
-  "base64"
-)
+async function createCategory(
+  request: APIRequestContext,
+  token: string,
+  name: string
+): Promise<number> {
+  const response = await request.post("/api/categories", {
+    headers: { "X-CSRF-Token": token },
+    data: { name, type: "expense", order: 0 },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
+async function createTag(
+  request: APIRequestContext,
+  token: string,
+  name: string
+): Promise<number> {
+  const response = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": token },
+    data: { name, is_hidden_from_budget: false },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
+async function seed(
+  request: APIRequestContext,
+  token: string,
+  title: string,
+  overrides: Partial<Parameters<typeof createTransaction>[2]> = {}
+): Promise<number> {
+  const categoryId =
+    overrides.category_id ??
+    (await createCategory(request, token, `Mobile spec ${Date.now()}-${Math.random()}`))
+  const today = new Date().toISOString().slice(0, 10)
+  return createTransaction(request, token, {
+    date: today,
+    occurred_at: `${today}T12:00:00`,
+    type: "expense",
+    amount_cents: 1234,
+    category_id: categoryId,
+    title,
+    tags: [],
+    ...overrides,
+  })
+}
+
+async function fetchTransaction(request: APIRequestContext, id: number) {
+  const response = await request.get(`/api/transactions/${id}`)
+  expect(response.ok()).toBeTruthy()
+  return (await response.json()) as {
+    title: string
+    amount_cents: number
+    category_id: number | null
+    description: string | null
+  }
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const width = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }))
+  expect(width.scroll).toBeLessThanOrEqual(width.client)
+}
 
 test.describe("Transactions Page (mobile)", () => {
-  test("preserves Markdown formatting when editing and reopening a description", async ({
+  test("shows the compact header with Add, Search and More actions without overflow", async ({
     page,
-    request,
   }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Description editing")
-    const transactionId = await createTransaction(request, token, {
-      date: "2026-09-09",
-      occurred_at: "2026-09-09T12:00:00",
-      type: "expense",
-      amount_cents: 1234,
-      category_id: categoryId,
-      title: "Description editing",
-      description: "**Original note**",
-      tags: [],
-    })
-
-    await page.goto(`/transactions/${transactionId}/edit`)
-    const editor = page.locator('.description-editor [contenteditable="true"]')
-    await expect(editor.locator("strong")).toHaveText("Original note")
-    await editor.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End")
-    await editor.pressSequentially(" updated")
-    await page.getByRole("button", { name: "Save changes", exact: true }).click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
-
-    const response = await request.get(`/api/transactions/${transactionId}`)
-    expect(response.ok()).toBeTruthy()
-    expect((await response.json()).description).toBe("**Original note updated**")
-    await page.getByRole("link", { name: "Edit transaction" }).click()
-    await expect(editor.locator("strong")).toHaveText("Original note updated")
-  })
-
-  test("stages the period and secondary filters together in the sheet", async ({ page }) => {
     await page.goto("/transactions")
 
-    await expect(page.getByRole("button", { name: /Filters/ })).toBeVisible()
-    await expect(page.getByRole("combobox", { name: "Category", exact: true })).toHaveCount(0)
-    await expect(
-      page.getByTestId("transactions-control-zone").getByRole("group", {
-        name: "Period",
-      }),
-    ).toHaveCount(0)
-
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const filterDialog = page.getByRole("dialog", { name: "Filter transactions" })
-    await expect(filterDialog).toBeVisible()
-    await expect(filterDialog.getByRole("group", { name: "Period" })).toBeVisible()
-    await expect(
-      filterDialog.getByRole("combobox", { name: "Category", exact: true })
-    ).toBeVisible()
-
-    await filterDialog.getByRole("button", { name: "This month" }).click()
-    await filterDialog.getByRole("button", { name: "Expense", exact: true }).click()
-    await filterDialog.getByRole("button", { name: "Cancel" }).click()
-    await expect(page).not.toHaveURL(/type=expense/)
-    await expect(page).not.toHaveURL(/period=this_month/)
-
-    await page.getByRole("button", { name: /Filters/ }).click()
-    const reopenedFilterDialog = page.getByRole("dialog", {
-      name: "Filter transactions",
-    })
-    await reopenedFilterDialog.getByRole("button", { name: "This month" }).click()
-    await reopenedFilterDialog
-      .getByRole("button", { name: "Expense", exact: true })
-      .click()
-    await reopenedFilterDialog.getByRole("button", { name: "Apply" }).last().click()
-    await expect(page).toHaveURL(/type=expense/)
-    await expect(page).toHaveURL(/period=this_month/)
-    await expect(page.getByRole("button", { name: "Remove This month" })).toBeVisible()
-  })
-
-  test("waits for the complete matching count before enabling query bulk edit", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      "Mobile Bulk Count",
+    await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toHaveText(
+      "Add"
     )
-    const title = `Mobile Bulk Count ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 1200,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
+    await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
 
-    let releaseSummary: (() => void) | undefined
-    const summaryReady = new Promise<void>((resolve) => {
-      releaseSummary = resolve
-    })
-    await page.route("**/api/transactions/summary?*", async (route) => {
-      await summaryReady
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          income_cents: 0,
-          expense_cents: 1_200_000,
-          net_cents: -1_200_000,
-          count: 1000,
-        }),
-      })
-    })
-
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await page
-      .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
-      .check()
-    await page.getByRole("button", { name: "Bulk edit" }).click()
-
-    const dialog = page.getByRole("dialog", { name: "Bulk edit" })
-    await expect(dialog.getByRole("button", { name: "Counting matching…" })).toBeDisabled()
-
-    releaseSummary?.()
-    await expect(
-      dialog.getByRole("button", { name: "All 1000 matching" }),
-    ).toBeEnabled()
+    await page.getByRole("button", { name: "More actions" }).tap()
+    const menu = page.getByRole("dialog", { name: "More actions" })
+    await expect(menu.getByRole("menuitem", { name: "Select" })).toBeVisible()
+    await expect(menu.getByRole("link", { name: "Trash" })).toBeVisible()
+    await expect(menu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
   })
 
-  test("expands fuzzy search across the control row and displaces Filters", async ({
+  test("sets type, category and tags in the Filter sheet and removes them again", async ({
     page,
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Mobile Fuzzy Search")
-    const transactionId = await createTransaction(request, token, {
-      date: "2026-04-18",
-      occurred_at: "2026-04-18T14:00:00",
-      type: "expense",
-      amount_cents: 5000,
+    const stamp = Date.now()
+    const marker = `Mobile filter ${stamp}`
+    const categoryName = `Filter category ${stamp}`
+    const tagName = `filter-tag-${stamp}`
+    const categoryId = await createCategory(request, token, categoryName)
+    const tagId = await createTag(request, token, tagName)
+    const match = await seed(request, token, `${marker} match`, {
       category_id: categoryId,
-      title: `Mobile description result ${Date.now()}`,
-      description: "Warranty paperwork stored here",
-      tags: [],
+      tags: [tagName],
     })
+    const other = await seed(request, token, `${marker} other`)
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    const list = page.getByRole("list", { name: "Transactions" })
+    await expect(list.getByRole("listitem", { name: `${marker} match` })).toBeVisible()
+    await expect(list.getByRole("listitem", { name: `${marker} other` })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Clear type filter" })).toHaveCount(0)
+
+    await page.getByRole("button", { name: "Filter", exact: true }).tap()
+    const sheet = page.getByRole("dialog", { name: "Filter" })
+    await sheet.getByRole("radio", { name: "Expense" }).tap()
+    await expect(page).toHaveURL(/type=expense/)
+    await sheet.getByLabel("Category").selectOption(String(categoryId))
+    await expect(page).toHaveURL(new RegExp(`category=${categoryId}`))
+    await sheet.getByRole("checkbox", { name: tagName }).tap()
+    await expect(page).toHaveURL(new RegExp(`tags=${tagId}`))
+    await page.keyboard.press("Escape")
+    await expect(sheet).toBeHidden()
+
+    await expect(list.getByRole("listitem", { name: `${marker} match` })).toBeVisible()
+    await expect(list.getByRole("listitem", { name: `${marker} other` })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Filter · 3" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Clear type filter" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Clear category filter" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Clear tag filter" })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+
+    await page.getByRole("button", { name: "Clear tag filter" }).tap()
+    await expect(page).not.toHaveURL(/tags=/)
+    await page.getByRole("button", { name: "Clear category filter" }).tap()
+    await expect(page).not.toHaveURL(/category=/)
+    await expect(list.getByRole("listitem", { name: `${marker} other` })).toBeVisible()
+    await page.getByRole("button", { name: "Clear type filter" }).tap()
+    await expect(page).not.toHaveURL(/type=/)
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible()
+    expect(match).not.toBe(other)
+  })
+
+  test("expands search at the top of the page and closes it with Escape", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const title = `Mobile search ${stamp}`
+    await seed(request, token, title, { description: "Warranty paperwork stored here" })
+    await seed(request, token, `Plain lunch ${stamp}`)
     await page.goto("/transactions")
 
-    const searchTrigger = page.getByRole("button", { name: "Search transactions" })
-    const searchField = page.locator("#transaction-search")
-    const filters = page.getByRole("button", { name: /^Filters/ })
-    const filtersSlot = page.locator(".transaction-toolbar-actions")
-    await expect(filters).toBeVisible()
-
-    await searchTrigger.tap()
+    const trigger = page.getByRole("button", { name: "Search", exact: true })
+    await trigger.tap()
     const searchbox = page.getByRole("searchbox", { name: "Search transactions" })
     await expect(searchbox).toBeVisible()
     await expect(searchbox).toBeFocused()
+    const box = await searchbox.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return { top: rect.top, left: rect.left, right: rect.right }
+    })
+    const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+    expect(box.top).toBeLessThan(200)
+    expect(box.left).toBeGreaterThanOrEqual(0)
+    expect(box.right).toBeLessThanOrEqual(viewportWidth)
+    await expectNoHorizontalOverflow(page)
 
-    // Layout rects come from the DOM rather than boundingBox(), which WebKit
-    // reports in page-scale-adjusted screen pixels.
-    const viewport = await page.evaluate(() => ({
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-    }))
-    // The expansion is animated, so the settled geometry is polled.
-    await expect(async () => {
-      const field = await searchField.evaluate((element) => {
-        const rect = element.getBoundingClientRect()
-        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
-      })
-      const filtersLeft = await filtersSlot.evaluate(
-        (element) => element.getBoundingClientRect().left,
-      )
-      expect(field.left).toBeGreaterThanOrEqual(0)
-      expect(field.top).toBeGreaterThanOrEqual(0)
-      expect(field.right).toBeLessThanOrEqual(viewport.width)
-      expect(field.bottom).toBeLessThanOrEqual(viewport.height)
-      expect(field.right - field.left).toBeGreaterThan(viewport.width * 0.85)
-      expect(filtersLeft).toBeGreaterThanOrEqual(field.right)
-    }).toPass({ timeout: 10_000 })
-    // Hidden here means gone from hit testing and the accessibility tree.
-    await expect(filters).toBeHidden()
-    const layout = await page.evaluate(() => ({
-      viewport: document.documentElement.clientWidth,
-      content: document.documentElement.scrollWidth,
-    }))
-    expect(layout.content).toBeLessThanOrEqual(layout.viewport)
+    await searchbox.fill(String(stamp))
+    await expect(page).toHaveURL(new RegExp(`q=${stamp}`))
+    const list = page.getByRole("list", { name: "Transactions" })
+    await expect(list.getByRole("listitem", { name: title })).toBeVisible()
+    await expect(list.getByRole("listitem", { name: `Plain lunch ${stamp}` })).toBeVisible()
 
     await searchbox.fill("waranty paperwork")
-    await expect(page).toHaveURL(/q=waranty(?:\+|%20)paperwork/)
-    await expect(page.getByTestId(`transaction-row-${transactionId}`)).toBeVisible()
-    await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
-
-    const clearSearch = page.getByRole("button", { name: "Clear search" })
-    const clearAlignment = await page.evaluate(() => {
-      const field = document.querySelector("#transaction-search")!.getBoundingClientRect()
-      const clear = document
-        .querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!
-        .getBoundingClientRect()
-      return {
-        top: clear.top - field.top,
-        right: field.right - clear.right,
-        bottom: field.bottom - clear.bottom,
-      }
-    })
-    await expect(clearSearch).toBeVisible()
-    expect(Math.abs(clearAlignment.top)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(clearAlignment.right)).toBeLessThanOrEqual(0.5)
-    expect(Math.abs(clearAlignment.bottom)).toBeLessThanOrEqual(0.5)
+    await expect(list.getByRole("listitem", { name: title })).toBeVisible()
+    await expect(list.getByRole("listitem", { name: `Plain lunch ${stamp}` })).toHaveCount(0)
 
     await searchbox.press("Escape")
     await expect(searchbox).toHaveValue("")
-    await expect(filters).toBeHidden()
+    await expect(page).not.toHaveURL(/q=/)
     await searchbox.press("Escape")
-    await expect(filters).toBeVisible()
-    await expect(searchTrigger).toBeFocused()
-    await expect(searchTrigger).toHaveAttribute("aria-expanded", "false")
+    await expect(searchbox).toBeHidden()
   })
 
-  test("collapses secondary actions into an overflow menu and keeps selection discoverable", async ({
+  test("selects rows from More actions and changes their category from the bulk bar", async ({
     page,
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      "E2E Mobile Selection",
-    )
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 2145,
-      category_id: categoryId,
-      title: `E2E Mobile Selection ${Date.now()}`,
-      tags: [],
-    })
-    await page.goto("/transactions?period=all")
-
-    const title = page.getByRole("heading", { name: "Transactions" })
-    await expect(title).toBeVisible()
-    await expect(page.getByTestId("transactions-control-zone")).toBeVisible()
-
-    await expect(page.getByRole("button", { name: "More actions" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Inbox" })).toHaveCount(0)
-    await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0)
-    await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Select", exact: true })).toHaveCount(0)
-    await expect(page.getByTestId("transactions-selection-controls")).toBeVisible()
-
-    const filtersTrigger = page.getByRole("button", { name: /Filters/ })
-    await expect(filtersTrigger).toBeVisible()
-    const filtersBox = await filtersTrigger.boundingBox()
-    expect(filtersBox).not.toBeNull()
-    expect(filtersBox!.width).toBeLessThanOrEqual(56)
-
-    const moreActions = page.getByRole("button", { name: "More actions" })
-    const [titleBox, moreActionsBox] = await Promise.all([
-      title.boundingBox(),
-      moreActions.boundingBox(),
-    ])
-    expect(titleBox).not.toBeNull()
-    expect(moreActionsBox).not.toBeNull()
-    expect(
-      Math.abs(
-        titleBox!.y + titleBox!.height / 2
-          - (moreActionsBox!.y + moreActionsBox!.height / 2),
-      ),
-    ).toBeLessThan(4)
-    expect(moreActionsBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width)
-    await expect(
-      page
-        .getByTestId("transactions-control-zone")
-        .getByRole("button", { name: "More actions" }),
-    ).toHaveCount(0)
-    await expect(
-      page
-        .getByTestId("transactions-control-zone")
-        .getByRole("group", { name: "Period" }),
-    ).toHaveCount(0)
-
-    await moreActions.click()
-    const menu = page.getByRole("menu")
-    await expect(menu.getByRole("menuitem", { name: "Inbox" })).toBeVisible()
-    await expect(menu.getByRole("menuitem", { name: "Trash" })).toBeVisible()
-    await expect(menu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
-    await page.keyboard.press("Escape")
-    await expect(menu).toHaveCount(0)
-
-    const layout = await page.evaluate(() => ({
-      viewportWidth: window.innerWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }))
-    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth)
-
-    const firstRow = page.getByTestId(`transaction-row-${transactionId}`)
-    const checkbox = firstRow.getByRole("checkbox", { name: /Select transaction/ })
-    await expect(checkbox).toBeVisible()
-    await checkbox.check()
-    await expect(page.getByTestId("transactions-selection-controls")).toContainText(
-      "1 selected",
-    )
-    await expect(page.getByRole("button", { name: "Bulk edit" })).toBeVisible()
-  })
-
-  test("keeps the compact header controls free of an outline-like shadow", async ({ page }) => {
-    await page.goto("/transactions")
-
-    const controls = [
-      page.getByRole("button", { name: "Search transactions" }),
-      page.getByRole("button", { name: /^Filters/ }),
-      page.getByRole("button", { name: "More actions" }),
+    const stamp = Date.now()
+    const marker = `Mobile select ${stamp}`
+    const targetName = `Select target ${stamp}`
+    const targetId = await createCategory(request, token, targetName)
+    const ids = [
+      await seed(request, token, `${marker} one`),
+      await seed(request, token, `${marker} two`),
+      await seed(request, token, `${marker} three`),
     ]
 
-    for (const control of controls) {
-      await expect(control).toBeVisible()
-      expect(await control.evaluate((element) => getComputedStyle(element).boxShadow)).toBe(
-        "none",
-      )
-    }
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    const tabs = page.getByRole("navigation", { name: "Tabs" })
+    await expect(tabs).toBeVisible()
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Select" }).tap()
+
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toBeVisible()
+    await expect(tabs).toBeHidden()
+    const list = page.getByRole("list", { name: "Transactions" })
+    await list.getByRole("listitem", { name: `${marker} one` }).tap()
+    await list.getByRole("listitem", { name: `${marker} two` }).tap()
+    await expect(page).not.toHaveURL(/peek=/)
+    await expect(bulk).toContainText("2 selected")
+    await expect(list.getByRole("checkbox", { name: `Select ${marker} three` })).not.toBeChecked()
+
+    await list.getByRole("listitem", { name: `${marker} two` }).tap()
+    await expect(bulk).toContainText("1 selected")
+    await list.getByRole("listitem", { name: `${marker} two` }).tap()
+    await expect(bulk).toContainText("2 selected")
+
+    await bulk.getByRole("button", { name: "Category" }).tap()
+    await page.getByRole("combobox", { name: "Set category" }).fill(targetName)
+    await page.getByRole("option", { name: targetName }).tap()
+    const confirm = page.getByRole("dialog", { name: "Change the category of 2 transactions?" })
+    await confirm.getByRole("button", { name: "Apply" }).tap()
+    await expect(page.getByRole("status")).toContainText("Updated 2 transactions")
+    await expect(bulk).toBeHidden()
+    await expect(tabs).toBeVisible()
+
+    expect((await fetchTransaction(request, ids[0])).category_id).toBe(targetId)
+    expect((await fetchTransaction(request, ids[1])).category_id).toBe(targetId)
+    expect((await fetchTransaction(request, ids[2])).category_id).not.toBe(targetId)
   })
 
-  test("opens and dismisses the transaction location dialog", async ({
+  test("leaves selection mode with the bulk bar close button", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const marker = `Mobile deselect ${Date.now()}`
+    await seed(request, token, `${marker} one`)
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Select" }).tap()
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toContainText("0 selected")
+    await page.getByRole("listitem", { name: `${marker} one` }).tap()
+    await expect(bulk).toContainText("1 selected")
+
+    await bulk.getByRole("button", { name: "Clear selection" }).tap()
+    await expect(bulk).toBeHidden()
+    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeVisible()
+    await page.getByRole("listitem", { name: `${marker} one` }).tap()
+    await expect(page).toHaveURL(/peek=\d+/)
+  })
+
+  test("opens a full-screen peek from a row and returns to the same scroll position", async ({
     page,
     request,
   }) => {
-    await stubOsmTiles(page)
-
-    const title = `E2E Mobile Location ${Date.now()}`
-    await createIngestTransaction(request, {
-      amount_cents: 880,
-      title,
-      date: "2026-03-20",
-      category: "Food",
-      latitude: 52.520008,
-      longitude: 13.404954,
-    })
-
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
-    await expect(row).toBeVisible()
-    await row.getByRole("button", { name: /View location/ }).click()
-
-    const dialog = page.getByRole("dialog", { name: "Transaction location" })
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText("52.520008, 13.404954")
-    await expect(dialog.getByTestId("transaction-location-map")).toBeVisible()
-    const dialogBounds = await dialog.boundingBox()
-    if (!dialogBounds) {
-      throw new Error("Expected transaction location dialog bounds")
+    const token = await getCsrfToken(request)
+    const marker = `Mobile scroll ${Date.now()}`
+    for (let index = 10; index < 40; index += 1) {
+      await seed(request, token, `${marker} ${index}`)
     }
-    const viewport = await page.evaluate(() => ({
-      height: window.visualViewport?.height ?? window.innerHeight,
-      width: window.visualViewport?.width ?? window.innerWidth,
-    }))
-    expect(
-      Math.abs(viewport.height / 2 - (dialogBounds.y + dialogBounds.height / 2))
-    ).toBeLessThan(24)
-    expect(
-      Math.abs(viewport.width / 2 - (dialogBounds.x + dialogBounds.width / 2))
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    const list = page.getByRole("list", { name: "Transactions" })
+    await expect(list.getByRole("listitem")).toHaveCount(30)
+
+    const scrollTo = (top: number) =>
+      list.evaluate((element, target) => {
+        let node: HTMLElement | null = element
+        while (node && node.scrollHeight <= node.clientHeight) node = node.parentElement
+        const scroller = node ?? document.scrollingElement!
+        scroller.scrollTop = target
+        return scroller.scrollTop
+      }, top)
+    const readScroll = () =>
+      list.evaluate((element) => {
+        let node: HTMLElement | null = element
+        while (node && node.scrollHeight <= node.clientHeight) node = node.parentElement
+        return (node ?? document.scrollingElement!).scrollTop
+      })
+    const scrolled = await scrollTo(500)
+    expect(scrolled).toBeGreaterThan(300)
+
+    const row = list.getByRole("listitem").filter({ hasText: `${marker} 25` })
+    await row.scrollIntoViewIfNeeded()
+    const before = await readScroll()
+    await row.tap()
+    await expect(page).toHaveURL(/peek=\d+/)
+    const peek = page.getByRole("complementary", { name: `${marker} 25` })
+    await expect(peek).toBeVisible()
+    await expect(list).toBeHidden()
+
+    await peek.getByRole("button", { name: "Transactions", exact: true }).tap()
+    await expect(page).not.toHaveURL(/peek=/)
+    await expect(peek).toHaveCount(0)
+    await expect(list).toBeVisible()
+    expect(await readScroll()).toBe(before)
+  })
+
+  test("edits title, amount and category inline in the peek", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const title = `Mobile inline ${stamp}`
+    const targetName = `Inline target ${stamp}`
+    const targetId = await createCategory(request, token, targetName)
+    const id = await seed(request, token, title, { amount_cents: 1234 })
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+
+    await peek.getByRole("button", { name: "Edit Title" }).tap()
+    await peek.getByRole("textbox", { name: "Title" }).fill("")
+    await peek.getByRole("textbox", { name: "Title" }).press("Enter")
+    await expect(peek.getByText("Enter a title.")).toBeVisible()
+    await peek.getByRole("textbox", { name: "Title" }).fill(`${title} renamed`)
+    await peek.getByRole("textbox", { name: "Title" }).press("Enter")
+    await expect(peek.getByRole("button", { name: "Edit Title" })).toHaveText(`${title} renamed`)
+
+    await peek.getByRole("button", { name: "Edit Amount" }).tap()
+    await peek.getByRole("textbox", { name: "Amount" }).fill("abc")
+    await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
+    await expect(peek.getByText("Enter a valid amount.")).toBeVisible()
+    await peek.getByRole("textbox", { name: "Amount" }).fill("45,60")
+    await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
+    await expect(peek.getByRole("button", { name: "Edit Amount" })).toContainText("45,60")
+
+    await peek.getByRole("button", { name: /^Category / }).tap()
+    await page.getByRole("combobox", { name: "Category" }).fill(targetName)
+    await page.getByRole("option", { name: targetName }).tap()
+    await expect(peek.getByRole("button", { name: `Category ${targetName}` })).toBeVisible()
+
+    await expect
+      .poll(async () => {
+        const saved = await fetchTransaction(request, id)
+        return [saved.title, saved.amount_cents, saved.category_id]
+      })
+      .toEqual([`${title} renamed`, 4560, targetId])
+  })
+
+  test("round-trips Markdown notes in the peek", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const title = `Mobile notes ${Date.now()}`
+    const id = await seed(request, token, title, { description: "**Original note**" })
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.locator("strong")).toHaveText("Original note")
+
+    await peek.getByRole("button", { name: "Edit notes" }).tap()
+    const editor = peek.getByRole("textbox", { name: "Notes" })
+    await expect(editor.locator("strong")).toHaveText("Original note")
+    await editor.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End")
+    await editor.pressSequentially(" updated")
+    await editor.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter")
+    await expect(peek.getByRole("textbox", { name: "Notes" })).toHaveCount(0)
+    await expect(peek.locator("strong")).toHaveText("Original note updated")
+    await expect
+      .poll(async () => (await fetchTransaction(request, id)).description)
+      .toBe("**Original note updated**")
+
+    await page.reload()
+    await expect(page.getByRole("complementary", { name: title }).locator("strong")).toHaveText(
+      "Original note updated"
     )
-      .toBeLessThan(24)
-
-    await dialog.getByRole("button", { name: "Close transaction location" }).click()
-    await expect(dialog).toHaveCount(0)
   })
 
-  test("navigates to detail from the mobile transaction row itself", async ({ page, request }) => {
-    const title = `E2E Mobile Detail CTA ${Date.now()}`
-    const transactionId = await createIngestTransaction(request, {
-      amount_cents: 930,
-      title,
-      date: "2026-04-18",
-      category: "Food",
-    })
+  test("adds a note to an empty transaction in the peek", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const title = `Mobile empty notes ${Date.now()}`
+    const id = await seed(request, token, title)
 
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-
-    const row = page.locator("div.surface-card").filter({ hasText: title }).first()
-    await expect(row).toBeVisible()
-    await expect(row.getByRole("link", { name: "View details" })).toHaveCount(0)
-    await expect(row.getByRole("link", { name: "Edit" })).toHaveCount(0)
-
-    await row.click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: "Add notes" }).tap()
+    await peek.getByRole("textbox", { name: "Notes" }).pressSequentially("Bought on sale")
+    await peek.getByRole("heading", { name: "Notes" }).tap()
+    await expect
+      .poll(async () => (await fetchTransaction(request, id)).description)
+      .toBe("Bought on sale")
+    await expect(peek.getByText("Bought on sale")).toBeVisible()
   })
 
-  test("keeps read-only summary above the fold and overflow-safe on mobile detail", async ({
+  test("shows an empty receipt section and uploads a receipt from the peek", async ({
     page,
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Detail")
-    const title = `E2E Mobile Detail ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: "2026-04-18",
-      occurred_at: "2026-04-18T07:20:00",
-      type: "expense",
-      amount_cents: 2315,
-      category_id: categoryId,
-      title,
-      tags: ["mobile-summary"],
-    })
+    const title = `Mobile receipt ${Date.now()}`
+    await seed(request, token, title)
 
-    await page.goto(`/transactions/${transactionId}`)
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.getByRole("button", { name: "Add a receipt" })).toBeVisible()
+    await expect(peek.getByRole("heading", { name: "Location" })).toHaveCount(0)
 
-    await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0)
-    await expect(page.locator("main")).toContainText(title)
-    await expect(page.locator("main")).toContainText("-23,15 €")
-    await expect(page.locator("main")).toContainText("18.04.2026 07:20")
+    const chooser = page.waitForEvent("filechooser")
+    await peek.getByRole("button", { name: "Add a receipt" }).tap()
+    const fileName = `mobile-receipt-${Date.now()}.png`
+    await (await chooser).setFiles({ name: fileName, mimeType: "image/png", buffer: onePixelPng })
+    await expect(peek.getByRole("button", { name: `Open ${fileName}` })).toBeVisible()
+    await expect(peek.getByRole("button", { name: "Add a receipt" })).toHaveCount(0)
 
-    const summaryCard = page.locator('[data-financial-surface="hero"]')
-    const bounds = await summaryCard.boundingBox()
-    if (!bounds) {
-      throw new Error("Expected detail summary card bounds")
-    }
-    const viewport = await page.evaluate(() => ({
-      height: window.visualViewport?.height ?? window.innerHeight,
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-
-    expect(bounds.y + bounds.height).toBeLessThan(viewport.height + 32)
-    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+    await peek.getByRole("button", { name: `Open ${fileName}` }).tap()
+    const viewer = page.getByRole("dialog", { name: fileName })
+    await expect(viewer).toBeVisible()
+    await viewer.getByRole("button", { name: "Close" }).tap()
+    await expect(viewer).toBeHidden()
   })
 
-  test("renders inline location and attachment previews on mobile detail", async ({
+  test("shows an existing receipt and a map for a located transaction in the peek", async ({
     page,
     request,
   }) => {
     await stubOsmTiles(page)
-
     const token = await getCsrfToken(request)
-    const title = `E2E Mobile Detail Modules ${Date.now()}`
-    const transactionId = await createIngestTransaction(request, {
+    const title = `Mobile located ${Date.now()}`
+    const id = await createIngestTransaction(request, {
       amount_cents: 1775,
       title,
       date: "2026-04-18",
@@ -463,247 +447,206 @@ test.describe("Transactions Page (mobile)", () => {
       latitude: 52.520008,
       longitude: 13.404954,
     })
-
-    const imageName = `mobile-receipt-${Date.now()}.png`
-    const pdfName = `mobile-invoice-${Date.now()}.pdf`
-    await uploadAttachment(request, token, transactionId, {
-      name: imageName,
+    const fileName = `mobile-located-${Date.now()}.png`
+    await uploadAttachment(request, token, id, {
+      name: fileName,
       mimeType: "image/png",
       buffer: onePixelPng,
     })
-    await uploadAttachment(request, token, transactionId, {
-      name: pdfName,
-      mimeType: "application/pdf",
-      buffer: samplePdf,
-    })
 
-    await page.goto(`/transactions/${transactionId}`)
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
 
-    await expect(page.getByRole("heading", { name: "Location" })).toBeVisible()
-    await expect(page.getByTestId("transaction-detail-location-map")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Attachments" })).toBeVisible()
-    await expect(page.getByRole("img", { name: imageName })).toBeVisible()
-    await expect(page.locator(`iframe[title="${pdfName}"]`)).toBeVisible()
-
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-    await expect(page.getByTestId("app-shell-mobile-add-action")).toHaveCount(0)
-
-    const viewport = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+    await expect(peek.getByRole("heading", { name: "Location" })).toBeVisible()
+    await expect(peek.getByText("52.520008, 13.404954").first()).toBeVisible()
+    const map = peek.getByRole("group", { name: /^Map at / })
+    await expect(map).toBeVisible()
+    await expect(map.locator(".leaflet-marker-icon")).toBeVisible()
+    await expect(peek.getByRole("button", { name: `Open ${fileName}` })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
   })
 
-  test("edits a transaction from its mobile detail surface", async ({ page, request }) => {
+  test("adds a transaction from the bottom sheet", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Mobile edit")
-    const title = `Mobile edit ${Date.now()}`
-    const updatedTitle = `${title} updated`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 2450,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
-
-    await page.goto(`/transactions/${transactionId}`)
-    await page.getByRole("link", { name: "Edit transaction" }).click()
-    await expect(page).toHaveURL(`/transactions/${transactionId}/edit`)
-    await page.getByLabel("Title").fill(updatedTitle)
-    await page.getByRole("button", { name: "Save changes" }).click()
-
-    await expect(page).toHaveURL(`/transactions/${transactionId}`)
-    await expect(page.getByRole("heading", { name: updatedTitle })).toBeVisible()
-  })
-
-  test("recategorizes a transaction from the mobile Inbox", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const categoriesResponse = await request.get("/api/categories?period=all")
-    const categories = (await categoriesResponse.json()) as {
-      categories: Array<{
-        id: number
-        name: string
-        type: string
-        archived_at: string | null
-      }>
-    }
-    let uncategorizedId = categories.categories.find(
-      (category) =>
-        category.type === "expense" &&
-        category.archived_at === null &&
-        category.name.toLowerCase() === "uncategorized"
-    )?.id
-    if (!uncategorizedId) {
-      const created = await request.post("/api/categories", {
-        headers: { "X-CSRF-Token": token },
-        data: { name: "Uncategorized", type: "expense", order: 0 },
-      })
-      expect(created.ok()).toBeTruthy()
-      uncategorizedId = ((await created.json()) as { id: number }).id
-    }
-    const targetCategory = await request.post("/api/categories", {
-      headers: { "X-CSRF-Token": token },
-      data: {
-        name: `Mobile inbox target ${Date.now()}`,
-        type: "expense",
-        order: 0,
-      },
-    })
-    expect(targetCategory.ok()).toBeTruthy()
-    const targetId = ((await targetCategory.json()) as { id: number }).id
-    const title = `Mobile inbox ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 3100,
-      category_id: uncategorizedId,
-      title,
-      tags: [],
-    })
+    const categoryName = `Add sheet category ${Date.now()}`
+    await createCategory(request, token, categoryName)
+    const title = `Mobile add ${Date.now()}`
 
     await page.goto("/transactions")
-    await page.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitem", { name: "Inbox" }).click()
-    await expect(page).toHaveURL(/\/transactions\/inbox$/)
-    await page.getByRole("button", { name: "All time", exact: true }).click()
-    await page.getByRole("textbox", { name: "Search", exact: true }).fill(title)
-    const row = page.getByTestId(`uncategorized-row-${transactionId}`)
-    await row.getByRole("checkbox", { name: `Select transaction ${transactionId}` }).check()
-    await page.getByLabel("Move selected to category").selectOption(String(targetId))
-    await page.getByRole("button", { name: "Apply", exact: true }).click()
-    await page
-      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
-      .getByRole("button", { name: "Apply", exact: true })
-      .click()
-    await expect(row).toBeHidden()
-  })
-
-  test("keeps the bulk-apply outcome visible in the mobile sheet until dismissed", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Mobile bulk source")
-    const targetResponse = await request.post("/api/categories", {
-      headers: { "X-CSRF-Token": token },
-      data: { name: `Mobile bulk target ${Date.now()}`, type: "expense", order: 0 },
-    })
-    expect(targetResponse.ok()).toBeTruthy()
-    const targetId = ((await targetResponse.json()) as { id: number }).id
-    const title = `Mobile bulk outcome ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 2750,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
-
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-    await page
-      .getByRole("checkbox", { name: `Select transaction ${transactionId}` })
-      .check()
-    await page.getByRole("button", { name: "Bulk edit" }).click()
-
-    const dialog = page.getByRole("dialog", { name: "Bulk edit" })
+    await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
+    const dialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(dialog).toBeVisible()
-    await dialog.getByLabel("Set category").selectOption(String(targetId))
-    await dialog.getByRole("button", { name: "Apply", exact: true }).click()
-    await page
-      .getByRole("dialog", { name: "Apply bulk changes to selected transactions?" })
-      .getByRole("button", { name: "Apply", exact: true })
-      .click()
+    const box = await dialog.boundingBox()
+    const viewport = page.viewportSize()
+    expect(box).not.toBeNull()
+    expect(box!.y + box!.height).toBeGreaterThan(viewport!.height - 4)
 
-    await expect(dialog.getByText("Resolved 1, skipped 0")).toBeVisible()
-    await expect(dialog.getByRole("group", { name: "Bulk edit scope" })).toHaveCount(0)
-    const done = dialog.getByRole("button", { name: "Done" })
-    await expect(done).toBeVisible()
-    await done.click()
-    await expect(dialog).toHaveCount(0)
-    await expect(page.getByText("Resolved 1, skipped 0")).toHaveCount(0)
+    const submit = dialog.getByRole("button", { name: "Add transaction" })
+    await submit.tap()
+    await expect(dialog.getByText("Enter an amount.")).toBeVisible()
+    await expect(dialog.getByText("Enter a title.")).toBeVisible()
+    await dialog.getByLabel("Amount").fill("abc")
+    await submit.tap()
+    await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
+
+    await dialog.getByLabel("Amount").fill("12,34")
+    await dialog.getByLabel("Title").fill(title)
+    await dialog.getByRole("button", { name: "Category", exact: true }).tap()
+    await page.getByRole("combobox", { name: "Category" }).fill(categoryName)
+    await page.getByRole("option", { name: categoryName }).tap()
+    await submit.tap()
+
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole("status")).toContainText("Transaction added")
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row).toBeVisible()
+    await expect(row).toContainText("12,34")
+    await expect(row).toContainText(categoryName)
   })
 
-  test("deletes a transaction from mobile detail and permanently deletes it from Trash", async ({
+  test("deletes a transaction from the peek menu and restores it with Undo", async ({
     page,
     request,
   }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Mobile delete")
-    const title = `Mobile delete ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 1450,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
+    const title = `Mobile peek delete ${Date.now()}`
+    const id = await seed(request, token, title)
 
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-    const row = page.getByTestId(`transaction-row-${transactionId}`)
-    await expect(row).toBeVisible()
-    await row.click()
-    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
-
-    await page.getByRole("button", { name: "Delete transaction" }).click()
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Delete" }).tap()
     await page
       .getByRole("dialog", { name: "Delete this transaction?" })
       .getByRole("button", { name: "Delete", exact: true })
-      .click()
-    await expect(page).toHaveURL(/\/transactions\?/)
-    await expect(page.getByTestId(`transaction-row-${transactionId}`)).toHaveCount(0)
+      .tap()
 
-    await page.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitem", { name: "Trash" }).click()
+    await expect(page.getByRole("status")).toContainText("Moved to Trash")
+    await expect(page).not.toHaveURL(/peek=/)
+    await expect(page.getByRole("listitem", { name: title })).toHaveCount(0)
+    expect((await request.get(`/api/transactions/${id}`)).status()).toBe(404)
+
+    await page.getByRole("status").getByRole("button", { name: "Undo" }).tap()
+    await expect(page.getByRole("listitem", { name: title })).toBeVisible()
+    expect((await fetchTransaction(request, id)).title).toBe(title)
+  })
+
+  test("recategorizes a transaction from the mobile Inbox with Select", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const targetName = `Mobile inbox target ${Date.now()}`
+    const targetId = await createCategory(request, token, targetName)
+    const title = `Mobile inbox ${Date.now()}`
+    const transactionId = await createUncategorizedExpense(request, token, title)
+
+    await page.goto(`/transactions/inbox?q=${encodeURIComponent(title)}`)
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Select" }).tap()
+    const row = page.getByRole("listitem", { name: title })
+    await row.tap()
+    await expect(page).not.toHaveURL(/peek=/)
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toContainText("1 selected")
+    await bulk.getByRole("button", { name: "Category" }).tap()
+    await page.getByRole("combobox").fill(targetName)
+    await page.getByRole("option", { name: targetName }).tap()
+    await page
+      .getByRole("dialog", { name: "Change the category of 1 transaction?" })
+      .getByRole("button", { name: "Apply" })
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Updated 1 transaction")
+    await expect(row).toHaveCount(0)
+    expect((await fetchTransaction(request, transactionId)).category_id).toBe(targetId)
+  })
+
+  test("accepts a category suggestion from the mobile Inbox peek", async ({ page }) => {
+    const title = `Corner bakery mobile ${Date.now()}`
+    const { request, bakeryId, uncategorizedIds } = await loginWithTrainedSuggestions(page, [title])
+    try {
+      await page.goto("/transactions/inbox")
+      const row = page.getByRole("listitem", { name: title })
+      await row.tap()
+      await expect(page).toHaveURL(/peek=\d+/)
+      const peek = page.getByRole("complementary", { name: title })
+      await expect(peek).toContainText("Bakery")
+      await peek.getByRole("button", { name: "Accept" }).tap()
+      await expect(page.getByRole("status")).toContainText("Moved to Bakery")
+      await expect(page).not.toHaveURL(/peek=/)
+      await expect(row).toHaveCount(0)
+      expect((await fetchTransaction(request, uncategorizedIds[0])).category_id).toBe(bakeryId)
+    } finally {
+      await request.dispose()
+    }
+  })
+
+  test("deletes a transaction from its peek and permanently deletes it from Trash", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const title = `Mobile delete ${Date.now()}`
+    await seed(request, token, title)
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    await page
+      .getByRole("complementary", { name: title })
+      .getByRole("button", { name: "More actions" })
+      .tap()
+    await page.getByRole("menuitem", { name: "Delete" }).tap()
+    await page
+      .getByRole("dialog", { name: "Delete this transaction?" })
+      .getByRole("button", { name: "Delete", exact: true })
+      .tap()
+    await expect(page.getByRole("listitem", { name: title })).toHaveCount(0)
+
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("link", { name: "Trash" }).tap()
     await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    const deletedRow = page.getByTestId(`deleted-transaction-${transactionId}`)
+    const list = page.getByRole("list", { name: "Deleted transactions" })
+    const deletedRow = list.getByRole("listitem", { name: title })
     await expect(deletedRow).toBeVisible()
 
-    await deletedRow.getByRole("button", { name: "Delete forever" }).click()
+    await deletedRow.tap()
+    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bulk).toContainText("1 selected")
+    await bulk.getByRole("button", { name: "Delete forever" }).tap()
     await page
-      .getByRole("dialog", { name: "Permanently delete this transaction?" })
+      .getByRole("dialog", { name: "Delete 1 transaction forever?" })
       .getByRole("button", { name: "Delete forever" })
-      .click()
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Deleted 1 transaction forever")
     await expect(deletedRow).toHaveCount(0)
   })
 
   test("restores a transaction from mobile Trash", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Mobile trash")
     const title = `Mobile trash ${Date.now()}`
-    const transactionId = await createTransaction(request, token, {
-      date: new Date().toISOString().slice(0, 10),
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 1999,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
+    const transactionId = await seed(request, token, title, { amount_cents: 1999 })
     const deleted = await request.delete(`/api/transactions/${transactionId}`, {
       headers: { "X-CSRF-Token": token },
     })
     expect(deleted.ok()).toBeTruthy()
 
     await page.goto("/transactions")
-    await page.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitem", { name: "Trash" }).click()
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("link", { name: "Trash" }).tap()
     await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    const row = page.getByTestId(`deleted-transaction-${transactionId}`)
+    const row = page.getByRole("list", { name: "Deleted transactions" }).getByRole("listitem", { name: title })
     await expect(row).toBeVisible()
-    await row.getByRole("button", { name: "Restore" }).click()
+    await row.tap()
+    await page
+      .getByRole("toolbar", { name: "Selected rows" })
+      .getByRole("button", { name: "Restore" })
+      .tap()
+    await expect(page.getByRole("status")).toContainText("Restored 1 transaction")
     await expect(row).toBeHidden()
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(
-      page.locator('[data-testid^="transaction-row-"]').filter({ hasText: title })
-    ).toBeVisible()
+    await expect(page.getByRole("listitem", { name: title })).toBeVisible()
   })
 })

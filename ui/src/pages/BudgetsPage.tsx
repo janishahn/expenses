@@ -1,44 +1,43 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowLeftIcon } from "@phosphor-icons/react/ArrowLeft"
-import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
-import { GaugeIcon } from "@phosphor-icons/react/Gauge"
-import { PiggyBankIcon } from "@phosphor-icons/react/PiggyBank"
-import { ReceiptIcon } from "@phosphor-icons/react/Receipt"
+import { useState, type FormEvent } from "react"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
+import type { Icon } from "@phosphor-icons/react"
+import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/ArrowCounterClockwise"
+import { CalendarBlankIcon } from "@phosphor-icons/react/CalendarBlank"
+import { CalendarSlashIcon } from "@phosphor-icons/react/CalendarSlash"
+import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/ClockCounterClockwise"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
-import { XIcon } from "@phosphor-icons/react/X"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Popover as PopoverPrimitive } from "radix-ui"
-import { useOutletContext, useSearchParams } from "react-router-dom"
-import { apiFetch } from "../app/api"
-import type { AppShellOutletContext } from "../app/AppShell"
-import { formatCurrency, formatEuroDate } from "../app/format"
-import { CategoryIcon } from "../components/CategoryIcon"
+import { useSearchParams } from "react-router-dom"
+import { apiFetch, getApiErrorMessage } from "../app/api"
+import { amountInput, parseAmountCents } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
-import BudgetBurndownChart from "../components/charts/BudgetBurndownChart"
-import PageIntro from "../components/PageIntro"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-  WorkspaceToolbar,
-} from "../components/product/ProductSurfaces"
-import { AppButton } from "../components/ui/product-button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/ui/product-fields"
+import { Amount } from "../components/ui/Amount"
+import { Button, IconButton } from "../components/ui/Button"
+import { CategoryGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip, type ChartFocus, type LegendEntry } from "../components/ui/ChartCard"
+import { BudgetBar, LineChart } from "../components/ui/Charts"
+import { Combobox } from "../components/ui/Combobox"
+import { DayBand } from "../components/ui/DayBand"
+import { EmptyState } from "../components/ui/EmptyState"
+import { EntryAmount, EntryChips, EntryDialog, EntryPreview } from "../components/ui/EntryDialog"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { Cell, List, Row, RowActions, type Columns } from "../components/ui/LedgerRow"
+import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { Peek, PeekHeadline, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { MonthPicker } from "../components/ui/PeriodControl"
+import { Pill } from "../components/ui/Pill"
+import { Popover, PopoverActions } from "../components/ui/Popover"
+import { Property, PropertyButton, PropertyList } from "../components/ui/PropertyList"
+import { RadioField, RadioGroup } from "../components/ui/Radio"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { MetricStrip, Sheet, type Metric } from "../components/ui/Sheet"
+import { Field, FieldGrid, TextField } from "../components/ui/TextField"
 import { buildSearchParams } from "../lib/searchParams"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
 
 type BudgetRow = {
   scope_category_id: number | null
@@ -68,44 +67,23 @@ type BudgetTemplateRow = {
   ends_on: string | null
 }
 
-type BudgetYearRow = {
-  scope_category_id: number | null
-  scope_label: string
-  amount_cents: number
-  source: string
-  source_id: number
-}
-
-type BudgetYearSpentRow = {
-  scope_category_id: number | null
-  spent_cents: number
-}
+type BudgetCategory = { id: number; name: string; type: string; icon: string | null; archived_at: string | null }
 
 type BudgetResponse = {
-  view: "month" | "templates" | "year" | "workspace"
-  year: number
-  month: number
   month_value: string
   budgets: BudgetRow[]
   progress: BudgetProgressRow[]
-  categories: Array<{
-    id: number
-    name: string
-    type: string
-    icon: string | null
-    archived_at: string | null
-  }>
+  categories: BudgetCategory[]
   templates: BudgetTemplateRow[]
   year_value: number
-  yearly_budgets: BudgetYearRow[]
-  yearly_spent: BudgetYearSpentRow[]
+  yearly_budgets: BudgetRow[]
+  yearly_spent: Array<{ scope_category_id: number | null; spent_cents: number }>
 }
 
 type BurndownResponse = {
   budget_amount_cents: number
   days_in_month: number
   daily_series: Array<{ day: number; cumulative_cents: number }>
-  compare_month: string | null
   compare_daily_series: Array<{ day: number; cumulative_cents: number }>
   top_spending_days: Array<{
     day: number
@@ -115,1576 +93,961 @@ type BurndownResponse = {
   }>
 }
 
-function getPreviousMonth(monthValue: string): string {
-  const [yearRaw, monthRaw] = monthValue.split("-")
-  const year = Number(yearRaw)
-  const month = Number(monthRaw)
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
-    return monthValue
-  }
-  const previous = new Date(year, month - 2, 1)
-  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}`
+type Frequency = "monthly" | "yearly"
+type Kind = "month" | "year"
+type BudgetRequest = { path: string; body: Record<string, unknown> }
+
+const MONTH_LONG = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
+const MONTH_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+const DAY_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+const WEEKDAY_SHORT = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
+
+const BUDGET_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) minmax(80px, 220px) 150px 120px",
+  narrowColumns: "18px minmax(0, 1fr) 72px 104px",
+}
+const INACTIVE_COLUMNS: Columns = {
+  columns: "18px minmax(0, 1fr) 260px 28px",
+  narrowColumns: "18px minmax(0, 1fr) 28px",
+}
+const TOP_DAY_COLUMNS = "96px minmax(0, 1fr) auto"
+const EMPTY_BAND_COLUMNS = "18px minmax(0, 1fr)"
+
+function monthDate(month: string): Date {
+  const [year, index] = month.split("-").map(Number)
+  return new Date(Date.UTC(year, index - 1, 1))
 }
 
-function formatBudgetMonth(monthValue: string): string {
-  const value = new Date(`${monthValue}-01T00:00:00`)
-  if (Number.isNaN(value.getTime())) {
-    return monthValue
+function shiftMonth(month: string, delta: number): string {
+  const date = monthDate(month)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + delta, 1)).toISOString().slice(0, 7)
+}
+
+function currentMonth(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+}
+
+function monthDays(month: string): number {
+  const date = monthDate(month)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate()
+}
+
+// Days of the month that have passed: all of a past month, none of a future one.
+function daysElapsed(month: string, now: Date): number {
+  const today = currentMonth(now)
+  return month < today ? monthDays(month) : month > today ? 0 : now.getDate()
+}
+
+function scopeKey(categoryId: number | null): string {
+  return categoryId === null ? "overall" : String(categoryId)
+}
+
+function ratioText(ratio: number): string {
+  return `${ratio.toFixed(2).replace(".", ",")}×`
+}
+
+// A projection more than 10% above the budget is over pace; only then is it shown as over.
+const OVER_PACE = 1.1
+
+function paceStatus(ratio: number): string {
+  return ratio > OVER_PACE ? "Over pace" : ratio < 0.9 ? "On track" : "On pace"
+}
+
+// The active template per scope: the latest one that covers `day`.
+function activeTemplates(templates: BudgetTemplateRow[], frequency: Frequency, day: string): Map<string, BudgetTemplateRow> {
+  const active = new Map<string, BudgetTemplateRow>()
+  for (const template of templates
+    .filter((row) => row.frequency === frequency && row.starts_on <= day && (!row.ends_on || row.ends_on >= day))
+    .sort((left, right) => right.starts_on.localeCompare(left.starts_on))) {
+    const key = scopeKey(template.category?.id ?? null)
+    if (!active.has(key)) active.set(key, template)
   }
-  return value.toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
+  return active
+}
+
+function useBurndown(month: string, scope: string | null, compare: boolean) {
+  return useQuery({
+    queryKey: ["budgets", "burndown", month, scope, compare],
+    enabled: scope !== null,
+    queryFn: () =>
+      apiFetch<BurndownResponse>(
+        `/api/budgets/burndown?month=${month}&scope=${scope}${compare ? `&compare_month=${shiftMonth(month, -1)}` : ""}`
+      ),
   })
 }
 
-function shiftBudgetMonth(monthValue: string, offset: number): string {
-  const [yearRaw, monthRaw] = monthValue.split("-")
-  const value = new Date(Number(yearRaw), Number(monthRaw) - 1 + offset, 1)
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`
+// Budgets also show on the Dashboard and in the Insights budget history.
+function invalidateBudgetViews(queryClient: QueryClient) {
+  for (const key of ["budgets", "dashboard", "insights"]) {
+    void queryClient.invalidateQueries({ queryKey: [key] })
+  }
 }
 
-const BUDGET_MONTH_LABELS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-]
-
-function BudgetMonthPicker({
-  monthValue,
-  monthLabel,
-  onChange,
-}: {
-  monthValue: string
-  monthLabel: string
-  onChange: (monthValue: string) => void
-}) {
-  const [selectedYearRaw, selectedMonthRaw] = monthValue.split("-")
-  const selectedYear = Number(selectedYearRaw)
-  const selectedMonth = Number(selectedMonthRaw) - 1
-  const [open, setOpen] = useState(false)
-  const [pickerYear, setPickerYear] = useState(selectedYear)
-  const selectedMonthRef = useRef<HTMLButtonElement>(null)
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) {
-      setPickerYear(selectedYear)
-    }
-    setOpen(nextOpen)
-  }
-
-  return (
-    <PopoverPrimitive.Root
-      modal={false}
-      open={open}
-      onOpenChange={handleOpenChange}
-    >
-      <PopoverPrimitive.Trigger asChild>
-        <button
-          type="button"
-          className="period-navigator-label"
-          aria-label={`Budget month, ${monthLabel}`}
-        >
-          <span aria-hidden="true">{monthLabel}</span>
-        </button>
-      </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          role="dialog"
-          aria-label="Choose budget month"
-          data-testid="budget-month-picker"
-          side="bottom"
-          align="center"
-          sideOffset={8}
-          collisionPadding={12}
-          className="z-[70] w-[min(19rem,calc(100vw-1.5rem))] rounded-xl bg-surface p-2 text-text shadow-[var(--shadow-raised)] outline-none"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault()
-            selectedMonthRef.current?.focus()
-          }}
-        >
-          <div className="mb-1 grid grid-cols-[2.75rem_1fr_2.75rem] items-center gap-1">
-            <AppButton
-              type="button"
-              tone="ghost"
-              className="h-11 w-11 p-0 text-muted"
-              aria-label="Previous year"
-              onClick={() => setPickerYear((year) => year - 1)}
-            >
-              <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
-            </AppButton>
-            <div
-              className="text-center font-mono text-sm font-semibold tabular-nums"
-              aria-live="polite"
-            >
-              {pickerYear}
-            </div>
-            <AppButton
-              type="button"
-              tone="ghost"
-              className="h-11 w-11 p-0 text-muted"
-              aria-label="Next year"
-              onClick={() => setPickerYear((year) => year + 1)}
-            >
-              <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
-            </AppButton>
-          </div>
-          <div className="grid grid-cols-3 gap-1">
-            {BUDGET_MONTH_LABELS.map((label, index) => {
-              const selected =
-                pickerYear === selectedYear && index === selectedMonth
-              return (
-                <AppButton
-                  key={label}
-                  ref={selected ? selectedMonthRef : undefined}
-                  type="button"
-                  tone={selected ? "primary" : "ghost"}
-                  className="h-11 min-w-0 rounded-md px-1 py-0 text-xs"
-                  aria-label={`${label} ${pickerYear}`}
-                  aria-pressed={selected}
-                  onClick={() => {
-                    onChange(
-                      `${pickerYear}-${String(index + 1).padStart(2, "0")}`,
-                    )
-                    setOpen(false)
-                  }}
-                >
-                  {label}
-                </AppButton>
-              )
-            })}
-          </div>
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
-  )
+function useSaveBudget(onSaved: () => void, onFailed: (message: string) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (request: BudgetRequest) => apiFetch(request.path, { method: "POST", body: JSON.stringify(request.body) }),
+    onSuccess: () => {
+      onSaved()
+      invalidateBudgetViews(queryClient)
+    },
+    onError: (error) => onFailed(getApiErrorMessage(error, "Could not save the budget.")),
+  })
 }
 
-function paceLabel(progress: BudgetProgressRow, amountCents: number): {
-  text: string
-  tone: string
-} {
-  const ratio = progress.velocity_ratio
-  if (ratio > 1.1) {
-    return {
-      text: `Over pace - projected ${formatCurrency(progress.projected_total_cents)} € (budget ${formatCurrency(amountCents)} €)`,
-      tone: "text-semantic-red",
-    }
-  }
-  if (ratio < 0.9) {
-    return {
-      text: `On track - ${formatCurrency(progress.daily_remaining_cents)} €/day remaining`,
-      tone: "text-semantic-green",
-    }
-  }
+// Cumulative spending by day against an even pace to the budget, with the previous month when compared.
+function paceLines(data: BurndownResponse, elapsed: number) {
+  const days = Array.from({ length: data.days_in_month }, (_, index) => index + 1)
+  const actual = new Map(data.daily_series.map((row) => [row.day, row.cumulative_cents]))
+  const previous = new Map(data.compare_daily_series.map((row) => [row.day, row.cumulative_cents]))
   return {
-    text: `On pace - ${formatCurrency(progress.daily_remaining_cents)} €/day remaining`,
-    tone: "text-muted",
+    days,
+    even: days.map((day) => Math.round((data.budget_amount_cents * day) / data.days_in_month)),
+    actual: days.map((day) => (day <= elapsed ? (actual.get(day) ?? null) : null)),
+    previous: data.compare_daily_series.length ? days.map((day) => previous.get(day) ?? null) : [],
   }
 }
 
-function BudgetBurndownPanel({
-  monthValue,
-  scopeCategoryId,
-  compareEnabled,
+function PaceChart({
+  data,
+  month,
+  elapsed,
+  height,
+  xEvery,
+  focus,
 }: {
-  monthValue: string
-  scopeCategoryId: number | null
-  compareEnabled: boolean
+  data: BurndownResponse
+  month: string
+  elapsed: number
+  height: number
+  xEvery: number
+  focus?: ChartFocus
 }) {
-  const scope = scopeCategoryId === null ? "overall" : String(scopeCategoryId)
-  const compareMonth = getPreviousMonth(monthValue)
-  const queryString = compareEnabled
-    ? `month=${monthValue}&scope=${scope}&compare_month=${compareMonth}`
-    : `month=${monthValue}&scope=${scope}`
-
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["budgets", "burndown", monthValue, scope, compareEnabled],
-    queryFn: () => apiFetch<BurndownResponse>(`/api/budgets/burndown?${queryString}`),
-  })
-
-  if (isLoading) {
-    return <p className="text-xs text-muted">Loading chart…</p>
-  }
-  if (error || !data) {
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-xs text-semantic-red">
-        <span>Unable to load chart.</span>
-        <AppButton type="button" tone="inline" onClick={() => void refetch()}>
-          Retry
-        </AppButton>
-      </div>
-    )
-  }
-
-  const [yearRaw, monthRaw] = monthValue.split("-")
-  const year = Number(yearRaw)
-  const month = Number(monthRaw)
-  const dayToIsoDate = (day: number): string | null => {
-    if (!Number.isFinite(year) || !Number.isFinite(month)) {
-      return null
-    }
-    const isoMonth = String(month).padStart(2, "0")
-    const isoDay = String(day).padStart(2, "0")
-    return `${yearRaw}-${isoMonth}-${isoDay}`
-  }
-
-  const dailySpend = data.daily_series.map((row, index) =>
-    index === 0 ? row.cumulative_cents : row.cumulative_cents - data.daily_series[index - 1].cumulative_cents
+  const lines = paceLines(data, elapsed)
+  const start = monthDate(month)
+  const dayDate = (day: number) => new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), day))
+  return (
+    <LineChart
+      labels={lines.days.map(String)}
+      height={height}
+      xEvery={xEvery}
+      mark={elapsed > 0 && elapsed < data.days_in_month ? elapsed - 1 : undefined}
+      idle={elapsed > 0 ? elapsed - 1 : undefined}
+      focus={focus}
+      series={[
+        { key: "even", values: lines.even, color: "var(--ink-3)", dash: true, width: 1.25 },
+        ...(lines.previous.length ? [{ key: "previous", values: lines.previous, color: "var(--ink-3)", width: 1.25 }] : []),
+        { key: "actual", values: lines.actual },
+      ]}
+      tooltip={(index) => (
+        <ChartTooltip
+          title={DAY_SHORT.format(dayDate(index + 1))}
+          rows={[
+            { key: "even", label: "Even pace", value: <Amount cents={lines.even[index]} decimals={false} />, color: "var(--ink-3)", mark: "dash" },
+            ...(lines.actual[index] !== null
+              ? [{ key: "actual", label: "Actual", value: <Amount cents={lines.actual[index] as number} decimals={false} />, color: "var(--ink)", mark: "line" as const }]
+              : []),
+            ...(lines.previous[index] != null
+              ? [{ key: "previous", label: "Previous month", value: <Amount cents={lines.previous[index] as number} decimals={false} />, color: "var(--ink-3)", mark: "line" as const }]
+              : []),
+          ]}
+        />
+      )}
+    />
   )
-  const positiveDays = dailySpend
-    .map((value, index) => ({
-      day: index + 1,
-      amount_cents: value,
-      date: dayToIsoDate(index + 1),
-    }))
-    .filter((row) => row.amount_cents > 0)
-  const bestDay = positiveDays.length
-    ? positiveDays.reduce((winner, row) => (row.amount_cents < winner.amount_cents ? row : winner))
-    : null
-  const worstDay = positiveDays.length
-    ? positiveDays.reduce((winner, row) => (row.amount_cents > winner.amount_cents ? row : winner))
-    : null
+}
 
-  const latestCumulative =
-    data.daily_series.length > 0
-      ? data.daily_series[data.daily_series.length - 1].cumulative_cents
-      : 0
-  const now = new Date()
-  let daysElapsed = data.days_in_month
-  if (Number.isFinite(year) && Number.isFinite(month)) {
-    if (now.getFullYear() === year && now.getMonth() + 1 === month) {
-      daysElapsed = now.getDate()
-    } else if (now.getFullYear() < year || (now.getFullYear() === year && now.getMonth() + 1 < month)) {
-      daysElapsed = 0
+function OverallPace({
+  month,
+  elapsed,
+  onEdit,
+}: {
+  month: string
+  elapsed: number
+  onEdit: () => void
+}) {
+  const isDesktop = useIsDesktop()
+  const [compare, setCompare] = useState(false)
+  const burndown = useBurndown(month, "overall", compare)
+  const lines = burndown.data ? paceLines(burndown.data, elapsed) : null
+  const legend: LegendEntry[] = [
+    { key: "actual", label: "Actual", color: "var(--ink)", mark: "line" },
+    { key: "even", label: "Even pace", color: "var(--ink-3)", mark: "dash" },
+    ...(lines?.previous.length ? [{ key: "previous", label: "Previous month", color: "var(--ink-3)", mark: "line" as const }] : []),
+  ]
+  return (
+    <ChartCard
+      title="Overall pace"
+      menu={
+        <>
+          <MenuItem icon={ClockCounterClockwiseIcon} checked={compare} onSelect={() => setCompare(!compare)}>
+            Compare previous month
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={PencilSimpleIcon} onSelect={onEdit}>
+            Edit overall budget
+          </MenuItem>
+        </>
+      }
+      legend={legend}
+      empty={burndown.isError ? "The pace chart is unavailable." : burndown.data ? undefined : "Loading…"}
+      table={
+        lines ? (
+          <ChartTable
+            label="Overall pace by day"
+            columns={["Day", "Even pace", "Actual", ...(lines.previous.length ? ["Previous month"] : [])]}
+            rows={lines.days.map((day, index) => ({
+              key: String(day),
+              cells: [
+                String(day),
+                <Amount cents={lines.even[index]} />,
+                lines.actual[index] === null ? "–" : <Amount cents={lines.actual[index] as number} />,
+                ...(lines.previous.length
+                  ? [lines.previous[index] === null ? "–" : <Amount cents={lines.previous[index] as number} />]
+                  : []),
+              ],
+            }))}
+          />
+        ) : null
+      }
+    >
+      {(focus) =>
+        burndown.data ? (
+          <PaceChart data={burndown.data} month={month} elapsed={elapsed} height={150} xEvery={isDesktop ? 5 : 10} focus={focus} />
+        ) : null
+      }
+    </ChartCard>
+  )
+}
+
+// The budget's amount, edited in a popover. A month's amount applies to that month only or
+// becomes the usual amount from that month on; a year's amount applies from that year on.
+function AmountEditor({
+  kind,
+  row,
+  usual,
+  periodLabel,
+  request,
+}: {
+  kind: Kind
+  row: BudgetRow
+  usual: number | null
+  periodLabel: string
+  request: (cents: number, range: "period" | "later") => BudgetRequest
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState("")
+  const [range, setRange] = useState<"period" | "later">("period")
+  const [error, setError] = useState<string | null>(null)
+  const save = useSaveBudget(() => setOpen(false), setError)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const cents = parseAmountCents(draft)
+    if (cents === null) {
+      setError("Enter a valid amount.")
+      return
     }
+    save.mutate(request(cents, kind === "year" ? "later" : range))
   }
-  const daysRemaining = Math.max(0, data.days_in_month - daysElapsed)
-  const dailyAllowance =
-    daysRemaining > 0
-      ? Math.round((data.budget_amount_cents - latestCumulative) / daysRemaining)
-      : data.budget_amount_cents - latestCumulative
-  const projectedFinish =
-    daysElapsed > 0
-      ? Math.round(
-          latestCumulative
-            + (latestCumulative / daysElapsed) * (data.days_in_month - daysElapsed)
-        )
-      : latestCumulative
+  return (
+    <Popover
+      form
+      label="Edit amount"
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setDraft(amountInput(row.amount_cents))
+          setRange("period")
+          setError(null)
+        }
+        setOpen(next)
+      }}
+      trigger={
+        <PropertyButton>
+          <Amount cents={row.amount_cents} />
+          {usual !== null && row.source === "override" ? (
+            <span>
+              · usually <Amount cents={usual} />
+            </span>
+          ) : null}
+        </PropertyButton>
+      }
+    >
+      <form onSubmit={submit}>
+        <FieldGrid narrow>
+          <Field label="Amount" error={error}>
+            <TextField autoFocus inputMode="decimal" suffix="€" value={draft} onChange={(event) => setDraft(event.target.value)} />
+          </Field>
+        </FieldGrid>
+        {kind === "month" ? (
+          <RadioGroup label="Apply to" value={range} onValueChange={(value) => setRange(value === "later" ? "later" : "period")}>
+            <RadioField value="period">Only {periodLabel}</RadioField>
+            <RadioField value="later">{periodLabel} and later</RadioField>
+          </RadioGroup>
+        ) : null}
+        <PopoverActions>
+          <Button size="small" variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" size="small" variant="primary" disabled={save.isPending}>
+            Save
+          </Button>
+        </PopoverActions>
+      </form>
+    </Popover>
+  )
+}
+
+// A start or end in the add dialog: a month, or a year for annual budgets.
+function TimingChip({
+  icon,
+  label,
+  field,
+  value,
+  yearly,
+  onChange,
+  onClear,
+}: {
+  icon: Icon
+  label: string
+  field: string
+  value: string
+  yearly: boolean
+  onChange: (value: string) => void
+  onClear?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (draft) onChange(draft)
+    setOpen(false)
+  }
+  return (
+    <Popover
+      form
+      label={field}
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDraft(value)
+        setOpen(next)
+      }}
+      trigger={
+        <Pill icon={icon} set={Boolean(onClear)} onClear={onClear} clearLabel={`Clear ${field.toLowerCase()}`}>
+          {label}
+        </Pill>
+      }
+    >
+      <form onSubmit={submit}>
+        <FieldGrid narrow>
+          <Field label={field}>
+            <TextField
+              autoFocus
+              type={yearly ? "number" : "month"}
+              min={yearly ? 1970 : undefined}
+              max={yearly ? 3000 : undefined}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </Field>
+        </FieldGrid>
+        <PopoverActions>
+          <Button type="submit" variant="primary" size="small" disabled={!draft}>
+            Done
+          </Button>
+        </PopoverActions>
+      </form>
+    </Popover>
+  )
+}
+
+function AddBudgetDialog({ data, onClose }: { data: BudgetResponse; onClose: () => void }) {
+  const [frequency, setFrequency] = useState<Frequency>("monthly")
+  const [amount, setAmount] = useState("")
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [start, setStart] = useState(data.month_value)
+  const [end, setEnd] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const save = useSaveBudget(onClose, setError)
+  const yearly = frequency === "yearly"
+  const categories = data.categories.filter((category) => category.type === "expense" && !category.archived_at)
+  const category = categories.find((entry) => entry.id === categoryId)
+  const timingLabel = (value: string) => (yearly ? value : MONTH_SHORT.format(monthDate(value)))
+
+  const submit = () => {
+    setError(null)
+    const amountCents = parseAmountCents(amount)
+    if (amountCents === null) {
+      setError("Enter a valid amount.")
+      return
+    }
+    const startsOn = yearly ? `${start}-01-01` : `${start}-01`
+    const existing = data.templates.find(
+      (template) =>
+        template.frequency === frequency &&
+        (template.category?.id ?? null) === categoryId &&
+        template.starts_on <= startsOn &&
+        (!template.ends_on || template.ends_on >= startsOn)
+    )
+    if (existing) {
+      setError(
+        `${existing.category?.name ?? "All expense categories"} already has a ${yearly ? "yearly" : "monthly"} budget for this period. Edit that budget instead.`
+      )
+      return
+    }
+    const body = { frequency, category_id: categoryId, amount_cents: amountCents, starts_on: startsOn }
+    if (!end) {
+      save.mutate({ path: "/api/budgets/templates/apply-from", body })
+      return
+    }
+    const endsOn = yearly
+      ? `${end}-12-31`
+      : `${end}-${String(new Date(Date.UTC(Number(end.slice(0, 4)), Number(end.slice(5, 7)), 0)).getUTCDate()).padStart(2, "0")}`
+    if (endsOn < startsOn) {
+      setError("The end must not be before the start.")
+      return
+    }
+    save.mutate({ path: "/api/budgets/templates", body: { ...body, ends_on: endsOn } })
+  }
 
   return (
-    <div className="mt-4 space-y-4 rounded-[1rem] bg-surface p-3.5 shadow-[var(--shadow-soft)] sm:p-4">
-      <BudgetBurndownChart
-        monthValue={monthValue}
-        daysInMonth={data.days_in_month}
-        budgetAmountCents={data.budget_amount_cents}
-        dailySeries={data.daily_series}
-        compareDailySeries={compareEnabled ? data.compare_daily_series : []}
-      />
-      <div className="grid gap-2.5 sm:grid-cols-3">
-        <div className="min-w-0 rounded-[0.875rem] bg-faint/75 p-3">
-          <p className="text-xs font-semibold text-muted">Daily allowance</p>
-          <p className={`mt-1 break-words font-mono text-sm font-semibold ${dailyAllowance >= 0 ? "text-semantic-green" : "text-semantic-red"}`}>
-            {formatCurrency(dailyAllowance)} €/day
-          </p>
-        </div>
-        <div className="min-w-0 rounded-[0.875rem] bg-faint/75 p-3">
-          <p className="text-xs font-semibold text-muted">Projected finish</p>
-          <p
-            className={`mt-1 break-words font-mono text-sm font-semibold ${
-              projectedFinish > data.budget_amount_cents ? "text-semantic-red" : "text-semantic-green"
-            }`}
-          >
-            {formatCurrency(projectedFinish)} €
-          </p>
-        </div>
-        <div className="min-w-0 rounded-[0.875rem] bg-faint/75 p-3">
-          <p className="text-xs font-semibold text-muted">Best / worst day</p>
-          <p className="mt-1 break-words font-mono text-xs font-semibold text-text">
-            Best{" "}
-            {bestDay
-              ? `${bestDay.date ? formatEuroDate(bestDay.date) : `Day ${bestDay.day}`} (${formatCurrency(bestDay.amount_cents)} €)`
-              : "-"}
-          </p>
-          <p className="break-words font-mono text-xs font-semibold text-text">
-            Worst{" "}
-            {worstDay
-              ? `${worstDay.date ? formatEuroDate(worstDay.date) : `Day ${worstDay.day}`} (${formatCurrency(worstDay.amount_cents)} €)`
-              : "-"}
-          </p>
-        </div>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-muted">Top spending days</p>
-        {data.top_spending_days.length ? (
-          <div className="mt-2 divide-y divide-border/70 overflow-hidden rounded-[0.875rem] bg-faint/70 px-3">
-            {data.top_spending_days.map((day) => (
-            <div key={day.day} className="min-w-0 py-3">
-              <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-muted">
-                <span>
-                  {day.date ? formatEuroDate(day.date) : `Day ${day.day}`}
-                </span>
-                <span className="font-mono text-semantic-red">{formatCurrency(day.total_cents)} €</span>
-              </div>
-              <div className="mt-1.5 space-y-1">
-                {day.transactions.map((txn) => (
-                  <div key={txn.id} className="flex min-w-0 items-center justify-between gap-3 overflow-hidden text-xs">
-                    <span className="block min-w-0 flex-1 truncate text-text">{txn.title || "Untitled"}</span>
-                    <span className="shrink-0 font-mono text-semantic-red">{formatCurrency(txn.amount_cents)} €</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 rounded-[0.875rem] bg-faint/70 px-3 py-3 text-xs text-muted">
-            No spending days yet for this scope.
-          </p>
-        )}
-      </div>
-    </div>
+    <EntryDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+      title="Add budget"
+      direction={
+        <SegmentedControl
+          label="Budget period"
+          value={frequency}
+          options={[
+            { value: "monthly", label: "Monthly" },
+            { value: "yearly", label: "Annual" },
+          ]}
+          onChange={(next) => {
+            setFrequency(next)
+            setStart(next === "monthly" ? data.month_value : String(data.year_value))
+            setEnd("")
+          }}
+        />
+      }
+      submitLabel="Add budget"
+      onSubmit={submit}
+      pending={save.isPending}
+      error={error}
+    >
+      <EntryAmount autoFocus placeholder="0,00 €" value={amount} onChange={(event) => setAmount(event.target.value)} />
+      <EntryPreview>
+        {yearly ? "Per year" : "Per month"}, from {yearly ? start : MONTH_LONG.format(monthDate(start))}
+        {end ? ` until ${yearly ? end : MONTH_LONG.format(monthDate(end))}` : ""}
+      </EntryPreview>
+      <EntryChips>
+        <Combobox
+          label="Category"
+          options={[
+            { value: 0, label: "All expense categories" },
+            ...categories.map((entry) => ({
+              value: entry.id,
+              label: entry.name,
+              leading: <CategoryGlyph categoryId={entry.id} icon={entry.icon} name={entry.name} />,
+            })),
+          ]}
+          selected={[categoryId ?? 0]}
+          onSelect={(value) => setCategoryId(value === 0 ? null : value)}
+          trigger={
+            <Pill
+              icon={category ? undefined : ShapesIcon}
+              leading={category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} /> : undefined}
+              set={Boolean(category)}
+              aria-label={`Category ${category?.name ?? "All expense categories"}`}
+            >
+              {category?.name ?? "All expense categories"}
+            </Pill>
+          }
+        />
+        <TimingChip
+          icon={CalendarBlankIcon}
+          field="Starts"
+          label={`From ${timingLabel(start)}`}
+          value={start}
+          yearly={yearly}
+          onChange={setStart}
+        />
+        <TimingChip
+          icon={CalendarSlashIcon}
+          field="Ends"
+          label={end ? `Until ${timingLabel(end)}` : "No end"}
+          value={end || start}
+          yearly={yearly}
+          onChange={setEnd}
+          onClear={end ? () => setEnd("") : undefined}
+        />
+      </EntryChips>
+    </EntryDialog>
+  )
+}
+
+function SpentAgainst({ spent, amount }: { spent: number; amount: number }) {
+  return (
+    <>
+      <Amount cents={spent} decimals={false} /> of <Amount cents={amount} decimals={false} />
+    </>
+  )
+}
+
+function LeftOrOver({ remaining }: { remaining: number }) {
+  return remaining < 0 ? (
+    <>
+      <Amount cents={-remaining} decimals={false} tone="over" /> over
+    </>
+  ) : (
+    <>
+      <Amount cents={remaining} decimals={false} /> left
+    </>
   )
 }
 
 function BudgetsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const { setUtilityAction } = useOutletContext<AppShellOutletContext>()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editorKind, setEditorKind] = useState<"create" | "month" | "year">(
-    "create"
-  )
-  const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null)
-  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null)
-  const [editingUsualAmount, setEditingUsualAmount] = useState<number | null>(null)
-  const [editorFrequency, setEditorFrequency] = useState<"monthly" | "yearly">(
-    "monthly"
-  )
-  const [editorCategory, setEditorCategory] = useState("")
-  const [editorAmount, setEditorAmount] = useState("")
-  const [editorStart, setEditorStart] = useState("")
-  const [editorEnd, setEditorEnd] = useState("")
-  const [applyRange, setApplyRange] = useState<"period" | "future">("period")
-  const [editorError, setEditorError] = useState("")
-  const [expandedCharts, setExpandedCharts] = useState<Record<string, boolean>>({})
-  const [compareMonth, setCompareMonth] = useState<Record<string, boolean>>({})
+  const isDesktop = useIsDesktop()
+  const [now] = useState(() => new Date())
+  const [adding, setAdding] = useState(false)
+  const [showInactive, setShowInactive] = useState(false)
+  const [compareInPeek, setCompareInPeek] = useState(false)
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams)
-    params.set("view", "workspace")
-    const selectedMonth = params.get("month")
-    if (selectedMonth) {
-      params.set("year", selectedMonth.slice(0, 4))
-    } else {
-      params.delete("year")
-    }
-    return params.toString()
-  }, [searchParams])
-
+  const month = searchParams.get("month") ?? currentMonth(now)
+  const peekKey = searchParams.get("peek")
+  const queryString = `view=workspace&month=${month}&year=${month.slice(0, 4)}`
   const { data, isLoading, error } = useQuery({
     queryKey: ["budgets", queryString],
     queryFn: () => apiFetch<BudgetResponse>(`/api/budgets?${queryString}`),
   })
 
-  useEffect(() => {
-    if (!searchParams.has("view")) {
-      return
-    }
-    setSearchParams(buildSearchParams(searchParams, { view: null, year: null }), {
-      replace: true,
-    })
-  }, [searchParams, setSearchParams])
+  const peekTarget = (() => {
+    if (!data || !peekKey) return null
+    const [kind, scope] = peekKey.split(":")
+    const rows = kind === "year" ? data.yearly_budgets : kind === "month" ? data.budgets : []
+    const row = rows.find((entry) => scopeKey(entry.scope_category_id) === scope)
+    return row ? { kind: kind as Kind, row } : null
+  })()
+  const peekScope = peekTarget?.kind === "month" ? scopeKey(peekTarget.row.scope_category_id) : null
+  const peekBurndown = useBurndown(month, peekScope, compareInPeek)
 
-  const openCreateEditor = useCallback(
-    (frequency: "monthly" | "yearly" = "monthly", categoryId = "") => {
-      if (!data) {
-        return
-      }
-      setEditorKind("create")
-      setEditingBudget(null)
-      setEditingTemplateId(null)
-      setEditingUsualAmount(null)
-      setEditorFrequency(frequency)
-      setEditorCategory(categoryId)
-      setEditorAmount("")
-      setEditorStart(
-        frequency === "monthly" ? data.month_value : String(data.year_value)
-      )
-      setEditorEnd("")
-      setApplyRange("future")
-      setEditorError("")
-      setEditorOpen(true)
-    },
-    [data]
-  )
-
-  useEffect(() => {
-    if (!data) {
-      setUtilityAction(null)
-      return
-    }
-    setUtilityAction({
-      label: "Add budget",
-      onClick: () => openCreateEditor("monthly"),
-    })
-    return () => setUtilityAction(null)
-  }, [data, openCreateEditor, setUtilityAction])
-
-  const invalidateBudgets = () => {
-    queryClient.invalidateQueries({ queryKey: ["budgets"] })
-  }
-
-  const overrideMutation = useMutation({
-    mutationFn: (payload: {
-      year: number
-      month: number
-      category_id: number | null
-      amount_cents: number
-    }) =>
-      apiFetch("/api/budgets/overrides", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      invalidateBudgets()
-    },
-    onError: (mutationError) => {
-      setEditorError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Could not save the month adjustment."
-      )
-    },
+  const remove = useMutation({
+    mutationFn: (path: string) => apiFetch(path, { method: "DELETE" }),
+    onSuccess: () => invalidateBudgetViews(queryClient),
   })
 
-  const applyFromMutation = useMutation({
-    mutationFn: (payload: {
-      frequency: "monthly" | "yearly"
-      category_id: number | null
-      amount_cents: number
-      starts_on: string
-    }) =>
-      apiFetch("/api/budgets/templates/apply-from", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      invalidateBudgets()
+  if (isLoading) return <PanelLoading title="Budgets" label="Loading budgets…" />
+  if (error || !data) return <PanelError title="Budgets" message="Unable to load budgets." />
+
+  const setMonth = (next: string) => setSearchParams(buildSearchParams(searchParams, { month: next, peek: null }))
+  const openPeek = (kind: Kind, row: BudgetRow) =>
+    setSearchParams(buildSearchParams(searchParams, { peek: `${kind}:${scopeKey(row.scope_category_id)}` }), { replace: true })
+  const closePeek = () => setSearchParams(buildSearchParams(searchParams, { peek: null }), { replace: true })
+
+  const monthLabel = MONTH_LONG.format(monthDate(data.month_value))
+  const elapsed = daysElapsed(data.month_value, now)
+  const daysInMonth = monthDays(data.month_value)
+  const pace = data.month_value === currentMonth(now) ? elapsed / daysInMonth : null
+  const categoriesById = new Map(data.categories.map((category) => [category.id, category]))
+  const progressByScope = new Map(data.progress.map((row) => [scopeKey(row.scope_category_id), row]))
+  const yearlySpent = new Map(data.yearly_spent.map((row) => [scopeKey(row.scope_category_id), row.spent_cents]))
+  const monthlyTemplates = activeTemplates(data.templates, "monthly", `${data.month_value}-01`)
+  const yearlyTemplates = activeTemplates(data.templates, "yearly", `${data.year_value}-01-01`)
+  const activeIds = new Set([...monthlyTemplates.values(), ...yearlyTemplates.values()].map((template) => template.id))
+  const inactiveTemplates = data.templates.filter((template) => !activeIds.has(template.id))
+
+  const overall = data.budgets.find((row) => row.scope_category_id === null)
+  const categoryBudgets = data.budgets.filter((row) => row.scope_category_id !== null)
+  const overallProgress = progressByScope.get("overall")
+  const spentFor = (row: BudgetRow) => progressByScope.get(scopeKey(row.scope_category_id))?.spent_cents ?? 0
+  const sum = (rows: BudgetRow[], value: (row: BudgetRow) => number) => rows.reduce((total, row) => total + value(row), 0)
+  const allocation = overall?.amount_cents ?? sum(categoryBudgets, (row) => row.amount_cents)
+  const spent = overallProgress?.spent_cents ?? sum(categoryBudgets, spentFor)
+  const remaining = overallProgress?.remaining_cents ?? allocation - spent
+  const projected =
+    overallProgress?.projected_total_cents ??
+    sum(categoryBudgets, (row) => progressByScope.get(scopeKey(row.scope_category_id))?.projected_total_cents ?? 0)
+  const daysRemaining = daysInMonth - elapsed
+  const ratio = allocation ? projected / allocation : 0
+  const hasBudgets = data.budgets.length > 0 || data.yearly_budgets.length > 0
+
+  const metrics: Metric[] = [
+    {
+      label: overall ? "Overall budget" : "Category budgets",
+      value: <Amount cents={allocation} />,
+      detail: overall ? "All expense categories" : `${categoryBudgets.length} ${categoryBudgets.length === 1 ? "category" : "categories"}`,
     },
-    onError: (mutationError) => {
-      setEditorError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Could not save the budget."
-      )
+    {
+      label: "Spent",
+      value: <Amount cents={spent} />,
+      detail: allocation ? `${Math.round((spent / allocation) * 100)} % used` : undefined,
     },
-  })
-
-  const templateMutation = useMutation({
-    mutationFn: (payload: {
-      frequency: "monthly" | "yearly"
-      category_id: number | null
-      amount_cents: number
-      starts_on: string
-      ends_on: string | null
-    }) =>
-      apiFetch("/api/budgets/templates", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      invalidateBudgets()
+    {
+      label: remaining < 0 ? "Over" : "Left",
+      value: <Amount cents={Math.abs(remaining)} tone={remaining < 0 ? "over" : undefined} />,
+      detail:
+        remaining > 0 && daysRemaining > 0 ? (
+          <>
+            <Amount cents={Math.round(remaining / daysRemaining)} /> per day
+          </>
+        ) : undefined,
     },
-    onError: (mutationError) => {
-      setEditorError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Could not save the budget."
-      )
+    {
+      label: "Projected",
+      value: <Amount cents={projected} tone={projected > allocation * OVER_PACE ? "over" : undefined} />,
+      detail: elapsed === 0 ? `Pacing starts in ${monthLabel}` : `${paceStatus(ratio)} · ${ratioText(ratio)}`,
     },
-  })
+  ]
 
-  const deleteOverrideMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch(`/api/budgets/overrides/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      invalidateBudgets()
-    },
-  })
-
-  const deleteTemplateMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch(`/api/budgets/templates/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      setEditorOpen(false)
-      invalidateBudgets()
-    },
-  })
-
-  if (isLoading) {
-    return <RouteLoading title="Budgets" label="Loading budgets…" />
-  }
-  if (error || !data) {
-    return <RouteError title="Budgets" message="Unable to load budgets." />
-  }
-
-  const selectedMonthLabel = formatBudgetMonth(data.month_value)
-  const selectedMonthStart = `${data.month_value}-01`
-  const expenseCategories = data.categories.filter(
-    (category) => category.type === "expense" && !category.archived_at
-  )
-  const categoryIcons = new Map(
-    data.categories.map((category) => [category.id, category.icon])
-  )
-  const progressMap = new Map(
-    data.progress.map((row) => [String(row.scope_category_id ?? "null"), row])
-  )
-  const yearlySpentMap = new Map(
-    data.yearly_spent.map((row) => [String(row.scope_category_id ?? "null"), row])
-  )
-
-  const activeMonthlyTemplates = new Map<string, BudgetTemplateRow>()
-  for (const template of [...data.templates]
-    .filter(
-      (row) =>
-        row.frequency === "monthly" &&
-        row.starts_on <= selectedMonthStart &&
-        (!row.ends_on || row.ends_on >= selectedMonthStart)
+  const budgetRow = (kind: Kind, row: BudgetRow) => {
+    const rowSpent = kind === "month" ? spentFor(row) : (yearlySpent.get(scopeKey(row.scope_category_id)) ?? 0)
+    const rowRemaining = row.amount_cents - rowSpent
+    const category = row.scope_category_id === null ? undefined : categoriesById.get(row.scope_category_id)
+    const key = `${kind}:${scopeKey(row.scope_category_id)}`
+    return (
+      <Row
+        key={key}
+        {...BUDGET_COLUMNS}
+        label={row.scope_label}
+        selected={peekKey === key}
+        onOpen={() => openPeek(kind, row)}
+      >
+        <CategoryGlyph categoryId={row.scope_category_id} icon={category?.icon} name={row.scope_label} />
+        <Cell>
+          {row.scope_label}
+          {row.source === "override" ? " · adjusted" : null}
+        </Cell>
+        <BudgetBar
+          ratio={row.amount_cents ? rowSpent / row.amount_cents : 0}
+          over={rowRemaining < 0}
+          pace={kind === "month" ? pace : null}
+        />
+        <Cell align="right" tone="muted" hide="narrow">
+          <SpentAgainst spent={rowSpent} amount={row.amount_cents} />
+        </Cell>
+        <Cell align="right">
+          <LeftOrOver remaining={rowRemaining} />
+        </Cell>
+      </Row>
     )
-    .sort((left, right) => right.starts_on.localeCompare(left.starts_on))) {
-    const key = String(template.category?.id ?? "null")
-    if (!activeMonthlyTemplates.has(key)) {
-      activeMonthlyTemplates.set(key, template)
-    }
   }
 
-  const selectedYearStart = `${data.year_value}-01-01`
-  const activeYearlyTemplates = new Map<string, BudgetTemplateRow>()
-  for (const template of [...data.templates]
-    .filter(
-      (row) =>
-        row.frequency === "yearly" &&
-        row.starts_on <= selectedYearStart &&
-        (!row.ends_on || row.ends_on >= selectedYearStart)
-    )
-    .sort((left, right) => right.starts_on.localeCompare(left.starts_on))) {
-    const key = String(template.category?.id ?? "null")
-    if (!activeYearlyTemplates.has(key)) {
-      activeYearlyTemplates.set(key, template)
-    }
-  }
-
-  const activeTemplateIds = new Set([
-    ...[...activeMonthlyTemplates.values()].map((row) => row.id),
-    ...[...activeYearlyTemplates.values()].map((row) => row.id),
-  ])
-  const inactiveTemplates = data.templates.filter(
-    (template) => !activeTemplateIds.has(template.id)
-  )
-
-  const overallMonthBudget = data.budgets.find(
-    (row) => row.scope_category_id === null
-  )
-  const categoryMonthBudgets = data.budgets.filter(
-    (row) => row.scope_category_id !== null
-  )
-  const overallMonthProgress = progressMap.get("null")
-  const monthlyAllocation =
-    overallMonthBudget?.amount_cents ??
-    categoryMonthBudgets.reduce((total, row) => total + row.amount_cents, 0)
-  const monthlySpent =
-    overallMonthProgress?.spent_cents ??
-    categoryMonthBudgets.reduce(
-      (total, row) =>
-        total +
-        (progressMap.get(String(row.scope_category_id))?.spent_cents ?? 0),
-      0
-    )
-  const monthlyRemaining =
-    overallMonthProgress?.remaining_cents ?? monthlyAllocation - monthlySpent
-  const monthlyProjected =
-    overallMonthProgress?.projected_total_cents ??
-    categoryMonthBudgets.reduce(
-      (total, row) =>
-        total +
-        (progressMap.get(String(row.scope_category_id))
-          ?.projected_total_cents ?? 0),
-      0
-    )
-  const monthlyUsedPercent = monthlyAllocation
-    ? Math.round((monthlySpent / monthlyAllocation) * 100)
-    : 0
-  const monthlyPaceNotStarted =
-    monthlyAllocation > 0 &&
-    data.progress.length > 0 &&
-    data.progress.every((row) => row.days_elapsed === 0)
-  const monthlyPaceRatio = monthlyAllocation
-    ? monthlyProjected / monthlyAllocation
-    : 0
-  const monthlyPaceStatus = monthlyPaceNotStarted
-    ? `Pacing has not started for ${selectedMonthLabel}`
-    : monthlyPaceRatio > 1.1
-      ? `Over pace · ${monthlyPaceRatio.toFixed(2)}x projected`
-      : monthlyPaceRatio < 0.9
-        ? `On track · ${monthlyPaceRatio.toFixed(2)}x projected`
-        : `On pace · ${monthlyPaceRatio.toFixed(2)}x projected`
-  const categoryBudgetTotal = categoryMonthBudgets.reduce(
-    (total, row) => total + row.amount_cents,
-    0
-  )
-
-  const setMonthFilter = (monthValue: string) =>
-    setSearchParams(
-      buildSearchParams(searchParams, {
-        view: null,
-        month: monthValue,
-        year: null,
-      })
-    )
-
-  const openMonthEditor = (row: BudgetRow) => {
-    const template = activeMonthlyTemplates.get(
-      String(row.scope_category_id ?? "null")
-    )
-    setEditorKind("month")
-    setEditingBudget(row)
-    setEditingTemplateId(row.source === "template" ? row.source_id : null)
-    setEditingUsualAmount(template?.amount_cents ?? null)
-    setEditorFrequency("monthly")
-    setEditorCategory(
-      row.scope_category_id === null ? "" : String(row.scope_category_id)
-    )
-    setEditorAmount(formatCurrency(row.amount_cents, false))
-    setEditorStart(data.month_value)
-    setEditorEnd("")
-    setApplyRange("period")
-    setEditorError("")
-    setEditorOpen(true)
-  }
-
-  const openYearEditor = (row: BudgetYearRow) => {
-    setEditorKind("year")
-    setEditingBudget(row)
-    setEditingTemplateId(row.source_id)
-    setEditingUsualAmount(null)
-    setEditorFrequency("yearly")
-    setEditorCategory(
-      row.scope_category_id === null ? "" : String(row.scope_category_id)
-    )
-    setEditorAmount(formatCurrency(row.amount_cents, false))
-    setEditorStart(String(data.year_value))
-    setEditorEnd("")
-    setApplyRange("future")
-    setEditorError("")
-    setEditorOpen(true)
-  }
-
-  const parseAmount = (raw: string) => {
-    const value = Number(raw.replace(/\s/g, "").replace(",", "."))
-    if (!Number.isFinite(value) || value < 0) {
-      return null
-    }
-    return Math.round(value * 100)
-  }
-
-  const handleEditorSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setEditorError("")
-    const amountCents = parseAmount(editorAmount)
-    if (amountCents === null) {
-      setEditorError("Enter a valid amount.")
-      return
-    }
-    const categoryId = editorCategory ? Number(editorCategory) : null
-
-    if (editorKind === "month") {
-      const [yearRaw, monthRaw] = data.month_value.split("-")
-      if (applyRange === "period") {
-        overrideMutation.mutate({
-          year: Number(yearRaw),
-          month: Number(monthRaw),
-          category_id: categoryId,
-          amount_cents: amountCents,
+  const peek = (() => {
+    if (!peekTarget) return null
+    const { kind, row } = peekTarget
+    const scope = scopeKey(row.scope_category_id)
+    const category = row.scope_category_id === null ? undefined : categoriesById.get(row.scope_category_id)
+    const template = (kind === "month" ? monthlyTemplates : yearlyTemplates).get(scope) ?? null
+    const progress = kind === "month" ? progressByScope.get(scope) : undefined
+    const rowSpent = kind === "month" ? spentFor(row) : (yearlySpent.get(scope) ?? 0)
+    const periodLabel = kind === "month" ? monthLabel : String(data.year_value)
+    const request = (cents: number, range: "period" | "later"): BudgetRequest =>
+      kind === "month" && range === "period"
+        ? {
+            path: "/api/budgets/overrides",
+            body: {
+              year: Number(data.month_value.slice(0, 4)),
+              month: Number(data.month_value.slice(5, 7)),
+              category_id: row.scope_category_id,
+              amount_cents: cents,
+            },
+          }
+        : {
+            path: "/api/budgets/templates/apply-from",
+            body: {
+              frequency: kind === "month" ? "monthly" : "yearly",
+              category_id: row.scope_category_id,
+              amount_cents: cents,
+              starts_on: kind === "month" ? `${data.month_value}-01` : `${data.year_value}-01-01`,
+            },
+          }
+    const removeTemplate = async (id: number) => {
+      if (
+        await confirmDialog({
+          title: `Remove the ${row.scope_label} budget?`,
+          description: "It is removed from every period it applies to.",
+          confirmLabel: "Remove",
+          tone: "danger",
         })
-      } else {
-        applyFromMutation.mutate({
-          frequency: "monthly",
-          category_id: categoryId,
-          amount_cents: amountCents,
-          starts_on: `${data.month_value}-01`,
-        })
+      ) {
+        remove.mutate(`/api/budgets/templates/${id}`, { onSuccess: closePeek })
       }
-      return
     }
-
-    if (editorKind === "year") {
-      applyFromMutation.mutate({
-        frequency: "yearly",
-        category_id: categoryId,
-        amount_cents: amountCents,
-        starts_on: `${data.year_value}-01-01`,
-      })
-      return
-    }
-
-    const startsOn =
-      editorFrequency === "monthly"
-        ? `${editorStart}-01`
-        : `${editorStart}-01-01`
-    if (!editorStart || startsOn.includes("--")) {
-      setEditorError("Choose when the budget starts.")
-      return
-    }
-    const existingAtStart = data.templates.find(
-      (template) =>
-        template.frequency === editorFrequency &&
-        (template.category?.id ?? null) === categoryId &&
-        template.starts_on <= startsOn &&
-        (!template.ends_on || template.ends_on >= startsOn)
+    const burndown = peekBurndown.data
+    return (
+      <Peek
+        parent="Budgets"
+        title={row.scope_label}
+        onClose={closePeek}
+        menu={
+          <>
+            {kind === "month" ? (
+              <>
+                <MenuItem icon={ClockCounterClockwiseIcon} checked={compareInPeek} onSelect={() => setCompareInPeek(!compareInPeek)}>
+                  Compare previous month
+                </MenuItem>
+                <MenuSeparator />
+              </>
+            ) : null}
+            {row.source === "override" ? (
+              template ? (
+                <MenuItem icon={ArrowCounterClockwiseIcon} onSelect={() => remove.mutate(`/api/budgets/overrides/${row.source_id}`)}>
+                  Reset to usual <Amount cents={template.amount_cents} />
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  icon={TrashIcon}
+                  danger
+                  onSelect={() => remove.mutate(`/api/budgets/overrides/${row.source_id}`, { onSuccess: closePeek })}
+                >
+                  Remove {monthLabel} budget
+                </MenuItem>
+              )
+            ) : (
+              <MenuItem icon={TrashIcon} danger onSelect={() => void removeTemplate(row.source_id)}>
+                Remove budget
+              </MenuItem>
+            )}
+          </>
+        }
+      >
+        <PeekHeadline
+          glyph={
+            row.scope_category_id === null ? undefined : (
+              <CategoryGlyph categoryId={row.scope_category_id} icon={category?.icon} name={row.scope_label} />
+            )
+          }
+          title={row.scope_label}
+          figure={<Amount cents={rowSpent} />}
+          detail={
+            <>
+              of <Amount cents={row.amount_cents} />
+            </>
+          }
+        />
+        <PropertyList>
+          <Property label="Amount" editable>
+            <AmountEditor
+              key={`${peekKey}-${row.amount_cents}`}
+              kind={kind}
+              row={row}
+              usual={template?.amount_cents ?? null}
+              periodLabel={periodLabel}
+              request={request}
+            />
+          </Property>
+          <Property label="Repeats">
+            {kind === "year" ? "Every year" : row.source === "override" && !template ? `Only ${monthLabel}` : "Every month"}
+          </Property>
+          {template ? (
+            <Property label="Started">
+              {kind === "year" ? template.starts_on.slice(0, 4) : MONTH_SHORT.format(monthDate(template.starts_on.slice(0, 7)))}
+            </Property>
+          ) : null}
+          {template?.ends_on ? (
+            <Property label="Ends">
+              {kind === "year" ? template.ends_on.slice(0, 4) : MONTH_SHORT.format(monthDate(template.ends_on.slice(0, 7)))}
+            </Property>
+          ) : null}
+          {progress && progress.days_elapsed > 0 ? (
+            <Property label="Projected">
+              <Amount cents={progress.projected_total_cents} tone={progress.projected_total_cents > row.amount_cents * OVER_PACE ? "over" : undefined} />
+            </Property>
+          ) : null}
+          {progress && progress.days_remaining > 0 ? (
+            <Property label="Allowance">
+              <span>
+                <Amount cents={progress.daily_remaining_cents} /> per day
+              </span>
+            </Property>
+          ) : null}
+          {kind === "year" ? (
+            <Property label={row.amount_cents - rowSpent < 0 ? "Over" : "Left"}>
+              <Amount cents={Math.abs(row.amount_cents - rowSpent)} tone={row.amount_cents - rowSpent < 0 ? "over" : undefined} />
+            </Property>
+          ) : null}
+        </PropertyList>
+        {kind === "month" ? (
+          <>
+            <PeekSection title="Pace">
+              {burndown ? (
+                <PaceChart data={burndown} month={data.month_value} elapsed={elapsed} height={110} xEvery={10} />
+              ) : peekBurndown.isError ? (
+                <EmptyState inline>The pace chart is unavailable.</EmptyState>
+              ) : null}
+            </PeekSection>
+            <PeekSection title="Top spending days">
+              {burndown?.top_spending_days.length ? (
+                <List flat label="Top spending days">
+                  {burndown.top_spending_days.map((day) => (
+                    <Row key={day.day} columns={TOP_DAY_COLUMNS}>
+                      <Cell tone="muted">
+                        {WEEKDAY_SHORT.format(
+                          new Date(Date.UTC(Number(data.month_value.slice(0, 4)), Number(data.month_value.slice(5, 7)) - 1, day.day))
+                        )}
+                      </Cell>
+                      <Cell>{day.transactions.map((transaction) => transaction.title || "Untitled").join(", ")}</Cell>
+                      <Cell align="right">
+                        <Amount cents={day.total_cents} kind="expense" />
+                      </Cell>
+                    </Row>
+                  ))}
+                </List>
+              ) : burndown ? (
+                <EmptyState inline>No spending yet</EmptyState>
+              ) : null}
+            </PeekSection>
+          </>
+        ) : null}
+      </Peek>
     )
-    if (existingAtStart) {
-      const categoryLabel =
-        existingAtStart.category?.name ?? "All expense categories"
-      setEditorError(
-        `${categoryLabel} already has a ${editorFrequency === "monthly" ? "monthly" : "yearly"} budget for this period. Edit that budget instead.`
-      )
-      return
-    }
+  })()
 
-    if (!editorEnd) {
-      applyFromMutation.mutate({
-        frequency: editorFrequency,
-        category_id: categoryId,
-        amount_cents: amountCents,
-        starts_on: startsOn,
-      })
-      return
-    }
-
-    let endsOn: string
-    if (editorFrequency === "monthly") {
-      const [endYearRaw, endMonthRaw] = editorEnd.split("-")
-      const endDay = new Date(
-        Number(endYearRaw),
-        Number(endMonthRaw),
-        0
-      ).getDate()
-      endsOn = `${editorEnd}-${String(endDay).padStart(2, "0")}`
-    } else {
-      endsOn = `${editorEnd}-12-31`
-    }
-    if (endsOn < startsOn) {
-      setEditorError("The end must not be before the start.")
-      return
-    }
-    templateMutation.mutate({
-      frequency: editorFrequency,
-      category_id: categoryId,
-      amount_cents: amountCents,
-      starts_on: startsOn,
-      ends_on: endsOn,
-    })
-  }
-
-  const saving =
-    overrideMutation.isPending ||
-    applyFromMutation.isPending ||
-    templateMutation.isPending
-  const dialogTitle =
-    editorKind === "create"
-      ? editorFrequency === "yearly"
-        ? "Add annual budget"
-        : "Add budget"
-      : `Edit ${editingBudget?.scope_label ?? "budget"}`
+  const showList = hasBudgets || (showInactive && inactiveTemplates.length > 0)
 
   return (
-    <section className="space-y-4 md:space-y-5">
-      <PageIntro title="Budgets" />
-
-      <WorkspaceToolbar
-        data-testid="budget-workspace-toolbar"
-        className="period-navigator desk:w-full desk:justify-between"
-      >
-        <div className="period-navigator-controls">
-          <AppButton
-            type="button"
-            tone="ghost"
-            className="h-11 w-11 px-0 py-0 text-muted"
-            aria-label="Previous month"
-            onClick={() => setMonthFilter(shiftBudgetMonth(data.month_value, -1))}
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-          </AppButton>
-          <BudgetMonthPicker
-            monthValue={data.month_value}
-            monthLabel={selectedMonthLabel}
-            onChange={setMonthFilter}
-          />
-          <AppButton
-            type="button"
-            tone="ghost"
-            className="h-11 w-11 px-0 py-0 text-muted"
-            aria-label="Next month"
-            onClick={() => setMonthFilter(shiftBudgetMonth(data.month_value, 1))}
-          >
-            <ArrowRightIcon className="h-4 w-4" />
-          </AppButton>
-        </div>
-        <AppButton
-          type="button"
-          tone="inline"
-          className="min-h-11 shrink-0"
-          onClick={() => {
-            const today = new Date()
-            setMonthFilter(
-              `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-            )
-          }}
-        >
-          Today
-        </AppButton>
-      </WorkspaceToolbar>
-
-      {data.budgets.length ? (
-        <FinancialPanel role="panel" className="overflow-hidden p-3.5 sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted">
-                {overallMonthBudget
-                  ? "Overall spending plan"
-                  : "Budgeted categories"}
-              </p>
-              <h2 className="mt-1 font-head text-lg font-bold text-text">
-                {overallMonthBudget
-                  ? "All expense categories"
-                  : selectedMonthLabel}
-              </h2>
-            </div>
-            <div className="flex items-baseline gap-1.5 sm:text-right">
-              <span className="font-mono text-lg font-semibold text-text">
-                {formatCurrency(monthlyAllocation)} €
-              </span>
-              <span className="font-mono text-[10px] text-muted">per month</span>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
-            <MetricLane
-              tone="plan"
-              data-testid="budget-summary-allocation"
-              className="col-span-2 p-4 xl:col-span-1"
+    <Panel
+      title="Budgets"
+      layout="fill"
+      peekOpen={peek !== null}
+      actions={
+        <>
+          <Button variant="primary" icon={PlusIcon} aria-label="Add budget" onClick={() => setAdding(true)}>
+            {isDesktop ? "Add budget" : "Add"}
+          </Button>
+          <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+            <MenuItem
+              icon={ClockCounterClockwiseIcon}
+              checked={showInactive}
+              onSelect={() => setShowInactive(!showInactive)}
+              end={inactiveTemplates.length || undefined}
             >
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <TargetIcon className="h-4 w-4 text-semantic-blue" />
-                Used
-              </div>
-              <p className="mt-3 font-mono text-xl font-semibold text-text">
-                {monthlyUsedPercent}%
-              </p>
-              <div
-                className="mt-3 h-1.5 overflow-hidden rounded-sm bg-surface-hi"
-                role="progressbar"
-                aria-label="Monthly budget used"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.min(100, Math.max(0, monthlyUsedPercent))}
-                aria-valuetext={`${monthlyUsedPercent}% used`}
-              >
-                <div
-                  className="h-full rounded-sm bg-accent"
-                  style={{ width: `${Math.min(100, Math.max(0, monthlyUsedPercent))}%` }}
-                />
-              </div>
-            </MetricLane>
-            <MetricLane
-              tone="expense"
-              data-testid="budget-summary-spent"
-              className="p-4"
-            >
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <ReceiptIcon className="h-4 w-4 text-semantic-red" />
-                Spent
-              </div>
-              <p className="mt-3 font-mono text-xl font-semibold text-semantic-red">
-                {formatCurrency(monthlySpent, false)} €
-              </p>
-            </MetricLane>
-            <MetricLane
-              tone={monthlyRemaining < 0 ? "warning" : "income"}
-              data-testid="budget-summary-remaining"
-              className="p-4"
-            >
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <PiggyBankIcon className="h-4 w-4 text-semantic-green" />
-                {monthlyRemaining < 0 ? "Over plan" : "Remaining"}
-              </div>
-              <p
-                className={`mt-3 font-mono text-xl font-semibold ${
-                  monthlyRemaining < 0
-                    ? "text-semantic-red"
-                    : "text-semantic-green"
-                }`}
-              >
-                {formatCurrency(Math.abs(monthlyRemaining), false)} €
-              </p>
-            </MetricLane>
-            <MetricLane
-              tone="warning"
-              data-testid="budget-summary-pace"
-              className="col-span-2 p-4 xl:col-span-1"
-            >
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <GaugeIcon className="h-4 w-4" />
-                Projected
-              </div>
-              <p className="mt-3 font-mono text-xl font-semibold text-text">
-                {formatCurrency(monthlyProjected, false)} €
-              </p>
-              <p className="mt-1 text-xs text-muted">{monthlyPaceStatus}</p>
-            </MetricLane>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2 border-t border-border/70 pt-3 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-            <p>
-              {overallMonthBudget
-                ? `Category budgets total ${formatCurrency(categoryBudgetTotal)} €. The ${formatCurrency(overallMonthBudget.amount_cents)} € overall cap remains separate.`
-                : `${formatCurrency(monthlySpent)} € spent across categories with ${formatCurrency(categoryBudgetTotal)} € in limits. No overall cap is configured.`}
-            </p>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {overallMonthBudget ? (
-                <>
-                  <AppButton
-                    type="button"
-                    tone="inline"
-                    className="min-h-11"
-                    onClick={() =>
-                      setExpandedCharts((current) => ({
-                        ...current,
-                        overall: !current.overall,
-                      }))
-                    }
-                  >
-                    {expandedCharts.overall ? "Hide details" : "View details"}
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    tone="inline"
-                    className="min-h-11"
-                    onClick={() => openMonthEditor(overallMonthBudget)}
-                  >
-                    Edit overall plan
-                  </AppButton>
-                </>
-              ) : (
-                <AppButton
-                  type="button"
-                  tone="inline"
-                  className="min-h-11"
-                  onClick={() => openCreateEditor("monthly", "")}
-                >
-                  Add overall budget
-                </AppButton>
-              )}
-            </div>
-          </div>
-          {overallMonthBudget && expandedCharts.overall ? (
-            <>
-              <label className="mt-2 flex min-h-11 items-center gap-2 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  checked={compareMonth.overall ?? false}
-                  onChange={(event) =>
-                    setCompareMonth((current) => ({
-                      ...current,
-                      overall: event.target.checked,
-                    }))
+              Show ended and future budgets
+            </MenuItem>
+          </Menu>
+        </>
+      }
+      viewRow={
+        <ViewRow>
+          <MonthPicker value={data.month_value} onChange={setMonth} />
+          <Button variant="ghost" disabled={data.month_value === currentMonth(now)} onClick={() => setMonth(currentMonth(now))}>
+            Today
+          </Button>
+        </ViewRow>
+      }
+    >
+      <PeekLayout
+        scroll
+        main={
+          <>
+            {data.budgets.length ? <MetricStrip metrics={metrics} /> : null}
+            {overall ? (
+              <OverallPace month={data.month_value} elapsed={elapsed} onEdit={() => openPeek("month", overall)} />
+            ) : null}
+            {showList ? (
+              <List scroll={false} label="Budgets">
+                <DayBand
+                  label="Monthly"
+                  end={
+                    categoryBudgets.length ? (
+                      <SpentAgainst spent={sum(categoryBudgets, spentFor)} amount={sum(categoryBudgets, (row) => row.amount_cents)} />
+                    ) : undefined
                   }
-                  className="control-check"
                 />
-                Compare previous month
-              </label>
-              <BudgetBurndownPanel
-                monthValue={data.month_value}
-                scopeCategoryId={null}
-                compareEnabled={compareMonth.overall ?? false}
-              />
-            </>
-          ) : null}
-        </FinancialPanel>
-      ) : null}
-
-      <FinancialPanel role="panel" className="min-w-0 overflow-hidden">
-        <SectionHeading>
-          <div className="min-w-0">
-            <h2 className="font-head text-lg font-bold text-text">
-              Monthly budgets
-            </h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Usual limits, with {selectedMonthLabel} adjustments shown in context
-            </p>
-          </div>
-          <span className="rounded-full bg-faint px-2.5 py-1 text-xs text-muted">
-            {categoryMonthBudgets.length}
-          </span>
-        </SectionHeading>
-        {categoryMonthBudgets.length ? (
-          <div className="divide-y divide-border/70 px-3.5 sm:px-5">
-            {categoryMonthBudgets.map((row) => {
-              const scopeKey = String(row.scope_category_id)
-              const progress = progressMap.get(scopeKey)
-              const spent = progress?.spent_cents ?? 0
-              const remaining = progress?.remaining_cents ?? row.amount_cents - spent
-              const usedPercent = row.amount_cents
-                ? (spent / row.amount_cents) * 100
-                : 0
-              const projected = progress?.projected_total_cents ?? spent
-              const template = activeMonthlyTemplates.get(scopeKey)
-              const chartOpen = expandedCharts[scopeKey] ?? false
-              const compareEnabled = compareMonth[scopeKey] ?? false
-              const pacing = progress
-                ? paceLabel(progress, row.amount_cents)
-                : { text: "No pace available", tone: "text-muted" }
-              return (
-                <article
-                  key={`${row.scope_label}-${row.source_id}`}
-                  data-testid="budget-plan-card"
-                  className="min-w-0 py-4"
-                >
-                  <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(13rem,1.15fr)_auto] md:items-center">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <CategoryIcon
-                        icon={
-                          row.scope_category_id === null
-                            ? null
-                            : (categoryIcons.get(row.scope_category_id) ?? null)
-                        }
-                        label={row.scope_label}
+                {categoryBudgets.length ? (
+                  categoryBudgets.map((row) => budgetRow("month", row))
+                ) : (
+                  <Row columns={EMPTY_BAND_COLUMNS}>
+                    <span />
+                    <Cell tone="muted">No category budgets for {monthLabel}</Cell>
+                  </Row>
+                )}
+                <DayBand
+                  label={`Annual · ${data.year_value}`}
+                  end={
+                    data.yearly_budgets.length ? (
+                      <SpentAgainst
+                        spent={sum(data.yearly_budgets, (row) => yearlySpent.get(scopeKey(row.scope_category_id)) ?? 0)}
+                        amount={sum(data.yearly_budgets, (row) => row.amount_cents)}
                       />
-                      <div className="min-w-0">
-                        <h3 className="truncate font-semibold leading-5 text-text">
-                          {row.scope_label}
-                        </h3>
-                        <p className="mt-1 font-mono text-xs leading-4 text-muted">
-                          {formatCurrency(row.amount_cents)} €{" "}
-                          {row.source === "override" ? `in ${selectedMonthLabel}` : "per month"}
-                        </p>
-                        {row.source === "override" ? (
-                          <span className="mt-1.5 block text-xs font-semibold leading-4 text-warning-ink">
-                            {template
-                              ? `Adjusted this month · usually ${formatCurrency(template.amount_cents)} €`
-                              : `Only ${selectedMonthLabel}`}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="grid min-h-11 min-w-0 grid-rows-[1.5rem_1rem] content-center">
-                      <div
-                        className="h-1.5 self-center overflow-hidden rounded-sm bg-surface-hi"
-                        role="progressbar"
-                        aria-label={`${row.scope_label} budget used`}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={Math.round(
-                          Math.min(100, Math.max(0, usedPercent))
-                        )}
-                        aria-valuetext={`${Math.round(usedPercent)}% used`}
-                      >
-                        <div
-                          className={`h-full rounded-sm ${remaining < 0 ? "bg-semantic-red" : "bg-semantic-green"}`}
-                          style={{
-                            width: `${Math.min(100, Math.max(0, usedPercent))}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between gap-3 font-mono text-xs leading-4 text-muted">
-                        <span>{formatCurrency(spent)} € spent</span>
-                        <span>
-                          {formatCurrency(Math.abs(remaining))} €{" "}
-                          {remaining < 0 ? "over" : "left"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end">
-                      <div className="grid min-h-11 min-w-0 grid-rows-[1.5rem_1rem] content-center text-left md:text-right">
-                        <p className="self-center font-mono text-xs font-semibold leading-4 text-text">
-                          {Math.round(usedPercent)}% used
-                        </p>
-                        <p className={`max-w-[18rem] text-xs leading-4 ${pacing.tone}`}>
-                          {progress?.days_elapsed === 0
-                            ? `Pacing has not started for ${selectedMonthLabel}`
-                            : `Projected ${formatCurrency(projected)} € · ${pacing.text.split(" - ")[0]}`}
-                        </p>
-                      </div>
-                      <AppButton
-                        type="button"
-                        tone="inline"
-                        className="min-h-11 shrink-0"
-                        onClick={() => openMonthEditor(row)}
-                      >
-                        Edit
-                      </AppButton>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 sm:pl-12">
-                    <AppButton
-                      type="button"
-                      tone="inline"
-                      className="min-h-11"
-                      onClick={() =>
-                        setExpandedCharts((current) => ({
-                          ...current,
-                          [scopeKey]: !chartOpen,
-                        }))
-                      }
-                    >
-                      {chartOpen ? "Hide details" : "View details"}
-                    </AppButton>
-                    {row.source === "override" ? (
-                      <AppButton
-                        type="button"
-                        tone="inline"
-                        className="min-h-11"
-                        onClick={() => deleteOverrideMutation.mutate(row.source_id)}
-                      >
-                        {template
-                          ? `Reset to ${formatCurrency(template.amount_cents)} €`
-                          : `Remove ${selectedMonthLabel} budget`}
-                      </AppButton>
-                    ) : null}
-                  </div>
-
-                  {chartOpen ? (
-                    <>
-                      <label className="mt-2 flex min-h-11 items-center gap-2 text-xs text-muted sm:ml-12">
-                        <input
-                          type="checkbox"
-                          checked={compareEnabled}
-                          onChange={(event) =>
-                            setCompareMonth((current) => ({
-                              ...current,
-                              [scopeKey]: event.target.checked,
-                            }))
-                          }
-                          className="control-check"
-                        />
-                        Compare previous month
-                      </label>
-                      <BudgetBurndownPanel
-                        monthValue={data.month_value}
-                        scopeCategoryId={row.scope_category_id}
-                        compareEnabled={compareEnabled}
-                      />
-                    </>
-                  ) : null}
-                </article>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="px-5 py-8 text-center">
-            <p className="font-head text-lg font-bold text-text">
-              {data.budgets.length
-                ? "No category budgets yet"
-                : `No budgets for ${selectedMonthLabel}`}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              You can adjust individual months later.
-            </p>
-            <AppButton
-              type="button"
-              tone="ghost"
-              className="mt-4"
-              onClick={() => openCreateEditor("monthly")}
-            >
-              Add monthly budget
-            </AppButton>
-          </div>
-        )}
-      </FinancialPanel>
-
-      <FinancialPanel role="panel" className="min-w-0 overflow-hidden">
-        <SectionHeading>
-          <h2 className="font-head text-lg font-bold text-text">
-            Annual budgets · {data.year_value}
-          </h2>
-          <AppButton
-            type="button"
-            tone="inline"
-            className="min-h-11 shrink-0"
-            onClick={() => openCreateEditor("yearly")}
-          >
-            Add annual
-          </AppButton>
-        </SectionHeading>
-        {data.yearly_budgets.length ? (
-          <div className="divide-y divide-border/70 px-3.5 sm:px-5">
-            {data.yearly_budgets.map((row) => {
-              const scopeKey = String(row.scope_category_id ?? "null")
-              const spent = yearlySpentMap.get(scopeKey)?.spent_cents ?? 0
-              const remaining = row.amount_cents - spent
-              const usedPercent = row.amount_cents
-                ? (spent / row.amount_cents) * 100
-                : 0
-              return (
-                <article
-                  key={`${row.scope_label}-${row.source_id}`}
-                  data-testid="budget-year-plan-card"
-                  className="grid min-w-0 gap-4 py-4 md:grid-cols-[minmax(0,1fr)_minmax(13rem,1.15fr)_auto] md:items-center"
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <CategoryIcon
-                      icon={
-                        row.scope_category_id === null
-                          ? null
-                          : (categoryIcons.get(row.scope_category_id) ?? null)
-                      }
-                      label={row.scope_label}
-                    />
-                    <div className="min-w-0">
-                      <h3 className="truncate font-semibold leading-5 text-text">
-                        {row.scope_label}
-                      </h3>
-                      <p className="mt-1 font-mono text-xs leading-4 text-muted">
-                        {formatCurrency(row.amount_cents)} € per year
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid min-h-11 min-w-0 grid-rows-[1.5rem_1rem] content-center">
-                    <div
-                      className="h-1.5 self-center overflow-hidden rounded-sm bg-surface-hi"
-                      role="progressbar"
-                      aria-label={`${row.scope_label} annual budget used`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(
-                        Math.min(100, Math.max(0, usedPercent))
-                      )}
-                      aria-valuetext={`${Math.round(usedPercent)}% used`}
-                    >
-                      <div
-                        className={`h-full rounded-sm ${remaining < 0 ? "bg-semantic-red" : "bg-semantic-purple"}`}
-                        style={{
-                          width: `${Math.min(100, Math.max(0, usedPercent))}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex justify-between gap-3 font-mono text-xs leading-4 text-muted">
-                      <span>{formatCurrency(spent)} € spent</span>
-                      <span>
-                        {formatCurrency(Math.abs(remaining))} €{" "}
-                        {remaining < 0 ? "over" : "left"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 md:justify-end">
-                    <p className="font-mono text-xs font-semibold leading-4 text-text">
-                      {Math.round(usedPercent)}% used
-                    </p>
-                    <AppButton
-                      type="button"
-                      tone="inline"
-                      className="min-h-11"
-                      onClick={() => openYearEditor(row)}
-                    >
-                      Edit
-                    </AppButton>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="px-5 py-6 text-sm text-muted">
-            No annual budgets for {data.year_value}. Add one for travel, repairs, or another longer-term limit.
-          </div>
-        )}
-      </FinancialPanel>
-
-      {inactiveTemplates.length ? (
-        <details className="rounded-[1rem] bg-surface px-4 py-2 shadow-[var(--shadow-soft)]">
-          <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-text">
-            Show {inactiveTemplates.length} future or ended {inactiveTemplates.length === 1 ? "budget" : "budgets"}
-          </summary>
-          <div className="divide-y divide-border/70 border-t border-border/70">
-            {inactiveTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="flex min-w-0 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-text">
-                    {template.category?.name ?? "All expense categories"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
-                    {formatCurrency(template.amount_cents)} € per {template.frequency === "monthly" ? "month" : "year"} · {formatEuroDate(template.starts_on)}
-                    {template.ends_on ? ` – ${formatEuroDate(template.ends_on)}` : " onward"}
-                  </p>
-                </div>
-                <AppButton
-                  type="button"
-                  tone="inlineDanger"
-                  className="min-h-11 shrink-0"
-                  onClick={async () => {
-                    if (
-                      await confirmDialog({
-                        title: `Remove the ${template.category?.name ?? "overall"} budget plan?`,
-                        confirmLabel: "Remove",
-                      })
-                    ) {
-                      deleteTemplateMutation.mutate(template.id)
-                    }
-                  }}
-                >
-                  <TrashIcon className="h-3.5 w-3.5" />
-                  Remove
-                </AppButton>
-              </div>
-            ))}
-          </div>
-        </details>
-      ) : null}
-
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => {
-          if (!open && !saving) {
-            setEditorOpen(false)
-          }
-        }}
-      >
-        <DialogContent
-          aria-label={dialogTitle}
-          className="max-h-[calc(100dvh-2rem)] overflow-hidden p-5"
-        >
-          <div className="-mr-5 overflow-y-auto pr-5">
-            <DialogHeader>
-              <DialogTitle>{dialogTitle}</DialogTitle>
-              <DialogClose asChild>
-                <AppButton
-                  tone="ghost"
-                  className="h-9 w-9 rounded-full p-0"
-                  aria-label="Close budget editor"
-                  disabled={saving}
-                >
-                  <XIcon className="h-4 w-4" />
-                </AppButton>
-              </DialogClose>
-            </DialogHeader>
-
-            <form onSubmit={handleEditorSubmit} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <AppFieldLabel>
-                  Category
-                  <AppNativeSelect
-                    value={editorCategory}
-                    onChange={(event) => setEditorCategory(event.target.value)}
-                    className="mt-1"
-                    disabled={editorKind !== "create"}
-                  >
-                    <option value="">All expense categories</option>
-                    {expenseCategories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </AppNativeSelect>
-                </AppFieldLabel>
-
-                {editorKind === "create" ? (
-                  <AppFieldLabel>
-                    Repeats
-                    <AppNativeSelect
-                      value={editorFrequency}
-                      onChange={(event) => {
-                        const frequency = event.target.value as "monthly" | "yearly"
-                        setEditorFrequency(frequency)
-                        setEditorStart(
-                          frequency === "monthly"
-                            ? data.month_value
-                            : String(data.year_value)
-                        )
-                        setEditorEnd("")
-                      }}
-                      className="mt-1"
-                    >
-                      <option value="monthly">Every month</option>
-                      <option value="yearly">Every year</option>
-                    </AppNativeSelect>
-                  </AppFieldLabel>
+                    ) : undefined
+                  }
+                />
+                {data.yearly_budgets.length ? (
+                  data.yearly_budgets.map((row) => budgetRow("year", row))
+                ) : (
+                  <Row columns={EMPTY_BAND_COLUMNS}>
+                    <span />
+                    <Cell tone="muted">No annual budgets for {data.year_value}</Cell>
+                  </Row>
+                )}
+                {showInactive && inactiveTemplates.length ? (
+                  <>
+                    <DayBand label="Ended and future" />
+                    {inactiveTemplates.map((template) => {
+                      const label = template.category?.name ?? "All expense categories"
+                      const yearlyTemplate = template.frequency === "yearly"
+                      const period = (date: string) =>
+                        yearlyTemplate ? date.slice(0, 4) : MONTH_SHORT.format(monthDate(date.slice(0, 7)))
+                      return (
+                        <Row key={template.id} {...INACTIVE_COLUMNS} dim label={label}>
+                          <CategoryGlyph categoryId={template.category?.id} icon={template.category?.icon} name={label} />
+                          <Cell>
+                            {label} · <Amount cents={template.amount_cents} decimals={false} /> per {yearlyTemplate ? "year" : "month"}
+                          </Cell>
+                          <Cell align="right" tone="muted" hide="narrow">
+                            {period(template.starts_on)}
+                            {template.ends_on ? ` – ${period(template.ends_on)}` : " onward"}
+                          </Cell>
+                          <RowActions>
+                            <IconButton
+                              icon={TrashIcon}
+                              size="small"
+                              label={`Remove the ${label} budget`}
+                              onClick={async () => {
+                                if (
+                                  await confirmDialog({
+                                    title: `Remove the ${label} budget?`,
+                                    confirmLabel: "Remove",
+                                    tone: "danger",
+                                  })
+                                ) {
+                                  remove.mutate(`/api/budgets/templates/${template.id}`)
+                                }
+                              }}
+                            />
+                          </RowActions>
+                        </Row>
+                      )
+                    })}
+                  </>
                 ) : null}
-
-                <AppFieldLabel className={editorKind !== "create" ? "sm:col-span-2" : ""}>
-                  Amount
-                  <div className="mt-1 grid grid-cols-[minmax(0,1fr)_7.5rem] gap-2">
-                    <AppInput
-                      value={editorAmount}
-                      onChange={(event) => setEditorAmount(event.target.value)}
-                      placeholder="e.g. 500.00"
-                      inputMode="decimal"
-                      required
-                    />
-                    <div className="flex min-h-11 items-center rounded-lg border border-border bg-faint px-3 text-xs text-muted">
-                      per {editorFrequency === "monthly" ? "month" : "year"}
-                    </div>
-                  </div>
-                </AppFieldLabel>
-              </div>
-
-              {editorKind === "month" ? (
-                <fieldset className="rounded-[0.875rem] bg-warning-soft p-3.5">
-                  <legend className="px-1 text-xs font-semibold text-warning-ink">
-                    Apply this amount to
-                  </legend>
-                  <label className="flex min-h-11 cursor-pointer items-start gap-2.5 py-1 text-xs text-text">
-                    <input
-                      type="radio"
-                      name="apply-range"
-                      value="period"
-                      checked={applyRange === "period"}
-                      onChange={() => setApplyRange("period")}
-                      className="mt-0.5 accent-accent"
-                    />
-                    <span>
-                      <strong>Only {selectedMonthLabel}</strong>
-                      <span className="mt-0.5 block text-muted">
-                        {editingUsualAmount !== null
-                          ? `Future months keep the usual amount of ${formatCurrency(editingUsualAmount)} €.`
-                          : "No budget is added to future months."}
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex min-h-11 cursor-pointer items-start gap-2.5 py-1 text-xs text-text">
-                    <input
-                      type="radio"
-                      name="apply-range"
-                      value="future"
-                      checked={applyRange === "future"}
-                      onChange={() => setApplyRange("future")}
-                      className="mt-0.5 accent-accent"
-                    />
-                    <span>
-                      <strong>{selectedMonthLabel} and future months</strong>
-                      <span className="mt-0.5 block text-muted">
-                        This becomes the usual amount from {selectedMonthLabel} onward.
-                      </span>
-                    </span>
-                  </label>
-                </fieldset>
-              ) : null}
-
-              {editorKind === "create" ? (
-                <details>
-                  <summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-accent">
-                    Advanced timing
-                  </summary>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <AppFieldLabel>
-                      Starts
-                      <AppInput
-                        type={editorFrequency === "monthly" ? "month" : "number"}
-                        min={editorFrequency === "monthly" ? undefined : 1970}
-                        max={editorFrequency === "monthly" ? undefined : 3000}
-                        value={editorStart}
-                        onChange={(event) => setEditorStart(event.target.value)}
-                        className="mt-1"
-                        required
-                      />
-                    </AppFieldLabel>
-                    <AppFieldLabel>
-                      Ends (optional)
-                      <AppInput
-                        type={editorFrequency === "monthly" ? "month" : "number"}
-                        min={editorFrequency === "monthly" ? undefined : 1970}
-                        max={editorFrequency === "monthly" ? undefined : 3000}
-                        value={editorEnd}
-                        onChange={(event) => setEditorEnd(event.target.value)}
-                        className="mt-1"
-                      />
-                    </AppFieldLabel>
-                  </div>
-                </details>
-              ) : null}
-
-              {editorError ? (
-                <p className="text-xs text-semantic-red">{editorError}</p>
-              ) : null}
-
-              <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row">
-                {editorKind === "month" && editingBudget?.source === "override" ? (
-                  <AppButton
-                    type="button"
-                    tone="inlineDanger"
-                    className="min-h-11 sm:mr-auto"
-                    disabled={deleteOverrideMutation.isPending}
-                    onClick={() =>
-                      deleteOverrideMutation.mutate(editingBudget.source_id)
-                    }
-                  >
-                    <TrashIcon className="h-3.5 w-3.5" />
-                    {editingUsualAmount !== null
-                      ? "Remove this month’s adjustment"
-                      : `Remove ${selectedMonthLabel} budget`}
-                  </AppButton>
-                ) : editorKind !== "create" && editingTemplateId !== null ? (
-                  <AppButton
-                    type="button"
-                    tone="inlineDanger"
-                    className="min-h-11 sm:mr-auto"
-                    disabled={deleteTemplateMutation.isPending}
-                    onClick={async () => {
-                      if (
-                        await confirmDialog({
-                          title: "Remove this budget plan?",
-                          confirmLabel: "Remove",
-                        })
-                      ) {
-                        deleteTemplateMutation.mutate(editingTemplateId)
-                      }
-                    }}
-                  >
-                    <TrashIcon className="h-3.5 w-3.5" />
-                    Remove budget
-                  </AppButton>
-                ) : null}
-                <div className="flex flex-1 gap-2 sm:justify-end">
-                  <AppButton type="submit" className="flex-1 sm:flex-none" disabled={saving}>
-                    {saving
-                      ? "Saving…"
-                      : editorKind === "create"
-                        ? "Save budget"
-                        : "Save change"}
-                  </AppButton>
-                  <AppButton
-                    type="button"
-                    tone="ghost"
-                    disabled={saving}
-                    onClick={() => setEditorOpen(false)}
-                  >
-                    Cancel
-                  </AppButton>
-                </div>
-              </div>
-            </form>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
+              </List>
+            ) : (
+              <Sheet>
+                <EmptyState
+                  icon={TargetIcon}
+                  action={
+                    <Button variant="quiet" icon={PlusIcon} onClick={() => setAdding(true)}>
+                      Add budget
+                    </Button>
+                  }
+                >
+                  No budgets for {monthLabel}
+                </EmptyState>
+              </Sheet>
+            )}
+          </>
+        }
+        peek={peek}
+      />
+      {adding ? <AddBudgetDialog data={data} onClose={() => setAdding(false)} /> : null}
+    </Panel>
   )
 }
 

@@ -26,6 +26,9 @@ output/playwright/*auth*.json
 implementation_plan*.md
 overview.md
 
+# Redesign reference prototype: force-tracked on the redesign branch only; untrack before merging
+ui/prototypes/redesign/
+
 # Virtual environments
 .venv
 
