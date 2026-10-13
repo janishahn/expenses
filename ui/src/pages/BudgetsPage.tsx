@@ -146,8 +146,11 @@ function ratioText(ratio: number): string {
   return `${ratio.toFixed(2).replace(".", ",")}×`
 }
 
+// A projection more than 10% above the budget is over pace; only then is it shown as over.
+const OVER_PACE = 1.1
+
 function paceStatus(ratio: number): string {
-  return ratio > 1.1 ? "Over pace" : ratio < 0.9 ? "On track" : "On pace"
+  return ratio > OVER_PACE ? "Over pace" : ratio < 0.9 ? "On track" : "On pace"
 }
 
 // The active template per scope: the latest one that covers `day`.
@@ -689,7 +692,7 @@ function BudgetsPage() {
     },
     {
       label: "Projected",
-      value: <Amount cents={projected} tone={projected > allocation ? "over" : undefined} />,
+      value: <Amount cents={projected} tone={projected > allocation * OVER_PACE ? "over" : undefined} />,
       detail: elapsed === 0 ? `Pacing starts in ${monthLabel}` : `${paceStatus(ratio)} · ${ratioText(ratio)}`,
     },
   ]
@@ -846,7 +849,7 @@ function BudgetsPage() {
           ) : null}
           {progress && progress.days_elapsed > 0 ? (
             <Property label="Projected">
-              <Amount cents={progress.projected_total_cents} tone={progress.projected_total_cents > row.amount_cents ? "over" : undefined} />
+              <Amount cents={progress.projected_total_cents} tone={progress.projected_total_cents > row.amount_cents * OVER_PACE ? "over" : undefined} />
             </Property>
           ) : null}
           {progress && progress.days_remaining > 0 ? (
