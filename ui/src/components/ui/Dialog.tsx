@@ -20,6 +20,8 @@ type DialogProps = {
   // Confirmations have no ✕; Cancel and Esc dismiss them.
   closable?: boolean
   footer?: ReactNode
+  // A destructive action at the left end of the footer, such as Delete in an edit dialog.
+  footerStart?: ReactNode
   children?: ReactNode
   onCloseAutoFocus?: (event: Event) => void
 }
@@ -36,6 +38,7 @@ export function Dialog({
   warning,
   closable = true,
   footer,
+  footerStart,
   children,
   onCloseAutoFocus,
 }: DialogProps) {
@@ -73,7 +76,17 @@ export function Dialog({
           </div>
           {warning ? <DialogPrimitive.Description className={s.warn}>{warning}</DialogPrimitive.Description> : null}
           {children != null ? <div className={s.dgBody}>{children}</div> : null}
-          {footer ? <div className={s.dgFoot}>{footer}</div> : null}
+          {footer ? (
+            <div className={s.dgFoot}>
+              {footerStart ? (
+                <>
+                  {footerStart}
+                  <span className={s.sp} />
+                </>
+              ) : null}
+              {footer}
+            </div>
+          ) : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

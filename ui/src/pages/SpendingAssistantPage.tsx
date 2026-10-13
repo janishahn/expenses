@@ -5,6 +5,7 @@ import { CopyIcon } from "@phosphor-icons/react/Copy"
 import { NotePencilIcon } from "@phosphor-icons/react/NotePencil"
 import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { streamSpendingChat } from "../app/api"
+import { copyText } from "../app/clipboard"
 import { formatDateRange } from "../app/format"
 import type { SpendingChatHistoryEntry, SpendingChatStreamEvent } from "../app/api-types"
 import { ChatGPTPlanLink } from "../components/AISettingsPanel"
@@ -136,23 +137,6 @@ function toolDetail(args: Record<string, unknown>): string {
     parts.push(`transaction ${transactionId}`)
   }
   return parts.join(" · ")
-}
-
-function copyTextToClipboard(text: string) {
-  // Self-hosted plain-HTTP deployments have no navigator.clipboard.
-  if (navigator.clipboard) {
-    void navigator.clipboard.writeText(text)
-    return
-  }
-  const area = document.createElement("textarea")
-  area.value = text
-  area.setAttribute("readonly", "")
-  area.style.position = "fixed"
-  area.style.opacity = "0"
-  document.body.append(area)
-  area.select()
-  document.execCommand("copy")
-  area.remove()
 }
 
 let turnIdCounter = 0
@@ -482,7 +466,7 @@ function SpendingAssistantPage() {
   )
 
   const handleCopy = useCallback((turnId: string, content: string) => {
-    copyTextToClipboard(content)
+    copyText(content)
     setCopiedTurnId(turnId)
     if (copyTimerRef.current) {
       window.clearTimeout(copyTimerRef.current)

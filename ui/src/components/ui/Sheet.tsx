@@ -92,6 +92,15 @@ export function FileRow({ icon: IconComponent, name, meta, action }: { icon: Ico
   )
 }
 
+// Preformatted text such as a captured request body or a log payload; it scrolls inside its own box.
+export function CodeBlock({ label, children }: { label: string; children: string }) {
+  return (
+    <pre className={s.code} aria-label={label} tabIndex={0}>
+      {children}
+    </pre>
+  )
+}
+
 export type Metric = {
   label: string
   value: ReactNode

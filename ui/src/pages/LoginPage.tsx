@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { getApiErrorMessage, getSafeRedirectTarget, useAuth } from "../app/auth"
-import ProductMark from "../components/ProductMark"
-import { AppButton } from "../components/legacy-ui/product-button"
-import { AppFieldLabel, AppInput } from "../components/legacy-ui/product-fields"
+import { AuthCard } from "../components/ui/Bare"
+import { LinkButton } from "../components/ui/Button"
+import { Field, FieldGrid, TextField } from "../components/ui/TextField"
 
 function LoginPage() {
   const { login, signupAllowed } = useAuth()
@@ -15,9 +15,7 @@ function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const redirectTarget = searchParams.get("redirect")
-  const signupHref = redirectTarget
-    ? `/signup?redirect=${encodeURIComponent(redirectTarget)}`
-    : "/signup"
+  const signupHref = redirectTarget ? `/signup?redirect=${encodeURIComponent(redirectTarget)}` : "/signup"
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -34,78 +32,36 @@ function LoginPage() {
   }
 
   return (
-    <main className="min-h-app-screen flex items-center justify-center bg-bg p-3 sm:p-6">
-      <section className="w-full max-w-md rounded-xl bg-surface p-5 shadow-[var(--shadow-hero)] sm:p-8">
-        <div className="mb-8 flex items-center gap-3">
-          <ProductMark />
-          <p className="font-head text-sm font-bold tracking-[-0.02em] text-text">Expenses</p>
-        </div>
-
-        <div className="space-y-6">
-          <h1 className="font-head text-3xl font-bold tracking-[-0.045em] text-text">
-            Sign in
-          </h1>
-
-          {searchParams.get("signup") === "success" ? (
-            <p data-testid="auth-success" className="text-sm text-semantic-green">
-              Account created. Sign in to continue.
-            </p>
-          ) : null}
-
-          <form data-testid="login-form" className="space-y-4" onSubmit={onSubmit}>
-            <AppFieldLabel>
-              <span>Username</span>
-              <AppInput
-                data-testid="auth-username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                required
-              />
-            </AppFieldLabel>
-
-            <AppFieldLabel>
-              <span>Password</span>
-              <AppInput
-                data-testid="auth-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </AppFieldLabel>
-
-            {errorMessage ? (
-              <p data-testid="auth-error" className="text-sm text-semantic-red">
-                {errorMessage}
-              </p>
-            ) : null}
-
-            <AppButton
-              data-testid="auth-submit"
-              type="submit"
-              className="w-full justify-center"
-              disabled={submitting}
-            >
-              {submitting ? "Signing in…" : "Sign in"}
-            </AppButton>
-          </form>
-
-          {signupAllowed ? (
-            <AppButton
-              data-testid="auth-switch-to-signup"
-              type="button"
-              tone="ghost"
-              className="w-full justify-center"
-              onClick={() => navigate(signupHref)}
-            >
-              Create account
-            </AppButton>
-          ) : null}
-        </div>
-      </section>
-    </main>
+    <AuthCard
+      title="Sign in"
+      onSubmit={onSubmit}
+      submitLabel={submitting ? "Signing in…" : "Sign in"}
+      submitting={submitting}
+      error={errorMessage}
+      notice={searchParams.get("signup") === "success" ? "Account created. Sign in to continue." : undefined}
+      footer={
+        signupAllowed ? (
+          <LinkButton variant="ghost" to={signupHref}>
+            Create account
+          </LinkButton>
+        ) : null
+      }
+    >
+      <FieldGrid stacked>
+        <Field label="Username">
+          <TextField value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required autoFocus />
+        </Field>
+        <Field label="Password">
+          <TextField
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </Field>
+      </FieldGrid>
+    </AuthCard>
   )
 }
 

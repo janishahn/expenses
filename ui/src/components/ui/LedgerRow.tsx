@@ -49,12 +49,18 @@ export function ListHead({ children, ...columns }: Columns & { children: ReactNo
   )
 }
 
-export function Row({ children, dim = false, ...props }: RowProps) {
+// `controls` rows hold form controls in their cells, such as per-feature selects; on mobile they may wrap to two lines.
+export function Row({ children, dim = false, controls = false, ...props }: RowProps & { controls?: boolean }) {
   return (
-    <div className={clsx(s.row, dim && s.rowDim)} style={columnStyle(props)} {...rowProps(props)}>
+    <div className={clsx(s.row, dim && s.rowDim, controls && s.rowControls)} style={columnStyle(props)} {...rowProps(props)}>
       {children}
     </div>
   )
+}
+
+// Two controls side by side in one cell of a `controls` row.
+export function CellControls({ children }: { children: ReactNode }) {
+  return <span className={s.cellControls}>{children}</span>
 }
 
 export function Cell({

@@ -70,26 +70,32 @@ const LOADING_DELAY_MS = 250
 // A page whose data is still loading: the header at once, placeholder rows only after
 // 250 ms so fast loads never flash. The rows are static, which keeps Pi-class hosts calm.
 export function PanelLoading({ title, parents, label }: { title: ReactNode; parents?: Crumb[]; label: string }) {
+  return (
+    <Panel title={title} parents={parents}>
+      <LoadingBody label={label} />
+    </Panel>
+  )
+}
+
+// The placeholder rows of a loading page, for parts of a page that load on their own.
+export function LoadingBody({ label }: { label: string }) {
   const [visible, setVisible] = useState(false)
   useEffect(() => {
     const timeout = window.setTimeout(() => setVisible(true), LOADING_DELAY_MS)
     return () => window.clearTimeout(timeout)
   }, [])
+  if (!visible) return null
   return (
-    <Panel title={title} parents={parents}>
-      {visible ? (
-        <div data-testid="route-loading">
-          <div aria-busy="true" className={clsx(s.card, s.cbody, s.skeleton)}>
-            {[100, 91, 82, 73].map((width) => (
-              <span key={width} className={s.skel} style={{ width: `${width}%` }} />
-            ))}
-          </div>
-          <p role="status" className="sr-only">
-            {label}
-          </p>
-        </div>
-      ) : null}
-    </Panel>
+    <div data-testid="route-loading">
+      <div aria-busy="true" className={clsx(s.card, s.cbody, s.skeleton)}>
+        {[100, 91, 82, 73].map((width) => (
+          <span key={width} className={s.skel} style={{ width: `${width}%` }} />
+        ))}
+      </div>
+      <p role="status" className="sr-only">
+        {label}
+      </p>
+    </div>
   )
 }
 
@@ -108,23 +114,29 @@ export function PanelError({
 }) {
   return (
     <Panel title={title} parents={parents}>
-      <section className={s.card}>
-        <EmptyState
-          action={
-            returnTo ? (
-              <LinkButton to={returnTo.to} variant="quiet">
-                {returnTo.label}
-              </LinkButton>
-            ) : (
-              <Button variant="quiet" onClick={() => window.location.reload()}>
-                Retry
-              </Button>
-            )
-          }
-        >
-          <span role="alert">{message}</span>
-        </EmptyState>
-      </section>
+      <ErrorBody message={message} returnTo={returnTo} />
     </Panel>
+  )
+}
+
+export function ErrorBody({ message, returnTo }: { message: string; returnTo?: Crumb }) {
+  return (
+    <section className={s.card}>
+      <EmptyState
+        action={
+          returnTo ? (
+            <LinkButton to={returnTo.to} variant="quiet">
+              {returnTo.label}
+            </LinkButton>
+          ) : (
+            <Button variant="quiet" onClick={() => window.location.reload()}>
+              Retry
+            </Button>
+          )
+        }
+      >
+        <span role="alert">{message}</span>
+      </EmptyState>
+    </section>
   )
 }

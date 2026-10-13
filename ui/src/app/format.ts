@@ -79,6 +79,12 @@ export function formatShortDate(iso: string): string {
   return `${day} ${month} ${year}`
 }
 
+// "12 Oct 2026, 14:20" from an ISO date-time, with the time as stored.
+export function formatShortDateTime(iso: string): string {
+  const time = iso.slice(11, 16)
+  return time ? `${formatShortDate(iso)}, ${time}` : formatShortDate(iso)
+}
+
 // "1 – 20 Apr 2026", "28 Mar – 3 Apr 2026", "28 Dec 2025 – 3 Jan 2026".
 export function formatDateRange(start: string, end: string): string {
   const a = dateParts(start)

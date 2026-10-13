@@ -174,12 +174,23 @@ export type CalendarLevel = 0 | 1 | 2 | 3 | 4
 const WEEKDAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""]
 const LEVEL_CLASS = [s.calL0, s.calL1, s.calL2, s.calL3, s.calL4]
 
+// Each week fills in after the one before it, top to bottom.
+function entranceDelay(index: number): CSSProperties {
+  const week = Math.floor(index / 7)
+  const day = index % 7
+  return { "--d": `${250 + week * 65 + day * 22}ms`, "--t": `${2.6 + week * 0.37}s` } as CSSProperties
+}
+
 // Days in week columns, Monday first, each in one of five ink levels; null days lie ahead.
 // Narrow screens scroll the weeks and start at the latest one.
 export function DayCalendar({
   days,
   months,
   scale,
+  legend,
+  today,
+  entrance = false,
+  twinkle,
   tooltip,
   onSelect,
 }: {
@@ -189,6 +200,13 @@ export function DayCalendar({
   months?: Array<{ week: number; label: string }>
   // Names of the five levels, shown as the legend.
   scale?: string[]
+  // The two ends of a legend without level names, such as "Less" and "More".
+  legend?: [string, string]
+  // The outlined day.
+  today?: number
+  // The 404 page only: shaded days fill in week by week once; `twinkle` days then fade in and out.
+  entrance?: boolean
+  twinkle?: number[]
   tooltip?: (index: number) => ReactNode
   onSelect?: (index: number) => void
 }) {
@@ -219,7 +237,14 @@ export function DayCalendar({
                 ) : (
                   <i
                     key={index}
-                    className={clsx(s.calCell, LEVEL_CLASS[level])}
+                    className={clsx(
+                      s.calCell,
+                      LEVEL_CLASS[level],
+                      entrance && level > 0 && s.calEnter,
+                      twinkle?.includes(index) && s.calTwinkle,
+                      today === index && s.calToday
+                    )}
+                    style={entrance && level > 0 ? entranceDelay(index) : undefined}
                     data-clickable={onSelect ? "" : undefined}
                     onPointerMove={tooltip ? track(index) : undefined}
                     onClick={onSelect ? () => onSelect(index) : undefined}
@@ -230,6 +255,15 @@ export function DayCalendar({
           </div>
         </div>
       </div>
+      {legend ? (
+        <div className={s.calLegend} aria-hidden="true">
+          {legend[0]}
+          {LEVEL_CLASS.map((levelClass) => (
+            <i key={levelClass} className={levelClass} />
+          ))}
+          {legend[1]}
+        </div>
+      ) : null}
       {scale ? (
         <div className={s.scale} aria-hidden="true">
           {scale.map((label, index) => (

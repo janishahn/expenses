@@ -20,16 +20,18 @@ type TextFieldProps = InputHTMLAttributes<HTMLInputElement> & {
   // Unit or trailing text inside the field, such as "%" or "€".
   suffix?: ReactNode
   invalid?: boolean
+  // A few characters wide, such as a percentage or a number of days.
+  short?: boolean
 }
 
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { icon: IconComponent, suffix, invalid, id, className, ...props },
+  { icon: IconComponent, suffix, invalid, short, id, className, ...props },
   ref
 ) {
   const field = useContext(FieldContext)
   const isInvalid = invalid ?? field.invalid
   return (
-    <span className={clsx(s.input, isInvalid && s.inputErr, className)}>
+    <span className={clsx(s.input, isInvalid && s.inputErr, short && s.inputShort, className)}>
       {IconComponent ? <IconComponent aria-hidden="true" /> : null}
       <input
         ref={ref}
@@ -76,9 +78,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   )
 })
 
-// Label column plus control column; one column on mobile.
-export function FieldGrid({ narrow = false, children }: { narrow?: boolean; children: ReactNode }) {
-  return <div className={clsx(s.form, narrow && s.formNarrow)}>{children}</div>
+// Label column plus control column; one column on mobile. `stacked` puts labels above
+// their controls on every layout, for narrow sheets such as sign in.
+export function FieldGrid({
+  narrow = false,
+  stacked = false,
+  children,
+}: {
+  narrow?: boolean
+  stacked?: boolean
+  children: ReactNode
+}) {
+  return <div className={clsx(s.form, narrow && s.formNarrow, stacked && s.formStacked)}>{children}</div>
 }
 
 export function Field({

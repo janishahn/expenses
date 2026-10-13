@@ -11,6 +11,7 @@ import {
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
 import LegacyLayout from "./app/LegacyLayout"
+import { PanelLoading } from "./components/ui/Panel"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
 const AdminElevationPage = lazy(() => import("./pages/AdminElevationPage"))
@@ -190,7 +191,7 @@ function AdminRoute() {
   }
 
   if (checking) {
-    return <AuthLoadingFallback />
+    return <PanelLoading title="Admin" label="Checking admin access…" />
   }
 
   if (requiresElevation) {
@@ -241,17 +242,17 @@ function AppRoutes() {
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
           <Route path="/assistant" element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />} />
+          <Route path="/settings/:section?" element={<SettingsPage />} />
+          <Route path="/admin/elevate" element={<AdminElevationPage />} />
+          <Route element={<AdminRoute />}>
+            <Route path="/admin/import" element={<AdminImportPage />} />
+            <Route path="/admin/:section?" element={<AdminPage />} />
+          </Route>
           <Route element={<LegacyLayout />}>
             <Route path="/reconciliation" element={<ReconciliationPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/admin/elevate" element={<AdminElevationPage />} />
-            <Route element={<AdminRoute />}>
-              <Route path="/admin" element={<AdminPage />} />
-              <Route path="/admin/import" element={<AdminImportPage />} />
-            </Route>
-            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   )
