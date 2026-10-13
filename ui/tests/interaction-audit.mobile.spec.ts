@@ -420,11 +420,10 @@ test.describe("Mobile interaction audit evidence", () => {
         window.matchMedia("(hover: none) and (pointer: coarse)").matches,
       ),
     ).toBe(true)
-    await insightsPage.getByRole("button", { name: /^Filters/ }).click()
-    controls.push(
-      await measurement(
-        "Insights filter sheet close",
-        insightsPage.getByRole("button", { name: "Close filters" }),
+    effectiveControls.push(
+      await effectiveTargetMeasurement(
+        "Insights filter pill",
+        insightsPage.getByRole("button", { name: "Filter", exact: true }),
       ),
     )
 
@@ -443,7 +442,7 @@ test.describe("Mobile interaction audit evidence", () => {
       transactionCheckboxLabel,
       inboxCheckboxLabel: inboxLabel,
     })
-    await capture(insightsPage, "insights-filter-close.png")
+    await capture(insightsPage, "insights-filter-pill.png")
     await insightsPage.close()
     await isolated.request.dispose()
   })
@@ -532,12 +531,14 @@ test.describe("Mobile interaction audit evidence", () => {
     await page.goto("/")
     controls.push(
       await effectiveTargetMeasurement(
-        "Dashboard spending month link",
-        page.getByTestId("dashboard-spending-band-month").first(),
+        "Dashboard spending chart options",
+        page
+          .getByRole("region", { name: "Spending by category" })
+          .getByRole("button", { name: "Chart options" }),
       ),
       await effectiveTargetMeasurement(
-        "Dashboard recent transactions View all",
-        page.getByRole("link", { name: "View all" }),
+        "Dashboard recent transactions Open transactions",
+        page.getByRole("region", { name: "Recent" }).getByRole("button", { name: "Open transactions" }),
       ),
     )
 
@@ -708,29 +709,18 @@ test.describe("Mobile interaction audit evidence", () => {
     await capture(page, "transaction-location-map-target.png")
 
     await page.goto("/insights")
-    await page.getByRole("tab", { name: "Net", exact: true }).click()
-    const chartData = page.getByRole("button", { name: "View chart data" })
+    const byMonth = page.getByRole("region", { name: "By month" })
+    const chartOptions = byMonth.getByRole("button", { name: "Chart options" })
     controls.push(
-      await effectiveTargetMeasurement("Insights chart-data action", chartData),
+      await effectiveTargetMeasurement("Insights chart options action", chartOptions),
     )
-    await capture(page, "insights-net-data-target.png", true)
-    await chartData.click()
-    const chartDataDialog = page.getByRole("dialog", { name: "Chart data" })
-    const chartDataClose = chartDataDialog.getByRole("button", {
-      name: "Close chart data",
-    })
-    const chartDataCategory = chartDataDialog
-      .getByRole("button", { name: /^Open .* transactions$/ })
-      .first()
-    controls.push(
-      await effectiveTargetMeasurement("Insights chart-data close", chartDataClose),
-      await effectiveTargetMeasurement(
-        "Insights chart-data category action",
-        chartDataCategory,
-      ),
-    )
-    await capture(page, "insights-net-data-controls.png", true)
-    await chartDataClose.click()
+    await capture(page, "insights-chart-options-target.png", true)
+    await chartOptions.click()
+    await page.getByRole("menuitemcheckbox", { name: "Show as table" }).click()
+    await expect(
+      byMonth.getByRole("table", { name: "Amounts by month" }).getByRole("link").first(),
+    ).toBeVisible()
+    await capture(page, "insights-table-drilldown-target.png", true)
 
     const recurringPage = await page.context().newPage()
     await useAuditTheme(recurringPage)
@@ -797,30 +787,29 @@ test.describe("Mobile interaction audit evidence", () => {
 
     const controls: EffectiveTargetMeasurement[] = []
     await page.goto("/budgets")
-    const budgetCard = page
-      .getByTestId("budget-plan-card")
-      .filter({ hasText: categoryName })
-    await budgetCard.getByRole("button", { name: "View details" }).click()
+    await page.getByRole("listitem", { name: categoryName }).tap()
+    const budgetPeek = page.getByRole("complementary", { name: categoryName })
+    const peekActions = budgetPeek.getByRole("button", { name: "More actions" })
     controls.push(
-      await effectiveTargetMeasurement(
-        "Budget compare-previous-month checkbox",
-        budgetCard.getByRole("checkbox", { name: "Compare previous month" }),
-      ),
+      await effectiveTargetMeasurement("Budget peek more-actions button", peekActions),
     )
-    await budgetCard.getByRole("button", { name: "Edit", exact: true }).click()
-    const budgetDialog = page.getByRole("dialog", { name: `Edit ${categoryName}` })
+    await peekActions.tap()
+    const compareItem = page.getByRole("menuitemcheckbox", { name: "Compare previous month" })
     controls.push(
-      await effectiveTargetMeasurement(
-        "Budget editor close",
-        budgetDialog.getByRole("button", { name: "Close budget editor" }),
-      ),
+      await effectiveTargetMeasurement("Budget compare-previous-month item", compareItem),
+    )
+    await compareItem.tap()
+    await expect(compareItem).toBeHidden()
+    await budgetPeek.getByRole("button", { name: /500,00/ }).tap()
+    const budgetEditor = page.getByRole("dialog", { name: "Edit amount" })
+    controls.push(
       await effectiveTargetMeasurement(
         "Budget selected-month-only radio",
-        budgetDialog.getByRole("radio", { name: /Only / }),
+        budgetEditor.getByRole("radio", { name: /^Only / }),
       ),
       await effectiveTargetMeasurement(
-        "Budget selected-and-future radio",
-        budgetDialog.getByRole("radio", { name: /and future months/ }),
+        "Budget selected-and-later radio",
+        budgetEditor.getByRole("radio", { name: /and later$/ }),
       ),
     )
     await capture(page, "budget-editor-conditional-targets.png")
@@ -995,7 +984,7 @@ test.describe("Mobile interaction audit evidence", () => {
     )
   })
 
-  test("keeps long Net labels readable and full names available", async ({
+  test("keeps long Insights category names readable and full names available", async ({
     page,
     request,
   }) => {
@@ -1052,34 +1041,29 @@ test.describe("Mobile interaction audit evidence", () => {
       tags: [],
     })
 
-    await page.goto("/insights?period=this_month&view=net")
+    await page.goto("/insights?period=this_month")
     await page.waitForLoadState("networkidle")
-    const chart = page.getByRole("group", { name: "Income and spending chart" })
-    await expect(chart).toBeVisible()
-    await expect(
-      chart.locator(`[data-waterfall-step][aria-label^="${incomeLabel}:"]`),
-    ).toBeVisible()
-    await expect(
-      chart.locator(`[data-waterfall-step][aria-label^="${expenseLabel}:"]`),
-    ).toBeVisible()
-    await chart.scrollIntoViewIfNeeded()
+    const byMonth = page.getByRole("region", { name: "By month" })
+    await byMonth.scrollIntoViewIfNeeded()
+    await byMonth.getByRole("button", { name: "Chart options" }).click()
+    await page.getByRole("menuitemcheckbox", { name: "Show as table" }).click()
+    const table = byMonth.getByRole("table", { name: "Amounts by month" })
+    await expect(table.getByRole("row", { name: expenseLabel as string })).toBeVisible()
     const geometry = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
     }))
-    await capture(page, "net-long-labels.png", true)
-    await page.getByRole("button", { name: "View chart data" }).click()
-    const dataView = page.getByRole("dialog", { name: "Chart data" })
-    await expect(dataView).toContainText(incomeLabel as string)
-    await expect(dataView).toContainText(expenseLabel as string)
-    await capture(page, "net-long-labels-data-view.png", true)
-    const amountCells = dataView.locator("tbody td:nth-child(2), tbody td:nth-child(3)")
+    await capture(page, "insights-long-labels.png", true)
+    await byMonth.getByRole("radio", { name: "Income" }).click()
+    await expect(table.getByRole("row", { name: incomeLabel as string })).toBeVisible()
+    await capture(page, "insights-long-labels-income.png", true)
+    const amountCells = table.locator("tbody td")
     const amountCellCount = await amountCells.count()
     expect(amountCellCount).toBeGreaterThan(0)
     for (let index = 0; index < amountCellCount; index += 1) {
       await expect(amountCells.nth(index)).toHaveCSS("white-space", "nowrap")
     }
-    persist("net-long-labels", {
+    persist("insights-long-labels", {
       viewport: page.viewportSize(),
       theme: auditTheme,
       incomeLabel,

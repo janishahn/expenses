@@ -583,3 +583,56 @@ export async function loginWithTrainedSuggestions(
     .toBe("ready")
   return { request, csrfToken, bakeryId: ids[0], uncategorizedIds }
 }
+
+// Two months of Insights data for a fresh user: last month 2.000 € Salary income and a 500 €
+// Rent expense tagged Trip; this month a 120 € Dining expense with a 300 € monthly Dining budget.
+export async function provisionInsightsData(request: APIRequestContext, csrfToken: string) {
+  const now = new Date()
+  const key = (offset: number) => {
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}`
+  }
+  const lastMonth = key(-1)
+  const thisMonth = key(0)
+  const salaryId = await createCategory(request, csrfToken, "income", "Salary")
+  const rentId = await createCategory(request, csrfToken, "expense", "Rent")
+  const diningId = await createCategory(request, csrfToken, "expense", "Dining")
+  const tagResponse = await request.post("/api/tags", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: { name: "Trip", is_hidden_from_budget: false },
+  })
+  expect(tagResponse.ok()).toBeTruthy()
+  const tagId = ((await tagResponse.json()) as { id: number }).id
+  const add = (
+    date: string,
+    type: "income" | "expense",
+    amount_cents: number,
+    category_id: number,
+    title: string,
+    tags: string[] = []
+  ) =>
+    createTransaction(request, csrfToken, {
+      date,
+      occurred_at: `${date}T09:00:00`,
+      type,
+      amount_cents,
+      category_id,
+      title,
+      tags,
+    })
+  await add(`${lastMonth}-10`, "income", 200_000, salaryId, "Salary payment")
+  await add(`${lastMonth}-12`, "expense", 50_000, rentId, "Rent payment", ["Trip"])
+  await add(`${thisMonth}-01`, "expense", 12_000, diningId, "Team dinner")
+  const budgetResponse = await request.post("/api/budgets/templates", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      frequency: "monthly",
+      category_id: diningId,
+      amount_cents: 30_000,
+      starts_on: `${lastMonth}-01`,
+      ends_on: null,
+    },
+  })
+  expect(budgetResponse.ok()).toBeTruthy()
+  return { lastMonth, thisMonth, rentId, diningId, tagId }
+}

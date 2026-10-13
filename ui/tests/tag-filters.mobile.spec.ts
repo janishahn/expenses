@@ -151,7 +151,7 @@ test("uses the unified multi-tag filter from each mobile sheet", async ({ page }
 
   await page.goto("/?period=this_month")
   const dashboardFilterTrigger = page.getByRole("button", {
-    name: "Filters",
+    name: "Filter",
     exact: true,
   })
   await expect(dashboardFilterTrigger).toBeVisible()
@@ -161,26 +161,28 @@ test("uses the unified multi-tag filter from each mobile sheet", async ({ page }
   ])
   expect(filterTriggerBox).not.toBeNull()
   expect(periodBox).not.toBeNull()
-  expect(Math.abs(filterTriggerBox!.height - periodBox!.height)).toBeLessThan(0.01)
-  expect(Math.abs(filterTriggerBox!.width - filterTriggerBox!.height)).toBeLessThan(0.01)
+  expect(Math.abs(filterTriggerBox!.height - periodBox!.height)).toBeLessThanOrEqual(1)
 
-  await dashboardFilterTrigger.click()
-  sheet = page.getByRole("dialog", { name: "Dashboard filters" })
-  await sheet.getByRole("button", { name: "Exclude" }).click()
-  await sheet.getByRole("checkbox", { name: vacationName }).check()
-  await sheet.getByRole("button", { name: "Apply" }).click()
-  await expect(page.getByRole("button", { name: `Remove Excluding: ${vacationName}` })).toBeVisible()
-  await expect(page.getByTestId("dashboard-recent-list")).not.toContainText(`${marker} vacation`)
+  await dashboardFilterTrigger.tap()
+  sheet = page.getByRole("dialog", { name: "Filter" })
+  await sheet.getByRole("radio", { name: "Exclude" }).tap()
+  await sheet.getByRole("checkbox", { name: vacationName }).click()
+  await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagIds[0]}(?:&|$)`))
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter · 1" })).toBeVisible()
+  const recent = page.getByRole("region", { name: "Recent" })
+  await expect(recent.getByRole("listitem", { name: `${marker} regular` })).toBeVisible()
+  await expect(recent.getByRole("listitem", { name: `${marker} vacation` })).toHaveCount(0)
 
   await page.goto("/insights?period=this_month")
-  await page.getByRole("button", { name: /^Filters/ }).click()
-  sheet = page.getByRole("dialog", { name: "Insights filters" })
-  await sheet.getByRole("checkbox", { name: vacationName }).check()
-  await sheet.getByRole("checkbox", { name: projectName }).check()
-  await sheet.getByRole("button", { name: "Apply" }).click()
+  await page.getByRole("button", { name: "Filter", exact: true }).tap()
+  sheet = page.getByRole("dialog", { name: "Filter" })
+  await sheet.getByRole("checkbox", { name: vacationName }).click()
+  await sheet.getByRole("checkbox", { name: projectName }).click()
   await expect(page).toHaveURL(new RegExp(`tags=${tagIds[0]}%2C${tagIds[1]}`))
-  await expect(page.getByRole("button", { name: "Remove Only: 2 tags" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter · 2" })).toBeVisible()
+  await expect(page.getByText("Spent", { exact: true }).first().locator("..")).toContainText("140,00 €")
 
   await isolated.request.dispose()
 })

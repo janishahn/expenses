@@ -89,41 +89,37 @@ test("restores excluded spending-band categories in their original stack order",
   }
 
   await page.goto("/?period=this_month")
-  const currentBand = page
-    .getByTestId("dashboard-spending-bands")
-    .locator(".recharts-wrapper")
-    .first()
-  const segments = currentBand.locator(".spending-band-segment")
-  await expect(segments).toHaveCount(4)
-  const initialFills = await segments.evaluateAll((elements) =>
-    elements.map((element) => getComputedStyle(element).fill),
-  )
-  expect(new Set(initialFills).size).toBe(4)
-
-  await page.getByRole("button", { name: "Filters", exact: true }).click()
-  const filterPanel = page.getByRole("dialog", { name: "Dashboard filters" })
-  await filterPanel.getByRole("button", { name: "Exclude" }).click()
-  for (const tagName of tagNames) {
-    await filterPanel.getByRole("checkbox", { name: tagName }).check()
+  const spending = page.getByRole("region", { name: "Spending by category" })
+  // The table columns follow the legend order, which is the stack order of the bands.
+  const categoryColumns = async () => {
+    await spending.getByRole("button", { name: "Chart options" }).click()
+    const toggle = page.getByRole("menuitemcheckbox", { name: "Show as table" })
+    if ((await toggle.getAttribute("aria-checked")) === "false") await toggle.click()
+    else await page.keyboard.press("Escape")
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    const headers = await spending.getByRole("columnheader").allTextContents()
+    return headers.filter((name) => name.startsWith("Band order"))
   }
-  await filterPanel.getByRole("button", { name: "Apply" }).click()
-  await expect(segments).toHaveCount(2)
+  const initialColumns = await categoryColumns()
+  expect(initialColumns).toEqual(categoryNames)
 
-  await page.getByRole("button", { name: "Remove Excluding: 2 tags" }).click()
-  await expect(segments).toHaveCount(4)
-  await expect
-    .poll(() =>
-      segments.evaluateAll((elements) => {
-        return elements
-          .map((element) => ({
-            fill: getComputedStyle(element).fill,
-            left: element.getBoundingClientRect().left,
-          }))
-          .sort((left, right) => left.left - right.left)
-          .map(({ fill }) => fill)
-      }),
-    )
-    .toEqual(initialFills)
+  await page.getByRole("button", { name: "Filter", exact: true }).click()
+  const filter = page.getByRole("dialog", { name: "Filter" })
+  await filter.getByRole("radio", { name: "Exclude" }).click()
+  for (const tagName of tagNames) {
+    await filter.getByRole("checkbox", { name: tagName }).click()
+  }
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter · 2" })).toBeVisible()
+  await expect.poll(categoryColumns).toEqual([categoryNames[1], categoryNames[3]])
+
+  await page.getByRole("button", { name: "Filter · 2" }).click()
+  for (const tagName of tagNames) {
+    await filter.getByRole("checkbox", { name: tagName }).click()
+  }
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible()
+  await expect.poll(categoryColumns).toEqual(initialColumns)
 
   await isolated.request.dispose()
 })
@@ -244,7 +240,7 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
 
   await page.goto("/?period=this_month")
   const dashboardFilterTrigger = page.getByRole("button", {
-    name: "Filters",
+    name: "Filter",
     exact: true,
   })
   const [filterTriggerBox, periodGroupBox] = await Promise.all([
@@ -256,27 +252,37 @@ test("uses one multi-tag include or exclude filter across desktop data surfaces"
   expect(Math.abs(periodGroupBox!.height - filterTriggerBox!.height)).toBeLessThanOrEqual(1)
 
   await dashboardFilterTrigger.click()
-  filterPanel = page.getByRole("dialog", { name: "Dashboard filters" })
-  await filterPanel.getByRole("button", { name: "Exclude" }).click()
-  await filterPanel.getByRole("checkbox", { name: vacationName }).check()
-  await filterPanel.getByRole("checkbox", { name: projectName }).check()
-  await filterPanel.getByRole("button", { name: "Apply" }).click()
+  filterPanel = page.getByRole("dialog", { name: "Filter" })
+  await filterPanel.getByRole("radio", { name: "Exclude" }).click()
+  await filterPanel.getByRole("checkbox", { name: vacationName }).click()
+  await filterPanel.getByRole("checkbox", { name: projectName }).click()
   await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagIds[0]}%2C${tagIds[1]}`))
-  await expect(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Remove Excluding: 2 tags" })).toBeVisible()
-  await expect(page.getByTestId("dashboard-recent-list")).toContainText(`${marker} regular`)
-  await expect(page.getByTestId("dashboard-recent-list")).not.toContainText(`${marker} vacation`)
-  await expect(page.getByText(/Balance and budgets stay/)).toHaveCount(0)
-  await expect(
-    page.getByTestId("dashboard-spending-band-month").first(),
-  ).toHaveAttribute(
-    "href",
-    new RegExp(`exclude_tags=${tagIds[0]}%2C${tagIds[1]}`),
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter · 2" })).toBeVisible()
+  const recent = page.getByRole("region", { name: "Recent" })
+  await expect(recent.getByRole("listitem", { name: `${marker} regular` })).toBeVisible()
+  await expect(recent.getByRole("listitem", { name: `${marker} vacation` })).toHaveCount(0)
+  await expect(recent.getByRole("listitem", { name: `${marker} project` })).toHaveCount(0)
+
+  // Chart drill-downs keep the tag scope.
+  await page
+    .getByRole("region", { name: "Spending by category" })
+    .locator('[class*="_track_"] > span')
+    .first()
+    .click()
+  await expect(page).toHaveURL(
+    new RegExp(`/transactions\\?.*exclude_tags=${tagIds[0]}%2C${tagIds[1]}`),
   )
 
-  await page.goto(`/insights?period=this_month&tags=${tagIds.join(",")}`)
-  await expect(page.getByRole("button", { name: "Remove Only: 2 tags" })).toBeVisible()
-  await expect(page.getByText(/budget figures stay based on all activity/)).toHaveCount(0)
+  await page.goto("/insights?period=this_month")
+  await page.getByRole("button", { name: "Filter", exact: true }).click()
+  filterPanel = page.getByRole("dialog", { name: "Filter" })
+  await filterPanel.getByRole("checkbox", { name: vacationName }).click()
+  await filterPanel.getByRole("checkbox", { name: projectName }).click()
+  await expect(page).toHaveURL(new RegExp(`tags=${tagIds[0]}%2C${tagIds[1]}`))
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Filter · 2" })).toBeVisible()
+  await expect(page.getByText("Spent", { exact: true }).first().locator("..")).toContainText("140,00 €")
 
   await isolated.request.dispose()
 })
