@@ -16,12 +16,14 @@ export function Amount({
   decimals?: boolean
   // Override the tone, e.g. "over" for an exceeded budget or "muted" for secondary figures.
   tone?: "income" | "over" | "muted" | "faint"
-  // Recurring rules may be kept in US dollars; everything else is in euros.
-  currency?: "EUR" | "USD"
+  // Recurring rules may be kept in US dollars and bank rows in their statement's currency;
+  // everything else is in euros. Other currencies show their code.
+  currency?: string
   className?: string
 }) {
   const hidden = usePrivacy()
-  const text = formatAmount(cents, kind, decimals, currency === "USD" ? "$" : "€")
+  const symbol = currency === "EUR" ? "€" : currency === "USD" ? "$" : currency
+  const text = formatAmount(cents, kind, decimals, symbol)
   const toneClass =
     tone === "income" || (!tone && kind === "income")
       ? s.in

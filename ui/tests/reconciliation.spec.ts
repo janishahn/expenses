@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "./fixtures"
 import { createCategory, createTransaction, loginAsIsolatedUser } from "./helpers"
 
 type Isolated = { request: APIRequestContext; csrfToken: string; categoryId: number }
-type CsvRow = { date: string; payee: string; cents: number; purpose?: string }
+type CsvRow = { date: string; payee: string; cents: number; purpose?: string; currency?: string }
 type StoredRow = { id: number; payee: string | null }
 type StoredTransaction = {
   id: number
@@ -19,10 +19,10 @@ function csvFile(rows: string[], name = "statement.csv") {
   return { name, mimeType: "text/csv", buffer: Buffer.from([CSV_HEADER, ...rows].join("\n"), "latin1") }
 }
 
-function csvRow({ date, payee, cents, purpose = "Test purpose" }: CsvRow) {
+function csvRow({ date, payee, cents, purpose = "Test purpose", currency = "EUR" }: CsvRow) {
   const [year, month, day] = date.split("-")
   const amount = `${cents < 0 ? "-" : ""}${Math.floor(Math.abs(cents) / 100)},${String(Math.abs(cents) % 100).padStart(2, "0")}`
-  return `${day}.${month}.${year};${day}.${month}.${year};Kartenzahlung;${payee};${amount};EUR;${purpose}`
+  return `${day}.${month}.${year};${day}.${month}.${year};Kartenzahlung;${payee};${amount};${currency};${purpose}`
 }
 
 async function signIn(page: Page): Promise<Isolated> {
@@ -271,6 +271,21 @@ test.describe("Reconcile", () => {
     await toast(page).getByRole("button", { name: "Undo" }).click()
     await expect(rowItem(openList(page), "PHYSIO")).toBeVisible()
     expect((await fetchTransaction(user, id)).amount_cents).toBe(4700)
+  })
+
+  test("shows a foreign statement amount in its currency and keeps the transaction amount", async ({ page }) => {
+    const user = await signIn(page)
+    await addExpense(user, "Hotel deposit", "2026-05-01", 9000)
+    await importRows(user, [{ date: "2026-05-20", payee: "HOTEL NYC", cents: -12000, currency: "USD" }])
+    await page.goto("/reconciliation")
+
+    const row = rowItem(openList(page), "HOTEL NYC")
+    await expect(row).toContainText("120,00 $")
+    await row.click()
+    const peek = page.getByRole("complementary", { name: "HOTEL NYC" })
+    await peek.getByRole("searchbox", { name: "Find a transaction" }).fill("Hotel")
+    await peek.getByRole("radio", { name: "Hotel deposit" }).check()
+    await expect(peek.getByRole("switch", { name: "Set the amount to the bank amount" })).toHaveCount(0)
   })
 
   test("keeps the transaction amount when the amount switch is off", async ({ page }) => {

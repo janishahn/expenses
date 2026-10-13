@@ -797,6 +797,9 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
         title="Cafe C",
         txn_type="income",
     )
+    dollars = _create_transaction(
+        api_client, csrf_headers, date="2026-05-06", amount_cents=1_900, title="Cafe D"
+    )
     _upload_csv(
         api_client,
         csrf_headers,
@@ -805,6 +808,7 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
                 "06.05.2026;06.05.2026;Karte;One;-12,00;EUR;",
                 "06.05.2026;06.05.2026;Karte;Two;-12,00;EUR;",
                 "06.05.2026;06.05.2026;Karte;Three;-12,00;EUR;",
+                "06.05.2026;06.05.2026;Karte;Four;-12,00;USD;",
             ]
         ),
     )
@@ -823,9 +827,11 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
     wrong_type = match("Three", income)
     wrong_type_updated = match("Three", income, update_amount_to_bank=True)
     missing = match("Three", 999_999)
+    # Transaction amounts are euros, so a dollar amount cannot replace one.
+    foreign = match("Four", dollars, update_amount_to_bank=True)
 
-    statuses = [plain, updated, wrong_type, wrong_type_updated, missing]
-    assert [r.status_code for r in statuses] == [200, 200, 400, 400, 400]
+    statuses = [plain, updated, wrong_type, wrong_type_updated, missing, foreign]
+    assert [r.status_code for r in statuses] == [200, 200, 400, 400, 400, 400]
     # The replaced amount lets the web undo the change.
     assert plain.json()["previous_amount_cents"] is None
     assert updated.json()["previous_amount_cents"] == 1_900
@@ -835,11 +841,12 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
             "amount_cents"
         ]
 
-    assert (amount(keep_amount), amount(adjust_amount), amount(income)) == (
-        1_500,
-        1_200,
-        1_200,
-    )
+    assert (
+        amount(keep_amount),
+        amount(adjust_amount),
+        amount(income),
+        amount(dollars),
+    ) == (1_500, 1_200, 1_200, 1_900)
     assert _rows(api_client)["Three"]["resolution"] is None
 
 

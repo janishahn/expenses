@@ -664,6 +664,11 @@ class BankReconciliationService:
         row.ignore_reason = None
 
     def _set_amount_to_bank(self, txn: Transaction, row: BankStatementRow) -> None:
+        # Transaction amounts are euros; other statement currencies would need FX.
+        if row.currency != "EUR":
+            raise ValueError(
+                "Only a EUR bank amount can replace the transaction amount"
+            )
         amount_cents = abs(row.amount_cents)
         reimbursements = ReimbursementService(self.session, self.user_id)
         if txn.type == TransactionType.expense:

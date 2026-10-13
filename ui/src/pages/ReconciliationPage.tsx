@@ -95,7 +95,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 const rowKind = (row: BankStatementRow) => (row.amount_cents > 0 ? "income" : "expense")
 
 function BankAmount({ row }: { row: BankStatementRow }) {
-  return <Amount cents={Math.abs(row.amount_cents)} kind={rowKind(row)} />
+  return <Amount cents={Math.abs(row.amount_cents)} kind={rowKind(row)} currency={row.currency} />
 }
 
 function IgnoreMenu({
@@ -169,7 +169,9 @@ function OpenRowPeek({
   if (selected && !listed.some((item) => item.id === selected.id)) listed.unshift(selected)
   const hasCandidates = row.candidates.length > 0
   const bankCents = Math.abs(row.amount_cents)
-  const canSetAmount = selected !== null && selected.amount_cents !== bankCents && selected.type === rowKind(row)
+  // Transactions are kept in euros, so only a euro statement amount can replace theirs.
+  const canSetAmount =
+    selected !== null && selected.amount_cents !== bankCents && selected.type === rowKind(row) && row.currency === "EUR"
   const title = bankRowTitle(row)
 
   return (
@@ -202,7 +204,7 @@ function OpenRowPeek({
       <PeekSection title="Match">
         {hasCandidates ? null : (
           <EmptyState inline>
-            No transaction with <Amount cents={bankCents} kind={rowKind(row)} /> within 5 days.
+            No transaction with <BankAmount row={row} /> within 5 days.
           </EmptyState>
         )}
         <TextField
@@ -246,7 +248,7 @@ function OpenRowPeek({
           <PropertyList>
             <Property label="Amount">
               <Switch label="Set the amount to the bank amount" checked={setAmount} onCheckedChange={setSetAmount} />
-              Set to <Amount cents={bankCents} kind={rowKind(row)} /> · was{" "}
+              Set to <BankAmount row={row} /> · was{" "}
               <Amount cents={selected.amount_cents} kind={selected.type} tone="muted" />
             </Property>
           </PropertyList>

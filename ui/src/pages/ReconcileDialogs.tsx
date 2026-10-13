@@ -435,7 +435,11 @@ export function ImportStatementDialog({
                   <Cell tone="muted">{shortDateLabel(row.booking_date)}</Cell>
                   <Cell>{bankRowTitle(row)}</Cell>
                   <AmountCell>
-                    <Amount cents={Math.abs(row.amount_cents)} kind={row.amount_cents > 0 ? "income" : "expense"} />
+                    <Amount
+                      cents={Math.abs(row.amount_cents)}
+                      kind={row.amount_cents > 0 ? "income" : "expense"}
+                      currency={row.currency}
+                    />
                   </AmountCell>
                 </Row>
               ))}
