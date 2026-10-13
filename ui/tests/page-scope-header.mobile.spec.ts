@@ -1,71 +1,87 @@
 import { expect, test } from "./fixtures"
 
 test.describe("Page scope headers (mobile)", () => {
-  test("keeps Canvas-first titles above one coherent scope row without overflow", async ({
-    page,
-  }) => {
+  test("keeps titles above one coherent scope row without overflow", async ({ page }) => {
     const pages = [
-      { path: "/", title: "Dashboard", filters: true, quickPeriod: true },
-      { path: "/insights", title: "Insights", filters: true, quickPeriod: true },
-      { path: "/categories", title: "Categories", filters: false, quickPeriod: true },
-      { path: "/tags", title: "Tags", filters: false, quickPeriod: true },
+      { path: "/", title: "Dashboard", filter: true },
+      { path: "/insights", title: "Insights", filter: true },
+      { path: "/categories", title: "Categories", filter: false },
+      { path: "/tags", title: "Tags", filter: false },
     ]
 
     for (const entry of pages) {
       await page.goto(entry.path)
-      const header = page.locator("[data-page-scope-header]")
-      const title = header.getByRole("heading", { name: entry.title })
-      const period = header.getByRole("group", { name: "Period" })
+      const main = page.getByRole("main")
+      const title = main.getByRole("heading", { name: entry.title, level: 1 })
+      const period = main.getByRole("group", { name: "Period" })
       await expect(title).toBeVisible()
-
-      const titleBox = await title.boundingBox()
-      expect(titleBox).not.toBeNull()
-
-      const filters = header.getByRole("button", { name: /^Filters/ })
       await expect(period).toBeVisible()
-      const periodBox = await period.boundingBox()
-      expect(periodBox).not.toBeNull()
-      expect(periodBox!.y).toBeGreaterThan(titleBox!.y)
-      const controlsY = periodBox!.y
-      const periodHeight = periodBox!.height
 
-      if (entry.filters) {
-        await expect(filters).toBeVisible()
-        const filterBox = await filters.boundingBox()
+      const [titleBox, periodBox] = await Promise.all([
+        title.boundingBox(),
+        period.boundingBox(),
+      ])
+      expect(titleBox).not.toBeNull()
+      expect(periodBox).not.toBeNull()
+      expect(periodBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height)
+
+      const filter = main.getByRole("button", { name: "Filter", exact: true })
+      if (entry.filter) {
+        await expect(filter).toBeVisible()
+        const filterBox = await filter.boundingBox()
         expect(filterBox).not.toBeNull()
-        expect(Math.abs(filterBox!.y - controlsY)).toBeLessThan(1)
-        expect(Math.abs(filterBox!.height - periodHeight)).toBeLessThanOrEqual(1)
+        expect(Math.abs(filterBox!.y - periodBox!.y)).toBeLessThanOrEqual(1)
+        expect(Math.abs(filterBox!.height - periodBox!.height)).toBeLessThanOrEqual(1)
       } else {
-        await expect(filters).toHaveCount(0)
+        await expect(filter).toHaveCount(0)
       }
 
       const layout = await page.evaluate(() => ({
         viewport: document.documentElement.clientWidth,
         content: document.documentElement.scrollWidth,
       }))
-      expect(layout.content).toBeLessThanOrEqual(layout.viewport)
+      expect(layout.content, entry.path).toBeLessThanOrEqual(layout.viewport)
     }
   })
 
-  test("keeps the Transactions header actions on the title row without overflow", async ({
+  test("keeps page actions on the title row inside the panel header without overflow", async ({
     page,
   }) => {
-    await page.goto("/transactions")
-    const title = page.getByRole("heading", { name: "Transactions", level: 1 })
-    const add = page.getByRole("button", { name: "Add transaction", exact: true })
-    await expect(title).toBeVisible()
-    await expect(add).toBeVisible()
-    const [titleBox, addBox] = await Promise.all([title.boundingBox(), add.boundingBox()])
-    expect(titleBox).not.toBeNull()
-    expect(addBox).not.toBeNull()
-    expect(
-      Math.abs(titleBox!.y + titleBox!.height / 2 - (addBox!.y + addBox!.height / 2)),
-    ).toBeLessThan(8)
+    for (const entry of [
+      { path: "/transactions", title: "Transactions", action: "Add transaction" },
+      { path: "/categories", title: "Categories", action: "Add category" },
+      { path: "/tags", title: "Tags", action: "Add tag" },
+      { path: "/budgets", title: "Budgets", action: "Add budget" },
+    ]) {
+      await page.goto(entry.path)
+      const header = page.getByRole("main").locator("header").first()
+      const title = header.getByRole("heading", { name: entry.title, level: 1 })
+      const action = header.getByRole("button", { name: entry.action, exact: true })
+      await expect(title).toBeVisible()
+      await expect(action).toBeVisible()
 
-    const layout = await page.evaluate(() => ({
-      viewport: document.documentElement.clientWidth,
-      content: document.documentElement.scrollWidth,
-    }))
-    expect(layout.content).toBeLessThanOrEqual(layout.viewport)
+      const [headerBox, titleBox, actionBox] = await Promise.all([
+        header.boundingBox(),
+        title.boundingBox(),
+        action.boundingBox(),
+      ])
+      expect(headerBox).not.toBeNull()
+      expect(titleBox).not.toBeNull()
+      expect(actionBox).not.toBeNull()
+      expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(
+        headerBox!.x + headerBox!.width,
+      )
+      expect(
+        Math.abs(
+          titleBox!.y + titleBox!.height / 2 - (actionBox!.y + actionBox!.height / 2),
+        ),
+      ).toBeLessThan(8)
+
+      const layout = await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        content: document.documentElement.scrollWidth,
+      }))
+      expect(layout.content, entry.path).toBeLessThanOrEqual(layout.viewport)
+    }
   })
 })

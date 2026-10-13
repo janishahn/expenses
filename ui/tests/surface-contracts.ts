@@ -14,9 +14,11 @@ export const authenticatedSurfaces = [
   { name: "Templates", path: "/templates" },
   { name: "Rules", path: "/rules" },
   { name: "What If", path: "/scenarios" },
-  { name: "Reconciliation", path: "/reconciliation" },
+  { name: "Reconcile", path: "/reconciliation" },
   { name: "Report Builder", path: "/reports/builder" },
   { name: "Settings", path: "/settings" },
+  { name: "Appearance settings", path: "/settings/appearance" },
+  { name: "Page not found", path: "/no-such-page" },
   {
     name: "Admin elevation",
     path: "/admin/elevate?redirect=%2Fadmin",

@@ -1,9 +1,9 @@
 import { test } from "./fixtures"
 import { runRouteThemeAudit } from "./route-theme-audit.helpers"
 
-test.describe("Mobile route theme audit evidence", () => {
+test.describe("Mobile route theme audit", () => {
   for (const theme of ["light", "dark"] as const) {
-    test(`captures every canonical surface in the ${theme} theme`, async ({
+    test(`renders every canonical surface in the ${theme} theme without overflow`, async ({
       browserName,
       page,
       request,

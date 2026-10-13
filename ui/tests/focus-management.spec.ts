@@ -46,6 +46,7 @@ test.describe("Focus management", () => {
     await addTrigger.press("Enter")
     const addDialog = page.getByRole("dialog", { name: "Add transaction" })
     await expect(addDialog).toBeVisible()
+    await waitForEntrance(addDialog)
     await page.keyboard.press("Escape")
     await expect(addDialog).toBeHidden()
     await expect(addTrigger).toBeFocused()
@@ -59,6 +60,7 @@ test.describe("Focus management", () => {
     await categoryTrigger.press("Enter")
     const categoryDialog = page.getByRole("dialog", { name: "Add category" })
     await expect(categoryDialog).toBeVisible()
+    await waitForEntrance(categoryDialog)
     await page.keyboard.press("Escape")
     await expect(categoryDialog).toBeHidden()
     await expect(categoryTrigger).toBeFocused()
@@ -131,25 +133,42 @@ test.describe("Focus management", () => {
       await addTrigger.press("Enter")
       const dialog = page.getByRole("dialog", { name: "Add transaction" })
       await expect(dialog).toBeVisible()
+      await waitForEntrance(dialog)
       await page.keyboard.press("Escape")
       await expect(dialog).toBeHidden()
       await expect(addTrigger).toBeFocused()
     })
   }
 
-  test("admin log entries expose an explicit keyboard action", async ({ page }) => {
+  test("admin log entries open from the keyboard", async ({ page }) => {
     await useTheme(page, "light")
     await ensureElevatedAdmin(page)
-    await page.getByRole("button", { name: "All", exact: true }).click()
-    const firstRow = page.locator("tbody tr").first()
-    await expect(firstRow).toBeVisible()
-    const inspectButton = firstRow.getByRole("button", { name: /^Inspect / })
-    await expect(inspectButton).toBeVisible()
-    await inspectButton.focus()
-    await inspectButton.press("Enter")
-    await expect(inspectButton).toHaveAttribute("aria-pressed", "true")
-    await inspectButton.press("Space")
-    await expect(inspectButton).toHaveAttribute("aria-pressed", "true")
+    await page.goto("/admin/logs")
+    await page
+      .getByRole("radiogroup", { name: "Log type" })
+      .getByRole("radio", { name: "All" })
+      .click()
+    const entry = page
+      .getByRole("list", { name: "Log entries" })
+      .getByRole("listitem")
+      .first()
+    await expect(entry).toBeVisible()
+    const name = (await entry.getAttribute("aria-label")) ?? ""
+    const event = name.replace(/^\S+ /, "").replace(/ at .*$/, "")
+    const peek = page.getByRole("complementary", { name: event, exact: true })
+
+    await entry.focus()
+    await entry.press("Enter")
+    await expect(entry).toHaveAttribute("aria-current", "true")
+    await expect(peek).toBeVisible()
+    await entry.press("Escape")
+    await expect(peek).toBeHidden()
+    await expect(entry).not.toHaveAttribute("aria-current", "true")
+
+    await entry.focus()
+    await entry.press("Space")
+    await expect(entry).toHaveAttribute("aria-current", "true")
+    await expect(peek).toBeVisible()
 
     if (artifactDirectory) {
       mkdirSync(artifactDirectory, { recursive: true })
@@ -159,6 +178,31 @@ test.describe("Focus management", () => {
         animations: "disabled",
       })
     }
+  })
+
+  test("a confirm opened from a menu returns focus to the menu button", async ({ page, request }) => {
+    await useTheme(page, "light")
+    const token = await getCsrfToken(request)
+    const suffix = Date.now()
+    const categoryId = await ensureCategory(request, token, "expense", `Focus confirm ${suffix}`)
+    const name = `Focus confirm template ${suffix}`
+    const response = await request.post("/api/templates", {
+      headers: { "X-CSRF-Token": token },
+      data: { name, type: "expense", category_id: categoryId, default_amount_cents: null, title: null, tags: [] },
+    })
+    expect(response.ok()).toBeTruthy()
+    const { id } = (await response.json()) as { id: number }
+
+    await page.goto(`/templates?peek=${id}`)
+    const moreActions = page.getByRole("complementary").getByRole("button", { name: "More actions" })
+    await moreActions.focus()
+    await moreActions.press("Enter")
+    await page.getByRole("menuitem", { name: "Delete template" }).press("Enter")
+    const confirm = page.getByRole("dialog", { name: `Delete template "${name}"?` })
+    await waitForEntrance(confirm)
+    await page.keyboard.press("Escape")
+    await expect(confirm).toBeHidden()
+    await expect(moreActions).toBeFocused()
   })
 
   test("keyboard template reorder preserves focus on the moved handle", async ({

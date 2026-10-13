@@ -1,126 +1,76 @@
-import { mkdirSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import AxeBuilder from "@axe-core/playwright"
 import { expect, freshInstanceTest as test, type Page } from "./fixtures"
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
-const artifactRoot = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
-  ? resolve(repoRoot, process.env.UI_POLISH_AUDIT_ARTIFACT_DIR)
-  : null
+const CANVAS = { light: "rgb(234, 234, 231)", dark: "rgb(17, 16, 14)" }
 
-async function captureAuth(
-  page: Page,
-  layout: "desktop-chromium" | "mobile-chromium-fallback",
-  theme: "light" | "dark",
-  name: string,
-) {
-  await page.evaluate((selectedTheme) => {
-    const key = "ew.theme.preference"
-    const oldValue = window.localStorage.getItem(key)
-    window.localStorage.setItem(key, selectedTheme)
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key,
-        oldValue,
-        newValue: selectedTheme,
-        storageArea: window.localStorage,
-      }),
-    )
-  }, theme)
-  await expect.poll(() => page.locator("html").getAttribute("data-theme")).toBe(theme)
-  const manifest = await page.evaluate(() => ({
-    url: window.location.href,
-    theme: document.documentElement.dataset.theme,
-    viewport: {
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-    },
-    document: {
-      scrollWidth: document.documentElement.scrollWidth,
-      scrollHeight: document.documentElement.scrollHeight,
-      horizontalOverflow:
+async function checkInBothThemes(page: Page, state: string) {
+  for (const theme of ["light", "dark"] as const) {
+    await page.evaluate((selectedTheme) => {
+      const key = "ew.theme.preference"
+      const oldValue = window.localStorage.getItem(key)
+      window.localStorage.setItem(key, selectedTheme)
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key,
+          oldValue,
+          newValue: selectedTheme,
+          storageArea: window.localStorage,
+        }),
+      )
+    }, theme)
+    await expect.poll(() => page.locator("html").getAttribute("data-theme")).toBe(theme)
+
+    const layout = await page.evaluate(() => ({
+      background: getComputedStyle(document.body).backgroundColor,
+      overflow:
         document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    },
-    controls: Array.from(
-      document.querySelectorAll<HTMLElement>("a[href],button,input"),
-    ).map((element) => {
-      const rect = element.getBoundingClientRect()
-      return {
-        tag: element.tagName.toLowerCase(),
-        label:
-          element.getAttribute("aria-label") ||
-          element.getAttribute("name") ||
-          element.textContent?.trim() ||
-          null,
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      }
-    }),
-  }))
-  if (artifactRoot) {
-    const directory = resolve(
-      artifactRoot,
-      "auth",
-      layout,
-      theme,
-    )
-    mkdirSync(directory, { recursive: true })
-    await page.screenshot({
-      path: resolve(directory, `${name}.png`),
-      fullPage: true,
-    })
-    writeFileSync(
-      resolve(directory, `${name}.json`),
-      `${JSON.stringify(manifest, null, 2)}\n`,
-    )
+    }))
+    expect(layout.background, `${state} canvas in ${theme}`).toBe(CANVAS[theme])
+    expect(layout.overflow, `${state} overflow in ${theme}`).toBeLessThanOrEqual(1)
+
+    const accessibility = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .disableRules(["color-contrast"])
+      .analyze()
+    expect(accessibility.violations, `${state} accessibility in ${theme}`).toEqual([])
   }
-  expect(manifest.document.horizontalOverflow).toBeLessThanOrEqual(1)
 }
 
-test("captures setup, login, validation, signup, and success states in both themes", async ({
+test("setup, login, validation, signup, and success states follow the theme without overflow", async ({
   page,
-}, testInfo) => {
-  const layout = testInfo.project.name.includes("mobile")
-    ? "mobile-chromium-fallback"
-    : "desktop-chromium"
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" })
 
   await page.goto("/")
   await expect(page).toHaveURL(/\/setup(?:\?|$)/)
-  for (const theme of ["light", "dark"] as const) {
-    await captureAuth(page, layout, theme, "setup")
-  }
+  await expect(page.getByRole("heading", { name: "Create the admin account" })).toBeVisible()
+  await checkInBothThemes(page, "setup")
 
-  await page.getByTestId("auth-username").fill("audit-admin")
-  await page.getByTestId("auth-password").fill("hunter22")
-  await page.getByTestId("auth-submit").click()
+  await page.getByLabel("Username").fill("audit-admin")
+  await page.getByLabel("Password").fill("hunter22")
+  await page.getByRole("button", { name: "Create account" }).click()
   await expect(page.getByTestId("app-shell-root")).toBeVisible()
-  await page.goto("/settings")
-  await page.getByTestId("auth-logout").click()
+  await page.getByRole("button", { name: "Expenses", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
   await expect(page).toHaveURL(/\/login(?:\?|$)/)
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
+  await checkInBothThemes(page, "login")
 
-  for (const theme of ["light", "dark"] as const) {
-    await captureAuth(page, layout, theme, "login")
-  }
-  await page.getByTestId("auth-username").fill("audit-admin")
-  await page.getByTestId("auth-password").fill("wrong-password")
-  await page.getByTestId("auth-submit").click()
-  await expect(page.getByTestId("auth-error")).toBeVisible()
-  for (const theme of ["light", "dark"] as const) {
-    await captureAuth(page, layout, theme, "login-error")
-  }
+  await page.getByLabel("Username").fill("audit-admin")
+  await page.getByLabel("Password").fill("wrong-password")
+  await page.getByRole("button", { name: "Sign in" }).click()
+  await expect(page.getByRole("alert")).toBeVisible()
+  await checkInBothThemes(page, "login error")
 
-  await page.getByTestId("auth-switch-to-signup").click()
+  await page.getByRole("link", { name: "Create account" }).click()
   await expect(page).toHaveURL(/\/signup(?:\?|$)/)
-  for (const theme of ["light", "dark"] as const) {
-    await captureAuth(page, layout, theme, "signup")
-  }
-  await page.getByTestId("auth-username").fill("audit-user")
-  await page.getByTestId("auth-password").fill("hunter22")
-  await page.getByTestId("auth-submit").click()
+  await expect(page.getByRole("heading", { name: "Create account" })).toBeVisible()
+  await checkInBothThemes(page, "signup")
+
+  await page.getByLabel("Username").fill("audit-user")
+  await page.getByLabel("Password").fill("hunter22")
+  await page.getByRole("button", { name: "Create account" }).click()
   await expect(page).toHaveURL(/\/login/)
-  await expect(page.getByTestId("auth-success")).toBeVisible()
-  for (const theme of ["light", "dark"] as const) {
-    await captureAuth(page, layout, theme, "login-success")
-  }
+  await expect(page.getByRole("status")).toHaveText("Account created. Sign in to continue.")
+  await checkInBothThemes(page, "login after signup")
 })
