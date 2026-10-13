@@ -1000,7 +1000,7 @@
   .crumb a::before { content: ""; position: absolute; inset: -13px -4px; }
   /* The map clips its corner control, so the attribution link's hit area grows upward. */
   .map :global(.leaflet-control-attribution a) { position: relative; }
-  .map :global(.leaflet-control-attribution a)::before { content: ""; position: absolute; inset: -32px -4px 0; }
+  .map :global(.leaflet-control-attribution a)::before { content: ""; position: absolute; right: -4px; bottom: 0; left: -4px; height: 44px; }
 }
 @keyframes sheetIn { from { transform: translateY(100%); } }
 @keyframes sheetOut { to { transform: translateY(100%); } }
