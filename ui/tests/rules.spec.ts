@@ -361,6 +361,41 @@ test.describe("Rules Page", () => {
     expect((await listRules(request)).find((rule) => rule.name === ruleName)?.enabled).toBe(true)
   })
 
+  test("clears a failed save's error when a later save of the same field succeeds", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const ruleName = `E2E Recovered switch ${Date.now()}`
+    const id = await createRule(request, token, { name: ruleName, match_value: "recovered-switch" })
+    let puts = 0
+    await page.route(`**/api/rules/${id}`, async (route) => {
+      if (route.request().method() === "PUT" && puts++ === 0) {
+        // The second change queues while the first save is still running.
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Temporary save failure" }),
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto(`/rules?peek=${id}`)
+    const peek = page.getByRole("complementary", { name: ruleName })
+    const enabled = peek.getByRole("switch", { name: "Enabled" })
+    await expect(enabled).toBeChecked()
+    const saved = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/rules/${id}`) && response.request().method() === "PUT" && response.ok()
+    )
+    await enabled.click()
+    await expect(enabled).not.toBeChecked()
+    await enabled.click()
+    await saved
+
+    await expect(enabled).toBeChecked()
+    await expect(peek.getByRole("alert")).toHaveCount(0)
+  })
+
   test("lists the recent transactions a rule matches in its peek", async ({
     page,
     request,

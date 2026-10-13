@@ -54,6 +54,8 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
         return false
       }
       known.current = payload
+      // Saves run in order, so this one supersedes an earlier failure of the field.
+      setError(field, null)
       if (shown) {
         setEntered((current) =>
           current.get(field)?.changes === changes ? new Map(current).set(field, { changes, saved: true }) : current

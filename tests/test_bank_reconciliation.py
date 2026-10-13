@@ -920,6 +920,37 @@ def test_match_can_update_transaction_amount_to_the_bank_amount(
     ) == (1_500, 1_200, 1_200, 1_900)
     assert _rows(api_client)["Three"]["resolution"] is None
 
+    # Undo reopens the row and restores the replaced amount in one request,
+    # unless the amount was edited since the match.
+    def reopen(name: str) -> None:
+        response = _post(
+            api_client,
+            csrf_headers,
+            f"{rows[name]['id']}/reopen",
+            {"restore_amount_cents": 1_900},
+        )
+        assert response.status_code == 200
+
+    reopen("Two")
+    assert amount(adjust_amount) == 1_900
+    match("Two", adjust_amount, update_amount_to_bank=True)
+    edited = api_client.get(f"/api/transactions/{adjust_amount}").json()
+    edit = api_client.put(
+        f"/api/transactions/{adjust_amount}",
+        headers=csrf_headers,
+        json={
+            "date": edited["date"],
+            "occurred_at": edited["occurred_at"],
+            "type": edited["type"],
+            "amount_cents": 1_250,
+            "category_id": edited["category_id"],
+            "title": edited["title"],
+        },
+    )
+    assert edit.status_code == 200
+    reopen("Two")
+    assert amount(adjust_amount) == 1_250
+
 
 def test_create_transaction_from_row_accepts_tags_and_notes(
     api_client: TestClient, csrf_headers: dict[str, str]

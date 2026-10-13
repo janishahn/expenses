@@ -3642,11 +3642,14 @@ def api_reopen_bank_row(
             trash_created_transaction=payload.trash_created_transaction,
             expected_resolution=payload.expected_resolution,
             expected_transaction_id=payload.expected_transaction_id,
+            restore_amount_cents=payload.restore_amount_cents,
         )
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BankRowChangedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
 
 

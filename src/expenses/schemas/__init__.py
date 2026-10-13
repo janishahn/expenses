@@ -719,6 +719,8 @@ class BankRowReopenIn(BaseModel):
     # An Undo sends the outcome it reverses, so a row changed since is left as it is.
     expected_resolution: Optional[Literal["matched", "created", "ignored"]] = None
     expected_transaction_id: Optional[int] = None
+    # Undoing a match that set the bank amount restores the amount it replaced.
+    restore_amount_cents: Optional[int] = Field(None, ge=0)
 
 
 class BankAcceptSuggestionsIn(BaseModel):

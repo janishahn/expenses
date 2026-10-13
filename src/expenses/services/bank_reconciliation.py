@@ -607,6 +607,7 @@ class BankReconciliationService:
         trash_created_transaction: bool = False,
         expected_resolution: str | None = None,
         expected_transaction_id: int | None = None,
+        restore_amount_cents: int | None = None,
     ) -> None:
         row = self._get_row(row_id)
         if (
@@ -616,6 +617,14 @@ class BankReconciliationService:
             and row.matched_transaction_id != expected_transaction_id
         ):
             raise BankRowChangedError("Bank row changed since this action")
+        # An amount edited since the match stays as it is.
+        txn = row.matched_transaction
+        if (
+            restore_amount_cents is not None
+            and txn is not None
+            and txn.amount_cents == abs(row.amount_cents)
+        ):
+            self._set_amount(txn, restore_amount_cents)
         if (
             trash_created_transaction
             and row.resolution == "created"
@@ -695,7 +704,9 @@ class BankReconciliationService:
             raise ValueError(
                 "Only a EUR bank amount can replace the transaction amount"
             )
-        amount_cents = abs(row.amount_cents)
+        self._set_amount(txn, abs(row.amount_cents))
+
+    def _set_amount(self, txn: Transaction, amount_cents: int) -> None:
         reimbursements = ReimbursementService(self.session, self.user_id)
         if txn.type == TransactionType.expense:
             if amount_cents < reimbursements.reimbursed_total_for_expense(txn.id):

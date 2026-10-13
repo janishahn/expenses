@@ -1227,6 +1227,18 @@
             ],
             "title": "Expected Transaction Id"
           },
+          "restore_amount_cents": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Amount Cents"
+          },
           "trash_created_transaction": {
             "default": false,
             "title": "Trash Created Transaction",

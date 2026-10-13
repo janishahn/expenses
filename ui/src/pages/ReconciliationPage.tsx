@@ -28,10 +28,9 @@ import type {
   BankRowResolution,
   BankRowsPage,
   BankStatementRow,
-  TransactionDetail,
 } from "../app/api-types"
 import { formatShortDate } from "../app/format"
-import { invalidateTransactionData, shortDateLabel, transactionPayload } from "../app/transactions"
+import { invalidateTransactionData, shortDateLabel } from "../app/transactions"
 import { Amount } from "../components/ui/Amount"
 import { Button, IconButton } from "../components/ui/Button"
 import { CategoryGlyph, IconGlyph } from "../components/ui/CategoryGlyph"
@@ -387,15 +386,17 @@ function ReconciliationPage() {
       { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }
     )
   // An Undo passes the outcome it reverses, so the server leaves a row changed since then as it is.
+  // It also passes the amount a match replaced, which the server restores unless it was edited since.
   const reopen = (
     rowId: number,
-    expected?: { resolution: BankRowResolution; transactionId?: number },
+    reversing?: { resolution: BankRowResolution; transactionId?: number; restoreAmountCents?: number },
     trashCreatedTransaction = false
   ) =>
     post(`${rowId}/reopen`, {
       trash_created_transaction: trashCreatedTransaction,
-      expected_resolution: expected?.resolution,
-      expected_transaction_id: expected?.transactionId,
+      expected_resolution: reversing?.resolution,
+      expected_transaction_id: reversing?.transactionId,
+      restore_amount_cents: reversing?.restoreAmountCents,
     })
 
   // Runs one row action, then confirms it in a toast whose Undo runs `undo`.
@@ -483,7 +484,7 @@ function ReconciliationPage() {
     )
   }
   const matchTransaction = async (row: BankStatementRow, transaction: BankReconciliationTransaction, setAmount: boolean) => {
-    let replacedAmount: number | null = null
+    let replacedAmount: number | undefined
     reportFailure(
       await act({
         row,
@@ -492,20 +493,11 @@ function ReconciliationPage() {
             transaction_id: transaction.id,
             update_amount_to_bank: setAmount,
           })
-          replacedAmount = result.previous_amount_cents ?? null
+          replacedAmount = result.previous_amount_cents ?? undefined
         },
         message: `Matched with ${candidateTitle(transaction)}`,
-        // Undo also restores the amount the match replaced, unless the amount was edited since.
-        undo: async () => {
-          await reopen(row.id, { resolution: "matched", transactionId: transaction.id })
-          if (replacedAmount === null) return
-          const detail = await apiFetch<TransactionDetail>(`/api/transactions/${transaction.id}`)
-          if (detail.amount_cents !== Math.abs(row.amount_cents)) return
-          await apiFetch(`/api/transactions/${transaction.id}`, {
-            method: "PUT",
-            body: JSON.stringify(transactionPayload(detail, { amount_cents: replacedAmount })),
-          })
-        },
+        undo: () =>
+          reopen(row.id, { resolution: "matched", transactionId: transaction.id, restoreAmountCents: replacedAmount }),
         transactions: setAmount,
       })
     )

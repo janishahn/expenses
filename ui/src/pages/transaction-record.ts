@@ -81,6 +81,8 @@ export function useTransactionRecord(id: number) {
         return false
       }
       queryClient.setQueryData(key, applyTransactionChanges(current, changes))
+      // Saves run in order, so this one supersedes an earlier failure of the field.
+      setError(field, null)
       // A newer value entered while this one saved stays shown.
       setEntered((current) => {
         if (current[field] !== changes) return current
