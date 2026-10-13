@@ -21,7 +21,11 @@ import {
 // details (location, receipts) on the right.
 function TransactionDetailPage() {
   const { transactionId } = useParams()
-  const id = Number(transactionId)
+  // Links to another transaction keep this route, so each record starts with fresh edit state.
+  return <TransactionDetail key={transactionId} id={Number(transactionId)} />
+}
+
+function TransactionDetail({ id }: { id: number }) {
   const navigate = useNavigate()
   const location = useLocation()
   const routeState = location.state as TransactionRouteState | null
