@@ -5,6 +5,7 @@ import clsx from "clsx"
 import { registerConfirmHost, type ConfirmRequest } from "../confirm"
 import { Button, IconButton } from "./Button"
 import { useBottomLayer, useIsDesktop } from "./layout-state"
+import { restoreRowFocus } from "./row-focus"
 import { useSheetDrag } from "./sheet-drag"
 import s from "./kit.module.css"
 
@@ -131,7 +132,9 @@ export function ConfirmDialogHost() {
       closable={false}
       onCloseAutoFocus={(event) => {
         event.preventDefault()
-        returnFocusRef.current?.focus()
+        // A confirmed delete can remove the opener before the dialog finishes closing.
+        if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus()
+        else restoreRowFocus()
         setRequest(null)
       }}
       footer={

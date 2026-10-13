@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, type FocusEvent, type ReactNode } from "react"
 import { ArrowsLeftRightIcon } from "@phosphor-icons/react/ArrowsLeftRight"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
@@ -6,6 +6,7 @@ import clsx from "clsx"
 import { Checkbox } from "./Checkbox"
 import { TagChips } from "./TagChip"
 import { columnAttrs, columnStyle, rowProps, type Columns, type RowProps } from "./row-layout"
+import { clearRowFocusRestorer, focusRow, ROW, setRowFocusRestorer, type LastRow } from "./row-focus"
 import s from "./kit.module.css"
 
 export type { Columns }
@@ -30,9 +31,37 @@ export function List({
   hasSelection?: boolean
   label?: string
 }) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const lastRow = useRef<LastRow | null>(null)
+  const lastFocused = useRef<Element | null>(null)
+  const restore = useRef(() => {
+    if (listRef.current && lastRow.current) focusRow(listRef.current, lastRow.current)
+  })
+  useEffect(() => {
+    const track = (event: globalThis.FocusEvent) => {
+      lastFocused.current = event.target as Element
+    }
+    const own = restore.current
+    document.addEventListener("focusin", track)
+    return () => {
+      document.removeEventListener("focusin", track)
+      clearRowFocusRestorer(own)
+    }
+  }, [])
+  // A render that removed the focused element (a deleted row, a closed peek or bulk bar) returns
+  // focus to the list. Focus left on the page by a click stays there.
+  useLayoutEffect(() => {
+    if (document.activeElement === document.body && lastFocused.current?.isConnected === false) restore.current()
+  })
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const row = (event.target as HTMLElement).closest<HTMLElement>(ROW)
+    if (!row) return
+    lastRow.current = { row, index: [...event.currentTarget.querySelectorAll(ROW)].indexOf(row) }
+    setRowFocusRestorer(restore.current)
+  }
   return (
     <div className={clsx(s.list, (!scroll || flat) && s.listStatic, flat && s.listFlat, hasSelection && s.hasSel)}>
-      <div role="list" aria-label={label}>
+      <div ref={listRef} role="list" aria-label={label} onFocus={onFocus}>
         {children}
       </div>
       {footer}

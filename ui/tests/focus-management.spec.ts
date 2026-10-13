@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { expect, test, type Page } from "./fixtures"
-import { ensureCategory, getCsrfToken, waitForEntrance } from "./helpers"
+import { createCategory, ensureCategory, getCsrfToken, loginAsIsolatedUser, waitForEntrance } from "./helpers"
 
 const artifactDirectory = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
   ? resolve(
@@ -203,6 +203,37 @@ test.describe("Focus management", () => {
     await page.keyboard.press("Escape")
     await expect(confirm).toBeHidden()
     await expect(moreActions).toBeFocused()
+  })
+
+  test("deleting a row from its peek moves focus to the next row", async ({ page }) => {
+    await useTheme(page, "light")
+    await page.goto("/templates")
+    const { request, csrfToken } = await loginAsIsolatedUser(page)
+    try {
+      const categoryId = await createCategory(request, csrfToken, "expense", "Focus delete")
+      for (const name of ["Focus row A", "Focus row B", "Focus row C"]) {
+        const response = await request.post("/api/templates", {
+          headers: { "X-CSRF-Token": csrfToken },
+          data: { name, type: "expense", category_id: categoryId, default_amount_cents: null, title: null, tags: [] },
+        })
+        expect(response.ok()).toBeTruthy()
+      }
+      await page.goto("/templates")
+      const list = page.getByRole("list", { name: "Templates" })
+      await list.getByRole("listitem", { name: "Focus row B" }).focus()
+      await page.keyboard.press("Enter")
+      const moreActions = page.getByRole("complementary", { name: "Focus row B" }).getByRole("button", { name: "More actions" })
+      await moreActions.focus()
+      await moreActions.press("Enter")
+      await page.getByRole("menuitem", { name: "Delete template" }).press("Enter")
+      const confirm = page.getByRole("dialog", { name: 'Delete template "Focus row B"?' })
+      await waitForEntrance(confirm)
+      await confirm.getByRole("button", { name: "Delete", exact: true }).press("Enter")
+      await expect(list.getByRole("listitem", { name: "Focus row B" })).toHaveCount(0)
+      await expect(list.getByRole("listitem", { name: "Focus row C" })).toBeFocused()
+    } finally {
+      await request.dispose()
+    }
   })
 
   test("keyboard template reorder preserves focus on the moved handle", async ({
