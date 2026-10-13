@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-13
+
 ### Added
 - API fields and endpoints for the redesigned web UI: a transaction list `total`; net and reimbursed amounts, `created_at`, and the linked bank row on transaction detail; paged Trash with bulk restore and permanent delete; an admin purge preview; month-end balance history; period totals on categories and tags; tag `created_at`; `category_id` on breakdown items; a 6- or 12-month category breakdown; and Insights month grids, recurring split, a 53-week day calendar, budget history, `recurring_cents`, and income and expense totals for the exact period with its month count.
 - An optional `rule_anchor_date` on the recurring preview, so a saved rule previewed from its next occurrence keeps its original schedule, and the transaction `type` on Digest auto-posted items.
@@ -421,7 +423,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/janishahn/expenses/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/janishahn/expenses/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/janishahn/expenses/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/janishahn/expenses/compare/v0.5.2...v0.5.3
