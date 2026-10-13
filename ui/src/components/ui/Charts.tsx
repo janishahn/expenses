@@ -384,7 +384,7 @@ function ShareList({ items, focus, onLeave }: { items: DonutItem[]; focus: Chart
           <div key={item.key} role="listitem" className={s.dlRow} onPointerEnter={() => focus.set(item.key)}>
             <span className={s.dlName} data-dim={dim}>
               <span aria-hidden="true" className={s.swatch} style={{ background: item.color }} />
-              {item.label}
+              <span className={s.dlLabel}>{item.label}</span>
             </span>
             <span className={s.dlAmount} data-dim={dim}>
               {item.amount}

@@ -609,6 +609,7 @@
 .dlRow { display: contents; }
 .dlRow > span { padding: 4px 0; font-variant-numeric: tabular-nums; transition: opacity 120ms ease; }
 .dlName { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; }
+.dlLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dlAmount, .dlShare { text-align: right; white-space: nowrap; }
 .dlShare { color: var(--ink-3); }
 .bt { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--track); }
