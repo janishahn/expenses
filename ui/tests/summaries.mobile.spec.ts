@@ -142,14 +142,19 @@ test.describe("Summary and report surfaces (mobile)", () => {
     })
 
     await page.goto("/")
-    await page.getByRole("button", { name: "Filters", exact: true }).click()
-    const filters = page.getByRole("dialog", { name: "Dashboard filters" })
-    await filters.getByRole("button", { name: "Exclude" }).click()
-    await filters.getByRole("checkbox", { name: tagName }).check()
-    await filters.getByRole("button", { name: "Apply" }).click()
+    await page.getByRole("button", { name: "Filter", exact: true }).click()
+    const filters = page.getByRole("dialog", { name: "Filter" })
+    await filters.getByRole("radio", { name: "Exclude" }).click()
+    await filters.getByRole("checkbox", { name: tagName }).click()
+    await expect(page).toHaveURL(new RegExp(`exclude_tags=${tagId}`))
+    await page.keyboard.press("Escape")
+    await expect(filters).toBeHidden()
 
-    await expect(
-      page.getByTestId("dashboard-spending-band-month").first(),
-    ).toHaveAttribute("href", new RegExp(`exclude_tags=${tagId}`))
+    await page
+      .getByRole("region", { name: "Spending by category" })
+      .locator('[class*="_track_"] > span')
+      .first()
+      .tap()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*exclude_tags=${tagId}`))
   })
 })

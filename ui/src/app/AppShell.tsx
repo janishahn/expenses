@@ -1,7 +1,7 @@
 import { Suspense, lazy, useState } from "react"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { useQuery } from "@tanstack/react-query"
-import { Outlet, useLocation, useNavigate } from "react-router-dom"
+import { Outlet, useNavigate } from "react-router-dom"
 import { AppFrame } from "../components/ui/AppFrame"
 import { apiFetch } from "./api"
 import { useAuth } from "./auth"
@@ -22,7 +22,6 @@ export type AppShellUtilityAction = {
 }
 
 function AppShell() {
-  const location = useLocation()
   const navigate = useNavigate()
   const { user, llmEnabled, logout } = useAuth()
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
@@ -40,12 +39,6 @@ function AppShell() {
     queryFn: () => apiFetch<{ total: number }>("/api/transactions/uncategorized?period=all&limit=1"),
   })
 
-  // Transactions has its own Add button in the header bar; the Dashboard keeps the
-  // legacy utility action until it moves to the kit.
-  const addTransactionAvailable = location.pathname === "/"
-  const activeUtilityAction =
-    utilityAction ??
-    (addTransactionAvailable ? { label: "Add transaction", onClick: openAddTransaction } : null)
 
   const signOut = async () => {
     await logout()
@@ -63,7 +56,7 @@ function AppShell() {
         context={{
           openAddTransaction,
           setUtilityAction,
-          utilityAction: activeUtilityAction,
+          utilityAction,
         }}
       />
       {addTransactionKey > 0 ? (

@@ -24,12 +24,12 @@ import type { AppShellOutletContext } from "../app/AppShell"
 import { dayLabel, dayNet, invalidateTransactionData } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
+import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
 import { TagPicker } from "../components/TagPicker"
 import { Amount } from "../components/ui/Amount"
 import { BulkBar } from "../components/ui/BulkBar"
 import { Button, IconButton } from "../components/ui/Button"
 import { CategoryGlyph } from "../components/ui/CategoryGlyph"
-import { CheckboxField } from "../components/ui/Checkbox"
 import { DayBand } from "../components/ui/DayBand"
 import { Dialog } from "../components/ui/Dialog"
 import { EmptyState } from "../components/ui/EmptyState"
@@ -40,7 +40,13 @@ import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { PeekLayout } from "../components/ui/Peek"
 import { PeriodControl } from "../components/ui/PeriodControl"
-import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
+import {
+  DEFAULT_PERIOD_PRESETS,
+  periodFromSearch,
+  periodLabel,
+  writePeriodToSearch,
+  type PeriodSelection,
+} from "../components/ui/period"
 import { Pill } from "../components/ui/Pill"
 import { Popover } from "../components/ui/Popover"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
@@ -51,7 +57,6 @@ import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 import { TransactionPeek } from "./TransactionRecord"
 
-type TagMode = "include" | "exclude"
 type TypeFilter = "income" | "expense"
 
 type BulkOperation = {
@@ -72,6 +77,9 @@ type Selection = { mode: "ids"; ids: number[] } | { mode: "query" }
 type TagPatchMode = "add" | "remove" | "replace"
 
 const LIST_KEYS = ["period", "start", "end", "type", "category", "tag", "tags", "exclude_tags", "q", "page"]
+// Pages whose chart marks open the ledger scoped to a slice (`from` in the URL); the
+// breadcrumb leads back to them.
+const ORIGINS = { dashboard: { label: "Dashboard", to: "/" }, insights: { label: "Insights", to: "/insights" } }
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
 
 const TAG_PATCH_COPY: Record<TagPatchMode, { title: string; verb: string }> = {
@@ -86,44 +94,6 @@ function rowTitle(row: TransactionListItem): string {
 
 function countLabel(count: number): string {
   return `${count} transaction${count === 1 ? "" : "s"}`
-}
-
-function TagFilterOptions({
-  tags,
-  mode,
-  ids,
-  onChange,
-}: {
-  tags: Array<{ id: number; name: string }>
-  mode: TagMode
-  ids: number[]
-  onChange: (mode: TagMode, ids: number[]) => void
-}) {
-  return (
-    <>
-      <SegmentedControl
-        label="Tag filter mode"
-        fullWidth
-        value={mode}
-        options={[
-          { value: "include", label: "Only include" },
-          { value: "exclude", label: "Exclude" },
-        ]}
-        onChange={(next) => onChange(next, ids)}
-      />
-      {tags.map((tag) => (
-        <CheckboxField
-          key={tag.id}
-          checked={ids.includes(tag.id)}
-          onCheckedChange={(checked) =>
-            onChange(mode, checked ? [...ids, tag.id] : ids.filter((id) => id !== tag.id))
-          }
-        >
-          {tag.name}
-        </CheckboxField>
-      ))}
-    </>
-  )
 }
 
 function TransactionsPage() {
@@ -209,6 +179,12 @@ function TransactionsPage() {
   const tagIds = tagMode === "exclude" ? excludedTagIds : includedTagIds
   const filterCount = (typeFilter ? 1 : 0) + (categoryId ? 1 : 0) + (tagIds.length ? 1 : 0)
   const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
+  const fromParam = searchParams.get("from")
+  const origin = fromParam === "dashboard" || fromParam === "insights" ? ORIGINS[fromParam] : null
+  // A drill-down names its slice, such as "Travel · Aug 2026".
+  const title = origin
+    ? [categoryFilter?.name, periodLabel(period, DEFAULT_PERIOD_PRESETS)].filter(Boolean).join(" · ")
+    : "Transactions"
   const searchVisible = searchOpen || Boolean(searchQuery)
 
   const updateList = (updates: Record<string, string | null>, replace = false) =>
@@ -508,7 +484,8 @@ function TransactionsPage() {
 
   return (
     <Panel
-      title="Transactions"
+      title={title}
+      parents={origin ? [origin] : undefined}
       peekOpen={peekId !== null}
       layout="fill"
       actions={

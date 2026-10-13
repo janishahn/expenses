@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react"
+import { useId, type CSSProperties, type ReactNode } from "react"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import clsx from "clsx"
 import { IconButton } from "./Button"
@@ -27,11 +27,12 @@ export function Sheet({
   flat?: boolean
   children: ReactNode
 }) {
+  const titleId = useId()
   return (
-    <section className={clsx(s.card, flat && s.cardFlat)}>
+    <section className={clsx(s.card, flat && s.cardFlat)} aria-labelledby={title != null ? titleId : undefined}>
       {title != null || actions || menu ? (
         <div className={s.ch}>
-          {title != null ? <h2>{title}</h2> : null}
+          {title != null ? <h2 id={titleId}>{title}</h2> : null}
           {meta != null ? <span className={s.meta}>{meta}</span> : null}
           <span className={s.sp} />
           {actions}
@@ -44,6 +45,21 @@ export function Sheet({
       ) : null}
       <div className={body === "padded" ? s.cbody : s.cbodyFlush}>{children}</div>
     </section>
+  )
+}
+
+// An editor inline at the top of a card's body, above its rows; it ends with PopoverActions.
+export function CardForm({ onSubmit, children }: { onSubmit: () => void; children: ReactNode }) {
+  return (
+    <form
+      className={s.cardForm}
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSubmit()
+      }}
+    >
+      {children}
+    </form>
   )
 }
 

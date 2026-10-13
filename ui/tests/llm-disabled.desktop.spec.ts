@@ -30,10 +30,8 @@ test.describe("AI surfaces hidden when LLM is disabled", () => {
   test("keeps plain transaction search without smart-search controls", async ({ page }) => {
     await page.goto("/transactions")
     await expect(page.locator("main h1")).toContainText("Transactions")
-    await page.getByRole("button", { name: "Search transactions" }).click()
-    await expect(
-      page.getByPlaceholder("Search titles and descriptions…"),
-    ).toBeVisible()
+    await page.getByRole("button", { name: "Search", exact: true }).click()
+    await expect(page.getByRole("searchbox", { name: "Search transactions" })).toBeVisible()
     await expect(page.getByRole("button", { name: "Run smart search" })).toHaveCount(0)
   })
 

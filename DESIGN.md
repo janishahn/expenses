@@ -455,10 +455,13 @@ changes and drop movement.
 
 **Closed primitive kit.** Pages compose these primitives from
 `ui/src/components/ui/` and nothing else visual: `AppFrame`, `Panel`, `Sheet`,
-`ChartCard`, `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
+`ChartCard` with the charts `LineChart`, `ColumnChart`, `StackedBands`, `Donut`,
+`BudgetBar`, and `WeekdayBars` and the grids `MonthGrid`, `BudgetGrid`, and
+`DayCalendar`, `LedgerRow`, `DayBand`, `MetricStrip`, `ViewRow`, `PeriodControl`,
 `MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
-`BottomSheet`, `BulkBar`, `Peek`, `PropertyList`, `SettingsShell`,
-`Notes`, `ReceiptSection`, `ReceiptViewer`, `LocationMap`, `DayCalendar`, `Amount`,
+`BottomSheet`, `BulkBar`, `Peek` with its `PeekLayout` and `AsideLayout`,
+`PropertyList`, `SettingsShell`, `Notes`, `ReceiptSection`, `ReceiptViewer`,
+`LocationMap`, `Amount`,
 `CategoryGlyph`, `SuggestionBox`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a

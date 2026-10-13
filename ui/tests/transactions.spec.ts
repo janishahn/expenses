@@ -614,6 +614,138 @@ test.describe("Transactions Page", () => {
       await expect(dialog).toBeHidden()
       await expect(page.getByRole("listitem", { name: title })).toBeVisible()
     })
+
+    test("dismisses on an outside click", async ({ page }) => {
+      await page.goto("/transactions")
+      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Add transaction" })
+      await expect(dialog).toBeVisible()
+      await page.mouse.click(10, 10)
+      await expect(dialog).toBeHidden()
+    })
+
+    test("filters the tag picker by search", async ({ page, request }) => {
+      const token = await getCsrfToken(request)
+      const marker = Date.now()
+      const alphaTag = `alpha-${marker}`
+      const betaTag = `beta-${marker}`
+      for (const name of [alphaTag, betaTag]) {
+        await createTag(request, token, name)
+      }
+
+      await page.goto("/transactions")
+      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Add transaction" })
+      // A scheduled tag from another test may be preselected, which names the chip after it.
+      await dialog.getByRole("button", { name: /^Tags/ }).click()
+      const picker = page.getByRole("listbox", { name: "Tags" })
+      await expect(picker.getByRole("option", { name: alphaTag })).toBeVisible()
+      await expect(picker.getByRole("option", { name: betaTag })).toBeVisible()
+
+      await page.getByRole("combobox", { name: "Tags" }).fill(alphaTag)
+      await expect(picker.getByRole("option", { name: alphaTag })).toBeVisible()
+      await expect(picker.getByRole("option", { name: betaTag })).toHaveCount(0)
+    })
+
+    test("shows scheduled tags and saves a manual removal", async ({ page, request }) => {
+      const token = await getCsrfToken(request)
+      const now = new Date()
+      const localToday = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-")
+      const tagName = `scheduled-${Date.now()}`
+      const tagResponse = await request.post("/api/tags", {
+        headers: { "X-CSRF-Token": token },
+        data: {
+          name: tagName,
+          is_hidden_from_budget: false,
+          auto_attach_period: { start: localToday, end: localToday },
+        },
+      })
+      expect(tagResponse.ok()).toBeTruthy()
+
+      await page.goto("/transactions")
+      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Add transaction" })
+      const tagsChip = dialog.getByRole("button", { name: tagName })
+      await expect(tagsChip).toBeVisible()
+      await tagsChip.click()
+      const scheduledOption = page.getByRole("option", { name: tagName })
+      await expect(scheduledOption).toHaveAttribute("aria-selected", "true")
+      await scheduledOption.click()
+      await expect(scheduledOption).toHaveAttribute("aria-selected", "false")
+      await page.keyboard.press("Escape")
+      await expect(dialog.getByRole("button", { name: tagName })).toHaveCount(0)
+
+      await dialog.getByLabel("Amount").fill("9.00")
+      await dialog.getByLabel("Title").fill(`Scheduled removal ${Date.now()}`)
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/transactions") && response.request().method() === "POST",
+      )
+      await dialog.getByRole("button", { name: "Add transaction" }).click()
+      const createResponse = await createResponsePromise
+      expect(createResponse.ok()).toBeTruthy()
+      const created = (await createResponse.json()) as { id: number }
+      const detail = await fetchTransaction(request, created.id)
+      expect(detail.tags).not.toContain(tagName)
+    })
+
+    test("offers active categories and hides archived ones", async ({ page, request }) => {
+      const token = await getCsrfToken(request)
+      const stamp = Date.now()
+      const activeName = `E2E Active Add ${stamp}`
+      const archivedName = `E2E Archived Add ${stamp}`
+      await createCategory(request, token, "expense", activeName)
+      const archivedId = await createCategory(request, token, "expense", archivedName)
+      const archiveResponse = await request.post(`/api/categories/${archivedId}/archive`, {
+        headers: { "X-CSRF-Token": token },
+      })
+      expect(archiveResponse.ok()).toBeTruthy()
+
+      await page.goto("/transactions")
+      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Add transaction" })
+      await dialog.getByRole("button", { name: "Category", exact: true }).click()
+      const options = page.getByRole("listbox", { name: "Category" }).getByRole("option")
+      await expect(options.filter({ hasText: activeName })).toHaveCount(1)
+      await expect(options.filter({ hasText: archivedName })).toHaveCount(0)
+    })
+
+    test("shows reimbursement only for income and hands off to Templates", async ({ page, request }) => {
+      const token = await getCsrfToken(request)
+      const categoryId = await createCategory(request, token, "expense", `E2E Add Sheet ${Date.now()}`)
+      const templateName = `Handoff Template ${Date.now()}`
+      const response = await request.post("/api/templates", {
+        headers: { "X-CSRF-Token": token },
+        data: {
+          name: templateName,
+          type: "expense",
+          category_id: categoryId,
+          default_amount_cents: null,
+          title: "Handoff title",
+          tags: [],
+        },
+      })
+      expect(response.ok()).toBeTruthy()
+
+      await page.goto("/transactions")
+      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Add transaction" })
+      await expect(dialog.getByRole("button", { name: templateName })).toBeVisible()
+      await expect(dialog.getByRole("button", { name: "Reimbursement" })).toHaveCount(0)
+      await dialog.getByRole("radio", { name: "Income" }).click()
+      await expect(dialog.getByRole("button", { name: "Reimbursement" })).toBeVisible()
+      await dialog.getByRole("radio", { name: "Expense" }).click()
+      await expect(dialog.getByRole("button", { name: "Reimbursement" })).toHaveCount(0)
+
+      await dialog.getByRole("button", { name: "Manage", exact: true }).click()
+      await expect(page).toHaveURL("/templates")
+      await expect(page.getByRole("dialog", { name: "Add transaction" })).toHaveCount(0)
+      await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("")
+    })
   })
 
   test("files an uncategorized transaction from its Category pill and undoes it", async ({

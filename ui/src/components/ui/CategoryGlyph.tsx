@@ -1,3 +1,4 @@
+import type { Icon } from "@phosphor-icons/react"
 import { QuestionIcon } from "@phosphor-icons/react/Question"
 import clsx from "clsx"
 import { CategoryIconSvg } from "../CategoryIcon"
@@ -27,11 +28,16 @@ export function CategoryGlyph({
   )
 }
 
-// The glyph of a row that has no category or suggestion yet.
-export function UnknownGlyph() {
+// A faint glyph for rows that stand for an action or kind rather than a category.
+export function IconGlyph({ icon: IconComponent }: { icon: Icon }) {
   return (
     <span aria-hidden="true" className={clsx(s.glyph, s.faint)}>
-      <QuestionIcon />
+      <IconComponent />
     </span>
   )
+}
+
+// The glyph of a row that has no category or suggestion yet.
+export function UnknownGlyph() {
+  return <IconGlyph icon={QuestionIcon} />
 }

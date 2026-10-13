@@ -211,6 +211,20 @@ export async function ensureCategory(
   return created.id
 }
 
+export async function createCategory(
+  request: APIRequestContext,
+  csrfToken: string,
+  type: "income" | "expense",
+  name: string
+): Promise<number> {
+  const response = await request.post("/api/categories", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: { name, type, order: 0 },
+  })
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()) as { id: number }).id
+}
+
 export async function createTransaction(
   request: APIRequestContext,
   csrfToken: string,

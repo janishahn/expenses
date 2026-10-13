@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from "react"
+import { useId, useState, type ReactNode } from "react"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import clsx from "clsx"
 import { IconButton } from "./Button"
 import { EmptyState } from "./EmptyState"
 import { Menu, MenuItem } from "./Menu"
 import s from "./kit.module.css"
+import { Link } from "react-router-dom"
 
 export type LegendEntry = {
   key: string
@@ -54,13 +55,14 @@ export function ChartCard({
   empty?: ReactNode
   children: (focus: ChartFocus) => ReactNode
 }) {
+  const titleId = useId()
   const [asTable, setAsTable] = useState(false)
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const focus = { key: focusKey, set: setFocusKey }
   return (
-    <section className={s.card}>
+    <section className={s.card} aria-labelledby={titleId}>
       <div className={s.ch}>
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         {meta != null ? <span className={s.meta}>{meta}</span> : null}
         <span className={s.sp} />
         {controls}
@@ -103,6 +105,15 @@ export function ChartCard({
 }
 
 // The exact values behind a chart. The first column names the row; the rest are right-aligned.
+// A table value that opens the records behind it: the keyboard path to a chart's drill-down.
+export function TableLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link to={to} className={s.tableLink}>
+      {children}
+    </Link>
+  )
+}
+
 export function ChartTable({
   label,
   columns,

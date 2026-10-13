@@ -6,7 +6,9 @@ const subscribers = new Set<() => void>()
 
 function readStored(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "on"
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    // Browsers that hid amounts with the previous dashboard toggle keep them hidden.
+    return stored === null ? window.localStorage.getItem("ew.incognito") === "1" : stored === "on"
   } catch {
     return false
   }

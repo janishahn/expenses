@@ -1,125 +1,92 @@
-import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { CurrencyCircleDollarIcon } from "@phosphor-icons/react/CurrencyCircleDollar"
-import { ListDashesIcon } from "@phosphor-icons/react/ListDashes"
-import { PencilLineIcon } from "@phosphor-icons/react/PencilLine"
+import { useState, type ReactNode } from "react"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import type { Icon } from "@phosphor-icons/react"
+import { CalendarDotIcon } from "@phosphor-icons/react/CalendarDot"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
+import { EraserIcon } from "@phosphor-icons/react/Eraser"
+import { MinusCircleIcon } from "@phosphor-icons/react/MinusCircle"
+import { PencilSimpleIcon } from "@phosphor-icons/react/PencilSimple"
+import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { PlusCircleIcon } from "@phosphor-icons/react/PlusCircle"
 import { SlidersHorizontalIcon } from "@phosphor-icons/react/SlidersHorizontal"
-import { SparkleIcon } from "@phosphor-icons/react/Sparkle"
-import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { WarningIcon } from "@phosphor-icons/react/Warning"
+import { XIcon } from "@phosphor-icons/react/X"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { formatCurrency } from "../app/format"
-import PageIntro from "../components/PageIntro"
-import LineChart from "../components/charts/LineChart"
-import SegmentedControl from "../components/SegmentedControl"
-import {
-  FinancialPanel,
-  MetricLane,
-  SectionHeading,
-  WorkspaceToolbar,
-} from "../components/product/ProductSurfaces"
+import { formatAmount, formatAmountPrivate } from "../app/format"
+import { usePrivacy } from "../app/privacy"
+import { Amount } from "../components/ui/Amount"
+import { Button, IconButton } from "../components/ui/Button"
+import { IconGlyph } from "../components/ui/CategoryGlyph"
+import { ChartCard, ChartTable, ChartTooltip, type LegendEntry } from "../components/ui/ChartCard"
+import { LineChart } from "../components/ui/Charts"
+import { EmptyState, Status } from "../components/ui/EmptyState"
+import { useIsDesktop } from "../components/ui/layout-state"
+import { Cell, List, ListHead, Row, RowActions, type Columns } from "../components/ui/LedgerRow"
+import { Menu, MenuItem } from "../components/ui/Menu"
+import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { AsideLayout } from "../components/ui/Peek"
+import { MonthPicker } from "../components/ui/PeriodControl"
+import { PopoverActions } from "../components/ui/Popover"
+import { SegmentedControl } from "../components/ui/SegmentedControl"
+import { CardForm, MetricStrip, Sheet, type Metric } from "../components/ui/Sheet"
+import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
 import { buildSearchParams } from "../lib/searchParams"
-import { AppButton } from "../components/legacy-ui/product-button"
-import {
-  AppFieldLabel,
-  AppInput,
-  AppNativeSelect,
-} from "../components/legacy-ui/product-fields"
-import RouteLoading from "../components/RouteLoading"
-import RouteError from "../components/RouteError"
-
-type ForecastMonth = {
-  month: string
-  end_balance_cents: number
-}
 
 type ForecastProjection = {
   mode: "recurring" | "full"
   start_balance_cents: number
-  months: ForecastMonth[]
-  summary: {
-    projected_balance_cents: number
-    average_monthly_net_cents: number
-    months_until_negative: number | null
-  }
+  months: Array<{ month: string; end_balance_cents: number }>
+  summary: { projected_balance_cents: number }
 }
 
+type MonthlyDelta = Array<{ month: string; delta_end_balance_cents: number }>
+
 type ScenarioResponse = ForecastProjection & {
-  horizon: number
   baseline: ForecastProjection
   impact: {
     final_delta_cents: number
-    average_monthly_delta_cents: number
-    monthly_delta: Array<{ month: string; delta_end_balance_cents: number }>
-    by_modification: Array<{
-      index: number
-      label: string
-      final_delta_cents: number
-      average_monthly_delta_cents: number
-      monthly_delta: Array<{ month: string; delta_end_balance_cents: number }>
-    }>
+    monthly_delta: MonthlyDelta
+    by_modification: Array<{ index: number; final_delta_cents: number; monthly_delta: MonthlyDelta }>
   }
 }
 
-type ForecastBaselineResponse = {
-  summary: {
-    projected_balance_cents: number
-  }
-}
+type RuleRow = { id: number; name: string | null; type: "income" | "expense"; amount_cents: number }
+type CategoryRow = { id: number; name: string; type: "income" | "expense" }
+type RecurringResponse = { rules: RuleRow[]; categories: CategoryRow[] }
 
-type RuleRow = {
-  id: number
-  name: string | null
-  type: "income" | "expense"
-  amount_cents: number
-}
-
-type CategoryRow = {
-  id: number
-  name: string
-  type: "income" | "expense"
-}
-
-type RecurringResponse = {
-  rules: RuleRow[]
-  categories: CategoryRow[]
-}
+type Direction = "income" | "expense"
+type Interval = "monthly" | "yearly" | "weekly"
 
 type ScenarioModification =
   | { id: string; type: "remove_rule"; rule_id: number }
-  | {
-      id: string
-      type: "add_rule"
-      name: string
-      tx_type: "income" | "expense"
-      amount_cents: number
-      interval: "monthly" | "yearly" | "weekly"
-    }
-  | {
-      id: string
-      type: "modify_rule"
-      rule_id: number
-      new_amount_cents: number
-      effective_month: string
-    }
-  | {
-      id: string
-      type: "one_time"
-      name: string
-      tx_type: "income" | "expense"
-      amount_cents: number
-      month: string
-    }
-  | {
-      id: string
-      type: "adjust_category"
-      category_id: number
-      new_monthly_cents: number
-    }
+  | { id: string; type: "add_rule"; name: string; tx_type: Direction; amount_cents: number; interval: Interval }
+  | { id: string; type: "modify_rule"; rule_id: number; new_amount_cents: number; effective_month: string }
+  | { id: string; type: "one_time"; name: string; tx_type: Direction; amount_cents: number; month: string }
+  | { id: string; type: "adjust_category"; category_id: number; new_monthly_cents: number }
 
-function monthLabel(month: string): string {
-  const value = new Date(`${month}-01T00:00:00`)
-  return value.toLocaleDateString("en-GB", { month: "short", year: "numeric" })
+type ModificationType = ScenarioModification["type"]
+
+type Horizon = "3" | "6" | "12"
+type Mode = "recurring" | "full"
+
+const KINDS: Array<{ type: ModificationType; label: string; icon: Icon }> = [
+  { type: "remove_rule", label: "Remove a recurring rule", icon: MinusCircleIcon },
+  { type: "add_rule", label: "Add a recurring rule", icon: PlusCircleIcon },
+  { type: "modify_rule", label: "Change a recurring rule", icon: PencilSimpleIcon },
+  { type: "one_time", label: "One-time event", icon: CalendarDotIcon },
+  { type: "adjust_category", label: "Category estimate", icon: SlidersHorizontalIcon },
+]
+const KIND_ICON = Object.fromEntries(KINDS.map((kind) => [kind.type, kind.icon])) as Record<ModificationType, Icon>
+const INTERVAL_TEXT: Record<Interval, string> = { monthly: "per month", yearly: "per year", weekly: "per week" }
+
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+const MONTH_YEAR = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+
+const ADJUSTMENT_COLUMNS = "18px minmax(0, 1fr) 28px"
+
+function monthDate(month: string): Date {
+  return new Date(`${month}-01T00:00:00Z`)
 }
 
 function newId(): string {
@@ -128,747 +95,565 @@ function newId(): string {
 
 function parseAmount(raw: string): number | null {
   const normalized = raw.trim().replace(/\s/g, "").replace(",", ".")
-  if (!normalized) {
-    return null
-  }
+  if (!normalized) return null
   const value = Number(normalized)
-  if (!Number.isFinite(value) || value < 0) {
-    return null
-  }
+  if (!Number.isFinite(value) || value < 0) return null
   return Math.round(value * 100)
 }
 
 function nextMonthValue(): string {
   const now = new Date()
   const value = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  return `${year}-${month}`
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`
+}
+
+function requestModification(mod: ScenarioModification) {
+  switch (mod.type) {
+    case "remove_rule":
+      return { type: mod.type, rule_id: mod.rule_id }
+    case "add_rule":
+      return { type: mod.type, name: mod.name, tx_type: mod.tx_type, amount_cents: mod.amount_cents, interval: mod.interval }
+    case "modify_rule":
+      return { type: mod.type, rule_id: mod.rule_id, new_amount_cents: mod.new_amount_cents, effective_month: mod.effective_month }
+    case "one_time":
+      return { type: mod.type, name: mod.name, tx_type: mod.tx_type, amount_cents: mod.amount_cents, month: mod.month }
+    case "adjust_category":
+      return { type: mod.type, category_id: mod.category_id, new_monthly_cents: mod.new_monthly_cents }
+  }
+}
+
+// Per-month change from the cumulative end-balance difference, so the months add up to the total.
+function monthlyChange(deltas: MonthlyDelta): number[] {
+  return deltas.map((row, index) => row.delta_end_balance_cents - (index ? deltas[index - 1].delta_end_balance_cents : 0))
+}
+
+function ChangeCell({ cents }: { cents: number }) {
+  return (
+    <Cell align="right" hide="narrow" tone={cents ? undefined : "faint"}>
+      {cents ? <Amount cents={cents} kind="signed" decimals={false} tone={cents > 0 ? "income" : undefined} /> : "–"}
+    </Cell>
+  )
+}
+
+function AdjustmentForm({
+  type,
+  rules,
+  categories,
+  onTypeChange,
+  onAdd,
+  onCancel,
+}: {
+  type: ModificationType
+  rules: RuleRow[]
+  categories: CategoryRow[]
+  onTypeChange: (type: ModificationType) => void
+  onAdd: (modification: ScenarioModification) => void
+  onCancel: () => void
+}) {
+  usePrivacy()
+  const [ruleId, setRuleId] = useState("")
+  const [categoryId, setCategoryId] = useState("")
+  const [name, setName] = useState("")
+  const [direction, setDirection] = useState<Direction>("expense")
+  const [repeat, setRepeat] = useState<Interval>("monthly")
+  const [amount, setAmount] = useState("")
+  const [month, setMonth] = useState(nextMonthValue)
+  const [error, setError] = useState("")
+
+  const submit = () => {
+    const cents = parseAmount(amount)
+    if (type === "remove_rule") {
+      if (!ruleId) return setError("Select a rule to remove.")
+      return onAdd({ id: newId(), type, rule_id: Number(ruleId) })
+    }
+    if (type === "add_rule") {
+      if (!name.trim() || cents === null) return setError("Enter a valid name and amount.")
+      return onAdd({ id: newId(), type, name: name.trim(), tx_type: direction, amount_cents: cents, interval: repeat })
+    }
+    if (type === "modify_rule") {
+      if (!ruleId || cents === null) return setError("Select a rule, month, and valid amount.")
+      return onAdd({ id: newId(), type, rule_id: Number(ruleId), new_amount_cents: cents, effective_month: month })
+    }
+    if (type === "one_time") {
+      if (!name.trim() || cents === null) return setError("Enter a valid name, month, and amount.")
+      return onAdd({ id: newId(), type, name: name.trim(), tx_type: direction, amount_cents: cents, month })
+    }
+    if (!categoryId || cents === null) return setError("Select a category and valid monthly estimate.")
+    onAdd({ id: newId(), type, category_id: Number(categoryId), new_monthly_cents: cents })
+  }
+
+  const ruleSelect = (
+    <Select value={ruleId} onChange={(event) => setRuleId(event.target.value)}>
+      <option value="">Select rule…</option>
+      {rules.map((rule) => (
+        <option key={rule.id} value={rule.id}>
+          {rule.name || "Recurring rule"} ({formatAmountPrivate(rule.amount_cents, rule.type === "income" ? "income" : "expense")})
+        </option>
+      ))}
+    </Select>
+  )
+  const amountField = (label: string) => (
+    <Field label={label}>
+      <TextField value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="0,00" suffix="€" />
+    </Field>
+  )
+  const directionField = (
+    <Field label="Type">
+      <SegmentedControl
+        label="Type"
+        value={direction}
+        options={[
+          { value: "expense", label: "Expense" },
+          { value: "income", label: "Income" },
+        ]}
+        onChange={setDirection}
+      />
+    </Field>
+  )
+
+  return (
+    <CardForm onSubmit={submit}>
+      <FieldGrid narrow>
+        <Field label="Adjustment">
+          <Select value={type} onChange={(event) => onTypeChange(event.target.value as ModificationType)}>
+            {KINDS.map((kind) => (
+              <option key={kind.type} value={kind.type}>
+                {kind.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {type === "remove_rule" ? <Field label="Rule">{ruleSelect}</Field> : null}
+        {type === "add_rule" || type === "one_time" ? (
+          <>
+            <Field label="Name">
+              <TextField value={name} onChange={(event) => setName(event.target.value)} />
+            </Field>
+            {directionField}
+          </>
+        ) : null}
+        {type === "add_rule" ? (
+          <>
+            <Field label="Repeats">
+              <Select value={repeat} onChange={(event) => setRepeat(event.target.value as Interval)}>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+                <option value="weekly">Weekly</option>
+              </Select>
+            </Field>
+            {amountField("Amount")}
+          </>
+        ) : null}
+        {type === "modify_rule" ? (
+          <>
+            <Field label="Rule">{ruleSelect}</Field>
+            {amountField("New amount")}
+            <Field label="From">
+              <MonthPicker value={month} onChange={setMonth} />
+            </Field>
+          </>
+        ) : null}
+        {type === "one_time" ? (
+          <>
+            {amountField("Amount")}
+            <Field label="Month">
+              <MonthPicker value={month} onChange={setMonth} />
+            </Field>
+          </>
+        ) : null}
+        {type === "adjust_category" ? (
+          <>
+            <Field label="Category">
+              <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                <option value="">Select category…</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {amountField("Per month")}
+          </>
+        ) : null}
+      </FieldGrid>
+      {error ? <FieldError>{error}</FieldError> : null}
+      <PopoverActions>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" type="submit">
+          Add
+        </Button>
+      </PopoverActions>
+    </CardForm>
+  )
 }
 
 function ScenariosPage() {
+  const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()
   const [modifications, setModifications] = useState<ScenarioModification[]>([])
-  const [selectedType, setSelectedType] = useState<
-    "remove_rule" | "add_rule" | "modify_rule" | "one_time" | "adjust_category"
-  >("remove_rule")
-  const [removeRuleId, setRemoveRuleId] = useState("")
-  const [addName, setAddName] = useState("")
-  const [addType, setAddType] = useState<"income" | "expense">("expense")
-  const [addAmount, setAddAmount] = useState("")
-  const [addInterval, setAddInterval] = useState<"monthly" | "yearly" | "weekly">(
-    "monthly"
-  )
-  const [modifyRuleId, setModifyRuleId] = useState("")
-  const [modifyAmount, setModifyAmount] = useState("")
-  const [modifyMonth, setModifyMonth] = useState(nextMonthValue)
-  const [oneTimeName, setOneTimeName] = useState("")
-  const [oneTimeType, setOneTimeType] = useState<"income" | "expense">("expense")
-  const [oneTimeAmount, setOneTimeAmount] = useState("")
-  const [oneTimeMonth, setOneTimeMonth] = useState(nextMonthValue)
-  const [adjustCategoryId, setAdjustCategoryId] = useState("")
-  const [adjustAmount, setAdjustAmount] = useState("")
-  const [formError, setFormError] = useState("")
+  const [draft, setDraft] = useState<ModificationType | null>(null)
 
-  const horizonRaw = Number(searchParams.get("horizon") || "6")
-  const horizon: 3 | 6 | 12 =
-    horizonRaw === 3 || horizonRaw === 12 ? horizonRaw : 6
-  const modeRaw = (searchParams.get("mode") || "full").toLowerCase()
-  const mode: "recurring" | "full" =
-    modeRaw === "recurring" ? "recurring" : "full"
+  const horizonParam = searchParams.get("horizon")
+  const horizon: Horizon = horizonParam === "3" || horizonParam === "12" ? horizonParam : "6"
+  const mode: Mode = searchParams.get("mode")?.toLowerCase() === "recurring" ? "recurring" : "full"
 
-  const { data: recurringData } = useQuery({
+  const recurring = useQuery({
     queryKey: ["recurring"],
     queryFn: () => apiFetch<RecurringResponse>("/api/recurring"),
   })
-
-  const ruleOptions = recurringData?.rules ?? []
-  const expenseCategories =
-    recurringData?.categories.filter((row) => row.type === "expense") ?? []
-
-  const requestModifications = useMemo(
-    () =>
-      modifications.map((mod) => {
-        switch (mod.type) {
-          case "remove_rule":
-            return { type: mod.type, rule_id: mod.rule_id }
-          case "add_rule":
-            return {
-              type: mod.type,
-              name: mod.name,
-              tx_type: mod.tx_type,
-              amount_cents: mod.amount_cents,
-              interval: mod.interval,
-            }
-          case "modify_rule":
-            return {
-              type: mod.type,
-              rule_id: mod.rule_id,
-              new_amount_cents: mod.new_amount_cents,
-              effective_month: mod.effective_month,
-            }
-          case "one_time":
-            return {
-              type: mod.type,
-              name: mod.name,
-              tx_type: mod.tx_type,
-              amount_cents: mod.amount_cents,
-              month: mod.month,
-            }
-          case "adjust_category":
-            return {
-              type: mod.type,
-              category_id: mod.category_id,
-              new_monthly_cents: mod.new_monthly_cents,
-            }
-        }
-      }),
-    [modifications]
-  )
-  const serializedModifications = useMemo(
-    () => JSON.stringify(requestModifications),
-    [requestModifications]
-  )
-
-  const {
-    data: baselineData,
-    isLoading: baselineLoading,
-    error: baselineError,
-  } = useQuery({
-    queryKey: ["forecast", "baseline", horizon, mode],
-    queryFn: () =>
-      apiFetch<ForecastProjection>(
-        `/api/forecast?horizon=${horizon}&mode=${mode}`
-      ),
+  const baseline = useQuery({
+    queryKey: ["forecast", "baseline", Number(horizon), mode],
+    queryFn: () => apiFetch<ForecastProjection>(`/api/forecast?horizon=${horizon}&mode=${mode}`),
   })
-  const { data: scenarioData, isFetching: scenarioFetching } = useQuery({
-    queryKey: ["forecast", "scenario", horizon, mode, serializedModifications],
-    queryFn: () =>
-      apiFetch<ScenarioResponse>(`/api/forecast/scenario?mode=${mode}`, {
+  const requested = modifications.map(requestModification)
+  // The adjustments travel with their result, so rows keep their labels while a newer result loads.
+  const scenario = useQuery({
+    queryKey: ["forecast", "scenario", Number(horizon), mode, JSON.stringify(requested)],
+    queryFn: async () => ({
+      result: await apiFetch<ScenarioResponse>(`/api/forecast/scenario?mode=${mode}`, {
         method: "POST",
-        body: JSON.stringify({
-          horizon,
-          modifications: requestModifications,
-        }),
+        body: JSON.stringify({ horizon: Number(horizon), modifications: requested }),
       }),
+      adjustments: modifications,
+    }),
     enabled: modifications.length > 0,
-  })
-  const { data: baseline12 } = useQuery({
-    queryKey: ["forecast", "baseline-12"],
-    queryFn: () =>
-      apiFetch<ForecastBaselineResponse>("/api/forecast?horizon=12&mode=full"),
+    placeholderData: keepPreviousData,
   })
 
-  const setHorizon = (value: 3 | 6 | 12) =>
-    setSearchParams(buildSearchParams(searchParams, { horizon: String(value) }))
+  if (baseline.isLoading) return <PanelLoading title="What If" label="Loading scenarios…" />
+  if (baseline.error || !baseline.data) return <PanelError title="What If" message="Unable to load scenario simulator." />
 
-  const setMode = (value: "recurring" | "full") =>
-    setSearchParams(buildSearchParams(searchParams, { mode: value }))
+  const rules = recurring.data?.rules ?? []
+  const expenseCategories = recurring.data?.categories.filter((row) => row.type === "expense") ?? []
+  const update = (values: Record<string, string | null>) => setSearchParams(buildSearchParams(searchParams, values))
 
-  const addModification = () => {
-    setFormError("")
-
-    if (selectedType === "remove_rule") {
-      if (!removeRuleId) {
-        setFormError("Select a rule to remove.")
-        return
-      }
-      setModifications((previous) => [
-        ...previous,
-        {
-          id: newId(),
-          type: "remove_rule",
-          rule_id: Number(removeRuleId),
-        },
-      ])
-      return
+  const describe = (row: ScenarioModification): ReactNode => {
+    const ruleName = (id: number) => rules.find((rule) => rule.id === id)?.name || "rule"
+    switch (row.type) {
+      case "remove_rule":
+        return `Cancel ${ruleName(row.rule_id)}`
+      case "add_rule":
+        return (
+          <>
+            {row.name} at <Amount cents={row.amount_cents} kind={row.tx_type} decimals={false} /> {INTERVAL_TEXT[row.interval]}
+          </>
+        )
+      case "modify_rule":
+        return (
+          <>
+            {ruleName(row.rule_id)} <Amount cents={row.new_amount_cents} decimals={false} /> from{" "}
+            {MONTH_YEAR.format(monthDate(row.effective_month))}
+          </>
+        )
+      case "one_time":
+        return `${row.name} in ${MONTH_YEAR.format(monthDate(row.month))}`
+      case "adjust_category":
+        return (
+          <>
+            {expenseCategories.find((category) => category.id === row.category_id)?.name ?? "Category"} at{" "}
+            <Amount cents={row.new_monthly_cents} decimals={false} /> per month
+          </>
+        )
     }
-
-    if (selectedType === "add_rule") {
-      const amountCents = parseAmount(addAmount)
-      if (!addName.trim() || amountCents === null) {
-        setFormError("Enter a valid name and amount.")
-        return
-      }
-      setModifications((previous) => [
-        ...previous,
-        {
-          id: newId(),
-          type: "add_rule",
-          name: addName.trim(),
-          tx_type: addType,
-          amount_cents: amountCents,
-          interval: addInterval,
-        },
-      ])
-      setAddName("")
-      setAddAmount("")
-      return
-    }
-
-    if (selectedType === "modify_rule") {
-      const amountCents = parseAmount(modifyAmount)
-      if (!modifyRuleId || !modifyMonth || amountCents === null) {
-        setFormError("Select a rule, month, and valid amount.")
-        return
-      }
-      setModifications((previous) => [
-        ...previous,
-        {
-          id: newId(),
-          type: "modify_rule",
-          rule_id: Number(modifyRuleId),
-          new_amount_cents: amountCents,
-          effective_month: modifyMonth,
-        },
-      ])
-      setModifyAmount("")
-      return
-    }
-
-    if (selectedType === "one_time") {
-      const amountCents = parseAmount(oneTimeAmount)
-      if (!oneTimeName.trim() || !oneTimeMonth || amountCents === null) {
-        setFormError("Enter a valid name, month, and amount.")
-        return
-      }
-      setModifications((previous) => [
-        ...previous,
-        {
-          id: newId(),
-          type: "one_time",
-          name: oneTimeName.trim(),
-          tx_type: oneTimeType,
-          amount_cents: amountCents,
-          month: oneTimeMonth,
-        },
-      ])
-      setOneTimeName("")
-      setOneTimeAmount("")
-      return
-    }
-
-    const amountCents = parseAmount(adjustAmount)
-    if (!adjustCategoryId || amountCents === null) {
-      setFormError("Select a category and valid monthly estimate.")
-      return
-    }
-    setModifications((previous) => [
-      ...previous,
-      {
-        id: newId(),
-        type: "adjust_category",
-        category_id: Number(adjustCategoryId),
-        new_monthly_cents: amountCents,
-      },
-    ])
-    setAdjustAmount("")
   }
 
-  const modificationDescription = (row: ScenarioModification): string => {
-    if (row.type === "remove_rule") {
-      const rule = ruleOptions.find((item) => item.id === row.rule_id)
-      return `Cancel ${rule?.name || "rule"}`
-    }
-    if (row.type === "add_rule") {
-      return `Add ${row.name} (${row.interval})`
-    }
-    if (row.type === "modify_rule") {
-      const rule = ruleOptions.find((item) => item.id === row.rule_id)
-      return `Change ${rule?.name || "rule"} starting ${row.effective_month}`
-    }
-    if (row.type === "one_time") {
-      return `${row.name} in ${row.month}`
-    }
-    const category = expenseCategories.find((item) => item.id === row.category_id)
-    return `Adjust ${category?.name || "category"} to ${formatCurrency(row.new_monthly_cents)} €/mo`
-  }
+  const result = modifications.length ? scenario.data : undefined
+  const base = result?.result.baseline ?? baseline.data
+  const months = base.months
+  const lastMonth = months[months.length - 1]
+  const baselineValues = [base.start_balance_cents, ...months.map((row) => row.end_balance_cents)]
+  const scenarioValues = result
+    ? [result.result.start_balance_cents, ...result.result.months.map((row) => row.end_balance_cents)]
+    : null
+  const difference = result?.result.impact.final_delta_cents ?? null
 
-  if (baselineLoading) {
-    return <RouteLoading title="What If" label="Loading scenarios…" />
-  }
-  if (baselineError || !baselineData) {
-    return (
-      <RouteError
-        title="What If"
-        message="Unable to load scenario simulator."
-      />
-    )
-  }
-
-  const hasAdjustments = modifications.length > 0
-  const activeScenarioData = hasAdjustments ? scenarioData : undefined
-  const baseline = activeScenarioData?.baseline ?? baselineData
-  const scenario = activeScenarioData ?? baselineData
-  const impact = activeScenarioData?.impact
-  const impactMonthColumns = impact?.monthly_delta.map((row) => row.month) ?? []
-
-  const labels = ["Now", ...baseline.months.map((row) => monthLabel(row.month))]
-  const baselineSeries = [
-    baseline.start_balance_cents,
-    ...baseline.months.map((row) => row.end_balance_cents),
+  const labels = [
+    "Now",
+    ...months.map((row, index) =>
+      (isDesktop && (index === 0 || row.month.endsWith("-01")) ? MONTH_YEAR : SHORT_MONTH).format(monthDate(row.month))
+    ),
   ]
-  const scenarioSeries = [
-    scenario.start_balance_cents,
-    ...scenario.months.map((row) => row.end_balance_cents),
+  const monthName = (index: number) => (index === 0 ? "Now" : MONTH_YEAR.format(monthDate(months[index - 1].month)))
+  const lastName = lastMonth ? MONTH_YEAR.format(monthDate(lastMonth.month)) : null
+
+  const metrics: Metric[] = [
+    {
+      label: lastName ? `Baseline in ${lastName}` : "Baseline",
+      value: <Amount cents={base.summary.projected_balance_cents} />,
+      detail: "current rules and spending",
+    },
+    {
+      label: lastName ? `Scenario in ${lastName}` : "Scenario",
+      value: <Amount cents={result?.result.summary.projected_balance_cents ?? base.summary.projected_balance_cents} />,
+      detail: result
+        ? `after ${result.adjustments.length} ${result.adjustments.length === 1 ? "adjustment" : "adjustments"}`
+        : "no adjustments",
+    },
+    {
+      label: "Difference",
+      value:
+        difference === null ? (
+          "No changes"
+        ) : (
+          <Amount cents={difference} kind="signed" tone={difference > 0 ? "income" : undefined} />
+        ),
+      detail: `over ${horizon} months`,
+    },
   ]
-  const baselineProjectedBalance =
-    baseline12?.summary.projected_balance_cents ??
-    baseline.summary.projected_balance_cents
-  const delta = impact?.final_delta_cents ?? 0
-  const baselineColor = "rgb(var(--semantic-purple))"
-  const scenarioColor = "rgb(var(--accent))"
-  const deltaFill =
-    delta >= 0
-      ? "rgb(var(--semantic-green) / 0.18)"
-      : "rgb(var(--semantic-red) / 0.18)"
+
+  const legend: LegendEntry[] = scenarioValues
+    ? [
+        { key: "scenario", label: "Scenario", color: "var(--ink)", mark: "line" },
+        { key: "baseline", label: "Baseline", color: "var(--ink-3)", mark: "dash" },
+        { key: "difference", label: "Difference", color: "var(--band)", mark: "area" },
+      ]
+    : [{ key: "baseline", label: "Baseline", color: "var(--ink)", mark: "line" }]
+
+  const impact = result?.result.impact
+  const impactColumns: Columns = {
+    columns: `minmax(0, 1fr) repeat(${months.length}, minmax(44px, 64px)) 88px`,
+    narrowColumns: "minmax(0, 1fr) 96px",
+  }
+
+  const addModification = (modification: ScenarioModification) => {
+    setModifications((previous) => [...previous, modification])
+    setDraft(null)
+  }
+
+  const adjustments = (
+    <Sheet
+      title="Adjustments"
+      meta={modifications.length || undefined}
+      actions={
+        <Menu label="Add adjustment" trigger={<Button variant="quiet" icon={PlusIcon}>Add</Button>}>
+          {KINDS.map((kind) => (
+            <MenuItem key={kind.type} icon={kind.icon} onSelect={() => setDraft(kind.type)}>
+              {kind.label}
+            </MenuItem>
+          ))}
+        </Menu>
+      }
+    >
+      {draft ? (
+        <AdjustmentForm
+          key={draft}
+          type={draft}
+          rules={rules}
+          categories={expenseCategories}
+          onTypeChange={setDraft}
+          onAdd={addModification}
+          onCancel={() => setDraft(null)}
+        />
+      ) : null}
+      {scenario.isError ? (
+        <Status icon={WarningIcon} tone="bad">
+          Unable to calculate this scenario.
+        </Status>
+      ) : null}
+      {modifications.length ? (
+        <List flat label="Adjustments">
+          {modifications.map((row) => (
+            <Row key={row.id} columns={ADJUSTMENT_COLUMNS}>
+              <IconGlyph icon={KIND_ICON[row.type]} />
+              <Cell>{describe(row)}</Cell>
+              <RowActions reveal={isDesktop}>
+                <IconButton
+                  icon={XIcon}
+                  label="Remove adjustment"
+                  size="small"
+                  onClick={() => setModifications((previous) => previous.filter((entry) => entry.id !== row.id))}
+                />
+              </RowActions>
+            </Row>
+          ))}
+        </List>
+      ) : draft ? null : (
+        <EmptyState inline>No adjustments</EmptyState>
+      )}
+    </Sheet>
+  )
 
   return (
-    <section className="space-y-4 md:space-y-5">
-      <PageIntro
-        title="What If"
-        description="Test changes without modifying your real transactions or commitments"
-        titleAccessory={
-          scenarioFetching ? <span className="loading-hint">Updating…</span> : null
-        }
-        titleAccessoryAlign="end"
-      />
-
-      <WorkspaceToolbar>
-        <SegmentedControl
-          value={horizon}
-          ariaLabel="Scenario horizon"
-          items={[
-            { value: 3, label: "3 months" },
-            { value: 6, label: "6 months" },
-            { value: 12, label: "12 months" },
-          ] as Array<{ value: 3 | 6 | 12; label: string }>}
-          onValueChange={setHorizon}
-        />
-        <SegmentedControl
-          value={mode}
-          ariaLabel="Scenario model"
-          items={[
-            { value: "recurring", label: "Recurring only" },
-            { value: "full", label: "Recurring + estimates" },
-          ]}
-          onValueChange={setMode}
-        />
-      </WorkspaceToolbar>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <MetricLane tone="plan">
-          <p className="text-sm font-semibold text-text">12-month baseline</p>
-          <p className="amount-text mt-2 text-2xl text-text">
-            {formatCurrency(baselineProjectedBalance)} €
-          </p>
-          <p className="mono-meta mt-1 text-muted">Current rules and spending</p>
-        </MetricLane>
-        <MetricLane tone={hasAdjustments ? (delta >= 0 ? "income" : "expense") : "neutral"}>
-          <p className="text-sm font-semibold text-text">Scenario impact</p>
-          <p
-            className={`amount-text mt-2 text-2xl ${
-              !hasAdjustments
-                ? "text-muted"
-                : delta >= 0
-                  ? "text-semantic-green"
-                  : "text-semantic-red"
-            }`}
+    <Panel
+      title="What If"
+      layout="fill"
+      actions={
+        <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+          <MenuItem
+            icon={EraserIcon}
+            danger
+            disabled={!modifications.length}
+            onSelect={() => {
+              setModifications([])
+              setDraft(null)
+            }}
           >
-            {hasAdjustments ? `${delta >= 0 ? "+" : ""}${formatCurrency(delta)} €` : "No changes"}
-          </p>
-          <p className="mono-meta mt-1 text-muted">After {horizon} months</p>
-        </MetricLane>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.15fr)]">
-        <FinancialPanel role="inspector">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Scenario adjustments</h2>
-            </div>
-            <span className="mono-meta text-muted">{modifications.length} active</span>
-          </SectionHeading>
-          <div className="space-y-4 px-4 py-4">
-            <AppFieldLabel>
-              Adjustment type
-              <AppNativeSelect
-                value={selectedType}
-                onChange={(event) =>
-                  setSelectedType(
-                    event.target.value as
-                      | "remove_rule"
-                      | "add_rule"
-                      | "modify_rule"
-                      | "one_time"
-                      | "adjust_category"
-                  )
-                }
-              >
-                <option value="remove_rule">Remove recurring rule</option>
-                <option value="add_rule">Add recurring rule</option>
-                <option value="modify_rule">Modify existing rule</option>
-                <option value="one_time">One-time event</option>
-                <option value="adjust_category">Adjust category estimate</option>
-              </AppNativeSelect>
-            </AppFieldLabel>
-
-            {selectedType === "remove_rule" ? (
-              <AppFieldLabel>
-                Rule
-                <AppNativeSelect
-                  value={removeRuleId}
-                  onChange={(event) => setRemoveRuleId(event.target.value)}
-                >
-                  <option value="">Select rule…</option>
-                  {ruleOptions.map((rule) => (
-                    <option key={rule.id} value={rule.id}>
-                      {rule.name || "Recurring rule"} ({formatCurrency(rule.amount_cents)} €)
-                    </option>
-                  ))}
-                </AppNativeSelect>
-              </AppFieldLabel>
-            ) : null}
-
-            {selectedType === "add_rule" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AppFieldLabel className="sm:col-span-2">
-                  Name
-                  <AppInput
-                    value={addName}
-                    onChange={(event) => setAddName(event.target.value)}
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={addType}
-                    onChange={(event) =>
-                      setAddType(event.target.value as "income" | "expense")
-                    }
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Interval
-                  <AppNativeSelect
-                    value={addInterval}
-                    onChange={(event) =>
-                      setAddInterval(
-                        event.target.value as "monthly" | "yearly" | "weekly"
-                      )
-                    }
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="yearly">Yearly</option>
-                    <option value="weekly">Weekly</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel className="sm:col-span-2">
-                  Amount
-                  <AppInput
-                    value={addAmount}
-                    onChange={(event) => setAddAmount(event.target.value)}
-                    placeholder="0.00"
-                  />
-                </AppFieldLabel>
-              </div>
-            ) : null}
-
-            {selectedType === "modify_rule" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AppFieldLabel className="sm:col-span-2">
-                  Rule
-                  <AppNativeSelect
-                    value={modifyRuleId}
-                    onChange={(event) => setModifyRuleId(event.target.value)}
-                  >
-                    <option value="">Select rule…</option>
-                    {ruleOptions.map((rule) => (
-                      <option key={rule.id} value={rule.id}>
-                        {rule.name || "Recurring rule"} ({formatCurrency(rule.amount_cents)} €)
-                      </option>
-                    ))}
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  New amount
-                  <AppInput
-                    value={modifyAmount}
-                    onChange={(event) => setModifyAmount(event.target.value)}
-                    placeholder="0.00"
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Effective month
-                  <AppInput
-                    type="month"
-                    value={modifyMonth}
-                    onChange={(event) => setModifyMonth(event.target.value)}
-                  />
-                </AppFieldLabel>
-              </div>
-            ) : null}
-
-            {selectedType === "one_time" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AppFieldLabel className="sm:col-span-2">
-                  Name
-                  <AppInput
-                    value={oneTimeName}
-                    onChange={(event) => setOneTimeName(event.target.value)}
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Type
-                  <AppNativeSelect
-                    value={oneTimeType}
-                    onChange={(event) =>
-                      setOneTimeType(event.target.value as "income" | "expense")
-                    }
-                  >
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel>
-                  Month
-                  <AppInput
-                    type="month"
-                    value={oneTimeMonth}
-                    onChange={(event) => setOneTimeMonth(event.target.value)}
-                  />
-                </AppFieldLabel>
-                <AppFieldLabel className="sm:col-span-2">
-                  Amount
-                  <AppInput
-                    value={oneTimeAmount}
-                    onChange={(event) => setOneTimeAmount(event.target.value)}
-                    placeholder="0.00"
-                  />
-                </AppFieldLabel>
-              </div>
-            ) : null}
-
-            {selectedType === "adjust_category" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AppFieldLabel className="sm:col-span-2">
-                  Category
-                  <AppNativeSelect
-                    value={adjustCategoryId}
-                    onChange={(event) => setAdjustCategoryId(event.target.value)}
-                  >
-                    <option value="">Select category…</option>
-                    {expenseCategories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </AppNativeSelect>
-                </AppFieldLabel>
-                <AppFieldLabel className="sm:col-span-2">
-                  New monthly estimate
-                  <AppInput
-                    value={adjustAmount}
-                    onChange={(event) => setAdjustAmount(event.target.value)}
-                    placeholder="0.00"
-                  />
-                </AppFieldLabel>
-              </div>
-            ) : null}
-
-            {formError ? <p className="text-xs text-semantic-red">{formError}</p> : null}
-            <AppButton
-              type="button"
-              className="w-full"
-              onClick={addModification}
+            Clear all adjustments
+          </MenuItem>
+        </Menu>
+      }
+      viewRow={
+        <ViewRow>
+          <SegmentedControl
+            label="Scenario horizon"
+            value={horizon}
+            options={[
+              { value: "3", label: isDesktop ? "3 months" : "3M" },
+              { value: "6", label: isDesktop ? "6 months" : "6M" },
+              { value: "12", label: isDesktop ? "12 months" : "12M" },
+            ]}
+            onChange={(next) => update({ horizon: next })}
+          />
+          <SegmentedControl
+            label="Scenario model"
+            value={mode}
+            options={[
+              { value: "recurring", label: "Recurring only" },
+              { value: "full", label: "With estimates" },
+            ]}
+            onChange={(next) => update({ mode: next })}
+          />
+        </ViewRow>
+      }
+    >
+      <AsideLayout
+        aside={adjustments}
+        main={
+          <>
+            <MetricStrip metrics={metrics} />
+            <ChartCard
+              title="Balance"
+              meta={scenario.isFetching ? "Updating…" : undefined}
+              legend={legend}
+              table={
+                <ChartTable
+                  label="Scenario and baseline balance by month"
+                  columns={scenarioValues ? ["Month", "Scenario", "Baseline", "Difference"] : ["Month", "Baseline"]}
+                  rows={labels.map((_, index) => ({
+                    key: String(index),
+                    cells: scenarioValues
+                      ? [
+                          monthName(index),
+                          <Amount cents={scenarioValues[index]} />,
+                          <Amount cents={baselineValues[index]} />,
+                          <Amount cents={scenarioValues[index] - baselineValues[index]} kind="signed" />,
+                        ]
+                      : [monthName(index), <Amount cents={baselineValues[index]} />],
+                  }))}
+                />
+              }
             >
-              Add adjustment
-            </AppButton>
-
-            <div className="space-y-2 pt-2">
-              {modifications.length ? (
-                modifications.map((modification) => (
-                  <div
-                    key={modification.id}
-                    className="flex items-center justify-between gap-3 rounded-md bg-faint px-3 py-2"
-                  >
-                    <span className="flex min-w-0 items-center gap-2 text-xs text-text">
-                      {modification.type === "remove_rule" ? (
-                        <ListDashesIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      ) : null}
-                      {modification.type === "add_rule" ? (
-                        <CurrencyCircleDollarIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      ) : null}
-                      {modification.type === "modify_rule" ? (
-                        <PencilLineIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      ) : null}
-                      {modification.type === "one_time" ? (
-                        <SparkleIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      ) : null}
-                      {modification.type === "adjust_category" ? (
-                        <SlidersHorizontalIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      ) : null}
-                      <span className="truncate">{modificationDescription(modification)}</span>
-                    </span>
-                    <AppButton
-                      type="button"
-                      onClick={() =>
-                        setModifications((previous) =>
-                          previous.filter((row) => row.id !== modification.id)
-                        )
+              {(focus) => (
+                <LineChart
+                  labels={labels}
+                  height={220}
+                  yAxis
+                  formatY={(cents) => formatAmount(cents, "balance", false)}
+                  xEvery={isDesktop || labels.length <= 7 ? 1 : 2}
+                  mark={0}
+                  idle={0}
+                  focus={focus}
+                  series={
+                    scenarioValues
+                      ? [
+                          { key: "baseline", values: baselineValues, color: "var(--ink-3)", dash: true, width: 1.25 },
+                          { key: "scenario", values: scenarioValues },
+                        ]
+                      : [{ key: "baseline", values: baselineValues }]
+                  }
+                  bands={
+                    scenarioValues
+                      ? [
+                          {
+                            key: "difference",
+                            lo: baselineValues.map((value, index) => Math.min(value, scenarioValues[index])),
+                            hi: baselineValues.map((value, index) => Math.max(value, scenarioValues[index])),
+                          },
+                        ]
+                      : []
+                  }
+                  tooltip={(index) => (
+                    <ChartTooltip
+                      title={monthName(index)}
+                      rows={
+                        scenarioValues
+                          ? [
+                              {
+                                key: "scenario",
+                                label: "Scenario",
+                                value: <Amount cents={scenarioValues[index]} />,
+                                color: "var(--ink)",
+                                mark: "line",
+                              },
+                              {
+                                key: "baseline",
+                                label: "Baseline",
+                                value: <Amount cents={baselineValues[index]} />,
+                                color: "var(--ink-3)",
+                                mark: "dash",
+                              },
+                              {
+                                key: "difference",
+                                label: "Difference",
+                                value: <Amount cents={scenarioValues[index] - baselineValues[index]} kind="signed" />,
+                                color: "var(--band)",
+                                mark: "area",
+                              },
+                            ]
+                          : [{ key: "baseline", label: "Baseline", value: <Amount cents={baselineValues[index]} /> }]
                       }
-                      tone="ghost"
-                      className="h-10 w-10 p-1 text-muted"
-                      aria-label="Delete adjustment"
-                    >
-                      <TrashIcon className="h-3.5 w-3.5" />
-                    </AppButton>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted">No adjustments yet.</p>
+                    />
+                  )}
+                />
               )}
-            </div>
-          </div>
-        </FinancialPanel>
-
-        {hasAdjustments ? (
-          <FinancialPanel role="chart">
-            <SectionHeading>
-              <div>
-                <h2 className="font-head text-lg font-bold">Baseline vs scenario</h2>
-              </div>
-              <span className="mono-meta text-muted">{horizon} months</span>
-            </SectionHeading>
-            <div className="p-4 md:p-5">
-              <LineChart
-                ariaLabel="Baseline balance compared with the adjusted scenario"
-                labels={labels}
-                series={[
-                  {
-                    label: "Baseline",
-                    data: baselineSeries,
-                    color: baselineColor,
-                    dashed: true,
-                  },
-                  {
-                    label: "Scenario",
-                    data: scenarioSeries,
-                    color: scenarioColor,
-                  },
-                ]}
-                band={{
-                  lower: baselineSeries.map((value, index) =>
-                    Math.min(value, scenarioSeries[index]),
-                  ),
-                  upper: baselineSeries.map((value, index) =>
-                    Math.max(value, scenarioSeries[index]),
-                  ),
-                  fill: deltaFill,
-                }}
-                height={320}
-                tooltipComparisonLabel="Scenario difference"
-              />
-            </div>
-          </FinancialPanel>
-        ) : null}
-      </div>
-
-      {hasAdjustments ? (
-        <FinancialPanel role="ledger">
-          <SectionHeading>
-            <div>
-              <h2 className="font-head text-lg font-bold">Impact attribution</h2>
-            </div>
-            <span className="amount-text text-sm text-muted">
-              Average monthly delta: {(impact?.average_monthly_delta_cents ?? 0) >= 0 ? "+" : ""}
-              {formatCurrency(impact?.average_monthly_delta_cents ?? 0)} €
-            </span>
-          </SectionHeading>
-          <div className="p-4">
-            <MetricLane tone={delta >= 0 ? "income" : "expense"}>
-              <p
-                className={`font-semibold ${
-                  delta >= 0 ? "text-semantic-green" : "text-semantic-red"
-                }`}
-              >
-                {delta >= 0
-                  ? `This scenario saves ${formatCurrency(delta)} € over ${horizon} months.`
-                  : `This scenario costs an additional ${formatCurrency(Math.abs(delta))} € over ${horizon} months.`}
-              </p>
-            </MetricLane>
-          </div>
-
-          <div className="px-4 pb-4">
-            {impact?.by_modification.length ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-border text-xs">
-                  <thead>
-                    <tr className="text-muted">
-                      <th className="py-2 pr-3 text-left font-semibold">
-                        Modification
-                      </th>
-                      {impactMonthColumns.map((month) => (
-                        <th
-                          key={month}
-                          className="px-2 py-2 text-right font-semibold"
-                        >
-                          {monthLabel(month)}
-                        </th>
-                      ))}
-                      <th className="pl-2 py-2 text-right font-semibold">
-                        Total
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {impact.by_modification.map((row) => (
-                      <tr key={row.index}>
-                        <td className="max-w-[18rem] py-2 pr-3 text-text">
-                          <span className="break-words">{row.label}</span>
-                        </td>
-                        {impactMonthColumns.map((month) => {
-                          const delta = row.monthly_delta.find(
-                            (item) => item.month === month
-                          )?.delta_end_balance_cents
-                          const value = delta ?? 0
-                          return (
-                            <td
-                              key={`${row.index}-${month}`}
-                              className={`px-2 py-2 text-right font-mono ${
-                                value >= 0
-                                  ? "text-semantic-green"
-                                  : "text-semantic-red"
-                              }`}
-                            >
-                              {value >= 0 ? "+" : ""}
-                              {formatCurrency(value)}
-                            </td>
-                          )
-                        })}
-                        <td
-                          className={`pl-2 py-2 text-right font-mono font-semibold ${
-                            row.final_delta_cents >= 0
-                              ? "text-semantic-green"
-                              : "text-semantic-red"
-                          }`}
-                        >
-                          {row.final_delta_cents >= 0 ? "+" : ""}
-                          {formatCurrency(row.final_delta_cents)}
-                        </td>
-                      </tr>
+            </ChartCard>
+            {impact && result ? (
+              <List scroll={false} label="Impact by adjustment">
+                <ListHead {...impactColumns}>
+                  <span>Adjustment</span>
+                  {months.map((row) => (
+                    <Cell key={row.month} align="right" hide="narrow">
+                      {SHORT_MONTH.format(monthDate(row.month))}
+                    </Cell>
+                  ))}
+                  <Cell align="right">Total</Cell>
+                </ListHead>
+                {impact.by_modification.map((row) => (
+                  <Row key={row.index} {...impactColumns}>
+                    <Cell>{result.adjustments[row.index] ? describe(result.adjustments[row.index]) : null}</Cell>
+                    {monthlyChange(row.monthly_delta).map((cents, index) => (
+                      <ChangeCell key={index} cents={cents} />
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                    <Cell align="right" strong>
+                      <Amount cents={row.final_delta_cents} kind="signed" decimals={false} />
+                    </Cell>
+                  </Row>
+                ))}
+                {impact.by_modification.length > 1 ? (
+                  <Row {...impactColumns}>
+                    <Cell strong>Total</Cell>
+                    {monthlyChange(impact.monthly_delta).map((cents, index) => (
+                      <ChangeCell key={index} cents={cents} />
+                    ))}
+                    <Cell align="right" strong>
+                      <Amount
+                        cents={impact.final_delta_cents}
+                        kind="signed"
+                        decimals={false}
+                        tone={impact.final_delta_cents > 0 ? "income" : undefined}
+                      />
+                    </Cell>
+                  </Row>
+                ) : null}
+              </List>
             ) : null}
-          </div>
-        </FinancialPanel>
-      ) : null}
-    </section>
+          </>
+        }
+      />
+    </Panel>
   )
 }
 

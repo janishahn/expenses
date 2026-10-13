@@ -11,11 +11,23 @@ import { Menu } from "./Menu"
 import s from "./kit.module.css"
 
 // The list and its docked peek, side by side. On mobile the peek replaces the list.
-export function PeekLayout({ main, peek }: { main: ReactNode; peek: ReactNode }) {
+// `scroll` mains hold cards (a strip, a chart, a list) and scroll as one column.
+export function PeekLayout({ main, peek, scroll = false }: { main: ReactNode; peek: ReactNode; scroll?: boolean }) {
   return (
     <div className={s.split}>
-      <div className={s.splitMain}>{main}</div>
+      <div className={clsx(s.splitMain, scroll && s.splitScroll)}>{main}</div>
       {peek}
+    </div>
+  )
+}
+
+// Cards beside a fixed-width side card, such as What If's adjustments; both scroll together.
+// On mobile the side card follows the cards.
+export function AsideLayout({ main, aside }: { main: ReactNode; aside: ReactNode }) {
+  return (
+    <div className={clsx(s.split, s.splitAside)}>
+      <div className={s.splitMain}>{main}</div>
+      <div className={s.aside}>{aside}</div>
     </div>
   )
 }
@@ -111,6 +123,33 @@ export function PeekSection({
       </div>
       {children}
     </section>
+  )
+}
+
+// The name and headline figure of a record that is not renamed in place, such as a budget:
+// its glyph and name, then the figure with its limit ("249,00 € of 250,00 €").
+export function PeekHeadline({
+  glyph,
+  title,
+  figure,
+  detail,
+}: {
+  glyph?: ReactNode
+  title: ReactNode
+  figure: ReactNode
+  detail?: ReactNode
+}) {
+  return (
+    <>
+      <h2 className={clsx(s.pkTitle, s.pkTitleStatic)}>
+        {glyph}
+        {title}
+      </h2>
+      <div className={s.pkAmt}>
+        {figure}
+        {detail != null ? <span className={s.pkAmtDetail}> {detail}</span> : null}
+      </div>
+    </>
   )
 }
 

@@ -221,20 +221,21 @@ function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
+          <Route path="/" element={<DashboardPage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/budgets" element={<BudgetsPage />} />
+          <Route path="/insights" element={<InsightsPage />} />
+          <Route path="/forecast" element={<ForecastPage />} />
+          <Route path="/scenarios" element={<ScenariosPage />} />
           <Route path="/transactions/inbox" element={<UncategorizedInboxPage />} />
           <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
           <Route element={<LegacyLayout />}>
-            <Route path="/" element={<DashboardPage />} />
             <Route
               path="/assistant"
               element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />}
             />
-            <Route path="/insights" element={<InsightsPage />} />
-            <Route path="/forecast" element={<ForecastPage />} />
-            <Route path="/budgets" element={<BudgetsPage />} />
             <Route path="/digest" element={<DigestPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/tags" element={<TagsPage />} />
@@ -246,7 +247,6 @@ function AppRoutes() {
               element={<RecurringOccurrencesPage />}
             />
             <Route path="/rules" element={<RulesPage />} />
-            <Route path="/scenarios" element={<ScenariosPage />} />
             <Route path="/reconciliation" element={<ReconciliationPage />} />
             <Route path="/reports/builder" element={<ReportBuilderPage />} />
             <Route path="/settings" element={<SettingsPage />} />

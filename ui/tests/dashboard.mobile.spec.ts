@@ -1,13 +1,31 @@
+import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
-import {
-  createTransaction,
-  ensureCategory,
-  getCsrfToken,
-  loginAsIsolatedUser,
-} from "./helpers"
-import type { APIRequestContext } from "@playwright/test"
+import { createCategory, createTransaction, loginAsIsolatedUser } from "./helpers"
 
 test.describe.configure({ mode: "parallel" })
+
+// Explicit lookup keyed on the month number of a YYYY-MM key so expected
+// labels never depend on the timezone of the process computing them.
+const SHORT_MONTHS: Record<string, string> = {
+  "01": "Jan",
+  "02": "Feb",
+  "03": "Mar",
+  "04": "Apr",
+  "05": "May",
+  "06": "Jun",
+  "07": "Jul",
+  "08": "Aug",
+  "09": "Sep",
+  "10": "Oct",
+  "11": "Nov",
+  "12": "Dec",
+}
+
+function monthKey(offsetMonths: number): string {
+  const now = new Date()
+  const target = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1)
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}`
+}
 
 function localToday(): string {
   const now = new Date()
@@ -18,411 +36,395 @@ function localToday(): string {
   ].join("-")
 }
 
-async function createOverallMonthlyBudget(
-  request: APIRequestContext,
-  csrfToken: string,
-  amountCents: number
-): Promise<void> {
-  const response = await request.post("/api/budgets/templates", {
-    headers: { "X-CSRF-Token": csrfToken },
-    data: {
-      frequency: "monthly",
-      category_id: null,
-      amount_cents: amountCents,
-      starts_on: `${localToday().slice(0, 7)}-01`,
-      ends_on: null,
-    },
-  })
-  expect(response.ok()).toBeTruthy()
+// Amounts group thousands with a narrow space, so tests write them with a dot.
+function eur(text: string): RegExp {
+  return new RegExp(text.replace("+", "\\+").replace(/\./g, "[\\s.]").replace(/ /g, "\\s"))
+}
+
+// The label text of a metric in the strip, with its value and detail beneath.
+function metric(page: Page, label: string) {
+  return page.getByText(label, { exact: true }).first().locator("..")
+}
+
+async function showAsTable(page: Page, cardName: string) {
+  const card = page.getByRole("region", { name: cardName })
+  await card.getByRole("button", { name: "Chart options" }).tap()
+  await page.getByRole("menuitemcheckbox", { name: "Show as table" }).tap()
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  return card
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const viewport = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
 }
 
 test.describe("Dashboard Page (mobile)", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/")
-  })
-
-  test("does not request the desktop-only forecast", async ({ page }) => {
-    let forecastRequests = 0
-    await page.route("**/api/forecast?*", (route) => {
-      forecastRequests += 1
-      return route.continue()
-    })
-
-    await page.reload()
-    await expect(page.getByTestId("dashboard-balance-card")).toBeVisible()
-    expect(forecastRequests).toBe(0)
-  })
-
-  test("dismisses add transaction dialog on outside tap", async ({ page }) => {
-    await page.getByRole("button", { name: "Add transaction", exact: true }).click()
-    const dialog = page.getByRole("dialog", { name: "Add transaction" })
-    await expect(dialog).toBeVisible()
-    const dialogBounds = await dialog.boundingBox()
-    if (!dialogBounds) {
-      throw new Error("Expected add transaction dialog bounds")
-    }
-    const viewport = await page.evaluate(() => ({
-      height: window.visualViewport?.height ?? window.innerHeight,
-      width: window.visualViewport?.width ?? window.innerWidth,
-    }))
-    expect(viewport.height - (dialogBounds.y + dialogBounds.height)).toBeLessThanOrEqual(2)
-    expect(dialogBounds.width).toBeGreaterThanOrEqual(viewport.width - 2)
-    expect(dialogBounds.y).toBeGreaterThanOrEqual(12)
-    await page.mouse.click(10, 10)
-    await expect(dialog).toBeHidden()
-  })
-
-  test("quick adds a transaction from the mobile sheet", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    await ensureCategory(request, token, "expense", "E2E Expense")
-    const tagName = `mobile-fab-${Date.now()}`
-    const tagResponse = await request.post("/api/tags", {
-      headers: { "X-CSRF-Token": token },
-      data: {
-        name: tagName,
-        is_hidden_from_budget: false,
-        auto_attach_period: { start: localToday(), end: localToday() },
-      },
-    })
-    expect(tagResponse.ok()).toBeTruthy()
-
-    await page.getByRole("button", { name: "Add transaction", exact: true }).click()
-    const dialog = page.getByRole("dialog", { name: "Add transaction" })
-    await expect(dialog).toBeVisible()
-
-    const title = `E2E Quick Add ${Date.now()}`
-    await dialog.getByLabel("Amount").fill("12.34")
-    await dialog.getByRole("button", { name: "Category", exact: true }).click()
-    await page.getByRole("option").nth(1).click()
-    await dialog.getByLabel("Title").fill(title)
-    await dialog.getByLabel("Notes").fill("Mobile description")
-    await dialog.getByRole("button", { name: tagName }).click()
-    const scheduledOption = page.getByRole("option", { name: tagName })
-    await expect(scheduledOption).toHaveAttribute("aria-selected", "true")
-    await scheduledOption.click()
-    await expect(scheduledOption).toHaveAttribute("aria-selected", "false")
-    await page.keyboard.press("Escape")
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().endsWith("/api/transactions") &&
-        response.request().method() === "POST",
-    )
-    await dialog.getByRole("button", { name: "Add transaction" }).click()
-
-    const createResponse = await createResponsePromise
-    expect(createResponse.ok()).toBeTruthy()
-    const created = (await createResponse.json()) as { id: number }
-    const detailResponse = await request.get(`/api/transactions/${created.id}`)
-    expect(detailResponse.ok()).toBeTruthy()
-    const detail = (await detailResponse.json()) as { tags: string[] }
-    expect(detail.tags).not.toContain(tagName)
-    await expect(dialog).toBeHidden()
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(page.locator("body")).toContainText(title)
-  })
-
-  test("uses one balance hero and four semantic metric lanes", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    await createOverallMonthlyBudget(request, token, 310_000)
-    await page.goto("/")
-
-    await expect(page.getByRole("button", { name: "This month" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    )
-    await expect(page.getByTestId("dashboard-balance-card")).toBeVisible()
-    await expect(page.getByTestId("dashboard-secondary-kpi-card")).toHaveCount(2)
-    await expect(page.locator("[data-metric-tone]")).toHaveCount(4)
-    await expect(page.getByTestId("dashboard-balance-budget-pace")).toBeVisible()
-    await expect(page.getByRole("group", { name: "Transaction type" })).toHaveCount(0)
-    await expect(page.getByTestId("dashboard-balance-history")).not.toBeVisible()
-    await expect(
-      page.getByTestId("dashboard-spending-bands").getByText(/Six months/),
-    ).toHaveCount(0)
-    await expect(
-      page.getByTestId("dashboard-spending-bands").getByRole("link", {
-        name: "Open ledger",
-      }),
-    ).toHaveCount(0)
-
-    const lanes = page.locator("[data-metric-tone]")
-    const boxes = await Promise.all(
-      [0, 1, 2, 3].map((index) => lanes.nth(index).boundingBox()),
-    )
-    expect(boxes.every(Boolean)).toBeTruthy()
-    expect(Math.abs((boxes[0]?.y ?? 0) - (boxes[1]?.y ?? 0))).toBeLessThan(2)
-    expect((boxes[2]?.y ?? 0)).toBeGreaterThan((boxes[0]?.y ?? 0) + 40)
-    expect(Math.abs((boxes[0]?.x ?? 0) - (boxes[2]?.x ?? 0))).toBeLessThan(2)
-    const periodButton = page.getByRole("button", { name: "This month" })
-    const periodButtonBox = await periodButton.boundingBox()
-    expect(periodButtonBox?.height).toBeGreaterThanOrEqual(44)
-  })
-
-  test("uses a complete second row for net movement when no budgets exist", async ({
+  test("shows balance, cash in, spent and net for the period and follows period changes", async ({
     page,
   }) => {
-    const isolated = await loginAsIsolatedUser(page)
-    await isolated.request.dispose()
     await page.goto("/")
-
-    await expect(page.getByTestId("dashboard-planning-card")).toHaveCount(0)
-    const grid = await page.getByTestId("dashboard-metric-grid").boundingBox()
-    const cashIn = await page
-      .getByTestId("dashboard-secondary-kpi-card")
-      .filter({ hasText: "Cash in" })
-      .boundingBox()
-    const spent = await page
-      .getByTestId("dashboard-secondary-kpi-card")
-      .filter({ hasText: "Spent" })
-      .boundingBox()
-    const netMovement = await page
-      .getByTestId("dashboard-net-movement-card")
-      .boundingBox()
-
-    expect(grid).not.toBeNull()
-    expect(cashIn).not.toBeNull()
-    expect(spent).not.toBeNull()
-    expect(netMovement).not.toBeNull()
-    expect(Math.abs((cashIn?.y ?? 0) - (spent?.y ?? 0))).toBeLessThan(2)
-    expect((netMovement?.y ?? 0)).toBeGreaterThan((cashIn?.y ?? 0) + 40)
-    expect(Math.abs((netMovement?.width ?? 0) - (grid?.width ?? 0))).toBeLessThan(2)
-    const viewport = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
-  })
-
-  test("keeps category budget health as the fourth metric lane", async ({ page }) => {
     const isolated = await loginAsIsolatedUser(page)
-    const monthStart = `${localToday().slice(0, 7)}-01`
-    const today = localToday()
-    // One overspent budget is at risk on any day of the month; the two
-    // untouched budgets always stay on track.
-    const plans = [
-      { name: "Food", budgetCents: 80_000, spentCents: 84_000 },
-      { name: "Transport", budgetCents: 50_000, spentCents: 0 },
-      { name: "Utilities", budgetCents: 50_000, spentCents: 0 },
-    ]
-    for (const [index, plan] of plans.entries()) {
-      const categoryResponse = await isolated.request.post("/api/categories", {
-        headers: { "X-CSRF-Token": isolated.csrfToken },
-        data: { name: plan.name, type: "expense", order: index },
-      })
-      expect(categoryResponse.ok()).toBeTruthy()
-      const category = (await categoryResponse.json()) as { id: number }
-      const budgetResponse = await isolated.request.post("/api/budgets/templates", {
-        headers: { "X-CSRF-Token": isolated.csrfToken },
-        data: {
-          frequency: "monthly",
-          category_id: category.id,
-          amount_cents: plan.budgetCents,
-          starts_on: monthStart,
-          ends_on: null,
-        },
-      })
-      expect(budgetResponse.ok()).toBeTruthy()
-      if (plan.spentCents > 0) {
-        await createTransaction(isolated.request, isolated.csrfToken, {
-          date: today,
-          occurred_at: `${today}T09:0${index}:00`,
-          type: "expense",
-          amount_cents: plan.spentCents,
-          category_id: category.id,
-          title: `${plan.name} spending`,
-          tags: [],
-        })
-      }
-    }
-    await isolated.request.dispose()
-    await page.goto("/")
-
-    const planningCard = page.getByTestId("dashboard-planning-card")
-    await expect(page.locator("[data-metric-tone]")).toHaveCount(4)
-    await expect(planningCard).toContainText("Category budgets")
-    await expect(planningCard).toContainText("1 at risk")
-    await expect(planningCard).toContainText("Food")
-    await expect(planningCard).toContainText("40 € over")
-  })
-
-  test("keeps budget pace and recent amounts readable when headline values are hidden", async ({
-    page,
-  }) => {
-    const isolated = await loginAsIsolatedUser(page)
-    const today = localToday()
-    const incomeCategoryResponse = await isolated.request.post("/api/categories", {
-      headers: { "X-CSRF-Token": isolated.csrfToken },
-      data: { name: "Salary", type: "income", order: 0 },
-    })
-    expect(incomeCategoryResponse.ok()).toBeTruthy()
-    const incomeCategory = (await incomeCategoryResponse.json()) as { id: number }
-    const expenseCategoryResponse = await isolated.request.post("/api/categories", {
-      headers: { "X-CSRF-Token": isolated.csrfToken },
-      data: { name: "Food", type: "expense", order: 0 },
-    })
-    expect(expenseCategoryResponse.ok()).toBeTruthy()
-    const expenseCategory = (await expenseCategoryResponse.json()) as { id: number }
+    const lastMonth = monthKey(-1)
+    const salary = await createCategory(isolated.request, isolated.csrfToken, "income", "Salary")
+    const rent = await createCategory(isolated.request, isolated.csrfToken, "expense", "Rent")
     await createTransaction(isolated.request, isolated.csrfToken, {
-      date: today,
-      occurred_at: `${today}T08:00:00`,
+      date: `${lastMonth}-10`,
+      occurred_at: `${lastMonth}-10T09:00:00`,
       type: "income",
-      amount_cents: 265_650,
-      category_id: incomeCategory.id,
+      amount_cents: 200_000,
+      category_id: salary,
       title: "Salary payment",
       tags: [],
     })
     await createTransaction(isolated.request, isolated.csrfToken, {
-      date: today,
-      occurred_at: `${today}T12:00:00`,
+      date: `${lastMonth}-12`,
+      occurred_at: `${lastMonth}-12T09:00:00`,
       type: "expense",
-      amount_cents: 3_000,
-      category_id: expenseCategory.id,
-      title: "Lunch",
+      amount_cents: 50_000,
+      category_id: rent,
+      title: "Rent payment",
       tags: [],
     })
-    await createOverallMonthlyBudget(isolated.request, isolated.csrfToken, 310_000)
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: `${monthKey(0)}-01`,
+      occurred_at: `${monthKey(0)}-01T09:00:00`,
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: rent,
+      title: "Groceries",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/?period=last_month")
+    await expect(metric(page, "Cash in")).toContainText(eur("2.000,00 €"))
+    await expect(metric(page, "Spent")).toContainText(eur("500,00 €"))
+    await expect(metric(page, "Net")).toContainText(eur("+ 1.500,00 €"))
+    await expect(metric(page, "Balance")).toContainText(eur("1.500,00 €"))
+    await expect(metric(page, "Balance")).toContainText(
+      `as of ${SHORT_MONTHS[lastMonth.slice(5)]} ${lastMonth.slice(0, 4)}`,
+    )
+
+    await page.getByRole("button", { name: /^Period:/ }).tap()
+    await page.getByRole("menuitemcheckbox", { name: "This month" }).tap()
+    await expect(page).toHaveURL(/period=this_month/)
+    await expect(metric(page, "Spent")).toContainText(eur("120,00 €"))
+    await expect(metric(page, "Spent")).toContainText("vs previous")
+    await expect(metric(page, "Balance")).toContainText(eur("1.380,00 €"))
+    await expect(metric(page, "Balance")).toContainText("as of today")
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test("includes or excludes tags from the metrics in the Filter sheet", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Misc")
+    const tagResponse = await isolated.request.post("/api/tags", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { name: "Trip", is_hidden_from_budget: false },
+    })
+    expect(tagResponse.ok()).toBeTruthy()
+    const tagId = ((await tagResponse.json()) as { id: number }).id
+    for (const [title, cents, tags] of [
+      ["Hotel", 9_000, ["Trip"]],
+      ["Lunch", 3_000, []],
+    ] as const) {
+      await createTransaction(isolated.request, isolated.csrfToken, {
+        date: today,
+        occurred_at: `${today}T10:00:00`,
+        type: "expense",
+        amount_cents: cents,
+        category_id: category,
+        title,
+        tags: [...tags],
+      })
+    }
+    await isolated.request.dispose()
+
+    await page.goto("/?period=this_month")
+    await expect(metric(page, "Spent")).toContainText(eur("120,00 €"))
+
+    await page.getByRole("button", { name: "Filter", exact: true }).tap()
+    const sheet = page.getByRole("dialog", { name: "Filter" })
+    await sheet.getByRole("checkbox", { name: "Trip" }).click()
+    await expect(page).toHaveURL(new RegExp(`[?&]tags=${tagId}(?:&|$)`))
+    await expect(metric(page, "Spent")).toContainText(eur("90,00 €"))
+
+    await sheet.getByRole("radio", { name: "Exclude" }).tap()
+    await expect(page).toHaveURL(new RegExp(`[?&]exclude_tags=${tagId}(?:&|$)`))
+    await expect(page).not.toHaveURL(/[?&]tags=/)
+    await expect(metric(page, "Spent")).toContainText(eur("30,00 €"))
+    await page.keyboard.press("Escape")
+    await expect(sheet).toBeHidden()
+    await expect(page.getByRole("button", { name: "Filter · 1" })).toBeVisible()
+  })
+
+  test("hides amounts in privacy mode, restores them, and remembers the choice after a reload", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Misc")
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T10:00:00`,
+      type: "expense",
+      amount_cents: 4_321,
+      category_id: category,
+      title: "Private purchase",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/?period=this_month")
+    const recent = page.getByRole("region", { name: "Recent" })
+    await expect(metric(page, "Spent")).toContainText(eur("43,21 €"))
+    await expect(recent).toContainText(eur("43,21 €"))
+
+    await page.getByRole("button", { name: "Hide amounts" }).tap()
+    await expect(metric(page, "Spent")).toContainText("Hidden amount")
+    await expect(recent.getByRole("listitem", { name: "Private purchase" })).toContainText("Hidden amount")
+
+    await page.reload()
+    await expect(page.getByRole("button", { name: "Show amounts" })).toBeVisible()
+    await expect(metric(page, "Spent")).toContainText("Hidden amount")
+
+    await page.getByRole("button", { name: "Show amounts" }).tap()
+    await expect(metric(page, "Spent")).toContainText(eur("43,21 €"))
+    await expect(page.getByRole("button", { name: "Hide amounts" })).toBeVisible()
+  })
+
+  test("lists the exact balance, spending and category share values as tables", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const salary = await createCategory(isolated.request, isolated.csrfToken, "income", "Salary")
+    const rent = await createCategory(isolated.request, isolated.csrfToken, "expense", "Rent")
+    // Early times keep both inside the balance history, which ends at the current time.
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T00:00:01`,
+      type: "income",
+      amount_cents: 123_456,
+      category_id: salary,
+      title: "Bonus",
+      tags: [],
+    })
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T00:00:02`,
+      type: "expense",
+      amount_cents: 23_456,
+      category_id: rent,
+      title: "Deposit",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/?period=this_month")
+
+    const balance = await showAsTable(page, "Balance")
+    await expect(
+      balance.getByRole("table", { name: "Balance by month" }).getByRole("row", { name: /^Today/ }),
+    ).toContainText(eur("1.000,00 €"))
+
+    const spending = await showAsTable(page, "Spending by category")
+    const spendingTable = spending.getByRole("table", { name: "Spending by category and month" })
+    const currentMonth = `${SHORT_MONTHS[monthKey(0).slice(5)]} ${monthKey(0).slice(0, 4)}`
+    await expect(spendingTable.getByRole("row", { name: new RegExp(`^${currentMonth}`) })).toContainText(
+      eur("234,56 €"),
+    )
+
+    const share = await showAsTable(page, "Category share")
+    const shareTable = share.getByRole("table", { name: "Category share" })
+    await expect(shareTable.getByRole("row", { name: /^Rent/ })).toContainText(eur("234,56 €"))
+    await expect(shareTable.getByRole("row", { name: /^Rent/ })).toContainText("100 %")
+    await share.getByRole("radio", { name: "Income" }).tap()
+    await expect(shareTable.getByRole("row", { name: /^Salary/ })).toContainText(eur("1.234,56 €"))
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test("hides a chart card from the dashboard and brings it back from the header menu", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
     await isolated.request.dispose()
     await page.goto("/")
 
-    await page.getByRole("button", { name: "Hide values" }).click()
+    const share = page.getByRole("region", { name: "Category share" })
+    await share.getByRole("button", { name: "Chart options" }).tap()
+    await page.getByRole("menuitem", { name: "Hide from dashboard" }).tap()
+    await expect(share).toHaveCount(0)
 
-    await expect(
-      page.getByTestId("dashboard-balance-card").getByText("2 626,50 €", {
-        exact: true,
-      }),
-    ).toHaveClass(/kpi-hidden/)
-    await expect(
-      page.getByTestId("dashboard-secondary-kpi-card").filter({ hasText: "Cash in" })
-        .getByText("2 656,50 €", { exact: true }),
-    ).toHaveClass(/kpi-hidden/)
-    await expect(
-      page.getByTestId("dashboard-secondary-kpi-card").filter({ hasText: "Spent" })
-        .getByText("30,00 €", { exact: true }),
-    ).toHaveClass(/kpi-hidden/)
-    await expect(page.getByTestId("dashboard-balance-budget-pace")).not.toHaveClass(
-      /kpi-hidden/,
-    )
+    await page.reload()
+    await expect(page.getByRole("region", { name: "Spending by category" })).toBeVisible()
+    await expect(share).toHaveCount(0)
 
-    const planPace = page.locator('[data-metric-tone="warning"]')
-    await expect(planPace.locator(".kpi-hidden")).toHaveCount(0)
-    await expect(
-      page.getByRole("link", { name: /Lunch/ }).getByText("−30,00 €", {
-        exact: true,
-      }),
-    ).not.toHaveClass(/kpi-hidden/)
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Show hidden cards (1)" }).tap()
+    await expect(share).toBeVisible()
   })
 
-  test("keeps recent transactions above breakdown charts", async ({
+  test("opens the transaction ledger when a spending band segment is tapped and returns with the breadcrumb", async ({
     page,
-    request,
   }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Order")
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
     const today = localToday()
-    await createTransaction(request, token, {
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Groceries")
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T10:00:00`,
+      type: "expense",
+      amount_cents: 7_500,
+      category_id: category,
+      title: "Weekly shop",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/?period=this_month")
+    const spending = page.getByRole("region", { name: "Spending by category" })
+    await spending.locator('[class*="_track_"] > span').first().tap()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*category=${category}.*from=dashboard`))
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" })
+    await expect(breadcrumb).toContainText("Dashboard")
+    await expect(breadcrumb).toContainText("Groceries")
+    await expect(page.getByRole("listitem", { name: "Weekly shop" })).toBeVisible()
+
+    await breadcrumb.getByRole("link", { name: "Dashboard" }).tap()
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+  })
+
+  test("lists the seven newest transactions in Recent and opens one from a tap", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Misc")
+    const ids: number[] = []
+    for (let index = 1; index <= 8; index += 1) {
+      ids.push(
+        await createTransaction(isolated.request, isolated.csrfToken, {
+          date: today,
+          occurred_at: `${today}T0${index}:00:00`,
+          type: "expense",
+          amount_cents: index * 1_000,
+          category_id: category,
+          title: `Recent item ${index}`,
+          tags: [],
+        }),
+      )
+    }
+    await isolated.request.dispose()
+
+    await page.goto("/")
+    const recent = page.getByRole("region", { name: "Recent" })
+    await expect(recent.getByRole("listitem")).toHaveCount(7)
+    await expect(recent.getByRole("listitem", { name: "Recent item 8" })).toBeVisible()
+    await expect(recent.getByRole("listitem", { name: "Recent item 1" })).toHaveCount(0)
+    await expectNoHorizontalOverflow(page)
+
+    await recent.getByRole("listitem", { name: "Recent item 5" }).tap()
+    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*peek=${ids[4]}`))
+    await expect(page.getByRole("complementary", { name: "Recent item 5" })).toBeVisible()
+  })
+
+  test("shows budget pace in the metrics and category budgets as left or over", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const monthStart = `${monthKey(0)}-01`
+    const dining = await createCategory(isolated.request, isolated.csrfToken, "expense", "Dining out")
+    const hobbies = await createCategory(isolated.request, isolated.csrfToken, "expense", "Hobbies")
+    for (const [categoryId, amount] of [
+      [null, 200_000],
+      [dining, 10_000],
+      [hobbies, 20_000],
+    ] as const) {
+      const response = await isolated.request.post("/api/budgets/templates", {
+        headers: { "X-CSRF-Token": isolated.csrfToken },
+        data: {
+          frequency: "monthly",
+          category_id: categoryId,
+          amount_cents: amount,
+          starts_on: monthStart,
+          ends_on: null,
+        },
+      })
+      expect(response.ok()).toBeTruthy()
+    }
+    await createTransaction(isolated.request, isolated.csrfToken, {
       date: today,
       occurred_at: `${today}T09:00:00`,
       type: "expense",
-      amount_cents: 3_000,
-      category_id: categoryId,
-      title: `E2E Mobile Order ${Date.now()}`,
+      amount_cents: 12_000,
+      category_id: dining,
+      title: "Dinner",
       tags: [],
     })
-    await page.goto("/")
+    await isolated.request.dispose()
 
-    const recentHeading = page.getByRole("heading", { name: "Recent transactions" })
-    const expensesHeading = page.getByRole("heading", { name: "Expenses" }).first()
-    const recentBox = await recentHeading.boundingBox()
-    const expensesBox = await expensesHeading.boundingBox()
+    await page.goto("/?period=this_month")
+    await expect(metric(page, "Budget pace")).toContainText("projected")
 
-    expect(recentBox).not.toBeNull()
-    expect(expensesBox).not.toBeNull()
-    expect((recentBox?.y ?? 0) < (expensesBox?.y ?? 0)).toBeTruthy()
+    const budgets = page.getByRole("region", { name: "Budgets" })
+    await expect(budgets.getByRole("listitem", { name: "Dining out" })).toContainText("20 € over")
+    await expect(budgets.getByRole("listitem", { name: "Hobbies" })).toContainText("200 € left")
+    await expectNoHorizontalOverflow(page)
+
+    await budgets.getByRole("button", { name: "Open budgets" }).tap()
+    await expect(page).toHaveURL(/\/budgets/)
   })
 
-  test("keeps the recent list compact and non-scrollable", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Recent")
-    const today = localToday()
-    const seed = Date.now()
-    for (let index = 0; index < 6; index += 1) {
-      await createTransaction(request, token, {
-        date: today,
-        occurred_at: `${today}T08:0${index}:00`,
-        type: "expense",
-        amount_cents: 2_000 + index,
-        category_id: categoryId,
-        title: `Mobile recent transaction ${seed}-${index + 1}`,
-        tags: [],
-      })
-    }
+  test("lists a durable purchase with its days owned and opens its transaction", async ({ page }) => {
     await page.goto("/")
-
-    const recentList = page.getByTestId("dashboard-recent-list")
-    await expect(recentList.getByRole("link")).toHaveCount(4)
-    expect(
-      ["auto", "scroll"],
-    ).not.toContain(
-      await recentList.evaluate((element) => getComputedStyle(element).overflowY),
-    )
-  })
-
-  test("keeps long recent transaction titles inside the mobile viewport", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "E2E Mobile Long Title")
-    const today = localToday()
-    await createTransaction(request, token, {
-      date: today,
-      occurred_at: new Date().toISOString(),
-      type: "expense",
-      amount_cents: 3_000,
-      category_id: categoryId,
-      title:
-        "This is a very long mobile transaction title with SupercalifragilisticexpialidociousStyleSegmentsThatShouldNeverStretchTheViewport",
-      tags: [],
-    })
-    await page.goto("/")
-
-    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-
-    expect(scrollWidth).toBeLessThanOrEqual(clientWidth)
-  })
-
-  test("keeps large accumulated financial values inside the mobile viewport", async ({
-    page,
-  }) => {
     const isolated = await loginAsIsolatedUser(page)
     const today = localToday()
-    const incomeCategoryResponse = await isolated.request.post("/api/categories", {
-      headers: { "X-CSRF-Token": isolated.csrfToken },
-      data: { name: "Salary", type: "income", order: 0 },
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Electronics")
+    const title = "Noise-cancelling headphones"
+    const transactionId = await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 120_000,
+      category_id: category,
+      title,
+      tags: [],
     })
-    expect(incomeCategoryResponse.ok()).toBeTruthy()
-    const incomeCategory = (await incomeCategoryResponse.json()) as { id: number }
-    const expenseCategoryResponse = await isolated.request.post("/api/categories", {
+    const durable = await isolated.request.post(`/api/transactions/${transactionId}/durable`, {
       headers: { "X-CSRF-Token": isolated.csrfToken },
-      data: { name: "Large purchase", type: "expense", order: 0 },
+      data: { expected_lifespan_days: 730, acquired_on: today },
     })
-    expect(expenseCategoryResponse.ok()).toBeTruthy()
-    const expenseCategory = (await expenseCategoryResponse.json()) as { id: number }
+    expect(durable.ok()).toBeTruthy()
+    await isolated.request.dispose()
+
+    await page.goto("/")
+    const row = page.getByRole("region", { name: "Durable purchases" }).getByRole("listitem", { name: title })
+    await expect(row).toContainText("0 of 730 days")
+
+    await row.tap()
+    await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))
+  })
+
+  test("keeps long titles and very large amounts inside the viewport", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const salary = await createCategory(isolated.request, isolated.csrfToken, "income", "Salary")
+    const purchase = await createCategory(isolated.request, isolated.csrfToken, "expense", "Large purchase")
     await createTransaction(isolated.request, isolated.csrfToken, {
       date: today,
       occurred_at: `${today}T08:00:00`,
       type: "income",
       amount_cents: 610_000,
-      category_id: incomeCategory.id,
+      category_id: salary,
       title: "Salary payment",
       tags: [],
     })
@@ -431,25 +433,51 @@ test.describe("Dashboard Page (mobile)", () => {
       occurred_at: `${today}T09:00:00`,
       type: "expense",
       amount_cents: 1_000_793_493,
-      category_id: expenseCategory.id,
-      title: "Accumulated large purchase",
+      category_id: purchase,
+      title:
+        "This is a very long mobile transaction title with SupercalifragilisticexpialidociousStyleSegmentsThatShouldNeverStretchTheViewport",
       tags: [],
     })
     // A small overall budget makes the projected pace figures extreme too.
-    await createOverallMonthlyBudget(isolated.request, isolated.csrfToken, 200_000)
+    const budget = await isolated.request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: {
+        frequency: "monthly",
+        category_id: null,
+        amount_cents: 200_000,
+        starts_on: `${monthKey(0)}-01`,
+        ends_on: null,
+      },
+    })
+    expect(budget.ok()).toBeTruthy()
     await isolated.request.dispose()
-    await page.goto("/")
 
-    await expect(
-      page
-        .getByTestId("dashboard-secondary-kpi-card")
-        .filter({ hasText: "Spent" })
-        .getByText("10 007 934,93 €", { exact: true }),
-    ).toBeVisible()
-    const viewport = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+    await page.goto("/")
+    await expect(metric(page, "Spent")).toContainText(eur("10.007.934,93 €"))
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test("shows empty states when there is nothing to chart", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    await isolated.request.dispose()
+
+    await page.goto("/")
+    await expect(page.getByRole("region", { name: "Spending by category" })).toContainText(
+      "No spending in these months.",
+    )
+    await expect(page.getByRole("region", { name: "Category share" })).toContainText(
+      "No spending in this period.",
+    )
+    await expect(page.getByRole("region", { name: "Recent" })).toContainText(
+      "No transactions in this period",
+    )
+    await expect(page.getByRole("region", { name: "Budgets" })).toContainText(
+      "No category budgets this month",
+    )
+    await expect(page.getByRole("region", { name: "Durable purchases" })).toContainText(
+      "No durable purchases are being tracked",
+    )
+    await expectNoHorizontalOverflow(page)
   })
 })
