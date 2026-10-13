@@ -38,3 +38,11 @@ export function usePrivacy(): boolean {
 export function isPrivacyOn(): boolean {
   return privacyOn
 }
+
+// Amounts in free text, such as assistant answers: "€1,234.56", "1 234,56 €", "-12 EUR".
+const TEXT_AMOUNT =
+  /(?:€|\$|\bEUR|\bUSD)\s?[-−]?\d(?:[\d.,\u00a0\u202f ]*\d)?|[-−]?\d(?:[\d.,\u00a0\u202f ]*\d)?\s?(?:€|\$|EUR\b|USD\b)/g
+
+export function maskTextAmounts(text: string): string {
+  return text.replace(TEXT_AMOUNT, "••••")
+}

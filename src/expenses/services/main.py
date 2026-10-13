@@ -2703,6 +2703,7 @@ class ReceiptAttachmentService:
         mime_type: str,
         size_bytes: int,
         sha256_hex: str,
+        replaces: ReceiptAttachment | None = None,
     ) -> ReceiptAttachment:
         attachment = ReceiptAttachment(
             user_id=self.user_id,
@@ -2714,8 +2715,27 @@ class ReceiptAttachmentService:
             sha256_hex=sha256_hex,
         )
         self.session.add(attachment)
+        # A replacement swaps the two rows in one commit; its files go once that lands.
+        replaced_files: list[Path] = []
+        if replaces is not None:
+            replaced_id = replaces.id
+            replaced_files = [
+                self.path_for_storage_key(replaces.storage_key),
+                self.thumbnail_path_for(replaces),
+            ]
+            self.session.delete(replaces)
         self.session.commit()
         self.session.refresh(attachment)
+        for path in replaced_files:
+            path.unlink(missing_ok=True)
+        if replaces is not None:
+            log_event(
+                logger,
+                logging.INFO,
+                "attachment_deleted",
+                attachment_id=replaced_id,
+                transaction_id=attachment.transaction_id,
+            )
         log_event(
             logger,
             logging.INFO,

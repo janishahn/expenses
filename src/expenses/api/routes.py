@@ -4128,6 +4128,7 @@ async def api_upload_transaction_attachment(
 
     service = ReceiptAttachmentService(db, user_id=user_id)
     # A replacement takes its target's slot, so it works at the attachment limit.
+    replaced = None
     if replaces_attachment_id is not None:
         try:
             replaced = service.get(replaces_attachment_id)
@@ -4139,7 +4140,7 @@ async def api_upload_transaction_attachment(
                 detail="Attachment belongs to another transaction",
             )
     current_count = service.count_for_transaction(transaction_id)
-    if replaces_attachment_id is not None:
+    if replaced is not None:
         current_count -= 1
     if current_count >= service.MAX_ATTACHMENTS_PER_TRANSACTION:
         raise HTTPException(
@@ -4185,16 +4186,20 @@ async def api_upload_transaction_attachment(
         full_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Attachment is empty")
 
-    attachment = service.create_metadata(
-        transaction_id=transaction_id,
-        storage_key=storage_key,
-        original_filename=original_filename,
-        mime_type=mime_type,
-        size_bytes=size_bytes,
-        sha256_hex=digest.hexdigest(),
-    )
-    if replaces_attachment_id is not None:
-        service.delete(replaces_attachment_id)
+    try:
+        attachment = service.create_metadata(
+            transaction_id=transaction_id,
+            storage_key=storage_key,
+            original_filename=original_filename,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            sha256_hex=digest.hexdigest(),
+            replaces=replaced,
+        )
+    except Exception:
+        # Without its row the new file would be orphaned.
+        full_path.unlink(missing_ok=True)
+        raise
     return ReceiptAttachmentOut(
         id=attachment.id,
         transaction_id=attachment.transaction_id,

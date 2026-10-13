@@ -1175,4 +1175,5 @@ def test_receipt_replace_works_at_the_attachment_limit(
         "bill4.pdf",
         "new.pdf",
     ]
+    assert api_client.get(f"/api/attachments/{ids[0]}/download").status_code == 404
     assert upload("x.pdf", replaces_attachment_id="999999").status_code == 404

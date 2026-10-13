@@ -222,6 +222,24 @@ test.describe("Spending Assistant", () => {
     await expect(composer(page)).toBeFocused()
   })
 
+  test("masks amounts in the conversation in privacy mode", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("ew.privacy", "on"))
+    await page.route(STREAM_URL, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: happyTurn("You spent €1,234.00 this month.", []),
+      })
+    })
+
+    await page.goto("/assistant")
+    await sendQuestion(page, "Did I spend more than €1,000?")
+
+    await expect(assistantTurns(page).last()).toContainText("You spent •••• this month.")
+    await expect(userTurns(page).last()).toContainText("Did I spend more than ••••?")
+    await expect(thread(page)).not.toContainText("1,234")
+  })
+
   test("an empty-state prompt sends immediately", async ({ page }) => {
     await page.route(STREAM_URL, async (route) => {
       await route.fulfill({

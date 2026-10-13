@@ -7,6 +7,7 @@ import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { streamSpendingChat } from "../app/api"
 import { copyText } from "../app/clipboard"
 import { formatDateRange } from "../app/format"
+import { maskTextAmounts, usePrivacy } from "../app/privacy"
 import type { SpendingChatHistoryEntry, SpendingChatStreamEvent } from "../app/api-types"
 import { ChatGPTPlanLink } from "../components/AISettingsPanel"
 import { Button, IconButton } from "../components/ui/Button"
@@ -172,6 +173,8 @@ function AssistantProgressLine({ narration, tools }: { narration: string; tools:
 }
 
 function ToolActivityDisclosure({ tools }: { tools: ToolActivity[] }) {
+  const privacy = usePrivacy()
+  const shown = (text: string) => (privacy ? maskTextAmounts(text) : text)
   const runningTool = tools.find((tool) => tool.status === "running")
   const failedTool = tools.find((tool) => tool.status === "failed")
   const summary = runningTool
@@ -185,7 +188,13 @@ function ToolActivityDisclosure({ tools }: { tools: ToolActivity[] }) {
   return (
     <ChatTools summary={summary} failed={!runningTool && Boolean(failedTool)}>
       {tools.map((tool) => (
-        <ChatToolItem key={tool.id} status={tool.status} label={toolLabel(tool.toolName)} detail={tool.detail} result={tool.summary} />
+        <ChatToolItem
+          key={tool.id}
+          status={tool.status}
+          label={toolLabel(tool.toolName)}
+          detail={shown(tool.detail)}
+          result={tool.summary === null ? null : shown(tool.summary)}
+        />
       ))}
     </ChatTools>
   )
@@ -205,6 +214,9 @@ function SpendingAssistantPage() {
   const threadRef = useRef<HTMLDivElement | null>(null)
   const pendingScrollRef = useRef<{ userId: string; assistantId: string } | null>(null)
   const copyTimerRef = useRef<number | null>(null)
+  // Privacy mode masks amounts in the conversation; copying keeps the exact text.
+  const privacy = usePrivacy()
+  const shown = (text: string) => (privacy ? maskTextAmounts(text) : text)
 
   useEffect(() => {
     return () => {
@@ -504,14 +516,14 @@ function SpendingAssistantPage() {
         </>
       }
     >
-      <ChatThread ref={threadRef} empty={messages.length === 0} announcement={announcement} onScroll={updateScrollPill}>
+      <ChatThread ref={threadRef} empty={messages.length === 0} announcement={shown(announcement)} onScroll={updateScrollPill}>
         {messages.length === 0 ? (
           <ChatEmpty title="Ask about your spending" prompts={PROMPT_CHIPS} onPrompt={(prompt) => void sendMessage(prompt)} />
         ) : (
           messages.map((turn) =>
             turn.role === "user" ? (
               <ChatTurn key={turn.id} id={turn.id} from="user">
-                <ChatBubble>{turn.content}</ChatBubble>
+                <ChatBubble>{shown(turn.content)}</ChatBubble>
                 <ChatActions>
                   <CopyButton copied={copiedTurnId === turn.id} label="Copy message" onCopy={() => handleCopy(turn.id, turn.content)} />
                 </ChatActions>
@@ -520,7 +532,7 @@ function SpendingAssistantPage() {
               <ChatTurn key={turn.id} id={turn.id} from="assistant" reserve={answerReserve?.turnId === turn.id ? answerReserve.px : undefined}>
                 {turn.tools.length > 0 ? <ToolActivityDisclosure tools={turn.tools} /> : null}
                 {turn.content ? (
-                  <ChatMarkdown content={turn.content} />
+                  <ChatMarkdown content={shown(turn.content)} />
                 ) : turn.streaming ? (
                   <AssistantProgressLine narration={turn.narration} tools={turn.tools} />
                 ) : null}
