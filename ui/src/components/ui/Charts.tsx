@@ -373,7 +373,7 @@ export function Donut({
       </div>
       {compact ? (
         <div className={s.dlCompactWrap}>
-          <ShareList items={items.slice(0, 5)} compact focus={focus} onLeave={leave} />
+          <ShareList items={items.slice(0, 5)} focus={focus} onLeave={leave} />
           {items.length > 5 ? <div className={s.dlMore}>{items.length - 5} more</div> : null}
         </div>
       ) : (
@@ -384,20 +384,10 @@ export function Donut({
   )
 }
 
-// Each share's name, amount, and percentage; hovering one dims the others in the chart. Compact drops the amount.
-function ShareList({
-  items,
-  compact = false,
-  focus,
-  onLeave,
-}: {
-  items: DonutItem[]
-  compact?: boolean
-  focus: ChartFocus
-  onLeave: () => void
-}) {
+// Each share's name, amount, and percentage; hovering one dims the others in the chart.
+function ShareList({ items, focus, onLeave }: { items: DonutItem[]; focus: ChartFocus; onLeave: () => void }) {
   return (
-    <div className={clsx(s.dl, compact && s.dlCompact)} role="list" onPointerLeave={onLeave}>
+    <div className={s.dl} role="list" onPointerLeave={onLeave}>
       {items.map((item) => {
         const dim = dimmed(focus, item.key) ? "" : undefined
         return (
@@ -406,11 +396,9 @@ function ShareList({
               <span aria-hidden="true" className={s.swatch} style={{ background: item.color }} />
               <span className={s.dlLabel}>{item.label}</span>
             </span>
-            {compact ? null : (
-              <span className={s.dlAmount} data-dim={dim}>
-                {item.amount}
-              </span>
-            )}
+            <span className={s.dlAmount} data-dim={dim}>
+              {item.amount}
+            </span>
             <span className={s.dlShare} data-dim={dim}>
               {item.share}
             </span>

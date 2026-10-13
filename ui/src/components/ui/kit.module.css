@@ -627,7 +627,8 @@
 .donutCompact .donut, .donutCompact .donut svg { width: 120px; height: 120px; }
 .donutCompact .donutValue { font-size: 14px; }
 .dlCompactWrap { min-width: 0; }
-.dlCompact { grid-template-columns: minmax(0, 1fr) 44px; }
+.donutCompact .dl { grid-template-columns: minmax(0, 1fr) 44px; }
+.donutCompact .dlAmount { display: none; }
 .dlMore { margin-top: 2px; color: var(--ink-3); font-size: 12px; }
 .bt { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--track); }
 .bf { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--budget-fill); }

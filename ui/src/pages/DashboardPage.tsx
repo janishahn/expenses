@@ -353,7 +353,6 @@ function DashboardPage() {
   const asOf = data.period.slug === "last_month" ? new Date(`${data.period.end}T00:00:00`) : now
   const pace = asOf.getDate() / new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0).getDate()
 
-  // On a phone the strip becomes one card: Spent leads, then the overall budget, then the other figures.
   const overall = data.budget_pace
   const summaryBudget: SummaryBudget | undefined = overall
     ? {
@@ -363,7 +362,7 @@ function DashboardPage() {
             <Amount cents={overall.spent_cents} decimals={false} /> of <Amount cents={overall.budget_cents} decimals={false} />
           </>
         ),
-        ratio: overall.spent_cents / overall.budget_cents,
+        ratio: overall.budget_cents ? overall.spent_cents / overall.budget_cents : 0,
         over: overall.remaining_cents < 0,
         pace,
         remaining:
@@ -646,48 +645,6 @@ function DashboardPage() {
       )}
     </Sheet>
   )
-  const durableCard = (
-    <Sheet
-      title="Durable purchases"
-      menu={
-        amortizedCount ? (
-          <MenuItem checked={showAmortized} onSelect={() => setShowAmortized(!showAmortized)}>
-            Show fully amortized ({amortizedCount})
-          </MenuItem>
-        ) : undefined
-      }
-    >
-      {durableItems.length ? (
-        <List flat label="Durable purchases">
-          {durableItems.map((item) => (
-            <Row
-              key={item.id}
-              {...DURABLE_COLUMNS}
-              label={item.title || "Untitled"}
-              onOpen={() =>
-                navigate(`/transactions/${item.transaction_id}`, { state: { returnTo: "/", returnLabel: "Dashboard" } })
-              }
-            >
-              <CategoryGlyph categoryId={item.category?.id} icon={item.category?.icon} name={item.category?.name} />
-              <Cell>{item.title || "Untitled"}</Cell>
-              <Cell align="right" tone="muted" hide="mobile">
-                <Amount cents={Math.round(item.cost_per_day_cents)} />
-                /day
-              </Cell>
-              <Cell hide="mobile">
-                <BudgetBar ratio={item.percent_amortized / 100} />
-              </Cell>
-              <Cell align="right" tone="muted">
-                {formatCount(item.days_owned)} of {formatCount(item.expected_lifespan_days)} days
-              </Cell>
-            </Row>
-          ))}
-        </List>
-      ) : (
-        <EmptyState inline>No durable purchases are being tracked</EmptyState>
-      )}
-    </Sheet>
-  )
 
   return (
     <Panel
@@ -740,7 +697,6 @@ function DashboardPage() {
             {shareCard}
             {budgetsCard}
           </CardRow>
-          {durableCard}
         </>
       ) : (
         <>
@@ -750,9 +706,48 @@ function DashboardPage() {
           {balanceCard}
           {spendingCard}
           {shareCard}
-          {durableCard}
         </>
       )}
+      <Sheet
+        title="Durable purchases"
+        menu={
+          amortizedCount ? (
+            <MenuItem checked={showAmortized} onSelect={() => setShowAmortized(!showAmortized)}>
+              Show fully amortized ({amortizedCount})
+            </MenuItem>
+          ) : undefined
+        }
+      >
+        {durableItems.length ? (
+          <List flat label="Durable purchases">
+            {durableItems.map((item) => (
+              <Row
+                key={item.id}
+                {...DURABLE_COLUMNS}
+                label={item.title || "Untitled"}
+                onOpen={() =>
+                  navigate(`/transactions/${item.transaction_id}`, { state: { returnTo: "/", returnLabel: "Dashboard" } })
+                }
+              >
+                <CategoryGlyph categoryId={item.category?.id} icon={item.category?.icon} name={item.category?.name} />
+                <Cell>{item.title || "Untitled"}</Cell>
+                <Cell align="right" tone="muted" hide="mobile">
+                  <Amount cents={Math.round(item.cost_per_day_cents)} />
+                  /day
+                </Cell>
+                <Cell hide="mobile">
+                  <BudgetBar ratio={item.percent_amortized / 100} />
+                </Cell>
+                <Cell align="right" tone="muted">
+                  {formatCount(item.days_owned)} of {formatCount(item.expected_lifespan_days)} days
+                </Cell>
+              </Row>
+            ))}
+          </List>
+        ) : (
+          <EmptyState inline>No durable purchases are being tracked</EmptyState>
+        )}
+      </Sheet>
     </Panel>
   )
 }
