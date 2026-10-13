@@ -315,14 +315,14 @@ export type DonutItem = { key: string; label: ReactNode; value: number; color: s
 export function Donut({
   items,
   center,
-  caption,
+  centerLabel,
   focus,
   tooltip,
   onSelect,
 }: {
   items: DonutItem[]
   center: ReactNode
-  caption: ReactNode
+  centerLabel: ReactNode
   focus: ChartFocus
   tooltip: (item: DonutItem) => ReactNode
   onSelect?: (item: DonutItem) => void
@@ -365,7 +365,7 @@ export function Donut({
         </svg>
         <div className={s.donutCenter}>
           <div className={s.donutValue}>{center}</div>
-          <div className={s.donutCaption}>{caption}</div>
+          <div className={s.donutLabel}>{centerLabel}</div>
         </div>
       </div>
       <ShareList items={items} focus={focus} onLeave={leave} />

@@ -579,7 +579,7 @@ function DashboardPage() {
               <Donut
                 focus={focus}
                 center={<Amount cents={shareTotal} decimals={false} />}
-                caption={periodName}
+                centerLabel={periodName}
                 items={shareItems.map((item) => ({
                   key: String(item.category_id),
                   label: item.name,

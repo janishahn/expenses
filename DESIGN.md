@@ -473,12 +473,12 @@ change to this document.
 
 - `no-restricted-imports`: `radix-ui` and `@radix-ui/*` only inside
   `src/components/ui/`.
-- `react/forbid-dom-props` and `react/forbid-component-props`: no `style`
-  outside `src/components/ui/` and chart internals; no `subtitle`, `eyebrow`,
-  `description`, or `caption` props.
-- Local rule `design/no-raw-visual-classes`: outside the primitives, no arbitrary
-  Tailwind values, palette colors, `shadow-*`, `rounded-*`, `ring-*`, or
-  `border-<color>` classes. Inside them, shadows only in floating primitives.
+- `react/forbid-dom-props` and `react/forbid-component-props`: outside
+  `src/components/ui/`, no `className` or `style`, and no `subtitle`,
+  `eyebrow`, `description`, or `caption` props.
+- Local rule `design/no-raw-visual-classes` (`ui/lint/design.js`): classes come
+  from the kit's CSS module, so a literal class name is an error everywhere,
+  except Tailwind's `sr-only`. Tailwind supplies only the CSS reset.
 - Keep `react/exhaustive-deps`, `rules-of-hooks`, `only-export-components`, and
   the TypeScript rules.
 

@@ -13,7 +13,7 @@
   },
   "ignorePatterns": [
     "dist",
-    "prototypes/redesign"
+    "prototypes"
   ],
   "rules": {
     "typescript/ban-ts-comment": "error",
@@ -201,7 +201,73 @@
       {
         "requireStringLiterals": false
       }
-    ]
+    ],
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "radix-ui",
+            "message": "Radix is wrapped by the kit in src/components/ui/; use the kit primitive."
+          }
+        ],
+        "patterns": [
+          {
+            "group": [
+              "@radix-ui/*"
+            ],
+            "message": "Radix is wrapped by the kit in src/components/ui/; use the kit primitive."
+          }
+        ]
+      }
+    ],
+    "react/forbid-dom-props": [
+      "error",
+      {
+        "forbid": [
+          {
+            "propName": "style",
+            "message": "Pages compose the kit in src/components/ui/; add a variant there instead."
+          },
+          {
+            "propName": "className",
+            "message": "Pages compose the kit in src/components/ui/; add a variant there instead."
+          }
+        ]
+      }
+    ],
+    "react/forbid-component-props": [
+      "error",
+      {
+        "forbid": [
+          {
+            "propName": "style",
+            "message": "Pages compose the kit in src/components/ui/; add a variant there instead."
+          },
+          {
+            "propName": "className",
+            "message": "Pages compose the kit in src/components/ui/; add a variant there instead."
+          },
+          {
+            "propName": "subtitle",
+            "message": "DESIGN.md bans subtitles: say it in the title or drop it."
+          },
+          {
+            "propName": "eyebrow",
+            "message": "DESIGN.md bans eyebrows: say it in the title or drop it."
+          },
+          {
+            "propName": "description",
+            "message": "DESIGN.md bans descriptions and helper text; the kit wires accessible descriptions itself."
+          },
+          {
+            "propName": "caption",
+            "message": "DESIGN.md bans captions: say it in the title or drop it."
+          }
+        ]
+      }
+    ],
+    "design/no-raw-visual-classes": "error"
   },
   "overrides": [
     {
@@ -211,6 +277,19 @@
       "rules": {
         "react/rules-of-hooks": "off"
       }
+    },
+    {
+      "files": [
+        "src/components/ui/**"
+      ],
+      "rules": {
+        "no-restricted-imports": "off",
+        "react/forbid-dom-props": "off",
+        "react/forbid-component-props": "off"
+      }
     }
+  ],
+  "jsPlugins": [
+    "./lint/design.js"
   ]
 }

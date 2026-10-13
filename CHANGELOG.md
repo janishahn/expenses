@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrading backfills existing bank rows as ignored (if reviewed) or matched. Rows created from a statement before this release are marked matched, because they cannot be told apart from matched rows.
 
 ### Dependencies
-- Replaced ESLint and its plugins with oxlint for web linting; `npm run lint` keeps the same rules.
+- Replaced ESLint and its plugins with oxlint for web linting. `npm run lint` keeps the previous rules and adds design rules that keep pages on the shared component kit.
 - Removed Recharts, class-variance-authority, tailwind-merge, and the IBM Plex Mono font from the web app. Tailwind CSS now supplies only the CSS reset.
 
 ## [0.6.1] - 2026-10-12

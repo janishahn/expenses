@@ -823,7 +823,7 @@ function RecurringRulesPage() {
           <Donut
             focus={focus}
             center={<Amount cents={annualTotal} decimals={false} />}
-            caption="per year"
+            centerLabel="per year"
             items={mix.map((entry) => ({
               key: String(entry.rule.category_id),
               label: entry.rule.category?.name ?? "Uncategorized",

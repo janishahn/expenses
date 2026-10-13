@@ -41,7 +41,7 @@ const TRANSACTION_COLUMNS: Columns = {
   mobileColumns: "18px minmax(0, 1fr) 84px auto",
 }
 
-function BreakdownCard({ title, items, caption, empty }: { title: string; items: BreakdownItem[]; caption: string; empty: string }) {
+function BreakdownCard({ title, items, centerLabel, empty }: { title: string; items: BreakdownItem[]; centerLabel: string; empty: string }) {
   const total = items.reduce((sum, item) => sum + item.amount_cents, 0)
   return (
     <ChartCard
@@ -62,7 +62,7 @@ function BreakdownCard({ title, items, caption, empty }: { title: string; items:
         <Donut
           focus={focus}
           center={<Amount cents={total} decimals={false} />}
-          caption={caption}
+          centerLabel={centerLabel}
           items={items.map((item) => ({
             key: String(item.id),
             label: item.name,
@@ -172,9 +172,9 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
               {tag.archived_at ? <Property label="Archived">{formatShortDate(tag.archived_at)}</Property> : null}
             </TagSettingsList>
           </Sheet>
-          <BreakdownCard title="Expenses" items={donut.expense_breakdown} caption={tag.name} empty="No spending in this period." />
+          <BreakdownCard title="Expenses" items={donut.expense_breakdown} centerLabel={tag.name} empty="No spending in this period." />
           {donut.income_breakdown.length ? (
-            <BreakdownCard title="Income" items={donut.income_breakdown} caption={tag.name} empty="No income in this period." />
+            <BreakdownCard title="Income" items={donut.income_breakdown} centerLabel={tag.name} empty="No income in this period." />
           ) : null}
         </CardStack>
       </CardRow>
