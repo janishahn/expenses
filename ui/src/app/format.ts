@@ -73,7 +73,8 @@ export function formatAmountPrivate(cents: number, kind: AmountKind = "balance",
   return isPrivacyOn() ? "•••• €" : formatAmount(cents, kind, decimals)
 }
 
-const SHORT_MONTH = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" })
+// en-US, because en-GB writes September as "Sept".
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
 
 function dateParts(isoDate: string) {
   const date = new Date(`${isoDate}T00:00:00Z`)

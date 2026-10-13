@@ -83,12 +83,17 @@ export function receiptFiles(attachments: ReceiptAttachment[]): ReceiptFile[] {
 }
 
 const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short" })
-const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short" })
 const TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" })
 
 function localDate(iso: string): Date {
   const [year, month, day] = iso.slice(0, 10).split("-").map(Number)
   return new Date(year, month - 1, day)
+}
+
+// "22 Oct"; en-GB would write "Sept".
+function dayMonth(date: Date): string {
+  return `${date.getDate()} ${SHORT_MONTH.format(date)}`
 }
 
 function sameDay(a: Date, b: Date): boolean {
@@ -98,14 +103,14 @@ function sameDay(a: Date, b: Date): boolean {
 // "Thu 22 Oct", or "Thu 22 Oct 2025" outside the current year.
 export function dayLabel(isoDate: string, today = new Date()): string {
   const date = localDate(isoDate)
-  const label = `${WEEKDAY.format(date)} ${DAY_MONTH.format(date)}`
+  const label = `${WEEKDAY.format(date)} ${dayMonth(date)}`
   return date.getFullYear() === today.getFullYear() ? label : `${label} ${date.getFullYear()}`
 }
 
 // "22 Oct", or "22 Oct 2025" outside the current year.
 export function shortDateLabel(isoDate: string, today = new Date()): string {
   const date = localDate(isoDate)
-  const label = DAY_MONTH.format(date)
+  const label = dayMonth(date)
   return date.getFullYear() === today.getFullYear() ? label : `${label} ${date.getFullYear()}`
 }
 
@@ -114,7 +119,7 @@ export function occurredLabel(occurredAt: string): string {
   const date = localDate(occurredAt)
   const [hours, minutes] = occurredAt.slice(11, 16).split(":").map(Number)
   date.setHours(hours || 0, minutes || 0)
-  return `${WEEKDAY.format(date)} ${DAY_MONTH.format(date)} ${date.getFullYear()}, ${TIME.format(date)}`
+  return `${WEEKDAY.format(date)} ${dayMonth(date)} ${date.getFullYear()}, ${TIME.format(date)}`
 }
 
 // "Today, 14:32", "Yesterday, 09:10", or "Thu 22 Oct, 20:15" for the entry dialog's date chip.

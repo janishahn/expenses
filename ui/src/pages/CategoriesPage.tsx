@@ -9,6 +9,7 @@ import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { CategoryListItem, TransactionsResponse } from "../app/api-types"
+import { formatShortDate } from "../app/format"
 import { useQueuedSave } from "../app/queued-save"
 import { categoryIconName, DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
 import { ValuePopover } from "../components/FormPopover"
@@ -50,7 +51,6 @@ const SORT_KEYS: ReadonlyArray<SortKey<SortField>> = [
   { key: "usage", label: "Usage", directions: { asc: "Least used first", desc: "Most used first" }, defaultDirection: "desc" },
   { key: "name", label: "Name", directions: { asc: "A to Z", desc: "Z to A" }, defaultDirection: "asc" },
 ]
-const ARCHIVED_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
 
 function categoryPayload(category: CategoryListItem): CategoryPayload {
   return { name: category.name, icon: category.icon ?? DEFAULT_CATEGORY_ICON_KEY, order: category.order ?? 0 }
@@ -300,7 +300,7 @@ function CategoryPeek({
             ) : null}
           </span>
         </Property>
-        {category.archived_at ? <Property label="Archived">{ARCHIVED_DATE.format(new Date(category.archived_at))}</Property> : null}
+        {category.archived_at ? <Property label="Archived">{formatShortDate(category.archived_at)}</Property> : null}
       </PropertyList>
       <PeekSection
         title="Recent"
@@ -410,7 +410,7 @@ function CategoriesPage() {
             <Cell strong>{category.name}</Cell>
             <Cell align="right" tone="muted">
               {category.archived_at
-                ? `Archived ${ARCHIVED_DATE.format(new Date(category.archived_at))}`
+                ? `Archived ${formatShortDate(category.archived_at)}`
                 : usesText(category.usage_count ?? 0)}
             </Cell>
           </Row>

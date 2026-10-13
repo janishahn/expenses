@@ -11,7 +11,7 @@ const DIGITS: Array<[number, string[]]> = [
   [7, ["111", "101", "101", "101", "111"]],
   [11, ["101", "101", "111", "001", "001"]],
 ]
-const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short" })
+const MONTH = new Intl.DateTimeFormat("en-US", { month: "short" })
 
 // A made-up spending calendar for the 17 weeks up to today; the busiest days spell 404.
 // The same seed draws the same light days on every visit.

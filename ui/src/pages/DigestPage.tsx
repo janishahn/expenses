@@ -81,7 +81,9 @@ const BUDGET_COLUMNS: Columns = {
   mobileColumns: "18px 92px minmax(0, 1fr) 84px",
 }
 const ROW_COLUMNS = "18px minmax(0, 1fr) auto auto"
-const DAY_LABEL = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })
+const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" })
+// en-US, because en-GB writes September as "Sept".
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
 
 function shiftDays(isoDate: string, days: number): string {
   const date = new Date(`${isoDate}T00:00:00Z`)
@@ -90,7 +92,8 @@ function shiftDays(isoDate: string, days: number): string {
 }
 
 function dayLabel(isoDate: string): string {
-  return DAY_LABEL.format(new Date(`${isoDate}T00:00:00Z`))
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  return `${WEEKDAY.format(date)} ${date.getUTCDate()} ${SHORT_MONTH.format(date)}`
 }
 
 function share(part: number, total: number): string {

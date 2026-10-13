@@ -13,8 +13,12 @@ export const DEFAULT_PERIOD_PRESETS: PeriodPreset[] = [
 ]
 
 const MONTH_LABEL = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
-const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })
-const DAY_MONTH_YEAR = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+
+// "13 Sep"; en-GB would write "Sept".
+function dayMonth(date: Date): string {
+  return `${date.getUTCDate()} ${SHORT_MONTH.format(date)}`
+}
 
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10)
@@ -79,8 +83,8 @@ export function periodLabel(selection: PeriodSelection, presets: PeriodPreset[],
   if (selection.slug !== "custom") return ""
   const start = parseIso(selection.start)
   const end = parseIso(selection.end)
-  const startFormat = start.getUTCFullYear() === end.getUTCFullYear() ? DAY_MONTH : DAY_MONTH_YEAR
-  return `${startFormat.format(start)} – ${DAY_MONTH_YEAR.format(end)}`
+  const startLabel = start.getUTCFullYear() === end.getUTCFullYear() ? dayMonth(start) : `${dayMonth(start)} ${start.getUTCFullYear()}`
+  return `${startLabel} – ${dayMonth(end)} ${end.getUTCFullYear()}`
 }
 
 // Reads the selection from URL search params. Pages differ in their default period,
