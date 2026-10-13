@@ -1864,7 +1864,7 @@ class TransactionService:
         self.hydrate_reimbursement_totals(transactions)
         return transactions
 
-    def soft_delete(self, transaction_id: int) -> None:
+    def soft_delete(self, transaction_id: int, *, commit: bool = True) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
@@ -1895,7 +1895,8 @@ class TransactionService:
         period = Period("transaction", txn.date, txn.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
-        self.session.commit()
+        if commit:
+            self.session.commit()
         log_event(
             logger,
             logging.INFO,
@@ -1910,37 +1911,47 @@ class TransactionService:
             raise ValueError("Transaction not found")
         if txn.deleted_at is None:
             return
-        txn.deleted_at = None
+        self._restore([txn], commit=commit)
+
+    # Restores trashed transactions, recomputing each affected month once.
+    def _restore(self, transactions: list[Transaction], *, commit: bool) -> None:
+        for txn in transactions:
+            txn.deleted_at = None
         self.session.flush()
-        months_to_recompute: set[tuple[int, int]] = {(txn.date.year, txn.date.month)}
-        if txn.type == TransactionType.income and txn.is_reimbursement:
-            expense_dates = self.session.execute(
-                select(Transaction.date)
-                .join(
-                    ReimbursementAllocation,
-                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
-                )
-                .where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                )
-            ).all()
-            for row in expense_dates:
-                d = row[0]
-                months_to_recompute.add((d.year, d.month))
+        months_to_recompute: set[tuple[int, int]] = set()
+        for txn in transactions:
+            months_to_recompute.add((txn.date.year, txn.date.month))
+            if txn.type == TransactionType.income and txn.is_reimbursement:
+                expense_dates = self.session.execute(
+                    select(Transaction.date)
+                    .join(
+                        ReimbursementAllocation,
+                        ReimbursementAllocation.expense_transaction_id
+                        == Transaction.id,
+                    )
+                    .where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                    )
+                ).all()
+                for row in expense_dates:
+                    d = row[0]
+                    months_to_recompute.add((d.year, d.month))
         for y, m in months_to_recompute:
             recompute_monthly_rollup(self.session, self.user_id, y, m)
         metrics = MetricsService(self.session, self.user_id)
-        metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
+        for txn in transactions:
+            metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
         if commit:
             self.session.commit()
-        log_event(
-            logger,
-            logging.INFO,
-            "transaction_restored",
-            transaction_id=txn.id,
-            transaction_type=txn.type.value,
-        )
+        for txn in transactions:
+            log_event(
+                logger,
+                logging.INFO,
+                "transaction_restored",
+                transaction_id=txn.id,
+                transaction_type=txn.type.value,
+            )
 
     def permanent_delete(self, transaction_id: int) -> tuple[int, int]:
         deleted_transaction_id = self.session.execute(
@@ -1991,16 +2002,18 @@ class TransactionService:
         return int(result.rowcount or 0), deleted_attachments
 
     def restore_many(self, transaction_ids: list[int]) -> int:
-        trashed_ids = self.session.scalars(
-            select(Transaction.id).where(
-                Transaction.user_id == self.user_id,
-                Transaction.id.in_(transaction_ids),
-                Transaction.deleted_at.isnot(None),
+        trashed = list(
+            self.session.scalars(
+                select(Transaction).where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.id.in_(transaction_ids),
+                    Transaction.deleted_at.isnot(None),
+                )
             )
-        ).all()
-        for transaction_id in trashed_ids:
-            self.restore(transaction_id)
-        return len(trashed_ids)
+        )
+        if trashed:
+            self._restore(trashed, commit=True)
+        return len(trashed)
 
     def permanent_delete_many(self, transaction_ids: list[int]) -> tuple[int, int]:
         trashed_ids = self.session.scalars(

@@ -633,7 +633,7 @@ class BankReconciliationService:
             and row.matched_transaction_id is not None
         ):
             TransactionService(self.session, self.user_id).soft_delete(
-                row.matched_transaction_id
+                row.matched_transaction_id, commit=False
             )
         row.reviewed_at = None
         row.matched_transaction_id = None

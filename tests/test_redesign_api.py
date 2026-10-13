@@ -146,6 +146,32 @@ def test_deleted_transactions_keep_default_page_and_support_paging_and_bulk_acti
     assert api_client.get(f"/api/transactions/{ids[0]}").status_code == 200
 
 
+def test_bulk_restore_brings_back_the_month_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    ids = [
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=cents,
+            title=f"March {cents}",
+            on=date(2026, 3, day),
+        )
+        for day, cents in ((10, 1_000), (20, 2_500))
+    ]
+    march = "/api/dashboard?period=custom&start=2026-03-01&end=2026-03-31"
+    for transaction_id in ids:
+        api_client.delete(f"/api/transactions/{transaction_id}", headers=csrf_headers)
+    assert api_client.get(march).json()["kpis"]["expenses"] == 0
+
+    restored = api_client.post(
+        "/api/transactions/deleted/restore", headers=csrf_headers, json={"ids": ids}
+    )
+
+    assert restored.json() == {"restored": 2}
+    assert api_client.get(march).json()["kpis"]["expenses"] == 3_500
+
+
 def test_bulk_trash_actions_ignore_other_users_transactions(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
