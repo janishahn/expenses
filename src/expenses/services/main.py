@@ -1904,7 +1904,7 @@ class TransactionService:
             transaction_type=txn.type.value,
         )
 
-    def restore(self, transaction_id: int) -> None:
+    def restore(self, transaction_id: int, *, commit: bool = True) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
@@ -1932,7 +1932,8 @@ class TransactionService:
             recompute_monthly_rollup(self.session, self.user_id, y, m)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
-        self.session.commit()
+        if commit:
+            self.session.commit()
         log_event(
             logger,
             logging.INFO,

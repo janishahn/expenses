@@ -545,15 +545,7 @@ function ReconciliationPage() {
         resolution === "ignored"
           ? () => post(`${row.id}/ignore`, { reason })
           : resolution && transaction
-            ? async () => {
-                if (trashCreatedTransaction) {
-                  await apiFetch("/api/transactions/deleted/restore", {
-                    method: "POST",
-                    body: JSON.stringify({ ids: [transaction.id] }),
-                  })
-                }
-                await post(`${row.id}/match-transaction`, { transaction_id: transaction.id, resolution })
-              }
+            ? () => post(`${row.id}/match-transaction`, { transaction_id: transaction.id, resolution })
             : null,
       transactions: trashCreatedTransaction,
     })

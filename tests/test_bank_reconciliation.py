@@ -710,11 +710,13 @@ def test_undo_reopen_skips_a_changed_row_and_restores_a_created_row(
         f"{row_id}/reopen",
         {"trash_created_transaction": True, "expected_transaction_id": second_id},
     )
-    api_client.post(
-        "/api/transactions/deleted/restore",
-        json={"ids": [second_id]},
-        headers=csrf_headers,
+    trashed_match = _post(
+        api_client,
+        csrf_headers,
+        f"{row_id}/match-transaction",
+        {"transaction_id": second_id},
     )
+    assert trashed_match.status_code == 400
     undone = _post(
         api_client,
         csrf_headers,

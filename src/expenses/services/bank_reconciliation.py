@@ -565,19 +565,21 @@ class BankReconciliationService:
     ) -> int | None:
         row = self._get_row(row_id)
         self._require_unresolved(row)
-        txn = self.session.scalar(
-            select(Transaction).where(
-                Transaction.user_id == self.user_id,
-                Transaction.id == transaction_id,
-                Transaction.deleted_at.is_(None),
-            )
+        stmt = select(Transaction).where(
+            Transaction.user_id == self.user_id, Transaction.id == transaction_id
         )
+        # Restoring a created row also takes its transaction back out of Trash.
+        if resolution == "matched":
+            stmt = stmt.where(Transaction.deleted_at.is_(None))
+        txn = self.session.scalar(stmt)
         if txn is None:
             raise ValueError("Transaction not found")
         if txn.type != _row_transaction_type(row):
             raise ValueError("Transaction type differs from the bank row")
         if transaction_id in self._reserved_transaction_ids(exclude_row_id=row.id):
             raise ValueError("Transaction is already matched to another bank row")
+        if txn.deleted_at is not None:
+            TransactionService(self.session, self.user_id).restore(txn.id, commit=False)
         previous_amount_cents = txn.amount_cents
         if update_amount_to_bank:
             self._set_amount_to_bank(txn, row)

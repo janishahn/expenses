@@ -744,7 +744,8 @@ class BankRowCandidatesOut(BaseModel):
 class BankRowMatchIn(BaseModel):
     transaction_id: int
     update_amount_to_bank: bool = False
-    # `created` restores a created row when its reopening is undone.
+    # `created` restores a created row when its reopening is undone, taking its
+    # transaction back out of Trash.
     resolution: Literal["matched", "created"] = "matched"
 
 
