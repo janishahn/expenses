@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from io import StringIO
+from typing import Literal
 
 from rapidfuzz import fuzz
 from sqlalchemy import and_, func, or_, select
@@ -30,6 +31,10 @@ class BankRowNotFoundError(ValueError):
 
 
 class BankRowAlreadyResolvedError(ValueError):
+    pass
+
+
+class BankRowChangedError(ValueError):
     pass
 
 
@@ -550,7 +555,12 @@ class BankReconciliationService:
         return accepted
 
     def match_transaction(
-        self, row_id: int, transaction_id: int, *, update_amount_to_bank: bool = False
+        self,
+        row_id: int,
+        transaction_id: int,
+        *,
+        update_amount_to_bank: bool = False,
+        resolution: Literal["matched", "created"] = "matched",
     ) -> int | None:
         row = self._get_row(row_id)
         self._require_unresolved(row)
@@ -571,6 +581,7 @@ class BankReconciliationService:
         if update_amount_to_bank:
             self._set_amount_to_bank(txn, row)
         self._resolve_matched(row, transaction_id)
+        row.resolution = resolution
         self.session.commit()
         # The amount the bank amount replaced, so the match can be undone.
         if txn.amount_cents == previous_amount_cents:
@@ -588,8 +599,22 @@ class BankReconciliationService:
         row.ignore_reason = reason
         self.session.commit()
 
-    def reopen(self, row_id: int, *, trash_created_transaction: bool = False) -> None:
+    def reopen(
+        self,
+        row_id: int,
+        *,
+        trash_created_transaction: bool = False,
+        expected_resolution: str | None = None,
+        expected_transaction_id: int | None = None,
+    ) -> None:
         row = self._get_row(row_id)
+        if (
+            expected_resolution is not None and row.resolution != expected_resolution
+        ) or (
+            expected_transaction_id is not None
+            and row.matched_transaction_id != expected_transaction_id
+        ):
+            raise BankRowChangedError("Bank row changed since this action")
         if (
             trash_created_transaction
             and row.resolution == "created"

@@ -386,8 +386,17 @@ function ReconciliationPage() {
       `/api/reconciliation/bank-rows/${path}`,
       { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }
     )
-  const reopen = (row: BankStatementRow, trashCreatedTransaction = false) =>
-    post(`${row.id}/reopen`, trashCreatedTransaction ? { trash_created_transaction: true } : undefined)
+  // An Undo passes the outcome it reverses, so the server leaves a row changed since then as it is.
+  const reopen = (
+    row: BankStatementRow,
+    expected?: { resolution: BankRowResolution; transactionId?: number },
+    trashCreatedTransaction = false
+  ) =>
+    post(`${row.id}/reopen`, {
+      trash_created_transaction: trashCreatedTransaction,
+      expected_resolution: expected?.resolution,
+      expected_transaction_id: expected?.transactionId,
+    })
 
   // Runs one row action, then confirms it in a toast whose Undo runs `undo`.
   // Returns the error message when the action fails.
@@ -444,7 +453,7 @@ function ReconciliationPage() {
         row,
         run: () => post(`${row.id}/accept-suggestion`).then(() => undefined),
         message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}`,
-        undo: () => reopen(row),
+        undo: () => reopen(row, { resolution: "matched" }),
       })
     )
   }
@@ -463,7 +472,7 @@ function ReconciliationPage() {
           return `Matched ${plural(matched.length, "row")}`
         },
         message: "Matched",
-        undo: () => Promise.all(matched.map((row) => reopen(row))),
+        undo: () => Promise.all(matched.map((row) => reopen(row, { resolution: "matched" }))),
       })
     )
   }
@@ -482,7 +491,7 @@ function ReconciliationPage() {
         message: `Matched with ${candidateTitle(transaction)}`,
         // Undo also restores the amount the match replaced, unless the amount was edited since.
         undo: async () => {
-          await reopen(row)
+          await reopen(row, { resolution: "matched", transactionId: transaction.id })
           if (replacedAmount === null) return
           const detail = await apiFetch<TransactionDetail>(`/api/transactions/${transaction.id}`)
           if (detail.amount_cents !== Math.abs(row.amount_cents)) return
@@ -500,15 +509,17 @@ function ReconciliationPage() {
       row,
       run: () => post(`${row.id}/ignore`, { reason }).then(() => undefined),
       message: reason ? `Ignored · ${reason}` : "Ignored",
-      undo: () => reopen(row),
+      undo: () => reopen(row, { resolution: "ignored" }),
     })
   // Undoing a create moves the new transaction to Trash.
   const createFromRow = async (row: BankStatementRow, payload: CreateFromRowPayload, receipt: File | null) => {
     setDialogError(null)
+    let createdId: number | undefined
     const error = await act({
       row,
       run: async () => {
         const created = await post(`${row.id}/create-transaction`, payload)
+        createdId = created.transaction_id ?? undefined
         if (!receipt || !created.transaction_id) return
         try {
           const form = new FormData()
@@ -519,7 +530,7 @@ function ReconciliationPage() {
         }
       },
       message: `Created ${payload.title}`,
-      undo: () => reopen(row, true),
+      undo: () => reopen(row, { resolution: "created", transactionId: createdId }, true),
       transactions: true,
     })
     if (error) setDialogError(error)
@@ -527,17 +538,24 @@ function ReconciliationPage() {
   }
   const reopenRow = async (row: BankStatementRow, trashCreatedTransaction: boolean) => {
     const transaction = row.suggested_transaction
-    const reason = row.ignore_reason
+    const { resolution, ignore_reason: reason } = row
     const error = await act({
       row,
-      run: () => reopen(row, trashCreatedTransaction).then(() => undefined),
+      run: () => reopen(row, undefined, trashCreatedTransaction).then(() => undefined),
       message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash" : "Moved back to review",
-      // A created row comes back only as a match, so its reopening has no Undo.
       undo:
-        row.resolution === "ignored"
+        resolution === "ignored"
           ? () => post(`${row.id}/ignore`, { reason })
-          : row.resolution === "matched" && transaction
-            ? () => post(`${row.id}/match-transaction`, { transaction_id: transaction.id })
+          : resolution && transaction
+            ? async () => {
+                if (trashCreatedTransaction) {
+                  await apiFetch("/api/transactions/deleted/restore", {
+                    method: "POST",
+                    body: JSON.stringify({ ids: [transaction.id] }),
+                  })
+                }
+                await post(`${row.id}/match-transaction`, { transaction_id: transaction.id, resolution })
+              }
             : null,
       transactions: trashCreatedTransaction,
     })

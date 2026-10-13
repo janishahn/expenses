@@ -716,6 +716,9 @@ class BankRowIgnoreIn(BaseModel):
 
 class BankRowReopenIn(BaseModel):
     trash_created_transaction: bool = False
+    # An Undo sends the outcome it reverses, so a row changed since is left as it is.
+    expected_resolution: Optional[Literal["matched", "created", "ignored"]] = None
+    expected_transaction_id: Optional[int] = None
 
 
 class BankAcceptSuggestionsIn(BaseModel):
@@ -734,6 +737,8 @@ class BankRowCandidatesOut(BaseModel):
 class BankRowMatchIn(BaseModel):
     transaction_id: int
     update_amount_to_bank: bool = False
+    # `created` restores a created row when its reopening is undone.
+    resolution: Literal["matched", "created"] = "matched"
 
 
 class BankTransactionCreateIn(BaseModel):

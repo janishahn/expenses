@@ -244,6 +244,7 @@ from expenses.services import (
 from expenses.services.bank_reconciliation import (
     BankReconciliationService,
     BankRowAlreadyResolvedError,
+    BankRowChangedError,
     BankRowNotFoundError,
 )
 from expenses.reports.pdf_renderer import render_report_html
@@ -3628,14 +3629,17 @@ def api_reopen_bank_row(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
+        payload = payload or BankRowReopenIn()
         BankReconciliationService(db, user_id=user_id).reopen(
             row_id,
-            trash_created_transaction=bool(
-                payload and payload.trash_created_transaction
-            ),
+            trash_created_transaction=payload.trash_created_transaction,
+            expected_resolution=payload.expected_resolution,
+            expected_transaction_id=payload.expected_transaction_id,
         )
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BankRowChangedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -3658,6 +3662,7 @@ def api_match_bank_row_transaction(
             row_id,
             payload.transaction_id,
             update_amount_to_bank=payload.update_amount_to_bank,
+            resolution=payload.resolution,
         )
     except BankRowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

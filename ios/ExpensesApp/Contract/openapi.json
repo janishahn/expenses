@@ -1155,6 +1155,15 @@
       },
       "BankRowMatchIn": {
         "properties": {
+          "resolution": {
+            "default": "matched",
+            "enum": [
+              "matched",
+              "created"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          },
           "transaction_id": {
             "title": "Transaction Id",
             "type": "integer"
@@ -1173,6 +1182,33 @@
       },
       "BankRowReopenIn": {
         "properties": {
+          "expected_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "matched",
+                  "created",
+                  "ignored"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Resolution"
+          },
+          "expected_transaction_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Transaction Id"
+          },
           "trash_created_transaction": {
             "default": false,
             "title": "Trash Created Transaction",

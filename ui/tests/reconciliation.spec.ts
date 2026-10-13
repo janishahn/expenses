@@ -3,7 +3,7 @@ import { createCategory, createTransaction, loginAsIsolatedUser } from "./helper
 
 type Isolated = { request: APIRequestContext; csrfToken: string; categoryId: number }
 type CsvRow = { date: string; payee: string; cents: number; purpose?: string; currency?: string }
-type StoredRow = { id: number; payee: string | null }
+type StoredRow = { id: number; payee: string | null; resolution: string | null }
 type StoredTransaction = {
   id: number
   title: string
@@ -450,7 +450,7 @@ test.describe("Reconcile", () => {
     { button: "Move transaction to Trash", trashed: true, message: "Moved back to review · transaction moved to Trash" },
     { button: "Keep transaction", trashed: false, message: "Moved back to review" },
   ]) {
-    test(`reopens a created row and chooses "${choice.button}"`, async ({ page }) => {
+    test(`reopens a created row, chooses "${choice.button}" and undoes it`, async ({ page }) => {
       const user = await signIn(page)
       await importRows(user, [{ date: "2026-05-08", payee: "HARDWARE STORE", cents: -2599 }])
       await resolveRow(user, await rowId(user, "open", "HARDWARE STORE"), "create-transaction", {
@@ -473,6 +473,10 @@ test.describe("Reconcile", () => {
       expect(await fetchRows(user, "open")).toHaveLength(1)
       const stored = await user.request.get(`/api/transactions/${createdId}`)
       expect(stored.status()).toBe(choice.trashed ? 404 : 200)
+
+      await toast(page).getByRole("button", { name: "Undo" }).click()
+      await expect.poll(async () => (await fetchRows(user, "resolved")).map((row) => row.resolution)).toEqual(["created"])
+      expect((await user.request.get(`/api/transactions/${createdId}`)).status()).toBe(200)
     })
   }
 

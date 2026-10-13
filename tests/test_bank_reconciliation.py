@@ -664,6 +664,71 @@ def test_reopen_can_trash_the_transaction_created_from_the_row(
     assert api_client.get(f"/api/transactions/{kept_id}").status_code == 200
 
 
+def test_undo_reopen_skips_a_changed_row_and_restores_a_created_row(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(["07.05.2026;07.05.2026;Karte;Shop;-20,00;EUR;"]),
+    )
+    row_id = _rows(api_client)["Shop"]["id"]
+    first = _post(api_client, csrf_headers, f"{row_id}/create-transaction")
+    first_id = first.json()["transaction_id"]
+    _post(api_client, csrf_headers, f"{row_id}/reopen")
+    second = _post(api_client, csrf_headers, f"{row_id}/create-transaction")
+    second_id = second.json()["transaction_id"]
+
+    # A stale Undo of the first create must not trash the second transaction.
+    stale = _post(
+        api_client,
+        csrf_headers,
+        f"{row_id}/reopen",
+        {
+            "trash_created_transaction": True,
+            "expected_resolution": "created",
+            "expected_transaction_id": first_id,
+        },
+    )
+    assert stale.status_code == 409
+    assert api_client.get(f"/api/transactions/{second_id}").status_code == 200
+    assert (
+        _post(
+            api_client,
+            csrf_headers,
+            f"{row_id}/reopen",
+            {"expected_resolution": "ignored"},
+        ).status_code
+        == 409
+    )
+
+    # Undoing a reopen that trashed the transaction restores both.
+    _post(
+        api_client,
+        csrf_headers,
+        f"{row_id}/reopen",
+        {"trash_created_transaction": True, "expected_transaction_id": second_id},
+    )
+    api_client.post(
+        "/api/transactions/deleted/restore",
+        json={"ids": [second_id]},
+        headers=csrf_headers,
+    )
+    undone = _post(
+        api_client,
+        csrf_headers,
+        f"{row_id}/match-transaction",
+        {"transaction_id": second_id, "resolution": "created"},
+    )
+
+    assert undone.status_code == 200
+    assert api_client.get(f"/api/transactions/{second_id}").status_code == 200
+    resolved = api_client.get("/api/reconciliation/bank-rows?view=resolved").json()
+    assert [(i["id"], i["resolution"]) for i in resolved["items"]] == [
+        (row_id, "created")
+    ]
+
+
 def test_accept_suggestions_only_accepts_rows_with_one_candidate(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
