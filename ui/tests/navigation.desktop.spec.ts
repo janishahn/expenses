@@ -35,8 +35,8 @@ test.describe("Navigation", () => {
     const routes = [
       { path: "/", heading: "Dashboard" },
       { path: "/transactions", heading: "Transactions" },
-      { path: "/admin", heading: "Re-enter your password" },
-      { path: "/unknown-route-12345", heading: "Page not found" },
+      { path: "/admin", heading: "Health" },
+      { path: "/unknown-route-12345", heading: "This page does not exist" },
     ]
 
     for (const route of routes) {
@@ -48,19 +48,11 @@ test.describe("Navigation", () => {
   test("distinguishes value selectors from page view tabs", async ({
     page,
   }) => {
-    const selectors = [{ path: "/settings", label: "Theme mode" }]
-
     await page.goto("/")
     await expect(page.getByRole("group", { name: "Period" })).toBeVisible()
 
-    for (const selector of selectors) {
-      await page.goto(selector.path)
-      const group = page.getByRole("group", { name: selector.label })
-      await expect(group).toBeVisible()
-      await expect(group.locator(".segmented-control-indicator")).toHaveCSS("opacity", "1")
-    }
-
     for (const selector of [
+      { path: "/settings/appearance", label: "Theme" },
       { path: "/forecast", label: "Forecast horizon" },
       { path: "/scenarios", label: "Scenario model" },
     ]) {
@@ -206,13 +198,17 @@ test.describe("Navigation", () => {
       .toBe("light")
     await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
     await chooseAppMenuItem(page, "Settings")
-    const themeControl = page.getByTestId("settings-theme-control")
-    await themeControl.getByRole("button", { name: "Dark" }).click()
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Appearance" })
+      .click()
+    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Dark" }).click()
     await expect
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("dark")
     await expect.poll(() => readThemePreference(page)).toBe("dark")
 
+    await page.getByRole("link", { name: "Back to app" }).click()
     await clickSidebarLink(page, "Transactions")
     await expect(page).toHaveURL("/transactions")
     await expect
@@ -281,7 +277,7 @@ test.describe("Navigation", () => {
       { label: "Tags", path: "/tags", heading: "Tags" },
       { label: "Reports", path: "/reports/builder", heading: "Reports" },
       { label: "What If", path: "/scenarios", heading: "What If" },
-      { label: "Reconcile", path: "/reconciliation", heading: "Reconciliation" },
+      { label: "Reconcile", path: "/reconciliation", heading: "Reconcile" },
     ]
 
     for (const route of routes) {
@@ -294,7 +290,8 @@ test.describe("Navigation", () => {
 
     await chooseAppMenuItem(page, "Admin")
     await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect(page.locator("main h1")).toContainText("Re-enter your password")
+    await expect(page.locator("main h1")).toContainText("Health")
+    await expect(page.getByRole("heading", { name: "Enter your password" })).toBeVisible()
   })
 
   test("uses page-specific desktop utility actions", async ({
@@ -434,13 +431,14 @@ test.describe("Navigation", () => {
   })
 
   test("should show 404 page for unknown routes", async ({ page }) => {
-    await page.goto("/unknown-route-12345")
-    await expect(page.locator("main h1")).toContainText("Page not found")
+    await page.goto("/unknown-route-12345?from=test")
+    await expect(page.locator("main h1")).toHaveText("This page does not exist")
+    await expect(page.locator("main")).toContainText("/unknown-route-12345?from=test")
   })
 
   test("recovers from unknown routes back to dashboard", async ({ page }) => {
     await page.goto("/unknown-route-12345")
-    await page.getByRole("link", { name: "Back to dashboard" }).click()
+    await page.getByRole("link", { name: "Go to dashboard" }).click()
     await expect(page).toHaveURL("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
   })

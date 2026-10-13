@@ -157,12 +157,12 @@ test.describe("Navigation (mobile)", () => {
       { label: "Tags", path: "/tags", heading: "Tags" },
       { label: "Reports", path: "/reports/builder", heading: "Reports" },
       { label: "What If", path: "/scenarios", heading: "What If" },
-      { label: "Reconcile", path: "/reconciliation", heading: "Reconciliation" },
+      { label: "Reconcile", path: "/reconciliation", heading: "Reconcile" },
       { label: "Settings", path: "/settings", heading: "Settings" },
       {
         label: "Admin",
         path: "/admin/elevate?redirect=%2Fadmin",
-        heading: "Re-enter your password",
+        heading: "Admin",
       },
     ]
 
@@ -181,8 +181,11 @@ test.describe("Navigation (mobile)", () => {
     await page.reload()
     await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
     await chooseMoreDestination(page, "Settings")
-    const themeControl = page.getByTestId("settings-theme-control")
-    await themeControl.getByRole("button", { name: "Light" }).click()
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Appearance" })
+      .click()
+    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Light" }).click()
     await expect.poll(() => readThemeChrome(page)).toMatchObject({
       theme: "light",
       themeColor: "#eaeae7",
@@ -199,8 +202,8 @@ test.describe("Navigation (mobile)", () => {
       .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
       .toBe("light")
 
-    await page.getByRole("button", { name: "Cancel" }).click()
-    await expect(page).toHaveURL("/")
+    await page.getByRole("link", { name: "Cancel" }).click()
+    await expect(page).toHaveURL("/settings")
     await tabBar(page).getByRole("link", { name: "Transactions" }).click()
     await expect(page).toHaveURL("/transactions")
     await expect
@@ -210,7 +213,7 @@ test.describe("Navigation (mobile)", () => {
 
   test("recovers from unknown routes back to dashboard", async ({ page }) => {
     await page.goto("/unknown-route-12345")
-    await page.getByRole("link", { name: "Back to dashboard" }).click()
+    await page.getByRole("link", { name: "Go to dashboard" }).click()
     await expect(page).toHaveURL("/")
     await expect(page.locator("main h1")).toContainText("Dashboard")
   })

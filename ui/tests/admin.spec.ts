@@ -1,70 +1,100 @@
-import { expect, test } from "./fixtures"
+import { spawnSync } from "node:child_process"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { expect, test, type Page } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
-import { getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
+
+function adminSections(page: Page) {
+  return page.getByRole("navigation", { name: "Admin sections" })
+}
+
+async function openSection(page: Page, name: string, path: string) {
+  await adminSections(page).getByRole("link", { name, exact: true }).click()
+  await expect(page).toHaveURL(path)
+  await expect(adminSections(page).getByRole("link", { name, exact: true })).toHaveAttribute(
+    "aria-current",
+    "page"
+  )
+}
 
 test.describe("Admin Page", () => {
   test.beforeEach(async ({ page }) => {
     await ensureElevatedAdmin(page)
   })
 
-  test("shows elevated admin tools and omits personal settings controls", async ({ page }) => {
-    await expect(page.locator("main h1")).toContainText("Admin")
-    await expect(page.getByText("Database backups")).toBeVisible()
-    await expect(page.getByText("Export transactions")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Import" })).toBeVisible()
-    await expect(page.getByText("Danger zone")).toBeVisible()
-    await expect(page.getByText("Rebuild rollups")).toBeVisible()
-    await expect(page.getByText("Recurring catch-up")).toBeVisible()
-    await expect(
-      page.getByRole("button", { name: "Post all overdue transactions" })
-    ).toBeVisible()
-    await expect(page.getByText("Pi health")).toBeVisible()
-    await expect(page.getByText("System information")).toBeVisible()
+  test("opens on Health and lists every admin section", async ({ page }) => {
+    await expect(page.locator("main h1")).toHaveText("Health")
+    const server = adminSections(page).getByRole("group", { name: "Server" })
+    await expect(server.getByRole("link")).toHaveText([
+      "Health",
+      "Maintenance",
+      "Assistant usage",
+      "Logs",
+      "System",
+    ])
+    await expect(server.getByRole("link", { name: "Health" })).toHaveAttribute("aria-current", "page")
+    await expect(page.getByRole("link", { name: "Back to app" })).toBeVisible()
 
-    await expect(page.getByText("Appearance")).toHaveCount(0)
-    await expect(page.getByText("Balance Snapshots")).toHaveCount(0)
+    for (const label of ["CPU temperature", "Load", "Memory", "Disk"]) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible()
+    }
+    const status = page.getByRole("region", { name: "Status" })
+    await expect(status.getByText("Server", { exact: true })).toBeVisible()
+    await expect(status.getByText("Database", { exact: true })).toBeVisible()
+    await expect(status.getByText("Free disk space")).toBeVisible()
+
+    await page.goto("/admin/unknown-section")
+    await expect(page).toHaveURL("/admin")
+    await expect(page.locator("main h1")).toHaveText("Health")
   })
 
-  test("shows app version metadata and backup download link", async ({ page }) => {
-    await page.waitForLoadState("networkidle")
-    await expect(page.getByText("App version")).toBeVisible()
+  test("shows the server system details and backup link", async ({ page }) => {
+    await openSection(page, "System", "/admin/system")
+    await expect(page.locator("main h1")).toHaveText("System")
+    const system = page.getByRole("region", { name: "System" })
+    for (const label of ["Version", "Environment", "Database", "Logs"]) {
+      await expect(system.getByText(label, { exact: true }).first()).toBeVisible()
+    }
 
-    const backupLink = page.locator('a[href="/api/admin/download-db"]')
-    await expect(backupLink).toBeVisible()
-    await expect(backupLink).toContainText("Download backup")
+    await openSection(page, "Maintenance", "/admin/maintenance")
+    await expect(page.getByRole("link", { name: "Download database backup" })).toHaveAttribute(
+      "href",
+      "/api/admin/download-db"
+    )
+    await expect(page.getByRole("link", { name: "Download all users’ transactions as CSV" })).toHaveAttribute(
+      "href",
+      "/api/admin/export-csv"
+    )
   })
 
-  test("reports purge and rebuild outcomes inline without native dialogs", async ({
-    page,
-  }) => {
+  test("reports rebuild and catch-up outcomes without native dialogs", async ({ page }) => {
     const nativeDialogs: string[] = []
     page.on("dialog", async (dialog) => {
       nativeDialogs.push(dialog.message())
       await dialog.dismiss()
     })
+    await openSection(page, "Maintenance", "/admin/maintenance")
 
-    await page.getByRole("button", { name: "Purge now" }).click()
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Purge", exact: true })
-      .click()
-    await expect(
-      page.getByRole("status").filter({ hasText: "Deleted transactions purged successfully." })
-    ).toBeVisible()
+    await page.getByRole("button", { name: "Rebuild", exact: true }).click()
+    const confirm = page.getByRole("dialog", { name: "Rebuild monthly totals now?" })
+    await confirm.getByRole("button", { name: "Cancel" }).click()
+    await expect(confirm).toBeHidden()
 
-    await page.getByRole("button", { name: "Rebuild now" }).click()
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Rebuild", exact: true })
-      .click()
-    await expect(
-      page.getByRole("status").filter({ hasText: "Monthly rollups rebuilt successfully." })
-    ).toBeVisible()
+    await page.getByRole("button", { name: "Rebuild", exact: true }).click()
+    await confirm.getByRole("button", { name: "Rebuild" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Monthly totals rebuilt." })).toBeVisible()
+
+    await page.getByRole("button", { name: "Run", exact: true }).click()
+    await expect(page.getByRole("status").filter({ hasText: /^Catch-up ran\./ })).toBeVisible()
 
     expect(nativeDialogs).toEqual([])
   })
 
   test("shows rebuild failures beside the action", async ({ page }) => {
+    await openSection(page, "Maintenance", "/admin/maintenance")
     await page.route("**/api/admin/rebuild-rollups", async (route) => {
       await route.fulfill({
         status: 503,
@@ -73,74 +103,190 @@ test.describe("Admin Page", () => {
       })
     })
 
-    await page.getByRole("button", { name: "Rebuild now" }).click()
+    await page.getByRole("button", { name: "Rebuild", exact: true }).click()
     await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Rebuild", exact: true })
+      .getByRole("dialog", { name: "Rebuild monthly totals now?" })
+      .getByRole("button", { name: "Rebuild" })
       .click()
 
-    await expect(page.getByRole("alert")).toContainText(
-      "Rollup storage is temporarily unavailable."
-    )
+    await expect(page.getByRole("alert")).toHaveText("Rollup storage is temporarily unavailable.")
   })
 
-  test("requests structured error logs for the Errors tab", async ({ page }) => {
-    let logsRequestUrl: URL | null = null
+  test("previews and purges deleted transactions older than the chosen days", async ({
+    page,
+    backend,
+  }) => {
+    const csrfToken = await getCsrfToken(page.request)
+    const categoryId = await createCategory(page.request, csrfToken, "expense", `Purge ${Date.now()}`)
+    const title = `Purge me ${Date.now()}`
+    const transactionId = await createTransaction(page.request, csrfToken, {
+      date: new Date().toISOString().slice(0, 10),
+      occurred_at: new Date().toISOString(),
+      type: "expense",
+      amount_cents: 321,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    const deleted = await page.request.delete(`/api/transactions/${transactionId}`, {
+      headers: { "X-CSRF-Token": csrfToken },
+    })
+    expect(deleted.ok()).toBeTruthy()
+    // The app cannot back-date a deletion, so age it in the worker's database.
+    const aged = spawnSync(
+      "uv",
+      [
+        "run",
+        "python",
+        "-c",
+        "import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute(\"UPDATE transactions SET deleted_at = datetime('now', '-60 days') WHERE id = ?\", (int(sys.argv[2]),)); c.commit()",
+        join(backend.dataDir, "expenses.db"),
+        String(transactionId),
+      ],
+      { cwd: repoRoot, encoding: "utf8" }
+    )
+    expect(aged.status, aged.stderr).toBe(0)
+
+    await openSection(page, "Maintenance", "/admin/maintenance")
+    const purgeCard = page.getByRole("region", { name: "Purge deleted transactions" })
+    const days = purgeCard.getByLabel("Older than")
+    const purge = purgeCard.getByRole("button", { name: "Purge", exact: true })
+
+    await expect(days).toHaveValue("30")
+    await expect(purgeCard).toContainText("1 transaction")
+    await expect(purge).toBeEnabled()
+
+    await days.fill("0")
+    await expect(purgeCard.getByRole("alert")).toHaveText("Enter a whole number of days, at least 1.")
+    await expect(purge).toBeDisabled()
+
+    await days.fill("90")
+    await expect(purgeCard).toContainText("0 transactions")
+    await expect(purge).toBeDisabled()
+
+    await days.fill("30")
+    await expect(purgeCard).toContainText("1 transaction")
+    await purge.click()
+    const confirm = page.getByRole("dialog", { name: "Purge 1 deleted transaction?" })
+    await expect(confirm).toContainText("Deleted more than 30 days ago.")
+    await confirm.getByRole("button", { name: "Purge" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Purged 1 deleted transaction." })).toBeVisible()
+    await expect(purgeCard).toContainText("0 transactions")
+    await expect(purge).toBeDisabled()
+  })
+
+  test("requests structured error logs by default and each log type on demand", async ({ page }) => {
+    const requests: URL[] = []
     await page.route("**/api/admin/logs?*", async (route) => {
-      logsRequestUrl = new URL(route.request().url())
+      requests.push(new URL(route.request().url()))
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ entries: [], next_cursor: null }),
       })
     })
+    const lastRequest = () => requests[requests.length - 1]
 
-    await page.reload()
+    await openSection(page, "Logs", "/admin/logs")
+    await expect.poll(() => lastRequest()?.searchParams.get("error_only")).toBe("true")
+    expect(lastRequest().searchParams.get("q")).toBeNull()
+    await expect(page.getByText("No matching log entries.")).toBeVisible()
 
-    await expect
-      .poll(() => logsRequestUrl?.searchParams.get("error_only"))
-      .toBe("true")
-    expect(logsRequestUrl?.searchParams.get("q")).not.toBe("failed")
+    const types = page.getByRole("radiogroup", { name: "Log type" })
+    await types.getByRole("radio", { name: "Ingest" }).click()
+    await expect.poll(() => lastRequest()?.searchParams.get("path")).toBe("/api/ingest")
+    await types.getByRole("radio", { name: "Imports" }).click()
+    await expect.poll(() => lastRequest()?.searchParams.get("q")).toBe("import_")
+    await types.getByRole("radio", { name: "Scheduler" }).click()
+    await expect.poll(() => lastRequest()?.searchParams.get("q")).toBe("scheduler_")
+    await types.getByRole("radio", { name: "All" }).click()
+    await expect.poll(() => lastRequest()?.searchParams.get("error_only")).toBeNull()
+
+    await page.getByLabel("Search logs").fill("request-abc")
+    await expect.poll(() => lastRequest()?.searchParams.get("q")).toBe("request-abc")
   })
 
-  test("renders the selected log entry's structured details", async ({ page }) => {
-    await page.getByRole("button", { name: "All", exact: true }).click()
-    const firstRow = page.locator("tbody tr").first()
+  test("opens a log entry's structured details and filters by search", async ({ page }) => {
+    await openSection(page, "Logs", "/admin/logs")
+    await page.getByRole("radiogroup", { name: "Log type" }).getByRole("radio", { name: "All" }).click()
+    const entries = page.getByRole("list", { name: "Log entries" }).getByRole("listitem")
+    const firstRow = entries.first()
     await expect(firstRow).toBeVisible()
-    const eventName = await firstRow.locator("td").nth(2).innerText()
-    const inspectButton = firstRow.getByRole("button", { name: /^Inspect / })
+    const name = (await firstRow.getAttribute("aria-label")) ?? ""
+    const event = name.replace(/^\S+ /, "").replace(/ at .*$/, "")
+    expect(event).not.toBe("")
 
-    await inspectButton.click()
-    await expect(inspectButton).toHaveAttribute("aria-pressed", "true")
-
-    const details = page
-      .getByRole("heading", { name: "Entry details", exact: true })
-      .locator("../..")
-    await expect(details.getByText("Structured payload", { exact: true })).toBeVisible()
-    const payload = details.locator("pre").last()
+    await firstRow.click()
+    await expect(firstRow).toHaveAttribute("aria-current", "true")
+    const peek = page.getByRole("complementary", { name: event, exact: true })
+    await expect(peek).toBeVisible()
+    await expect(peek.getByText("Logger", { exact: true })).toBeVisible()
+    await expect(peek.getByText("Request ID", { exact: true })).toBeVisible()
+    const payload = peek.getByLabel("Structured payload")
     await expect(payload).toBeVisible()
-    await expect
-      .poll(async () => JSON.parse(await payload.innerText()).event)
-      .toBe(eventName)
+    await expect.poll(async () => JSON.parse(await payload.innerText()).event).toBe(event)
+
+    await page.keyboard.press("Escape")
+    await expect(peek).toBeHidden()
+
+    await page.getByLabel("Search logs").fill(event)
+    await expect(entries.first()).toBeVisible()
+    await page.getByLabel("Search logs").fill("no-such-log-event-xyz")
+    await expect(page.getByText("No matching log entries.")).toBeVisible()
+    await expect(entries).toHaveCount(0)
   })
 
-  test("renders low storage warning from backend validation override", async ({ page }) => {
-    const csrfToken = await getCsrfToken(page.request)
-    const setOverrideResponse = await page.request.post(
-      "/api/admin/system-health/validation-override",
+  test("pages back through older log entries", async ({ page }) => {
+    const pageOne = Array.from({ length: 3 }, (_, index) => ({
+      timestamp: `2026-10-12T10:0${index}:00`,
+      level: "INFO",
+      logger: "expenses",
+      event: `paged_event_${index}`,
+      request_id: `req-${index}`,
+    }))
+    const older = [
       {
-        headers: { "X-CSRF-Token": csrfToken },
-        data: { profile: "critical" },
-      }
-    )
+        timestamp: "2026-10-11T09:00:00",
+        level: "ERROR",
+        logger: "expenses",
+        event: "paged_older_event",
+        request_id: "req-old",
+      },
+    ]
+    await page.route("**/api/admin/logs?*", async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get("cursor")
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          cursor
+            ? { entries: older, next_cursor: null }
+            : { entries: pageOne, next_cursor: "page-two" }
+        ),
+      })
+    })
+
+    await openSection(page, "Logs", "/admin/logs")
+    const entries = page.getByRole("list", { name: "Log entries" }).getByRole("listitem")
+    await expect(entries).toHaveCount(3)
+    await page.getByRole("button", { name: "Load older" }).click()
+    await expect(entries).toHaveCount(1)
+    await expect(entries.first()).toHaveAccessibleName(/^Error paged_older_event at /)
+    await expect(page.getByRole("button", { name: "Load older" })).toHaveCount(0)
+  })
+
+  test("shows a critical server status from the backend validation override", async ({ page }) => {
+    const csrfToken = await getCsrfToken(page.request)
+    const setOverrideResponse = await page.request.post("/api/admin/system-health/validation-override", {
+      headers: { "X-CSRF-Token": csrfToken },
+      data: { profile: "critical" },
+    })
     expect(setOverrideResponse.ok()).toBeTruthy()
 
     try {
       await page.reload()
-      await expect(page.getByText(/Storage is running low/i)).toBeVisible()
-      await expect(
-        page.getByRole("link", { name: /Purge deleted transactions/i })
-      ).toBeVisible()
+      const status = page.getByRole("region", { name: "Status" })
+      await expect(status).toContainText("Critical")
     } finally {
       await page.request.delete("/api/admin/system-health/validation-override", {
         headers: { "X-CSRF-Token": csrfToken },
@@ -148,13 +294,10 @@ test.describe("Admin Page", () => {
     }
   })
 
-  test("renders assistant usage stats and switches the reporting period", async ({
-    page,
-  }) => {
+  test("renders assistant usage stats and switches the reporting period", async ({ page }) => {
     const requestedPeriods: string[] = []
     await page.route("**/api/ai/usage/summary?*", async (route) => {
-      const period =
-        new URL(route.request().url()).searchParams.get("period") ?? "week"
+      const period = new URL(route.request().url()).searchParams.get("period") ?? "week"
       requestedPeriods.push(period)
       await route.fulfill({
         status: 200,
@@ -163,7 +306,7 @@ test.describe("Admin Page", () => {
           feature: "spending_chat",
           period,
           started_at: period === "all" ? null : "2026-06-21T00:00:00",
-          total_chats: period === "all" ? 42 : 7,
+          total_chats: period === "all" ? 42 : period === "month" ? 0 : 7,
           completed_chats: period === "all" ? 40 : 6,
           failed_chats: 1,
           cancelled_chats: 0,
@@ -183,33 +326,39 @@ test.describe("Admin Page", () => {
       })
     })
 
-    await page.reload()
+    await openSection(page, "Assistant usage", "/admin/usage")
+    await expect(page.locator("main h1")).toHaveText("Assistant usage")
+    const period = page.getByRole("radiogroup", { name: "Assistant usage period" })
+    await expect(period.getByRole("radio", { name: "Week" })).toBeChecked()
 
-    const usage = page.getByTestId("admin-ai-usage")
-    await expect(
-      usage.getByRole("heading", { name: "Assistant usage" })
-    ).toBeVisible()
-    await expect(usage.getByText("$0.0123")).toBeVisible()
-    await expect(usage.getByText("Ø $0.0025 per chat")).toBeVisible()
-    await expect(usage.getByText(/^Since /)).toBeVisible()
-
+    const strip = page.locator("section").filter({ hasText: "Per chat" }).first()
+    await expect(strip.getByText("$0.0123")).toBeVisible()
+    await expect(strip.getByText("$0.0025 per chat")).toBeVisible()
+    await expect(strip.getByText("6 completed · 1 failed")).toBeVisible()
+    await expect(strip.getByText("1.500")).toBeVisible()
     await expect.poll(() => requestedPeriods.includes("week")).toBeTruthy()
 
-    await usage.getByRole("button", { name: "All time" }).click()
+    await period.getByRole("radio", { name: "Month" }).click()
+    await expect(page.getByText("No assistant usage in this period.")).toBeVisible()
 
+    await period.getByRole("radio", { name: "All time" }).click()
     await expect.poll(() => requestedPeriods.includes("all")).toBeTruthy()
-    await expect(usage.getByText("42")).toBeVisible()
-    await expect(usage.getByText(/^Since /)).toHaveCount(0)
+    await expect(strip.getByText("40 completed · 1 failed")).toBeVisible()
+    await expect(strip.getByText("42", { exact: true })).toBeVisible()
   })
 
-  test("navigates to sqlite importer and back", async ({ page }) => {
-    await page.getByRole("link", { name: "Open importer" }).click()
+  test("navigates to the SQLite importer and back to Maintenance", async ({ page }) => {
+    await openSection(page, "Maintenance", "/admin/maintenance")
+    await page.getByRole("link", { name: "Open legacy SQLite import" }).click()
     await expect(page).toHaveURL("/admin/import")
-    await expect(page.locator("main h1")).toContainText("SQLite Import")
-    await expect(page.getByRole("button", { name: "Preview CSV" })).toHaveCount(0)
+    await expect(page.locator("main h1")).toHaveText("Legacy SQLite import")
+    await expect(adminSections(page).getByRole("link", { name: "Maintenance" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    )
 
-    await page.getByRole("link", { name: "← Back to admin" }).click()
-    await expect(page).toHaveURL("/admin")
-    await expect(page.locator("main h1")).toContainText("Admin")
+    await page.getByRole("link", { name: "Maintenance" }).first().click()
+    await expect(page).toHaveURL("/admin/maintenance")
+    await expect(page.locator("main h1")).toHaveText("Maintenance")
   })
 })
