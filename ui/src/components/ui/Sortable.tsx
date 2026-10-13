@@ -70,7 +70,7 @@ export function SortableRow({
         className={s.grip}
         aria-label={`Reorder ${props.label}`}
         data-sort-id={id}
-        disabled={disabled}
+        // useSortable sets aria-disabled and drops the listeners; a disabled button would lose focus mid-reorder.
         {...attributes}
         {...listeners}
       >

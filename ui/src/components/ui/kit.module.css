@@ -391,7 +391,7 @@
   background: none; color: var(--ink-3); cursor: grab; touch-action: none;
 }
 .grip:hover { color: var(--ink-2); }
-.grip:disabled { cursor: default; opacity: 0.4; }
+.grip[aria-disabled="true"] { cursor: default; opacity: 0.4; }
 .grip svg { width: 14px; height: 14px; }
 .rowDragging .grip { cursor: grabbing; }
 .cardFlat .row { padding: 0 8px; min-height: 32px; }
