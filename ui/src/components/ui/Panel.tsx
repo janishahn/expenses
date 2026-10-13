@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react"
+import { Fragment, type ReactNode } from "react"
 import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
 import { Link } from "react-router-dom"
 import clsx from "clsx"
 import { Button, LinkButton } from "./Button"
 import { EmptyState } from "./EmptyState"
+import { useLoadingDelayElapsed } from "./layout-state"
 import s from "./kit.module.css"
 
 export type Crumb = { label: string; to: string }
@@ -65,8 +66,6 @@ export function ViewRow({ children, end }: { children?: ReactNode; end?: ReactNo
   )
 }
 
-const LOADING_DELAY_MS = 250
-
 // A page whose data is still loading: the header at once, placeholder rows only after
 // 250 ms so fast loads never flash. The rows are static, which keeps Pi-class hosts calm.
 export function PanelLoading({ title, parents, label }: { title: ReactNode; parents?: Crumb[]; label: string }) {
@@ -79,11 +78,7 @@ export function PanelLoading({ title, parents, label }: { title: ReactNode; pare
 
 // The placeholder rows of a loading page, for parts of a page that load on their own.
 export function LoadingBody({ label }: { label: string }) {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setVisible(true), LOADING_DELAY_MS)
-    return () => window.clearTimeout(timeout)
-  }, [])
+  const visible = useLoadingDelayElapsed()
   if (!visible) return null
   return (
     <div data-testid="route-loading">

@@ -1,4 +1,16 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
+
+// Loading placeholders appear only after this delay, so fast loads never flash.
+const LOADING_DELAY_MS = 250
+
+export function useLoadingDelayElapsed(): boolean {
+  const [elapsed, setElapsed] = useState(false)
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setElapsed(true), LOADING_DELAY_MS)
+    return () => window.clearTimeout(timeout)
+  }, [])
+  return elapsed
+}
 
 const DESKTOP_QUERY = "(min-width: 861px)"
 

@@ -10,6 +10,7 @@ import {
   useSearchParams,
 } from "react-router-dom"
 import AppShell, { type AppShellOutletContext } from "./app/AppShell"
+import { BareLoading } from "./components/ui/Bare"
 import { PanelLoading } from "./components/ui/Panel"
 import { AuthProvider, getSafeRedirectTarget, useAuth } from "./app/auth"
 
@@ -46,17 +47,6 @@ const UncategorizedInboxPage = lazy(
   () => import("./pages/UncategorizedInboxPage")
 )
 
-function AuthLoadingFallback() {
-  return (
-    <div
-      data-testid="app-loading-fallback"
-      className="min-h-app-screen flex items-center justify-center bg-bg text-muted"
-    >
-      Loading…
-    </div>
-  )
-}
-
 function currentDestination({
   pathname,
   search,
@@ -79,7 +69,7 @@ function SetupRoute() {
   const [searchParams] = useSearchParams()
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
   if (setupRequired) {
     return <SetupPage />
@@ -100,7 +90,7 @@ function PublicAuthRoute({ mode }: { mode: "login" | "signup" }) {
   const [searchParams] = useSearchParams()
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
 
   const redirectTarget = searchParams.get("redirect")
@@ -134,7 +124,7 @@ function ProtectedRoute() {
   const redirectTarget = currentDestination(location)
 
   if (!ready) {
-    return <AuthLoadingFallback />
+    return <BareLoading />
   }
 
   if (setupRequired) {
@@ -258,7 +248,7 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Suspense fallback={<AuthLoadingFallback />}>
+      <Suspense fallback={<BareLoading />}>
         <AppRoutes />
       </Suspense>
     </AuthProvider>

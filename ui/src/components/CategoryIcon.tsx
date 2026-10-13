@@ -6,13 +6,7 @@ import {
   DEFAULT_CATEGORY_ICON_KEY,
 } from "./categoryIconsCatalog"
 
-function DynamicCategoryIcon({
-  iconKey,
-  className,
-}: {
-  iconKey: string
-  className: string
-}) {
+function DynamicCategoryIcon({ iconKey }: { iconKey: string }) {
   const [loadedIcon, setLoadedIcon] = useState<{
     iconKey: string
     iconComponent: PhosphorIcon | null
@@ -43,13 +37,11 @@ function DynamicCategoryIcon({
     loadedIcon.iconKey === iconKey ? loadedIcon.iconComponent : null
 
   if (!iconComponent) {
-    return <CurrencyCircleDollarIcon className={className} />
+    return <CurrencyCircleDollarIcon />
   }
   const Icon = iconComponent
-  return <Icon className={className} />
+  return <Icon />
 }
-
-const signalTones = ["blue", "green", "red", "yellow", "purple", "coral"] as const
 
 const categoryIconHints: Array<[RegExp, string]> = [
   [/uncategorized/, "receipt"],
@@ -101,46 +93,9 @@ function resolveCategoryIconKey(icon: string | null, label?: string | null): str
     )
 }
 
-// The bare category icon, without the tile.
 export function CategoryIconSvg({ icon, label }: { icon: string | null; label?: string | null }) {
   const iconKey = resolveCategoryIconKey(icon, label)
   const CuratedIcon = CURATED_CATEGORY_ICONS[iconKey]
   if (CuratedIcon) return <CuratedIcon aria-hidden="true" />
-  return <DynamicCategoryIcon iconKey={iconKey} className="" />
-}
-
-export function CategoryIcon({
-  icon,
-  label,
-  className = "",
-}: {
-  icon: string | null
-  label?: string | null
-  className?: string
-}) {
-  const normalizedLabel = label?.trim().toLowerCase() ?? ""
-  const iconKey = resolveCategoryIconKey(icon, label)
-  const CuratedIcon = CURATED_CATEGORY_ICONS[iconKey]
-  const toneKey = normalizedLabel ? `${iconKey}:${normalizedLabel}` : iconKey
-  const toneIndex = Array.from(toneKey).reduce(
-    (total, character) => total + character.codePointAt(0)!,
-    0
-  ) % signalTones.length
-  return (
-    <span
-      data-testid="category-icon"
-      data-category-icon={iconKey}
-      data-signal-tone={signalTones[toneIndex]}
-      className={`category-icon-tile ${className}`.trim()}
-    >
-      {CuratedIcon ? (
-        <CuratedIcon className="h-4 w-4" />
-      ) : (
-        <DynamicCategoryIcon
-          iconKey={iconKey}
-          className="h-4 w-4"
-        />
-      )}
-    </span>
-  )
+  return <DynamicCategoryIcon iconKey={iconKey} />
 }

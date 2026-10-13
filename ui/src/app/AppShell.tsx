@@ -1,5 +1,4 @@
 import { Suspense, lazy, useState } from "react"
-import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { useQuery } from "@tanstack/react-query"
 import { Outlet, useNavigate } from "react-router-dom"
 import { AppFrame } from "../components/ui/AppFrame"
@@ -10,15 +9,6 @@ const AddTransactionDialog = lazy(() => import("./AddTransactionDialog"))
 
 export type AppShellOutletContext = {
   openAddTransaction: () => void
-  setUtilityAction: (action: AppShellUtilityAction | null) => void
-  utilityAction: AppShellUtilityAction | null
-}
-
-export type AppShellUtilityAction = {
-  label: string
-  onClick: () => void
-  icon?: typeof PlusIcon
-  presentation?: "primary" | "quiet"
 }
 
 function AppShell() {
@@ -32,13 +22,11 @@ function AppShell() {
     setAddTransactionKey((key) => key + 1)
     setAddTransactionOpen(true)
   }
-  const [utilityAction, setUtilityAction] = useState<AppShellUtilityAction | null>(null)
 
   const uncategorizedQuery = useQuery({
     queryKey: ["transactions", "uncategorized", "count"],
     queryFn: () => apiFetch<{ total: number }>("/api/transactions/uncategorized?period=all&limit=1"),
   })
-
 
   const signOut = async () => {
     await logout()
@@ -52,13 +40,7 @@ function AppShell() {
       uncategorizedCount={uncategorizedQuery.data?.total ?? 0}
       onSignOut={() => void signOut()}
     >
-      <Outlet
-        context={{
-          openAddTransaction,
-          setUtilityAction,
-          utilityAction,
-        }}
-      />
+      <Outlet context={{ openAddTransaction } satisfies AppShellOutletContext} />
       {addTransactionKey > 0 ? (
         <Suspense fallback={null}>
           <AddTransactionDialog key={addTransactionKey} open={addTransactionOpen} onClose={() => setAddTransactionOpen(false)} />

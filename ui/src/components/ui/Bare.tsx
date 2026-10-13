@@ -3,6 +3,7 @@ import { WalletIcon } from "@phosphor-icons/react/Wallet"
 import clsx from "clsx"
 import { Button } from "./Button"
 import { FieldError } from "./TextField"
+import { useLoadingDelayElapsed } from "./layout-state"
 import s from "./kit.module.css"
 
 // Sign in, setup and the 404 page: no navigation, one centered column on the canvas.
@@ -11,6 +12,22 @@ export function BarePage({ children }: { children: ReactNode }) {
     <div className={clsx(s.frame, s.bare)}>
       <main className={s.bareMain}>{children}</main>
     </div>
+  )
+}
+
+// While the session is checked: the empty canvas, with a status line only if the check is slow.
+export function BareLoading() {
+  const visible = useLoadingDelayElapsed()
+  return (
+    <BarePage>
+      <div data-testid="app-loading-fallback">
+        {visible ? (
+          <p role="status" className={s.barePath}>
+            Loading…
+          </p>
+        ) : null}
+      </div>
+    </BarePage>
   )
 }
 

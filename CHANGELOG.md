@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 - Replaced ESLint and its plugins with oxlint for web linting; `npm run lint` keeps the same rules.
+- Removed Recharts, class-variance-authority, tailwind-merge, and the IBM Plex Mono font from the web app. Tailwind CSS now supplies only the CSS reset.
 
 ## [0.6.1] - 2026-10-12
 
