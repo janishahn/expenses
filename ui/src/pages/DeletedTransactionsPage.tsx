@@ -5,7 +5,7 @@ import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
 import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
-import { useSearchParams } from "react-router-dom"
+import { Navigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import { invalidateTransactionData, shortDateLabel } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
@@ -54,7 +54,7 @@ function DeletedTransactionsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [pending, setPending] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isPlaceholderData, error } = useQuery({
     queryKey: ["transactions", "deleted", page],
     queryFn: () => apiFetch<DeletedResponse>(`/api/transactions/deleted?page=${page}&limit=${LIMIT}`),
   })
@@ -68,6 +68,16 @@ function DeletedTransactionsPage() {
 
   const rows = data.transactions
   const total = data.total
+  // A page past the end, from a bookmark or removals elsewhere, moves to the last page with rows.
+  if (!rows.length && page > 1 && total > 0 && !isPlaceholderData) {
+    const lastPage = Math.ceil(total / LIMIT)
+    return (
+      <>
+        <Navigate replace to={{ search: buildSearchParams(searchParams, { page: lastPage > 1 ? String(lastPage) : null }).toString() }} />
+        <PanelLoading title="Trash" parents={[{ label: "Transactions", to: "/transactions" }]} label="Loading trash…" />
+      </>
+    )
+  }
   const first = (page - 1) * LIMIT + 1
   // Rows restored or purged elsewhere drop out of the selection.
   const selected = selectedIds.filter((id) => rows.some((row) => row.id === id))
@@ -144,7 +154,7 @@ function DeletedTransactionsPage() {
                 />
               </ListFooter>
             ) : null
-          ) : (
+          ) : isPlaceholderData ? null : (
             <EmptyState>Trash is empty</EmptyState>
           )
         }

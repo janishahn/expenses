@@ -550,7 +550,11 @@ function ReconciliationPage() {
     const { resolution, ignore_reason: reason } = row
     const error = await act({
       row,
-      run: () => reopen(row.id, undefined, trashCreatedTransaction).then(() => undefined),
+      // The shown outcome is passed too, so a row changed elsewhere since is left as it is.
+      run: () =>
+        reopen(row.id, resolution ? { resolution, transactionId: transaction?.id } : undefined, trashCreatedTransaction).then(
+          () => undefined
+        ),
       message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash" : "Moved back to review",
       undo:
         resolution === "ignored"

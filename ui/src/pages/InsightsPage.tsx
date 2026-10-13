@@ -32,6 +32,7 @@ type InsightsResponse = {
   // Totals for the exact period; the series covers whole months, at most 12.
   income_cents: number
   expense_cents: number
+  recurring_cents: number
   month_count: number
 }
 
@@ -186,6 +187,7 @@ function InsightsPage() {
   const spent = data.expense_cents
   const months = data.month_count
   const saved = income - spent
+  const recurring = data.recurring_cents
   const seriesMonths = series.map((point) => `${point.year}-${String(point.month).padStart(2, "0")}`)
   const seriesLabels = axisLabels(seriesMonths)
   const splitFull = split.data?.rows.slice(0, -1) ?? []
@@ -215,8 +217,8 @@ function InsightsPage() {
     },
     {
       label: "Recurring",
-      value: spentFull ? `${Math.round((recurringFull / spentFull) * 100)} %` : "–",
-      detail: "of spending · 12 months",
+      value: spent ? `${Math.round((recurring / spent) * 100)} %` : "–",
+      detail: "of spending",
     },
   ]
 
