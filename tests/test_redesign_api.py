@@ -687,6 +687,27 @@ def test_uncategorized_suggestions_use_the_local_model_and_can_be_dismissed(
     )
     assert missing.status_code == 404
 
+    # After a merge and retraining, the rejection still covers the merged category.
+    bread = _category(api_client, csrf_headers, "Bread")
+    merged = api_client.post(
+        "/api/categories/merge",
+        headers=csrf_headers,
+        json={"source_category_id": bakery, "target_category_id": bread},
+    )
+    assert merged.status_code == 200
+    for enabled in (False, True):
+        api_client.put(
+            "/api/settings/auto-categorization",
+            headers=csrf_headers,
+            json={"enabled": enabled, "threshold": 0.8},
+        )
+    assert suggestion() is None
+    # The retrained model now picks the merged category, so the rejection is what hides it.
+    other = _transaction(
+        api_client, csrf_headers, amount_cents=500, title="Corner bakery"
+    )
+    assert api_client.get(f"/api/transactions/{other}").json()["category_id"] == bread
+
     api_client.put(
         "/api/settings/auto-categorization",
         headers=csrf_headers,

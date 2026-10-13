@@ -1072,6 +1072,15 @@ class CategoryService:
             ).rowcount
             or 0
         )
+        # A suggestion rejected for the source stays rejected for the target.
+        self.session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.category_suggestion_dismissed_id == source.id,
+            )
+            .values(category_suggestion_dismissed_id=target.id)
+        )
         updated_recurring_rules = int(
             self.session.execute(
                 update(RecurringRule)
