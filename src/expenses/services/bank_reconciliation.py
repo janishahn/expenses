@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from io import StringIO
 
 from rapidfuzz import fuzz
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from expenses.core.periods import Period
@@ -404,8 +404,19 @@ class BankReconciliationService:
             Transaction.user_id == self.user_id, Transaction.deleted_at.is_not(None)
         )
         matched_to_trash = BankStatementRow.matched_transaction_id.in_(trashed_ids)
+        # Permanently deleting the transaction sets the row's key to NULL.
+        match_purged = and_(
+            BankStatementRow.resolution.in_(("matched", "created")),
+            BankStatementRow.matched_transaction_id.is_(None),
+        )
         if view == "open":
-            conditions = [or_(BankStatementRow.resolution.is_(None), matched_to_trash)]
+            conditions = [
+                or_(
+                    BankStatementRow.resolution.is_(None),
+                    matched_to_trash,
+                    match_purged,
+                )
+            ]
             order = (BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
         else:
             conditions = [
@@ -413,6 +424,7 @@ class BankReconciliationService:
                 or_(
                     BankStatementRow.matched_transaction_id.is_(None), ~matched_to_trash
                 ),
+                ~match_purged,
             ]
             order = (BankStatementRow.resolved_at.desc(), BankStatementRow.id.desc())
         conditions.append(BankStatementRow.user_id == self.user_id)

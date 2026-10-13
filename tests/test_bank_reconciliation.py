@@ -619,6 +619,14 @@ def test_row_matched_to_trashed_transaction_is_open_again(
     assert [(i["id"], i["status"]) for i in open_page["items"]] == [(row_id, "missing")]
     resolved_url = "/api/reconciliation/bank-rows?view=resolved"
     assert api_client.get(resolved_url).json()["total"] == 0
+
+    purged = api_client.delete(
+        f"/api/transactions/{transaction_id}/permanent", headers=csrf_headers
+    )
+    assert purged.status_code == 200
+    open_page = api_client.get("/api/reconciliation/bank-rows").json()
+    assert [(i["id"], i["status"]) for i in open_page["items"]] == [(row_id, "missing")]
+    assert api_client.get(resolved_url).json()["total"] == 0
     ignored = _post(api_client, csrf_headers, f"{row_id}/ignore", {"reason": "gone"})
     assert ignored.status_code == 200
     assert api_client.get(resolved_url).json()["total"] == 1
