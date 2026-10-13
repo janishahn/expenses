@@ -333,13 +333,15 @@ function ReconciliationPage() {
   }
   const rowsParams = listParams(view, page, PAGE_SIZE)
   const rows = useQuery({
-    queryKey: ["reconciliation", "rows", rowsParams],
+    queryKey: ["reconciliation", "rows", view, rowsParams],
     queryFn: () => apiFetch<BankRowsPage>(`/api/reconciliation/bank-rows?${rowsParams}`),
+    // Filter and page changes keep the shown rows until the new ones arrive; a view change shows the loading state.
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === view ? previous : undefined),
   })
   // The To review count while Resolved is shown.
   const openParams = listParams("open", 1, 1)
   const openCount = useQuery({
-    queryKey: ["reconciliation", "rows", openParams],
+    queryKey: ["reconciliation", "rows", "open", openParams],
     queryFn: () => apiFetch<BankRowsPage>(`/api/reconciliation/bank-rows?${openParams}`),
     enabled: view === "resolved",
   })
