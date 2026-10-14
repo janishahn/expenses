@@ -87,7 +87,7 @@ struct WhatIfView: View {
         model.recurring?.rules ?? []
     }
 
-    private var categories: [RecurringCategory] {
+    private var categories: [CategorySummary] {
         model.recurring?.categories.filter { $0.type == "expense" } ?? []
     }
 
@@ -398,7 +398,7 @@ private struct AdjustmentRow: View {
 
     let adjustment: ForecastScenarioModificationRequest
     let rules: [RecurringRule]
-    let categories: [RecurringCategory]
+    let categories: [CategorySummary]
     let impact: Int?
     let remove: () -> Void
 
@@ -480,7 +480,7 @@ private struct AdjustmentSheet: View {
 
     let kind: AdjustmentKind
     let rules: [RecurringRule]
-    let categories: [RecurringCategory]
+    let categories: [CategorySummary]
     let onAdd: (ForecastScenarioModificationRequest) -> Void
 
     @State private var amount = ""

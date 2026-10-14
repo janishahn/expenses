@@ -54,6 +54,8 @@
 		001000000000000000000047 /* AddBudgetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000047 /* AddBudgetSheet.swift */; };
 		001000000000000000000048 /* WhatIfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000048 /* WhatIfView.swift */; };
 		001000000000000000000049 /* DigestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000049 /* DigestView.swift */; };
+		001000000000000000000050 /* RecurringRuleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000050 /* RecurringRuleView.swift */; };
+		001000000000000000000051 /* AddRuleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000051 /* AddRuleSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -106,6 +108,8 @@
 		002000000000000000000047 /* AddBudgetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBudgetSheet.swift; sourceTree = "<group>"; };
 		002000000000000000000048 /* WhatIfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatIfView.swift; sourceTree = "<group>"; };
 		002000000000000000000049 /* DigestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigestView.swift; sourceTree = "<group>"; };
+		002000000000000000000050 /* RecurringRuleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringRuleView.swift; sourceTree = "<group>"; };
+		002000000000000000000051 /* AddRuleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRuleSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -288,6 +292,8 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000022 /* RecurringView.swift */,
+				002000000000000000000051 /* AddRuleSheet.swift */,
+				002000000000000000000050 /* RecurringRuleView.swift */,
 			);
 			path = Recurring;
 			sourceTree = "<group>";
@@ -412,6 +418,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000051 /* AddRuleSheet.swift in Sources */,
+				001000000000000000000050 /* RecurringRuleView.swift in Sources */,
 				001000000000000000000049 /* DigestView.swift in Sources */,
 				001000000000000000000048 /* WhatIfView.swift in Sources */,
 				001000000000000000000047 /* AddBudgetSheet.swift in Sources */,

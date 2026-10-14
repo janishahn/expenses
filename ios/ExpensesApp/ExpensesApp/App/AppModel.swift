@@ -70,7 +70,6 @@ final class AppModel {
     var aiSettings: AISettingsResponse?
     var csvPreview: CSVPreviewResponse?
     var recurring: RecurringResponse?
-    var recurringOccurrences: RecurringOccurrencesResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
     var reimbursementExpenseSearch: ReimbursementExpenseSearchResponse?
@@ -1323,32 +1322,6 @@ final class AppModel {
         recurringLoadState = recurring != nil ? .loaded : .failed
     }
 
-    func loadRecurringOccurrences(ruleID: Int) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            recurringOccurrences = try await apiClient.recurringOccurrences(ruleID: ruleID, token: token)
-        }
-    }
-
-    func previewRecurring(_ body: RecurringPreviewRequest) async -> RecurringPreviewResponse? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            return try await apiClient.previewRecurring(body, token: token)
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
-    }
-
     func saveRecurringRule(id: Int?, body: RecurringRuleRequest) async -> Bool {
         guard let token else {
             return false
@@ -1363,26 +1336,12 @@ final class AppModel {
         }
     }
 
-    func toggleRecurringRule(_ rule: RecurringRule, autoPost: Bool) async -> Bool {
+    func deleteRecurringRule(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.toggleRecurringRule(
-                id: rule.id,
-                body: RecurringToggleRequest(autoPost: autoPost),
-                token: token
-            )
-            recurring = try await apiClient.recurring(token: token)
-        }
-    }
-
-    func deleteRecurringRule(_ rule: RecurringRule) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.deleteRecurringRule(id: rule.id, token: token)
+            try await apiClient.deleteRecurringRule(id: id, token: token)
             recurring = try await apiClient.recurring(token: token)
         }
     }
@@ -2033,7 +1992,6 @@ final class AppModel {
         csvPreview = nil
         recurring = nil
         recurringLoadState = .idle
-        recurringOccurrences = nil
         selectedTransaction = nil
         transactionReimbursements = nil
         reimbursementExpenseSearch = nil

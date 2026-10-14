@@ -1,105 +1,42 @@
+import Charts
 import SwiftUI
 
+/// Recurring rules as monthly commitments, or as an audit of what the expenses cost
+/// over time.
 struct RecurringView: View {
     @Environment(AppModel.self) private var model
-    @State private var activeSheet: RecurringSheet?
-    @State private var pendingDelete: RecurringRule?
+    @Environment(\.colorScheme) private var scheme
+    @State private var audit = false
+    @State private var adding = false
 
     var body: some View {
         List {
-            if model.identity?.authenticated != true {
-                SignedOutStateSection()
-            } else if let recurring = model.recurring {
-                Section("Monthly") {
-                    LabeledContent("Income", value: AppFormatters.euros(recurring.stats.totalMonthlyIncome))
-                    LabeledContent("Expenses", value: AppFormatters.euros(recurring.stats.totalMonthlyExpenses))
-                    LabeledContent("Net", value: AppFormatters.euros(recurring.stats.netMonthly))
-                    LabeledContent("Coverage", value: "\(Int(recurring.stats.coverageRatio.rounded()))%")
-                }
-
-                Section("Rules") {
-                    if recurring.rules.isEmpty {
-                        ContentUnavailableView("No recurring rules", systemImage: "repeat")
-                    } else {
-                        ForEach(recurring.rules) { rule in
-                            NavigationLink {
-                                RecurringOccurrencesView(ruleID: rule.id)
-                            } label: {
-                                RecurringRuleRow(rule: rule)
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button(rule.autoPost ? "Manual" : "Auto") {
-                                    Task { await model.toggleRecurringRule(rule, autoPost: !rule.autoPost) }
-                                }
-                                .tint(rule.autoPost ? .orange : .green)
-                                Button("Edit") {
-                                    activeSheet = .rule(rule)
-                                }
-                                .tint(.blue)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button("Delete", role: .destructive) {
-                                    pendingDelete = rule
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if !recurring.stats.expenseBreakdown.isEmpty {
-                    Section("Expense mix") {
-                        ForEach(recurring.stats.expenseBreakdown) { item in
-                            LabeledContent(item.name, value: AppFormatters.euros(item.amountCents))
-                        }
-                    }
-                }
-            } else if model.isLoading {
-                LoadingStateSection(title: "Loading recurring rules")
+            if let recurring = model.recurring {
+                content(recurring)
             } else if model.showsRecurringLoadFailed {
-                UnavailableStateSection(title: "Couldn't load recurring rules", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
+                UnavailableStateSection(
+                    title: "Couldn't load recurring rules",
+                    systemImage: "exclamationmark.triangle",
+                    message: model.lastError?.message
+                )
             } else {
-                ContentUnavailableView("No recurring rules loaded", systemImage: "repeat")
+                LoadingStateSection(title: "Loading recurring rules")
             }
         }
         .navigationTitle("Recurring")
+        .expensesScreenStyle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    activeSheet = .rule(nil)
-                } label: {
-                    Image(systemName: "plus")
+                Button("Add rule", systemImage: "plus") {
+                    adding = true
                 }
-                .accessibilityLabel("Add Recurring Rule")
-                .disabled(model.identity?.authenticated != true)
+                .disabled(model.recurring == nil)
             }
         }
-        .expensesScreenStyle()
-        .sheet(item: $activeSheet) { sheet in
-            Group {
-                switch sheet {
-                case .rule(let rule):
-                    RecurringRuleFormView(rule: rule, categories: model.recurring?.categories ?? [])
-                }
+        .sheet(isPresented: $adding) {
+            if let recurring = model.recurring {
+                AddRuleSheet(categories: recurring.categories)
             }
-            .themeAccentTint()
-        }
-        .confirmationDialog(
-            "Delete recurring rule?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingDelete = nil
-                    }
-                }
-            )
-        ) {
-            Button("Delete Rule", role: .destructive) {
-                if let rule = pendingDelete {
-                    Task { await model.deleteRecurringRule(rule) }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
         }
         .task {
             await model.loadRecurring()
@@ -107,352 +44,269 @@ struct RecurringView: View {
         .refreshable {
             await model.loadRecurring()
         }
-        .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.recurring == nil)
     }
-}
 
-private enum RecurringSheet: Identifiable {
-    case rule(RecurringRule?)
+    @ViewBuilder
+    private func content(_ recurring: RecurringResponse) -> some View {
+        let expenses = recurring.rules.filter { $0.type == .expense }
+        if recurring.rules.isEmpty {
+            empty("No recurring rules yet")
+        } else {
+            Section {
+                Picker("View", selection: $audit) {
+                    Text("Commitments").tag(false)
+                    Text("Audit").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .sensoryFeedback(.selection, trigger: audit)
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
 
-    var id: String {
-        switch self {
-        case .rule(let rule):
-            "rule-\(rule?.id ?? 0)"
+            if !audit {
+                commitments(recurring)
+            } else if expenses.isEmpty {
+                empty("No recurring expenses")
+            } else {
+                auditSections(recurring.stats, expenses: expenses.sorted { $0.monthlyEquivalentCents > $1.monthlyEquivalentCents })
+            }
         }
     }
+
+    private func empty(_ title: String) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: "repeat")
+        } actions: {
+            Button("Add rule") {
+                adding = true
+            }
+        }
+        .listRowBackground(Color.clear)
+    }
+
+    @ViewBuilder
+    private func commitments(_ recurring: RecurringResponse) -> some View {
+        let stats = recurring.stats
+        let net = stats.netMonthly
+        Section {
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+                GridRow {
+                    Metric("Income per month") {
+                        AmountText(stats.totalMonthlyIncome)
+                            .foregroundStyle(ExpensesTheme.income(for: scheme))
+                    } detail: {
+                        Text(rules(stats.ruleCounts.income))
+                    }
+                    Metric("Expenses per month") {
+                        AmountText(stats.totalMonthlyExpenses)
+                    } detail: {
+                        Text(rules(stats.ruleCounts.expense))
+                    }
+                }
+                GridRow {
+                    Metric("Covered") {
+                        Text((stats.coverageRatio / 100).formatted(.percent.precision(.fractionLength(0))))
+                    } detail: {
+                        HStack(spacing: 4) {
+                            AmountText(abs(net), decimals: false)
+                                .foregroundStyle(net >= 0 ? ExpensesTheme.income(for: scheme) : .secondary)
+                            Text(net >= 0 ? "left per month" : "short per month")
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .expensesRowBackground()
+
+        ruleSection("Expenses", rules: recurring.rules.filter { $0.type == .expense }, perMonth: stats.totalMonthlyExpenses)
+        ruleSection("Income", rules: recurring.rules.filter { $0.type == .income }, perMonth: stats.totalMonthlyIncome)
+    }
+
+    @ViewBuilder
+    private func ruleSection(_ title: String, rules: [RecurringRule], perMonth: Int) -> some View {
+        if !rules.isEmpty {
+            Section {
+                ForEach(rules) { rule in
+                    NavigationLink {
+                        RecurringRuleView(ruleID: rule.id)
+                    } label: {
+                        RecurringRuleRow(rule: rule)
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
+                }
+            } header: {
+                HStack {
+                    Text(title)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        AmountText(perMonth)
+                        Text("per month")
+                    }
+                }
+            }
+            .expensesRowBackground()
+        }
+    }
+
+    @ViewBuilder
+    private func auditSections(_ stats: RecurringStats, expenses: [RecurringRule]) -> some View {
+        Section {
+            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+                GridRow {
+                    Metric("Per month") {
+                        AmountText(stats.totalMonthlyExpenses)
+                    } detail: {
+                        Text(expenses.count == 1 ? "1 expense rule" : "\(expenses.count) expense rules")
+                    }
+                    Metric("Per year") {
+                        AmountText(stats.totalMonthlyExpenses * 12)
+                    } detail: {
+                        EmptyView()
+                    }
+                }
+                GridRow {
+                    Metric("Over 5 years") {
+                        AmountText(stats.totalMonthlyExpenses * 60, decimals: false)
+                    } detail: {
+                        EmptyView()
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .expensesRowBackground()
+
+        AnnualMixSection(rules: expenses, totalCents: stats.totalMonthlyExpenses * 12)
+
+        Section {
+            ForEach(expenses) { rule in
+                NavigationLink {
+                    RecurringRuleView(ruleID: rule.id)
+                } label: {
+                    HStack(spacing: 12) {
+                        CategoryGlyph(categoryID: rule.categoryID, iconKey: rule.category?.icon, name: rule.category?.name)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(rule.label)
+                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                AmountText(rule.monthlyEquivalentCents * 12, decimals: false)
+                                Text("per year")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        AmountText(rule.monthlyEquivalentCents)
+                    }
+                }
+                .navigationLinkIndicatorVisibility(.hidden)
+            }
+        } header: {
+            HStack {
+                Text("True cost")
+                Spacer()
+                Text("Per month")
+            }
+        }
+        .expensesRowBackground()
+    }
+
+    private func rules(_ count: Int) -> String {
+        count == 1 ? "1 rule" : "\(count) rules"
+    }
 }
 
+/// A rule in a list: its category glyph, name, how often and when next, and amount.
 private struct RecurringRuleRow: View {
     @Environment(\.colorScheme) private var scheme
 
     let rule: RecurringRule
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(rule.name ?? rule.category?.name ?? "Untitled")
-                    .font(.body.weight(.medium))
-                Text("\(frequencyLabel) · Next \(AppFormatters.day(rule.nextOccurrence))")
-                    .font(.caption)
+        HStack(spacing: 12) {
+            CategoryGlyph(categoryID: rule.categoryID, iconKey: rule.category?.icon, name: rule.category?.name)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.label)
+                    .lineLimit(1)
+                Text("\(rule.intervalUnit.repeats(rule.intervalCount)) · Next \(AppFormatters.shortDay(AppFormatters.localDay(rule.nextOccurrence)))")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(AppFormatters.amount(rule.type == "income" ? rule.amountCents : -rule.amountCents, currencyCode: rule.currencyCode))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(rule.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
-                Text(rule.autoPost ? "Auto" : "Manual")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 8)
+            AmountText(rule.amountCents, currencyCode: rule.currencyCode, signed: rule.type == .income)
+                .foregroundStyle(rule.type == .income ? ExpensesTheme.income(for: scheme) : .primary)
         }
-    }
-
-    private var frequencyLabel: String {
-        if rule.intervalCount == 1 {
-            return "Every \(rule.intervalUnit)"
-        }
-        return "Every \(rule.intervalCount) \(rule.intervalUnit)s"
+        .contentShape(Rectangle())
     }
 }
 
-private struct RecurringRuleFormView: View {
+/// What the recurring expenses cost per year, by category.
+private struct AnnualMixSection: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
 
-    let rule: RecurringRule?
-    let categories: [RecurringCategory]
-    @State private var name: String
-    @State private var type: String
-    @State private var currencyCode: String
-    @State private var amount: String
-    @State private var categoryID: Int?
-    @State private var anchorDate: Date
-    @State private var intervalUnit: String
-    @State private var intervalCount: Int
-    @State private var endDate: Date?
-    @State private var hasEndDate: Bool
-    @State private var autoPost: Bool
-    @State private var skipWeekends: Bool
-    @State private var monthDayPolicy: String
-    @State private var preview: RecurringPreviewResponse?
-    @State private var formError: String?
+    let rules: [RecurringRule]
+    let totalCents: Int
 
-    init(rule: RecurringRule?, categories: [RecurringCategory]) {
-        self.rule = rule
-        self.categories = categories
-        _name = State(initialValue: rule?.name ?? "")
-        _type = State(initialValue: rule?.type ?? "expense")
-        _currencyCode = State(initialValue: rule?.currencyCode ?? "EUR")
-        if let amount = rule?.amountCents {
-            _amount = State(initialValue: String(format: "%.2f", Double(amount) / 100.0))
-        } else {
-            _amount = State(initialValue: "")
-        }
-        _categoryID = State(initialValue: rule?.categoryID)
-        _anchorDate = State(initialValue: rule?.anchorDate ?? Date())
-        _intervalUnit = State(initialValue: rule?.intervalUnit ?? "month")
-        _intervalCount = State(initialValue: rule?.intervalCount ?? 1)
-        _endDate = State(initialValue: rule?.endDate)
-        _hasEndDate = State(initialValue: rule?.endDate != nil)
-        _autoPost = State(initialValue: rule?.autoPost ?? true)
-        _skipWeekends = State(initialValue: rule?.skipWeekends ?? false)
-        _monthDayPolicy = State(initialValue: rule?.monthDayPolicy ?? "snap_to_end")
+    private struct Slice: Identifiable {
+        let id: Int
+        let name: String
+        let cents: Int
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $name)
-                    Picker("Type", selection: $type) {
-                        Text("Expense").tag("expense")
-                        Text("Income").tag("income")
-                    }
-                    .pickerStyle(.segmented)
-                    .sensoryFeedback(.selection, trigger: type)
-                    .onChange(of: type) { _, nextType in
-                        if !filteredCategories(for: nextType).contains(where: { $0.id == categoryID }) {
-                            categoryID = filteredCategories(for: nextType).first?.id
-                        }
-                    }
-                    Picker("Currency", selection: $currencyCode) {
-                        Text("EUR").tag("EUR")
-                        Text("USD").tag("USD")
-                    }
-                    TextField("Amount", text: $amount)
-                        .keyboardType(.decimalPad)
-                    Picker("Category", selection: $categoryID) {
-                        Text("Select category").tag(Int?.none)
-                        ForEach(filteredCategories(for: type)) { category in
-                            Text(category.name).tag(Optional(category.id))
-                        }
+        let slices = Dictionary(grouping: rules, by: \.categoryID)
+            .map { id, rules in
+                Slice(id: id, name: rules[0].category?.name ?? "Uncategorized", cents: rules.reduce(0) { $0 + $1.monthlyEquivalentCents * 12 })
+            }
+            .sorted { $0.cents > $1.cents }
+        Section("Annual mix") {
+            HStack(spacing: 18) {
+                Chart(slices) { slice in
+                    SectorMark(angle: .value("Per year", slice.cents), innerRadius: .ratio(0.64), angularInset: 1)
+                        .foregroundStyle(ExpensesTheme.category(slice.id, for: scheme))
+                        .accessibilityLabel(slice.name)
+                        .accessibilityValue(model.amountString(slice.cents))
+                }
+                .chartLegend(.hidden)
+                .frame(width: 112, height: 112)
+                .overlay {
+                    VStack(spacing: 0) {
+                        AmountText(totalCents, decimals: false)
+                            .font(.footnote.weight(.semibold))
+                        Text("per year")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Schedule") {
-                    DatePicker("Start date", selection: $anchorDate, displayedComponents: .date)
-                    Stepper("Every \(intervalCount) \(intervalUnit)\(intervalCount == 1 ? "" : "s")", value: $intervalCount, in: 1...365)
-                    Picker("Interval", selection: $intervalUnit) {
-                        Text("Day").tag("day")
-                        Text("Week").tag("week")
-                        Text("Month").tag("month")
-                        Text("Year").tag("year")
-                    }
-                    Toggle("Has end date", isOn: $hasEndDate)
-                        .sensoryFeedback(.selection, trigger: hasEndDate)
-                    if hasEndDate {
-                        DatePicker(
-                            "End date",
-                            selection: Binding(
-                                get: { endDate ?? anchorDate },
-                                set: { endDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                    }
-                    Toggle("Auto-post", isOn: $autoPost)
-                        .sensoryFeedback(.selection, trigger: autoPost)
-                    Toggle("Skip weekends", isOn: $skipWeekends)
-                        .sensoryFeedback(.selection, trigger: skipWeekends)
-                    Picker("Missing month day", selection: $monthDayPolicy) {
-                        Text("Last day").tag("snap_to_end")
-                        Text("Skip").tag("skip")
-                        Text("Carry forward").tag("carry_forward")
-                    }
-                }
-
-                Section("Preview") {
-                    Button {
-                        Task { await previewSchedule() }
-                    } label: {
-                        Label("Preview Schedule", systemImage: "calendar.badge.clock")
-                    }
-                    if let preview {
-                        if let error = preview.error {
-                            Text(error)
-                                .foregroundStyle(.red)
-                        } else {
-                            ForEach(Array(preview.occurrences.enumerated()), id: \.offset) { _, occurrence in
-                                Text(AppFormatters.day(occurrence))
-                            }
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(slices.prefix(5)) { slice in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(ExpensesTheme.category(slice.id, for: scheme))
+                                .frame(width: 8, height: 8)
+                            Text(slice.name)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(percent(slice.cents, of: totalCents))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
                         }
+                        .font(.subheadline)
                     }
-                }
-
-                if let formError {
-                    Section {
-                        Text(formError)
-                            .foregroundStyle(.red)
+                    if slices.count > 5 {
+                        Text("\(slices.count - 5) more")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
-            .navigationTitle(rule == nil ? "Add Rule" : "Edit Rule")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await save() }
-                    }
-                    .disabled(model.isLoading)
-                }
-            }
+            .padding(.vertical, 6)
         }
+        .expensesRowBackground()
     }
-
-    private func previewSchedule() async {
-        let body = RecurringPreviewRequest(
-            startDate: RecurringFormParsing.dateString(anchorDate),
-            intervalUnit: intervalUnit,
-            intervalCount: intervalCount,
-            monthDayPolicy: monthDayPolicy,
-            skipWeekends: skipWeekends
-        )
-        preview = await model.previewRecurring(body)
-        if preview == nil {
-            formError = model.lastError?.message ?? "Schedule preview failed."
-        }
-    }
-
-    private func save() async {
-        guard let amountCents = RecurringFormParsing.parseAmount(amount) else {
-            formError = "Amount is invalid."
-            return
-        }
-        guard let categoryID else {
-            formError = "Category is required."
-            return
-        }
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let anchor = RecurringFormParsing.dateString(anchorDate)
-        let nextOccurrence = recurringNextOccurrence(anchor: anchor)
-        let body = RecurringRuleRequest(
-            name: cleanName.isEmpty ? nil : cleanName,
-            type: type,
-            currencyCode: currencyCode,
-            amountCents: amountCents,
-            categoryID: categoryID,
-            anchorDate: anchor,
-            intervalUnit: intervalUnit,
-            intervalCount: intervalCount,
-            nextOccurrence: nextOccurrence,
-            endDate: hasEndDate ? RecurringFormParsing.dateString(endDate ?? anchorDate) : nil,
-            autoPost: autoPost,
-            skipWeekends: skipWeekends,
-            monthDayPolicy: monthDayPolicy
-        )
-        if await model.saveRecurringRule(id: rule?.id, body: body) {
-            dismiss()
-        } else {
-            formError = model.lastError?.message ?? "Recurring rule could not be saved."
-        }
-    }
-
-    private func recurringNextOccurrence(anchor: String) -> String {
-        guard let rule else {
-            return anchor
-        }
-        if RecurringFormParsing.dateString(rule.anchorDate) == anchor,
-           rule.intervalUnit == intervalUnit,
-           rule.intervalCount == intervalCount,
-           (rule.skipWeekends ?? false) == skipWeekends,
-           (rule.monthDayPolicy ?? "snap_to_end") == monthDayPolicy
-        {
-            return RecurringFormParsing.dateString(rule.nextOccurrence)
-        }
-        return anchor
-    }
-
-    private func filteredCategories(for selectedType: String) -> [RecurringCategory] {
-        categories.filter { $0.type == selectedType }
-    }
-}
-
-private struct RecurringOccurrencesView: View {
-    @Environment(AppModel.self) private var model
-    let ruleID: Int
-    @State private var loadFailed = false
-
-    private var data: RecurringOccurrencesResponse? {
-        model.recurringOccurrences?.rule.id == ruleID ? model.recurringOccurrences : nil
-    }
-
-    var body: some View {
-        List {
-            if let data {
-                Section {
-                    LabeledContent("Amount", value: AppFormatters.amount(data.rule.amountCents, currencyCode: data.rule.currencyCode))
-                    LabeledContent("Category", value: data.rule.category?.name ?? "-")
-                    LabeledContent("Next", value: AppFormatters.day(data.rule.nextOccurrence))
-                    LabeledContent("Auto-post", value: data.rule.autoPost ? "Yes" : "No")
-                }
-                Section("Posted transactions") {
-                    if data.occurrences.isEmpty {
-                        ContentUnavailableView("No occurrences posted", systemImage: "clock.arrow.circlepath")
-                    } else {
-                        ForEach(data.occurrences) { occurrence in
-                            HStack(alignment: .firstTextBaseline) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(occurrence.title ?? occurrence.category?.name ?? "Untitled")
-                                    Text(occurrence.occurrenceDate.map(AppFormatters.day) ?? "-")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(AppFormatters.euros(occurrence.amountCents))
-                                    .font(.body.weight(.semibold))
-                            }
-                        }
-                    }
-                }
-            } else if loadFailed {
-                ContentUnavailableView(
-                    "Couldn't load occurrences",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("Pull to refresh to try again.")
-                )
-            } else {
-                ProgressView()
-            }
-        }
-        .navigationTitle(data?.rule.name ?? "Occurrences")
-        .task {
-            await reload()
-        }
-        .refreshable {
-            await reload()
-        }
-    }
-
-    private func reload() async {
-        loadFailed = false
-        await model.loadRecurringOccurrences(ruleID: ruleID)
-        loadFailed = data == nil
-    }
-}
-
-private enum RecurringFormParsing {
-    static func parseAmount(_ raw: String) -> Int? {
-        let normalized = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: ",", with: ".")
-        guard let value = Double(normalized), value >= 0, value.isFinite else {
-            return nil
-        }
-        return Int((value * 100).rounded())
-    }
-
-    static func dateString(_ date: Date) -> String {
-        formatter.string(from: date)
-    }
-
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }

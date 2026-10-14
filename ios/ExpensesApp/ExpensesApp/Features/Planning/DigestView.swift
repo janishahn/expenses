@@ -240,7 +240,11 @@ struct DigestView: View {
             }
             ForEach(data.recurringPostings) { item in
                 NavigationLink {
-                    TransactionDetailView(transactionID: item.transactionID)
+                    if let ruleID = item.ruleID {
+                        RecurringRuleView(ruleID: ruleID)
+                    } else {
+                        TransactionDetailView(transactionID: item.transactionID)
+                    }
                 } label: {
                     LedgerRow(
                         title: item.ruleName.isEmpty ? "Recurring" : item.ruleName,

@@ -9,8 +9,11 @@ enum AppFormatters {
 
     // A sign on either side of zero, as the web shows changes and nets.
     static func signedEuros(_ cents: Int, decimals: Bool = true) -> String {
-        let sign = cents < 0 ? "\u{2212} " : cents > 0 ? "+ " : ""
-        return sign + euros(abs(cents), decimals: decimals)
+        sign(cents) + euros(abs(cents), decimals: decimals)
+    }
+
+    static func sign(_ cents: Int) -> String {
+        cents < 0 ? "\u{2212} " : cents > 0 ? "+ " : ""
     }
 
     static func amount(_ cents: Int, currencyCode: String) -> String {

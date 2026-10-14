@@ -14,8 +14,10 @@ struct AmountText: View {
         placeholder = AppFormatters.euros(888_888, decimals: decimals)
     }
 
-    init(_ cents: Int, currencyCode: String) {
-        text = AppFormatters.amount(cents, currencyCode: currencyCode)
+    init(_ cents: Int, currencyCode: String, signed: Bool = false) {
+        text = signed
+            ? AppFormatters.sign(cents) + AppFormatters.amount(abs(cents), currencyCode: currencyCode)
+            : AppFormatters.amount(cents, currencyCode: currencyCode)
         placeholder = AppFormatters.amount(888_888, currencyCode: currencyCode)
     }
 

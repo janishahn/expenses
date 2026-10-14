@@ -717,15 +717,6 @@ struct ExpensesAPIClient {
         try await request(path: "/api/recurring/\(id)", method: "PUT", bearerToken: token, body: body)
     }
 
-    func toggleRecurringRule(id: Int, body: RecurringToggleRequest, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/recurring/\(id)/toggle",
-            method: "POST",
-            bearerToken: token,
-            body: body
-        )
-    }
-
     func deleteRecurringRule(id: Int, token: String) async throws {
         let _: EmptyResponse = try await request(
             path: "/api/recurring/\(id)",

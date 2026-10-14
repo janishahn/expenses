@@ -866,24 +866,22 @@ struct ForecastScenarioResponse: Codable, Equatable {
     }
 }
 
-struct RecurringCategory: Codable, Equatable, Identifiable {
-    let id: Int
-    let name: String
-    let type: String?
-    let icon: String?
+enum IntervalUnit: String, Codable, CaseIterable, Identifiable {
+    case day
+    case week
+    case month
+    case year
+
+    var id: Self { self }
 }
 
-struct RecurringBreakdown: Codable, Equatable, Identifiable {
-    var id: String { name }
-    let name: String
-    let amountCents: Int
-    let percent: Double
+/// Where a monthly or yearly rule posts in a month that lacks its day.
+enum MonthDayPolicy: String, Codable, CaseIterable, Identifiable {
+    case snapToEnd = "snap_to_end"
+    case skip
+    case carryForward = "carry_forward"
 
-    enum CodingKeys: String, CodingKey {
-        case name
-        case amountCents = "amount_cents"
-        case percent
-    }
+    var id: Self { self }
 }
 
 struct RecurringRuleCounts: Codable, Equatable {
@@ -897,8 +895,6 @@ struct RecurringStats: Codable, Equatable {
     let totalMonthlyExpenses: Int
     let netMonthly: Int
     let coverageRatio: Double
-    let expenseBreakdown: [RecurringBreakdown]
-    let incomeBreakdown: [RecurringBreakdown]
     let ruleCounts: RecurringRuleCounts
 
     enum CodingKeys: String, CodingKey {
@@ -906,8 +902,6 @@ struct RecurringStats: Codable, Equatable {
         case totalMonthlyExpenses = "total_monthly_expenses"
         case netMonthly = "net_monthly"
         case coverageRatio = "coverage_ratio"
-        case expenseBreakdown = "expense_breakdown"
-        case incomeBreakdown = "income_breakdown"
         case ruleCounts = "rule_counts"
     }
 }
@@ -915,20 +909,21 @@ struct RecurringStats: Codable, Equatable {
 struct RecurringRule: Codable, Equatable, Identifiable {
     let id: Int
     let name: String?
-    let type: String
+    let type: TransactionKind
     let currencyCode: String
     let amountCents: Int
-    let monthlyEquivalentCents: Int?
-    let categoryID: Int?
-    let category: RecurringCategory?
+    // In euros, converted for dollar rules.
+    let monthlyEquivalentCents: Int
+    let categoryID: Int
+    let category: CategorySummary?
     let anchorDate: Date
-    let intervalUnit: String
+    let intervalUnit: IntervalUnit
     let intervalCount: Int
     let nextOccurrence: Date
     let endDate: Date?
     let autoPost: Bool
-    let skipWeekends: Bool?
-    let monthDayPolicy: String?
+    let skipWeekends: Bool
+    let monthDayPolicy: MonthDayPolicy
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -953,23 +948,24 @@ struct RecurringRule: Codable, Equatable, Identifiable {
 struct RecurringResponse: Codable, Equatable {
     let rules: [RecurringRule]
     let stats: RecurringStats
-    let categories: [RecurringCategory]
+    let categories: [CategorySummary]
 }
 
+/// The body of POST and PUT /api/recurring. Days are "yyyy-MM-dd".
 struct RecurringRuleRequest: Codable, Equatable {
-    let name: String?
-    let type: String
-    let currencyCode: String
-    let amountCents: Int
-    let categoryID: Int
-    let anchorDate: String
-    let intervalUnit: String
-    let intervalCount: Int
-    let nextOccurrence: String
-    let endDate: String?
-    let autoPost: Bool
-    let skipWeekends: Bool
-    let monthDayPolicy: String
+    var name: String?
+    var type: TransactionKind
+    var currencyCode: String
+    var amountCents: Int
+    var categoryID: Int
+    var anchorDate: String
+    var intervalUnit: IntervalUnit
+    var intervalCount: Int
+    var nextOccurrence: String
+    var endDate: String?
+    var autoPost: Bool
+    var skipWeekends: Bool
+    var monthDayPolicy: MonthDayPolicy
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -988,15 +984,39 @@ struct RecurringRuleRequest: Codable, Equatable {
     }
 }
 
+extension RecurringRuleRequest {
+    init(_ rule: RecurringRule) {
+        let day = Date.ISO8601FormatStyle().year().month().day()
+        self.init(
+            name: rule.name,
+            type: rule.type,
+            currencyCode: rule.currencyCode,
+            amountCents: rule.amountCents,
+            categoryID: rule.categoryID,
+            anchorDate: rule.anchorDate.formatted(day),
+            intervalUnit: rule.intervalUnit,
+            intervalCount: rule.intervalCount,
+            nextOccurrence: rule.nextOccurrence.formatted(day),
+            endDate: rule.endDate?.formatted(day),
+            autoPost: rule.autoPost,
+            skipWeekends: rule.skipWeekends,
+            monthDayPolicy: rule.monthDayPolicy
+        )
+    }
+}
+
 struct RecurringPreviewRequest: Codable, Equatable {
     let startDate: String
-    let intervalUnit: String
+    // A saved rule's anchor, when previewing from its next occurrence.
+    var ruleAnchorDate: String?
+    let intervalUnit: IntervalUnit
     let intervalCount: Int
-    let monthDayPolicy: String
+    let monthDayPolicy: MonthDayPolicy
     let skipWeekends: Bool
 
     enum CodingKeys: String, CodingKey {
         case startDate = "start_date"
+        case ruleAnchorDate = "rule_anchor_date"
         case intervalUnit = "interval_unit"
         case intervalCount = "interval_count"
         case monthDayPolicy = "month_day_policy"
@@ -1009,34 +1029,19 @@ struct RecurringPreviewResponse: Codable, Equatable {
     let error: String?
 }
 
-struct RecurringToggleRequest: Codable, Equatable {
-    let autoPost: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case autoPost = "auto_post"
-    }
-}
-
 struct RecurringOccurrence: Codable, Equatable, Identifiable {
     let id: Int
     let occurrenceDate: Date?
     let amountCents: Int
-    let category: RecurringCategory?
-    let title: String?
-    let createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case occurrenceDate = "occurrence_date"
         case amountCents = "amount_cents"
-        case category
-        case title
-        case createdAt = "created_at"
     }
 }
 
 struct RecurringOccurrencesResponse: Codable, Equatable {
-    let rule: RecurringRule
     let occurrences: [RecurringOccurrence]
 }
 
@@ -1531,7 +1536,7 @@ struct CategorySuggestionDismissRequest: Codable, Equatable {
     }
 }
 
-enum TransactionKind: String, Hashable {
+enum TransactionKind: String, Hashable, Codable {
     case expense
     case income
 }
