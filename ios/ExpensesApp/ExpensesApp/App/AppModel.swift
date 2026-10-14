@@ -64,10 +64,6 @@ final class AppModel {
     var ruleSuggestions: [RuleSuggestion] = []
     var budgets: BudgetsResponse?
     var reconciliation: BankReconciliationResponse?
-    var adminInfo: AdminInfo?
-    var adminSystemHealth: AdminSystemHealth?
-    var adminLogs: AdminLogsResponse?
-    var legacySQLitePreview: LegacySQLitePreviewResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
     var aiSettings: AISettingsResponse?
@@ -1169,35 +1165,6 @@ final class AppModel {
         }
     }
 
-    func loadAdmin() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            adminInfo = try await apiClient.adminInfo(token: token)
-            adminSystemHealth = try await apiClient.adminSystemHealth(token: token)
-            adminLogs = try await apiClient.adminLogs(filter: .errors, search: "", cursor: nil, token: token)
-        }
-    }
-
-    func loadAdminHealth() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            adminSystemHealth = try await apiClient.adminSystemHealth(token: token)
-        }
-    }
-
-    func loadAdminLogs(filter: AdminLogFilter, search: String, cursor: String?) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            adminLogs = try await apiClient.adminLogs(filter: filter, search: search, cursor: cursor, token: token)
-        }
-    }
-
     func downloadAdminDatabase() async -> AttachmentDownload? {
         guard let token else {
             return nil
@@ -1292,13 +1259,11 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let preview = try await apiClient.previewLegacySQLite(
+            return try await apiClient.previewLegacySQLite(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            legacySQLitePreview = preview
-            return preview
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1316,7 +1281,6 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let response = try await apiClient.commitLegacySQLite(request, token: token)
-            legacySQLitePreview = nil
             try await reloadPrimaryData()
             return response
         } catch let error as APIErrorInfo {
@@ -1981,10 +1945,6 @@ final class AppModel {
         budgets = nil
         budgetsLoadState = .idle
         reconciliation = nil
-        adminInfo = nil
-        adminSystemHealth = nil
-        adminLogs = nil
-        legacySQLitePreview = nil
         mobileSessions = nil
         settings = nil
         recurring = nil

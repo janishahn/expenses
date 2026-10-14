@@ -661,6 +661,14 @@ struct ExpensesAPIClient {
         )
     }
 
+    func purgeDeletedPreview(days: Int, token: String) async throws -> AdminPurgeDeletedPreview {
+        try await request(path: "/api/admin/purge-deleted/preview?days=\(days)", bearerToken: token)
+    }
+
+    func assistantUsage(period: AssistantUsage.Period, token: String) async throws -> AssistantUsage {
+        try await request(path: "/api/ai/usage/summary?feature=spending_chat&period=\(period.rawValue)", bearerToken: token)
+    }
+
     func rebuildRollups(token: String) async throws -> AdminRebuildRollupsResponse {
         try await request(path: "/api/admin/rebuild-rollups", method: "POST", bearerToken: token)
     }

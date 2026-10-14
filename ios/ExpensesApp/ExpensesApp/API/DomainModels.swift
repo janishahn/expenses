@@ -2439,7 +2439,6 @@ struct AdminInfo: Codable, Equatable {
     let logSizeMB: Double
     let logModified: Date?
     let logRetainedFiles: Int
-    let usersCount: Int
 
     enum CodingKeys: String, CodingKey {
         case appVersion = "app_version"
@@ -2451,11 +2450,14 @@ struct AdminInfo: Codable, Equatable {
         case logSizeMB = "log_size_mb"
         case logModified = "log_modified"
         case logRetainedFiles = "log_retained_files"
-        case usersCount = "users_count"
     }
 }
 
 struct AdminSystemHealth: Codable, Equatable {
+    enum Status: String, Codable {
+        case healthy, warm, critical
+    }
+
     let cpuTempCelsius: Double?
     let cpuLoadPercent: Double
     let ramUsedBytes: Int
@@ -2465,21 +2467,7 @@ struct AdminSystemHealth: Codable, Equatable {
     let diskFreeBytes: Int
     let dbSizeBytes: Int
     let receiptsSizeBytes: Int
-    let status: String
-
-    var ramUsagePercent: Double {
-        guard ramTotalBytes > 0 else {
-            return 0
-        }
-        return Double(ramUsedBytes) / Double(ramTotalBytes) * 100
-    }
-
-    var diskUsagePercent: Double {
-        guard diskTotalBytes > 0 else {
-            return 0
-        }
-        return Double(diskUsedBytes) / Double(diskTotalBytes) * 100
-    }
+    let status: Status
 
     enum CodingKeys: String, CodingKey {
         case cpuTempCelsius = "cpu_temp_celsius"
@@ -2531,9 +2519,9 @@ enum AdminLogFilter: String, CaseIterable, Equatable, Identifiable {
 }
 
 struct AdminLogEntry: Decodable, Equatable, Identifiable {
-    var id: String { "\(timestamp)-\(event)-\(requestID ?? "")" }
+    var id: String { "\(timestamp?.timeIntervalSince1970 ?? 0)-\(event)-\(requestID ?? "")" }
 
-    let timestamp: String
+    let timestamp: Date?
     let level: String
     let logger: String?
     let event: String
@@ -2562,7 +2550,7 @@ struct AdminLogEntry: Decodable, Equatable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let known = try decoder.container(keyedBy: KnownKeys.self)
-        timestamp = try known.decodeIfPresent(String.self, forKey: .timestamp) ?? "-"
+        timestamp = try known.decodeIfPresent(Date.self, forKey: .timestamp)
         level = try known.decodeIfPresent(String.self, forKey: .level) ?? "INFO"
         logger = try known.decodeIfPresent(String.self, forKey: .logger)
         event = try known.decodeIfPresent(String.self, forKey: .event) ?? "log_entry"
@@ -2589,6 +2577,10 @@ struct AdminLogEntry: Decodable, Equatable, Identifiable {
 
 struct AdminPurgeDeletedRequest: Codable, Equatable {
     let days: Int
+}
+
+struct AdminPurgeDeletedPreview: Decodable, Equatable {
+    let count: Int
 }
 
 struct AdminPurgeDeletedResponse: Codable, Equatable {
@@ -2624,6 +2616,54 @@ struct AdminRecurringCatchUpResponse: Codable, Equatable {
         case advancedRules = "advanced_rules"
         case overdueRules = "overdue_rules"
         case updated
+    }
+}
+
+/// The assistant's chats, tokens, and cost in a period.
+struct AssistantUsage: Decodable, Equatable {
+    enum Period: String, CaseIterable, Identifiable {
+        case week, month, all
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .week:
+                "Week"
+            case .month:
+                "Month"
+            case .all:
+                "All time"
+            }
+        }
+    }
+
+    let totalChats: Int
+    let completedChats: Int
+    let failedChats: Int
+    let costedChats: Int
+    let totalTokens: Int
+    let cachedInputTokens: Int
+    let reasoningTokens: Int
+    let totalCostDecimal: String
+    let averageCostDecimal: String
+    let costUnit: String?
+    let averageTotalTokens: Int
+    let p95DurationMS: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case totalChats = "total_chats"
+        case completedChats = "completed_chats"
+        case failedChats = "failed_chats"
+        case costedChats = "costed_chats"
+        case totalTokens = "total_tokens"
+        case cachedInputTokens = "cached_input_tokens"
+        case reasoningTokens = "reasoning_tokens"
+        case totalCostDecimal = "total_cost_decimal"
+        case averageCostDecimal = "average_cost_decimal"
+        case costUnit = "cost_unit"
+        case averageTotalTokens = "average_total_tokens"
+        case p95DurationMS = "p95_duration_ms"
     }
 }
 
@@ -2929,12 +2969,9 @@ enum JSONValue: Codable, Equatable {
     }
 
     func prettyDescription() -> String {
-        guard
-            let data = try? JSONEncoder().encode(self),
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
-            let string = String(data: prettyData, encoding: .utf8)
-        else {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(self), let string = String(data: data, encoding: .utf8) else {
             return String(describing: self)
         }
         return string

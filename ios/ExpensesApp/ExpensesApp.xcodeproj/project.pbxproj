@@ -68,6 +68,12 @@
 		001000000000000000000062 /* CategorizationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000062 /* CategorizationSettingsView.swift */; };
 		001000000000000000000063 /* BalanceSnapshotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000063 /* BalanceSnapshotsView.swift */; };
 		001000000000000000000064 /* ImportExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000064 /* ImportExportView.swift */; };
+		001000000000000000000065 /* AdminHealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000065 /* AdminHealthView.swift */; };
+		001000000000000000000066 /* AdminLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000066 /* AdminLogsView.swift */; };
+		001000000000000000000067 /* AdminMaintenanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000067 /* AdminMaintenanceView.swift */; };
+		001000000000000000000068 /* AdminSystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000068 /* AdminSystemView.swift */; };
+		001000000000000000000069 /* AssistantUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000069 /* AssistantUsageView.swift */; };
+		001000000000000000000070 /* LegacyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000070 /* LegacyImportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -134,6 +140,12 @@
 		002000000000000000000062 /* CategorizationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationSettingsView.swift; sourceTree = "<group>"; };
 		002000000000000000000063 /* BalanceSnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceSnapshotsView.swift; sourceTree = "<group>"; };
 		002000000000000000000064 /* ImportExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportExportView.swift; sourceTree = "<group>"; };
+		002000000000000000000065 /* AdminHealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminHealthView.swift; sourceTree = "<group>"; };
+		002000000000000000000066 /* AdminLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminLogsView.swift; sourceTree = "<group>"; };
+		002000000000000000000067 /* AdminMaintenanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminMaintenanceView.swift; sourceTree = "<group>"; };
+		002000000000000000000068 /* AdminSystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminSystemView.swift; sourceTree = "<group>"; };
+		002000000000000000000069 /* AssistantUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantUsageView.swift; sourceTree = "<group>"; };
+		002000000000000000000070 /* LegacyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyImportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -372,6 +384,12 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000029 /* AdminView.swift */,
+				002000000000000000000070 /* LegacyImportView.swift */,
+				002000000000000000000069 /* AssistantUsageView.swift */,
+				002000000000000000000068 /* AdminSystemView.swift */,
+				002000000000000000000067 /* AdminMaintenanceView.swift */,
+				002000000000000000000066 /* AdminLogsView.swift */,
+				002000000000000000000065 /* AdminHealthView.swift */,
 			);
 			path = Admin;
 			sourceTree = "<group>";
@@ -454,6 +472,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000070 /* LegacyImportView.swift in Sources */,
+				001000000000000000000069 /* AssistantUsageView.swift in Sources */,
+				001000000000000000000068 /* AdminSystemView.swift in Sources */,
+				001000000000000000000067 /* AdminMaintenanceView.swift in Sources */,
+				001000000000000000000066 /* AdminLogsView.swift in Sources */,
+				001000000000000000000065 /* AdminHealthView.swift in Sources */,
 				001000000000000000000064 /* ImportExportView.swift in Sources */,
 				001000000000000000000063 /* BalanceSnapshotsView.swift in Sources */,
 				001000000000000000000062 /* CategorizationSettingsView.swift in Sources */,
