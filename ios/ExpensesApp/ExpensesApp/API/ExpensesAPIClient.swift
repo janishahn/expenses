@@ -548,8 +548,45 @@ struct ExpensesAPIClient {
         return destination
     }
 
-    func reconciliation(token: String) async throws -> BankReconciliationResponse {
-        try await request(path: "/api/reconciliation", bearerToken: token)
+    func bankRows(
+        resolved: Bool,
+        outcome: BankRowResolution?,
+        account: String?,
+        page: Int,
+        limit: Int,
+        token: String
+    ) async throws -> BankRowsPage {
+        var components = URLComponents()
+        components.path = "/api/reconciliation/bank-rows"
+        var items = [
+            URLQueryItem(name: "view", value: resolved ? "resolved" : "open"),
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+        ]
+        if let outcome {
+            items.append(URLQueryItem(name: "outcome", value: outcome.rawValue))
+        }
+        if let account {
+            items.append(URLQueryItem(name: "account", value: account))
+        }
+        components.queryItems = items
+        return try await request(path: components.string ?? components.path, bearerToken: token)
+    }
+
+    func bankAccounts(token: String) async throws -> [BankAccount] {
+        let response: BankAccountsResponse = try await request(path: "/api/reconciliation/accounts", bearerToken: token)
+        return response.accounts
+    }
+
+    func bankRowCandidates(rowID: Int, query: String, token: String) async throws -> [BankReconciliationTransaction] {
+        var components = URLComponents()
+        components.path = "/api/reconciliation/bank-rows/\(rowID)/candidates"
+        components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "limit", value: "8")]
+        let response: BankRowCandidatesResponse = try await request(
+            path: components.string ?? components.path,
+            bearerToken: token
+        )
+        return response.items
     }
 
     func previewCommerzbankCSV(
@@ -590,27 +627,52 @@ struct ExpensesAPIClient {
         )
     }
 
-    func markBankRowReviewed(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func acceptBankRowSuggestions(rowIDs: [Int], token: String) async throws -> BankAcceptSuggestionsResponse {
         try await request(
-            path: "/api/reconciliation/bank-rows/\(rowID)/review",
+            path: "/api/reconciliation/bank-rows/accept-suggestions",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: BankRowIDsRequest(rowIDs: rowIDs)
         )
     }
 
-    func reopenBankRow(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func ignoreBankRow(rowID: Int, reason: String, token: String) async throws -> BankRowActionResponse {
+        try await request(
+            path: "/api/reconciliation/bank-rows/\(rowID)/ignore",
+            method: "POST",
+            bearerToken: token,
+            body: BankRowIgnoreRequest(reason: reason)
+        )
+    }
+
+    func reopenBankRow(rowID: Int, body: BankRowReopenRequest, token: String) async throws -> BankRowActionResponse {
         try await request(
             path: "/api/reconciliation/bank-rows/\(rowID)/reopen",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: body
         )
     }
 
-    func createTransactionFromBankRow(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func matchBankRow(rowID: Int, body: BankRowMatchRequest, token: String) async throws -> BankRowActionResponse {
+        try await request(
+            path: "/api/reconciliation/bank-rows/\(rowID)/match-transaction",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
+    func createTransactionFromBankRow(
+        rowID: Int,
+        body: BankTransactionCreateRequest,
+        token: String
+    ) async throws -> BankRowActionResponse {
         try await request(
             path: "/api/reconciliation/bank-rows/\(rowID)/create-transaction",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: body
         )
     }
 

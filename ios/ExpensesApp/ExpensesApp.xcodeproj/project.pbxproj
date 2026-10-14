@@ -74,6 +74,8 @@
 		001000000000000000000068 /* AdminSystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000068 /* AdminSystemView.swift */; };
 		001000000000000000000069 /* AssistantUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000069 /* AssistantUsageView.swift */; };
 		001000000000000000000070 /* LegacyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000070 /* LegacyImportView.swift */; };
+		001000000000000000000071 /* BankRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000071 /* BankRowView.swift */; };
+		001000000000000000000072 /* BankStatementSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000072 /* BankStatementSheets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -146,6 +148,8 @@
 		002000000000000000000068 /* AdminSystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminSystemView.swift; sourceTree = "<group>"; };
 		002000000000000000000069 /* AssistantUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantUsageView.swift; sourceTree = "<group>"; };
 		002000000000000000000070 /* LegacyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyImportView.swift; sourceTree = "<group>"; };
+		002000000000000000000071 /* BankRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankRowView.swift; sourceTree = "<group>"; };
+		002000000000000000000072 /* BankStatementSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankStatementSheets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -376,6 +380,8 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000028 /* ReconciliationView.swift */,
+				002000000000000000000072 /* BankStatementSheets.swift */,
+				002000000000000000000071 /* BankRowView.swift */,
 			);
 			path = Reconciliation;
 			sourceTree = "<group>";
@@ -472,6 +478,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000072 /* BankStatementSheets.swift in Sources */,
+				001000000000000000000071 /* BankRowView.swift in Sources */,
 				001000000000000000000070 /* LegacyImportView.swift in Sources */,
 				001000000000000000000069 /* AssistantUsageView.swift in Sources */,
 				001000000000000000000068 /* AdminSystemView.swift in Sources */,

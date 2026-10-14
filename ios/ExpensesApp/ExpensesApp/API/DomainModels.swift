@@ -2290,34 +2290,31 @@ struct BankStatementImportResponse: Codable, Equatable {
     }
 }
 
-struct BankReconciliationSummary: Codable, Equatable {
-    let rowCount: Int
-    let unresolvedCount: Int
-    let suggestedCount: Int
-    let matchedCount: Int
-    let reviewedCount: Int
-    let bankTotalCents: Int
-    let onlyInExpensesCount: Int
+enum BankRowStatus: String, Codable {
+    case matched
+    case suggested
+    case ambiguous
+    case missing
+    case reviewed
+}
 
-    enum CodingKeys: String, CodingKey {
-        case rowCount = "row_count"
-        case unresolvedCount = "unresolved_count"
-        case suggestedCount = "suggested_count"
-        case matchedCount = "matched_count"
-        case reviewedCount = "reviewed_count"
-        case bankTotalCents = "bank_total_cents"
-        case onlyInExpensesCount = "only_in_expenses_count"
-    }
+enum BankRowResolution: String, Codable, CaseIterable, Identifiable {
+    case matched
+    case created
+    case ignored
+
+    var id: Self { self }
 }
 
 struct BankReconciliationTransaction: Codable, Equatable, Identifiable {
     let id: Int
     let date: Date
-    let type: String
+    let type: TransactionKind
     let amountCents: Int
-    let signedAmountCents: Int
     let title: String?
     let category: String?
+    let categoryID: Int?
+    let categoryIcon: String?
     let dateDeltaDays: Int
 
     enum CodingKeys: String, CodingKey {
@@ -2325,9 +2322,10 @@ struct BankReconciliationTransaction: Codable, Equatable, Identifiable {
         case date
         case type
         case amountCents = "amount_cents"
-        case signedAmountCents = "signed_amount_cents"
         case title
         case category
+        case categoryID = "category_id"
+        case categoryIcon = "category_icon"
         case dateDeltaDays = "date_delta_days"
     }
 }
@@ -2343,8 +2341,11 @@ struct BankStatementRow: Codable, Equatable, Identifiable {
     let bookingText: String?
     let purpose: String?
     let rawDescription: String
-    let reviewedAt: Date?
-    let status: String
+    let resolution: BankRowResolution?
+    let resolvedAt: Date?
+    let ignoreReason: String?
+    let status: BankRowStatus
+    let candidates: [BankReconciliationTransaction]
     let candidateCount: Int
     let suggestedTransaction: BankReconciliationTransaction?
 
@@ -2359,31 +2360,112 @@ struct BankStatementRow: Codable, Equatable, Identifiable {
         case bookingText = "booking_text"
         case purpose
         case rawDescription = "raw_description"
-        case reviewedAt = "reviewed_at"
+        case resolution
+        case resolvedAt = "resolved_at"
+        case ignoreReason = "ignore_reason"
         case status
+        case candidates
         case candidateCount = "candidate_count"
         case suggestedTransaction = "suggested_transaction"
     }
 }
 
-struct BankReconciliationResponse: Codable, Equatable {
-    let summary: BankReconciliationSummary
-    let rows: [BankStatementRow]
-    let onlyInExpenses: [BankReconciliationTransaction]
+struct BankRowsPage: Codable, Equatable {
+    let items: [BankStatementRow]
+    let total: Int
+}
+
+struct BankAccount: Codable, Equatable, Identifiable {
+    var id: String { label }
+    let label: String
+    let rowCount: Int
+    let lastImportAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case summary
-        case rows
-        case onlyInExpenses = "only_in_expenses"
+        case label
+        case rowCount = "row_count"
+        case lastImportAt = "last_import_at"
+    }
+}
+
+struct BankAccountsResponse: Codable, Equatable {
+    let accounts: [BankAccount]
+}
+
+struct BankRowCandidatesResponse: Codable, Equatable {
+    let items: [BankReconciliationTransaction]
+}
+
+struct BankRowIDsRequest: Codable, Equatable {
+    let rowIDs: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case rowIDs = "row_ids"
+    }
+}
+
+struct BankAcceptSuggestionsResponse: Codable, Equatable {
+    struct Match: Codable, Equatable {
+        let rowID: Int
+        let transactionID: Int
+
+        enum CodingKeys: String, CodingKey {
+            case rowID = "row_id"
+            case transactionID = "transaction_id"
+        }
+    }
+
+    let matches: [Match]
+}
+
+struct BankRowIgnoreRequest: Codable, Equatable {
+    let reason: String
+}
+
+struct BankRowReopenRequest: Codable, Equatable {
+    let trashCreatedTransaction: Bool
+    // The shown outcome, so the server leaves a row changed elsewhere since as it is.
+    let expectedResolution: BankRowResolution?
+    let expectedTransactionID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case trashCreatedTransaction = "trash_created_transaction"
+        case expectedResolution = "expected_resolution"
+        case expectedTransactionID = "expected_transaction_id"
+    }
+}
+
+struct BankRowMatchRequest: Codable, Equatable {
+    let transactionID: Int
+    let updateAmountToBank: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case transactionID = "transaction_id"
+        case updateAmountToBank = "update_amount_to_bank"
+    }
+}
+
+struct BankTransactionCreateRequest: Codable, Equatable {
+    /// yyyy-MM-dd
+    let date: String
+    let categoryID: Int?
+    let title: String
+    let description: String?
+    let tagIDs: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case categoryID = "category_id"
+        case title
+        case description
+        case tagIDs = "tag_ids"
     }
 }
 
 struct BankRowActionResponse: Codable, Equatable {
-    let status: String?
     let transactionID: Int?
 
     enum CodingKeys: String, CodingKey {
-        case status
         case transactionID = "transaction_id"
     }
 }

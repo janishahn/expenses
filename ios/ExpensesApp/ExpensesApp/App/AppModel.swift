@@ -63,7 +63,6 @@ final class AppModel {
     var rules: RulesResponse?
     var ruleSuggestions: [RuleSuggestion] = []
     var budgets: BudgetsResponse?
-    var reconciliation: BankReconciliationResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
     var aiSettings: AISettingsResponse?
@@ -1067,15 +1066,6 @@ final class AppModel {
         return nil
     }
 
-    func loadReconciliation() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            reconciliation = try await apiClient.reconciliation(token: token)
-        }
-    }
-
     func previewCommerzbankCSV(fileURL: URL, accountLabel: String) async -> BankStatementPreviewResponse? {
         guard let token else {
             return nil
@@ -1108,14 +1098,12 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let result = try await apiClient.commitCommerzbankCSV(
+            return try await apiClient.commitCommerzbankCSV(
                 accountLabel: accountLabel,
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            reconciliation = try await apiClient.reconciliation(token: token)
-            return result
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1130,39 +1118,72 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.acceptBankRowSuggestion(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
         }
     }
 
-    func markBankRowReviewed(_ row: BankStatementRow) async -> Bool {
+    /// The number of rows matched. The server skips rows that no longer have exactly one candidate.
+    func acceptBankRowSuggestions(_ rows: [BankStatementRow]) async -> Int? {
+        guard let token else {
+            return nil
+        }
+        var matched: Int?
+        _ = await runRequestReturningSuccess {
+            matched = try await apiClient.acceptBankRowSuggestions(rowIDs: rows.map(\.id), token: token).matches.count
+        }
+        return matched
+    }
+
+    func ignoreBankRow(_ row: BankStatementRow, reason: String) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            _ = try await apiClient.markBankRowReviewed(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
+            _ = try await apiClient.ignoreBankRow(rowID: row.id, reason: reason, token: token)
         }
     }
 
-    func reopenBankRow(_ row: BankStatementRow) async -> Bool {
+    // The shown outcome goes along, so the server leaves a row changed elsewhere since as it is.
+    func reopenBankRow(_ row: BankStatementRow, trashCreatedTransaction: Bool) async -> Bool {
         guard let token else {
             return false
         }
+        let body = BankRowReopenRequest(
+            trashCreatedTransaction: trashCreatedTransaction,
+            expectedResolution: row.resolution,
+            expectedTransactionID: row.suggestedTransaction?.id
+        )
         return await runRequestReturningSuccess {
-            _ = try await apiClient.reopenBankRow(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
+            _ = try await apiClient.reopenBankRow(rowID: row.id, body: body, token: token)
+            if trashCreatedTransaction {
+                try await reloadLedger(token: token)
+            }
         }
     }
 
-    func createTransactionFromBankRow(_ row: BankStatementRow) async -> Bool {
+    func matchBankRow(_ row: BankStatementRow, transactionID: Int, updateAmountToBank: Bool) async -> Bool {
         guard let token else {
             return false
         }
+        let body = BankRowMatchRequest(transactionID: transactionID, updateAmountToBank: updateAmountToBank)
         return await runRequestReturningSuccess {
-            _ = try await apiClient.createTransactionFromBankRow(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
-            try await reloadPrimaryData()
+            _ = try await apiClient.matchBankRow(rowID: row.id, body: body, token: token)
+            if updateAmountToBank {
+                try await reloadLedger(token: token)
+            }
         }
+    }
+
+    /// The new transaction's id, also when refreshing the ledger afterwards fails.
+    func createTransactionFromBankRow(_ row: BankStatementRow, body: BankTransactionCreateRequest) async -> Int? {
+        guard let token else {
+            return nil
+        }
+        var created: Int?
+        _ = await runRequestReturningSuccess {
+            created = try await apiClient.createTransactionFromBankRow(rowID: row.id, body: body, token: token).transactionID
+            try await reloadLedger(token: token)
+        }
+        return created
     }
 
     func downloadAdminDatabase() async -> AttachmentDownload? {
@@ -1944,7 +1965,6 @@ final class AppModel {
         isAssistantStreaming = false
         budgets = nil
         budgetsLoadState = .idle
-        reconciliation = nil
         mobileSessions = nil
         settings = nil
         recurring = nil
