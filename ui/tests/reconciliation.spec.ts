@@ -354,6 +354,38 @@ test.describe("Reconcile", () => {
     await expect(page.getByText("Nothing to review")).toHaveCount(0)
   })
 
+  test("ignores every remaining row of the account on every page, and Undo reopens them", async ({ page }) => {
+    const user = await signIn(page)
+    await importRows(
+      user,
+      Array.from({ length: 51 }, (_, index) => ({
+        date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`,
+        payee: `SHOP ${index}`,
+        cents: -(1000 + index),
+      }))
+    )
+    await importRows(user, [{ date: "2026-05-06", payee: "OTHER BANK", cents: -500 }], "Other")
+    await page.goto("/reconciliation?account=StartKonto")
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: /^Ignore remaining rows…/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Ignore 51 rows to review in StartKonto?" })
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(openList(page).getByRole("listitem")).toHaveCount(50)
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: /^Ignore remaining rows…/ }).click()
+    await dialog.getByRole("button", { name: "Ignore all" }).click()
+    await expect(toast(page)).toContainText("Ignored 51 rows")
+    await expect(page.getByText("Nothing to review")).toBeVisible()
+    expect((await fetchRows(user, "open")).map((row) => row.payee)).toEqual(["OTHER BANK"])
+
+    await toast(page).getByRole("button", { name: "Undo" }).click()
+    await expect(openList(page).getByRole("listitem")).toHaveCount(50)
+    expect(await fetchRows(user, "open")).toHaveLength(52)
+  })
+
   test("creates and matches a transaction from a row with no match", async ({ page }) => {
     const user = await signIn(page)
     const groceries = await createCategory(user.request, user.csrfToken, "expense", "Groceries")

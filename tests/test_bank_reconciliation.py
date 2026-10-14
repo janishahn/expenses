@@ -790,6 +790,52 @@ def test_accept_suggestions_only_accepts_rows_with_one_candidate(
     assert repeated.json() == {"matches": []}
 
 
+def test_ignore_open_ignores_only_rows_to_review_in_the_account(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    _create_transaction(
+        api_client, csrf_headers, date="2026-05-04", amount_cents=1_200, title="Cafe"
+    )
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(
+            [
+                "06.05.2026;06.05.2026;Karte;Cafe;-12,00;EUR;",
+                "07.05.2026;07.05.2026;Karte;Amazon;-13,95;EUR;",
+                "08.05.2026;08.05.2026;Karte;Cash;-50,00;EUR;",
+            ]
+        ),
+    )
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(["09.05.2026;09.05.2026;Karte;Savings;-1,00;EUR;"]),
+        account_label="Other",
+    )
+    rows = _rows(api_client)
+    _post(api_client, csrf_headers, f"{rows['Cafe']['id']}/accept-suggestion")
+    _post(api_client, csrf_headers, f"{rows['Cash']['id']}/ignore", {"reason": "ATM"})
+
+    response = _post(api_client, csrf_headers, "ignore-open", {"account": "StartKonto"})
+
+    assert response.json() == {"row_ids": [rows["Amazon"]["id"]]}
+    open_page = api_client.get("/api/reconciliation/bank-rows").json()
+    assert [item["payee"] for item in open_page["items"]] == ["Savings"]
+    ignored = api_client.get(
+        "/api/reconciliation/bank-rows?view=resolved&outcome=ignored"
+    ).json()
+    assert [(i["payee"], i["ignore_reason"]) for i in ignored["items"]] == [
+        ("Amazon", None),
+        ("Cash", "ATM"),
+    ]
+    assert _rows(api_client)["Cafe"]["status"] == "matched"
+
+    everything = _post(api_client, csrf_headers, "ignore-open", {})
+    assert everything.json() == {"row_ids": [rows["Savings"]["id"]]}
+    assert api_client.get("/api/reconciliation/bank-rows").json()["total"] == 0
+
+
 def test_foreign_rows_suggest_only_the_amount_entered_in_their_currency(
     api_client: TestClient, csrf_headers: dict[str, str], db_session
 ) -> None:

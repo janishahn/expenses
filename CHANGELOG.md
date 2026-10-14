@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Reconcile can ignore every remaining row to review at once from ⋯ › Ignore remaining rows…, within the account filter. `POST /api/reconciliation/bank-rows/ignore-open` ignores all open rows, optionally for one `account`, and returns their ids.
 - The dashboard's `budget_pace` includes the overall budget's `spent_cents`, `remaining_cents`, `daily_remaining_cents`, and `days_remaining`.
 
 ### Changed

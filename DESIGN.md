@@ -355,7 +355,9 @@ pages below fix the structure; the current pages show the content.
   preselected), and No match (Create… opens the create dialog filled from the
   row, ending in "Create and match"). Every row has an Ignore menu of reasons:
   Cash withdrawal, Transfer between my accounts, Not something I track, Other
-  reason… (free text). The peek shows Booked, Account, Purpose, the candidates
+  reason… (free text). ⋯ in the header holds "Ignore remaining rows…", which
+  confirms and then ignores every row to review in the account filter, on
+  every page. The peek shows Booked, Account, Purpose, the candidates
   as radio rows, and a search over all transactions; picking one with another
   amount adds a switch, on by default, to set it to the bank amount. The peek
   footer is always Match, Create…, then Ignore; only the ink fill moves (Match

@@ -10,6 +10,7 @@ import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
 import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle"
 import { ChecksIcon } from "@phosphor-icons/react/Checks"
 import { CircleDashedIcon } from "@phosphor-icons/react/CircleDashed"
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { EyeSlashIcon } from "@phosphor-icons/react/EyeSlash"
 import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { GitForkIcon } from "@phosphor-icons/react/GitFork"
@@ -31,6 +32,7 @@ import type {
 } from "../app/api-types"
 import { formatShortDate } from "../app/format"
 import { invalidateTransactionData, shortDateLabel } from "../app/transactions"
+import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
 import { Button, IconButton } from "../components/ui/Button"
 import { CategoryGlyph, IconGlyph } from "../components/ui/CategoryGlyph"
@@ -494,6 +496,32 @@ function ReconciliationPage() {
       })
     )
   }
+  // Every row to review in the account filter, on every page.
+  const ignoreRemaining = async () => {
+    const confirmed = await confirmDialog({
+      title: `Ignore ${plural(openTotal ?? 0, "row")} to review${account ? ` in ${account}` : ""}?`,
+      description: "They move to Resolved, where you can reopen them.",
+      confirmLabel: "Ignore all",
+      tone: "primary",
+    })
+    if (!confirmed) return
+    let rowIds: number[] = []
+    reportFailure(
+      await act({
+        row: view === "open" ? (items.find((row) => row.id === peekId) ?? null) : null,
+        run: async () => {
+          const result = await apiFetch<{ row_ids: number[] }>("/api/reconciliation/bank-rows/ignore-open", {
+            method: "POST",
+            body: JSON.stringify({ account }),
+          })
+          rowIds = result.row_ids
+          return `Ignored ${plural(rowIds.length, "row")}`
+        },
+        message: "Ignored",
+        undo: () => Promise.all(rowIds.map((id) => reopen(id, { resolution: "ignored" }))),
+      })
+    )
+  }
   const matchTransaction = async (row: BankStatementRow, transaction: BankReconciliationTransaction, setAmount: boolean) => {
     let replacedAmount: number | undefined
     reportFailure(
@@ -700,9 +728,21 @@ function ReconciliationPage() {
       peekOpen={peekRow !== null}
       layout="fill"
       actions={
-        <Button variant="primary" icon={UploadSimpleIcon} aria-label="Import statement" onClick={() => setImporting(true)}>
-          {isDesktop ? "Import statement" : "Import"}
-        </Button>
+        <>
+          <Button variant="primary" icon={UploadSimpleIcon} aria-label="Import statement" onClick={() => setImporting(true)}>
+            {isDesktop ? "Import statement" : "Import"}
+          </Button>
+          <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
+            <MenuItem
+              icon={EyeSlashIcon}
+              disabled={!openTotal || pending}
+              end={openTotal || undefined}
+              onSelect={() => void ignoreRemaining()}
+            >
+              Ignore remaining rows…
+            </MenuItem>
+          </Menu>
+        </>
       }
       viewRow={
         <ViewRow end={isDesktop && latestImport?.last_import_at ? `Last import ${shortDateLabel(latestImport.last_import_at.slice(0, 10))} · ${latestImport.label}` : null}>
