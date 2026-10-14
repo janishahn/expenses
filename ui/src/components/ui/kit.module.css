@@ -150,6 +150,8 @@
 .input select { appearance: none; }
 .input input::placeholder, .textarea textarea::placeholder { color: var(--ink-3); }
 .input input:focus-visible, .input select:focus-visible, .textarea textarea:focus-visible { outline: 0; }
+/* Browsers force an !important autofill background and text color on the inner input. Clip the background to the text and paint the text over it. */
+.input input:autofill { background-clip: text; -webkit-text-fill-color: var(--ink); caret-color: var(--ink); }
 .inputSuffix { color: var(--ink-2); flex: none; }
 .inputErr { box-shadow: inset 0 0 0 1px var(--over); }
 .inputShort { width: 84px; flex: none; }

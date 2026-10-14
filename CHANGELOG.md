@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.
+- Text fields filled in by the browser or a password manager showed the browser's autofill color as a box inside the field.
 
 ## [0.7.0] - 2026-10-13
 
