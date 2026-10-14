@@ -888,15 +888,21 @@ struct ExpensesAPIClient {
         try await request(path: "/api/transactions/\(id)/attachments", bearerToken: token)
     }
 
+    /// `replacing` swaps that receipt for the new file in one request.
     func uploadAttachment(
         transactionID: Int,
         filename: String,
         mimeType: String,
         data: Data,
+        replacing: Int? = nil,
         token: String
     ) async throws -> ReceiptAttachment {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
+        if let replacing {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"replaces_attachment_id\"\r\n\r\n\(replacing)\r\n".data(using: .utf8)!)
+        }
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append(
             "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
@@ -912,6 +918,28 @@ struct ExpensesAPIClient {
             bearerToken: token,
             contentType: "multipart/form-data; boundary=\(boundary)",
             bodyData: body
+        )
+    }
+
+    /// A WebP preview of an image receipt. The server makes none for PDFs.
+    func attachmentThumbnail(id: Int, token: String) async throws -> Data {
+        try await dataRequest(path: "/api/attachments/\(id)/thumbnail", bearerToken: token).0
+    }
+
+    func saveDurablePurchase(transactionID: Int, body: DurablePurchaseRequest, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/transactions/\(transactionID)/durable",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
+    func deleteDurablePurchase(transactionID: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/transactions/\(transactionID)/durable",
+            method: "DELETE",
+            bearerToken: token
         )
     }
 

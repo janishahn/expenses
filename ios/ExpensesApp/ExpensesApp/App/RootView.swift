@@ -43,7 +43,7 @@ struct RootView: View {
                 .sheet(item: $quickAddSheet) { sheet in
                     switch sheet {
                     case .transaction:
-                        TransactionFormView(mode: .create, categories: model.knownCategories)
+                        AddTransactionSheet()
                     }
                 }
             } else {

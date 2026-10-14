@@ -24,6 +24,11 @@ enum ExpensesTheme {
         scheme == .dark ? Color(rgb: 0x1F1D1A) : Color(rgb: 0xFFFFFF)
     }
 
+    // A recessed well inside a sheet, as behind a receipt preview.
+    static func day(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(rgb: 0x1B1A17) : Color(rgb: 0xF2F2F0)
+    }
+
     static func background(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(rgb: 0x181715) : Color(rgb: 0xF5F5F3)
     }

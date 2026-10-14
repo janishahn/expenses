@@ -1195,8 +1195,11 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
     let longitude: Double?
     let isReimbursement: Bool
     let tags: [String]
+    let netAmountCents: Int
+    let reimbursedTotalCents: Int
     let durablePurchase: DurablePurchase?
     let attachments: [ReceiptAttachment]
+    let bankRow: TransactionBankRow?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1212,14 +1215,40 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
         case longitude
         case isReimbursement = "is_reimbursement"
         case tags
+        case netAmountCents = "net_amount_cents"
+        case reimbursedTotalCents = "reimbursed_total_cents"
         case durablePurchase = "durable_purchase"
         case attachments
+        case bankRow = "bank_row"
+    }
+}
+
+/// The bank statement row a transaction was matched to or created from.
+struct TransactionBankRow: Codable, Equatable {
+    let id: Int
+    let accountLabel: String
+    let bookingDate: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case accountLabel = "account_label"
+        case bookingDate = "booking_date"
     }
 }
 
 struct DurablePurchase: Codable, Equatable {
     let expectedLifespanDays: Int
     let acquiredOn: Date
+
+    enum CodingKeys: String, CodingKey {
+        case expectedLifespanDays = "expected_lifespan_days"
+        case acquiredOn = "acquired_on"
+    }
+}
+
+struct DurablePurchaseRequest: Encodable, Equatable {
+    let expectedLifespanDays: Int
+    let acquiredOn: String
 
     enum CodingKeys: String, CodingKey {
         case expectedLifespanDays = "expected_lifespan_days"
@@ -1597,18 +1626,24 @@ struct TransactionFilters: Codable, Equatable {
     }
 }
 
-struct TransactionMutationRequest: Codable, Equatable {
-    let date: String
-    let occurredAt: String
-    let type: String
-    let isReimbursement: Bool
-    let amountCents: Int
-    let categoryID: Int?
-    let title: String
-    let description: String?
-    let latitude: Double?
-    let longitude: Double?
-    let tags: [String]
+/// The full body that creates or replaces a transaction.
+struct TransactionMutationRequest: Encodable, Equatable {
+    var occurredAt: Date
+    var type: TransactionKind
+    var isReimbursement: Bool
+    var amountCents: Int
+    var categoryID: Int?
+    var title: String
+    var description: String?
+    var location: LocationUpdate = .keep
+    var tags: [String]
+
+    /// Omitted coordinates keep the stored ones; clearing needs explicit nulls.
+    enum LocationUpdate: Equatable {
+        case keep
+        case clear
+        case set(latitude: Double, longitude: Double)
+    }
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -1622,6 +1657,45 @@ struct TransactionMutationRequest: Codable, Equatable {
         case latitude
         case longitude
         case tags
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(AppFormatters.isoDay(occurredAt), forKey: .date)
+        try container.encode(AppFormatters.isoDateTime(occurredAt), forKey: .occurredAt)
+        try container.encode(type.rawValue, forKey: .type)
+        try container.encode(type == .income && isReimbursement, forKey: .isReimbursement)
+        try container.encode(amountCents, forKey: .amountCents)
+        try container.encode(categoryID, forKey: .categoryID)
+        try container.encode(title, forKey: .title)
+        try container.encode(description, forKey: .description)
+        switch location {
+        case .keep:
+            break
+        case .clear:
+            try container.encodeNil(forKey: .latitude)
+            try container.encodeNil(forKey: .longitude)
+        case let .set(latitude, longitude):
+            try container.encode(latitude, forKey: .latitude)
+            try container.encode(longitude, forKey: .longitude)
+        }
+        try container.encode(tags, forKey: .tags)
+    }
+}
+
+extension TransactionMutationRequest {
+    /// The stored transaction as a body, to change one field at a time.
+    init(_ transaction: TransactionDetail) {
+        self.init(
+            occurredAt: transaction.occurredAt ?? AppFormatters.localDay(transaction.date),
+            type: TransactionKind(rawValue: transaction.type) ?? .expense,
+            isReimbursement: transaction.isReimbursement,
+            amountCents: transaction.amountCents,
+            categoryID: transaction.categoryID,
+            title: transaction.title,
+            description: transaction.description,
+            tags: transaction.tags
+        )
     }
 }
 

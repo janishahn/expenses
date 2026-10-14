@@ -22,7 +22,7 @@
 		001000000000000000000013 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000015 /* DashboardView.swift */; };
 		001000000000000000000014 /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000016 /* TransactionsView.swift */; };
 		001000000000000000000015 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* TransactionDetailView.swift */; };
-		001000000000000000000016 /* TransactionFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* TransactionFormView.swift */; };
+		001000000000000000000016 /* AddTransactionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* AddTransactionSheet.swift */; };
 		001000000000000000000017 /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* LocationProvider.swift */; };
 		001000000000000000000018 /* OrganizeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000020 /* OrganizeView.swift */; };
 		001000000000000000000019 /* BudgetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000021 /* BudgetsView.swift */; };
@@ -48,6 +48,8 @@
 		001000000000000000000041 /* Pickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000041 /* Pickers.swift */; };
 		001000000000000000000042 /* UncategorizedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000042 /* UncategorizedView.swift */; };
 		001000000000000000000043 /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000043 /* TrashView.swift */; };
+		001000000000000000000044 /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000044 /* Entry.swift */; };
+		001000000000000000000045 /* ReceiptPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000045 /* ReceiptPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,7 +70,7 @@
 		002000000000000000000015 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		002000000000000000000016 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
 		002000000000000000000017 /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
-		002000000000000000000018 /* TransactionFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionFormView.swift; sourceTree = "<group>"; };
+		002000000000000000000018 /* AddTransactionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionSheet.swift; sourceTree = "<group>"; };
 		002000000000000000000019 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
 		002000000000000000000020 /* OrganizeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizeView.swift; sourceTree = "<group>"; };
 		002000000000000000000021 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
@@ -94,6 +96,8 @@
 		002000000000000000000041 /* Pickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pickers.swift; sourceTree = "<group>"; };
 		002000000000000000000042 /* UncategorizedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UncategorizedView.swift; sourceTree = "<group>"; };
 		002000000000000000000043 /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
+		002000000000000000000044 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
+		002000000000000000000045 /* ReceiptPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +168,7 @@
 		004000000000000000000006 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000044 /* Entry.swift */,
 				002000000000000000000041 /* Pickers.swift */,
 				002000000000000000000040 /* Period.swift */,
 				002000000000000000000038 /* Components.swift */,
@@ -213,6 +218,7 @@
 		004000000000000000000010 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000045 /* ReceiptPicker.swift */,
 				002000000000000000000023 /* CameraCaptureView.swift */,
 				002000000000000000000031 /* CategoryIcons.swift */,
 				002000000000000000000027 /* DocumentPreviewView.swift */,
@@ -247,7 +253,7 @@
 				002000000000000000000043 /* TrashView.swift */,
 				002000000000000000000042 /* UncategorizedView.swift */,
 				002000000000000000000017 /* TransactionDetailView.swift */,
-				002000000000000000000018 /* TransactionFormView.swift */,
+				002000000000000000000018 /* AddTransactionSheet.swift */,
 			);
 			path = Transactions;
 			sourceTree = "<group>";
@@ -394,6 +400,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000045 /* ReceiptPicker.swift in Sources */,
+				001000000000000000000044 /* Entry.swift in Sources */,
 				001000000000000000000043 /* TrashView.swift in Sources */,
 				001000000000000000000042 /* UncategorizedView.swift in Sources */,
 				001000000000000000000041 /* Pickers.swift in Sources */,
@@ -413,7 +421,7 @@
 				001000000000000000000009 /* DiagnosticsView.swift in Sources */,
 				001000000000000000000014 /* TransactionsView.swift in Sources */,
 				001000000000000000000015 /* TransactionDetailView.swift in Sources */,
-				001000000000000000000016 /* TransactionFormView.swift in Sources */,
+				001000000000000000000016 /* AddTransactionSheet.swift in Sources */,
 				001000000000000000000012 /* Formatters.swift in Sources */,
 				001000000000000000000017 /* LocationProvider.swift in Sources */,
 				001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */,

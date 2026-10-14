@@ -1785,14 +1785,17 @@ final class AppModel {
         }
     }
 
-    func createTransaction(_ body: TransactionMutationRequest) async -> Bool {
+    /// Returns the new transaction's id.
+    func createTransaction(_ body: TransactionMutationRequest) async -> Int? {
         guard let token else {
-            return false
+            return nil
         }
-        return await runRequestReturningSuccess {
-            _ = try await apiClient.createTransaction(body, token: token)
+        var createdID: Int?
+        _ = await runRequestReturningSuccess {
+            createdID = try await apiClient.createTransaction(body, token: token).id
             try await reloadPrimaryData()
         }
+        return createdID
     }
 
     func updateTransaction(id: Int, body: TransactionMutationRequest) async -> Bool {
@@ -1803,8 +1806,31 @@ final class AppModel {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
             selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
             transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
-            try await reloadPrimaryData()
+            try await reloadLedger(token: token)
         }
+    }
+
+    /// Tracks the transaction as a durable purchase, or stops tracking it when `body` is nil.
+    func saveDurablePurchase(transactionID: Int, _ body: DurablePurchaseRequest?) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            if let body {
+                try await apiClient.saveDurablePurchase(transactionID: transactionID, body: body, token: token)
+            } else {
+                try await apiClient.deleteDurablePurchase(transactionID: transactionID, token: token)
+            }
+            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
+        }
+    }
+
+    /// An image receipt's preview, or nil when there is none, as for a PDF.
+    func attachmentThumbnail(_ attachment: ReceiptAttachment) async -> Data? {
+        guard let token else {
+            return nil
+        }
+        return try? await apiClient.attachmentThumbnail(id: attachment.id, token: token)
     }
 
     func saveReimbursementAllocation(
@@ -1847,7 +1873,7 @@ final class AppModel {
         }
     }
 
-    func uploadAttachment(transactionID: Int, fileURL: URL) async -> Bool {
+    func uploadAttachment(transactionID: Int, fileURL: URL, replacing: Int? = nil) async -> Bool {
         guard let token else {
             return false
         }
@@ -1864,6 +1890,7 @@ final class AppModel {
                 filename: fileURL.lastPathComponent,
                 mimeType: mimeType(for: fileURL),
                 data: data,
+                replacing: replacing,
                 token: token
             )
             selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
@@ -1875,7 +1902,8 @@ final class AppModel {
         transactionID: Int,
         filename: String,
         mimeType: String,
-        data: Data
+        data: Data,
+        replacing: Int? = nil
     ) async -> Bool {
         guard let token else {
             return false
@@ -1886,6 +1914,7 @@ final class AppModel {
                 filename: filename,
                 mimeType: mimeType,
                 data: data,
+                replacing: replacing,
                 token: token
             )
             selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
@@ -2086,11 +2115,16 @@ final class AppModel {
         guard let token else {
             return
         }
+        try await reloadLedger(token: token)
+        try await reloadOrganizeData(token: token)
+    }
+
+    // The views an edit to one transaction changes.
+    private func reloadLedger(token: String) async throws {
         dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         dashboardLoadState = .loaded
         try await reloadTransactions(token: token)
         uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
-        try await reloadOrganizeData(token: token)
     }
 
     // The first page for the current query, after a change made elsewhere.

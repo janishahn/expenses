@@ -148,6 +148,9 @@ struct TransactionsView: View {
                     }
                 case let .tags(mode):
                     TagPickerSheet(title: mode.title, options: tagOptions) { names in
+                        guard !names.isEmpty else {
+                            return
+                        }
                         Task {
                             await prepareBulk(
                                 BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: mode.rawValue, tags: names), lifecycle: "none"),
