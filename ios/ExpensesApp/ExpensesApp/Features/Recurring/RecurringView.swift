@@ -35,7 +35,7 @@ struct RecurringView: View {
         }
         .sheet(isPresented: $adding) {
             if let recurring = model.recurring {
-                AddRuleSheet(categories: recurring.categories)
+                AddRecurringRuleSheet(categories: recurring.categories)
             }
         }
         .task {
@@ -245,67 +245,32 @@ private struct RecurringRuleRow: View {
 
 /// What the recurring expenses cost per year, by category.
 private struct AnnualMixSection: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
-
     let rules: [RecurringRule]
     let totalCents: Int
-
-    private struct Slice: Identifiable {
-        let id: Int
-        let name: String
-        let cents: Int
-    }
 
     var body: some View {
         let slices = Dictionary(grouping: rules, by: \.categoryID)
             .map { id, rules in
-                Slice(id: id, name: rules[0].category?.name ?? "Uncategorized", cents: rules.reduce(0) { $0 + $1.monthlyEquivalentCents * 12 })
+                let cents = rules.reduce(0) { $0 + $1.monthlyEquivalentCents * 12 }
+                return CategoryShare(
+                    id: String(id),
+                    categoryID: id,
+                    name: rules[0].category?.name ?? "Uncategorized",
+                    cents: cents,
+                    share: percent(cents, of: totalCents)
+                )
             }
             .sorted { $0.cents > $1.cents }
         Section("Annual mix") {
-            HStack(spacing: 18) {
-                Chart(slices) { slice in
-                    SectorMark(angle: .value("Per year", slice.cents), innerRadius: .ratio(0.64), angularInset: 1)
-                        .foregroundStyle(ExpensesTheme.category(slice.id, for: scheme))
-                        .accessibilityLabel(slice.name)
-                        .accessibilityValue(model.amountString(slice.cents))
-                }
-                .chartLegend(.hidden)
-                .frame(width: 112, height: 112)
-                .overlay {
-                    VStack(spacing: 0) {
-                        AmountText(totalCents, decimals: false)
-                            .font(.footnote.weight(.semibold))
-                        Text("per year")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(slices.prefix(5)) { slice in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(ExpensesTheme.category(slice.id, for: scheme))
-                                .frame(width: 8, height: 8)
-                            Text(slice.name)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(percent(slice.cents, of: totalCents))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                        .font(.subheadline)
-                    }
-                    if slices.count > 5 {
-                        Text("\(slices.count - 5) more")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            CategoryShareDonut(slices: slices) {
+                VStack(spacing: 0) {
+                    AmountText(totalCents, decimals: false)
+                        .font(.footnote.weight(.semibold))
+                    Text("per year")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 6)
         }
         .expensesRowBackground()
     }

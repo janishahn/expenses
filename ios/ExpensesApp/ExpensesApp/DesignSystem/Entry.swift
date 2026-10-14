@@ -42,24 +42,25 @@ struct ChipFlow: Layout {
 
 /// A capsule in the add sheet's chip row. A set chip has a light ink fill; an unset
 /// one is outlined.
-struct EntryChip<Leading: View>: View {
+struct EntryChip<Leading: View, Title: View>: View {
     @Environment(\.colorScheme) private var scheme
 
-    let title: String
     let isSet: Bool
     let leading: Leading
+    let title: Title
 
-    init(_ title: String, isSet: Bool, @ViewBuilder leading: () -> Leading) {
-        self.title = title
+    /// A chip whose title is more than text, such as an amount.
+    init(isSet: Bool, @ViewBuilder leading: () -> Leading, @ViewBuilder title: () -> Title) {
         self.isSet = isSet
         self.leading = leading()
+        self.title = title()
     }
 
     var body: some View {
         HStack(spacing: 6) {
             leading
                 .foregroundStyle(.secondary)
-            Text(title)
+            title
                 .lineLimit(1)
         }
         .font(.subheadline)
@@ -78,7 +79,15 @@ struct EntryChip<Leading: View>: View {
     }
 }
 
-extension EntryChip where Leading == Image {
+extension EntryChip where Title == Text {
+    init(_ title: String, isSet: Bool, @ViewBuilder leading: () -> Leading) {
+        self.init(isSet: isSet, leading: leading) {
+            Text(title)
+        }
+    }
+}
+
+extension EntryChip where Leading == Image, Title == Text {
     init(_ title: String, systemImage: String, isSet: Bool) {
         self.init(title, isSet: isSet) {
             Image(systemName: systemImage)
@@ -92,9 +101,10 @@ struct EntryAmountField: View {
 
     @Binding var text: String
     let income: Bool
+    var prompt = AppFormatters.euros(0)
 
     var body: some View {
-        TextField("Amount", text: $text, prompt: Text(AppFormatters.euros(0)))
+        TextField("Amount", text: $text, prompt: Text(prompt))
             .font(.system(size: 34, weight: .semibold))
             .monospacedDigit()
             .keyboardType(.decimalPad)

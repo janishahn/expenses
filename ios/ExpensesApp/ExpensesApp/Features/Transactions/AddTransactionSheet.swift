@@ -206,7 +206,7 @@ struct AddTransactionSheet: View {
                         categoryID = category.id
                     }
                 case .tags:
-                    TagPickerSheet(title: "Tags", options: (model.tags?.tags ?? []).map(\.name), selected: tags, onApply: changeTags)
+                    TagPickerSheet(title: "Tags", options: model.activeTags.map(\.name), selected: tags, onApply: changeTags)
                 }
             }
             .receiptPicker($receiptSource) { picked in
@@ -243,7 +243,7 @@ struct AddTransactionSheet: View {
     // Tags scheduled for the chosen day join automatically unless removed.
     private var scheduledTags: [String] {
         let day = AppFormatters.isoDay(occurredAt)
-        return (model.tags?.tags ?? []).compactMap { tag in
+        return model.activeTags.compactMap { tag in
             guard let period = tag.autoAttachPeriod, period.start <= day, period.end >= day else {
                 return nil
             }
@@ -273,7 +273,7 @@ struct AddTransactionSheet: View {
     }
 
     private func apply(_ template: TemplateRow) {
-        type = TransactionKind(rawValue: template.type) ?? .expense
+        type = template.type
         categoryID = template.categoryID
         title = template.title ?? ""
         notes = ""

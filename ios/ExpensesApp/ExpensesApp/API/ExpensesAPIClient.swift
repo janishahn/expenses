@@ -199,8 +199,8 @@ struct ExpensesAPIClient {
         )
     }
 
-    func transactions(_ query: TransactionQuery, page: Int, token: String) async throws -> TransactionsResponse {
-        try await request(path: listPath("/api/transactions", query.queryItems, page: page), bearerToken: token)
+    func transactions(_ query: TransactionQuery, page: Int, limit: Int = 50, token: String) async throws -> TransactionsResponse {
+        try await request(path: listPath("/api/transactions", query.queryItems, page: page, limit: limit), bearerToken: token)
     }
 
     func uncategorizedTransactions(
@@ -354,12 +354,26 @@ struct ExpensesAPIClient {
         }
     }
 
-    func categories(token: String) async throws -> CategoriesResponse {
-        try await request(path: "/api/categories?period=all", bearerToken: token)
+    func categories(period: PeriodSelection, token: String) async throws -> CategoriesResponse {
+        var components = URLComponents()
+        components.path = "/api/categories"
+        components.queryItems = period.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
-    func tags(token: String) async throws -> TagsResponse {
-        try await request(path: "/api/tags?period=all", bearerToken: token)
+    // Archived tags too, which the Tags screen lists and pickers leave out.
+    func tags(period: PeriodSelection, token: String) async throws -> TagsResponse {
+        var components = URLComponents()
+        components.path = "/api/tags"
+        components.queryItems = period.queryItems + [URLQueryItem(name: "include_archived", value: "1")]
+        return try await request(path: components.string!, bearerToken: token)
+    }
+
+    func tagDetail(id: Int, period: PeriodSelection, token: String) async throws -> TagDetailResponse {
+        var components = URLComponents()
+        components.path = "/api/tags/\(id)"
+        components.queryItems = period.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
     func templates(token: String) async throws -> TemplatesResponse {
@@ -376,15 +390,6 @@ struct ExpensesAPIClient {
 
     func updateRule(id: Int, body: RuleMutationRequest, token: String) async throws -> IDResponse {
         try await request(path: "/api/rules/\(id)", method: "PUT", bearerToken: token, body: body)
-    }
-
-    func toggleRule(id: Int, body: RuleToggleRequest, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/rules/\(id)/toggle",
-            method: "POST",
-            bearerToken: token,
-            body: body
-        )
     }
 
     func deleteRule(id: Int, token: String) async throws {
@@ -799,6 +804,22 @@ struct ExpensesAPIClient {
         let _: EmptyResponse = try await request(
             path: "/api/tags/\(id)",
             method: "DELETE",
+            bearerToken: token
+        )
+    }
+
+    func archiveTag(id: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/tags/\(id)/archive",
+            method: "POST",
+            bearerToken: token
+        )
+    }
+
+    func restoreTag(id: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/tags/\(id)/restore",
+            method: "POST",
             bearerToken: token
         )
     }

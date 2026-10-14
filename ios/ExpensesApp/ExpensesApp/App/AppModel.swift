@@ -54,7 +54,10 @@ final class AppModel {
     // Every uncategorized transaction, whatever the Uncategorized screen's search.
     var uncategorizedCount = 0
     var deletedTransactions: DeletedTransactionsResponse?
+    // The Categories and Tags screens' periods, which set their usage and sums.
+    var categoriesPeriod = PeriodSelection.all
     var categories: CategoriesResponse?
+    var tagsPeriod = PeriodSelection.all
     var tags: TagsResponse?
     var templates: TemplatesResponse?
     var rules: RulesResponse?
@@ -76,7 +79,6 @@ final class AppModel {
     var lastError: APIErrorInfo?
     var isLoading = false
     var isMiningRuleSuggestions = false
-    var ruleMiningStatus: RuleMiningStatus = .idle
     var assistantTurns: [AssistantTurn] = []
     var isAssistantStreaming = false
     private var assistantMessageHistory: [JSONValue] = []
@@ -115,7 +117,7 @@ final class AppModel {
     var knownCategories: [CategorySummary] {
         if let categories {
             return categories.categories.map {
-                CategorySummary(id: $0.id, name: $0.name, type: $0.type, icon: $0.icon)
+                CategorySummary(id: $0.id, name: $0.name, type: $0.type.rawValue, icon: $0.icon)
             }
         }
         if let transactions {
@@ -128,9 +130,14 @@ final class AppModel {
         if let categories {
             return categories.categories
                 .filter { $0.archivedAt == nil }
-                .map { CategorySummary(id: $0.id, name: $0.name, type: $0.type, icon: $0.icon) }
+                .map { CategorySummary(id: $0.id, name: $0.name, type: $0.type.rawValue, icon: $0.icon) }
         }
         return knownCategories
+    }
+
+    // Tags to choose from; archived ones stay on the Tags screen.
+    var activeTags: [TagRow] {
+        tags?.tags.filter { $0.archivedAt == nil } ?? []
     }
 
     var showsDashboardInitialLoading: Bool {
@@ -892,6 +899,51 @@ final class AppModel {
         }
     }
 
+    func loadCategories() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+        }
+    }
+
+    func loadTags() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            tags = try await apiClient.tags(period: tagsPeriod, token: token)
+        }
+    }
+
+    func loadTemplates() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            templates = try await apiClient.templates(token: token)
+            if categories == nil {
+                categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+            }
+            if tags == nil {
+                tags = try await apiClient.tags(period: tagsPeriod, token: token)
+            }
+        }
+    }
+
+    func loadRules() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            rules = try await apiClient.rules(token: token)
+            if llmEnabled {
+                ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+            }
+        }
+    }
+
     func saveRule(id: Int?, body: RuleMutationRequest) async -> Bool {
         guard let token else {
             return false
@@ -907,15 +959,6 @@ final class AppModel {
         }
     }
 
-    func loadRuleSuggestions() async {
-        guard llmEnabled, let token else {
-            return
-        }
-        await runRequest {
-            ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
-        }
-    }
-
     func mineRuleSuggestions() async -> Bool {
         guard let token else {
             return false
@@ -924,25 +967,16 @@ final class AppModel {
             return false
         }
         isMiningRuleSuggestions = true
-        ruleMiningStatus = .idle
         defer { isMiningRuleSuggestions = false }
-
-        let success = await runRequestReturningSuccess {
-            let minedSuggestions = try await apiClient.mineRuleSuggestions(token: token)
-            ruleSuggestions = minedSuggestions
-            ruleMiningStatus = minedSuggestions.isEmpty ? .noneFound : .idle
+        return await runRequestReturningSuccess {
+            ruleSuggestions = try await apiClient.mineRuleSuggestions(token: token)
         }
-        if !success {
-            ruleMiningStatus = .idle
-        }
-        return success
     }
 
     func acceptRuleSuggestion(_ suggestion: RuleSuggestion) async -> Bool {
         guard let token else {
             return false
         }
-        ruleMiningStatus = .idle
         return await runRequestReturningSuccess {
             _ = try await apiClient.acceptRuleSuggestion(id: suggestion.id, token: token)
             rules = try await apiClient.rules(token: token)
@@ -954,50 +988,18 @@ final class AppModel {
         guard let token else {
             return false
         }
-        ruleMiningStatus = .idle
         return await runRequestReturningSuccess {
             _ = try await apiClient.rejectRuleSuggestion(id: suggestion.id, token: token)
             ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
         }
     }
 
-    func previewRule(_ body: RuleMutationRequest) async -> RulePreview? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            return try await apiClient.previewRule(body, token: token)
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
-    }
-
-    func toggleRule(_ rule: RuleRow, enabled: Bool) async -> Bool {
+    func deleteRule(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.toggleRule(
-                id: rule.id,
-                body: RuleToggleRequest(enabled: enabled),
-                token: token
-            )
-            rules = try await apiClient.rules(token: token)
-        }
-    }
-
-    func deleteRule(_ rule: RuleRow) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.deleteRule(id: rule.id, token: token)
+            try await apiClient.deleteRule(id: id, token: token)
             rules = try await apiClient.rules(token: token)
         }
     }
@@ -1396,57 +1398,41 @@ final class AppModel {
         }
     }
 
-    func saveCategory(id: Int?, create: CategoryCreateRequest, update: CategoryUpdateRequest) async -> Bool {
+    func createCategory(_ body: CategoryCreateRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            if let id {
-                try await apiClient.updateCategory(id: id, body: update, token: token)
-            } else {
-                try await apiClient.createCategory(create, token: token)
-            }
+            try await apiClient.createCategory(body, token: token)
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+        }
+    }
+
+    // Names and icons also show on the Dashboard, in transactions, and in rules.
+    func updateCategory(id: Int, body: CategoryUpdateRequest) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.updateCategory(id: id, body: body, token: token)
             try await reloadOrganizeData(token: token)
             dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
             try await reloadTransactions(token: token)
         }
     }
 
-    func setCategoryArchived(_ category: CategoryListItem, archived: Bool) async -> Bool {
+    func setCategoryArchived(id: Int, archived: Bool) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             if archived {
-                try await apiClient.archiveCategory(id: category.id, token: token)
+                try await apiClient.archiveCategory(id: id, token: token)
             } else {
-                try await apiClient.restoreCategory(id: category.id, token: token)
+                try await apiClient.restoreCategory(id: id, token: token)
             }
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            try await reloadTransactions(token: token)
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
         }
-    }
-
-    func previewCategoryMerge(sourceID: Int, targetID: Int) async -> [String: Int]? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.previewCategoryMerge(
-                CategoryMergeRequest(sourceCategoryID: sourceID, targetCategoryID: targetID),
-                token: token
-            )
-            return response.counts
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
     }
 
     func mergeCategories(sourceID: Int, targetID: Int) async -> Bool {
@@ -1482,25 +1468,18 @@ final class AppModel {
         }
     }
 
-    func previewTagMerge(sourceID: Int, targetID: Int) async -> [String: Int]? {
+    func setTagArchived(id: Int, archived: Bool) async -> Bool {
         guard let token else {
-            return nil
+            return false
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.previewTagMerge(
-                TagMergeRequest(sourceTagID: sourceID, targetTagID: targetID),
-                token: token
-            )
-            return response.counts
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
+        return await runRequestReturningSuccess {
+            if archived {
+                try await apiClient.archiveTag(id: id, token: token)
+            } else {
+                try await apiClient.restoreTag(id: id, token: token)
+            }
+            tags = try await apiClient.tags(period: tagsPeriod, token: token)
         }
-        return nil
     }
 
     func mergeTags(sourceID: Int, targetID: Int) async -> Bool {
@@ -1517,12 +1496,12 @@ final class AppModel {
         }
     }
 
-    func deleteTag(_ tag: TagRow) async -> Bool {
+    func deleteTag(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.deleteTag(id: tag.id, token: token)
+            try await apiClient.deleteTag(id: id, token: token)
             try await reloadOrganizeData(token: token)
             try await reloadTransactions(token: token)
         }
@@ -1542,29 +1521,34 @@ final class AppModel {
         }
     }
 
-    func deleteTemplate(_ template: TemplateRow) async -> Bool {
+    func deleteTemplate(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.deleteTemplate(id: template.id, token: token)
+            try await apiClient.deleteTemplate(id: id, token: token)
             templates = try await apiClient.templates(token: token)
         }
     }
 
-    func moveTemplate(from source: IndexSet, to destination: Int) async {
-        guard let token, var rows = templates?.templates else {
-            return
+    // The new order shows at once and goes back if it does not save.
+    func moveTemplate(from source: IndexSet, to destination: Int) async -> Bool {
+        guard let token, let previous = templates?.templates else {
+            return false
         }
+        var rows = previous
         rows.move(fromOffsets: source, toOffset: destination)
         templates = TemplatesResponse(templates: rows)
-        await runRequest {
+        let saved = await runRequestReturningSuccess {
             try await apiClient.reorderTemplates(
                 TemplateReorderRequest(templateIDs: rows.map(\.id)),
                 token: token
             )
-            templates = try await apiClient.templates(token: token)
         }
+        if !saved {
+            templates = TemplatesResponse(templates: previous)
+        }
+        return saved
     }
 
     /// Returns the new transaction's id.
@@ -1913,8 +1897,8 @@ final class AppModel {
     }
 
     private func reloadOrganizeData(token: String) async throws {
-        categories = try await apiClient.categories(token: token)
-        tags = try await apiClient.tags(token: token)
+        categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+        tags = try await apiClient.tags(period: tagsPeriod, token: token)
         templates = try await apiClient.templates(token: token)
         rules = try await apiClient.rules(token: token)
         if llmEnabled {
@@ -1969,12 +1953,13 @@ final class AppModel {
         loadedUncategorizedQuery = nil
         uncategorizedCount = 0
         deletedTransactions = nil
+        categoriesPeriod = .all
         categories = nil
+        tagsPeriod = .all
         tags = nil
         templates = nil
         rules = nil
         ruleSuggestions = []
-        ruleMiningStatus = .idle
         assistantStreamTask?.cancel()
         assistantStreamTask = nil
         assistantTurns = []
@@ -2017,11 +2002,6 @@ private enum AuthMode {
     case setup
     case signup
     case login
-}
-
-enum RuleMiningStatus: Equatable {
-    case idle
-    case noneFound
 }
 
 private enum PrimaryLoadState: Equatable {

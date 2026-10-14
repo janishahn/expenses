@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Adds a recurring rule, entered like a transaction: the amount in large figures, a
 /// name, chips for the category and schedule, and the next days it would post.
-struct AddRuleSheet: View {
+struct AddRecurringRuleSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme

@@ -134,7 +134,7 @@ struct TransactionDetailView: View {
                         saveCategory(category.id, shown: shown)
                     }
                 case .tags:
-                    TagPickerSheet(title: "Tags", options: (model.tags?.tags ?? []).map(\.name), selected: shown.tags) { names in
+                    TagPickerSheet(title: "Tags", options: model.activeTags.map(\.name), selected: shown.tags) { names in
                         if names != shown.tags || errors[.tags] != nil {
                             save(.tags) { $0.tags = names }
                         }

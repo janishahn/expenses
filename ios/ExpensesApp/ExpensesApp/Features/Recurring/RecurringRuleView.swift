@@ -274,6 +274,8 @@ struct RecurringRuleView: View {
             if model.recurring == nil {
                 await model.loadRecurring()
             }
+        }
+        .onChange(of: rule == nil, initial: true) {
             if let rule {
                 nameDraft = rule.name ?? ""
                 amountDraft = AppFormatters.amountInput(rule.amountCents)

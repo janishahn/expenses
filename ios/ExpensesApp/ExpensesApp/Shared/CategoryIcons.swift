@@ -216,6 +216,21 @@ private let additionalCategorySymbolNames: [String: String] = [
     "x-square": "xmark.square",
 ]
 
+// Every icon the app can draw: the curated ones first, then the rest by name.
+let allCategoryIconOptions = categoryIconOptions + additionalCategorySymbolNames.keys
+    .filter { key in !categoryIconOptions.contains { $0.key == key } }
+    .sorted()
+    .map { CategoryIconOption(key: $0, label: categoryIconLabel($0), symbolName: additionalCategorySymbolNames[$0]!) }
+
+/// "Housing" for a curated icon, or "Shopping bag" from the key "shopping-bag".
+func categoryIconLabel(_ key: String) -> String {
+    if let option = categoryIconOption(for: key) {
+        return option.label
+    }
+    let words = key.replacingOccurrences(of: "-", with: " ")
+    return words.prefix(1).uppercased() + words.dropFirst()
+}
+
 func categoryIconOption(for key: String?) -> CategoryIconOption? {
     guard let key else {
         return nil

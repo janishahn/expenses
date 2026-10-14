@@ -223,7 +223,7 @@ struct DashboardView: View {
     }
 
     private var currentTags: [TransactionTag] {
-        model.dashboard?.tags ?? model.tags?.tags.map { TransactionTag(id: $0.id, name: $0.name) } ?? []
+        model.dashboard?.tags ?? model.activeTags.map { TransactionTag(id: $0.id, name: $0.name) }
     }
 
     private var excludedTagLabels: [String] {
@@ -606,8 +606,6 @@ private struct SpendingBandsSection: View {
 }
 
 private struct CategoryShareSection: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
     @State private var showsIncome = false
 
     let donut: DashboardDonut
@@ -625,43 +623,12 @@ private struct CategoryShareSection: View {
             if items.isEmpty {
                 ChartMessage(text: showsIncome ? "No income in this period." : "No spending in this period.")
             } else {
-                HStack(spacing: 18) {
-                    Chart(items) { item in
-                        SectorMark(angle: .value("Amount", item.amountCents), innerRadius: .ratio(0.64), angularInset: 1)
-                            .foregroundStyle(ExpensesTheme.category(item.categoryID, for: scheme))
-                            .accessibilityLabel(item.name)
-                            .accessibilityValue(model.amountString(item.amountCents))
-                    }
-                    .chartLegend(.hidden)
-                    .frame(width: 112, height: 112)
-                    .overlay {
-                        AmountText(total, decimals: false)
-                            .font(.footnote.weight(.semibold))
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(items.prefix(5)) { item in
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(ExpensesTheme.category(item.categoryID, for: scheme))
-                                    .frame(width: 8, height: 8)
-                                Text(item.name)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text((item.percent / 100).formatted(.percent.precision(.fractionLength(0))))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(.subheadline)
-                        }
-                        if items.count > 5 {
-                            Text("\(items.count - 5) more")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                CategoryShareDonut(slices: items.map {
+                    .init(id: $0.id, categoryID: $0.categoryID, name: $0.name, cents: $0.amountCents, share: ($0.percent / 100).formatted(.percent.precision(.fractionLength(0))))
+                }) {
+                    AmountText(total, decimals: false)
+                        .font(.footnote.weight(.semibold))
                 }
-                .padding(.vertical, 6)
             }
         }
         .expensesRowBackground()

@@ -24,7 +24,6 @@
 		001000000000000000000015 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* TransactionDetailView.swift */; };
 		001000000000000000000016 /* AddTransactionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* AddTransactionSheet.swift */; };
 		001000000000000000000017 /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* LocationProvider.swift */; };
-		001000000000000000000018 /* OrganizeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000020 /* OrganizeView.swift */; };
 		001000000000000000000019 /* BudgetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000021 /* BudgetsView.swift */; };
 		001000000000000000000020 /* RecurringView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000022 /* RecurringView.swift */; };
 		001000000000000000000021 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000023 /* CameraCaptureView.swift */; };
@@ -55,7 +54,16 @@
 		001000000000000000000048 /* WhatIfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000048 /* WhatIfView.swift */; };
 		001000000000000000000049 /* DigestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000049 /* DigestView.swift */; };
 		001000000000000000000050 /* RecurringRuleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000050 /* RecurringRuleView.swift */; };
-		001000000000000000000051 /* AddRuleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000051 /* AddRuleSheet.swift */; };
+		001000000000000000000051 /* AddRecurringRuleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000051 /* AddRecurringRuleSheet.swift */; };
+		001000000000000000000052 /* OrganizeShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000052 /* OrganizeShared.swift */; };
+		001000000000000000000053 /* CategoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000053 /* CategoriesView.swift */; };
+		001000000000000000000054 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000054 /* CategoryDetailView.swift */; };
+		001000000000000000000055 /* TagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000055 /* TagsView.swift */; };
+		001000000000000000000056 /* TagDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000056 /* TagDetailView.swift */; };
+		001000000000000000000057 /* TemplatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000057 /* TemplatesView.swift */; };
+		001000000000000000000058 /* TemplateDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000058 /* TemplateDetailView.swift */; };
+		001000000000000000000059 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000059 /* RulesView.swift */; };
+		001000000000000000000060 /* RuleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000060 /* RuleDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,7 +86,6 @@
 		002000000000000000000017 /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		002000000000000000000018 /* AddTransactionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionSheet.swift; sourceTree = "<group>"; };
 		002000000000000000000019 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
-		002000000000000000000020 /* OrganizeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizeView.swift; sourceTree = "<group>"; };
 		002000000000000000000021 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
 		002000000000000000000022 /* RecurringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringView.swift; sourceTree = "<group>"; };
 		002000000000000000000023 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
@@ -109,7 +116,16 @@
 		002000000000000000000048 /* WhatIfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatIfView.swift; sourceTree = "<group>"; };
 		002000000000000000000049 /* DigestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigestView.swift; sourceTree = "<group>"; };
 		002000000000000000000050 /* RecurringRuleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringRuleView.swift; sourceTree = "<group>"; };
-		002000000000000000000051 /* AddRuleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRuleSheet.swift; sourceTree = "<group>"; };
+		002000000000000000000051 /* AddRecurringRuleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRecurringRuleSheet.swift; sourceTree = "<group>"; };
+		002000000000000000000052 /* OrganizeShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizeShared.swift; sourceTree = "<group>"; };
+		002000000000000000000053 /* CategoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesView.swift; sourceTree = "<group>"; };
+		002000000000000000000054 /* CategoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000055 /* TagsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagsView.swift; sourceTree = "<group>"; };
+		002000000000000000000056 /* TagDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000057 /* TemplatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplatesView.swift; sourceTree = "<group>"; };
+		002000000000000000000058 /* TemplateDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000059 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
+		002000000000000000000060 /* RuleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -273,7 +289,15 @@
 		004000000000000000000014 /* Organize */ = {
 			isa = PBXGroup;
 			children = (
-				002000000000000000000020 /* OrganizeView.swift */,
+				002000000000000000000056 /* TagDetailView.swift */,
+				002000000000000000000055 /* TagsView.swift */,
+				002000000000000000000054 /* CategoryDetailView.swift */,
+				002000000000000000000053 /* CategoriesView.swift */,
+				002000000000000000000052 /* OrganizeShared.swift */,
+				002000000000000000000060 /* RuleDetailView.swift */,
+				002000000000000000000059 /* RulesView.swift */,
+				002000000000000000000058 /* TemplateDetailView.swift */,
+				002000000000000000000057 /* TemplatesView.swift */,
 			);
 			path = Organize;
 			sourceTree = "<group>";
@@ -292,7 +316,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000022 /* RecurringView.swift */,
-				002000000000000000000051 /* AddRuleSheet.swift */,
+				002000000000000000000051 /* AddRecurringRuleSheet.swift */,
 				002000000000000000000050 /* RecurringRuleView.swift */,
 			);
 			path = Recurring;
@@ -418,7 +442,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				001000000000000000000051 /* AddRuleSheet.swift in Sources */,
+				001000000000000000000060 /* RuleDetailView.swift in Sources */,
+				001000000000000000000059 /* RulesView.swift in Sources */,
+				001000000000000000000058 /* TemplateDetailView.swift in Sources */,
+				001000000000000000000057 /* TemplatesView.swift in Sources */,
+				001000000000000000000056 /* TagDetailView.swift in Sources */,
+				001000000000000000000055 /* TagsView.swift in Sources */,
+				001000000000000000000054 /* CategoryDetailView.swift in Sources */,
+				001000000000000000000053 /* CategoriesView.swift in Sources */,
+				001000000000000000000052 /* OrganizeShared.swift in Sources */,
+				001000000000000000000051 /* AddRecurringRuleSheet.swift in Sources */,
 				001000000000000000000050 /* RecurringRuleView.swift in Sources */,
 				001000000000000000000049 /* DigestView.swift in Sources */,
 				001000000000000000000048 /* WhatIfView.swift in Sources */,
@@ -449,7 +482,6 @@
 				001000000000000000000012 /* Formatters.swift in Sources */,
 				001000000000000000000017 /* LocationProvider.swift in Sources */,
 				001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */,
-				001000000000000000000018 /* OrganizeView.swift in Sources */,
 				001000000000000000000019 /* BudgetsView.swift in Sources */,
 				001000000000000000000020 /* RecurringView.swift in Sources */,
 				001000000000000000000021 /* CameraCaptureView.swift in Sources */,

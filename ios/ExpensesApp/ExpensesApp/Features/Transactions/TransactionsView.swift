@@ -333,7 +333,7 @@ struct TransactionsView: View {
     }
 
     private var tagOptions: [String] {
-        (model.tags?.tags.map(\.name) ?? model.transactions?.tags.map(\.name) ?? []).sorted {
+        (model.transactions?.tags.map(\.name) ?? []).sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
     }

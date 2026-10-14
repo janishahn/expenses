@@ -1,14 +1,18 @@
 import SwiftUI
 
 /// Categories grouped by type, with search. Choosing one dismisses the sheet.
-/// With `onSelectNone`, an Uncategorized row stands for no category.
+/// With `onSelectNone`, a first row stands for no category: Uncategorized, or
+/// `noneTitle` such as Keep category.
 struct CategoryPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
     @State private var search = ""
 
     let title: String
     let categories: [CategorySummary]
     var selectedID: Int?
+    var noneTitle = "Uncategorized"
+    var noneSymbol = "questionmark"
     var onSelectNone: (() -> Void)?
     let onSelect: (CategorySummary) -> Void
 
@@ -22,8 +26,12 @@ struct CategoryPickerSheet: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
-                                CategoryGlyph(categoryID: nil, iconKey: nil, name: "Uncategorized")
-                                Text("Uncategorized")
+                                Image(systemName: noneSymbol)
+                                    .font(.callout)
+                                    .foregroundStyle(ExpensesTheme.category(nil, for: scheme))
+                                    .frame(width: 26)
+                                    .accessibilityHidden(true)
+                                Text(noneTitle)
                                 Spacer()
                                 if selectsNone {
                                     Image(systemName: "checkmark")

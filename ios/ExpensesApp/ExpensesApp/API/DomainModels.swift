@@ -16,11 +16,13 @@ struct CategorySummary: Codable, Equatable, Identifiable {
 struct CategoryListItem: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
-    let type: String
+    let type: TransactionKind
     let icon: String?
     let archivedAt: Date?
     let order: Int
     let usageCount: Int
+    let expenseCents: Int
+    let incomeCents: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -30,6 +32,8 @@ struct CategoryListItem: Codable, Equatable, Identifiable {
         case archivedAt = "archived_at"
         case order
         case usageCount = "usage_count"
+        case expenseCents = "expense_cents"
+        case incomeCents = "income_cents"
     }
 }
 
@@ -53,16 +57,26 @@ struct TagRow: Codable, Equatable, Identifiable {
     let name: String
     let color: String?
     let isHiddenFromBudget: Bool
+    let isHiddenFromFilters: Bool
     let autoAttachPeriod: TagAutoAttachPeriod?
+    let archivedAt: Date?
     let usageCount: Int
+    let expenseCents: Int
+    let incomeCents: Int
+    let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case isHiddenFromFilters = "is_hidden_from_filters"
         case autoAttachPeriod = "auto_attach_period"
+        case archivedAt = "archived_at"
         case usageCount = "usage_count"
+        case expenseCents = "expense_cents"
+        case incomeCents = "income_cents"
+        case createdAt = "created_at"
     }
 }
 
@@ -74,7 +88,7 @@ struct TagsResponse: Codable, Equatable {
 struct TemplateRow: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
-    let type: String
+    let type: TransactionKind
     let categoryID: Int
     let category: CategorySummary?
     let defaultAmountCents: Int?
@@ -116,14 +130,36 @@ struct RuleBudgetExcludeTag: Codable, Equatable, Identifiable {
     let name: String
 }
 
+enum MatchType: String, Codable, CaseIterable, Identifiable {
+    case contains
+    case startsWith = "starts_with"
+    case equals
+    case regex
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .contains:
+            "Contains"
+        case .startsWith:
+            "Starts with"
+        case .equals:
+            "Equals"
+        case .regex:
+            "Regex"
+        }
+    }
+}
+
 struct RuleRow: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
     let enabled: Bool
     let priority: Int
-    let matchType: String
+    let matchType: MatchType
     let matchValue: String
-    let transactionType: String?
+    let transactionType: TransactionKind?
     let minAmountCents: Int?
     let maxAmountCents: Int?
     let setCategoryID: Int?
@@ -157,17 +193,17 @@ struct RulesResponse: Codable, Equatable {
 }
 
 struct RuleMutationRequest: Codable, Equatable {
-    let name: String
-    let enabled: Bool
-    let priority: Int
-    let matchType: String
-    let matchValue: String
-    let transactionType: String?
-    let minAmountCents: Int?
-    let maxAmountCents: Int?
-    let setCategoryID: Int?
-    let addTags: [String]
-    let budgetExcludeTagID: Int?
+    var name: String
+    var enabled: Bool
+    var priority: Int
+    var matchType: MatchType
+    var matchValue: String
+    var transactionType: TransactionKind?
+    var minAmountCents: Int?
+    var maxAmountCents: Int?
+    var setCategoryID: Int?
+    var addTags: [String]
+    var budgetExcludeTagID: Int?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -184,8 +220,22 @@ struct RuleMutationRequest: Codable, Equatable {
     }
 }
 
-struct RuleToggleRequest: Codable, Equatable {
-    let enabled: Bool
+extension RuleMutationRequest {
+    init(_ rule: RuleRow) {
+        self.init(
+            name: rule.name,
+            enabled: rule.enabled,
+            priority: rule.priority,
+            matchType: rule.matchType,
+            matchValue: rule.matchValue,
+            transactionType: rule.transactionType,
+            minAmountCents: rule.minAmountCents,
+            maxAmountCents: rule.maxAmountCents,
+            setCategoryID: rule.setCategoryID,
+            addTags: rule.addTags,
+            budgetExcludeTagID: rule.budgetExcludeTagID
+        )
+    }
 }
 
 struct RulePreviewSample: Codable, Equatable, Identifiable {
@@ -222,9 +272,9 @@ struct RuleSuggestion: Codable, Equatable, Identifiable {
     let id: Int
     let status: String
     let name: String
-    let matchType: String
+    let matchType: MatchType
     let matchValue: String
-    let transactionType: String?
+    let transactionType: TransactionKind?
     let minAmountCents: Int?
     let maxAmountCents: Int?
     let setCategoryID: Int?
@@ -1047,27 +1097,35 @@ struct RecurringOccurrencesResponse: Codable, Equatable {
 
 struct CategoryCreateRequest: Codable, Equatable {
     let name: String
-    let type: String
+    let type: TransactionKind
     let icon: String?
     let order: Int
 }
 
 struct CategoryUpdateRequest: Codable, Equatable {
-    let name: String
-    let icon: String?
-    let order: Int
+    var name: String
+    var icon: String?
+    var order: Int
+}
+
+extension CategoryUpdateRequest {
+    init(_ category: CategoryListItem) {
+        self.init(name: category.name, icon: category.icon, order: category.order)
+    }
 }
 
 struct TagMutationRequest: Encodable, Equatable {
-    let name: String
-    let color: String?
-    let isHiddenFromBudget: Bool
-    let autoAttachPeriod: TagAutoAttachPeriod?
+    var name: String
+    var color: String?
+    var isHiddenFromBudget: Bool
+    var isHiddenFromFilters: Bool
+    var autoAttachPeriod: TagAutoAttachPeriod?
 
     enum CodingKeys: String, CodingKey {
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case isHiddenFromFilters = "is_hidden_from_filters"
         case autoAttachPeriod = "auto_attach_period"
     }
 
@@ -1076,11 +1134,61 @@ struct TagMutationRequest: Encodable, Equatable {
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(color, forKey: .color)
         try container.encode(isHiddenFromBudget, forKey: .isHiddenFromBudget)
+        try container.encode(isHiddenFromFilters, forKey: .isHiddenFromFilters)
         if let autoAttachPeriod {
             try container.encode(autoAttachPeriod, forKey: .autoAttachPeriod)
         } else {
             try container.encodeNil(forKey: .autoAttachPeriod)
         }
+    }
+}
+
+extension TagMutationRequest {
+    init(_ tag: TagRow) {
+        self.init(
+            name: tag.name,
+            color: tag.color,
+            isHiddenFromBudget: tag.isHiddenFromBudget,
+            isHiddenFromFilters: tag.isHiddenFromFilters,
+            autoAttachPeriod: tag.autoAttachPeriod
+        )
+    }
+}
+
+/// A tag's totals and where its money went, for one period.
+struct TagDetailResponse: Codable, Equatable {
+    let kpis: TagKPIs
+    let donut: TagDonut
+}
+
+struct TagKPIs: Codable, Equatable {
+    let income: Int
+    let expenses: Int
+    let balance: Int
+}
+
+struct TagDonut: Codable, Equatable {
+    let expenseBreakdown: [TagBreakdownItem]
+    let incomeBreakdown: [TagBreakdownItem]
+
+    enum CodingKeys: String, CodingKey {
+        case expenseBreakdown = "expense_breakdown"
+        case incomeBreakdown = "income_breakdown"
+    }
+}
+
+/// A category's share of a tag's money.
+struct TagBreakdownItem: Codable, Equatable, Identifiable {
+    let id: Int
+    let name: String
+    let amountCents: Int
+    let percent: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case amountCents = "amount_cents"
+        case percent
     }
 }
 
@@ -1109,12 +1217,12 @@ struct MergeResponse: Codable, Equatable {
 }
 
 struct TemplateMutationRequest: Codable, Equatable {
-    let name: String
-    let type: String
-    let categoryID: Int
-    let defaultAmountCents: Int?
-    let title: String?
-    let tags: [String]
+    var name: String
+    var type: TransactionKind
+    var categoryID: Int
+    var defaultAmountCents: Int?
+    var title: String?
+    var tags: [String]
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -1123,6 +1231,19 @@ struct TemplateMutationRequest: Codable, Equatable {
         case defaultAmountCents = "default_amount_cents"
         case title
         case tags
+    }
+}
+
+extension TemplateMutationRequest {
+    init(_ template: TemplateRow) {
+        self.init(
+            name: template.name,
+            type: template.type,
+            categoryID: template.categoryID,
+            defaultAmountCents: template.defaultAmountCents,
+            title: template.title,
+            tags: template.tags
+        )
     }
 }
 

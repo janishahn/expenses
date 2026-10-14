@@ -139,8 +139,14 @@ struct RootView: View {
             AdminView()
         case .recurring:
             RecurringView()
-        case .organize:
-            OrganizeView()
+        case .templates:
+            TemplatesView()
+        case .rules:
+            RulesView()
+        case .categories:
+            CategoriesView(openTransactions: openTransactions)
+        case .tags:
+            TagsView(openTransactions: openTransactions)
         case .account:
             AuthView()
         case .diagnostics:
@@ -249,7 +255,10 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case reconcile
     case admin
     case recurring
-    case organize
+    case templates
+    case rules
+    case categories
+    case tags
     case account
     case diagnostics
     case assistant
@@ -280,8 +289,14 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "Admin"
         case .recurring:
             "Recurring"
-        case .organize:
-            "Organize"
+        case .templates:
+            "Templates"
+        case .rules:
+            "Rules"
+        case .categories:
+            "Categories"
+        case .tags:
+            "Tags"
         case .account:
             "Account"
         case .diagnostics:
@@ -315,8 +330,14 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "person.badge.key"
         case .recurring:
             "repeat"
-        case .organize:
-            "slider.horizontal.3"
+        case .templates:
+            "bolt"
+        case .rules:
+            "wand.and.stars"
+        case .categories:
+            "square.on.circle"
+        case .tags:
+            "tag"
         case .account:
             "person.crop.circle"
         case .diagnostics:
@@ -335,7 +356,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     }
 
     static var manageDestinations: [AppDestination] {
-        [.recurring, .organize]
+        [.recurring, .templates, .rules, .categories, .tags]
     }
 
     static var toolsDestinations: [AppDestination] {

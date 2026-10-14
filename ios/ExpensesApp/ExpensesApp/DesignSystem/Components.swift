@@ -1,4 +1,62 @@
+import Charts
 import SwiftUI
+
+/// One category's part of a total, with its share already worded.
+struct CategoryShare: Identifiable {
+    let id: String
+    let categoryID: Int?
+    let name: String
+    let cents: Int
+    let share: String
+}
+
+/// Category shares as a donut, with the five largest named beside it.
+struct CategoryShareDonut<Center: View>: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    let slices: [CategoryShare]
+    @ViewBuilder let center: Center
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Chart(slices) { slice in
+                SectorMark(angle: .value("Amount", slice.cents), innerRadius: .ratio(0.64), angularInset: 1)
+                    .foregroundStyle(ExpensesTheme.category(slice.categoryID, for: scheme))
+                    .accessibilityLabel(slice.name)
+                    .accessibilityValue(model.amountString(slice.cents))
+            }
+            .chartLegend(.hidden)
+            .frame(width: 112, height: 112)
+            .overlay {
+                center
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(slices.prefix(5)) { slice in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(ExpensesTheme.category(slice.categoryID, for: scheme))
+                            .frame(width: 8, height: 8)
+                        Text(slice.name)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(slice.share)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+                }
+                if slices.count > 5 {
+                    Text("\(slices.count - 5) more")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
 
 /// A euro amount that follows privacy mode. While amounts are hidden it shows a blurred
 /// fixed placeholder, so neither the digits nor the length of the real amount show.
