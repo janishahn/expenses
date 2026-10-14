@@ -735,7 +735,7 @@ function ReconciliationPage() {
           <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
             <MenuItem
               icon={EyeSlashIcon}
-              disabled={!openTotal || pending}
+              disabled={!openTotal || pending || rows.isPlaceholderData}
               end={openTotal || undefined}
               onSelect={() => void ignoreRemaining()}
             >
