@@ -174,6 +174,31 @@ struct ExpensesAPIClient {
         )
     }
 
+    func balanceHistory(months: Int, token: String) async throws -> BalanceHistoryResponse {
+        try await request(path: "/api/dashboard/balance-history?months=\(months)", bearerToken: token)
+    }
+
+    func categorySpendingBands(
+        period: String,
+        excludedTagIDs: [Int],
+        months: Int,
+        token: String
+    ) async throws -> CategoryBandsResponse {
+        var components = URLComponents()
+        components.path = "/api/category-breakdown"
+        var items = [
+            URLQueryItem(name: "period", value: period),
+            URLQueryItem(name: "view", value: "monthly"),
+            URLQueryItem(name: "months", value: String(months)),
+        ]
+        appendExcludedTags(excludedTagIDs, to: &items)
+        components.queryItems = items
+        return try await request(
+            path: components.string ?? "/api/category-breakdown?period=\(period)&view=monthly&months=\(months)",
+            bearerToken: token
+        )
+    }
+
     func transactions(
         query: String?,
         type: String?,

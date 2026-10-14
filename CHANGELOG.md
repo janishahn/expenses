@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
+- The iOS app takes the web's colors and its dashboard layout: the same summary card, Budgets, Recent, a balance chart with the likely forecast and its 80% range, spending by category over six months, Category share, and Durable purchases. Hide amounts now covers every amount on the dashboard. Budgets is a tab, Digest moves to More, and the add button is a solid ink circle. Update the iOS app together with the server, because it reads the new `budget_pace` fields.
 
 ### Fixed
 - Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.

@@ -1,8 +1,12 @@
 {
   "budget_pace": {
     "budget_cents": 220000,
+    "daily_remaining_cents": 9030,
+    "days_remaining": 15,
     "projected_cents": 178000,
+    "remaining_cents": 135450,
     "sparkline": "0.61,0.66,0.7,0.75,0.78,0.8,0.82",
+    "spent_cents": 84550,
     "velocity_ratio": 0.82
   },
   "categories": [
@@ -44,6 +48,7 @@
     "expense_breakdown": [
       {
         "amount_cents": 34200,
+        "category_id": 10,
         "name": "Groceries",
         "percent": 40.45
       }
@@ -52,6 +57,7 @@
     "income_breakdown": [
       {
         "amount_cents": 320000,
+        "category_id": 20,
         "name": "Salary",
         "percent": 100.0
       }

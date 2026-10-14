@@ -5,54 +5,52 @@ struct DigestView: View {
     @State private var weekOf: Date?
 
     var body: some View {
-        NavigationStack {
-            List {
-                if model.identity?.authenticated != true {
-                    SignedOutStateSection()
-                } else if let digest = model.digest {
-                    DigestHeadlineSection(digest: digest)
-                    DigestCategoriesSection(categories: digest.topCategories)
-                    DigestBudgetPulseSection(rows: digest.budgetPulse)
-                    DigestUnusualSection(rows: digest.unusualTransactions)
-                    DigestRecurringSection(rows: digest.recurringPostings)
-                } else if model.showsDigestInitialLoading {
-                    LoadingStateSection(title: "Loading digest")
-                } else if model.showsDigestLoadFailed {
-                    UnavailableStateSection(title: "Couldn't load the weekly digest", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                } else {
-                    ContentUnavailableView("No digest loaded", systemImage: "newspaper")
-                }
+        List {
+            if model.identity?.authenticated != true {
+                SignedOutStateSection()
+            } else if let digest = model.digest {
+                DigestHeadlineSection(digest: digest)
+                DigestCategoriesSection(categories: digest.topCategories)
+                DigestBudgetPulseSection(rows: digest.budgetPulse)
+                DigestUnusualSection(rows: digest.unusualTransactions)
+                DigestRecurringSection(rows: digest.recurringPostings)
+            } else if model.showsDigestInitialLoading {
+                LoadingStateSection(title: "Loading digest")
+            } else if model.showsDigestLoadFailed {
+                UnavailableStateSection(title: "Couldn't load the weekly digest", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
+            } else {
+                ContentUnavailableView("No digest loaded", systemImage: "newspaper")
             }
-            .navigationTitle("Digest")
-            .expensesScreenStyle()
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        shiftWeek(by: -7)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .accessibilityLabel("Previous week")
-                    .disabled(model.digest == nil)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        shiftWeek(by: 7)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                    }
-                    .accessibilityLabel("Next week")
-                    .disabled(model.digest == nil)
-                }
-            }
-            .task {
-                await loadDigest()
-            }
-            .refreshable {
-                await loadDigest()
-            }
-            .animation(.easeInOut(duration: 0.18), value: model.showsDigestInitialLoading)
         }
+        .navigationTitle("Digest")
+        .expensesScreenStyle()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    shiftWeek(by: -7)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("Previous week")
+                .disabled(model.digest == nil)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    shiftWeek(by: 7)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .accessibilityLabel("Next week")
+                .disabled(model.digest == nil)
+            }
+        }
+        .task {
+            await loadDigest()
+        }
+        .refreshable {
+            await loadDigest()
+        }
+        .animation(.easeInOut(duration: 0.18), value: model.showsDigestInitialLoading)
     }
 
     private func loadDigest() async {

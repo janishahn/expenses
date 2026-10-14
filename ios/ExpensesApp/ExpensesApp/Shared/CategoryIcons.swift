@@ -12,6 +12,22 @@ struct CategoryIconImage: View {
     }
 }
 
+// A category's symbol in its color, as list rows show it.
+struct CategoryGlyph: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let categoryID: Int?
+    let iconKey: String?
+
+    var body: some View {
+        Image(systemName: categorySymbolName(for: iconKey))
+            .font(.callout)
+            .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
+            .frame(width: 26)
+            .accessibilityHidden(true)
+    }
+}
+
 struct CategoryIconOption: Identifiable {
     let key: String
     let label: String

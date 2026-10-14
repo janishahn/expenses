@@ -1243,6 +1243,68 @@ private struct DurablePurchasesSection: View {
     .expensesScreenStyle()
 }
 
+struct CategoryRingChart: View {
+    let title: String
+    let rows: [BreakdownItem]
+    let tint: Color
+
+    private var palette: [Color] {
+        [
+            tint,
+            .orange,
+            .yellow,
+            .teal,
+            .blue,
+            .purple,
+            .pink,
+            .indigo,
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.headline)
+
+            HStack(alignment: .center, spacing: 18) {
+                Chart {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        SectorMark(
+                            angle: .value("Amount", row.amountCents),
+                            innerRadius: .ratio(0.68),
+                            angularInset: 1.4
+                        )
+                        .foregroundStyle(palette[index % palette.count])
+                    }
+                }
+                .chartLegend(.hidden)
+                .frame(width: 136, height: 136)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(Array(rows.prefix(5).enumerated()), id: \.element.id) { index, row in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(palette[index % palette.count])
+                                .frame(width: 8, height: 8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.name)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                Text("\(row.percent.formatted(.number.precision(.fractionLength(1))))%")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 #Preview {
     InsightsView()
         .environment(AppModel())

@@ -1698,15 +1698,63 @@ struct DashboardDonut: Codable, Equatable {
 
 struct BreakdownItem: Codable, Equatable, Identifiable {
     var id: String { name }
+    let categoryID: Int?
     let name: String
     let amountCents: Int
     let percent: Double
 
     enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
         case name
         case amountCents = "amount_cents"
         case percent
     }
+}
+
+struct BalanceHistoryPoint: Codable, Equatable, Identifiable {
+    var id: String { month }
+    let month: String
+    let balanceCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case month
+        case balanceCents = "balance_cents"
+    }
+}
+
+struct BalanceHistoryResponse: Codable, Equatable {
+    let months: [BalanceHistoryPoint]
+}
+
+struct CategoryBandSegment: Codable, Equatable {
+    let categoryID: Int?
+    let name: String
+    let icon: String?
+    let amountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+        case name
+        case icon
+        case amountCents = "amount_cents"
+    }
+}
+
+struct CategoryBandMonth: Codable, Equatable, Identifiable {
+    var id: String { month }
+    let month: String
+    let totalCents: Int
+    let segments: [CategoryBandSegment]
+
+    enum CodingKeys: String, CodingKey {
+        case month
+        case totalCents = "total_cents"
+        case segments
+    }
+}
+
+struct CategoryBandsResponse: Codable, Equatable {
+    let months: [CategoryBandMonth]
 }
 
 struct DashboardDurablePurchase: Codable, Equatable, Identifiable {
@@ -2108,12 +2156,20 @@ struct DashboardBudgetPace: Codable, Equatable {
     let velocityRatio: Double
     let projectedCents: Int
     let budgetCents: Int
+    let spentCents: Int
+    let remainingCents: Int
+    let dailyRemainingCents: Int
+    let daysRemaining: Int
     let sparkline: String
 
     enum CodingKeys: String, CodingKey {
         case velocityRatio = "velocity_ratio"
         case projectedCents = "projected_cents"
         case budgetCents = "budget_cents"
+        case spentCents = "spent_cents"
+        case remainingCents = "remaining_cents"
+        case dailyRemainingCents = "daily_remaining_cents"
+        case daysRemaining = "days_remaining"
         case sparkline
     }
 }

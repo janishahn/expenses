@@ -1,25 +1,47 @@
 import SwiftUI
 import UIKit
 
+// Colors from the web design tokens (DESIGN.md), so both apps read as one product.
 enum ExpensesTheme {
     static func accent(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.95, green: 0.69, blue: 0.32) : Color(red: 0.08, green: 0.55, blue: 0.63)
+        scheme == .dark ? Color(rgb: 0xEEEBE6) : Color(rgb: 0x1C1C1A)
     }
 
     static func income(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.44, green: 0.78, blue: 0.58) : Color(red: 0.12, green: 0.55, blue: 0.34)
+        scheme == .dark ? Color(rgb: 0x4CC38A) : Color(rgb: 0x18704A)
     }
 
     static func expense(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.88, green: 0.42, blue: 0.36) : Color(red: 0.76, green: 0.28, blue: 0.23)
+        scheme == .dark ? Color(rgb: 0xF07A63) : Color(rgb: 0xB83A26)
     }
 
     static func surface(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(white: 0.085) : Color(uiColor: .secondarySystemGroupedBackground)
+        scheme == .dark ? Color(rgb: 0x1F1D1A) : Color(rgb: 0xFFFFFF)
     }
 
     static func background(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(white: 0.005) : Color(uiColor: .systemGroupedBackground)
+        scheme == .dark ? Color(rgb: 0x181715) : Color(rgb: 0xF5F5F3)
+    }
+
+    // The web's categoryColor: eight hues by category id, gray for uncategorized.
+    static func category(_ id: Int?, for scheme: ColorScheme) -> Color {
+        guard let id else {
+            return scheme == .dark ? Color(rgb: 0x77776F) : Color(rgb: 0x86867F)
+        }
+        let palette: [UInt32] = scheme == .dark
+            ? [0x7B86E8, 0x45B882, 0xEC8A57, 0xD872A6, 0x45B5CC, 0xE0BB4A, 0x9A80E6, 0xC99645]
+            : [0x5563D1, 0x278A5C, 0xC75F2A, 0xC2508A, 0x21879C, 0xA8801A, 0x7A5BD0, 0x9A6A22]
+        return Color(rgb: palette[abs(id) % palette.count])
+    }
+}
+
+private extension Color {
+    init(rgb: UInt32) {
+        self.init(
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255
+        )
     }
 }
 
@@ -44,31 +66,8 @@ struct ExpensesBackground: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ExpensesTheme.background(for: scheme)
-            LinearGradient(
-                colors: [
-                    ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.045 : 0.06),
-                    ExpensesTheme.background(for: scheme).opacity(0)
-                ],
-                startPoint: .topTrailing,
-                endPoint: .bottom
-            )
-            .frame(height: 190)
-            .ignoresSafeArea(edges: .top)
-            RadialGradient(
-                colors: [
-                    Color.white.opacity(scheme == .dark ? 0.055 : 0.18),
-                    Color.clear
-                ],
-                center: .topLeading,
-                startRadius: 8,
-                endRadius: 260
-            )
-            .frame(height: 220)
-                .ignoresSafeArea(edges: .top)
-        }
-        .ignoresSafeArea()
+        ExpensesTheme.background(for: scheme)
+            .ignoresSafeArea()
     }
 }
 
@@ -83,9 +82,22 @@ struct ExpensesScreenStyle: ViewModifier {
     }
 }
 
+// List rows on the warm sheet color; system cells are a cooler gray in dark mode.
+struct ExpensesRowBackground: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.listRowBackground(ExpensesTheme.surface(for: scheme))
+    }
+}
+
 extension View {
     func expensesScreenStyle() -> some View {
         modifier(ExpensesScreenStyle())
+    }
+
+    func expensesRowBackground() -> some View {
+        modifier(ExpensesRowBackground())
     }
 }
 

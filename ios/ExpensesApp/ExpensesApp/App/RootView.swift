@@ -56,21 +56,23 @@ struct RootView: View {
         TabView(selection: $selectedPrimaryDestination) {
             destinationView(.dashboard)
                 .tabItem {
-                    Label("Dashboard", systemImage: "chart.pie")
+                    Label("Dashboard", systemImage: "square.grid.2x2")
                 }
                 .tag(AppDestination.dashboard)
 
             destinationView(.transactions)
                 .tabItem {
-                    Label("Transactions", systemImage: "list.bullet.rectangle")
+                    Label("Transactions", systemImage: "list.bullet")
                 }
                 .tag(AppDestination.transactions)
 
-            destinationView(.digest)
-                .tabItem {
-                    Label("Digest", systemImage: "newspaper")
-                }
-                .tag(AppDestination.digest)
+            NavigationStack {
+                destinationView(.budgets)
+            }
+            .tabItem {
+                Label("Budgets", systemImage: "target")
+            }
+            .tag(AppDestination.budgets)
 
             destinationView(.insights)
                 .tabItem {
@@ -80,7 +82,7 @@ struct RootView: View {
 
             moreTab
                 .tabItem {
-                    Label("More", systemImage: "ellipsis.circle")
+                    Label("More", systemImage: "line.3.horizontal")
                 }
                 .tag(AppDestination.more)
         }
@@ -90,7 +92,11 @@ struct RootView: View {
     private func destinationView(_ destination: AppDestination) -> some View {
         switch destination {
         case .dashboard:
-            DashboardView(path: $dashboardPath)
+            DashboardView(
+                path: $dashboardPath,
+                openBudgets: { selectedPrimaryDestination = .budgets },
+                openTransactions: { selectedPrimaryDestination = .transactions }
+            )
         case .transactions:
             TransactionsView(path: $transactionsPath, selecting: $transactionsSelecting)
         case .budgets:
@@ -162,26 +168,14 @@ struct RootView: View {
                 Button {
                     performQuickAdd()
                 } label: {
+                    // The ink tint is light in dark mode, so the glyph takes the page color.
                     Image(systemName: "plus")
-                        .font(.system(size: 24, weight: .medium))
-                        .frame(width: 54, height: 54)
-                        .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(ExpensesTheme.background(for: scheme))
+                        .frame(width: 40, height: 40)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ExpensesTheme.accent(for: scheme))
-                .background {
-                    RoundedRectangle(cornerRadius: 27, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .shadow(color: .black.opacity(scheme == .dark ? 0.24 : 0.12), radius: 18, y: 8)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 27, style: .continuous)
-                        .stroke(.white.opacity(scheme == .dark ? 0.12 : 0.42), lineWidth: 0.8)
-                }
-                .glassEffect(
-                    .regular.tint(ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.035 : 0.055)).interactive(),
-                    in: .rect(cornerRadius: 27)
-                )
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
                 .accessibilityLabel("Quick Add")
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
                 .disabled(model.identity?.authenticated != true)
@@ -278,15 +272,15 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .dashboard:
-            "chart.pie"
+            "square.grid.2x2"
         case .transactions:
-            "list.bullet.rectangle"
+            "list.bullet"
         case .budgets:
-            "chart.bar"
+            "target"
         case .insights:
             "chart.xyaxis.line"
         case .more:
-            "ellipsis.circle"
+            "line.3.horizontal"
         case .forecast:
             "chart.line.uptrend.xyaxis"
         case .digest:
@@ -315,7 +309,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     }
 
     static var planningDestinations: [AppDestination] {
-        [.budgets, .forecast]
+        [.forecast]
     }
 
     static var manageDestinations: [AppDestination] {
@@ -323,7 +317,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     }
 
     static var toolsDestinations: [AppDestination] {
-        [.assistant, .reconcile, .reports, .diagnostics]
+        [.assistant, .digest, .reconcile, .reports, .diagnostics]
     }
 
     static var accountDestinations: [AppDestination] {

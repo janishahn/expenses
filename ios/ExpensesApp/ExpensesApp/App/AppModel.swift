@@ -33,6 +33,11 @@ final class AppModel {
     var dashboard: DashboardResponse?
     var dashboardPeriod = "this_month"
     var dashboardExcludedTagIDs: [Int] = []
+    // Dashboard charts load beside the summary. nil means not loaded yet; a
+    // failure stays inside its chart instead of replacing the dashboard.
+    var dashboardBalanceHistory: Result<BalanceHistoryResponse, APIErrorInfo>?
+    var dashboardForecast: Result<ForecastResponse, APIErrorInfo>?
+    var dashboardSpendingBands: Result<CategoryBandsResponse, APIErrorInfo>?
     var transactions: TransactionsResponse?
     var uncategorizedTransactions: UncategorizedTransactionsResponse?
     var deletedTransactions: DeletedTransactionsResponse?
@@ -497,6 +502,48 @@ final class AppModel {
                 dashboardLoadState = .failed
             }
             lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+    }
+
+    // Month-end balances and the forecast do not depend on the dashboard period.
+    func loadDashboardBalance() async {
+        guard let token else {
+            return
+        }
+        let client = apiClient
+        async let history = Self.chartResult { try await client.balanceHistory(months: 6, token: token) }
+        async let forecast = Self.chartResult { try await client.forecast(horizon: 6, mode: "full", token: token) }
+        let (historyResult, forecastResult) = await (history, forecast)
+        guard !Task.isCancelled else {
+            return
+        }
+        dashboardBalanceHistory = historyResult
+        dashboardForecast = forecastResult
+    }
+
+    func loadDashboardSpendingBands(period: String, excludedTagIDs: [Int]) async {
+        guard let token else {
+            return
+        }
+        let client = apiClient
+        let result = await Self.chartResult {
+            try await client.categorySpendingBands(period: period, excludedTagIDs: excludedTagIDs, months: 6, token: token)
+        }
+        guard !Task.isCancelled else {
+            return
+        }
+        dashboardSpendingBands = result
+    }
+
+    private nonisolated static func chartResult<Response>(
+        _ load: () async throws -> Response
+    ) async -> Result<Response, APIErrorInfo> {
+        do {
+            return .success(try await load())
+        } catch let error as APIErrorInfo {
+            return .failure(error)
+        } catch {
+            return .failure(APIErrorInfo(message: error.localizedDescription))
         }
     }
 
@@ -2077,6 +2124,9 @@ final class AppModel {
         insightsLoadID += 1
         dashboard = nil
         dashboardExcludedTagIDs = []
+        dashboardBalanceHistory = nil
+        dashboardForecast = nil
+        dashboardSpendingBands = nil
         transactions = nil
         dashboardLoadState = .idle
         transactionsLoadState = .idle
