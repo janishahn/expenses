@@ -10,7 +10,6 @@ struct DashboardView: View {
     @State private var excludedTagIDs: Set<Int> = []
     @State private var draftExcludedTagIDs: Set<Int> = []
     @State private var presentingFilters = false
-    @AppStorage("expenses.dashboardIncognito") private var hidesAmounts = false
 
     private var reloadKey: String {
         let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
@@ -145,7 +144,6 @@ struct DashboardView: View {
                 }
             }
             .headerProminence(.increased)
-            .redacted(reason: hidesAmounts ? .privacy : [])
             .navigationTitle("Dashboard")
             .navigationSubtitle(periodSubtitle)
             .expensesScreenStyle()
@@ -174,11 +172,11 @@ struct DashboardView: View {
                     }
 
                     Button {
-                        withAnimation(.snappy(duration: 0.18)) {
-                            hidesAmounts.toggle()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            model.amountsHidden.toggle()
                         }
                     } label: {
-                        Label(hidesAmounts ? "Show amounts" : "Hide amounts", systemImage: hidesAmounts ? "eye" : "eye.slash")
+                        Label(model.amountsHidden ? "Show amounts" : "Hide amounts", systemImage: model.amountsHidden ? "eye" : "eye.slash")
                     }
                 }
             }
@@ -320,38 +318,6 @@ private enum DashboardPeriod: String, CaseIterable, Identifiable {
     }
 }
 
-// "2026-10" → the locale's short month name.
-private func shortMonth(_ month: String) -> String {
-    Calendar.current.shortStandaloneMonthSymbols[Int(month.suffix(2))! - 1]
-}
-
-private func usedRatio(spent: Int, budget: Int) -> Double {
-    if budget > 0 {
-        return Double(spent) / Double(budget)
-    }
-    return spent > 0 ? 1 : 0
-}
-
-private struct SectionLink: View {
-    let title: String
-    let destination: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
-                Image(systemName: "chevron.forward")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .tint(.primary)
-        .accessibilityHint("Opens \(destination)")
-    }
-}
-
 private struct DashboardSummary: View {
     @Environment(\.colorScheme) private var scheme
 
@@ -365,16 +331,16 @@ private struct DashboardSummary: View {
             Text("Spent")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text(AppFormatters.euros(kpis.expenses))
+            AmountText(kpis.expenses)
                 .font(.title.weight(.semibold))
-                .monospacedDigit()
                 .padding(.vertical, 1)
-                .privacySensitive()
             if let deltas = dashboard.deltas {
-                Text("\(AppFormatters.signedEuros(deltas.expenses, decimals: false)) vs previous")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .privacySensitive()
+                HStack(spacing: 4) {
+                    AmountText(deltas.expenses, decimals: false, signed: true)
+                    Text("vs previous")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             if let budget = dashboard.budgetPace {
@@ -387,9 +353,9 @@ private struct DashboardSummary: View {
                 .padding(.vertical, 12)
 
             HStack(alignment: .top, spacing: 0) {
-                metric("Balance", AppFormatters.euros(kpis.balance), .primary)
-                metric("Cash in", AppFormatters.euros(kpis.income), .primary)
-                metric("Net", AppFormatters.signedEuros(net), net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
+                metric("Balance", AmountText(kpis.balance), .primary)
+                metric("Cash in", AmountText(kpis.income), .primary)
+                metric("Net", AmountText(net, signed: true), net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
             }
         }
         .padding(.vertical, 6)
@@ -400,58 +366,32 @@ private struct DashboardSummary: View {
             HStack {
                 Text("Overall budget")
                 Spacer()
-                Text("\(AppFormatters.euros(budget.spentCents, decimals: false)) of \(AppFormatters.euros(budget.budgetCents, decimals: false))")
-                    .monospacedDigit()
-                    .privacySensitive()
+                HStack(spacing: 4) {
+                    AmountText(budget.spentCents, decimals: false)
+                    Text("of")
+                    AmountText(budget.budgetCents, decimals: false)
+                }
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
-            BudgetBar(ratio: usedRatio(spent: budget.spentCents, budget: budget.budgetCents), over: budget.remainingCents < 0, pace: pace)
+            BudgetBar(spentCents: budget.spentCents, budgetCents: budget.budgetCents, pace: pace)
                 .padding(.top, 9)
         }
     }
 
-    private func metric(_ label: String, _ value: String, _ color: Color) -> some View {
+    private func metric(_ label: String, _ value: AmountText, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Text(value)
+            value
                 .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-                .privacySensitive()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct BudgetBar: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let ratio: Double
-    let over: Bool
-    let pace: Double
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.08))
-                Capsule()
-                    .fill(over ? ExpensesTheme.expense(for: scheme) : Color.primary.opacity(0.55))
-                    .frame(width: geometry.size.width * min(max(ratio, 0), 1))
-                Rectangle()
-                    .fill(Color.primary)
-                    .frame(width: 1.5, height: 11)
-                    .offset(x: geometry.size.width * pace - 0.75)
-            }
-        }
-        .frame(height: 6)
-        .accessibilityHidden(true)
     }
 }
 
@@ -471,19 +411,15 @@ private struct CategoryBudgetRow: View {
                     Text(budget.scopeLabel)
                         .lineLimit(1)
                     Spacer()
-                    Group {
-                        if over {
-                            Text("\(Text(AppFormatters.euros(-budget.remainingCents, decimals: false)).foregroundStyle(ExpensesTheme.expense(for: scheme))) over")
-                        } else {
-                            Text("\(AppFormatters.euros(budget.remainingCents, decimals: false)) left")
-                        }
+                    HStack(spacing: 4) {
+                        AmountText(abs(budget.remainingCents), decimals: false)
+                            .foregroundStyle(over ? ExpensesTheme.expense(for: scheme) : .secondary)
+                        Text(over ? "over" : "left")
                     }
                     .font(.subheadline)
-                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .privacySensitive()
                 }
-                BudgetBar(ratio: usedRatio(spent: budget.spentCents, budget: budget.amountCents), over: over, pace: pace)
+                BudgetBar(spentCents: budget.spentCents, budgetCents: budget.amountCents, pace: pace)
             }
         }
         .padding(.vertical, 4)
@@ -491,39 +427,9 @@ private struct CategoryBudgetRow: View {
     }
 }
 
-private struct LedgerRow: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let transaction: TransactionListItem
-    let category: CategorySummary?
-
-    var body: some View {
-        let income = transaction.type == "income"
-        HStack(spacing: 12) {
-            CategoryGlyph(categoryID: category?.id, iconKey: category?.icon)
-            Text(transaction.title ?? "Untitled")
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(income ? AppFormatters.signedEuros(transaction.amountCents) : AppFormatters.euros(transaction.amountCents))
-                .monospacedDigit()
-                .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
-                .privacySensitive()
-        }
-        .contentShape(Rectangle())
-    }
-}
-
-private struct ChartMessage: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, minHeight: 120)
-    }
-}
-
 private struct BalanceSection: View {
+    @Environment(AppModel.self) private var model
+
     let history: Result<BalanceHistoryResponse, APIErrorInfo>?
     let forecast: Result<ForecastResponse, APIErrorInfo>?
 
@@ -564,10 +470,13 @@ private struct BalanceSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Balance")
                 if case .success(let response) = history, !response.months.isEmpty, let final = projected.last {
-                    Text("likely \(AppFormatters.euros(final.endBalanceCents, decimals: false)) in \(shortMonth(final.month))")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .privacySensitive()
+                    HStack(spacing: 4) {
+                        Text("likely")
+                        AmountText(final.endBalanceCents, decimals: false)
+                        Text("in \(shortMonth(final.month))")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
@@ -603,20 +512,20 @@ private struct BalanceSection: View {
                 )
                 .foregroundStyle(Color.primary.opacity(0.07))
                 .accessibilityLabel("\(labels[range.index]) 80% range")
-                .accessibilityValue("\(AppFormatters.euros(range.low)) to \(AppFormatters.euros(range.high))")
+                .accessibilityValue("\(model.amountString(range.low)) to \(model.amountString(range.high))")
             }
             ForEach(actualPoints) { point in
                 LineMark(x: .value("Month", point.index), y: .value("Balance", point.cents), series: .value("Series", "Actual"))
                     .foregroundStyle(Color.primary)
                     .accessibilityLabel(labels[point.index])
-                    .accessibilityValue(AppFormatters.euros(point.cents))
+                    .accessibilityValue(model.amountString(point.cents))
             }
             ForEach(likelyPoints) { point in
                 LineMark(x: .value("Month", point.index), y: .value("Balance", point.cents), series: .value("Series", "Likely"))
                     .foregroundStyle(Color.secondary)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                     .accessibilityLabel("\(labels[point.index]) likely")
-                    .accessibilityValue(AppFormatters.euros(point.cents))
+                    .accessibilityValue(model.amountString(point.cents))
             }
             if !projected.isEmpty {
                 RuleMark(x: .value("Month", todayIndex))
@@ -646,6 +555,7 @@ private struct BalanceSection: View {
 }
 
 private struct SpendingBandsSection: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
 
     let bands: Result<CategoryBandsResponse, APIErrorInfo>?
@@ -687,8 +597,8 @@ private struct SpendingBandsSection: View {
                     Text(shortMonth(month.month))
                         .foregroundStyle(.secondary)
                         .gridColumnAlignment(.leading)
-                        .accessibilityLabel("\(shortMonth(month.month)), \(AppFormatters.euros(month.totalCents))")
-                        .accessibilityValue(segments.map { "\($0.name) \(AppFormatters.euros($0.amountCents))" }.joined(separator: ", "))
+                        .accessibilityLabel("\(shortMonth(month.month)), \(model.amountString(month.totalCents))")
+                        .accessibilityValue(segments.map { "\($0.name) \(model.amountString($0.amountCents))" }.joined(separator: ", "))
                     GeometryReader { geometry in
                         let width = geometry.size.width - CGFloat(max(segments.count - 1, 0))
                         HStack(spacing: 1) {
@@ -702,10 +612,8 @@ private struct SpendingBandsSection: View {
                     }
                     .frame(height: 14)
                     .accessibilityHidden(true)
-                    Text(AppFormatters.euros(month.totalCents))
-                        .monospacedDigit()
+                    AmountText(month.totalCents)
                         .gridColumnAlignment(.trailing)
-                        .privacySensitive()
                         .accessibilityHidden(true)
                 }
             }
@@ -737,6 +645,7 @@ private struct SpendingBandsSection: View {
 }
 
 private struct CategoryShareSection: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @State private var showsIncome = false
 
@@ -760,15 +669,13 @@ private struct CategoryShareSection: View {
                         SectorMark(angle: .value("Amount", item.amountCents), innerRadius: .ratio(0.64), angularInset: 1)
                             .foregroundStyle(ExpensesTheme.category(item.categoryID, for: scheme))
                             .accessibilityLabel(item.name)
-                            .accessibilityValue(AppFormatters.euros(item.amountCents))
+                            .accessibilityValue(model.amountString(item.amountCents))
                     }
                     .chartLegend(.hidden)
                     .frame(width: 112, height: 112)
                     .overlay {
-                        Text(AppFormatters.euros(total, decimals: false))
+                        AmountText(total, decimals: false)
                             .font(.footnote.weight(.semibold))
-                            .monospacedDigit()
-                            .privacySensitive()
                     }
 
                     VStack(alignment: .leading, spacing: 5) {

@@ -13,7 +13,7 @@
 		001000000000000000000004 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000004 /* APIModels.swift */; };
 		001000000000000000000005 /* ExpensesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000005 /* ExpensesAPIClient.swift */; };
 		001000000000000000000006 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000006 /* KeychainStore.swift */; };
-		001000000000000000000007 /* GlassSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000007 /* GlassSurface.swift */; };
+		001000000000000000000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000007 /* Theme.swift */; };
 		001000000000000000000008 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000008 /* AuthView.swift */; };
 		001000000000000000000009 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000009 /* DiagnosticsView.swift */; };
 		001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000010 /* PrivacyOverlayModifier.swift */; };
@@ -42,6 +42,7 @@
 		001000000000000000000033 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000035 /* AppIcon.icon */; };
 		001000000000000000000036 /* AISettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000036 /* AISettingsModels.swift */; };
 		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
+		001000000000000000000038 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* Components.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,7 +52,7 @@
 		002000000000000000000004 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 		002000000000000000000005 /* ExpensesAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesAPIClient.swift; sourceTree = "<group>"; };
 		002000000000000000000006 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
-		002000000000000000000007 /* GlassSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassSurface.swift; sourceTree = "<group>"; };
+		002000000000000000000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		002000000000000000000008 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		002000000000000000000009 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		002000000000000000000010 /* PrivacyOverlayModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyOverlayModifier.swift; sourceTree = "<group>"; };
@@ -82,6 +83,7 @@
 		002000000000000000000035 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		002000000000000000000036 /* AISettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsModels.swift; sourceTree = "<group>"; };
 		002000000000000000000037 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
+		002000000000000000000038 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -152,7 +154,8 @@
 		004000000000000000000006 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
-				002000000000000000000007 /* GlassSurface.swift */,
+				002000000000000000000038 /* Components.swift */,
+				002000000000000000000007 /* Theme.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -376,6 +379,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000038 /* Components.swift in Sources */,
 				001000000000000000000001 /* ExpensesApp.swift in Sources */,
 				001000000000000000000002 /* AppModel.swift in Sources */,
 				001000000000000000000003 /* RootView.swift in Sources */,
@@ -383,7 +387,7 @@
 				001000000000000000000011 /* DomainModels.swift in Sources */,
 				001000000000000000000005 /* ExpensesAPIClient.swift in Sources */,
 				001000000000000000000006 /* KeychainStore.swift in Sources */,
-				001000000000000000000007 /* GlassSurface.swift in Sources */,
+				001000000000000000000007 /* Theme.swift in Sources */,
 				001000000000000000000008 /* AuthView.swift in Sources */,
 				001000000000000000000013 /* DashboardView.swift in Sources */,
 				001000000000000000000009 /* DiagnosticsView.swift in Sources */,

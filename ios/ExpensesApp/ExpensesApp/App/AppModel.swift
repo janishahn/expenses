@@ -27,6 +27,12 @@ final class AppModel {
             UserDefaults.standard.set(appearancePreference, forKey: Self.appearancePreferenceKey)
         }
     }
+    // Privacy mode hides every amount on screen, as the web's privacy toggle does.
+    var amountsHidden: Bool {
+        didSet {
+            UserDefaults.standard.set(amountsHidden, forKey: Self.amountsHiddenKey)
+        }
+    }
     var status: MobileStatus?
     var llmEnabled: Bool { status?.llmEnabled ?? false }
     var identity: MobileAuthIdentity?
@@ -96,12 +102,14 @@ final class AppModel {
     private let keychain = KeychainStore(service: ExpensesAppStorage.mobileKeychainService)
 
     private static let appearancePreferenceKey = "expenses.appearancePreference"
+    private static let amountsHiddenKey = "expenses.amountsHidden"
 
     init() {
         let storedURL = UserDefaults.standard.string(forKey: ExpensesAppStorage.baseURLKey)
         let initialBaseURLString = storedURL ?? ExpensesAppStorage.defaultLocalBackendURL
         baseURLString = initialBaseURLString
         appearancePreference = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey) ?? "system"
+        amountsHidden = UserDefaults.standard.bool(forKey: Self.amountsHiddenKey)
         apiClient = ExpensesAPIClient(baseURL: URL(string: initialBaseURLString))
     }
 

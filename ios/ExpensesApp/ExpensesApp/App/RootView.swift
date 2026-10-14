@@ -137,7 +137,6 @@ struct RootView: View {
                 moreDestinationSection("Account", destinations: AppDestination.accountDestinations)
             }
             .navigationTitle("More")
-            .navigationBarTitleDisplayMode(.inline)
             .expensesScreenStyle()
             .navigationDestination(for: AppDestination.self) { destination in
                 destinationView(destination)
@@ -154,10 +153,11 @@ struct RootView: View {
         Section(title) {
             ForEach(destinations) { destination in
                 NavigationLink(value: destination) {
-                    MoreDestinationRow(destination: destination)
+                    Label(destination.title, systemImage: destination.systemImage)
                 }
             }
         }
+        .expensesRowBackground()
     }
 
     private var quickAddButton: some View {
@@ -322,28 +322,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
 
     static var accountDestinations: [AppDestination] {
         [.account, .admin]
-    }
-}
-
-private struct MoreDestinationRow: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let destination: AppDestination
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Label {
-                Text(destination.title)
-                    .font(.body.weight(.medium))
-            } icon: {
-                Image(systemName: destination.systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(ExpensesTheme.accent(for: scheme))
-                    .frame(width: 30, height: 30)
-                    .background(.thinMaterial, in: Circle())
-            }
-        }
-        .padding(.vertical, 3)
     }
 }
 
