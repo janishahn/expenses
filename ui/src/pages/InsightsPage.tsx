@@ -127,6 +127,7 @@ function InsightsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [gridKind, setGridKind] = useState<GridKind>("expense")
   const [emptyTagMode, setEmptyTagMode] = useState<TagMode>("include")
+  const [now] = useState(() => new Date())
 
   const period = periodFromSearch(searchParams, DEFAULT_PERIOD)
   const includedTagIds = parseTagIds(searchParams, ["tag", "tags"])
@@ -190,6 +191,10 @@ function InsightsPage() {
   const recurring = data.recurring_cents
   const seriesMonths = series.map((point) => `${point.year}-${String(point.month).padStart(2, "0")}`)
   const seriesLabels = axisLabels(seriesMonths)
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  const seriesPartial = seriesMonths[seriesMonths.length - 1] === thisMonth ? seriesMonths.length - 1 : undefined
+  const flowIncome = series.map((point) => point.income_cents)
+  const flowExpenses = series.map((point) => point.expense_cents)
   const splitFull = split.data?.rows.slice(0, -1) ?? []
   const recurringFull = sum(splitFull.map((row) => row.recurring_cents))
   const spentFull = recurringFull + sum(splitFull.map((row) => row.other_cents))
@@ -227,6 +232,9 @@ function InsightsPage() {
     { key: "expenses", label: "Expenses", color: "var(--ink)", mark: "line" },
     { key: "saved", label: "Saved", color: "var(--saved)", mark: "area" },
   ]
+  if (series.some((point, index) => index !== seriesPartial && point.expense_cents > point.income_cents)) {
+    flowLegend.push({ key: "overspent", label: "Overspent", color: "var(--overspent)", mark: "area" })
+  }
   const flowEvery = seriesLabels.length <= 13 ? (isDesktop ? 1 : 3) : Math.ceil(seriesLabels.length / (isDesktop ? 6 : 3))
 
   // Rolling windows: the last 12 full months and the month in progress.
@@ -332,7 +340,7 @@ function InsightsPage() {
       <CardRow>
         <ChartCard
           title="Income and expenses"
-          meta={income > 0 ? `${Math.round((saved / income) * 100)} % saved` : undefined}
+          meta={income > 0 ? `${Math.round((Math.abs(saved) / income) * 100)} % ${saved < 0 ? "overspent" : "saved"}` : undefined}
           legend={flowLegend}
           empty={series.length ? undefined : "No transactions in this period."}
           table={
@@ -359,32 +367,30 @@ function InsightsPage() {
               zero
               formatY={amountTick}
               xEvery={flowEvery}
+              partial={seriesPartial}
               focus={focus}
               series={[
-                { key: "income", values: series.map((point) => point.income_cents), color: "var(--income)" },
-                { key: "expenses", values: series.map((point) => point.expense_cents) },
+                { key: "income", values: flowIncome, color: "var(--income)" },
+                { key: "expenses", values: flowExpenses },
               ]}
               bands={[
-                {
-                  key: "saved",
-                  lo: series.map((point) => point.expense_cents),
-                  hi: series.map((point) => point.income_cents),
-                  fill: "var(--saved)",
-                },
+                { key: "saved", lo: flowExpenses, hi: flowIncome, fill: "var(--saved)", clip: "above" },
+                { key: "overspent", lo: flowExpenses, hi: flowIncome, fill: "var(--overspent)", clip: "below" },
               ]}
               tooltip={(index) => {
                 const point = series[index]
                 const pointSaved = point.income_cents - point.expense_cents
+                const share = point.income_cents > 0 ? ` (${Math.round((Math.abs(pointSaved) / point.income_cents) * 100)} %)` : ""
                 return (
                   <ChartTooltip
-                    title={MONTH_YEAR.format(monthDate(seriesMonths[index]))}
+                    title={`${MONTH_YEAR.format(monthDate(seriesMonths[index]))}${index === seriesPartial ? " so far" : ""}`}
                     rows={[
                       { key: "income", label: "Income", value: <Amount cents={point.income_cents} />, color: "var(--income)", mark: "line" },
                       { key: "expenses", label: "Expenses", value: <Amount cents={point.expense_cents} />, color: "var(--ink)", mark: "line" },
                       {
                         key: "saved",
-                        label: point.income_cents > 0 ? `Saved (${Math.round((pointSaved / point.income_cents) * 100)} %)` : "Saved",
-                        value: <Amount cents={pointSaved} />,
+                        label: `${pointSaved < 0 ? "Overspent" : "Saved"}${share}`,
+                        value: <Amount cents={Math.abs(pointSaved)} />,
                       },
                     ]}
                   />

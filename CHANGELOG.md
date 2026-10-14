@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
+- Insights' Income and expenses chart shades months where expenses exceed income as Overspent instead of Saved, and draws the month in progress dashed without shading.
 
 ### Fixed
 - Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.

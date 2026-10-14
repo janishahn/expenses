@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
+import { useId, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
 import clsx from "clsx"
 import { usePrivacy } from "../../app/privacy"
 import type { ChartFocus } from "./ChartCard"
@@ -73,8 +73,9 @@ export type LineSeries = {
   width?: number
 }
 
-// A shaded area between two value lists, such as the forecast's 80 % range.
-export type LineBand = { key: string; lo: Array<number | null>; hi: Array<number | null>; fill?: string }
+// A shaded area between two value lists, such as the forecast's 80 % range. `clip` keeps only the
+// part above or below the lo line, such as where income is above or below expenses.
+export type LineBand = { key: string; lo: Array<number | null>; hi: Array<number | null>; fill?: string; clip?: "above" | "below" }
 
 export function LineChart({
   labels,
@@ -83,6 +84,7 @@ export function LineChart({
   height = 190,
   zero = false,
   mark,
+  partial,
   idle,
   yAxis = false,
   formatY,
@@ -98,6 +100,9 @@ export function LineChart({
   zero?: boolean
   // Today: a dotted vertical mark at this index.
   mark?: number
+  // The first index with incomplete values, such as the month in progress: lines dash into it
+  // and bands stop before it.
+  partial?: number
   // The index whose points show while the pointer is elsewhere.
   idle?: number
   // Full-page analysis charts label the y-axis; dashboard and peek charts do not.
@@ -111,6 +116,7 @@ export function LineChart({
   const hidden = usePrivacy()
   const root = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ index: number; at: PointerAt } | null>(null)
+  const clipId = useId()
   const H = height
   const n = labels.length
   const values = [...series.flatMap((entry) => entry.values), ...bands.flatMap((band) => [...band.lo, ...band.hi])].filter(
@@ -129,6 +135,7 @@ export function LineChart({
   const x = (index: number) => (n > 1 ? 8 + (index / (n - 1)) * (W - 16) : W / 2)
   const y = (value: number) => 6 + (1 - (value - lo) / (hi - lo)) * (H - 12)
   const ticks = niceTicks(lo, hi, 3)
+  const cut = partial ?? n
 
   const track = (event: PointerEvent<HTMLDivElement>) => {
     if (!root.current) return
@@ -164,17 +171,26 @@ export function LineChart({
             <line x1={0} x2={W} y1={y(0)} y2={y(0)} stroke="var(--ink-3)" vectorEffect="non-scaling-stroke" />
           ) : null}
           {bands.map((band) =>
-            runs(band.lo.map((value, index) => (value === null || band.hi[index] === null ? null : value))).map((run) => (
-              <polygon
-                key={`${band.key}-${run[0]}`}
-                fill={band.fill ?? "var(--band)"}
-                opacity={dimmed(focus, band.key) ? 0.22 : 1}
-                points={[
-                  ...run.map((index) => `${x(index)},${y(band.hi[index] as number)}`),
-                  ...[...run].reverse().map((index) => `${x(index)},${y(band.lo[index] as number)}`),
-                ].join(" ")}
-              />
-            ))
+            runs(band.lo.map((value, index) => (value === null || band.hi[index] === null || index >= cut ? null : value))).map((run) => {
+              const lo = run.map((index) => `${x(index)},${y(band.lo[index] as number)}`)
+              const clip = `${clipId}${band.key}${run[0]}`
+              const edge = band.clip === "above" ? 0 : H
+              return (
+                <g key={`${band.key}-${run[0]}`}>
+                  {band.clip ? (
+                    <clipPath id={clip}>
+                      <polygon points={`${x(run[0])},${edge} ${lo.join(" ")} ${x(run[run.length - 1])},${edge}`} />
+                    </clipPath>
+                  ) : null}
+                  <polygon
+                    fill={band.fill ?? "var(--band)"}
+                    clipPath={band.clip && `url(#${clip})`}
+                    opacity={dimmed(focus, band.key) ? 0.22 : 1}
+                    points={[...run.map((index) => `${x(index)},${y(band.hi[index] as number)}`), ...[...lo].reverse()].join(" ")}
+                  />
+                </g>
+              )
+            })
           )}
           {mark !== undefined ? (
             <line
@@ -189,14 +205,18 @@ export function LineChart({
           ) : null}
           {series.map((entry) =>
             runs(entry.values)
-              .filter((run) => run.length > 1)
-              .map((run) => (
+              .flatMap((run) => [
+                { run: run.filter((index) => index < cut), dash: entry.dash },
+                { run: run.filter((index) => index >= cut - 1), dash: true },
+              ])
+              .filter(({ run }) => run.length > 1)
+              .map(({ run, dash }) => (
                 <polyline
                   key={`${entry.key}-${run[0]}`}
                   fill="none"
                   stroke={entry.color ?? "var(--ink)"}
                   strokeWidth={entry.width ?? 1.75}
-                  strokeDasharray={entry.dash ? "4 4" : undefined}
+                  strokeDasharray={dash ? "4 4" : undefined}
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                   opacity={dimmed(focus, entry.key) ? 0.22 : 1}
