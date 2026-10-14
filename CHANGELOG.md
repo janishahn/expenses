@@ -7,22 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- The dashboard's `budget_pace` includes the overall budget's `spent_cents`, `remaining_cents`, `daily_remaining_cents`, and `days_remaining`.
-
 ### Changed
-- On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
 - Redesigned the iOS app to match the web redesign in light and dark. Dashboard, Transactions, Budgets, and Insights are tabs; More lists Forecast, Uncategorized, the Manage screens, the Tools, Settings, and Admin. Every screen takes the web page's content: transaction and Manage details save each field as you edit it, Uncategorized accepts or rejects suggested categories, Trash restores or deletes in bulk, Budgets steps through months with pace, Insights shows the month grids, daily calendar, and budget history, Reconcile reviews statement rows in suggested, several-match, and no-match groups with ignore reasons and a Resolved view, Settings and Admin have the web's sections, and the Assistant lists each tool step with its result. Without a stored session the app opens on one sign-in screen.
 - Hide amounts on iOS covers every amount in the app, including Assistant answers, and blurs amounts instead of drawing gray boxes.
 - iOS CSV export moves from Reports to Settings > Import and Export, next to the portable archive. Reports builds the web's report, including category and tag scope, and opens the PDF in Quick Look.
-- Update the iOS app together with the server, because it reads the new `budget_pace` fields.
+- The redesigned iOS app needs a 0.7.1 or later server.
 
 ### Removed
 - The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
 
 ### Fixed
 - iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
+
+## [0.7.1] - 2026-10-14
+
+### Added
+- Reconcile can ignore every remaining row to review at once from ⋯ › Ignore remaining rows…, within the account filter. `POST /api/reconciliation/bank-rows/ignore-open` ignores all open rows, optionally for one `account`, and returns their ids.
+- The dashboard's `budget_pace` includes the overall budget's `spent_cents`, `remaining_cents`, `daily_remaining_cents`, and `days_remaining`.
+
+### Changed
+- On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
+- Insights' Income and expenses chart shades months where expenses exceed income as Overspent instead of Saved, and draws the month in progress dashed without shading.
+
+### Fixed
 - Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.
+- Text fields filled in by the browser or a password manager showed the browser's autofill color as a box inside the field.
 
 ## [0.7.0] - 2026-10-13
 
@@ -440,7 +449,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/janishahn/expenses/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/janishahn/expenses/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/janishahn/expenses/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/janishahn/expenses/compare/v0.5.3...v0.6.0

@@ -737,6 +737,16 @@ class BankAcceptSuggestionsIn(BaseModel):
     row_ids: list[int] = Field(..., max_length=500)
 
 
+class BankIgnoreOpenIn(BaseModel):
+    # The account filter; without it every row to review is ignored.
+    account: Optional[str] = None
+
+
+class BankIgnoreOpenOut(BaseModel):
+    # The rows ignored by this request, so an Undo can reopen them.
+    row_ids: list[int]
+
+
 class BankAcceptedMatchOut(BaseModel):
     row_id: int
     transaction_id: int
