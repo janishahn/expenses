@@ -97,6 +97,86 @@ enum PeriodSelection: Hashable {
     }
 }
 
+/// A calendar month as the API names it, such as "2026-10".
+struct CalendarMonth: Hashable, Comparable {
+    let year: Int
+    let month: Int
+
+    static var current: CalendarMonth {
+        let parts = Calendar.current.dateComponents([.year, .month], from: .now)
+        return CalendarMonth(year: parts.year!, month: parts.month!)
+    }
+
+    var value: String {
+        String(format: "%04d-%02d", year, month)
+    }
+
+    var days: Int {
+        Self.calendar.range(of: .day, in: .month, for: start)!.count
+    }
+
+    /// The first day at UTC midnight, as the API's days decode.
+    var start: Date {
+        Self.calendar.date(from: DateComponents(year: year, month: month, day: 1))!
+    }
+
+    /// "October 2026".
+    var title: String {
+        start.formatted(Date.FormatStyle(timeZone: .gmt).month(.wide).year())
+    }
+
+    /// "Oct".
+    var shortTitle: String {
+        start.formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated))
+    }
+
+    /// The month as a page period, as a ledger opens on it.
+    var period: PeriodSelection {
+        let current = Self.current
+        return .month(offset: (year - current.year) * 12 + month - current.month)
+    }
+
+    /// Days that have passed: all of a past month, none of a future one.
+    var daysElapsed: Int {
+        let current = Self.current
+        if self < current {
+            return days
+        }
+        return self > current ? 0 : Calendar.current.component(.day, from: .now)
+    }
+
+    /// The share of the month that has passed, while it is under way.
+    var pace: Double? {
+        self == .current ? Double(daysElapsed) / Double(days) : nil
+    }
+
+    func adding(_ months: Int) -> CalendarMonth {
+        let index = year * 12 + month - 1 + months
+        return CalendarMonth(year: index / 12, month: index % 12 + 1)
+    }
+
+    func day(_ day: Int) -> Date {
+        Self.calendar.date(byAdding: .day, value: day - 1, to: start)!
+    }
+
+    static func < (lhs: CalendarMonth, rhs: CalendarMonth) -> Bool {
+        (lhs.year, lhs.month) < (rhs.year, rhs.month)
+    }
+
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        return calendar
+    }()
+}
+
+extension CalendarMonth {
+    /// "2026-10".
+    init(_ value: String) {
+        self.init(year: Int(value.prefix(4))!, month: Int(value.suffix(2))!)
+    }
+}
+
 /// The page period as a toolbar menu: step by month, pick a preset, or set a range.
 struct PeriodMenu: View {
     @Binding var period: PeriodSelection

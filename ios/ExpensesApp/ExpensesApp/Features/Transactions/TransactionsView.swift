@@ -114,6 +114,10 @@ struct TransactionsView: View {
             .onChange(of: model.transactionQuery) {
                 clearSelection()
             }
+            // Insights opens the ledger on a new query.
+            .onChange(of: model.transactionQuery.search) { _, value in
+                search = value
+            }
             .onChange(of: selecting) {
                 clearSelection()
             }
@@ -314,12 +318,8 @@ struct TransactionsView: View {
         if let categoryID = query.categoryID {
             parts.append(model.knownCategories.first { $0.id == categoryID }?.name ?? "1 category")
         }
-        if !query.tagIDs.isEmpty {
-            let tags = model.transactions?.tags ?? []
-            let names = query.tagIDs.count == 1
-                ? tags.first { query.tagIDs.contains($0.id) }?.name ?? "1 tag"
-                : "\(query.tagIDs.count) tags"
-            parts.append(query.tagMode == .include ? "Only \(names)" : "Excluding \(names)")
+        if let tags = query.tagSummary(model.transactions?.tags ?? []) {
+            parts.append(tags)
         }
         return parts.joined(separator: " · ")
     }
@@ -583,42 +583,7 @@ private struct TransactionFilterSheet: View {
                 }
                 .expensesRowBackground()
 
-                Section("Tags") {
-                    Picker("Tag filter", selection: $query.tagMode) {
-                        Text("Only include").tag(TagFilterMode.include)
-                        Text("Exclude").tag(TagFilterMode.exclude)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-
-                    if tags.isEmpty {
-                        Text("No tags")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(tags) { tag in
-                        Button {
-                            if query.tagIDs.contains(tag.id) {
-                                query.tagIDs.remove(tag.id)
-                            } else {
-                                query.tagIDs.insert(tag.id)
-                            }
-                        } label: {
-                            HStack {
-                                Text(tag.name)
-                                Spacer()
-                                if query.tagIDs.contains(tag.id) {
-                                    Image(systemName: "checkmark")
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .tint(.primary)
-                        .accessibilityAddTraits(query.tagIDs.contains(tag.id) ? .isSelected : [])
-                    }
-                }
-                .expensesRowBackground()
+                TagFilterSection(mode: $query.tagMode, ids: $query.tagIDs, tags: tags)
             }
             .navigationTitle("Filter")
             .navigationBarTitleDisplayMode(.inline)

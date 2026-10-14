@@ -465,44 +465,29 @@ struct ExpensesAPIClient {
         )
     }
 
-    func insights(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int?,
-        token: String
-    ) async throws -> InsightsResponse {
-        try await request(
-            path: insightsPath(
-                base: "/api/insights",
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                trendCategoryID: trendCategoryID
-            ),
-            bearerToken: token
-        )
+    /// Insights for the query's period and tags; it takes no type, category or search.
+    func insights(_ query: TransactionQuery, token: String) async throws -> InsightsResponse {
+        var components = URLComponents()
+        components.path = "/api/insights"
+        components.queryItems = query.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
-    func insightsFlow(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        token: String
-    ) async throws -> InsightsFlowResponse {
-        try await request(
-            path: insightsPath(
-                base: "/api/insights/flow",
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs
-            ),
-            bearerToken: token
-        )
+    /// `kind` is "expense", "income" or "tag".
+    func insightsMonthGrid(kind: String, token: String) async throws -> InsightsMonthGridResponse {
+        try await request(path: "/api/insights/month-grid?kind=\(kind)", bearerToken: token)
     }
 
-    func durablePurchases(token: String) async throws -> DurablePurchasesResponse {
-        try await request(path: "/api/durable-purchases", bearerToken: token)
+    func insightsRecurringSplit(token: String) async throws -> InsightsRecurringSplitResponse {
+        try await request(path: "/api/insights/recurring-split", bearerToken: token)
+    }
+
+    func insightsDayCalendar(token: String) async throws -> InsightsDayCalendarResponse {
+        try await request(path: "/api/insights/day-calendar", bearerToken: token)
+    }
+
+    func insightsBudgetHistory(token: String) async throws -> InsightsBudgetHistoryResponse {
+        try await request(path: "/api/insights/budget-history", bearerToken: token)
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest, token: String) async throws -> AttachmentDownload {
@@ -1011,27 +996,6 @@ struct ExpensesAPIClient {
             contentType: "multipart/form-data; boundary=\(boundary)",
             bodyData: body
         )
-    }
-
-    private func insightsPath(
-        base: String,
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int? = nil
-    ) -> String {
-        var components = URLComponents()
-        components.path = base
-        var items = [URLQueryItem(name: "period", value: period)]
-        if let tagID {
-            items.append(URLQueryItem(name: "tag", value: String(tagID)))
-        }
-        appendExcludedTags(excludedTagIDs, to: &items)
-        if let trendCategoryID {
-            items.append(URLQueryItem(name: "trend_category", value: String(trendCategoryID)))
-        }
-        components.queryItems = items
-        return components.string ?? "\(base)?period=\(period)"
     }
 
     private func listPath(_ base: String, _ queryItems: [URLQueryItem], page: Int, limit: Int = 50) -> String {

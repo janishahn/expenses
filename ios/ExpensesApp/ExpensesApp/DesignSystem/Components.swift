@@ -72,7 +72,7 @@ struct SectionLink: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .tint(.primary)
+        .buttonStyle(.plain)
         .accessibilityHint("Opens \(destination)")
     }
 }

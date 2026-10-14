@@ -11,8 +11,8 @@ struct AddBudgetSheet: View {
     @State private var yearly = false
     @State private var amount = ""
     @State private var categoryID: Int?
-    @State private var start: BudgetMonth
-    @State private var end: BudgetMonth?
+    @State private var start: CalendarMonth
+    @State private var end: CalendarMonth?
     @State private var choosingStart = false
     @State private var choosingEnd = false
     @State private var amountError: String?
@@ -112,7 +112,7 @@ struct AddBudgetSheet: View {
             get: { yearly },
             set: { next in
                 yearly = next
-                start = next ? BudgetMonth(year: budgets.yearValue, month: 1) : budgets.budgetMonth
+                start = next ? CalendarMonth(year: budgets.yearValue, month: 1) : budgets.budgetMonth
                 end = nil
             }
         )
@@ -126,7 +126,7 @@ struct AddBudgetSheet: View {
         categories.first { $0.id == categoryID }
     }
 
-    private func label(_ period: BudgetMonth) -> String {
+    private func label(_ period: CalendarMonth) -> String {
         yearly ? String(period.year) : period.start.formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated).year())
     }
 
@@ -138,7 +138,7 @@ struct AddBudgetSheet: View {
         amountError = nil
         formError = nil
         let frequency = yearly ? "yearly" : "monthly"
-        let first = yearly ? BudgetMonth(year: start.year, month: 1) : start
+        let first = yearly ? CalendarMonth(year: start.year, month: 1) : start
         if let existing = budgets.templates.first(where: {
             $0.frequency == frequency && $0.category?.id == categoryID
                 && $0.startsOn <= first.start && ($0.endsOn.map { $0 >= first.start } ?? true)
@@ -146,7 +146,7 @@ struct AddBudgetSheet: View {
             formError = "\(existing.category?.name ?? "All expense categories") already has a \(frequency) budget for this period. Edit that budget instead."
             return
         }
-        let last = end.map { yearly ? BudgetMonth(year: $0.year, month: 12) : $0 }
+        let last = end.map { yearly ? CalendarMonth(year: $0.year, month: 12) : $0 }
         if let last, last < first {
             formError = "The end must not be before the start."
             return
@@ -179,24 +179,24 @@ private struct PeriodPopover: View {
     @Environment(\.dismiss) private var dismiss
 
     let yearly: Bool
-    @State var value: BudgetMonth
+    @State var value: CalendarMonth
     var onClear: (() -> Void)?
-    let onDone: (BudgetMonth) -> Void
+    let onDone: (CalendarMonth) -> Void
 
-    private let years = Array((BudgetMonth.current.year - 10)...(BudgetMonth.current.year + 10))
+    private let years = Array((CalendarMonth.current.year - 10)...(CalendarMonth.current.year + 10))
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 0) {
                 if !yearly {
-                    Picker("Month", selection: Binding(get: { value.month }, set: { value = BudgetMonth(year: value.year, month: $0) })) {
+                    Picker("Month", selection: Binding(get: { value.month }, set: { value = CalendarMonth(year: value.year, month: $0) })) {
                         ForEach(1...12, id: \.self) { month in
                             Text(Calendar.current.standaloneMonthSymbols[month - 1]).tag(month)
                         }
                     }
                     .pickerStyle(.wheel)
                 }
-                Picker("Year", selection: Binding(get: { value.year }, set: { value = BudgetMonth(year: $0, month: value.month) })) {
+                Picker("Year", selection: Binding(get: { value.year }, set: { value = CalendarMonth(year: $0, month: value.month) })) {
                     ForEach(years, id: \.self) { year in
                         Text(String(year)).tag(year)
                     }

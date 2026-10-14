@@ -56,11 +56,14 @@ struct BudgetDetailView: View {
             guard let burndownRequest else {
                 return
             }
-            let result = await model.budgetBurndown(
-                month: burndownRequest.month.value,
-                scope: key.scopeCategoryID.map(String.init) ?? "overall",
-                compareMonth: burndownRequest.comparing ? burndownRequest.month.adding(-1).value : nil
-            )
+            let result = await model.chart {
+                try await $0.budgetBurndown(
+                    month: burndownRequest.month.value,
+                    scope: key.scopeCategoryID.map(String.init) ?? "overall",
+                    compareMonth: burndownRequest.comparing ? burndownRequest.month.adding(-1).value : nil,
+                    token: $1
+                )
+            }
             if !Task.isCancelled {
                 burndown = result
             }
@@ -73,7 +76,7 @@ struct BudgetDetailView: View {
     }
 
     private struct BurndownRequest: Equatable {
-        let month: BudgetMonth
+        let month: CalendarMonth
         let comparing: Bool
         let budgetCents: Int
     }

@@ -118,7 +118,15 @@ struct RootView: View {
         case .budgets:
             BudgetsView()
         case .insights:
-            InsightsView()
+            InsightsView(
+                openTransactions: { query in
+                    model.transactionQuery = query
+                    transactionsPath = []
+                    transactionsSelecting = false
+                    selectedPrimaryDestination = .transactions
+                },
+                openBudgets: { selectedPrimaryDestination = .budgets }
+            )
         case .forecast:
             ForecastView()
         case .digest:

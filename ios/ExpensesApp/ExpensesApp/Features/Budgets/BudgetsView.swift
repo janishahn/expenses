@@ -1,68 +1,6 @@
 import Charts
 import SwiftUI
 
-/// A calendar month as the budgets API names it, such as "2026-10".
-struct BudgetMonth: Hashable, Comparable {
-    let year: Int
-    let month: Int
-
-    static var current: BudgetMonth {
-        let parts = Calendar.current.dateComponents([.year, .month], from: .now)
-        return BudgetMonth(year: parts.year!, month: parts.month!)
-    }
-
-    var value: String {
-        String(format: "%04d-%02d", year, month)
-    }
-
-    var days: Int {
-        Self.calendar.range(of: .day, in: .month, for: start)!.count
-    }
-
-    /// The first day at UTC midnight, as the API's days decode.
-    var start: Date {
-        Self.calendar.date(from: DateComponents(year: year, month: month, day: 1))!
-    }
-
-    /// "October 2026".
-    var title: String {
-        start.formatted(Date.FormatStyle(timeZone: .gmt).month(.wide).year())
-    }
-
-    /// Days that have passed: all of a past month, none of a future one.
-    var daysElapsed: Int {
-        let current = Self.current
-        if self < current {
-            return days
-        }
-        return self > current ? 0 : Calendar.current.component(.day, from: .now)
-    }
-
-    /// The share of the month that has passed, while it is under way.
-    var pace: Double? {
-        self == .current ? Double(daysElapsed) / Double(days) : nil
-    }
-
-    func adding(_ months: Int) -> BudgetMonth {
-        let index = year * 12 + month - 1 + months
-        return BudgetMonth(year: index / 12, month: index % 12 + 1)
-    }
-
-    func day(_ day: Int) -> Date {
-        Self.calendar.date(byAdding: .day, value: day - 1, to: start)!
-    }
-
-    static func < (lhs: BudgetMonth, rhs: BudgetMonth) -> Bool {
-        (lhs.year, lhs.month) < (rhs.year, rhs.month)
-    }
-
-    static let calendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .gmt
-        return calendar
-    }()
-}
-
 /// A budget's period: a month, or a year for an annual budget.
 enum BudgetKind: Hashable {
     case month
@@ -76,8 +14,8 @@ struct BudgetKey: Hashable {
 }
 
 extension BudgetsResponse {
-    var budgetMonth: BudgetMonth {
-        BudgetMonth(year: year, month: month)
+    var budgetMonth: CalendarMonth {
+        CalendarMonth(year: year, month: month)
     }
 
     var overall: BudgetScope? {
@@ -120,7 +58,7 @@ extension BudgetsResponse {
     }
 
     private func activeTemplates(_ kind: BudgetKind) -> [BudgetTemplateRow] {
-        let day = kind == .month ? budgetMonth.start : BudgetMonth(year: yearValue, month: 1).start
+        let day = kind == .month ? budgetMonth.start : CalendarMonth(year: yearValue, month: 1).start
         let frequency = kind == .month ? "monthly" : "yearly"
         var scopes = Set<Int?>()
         return templates
@@ -132,7 +70,7 @@ extension BudgetsResponse {
 
 struct BudgetsView: View {
     @Environment(AppModel.self) private var model
-    @State private var month = BudgetMonth.current
+    @State private var month = CalendarMonth.current
     @State private var comparing = false
     @State private var showsInactive = false
     @State private var adding = false
@@ -141,7 +79,7 @@ struct BudgetsView: View {
     @State private var failure: String?
 
     private struct PaceRequest: Equatable {
-        let month: BudgetMonth
+        let month: CalendarMonth
         let comparing: Bool
         let budgetCents: Int
     }
@@ -225,11 +163,14 @@ struct BudgetsView: View {
             guard let paceRequest else {
                 return
             }
-            let result = await model.budgetBurndown(
-                month: paceRequest.month.value,
-                scope: "overall",
-                compareMonth: paceRequest.comparing ? paceRequest.month.adding(-1).value : nil
-            )
+            let result = await model.chart {
+                try await $0.budgetBurndown(
+                    month: paceRequest.month.value,
+                    scope: "overall",
+                    compareMonth: paceRequest.comparing ? paceRequest.month.adding(-1).value : nil,
+                    token: $1
+                )
+            }
             if !Task.isCancelled {
                 overallPace = (paceRequest, result)
             }
@@ -464,7 +405,7 @@ struct PaceChart: View {
     @Environment(AppModel.self) private var model
 
     let data: BudgetBurndownResponse
-    let month: BudgetMonth
+    let month: CalendarMonth
     let height: CGFloat
 
     private struct Point: Identifiable {

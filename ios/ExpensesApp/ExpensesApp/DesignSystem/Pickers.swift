@@ -183,3 +183,49 @@ struct TagPickerSheet: View {
         options.filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }
     }
 }
+
+/// Tags to include or exclude. The server takes one mode at a time.
+struct TagFilterSection: View {
+    @Binding var mode: TagFilterMode
+    @Binding var ids: Set<Int>
+    let tags: [TransactionTag]
+
+    var body: some View {
+        Section("Tags") {
+            Picker("Tag filter", selection: $mode) {
+                Text("Only include").tag(TagFilterMode.include)
+                Text("Exclude").tag(TagFilterMode.exclude)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if tags.isEmpty {
+                Text("No tags")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(tags) { tag in
+                Button {
+                    if ids.contains(tag.id) {
+                        ids.remove(tag.id)
+                    } else {
+                        ids.insert(tag.id)
+                    }
+                } label: {
+                    HStack {
+                        Text(tag.name)
+                        Spacer()
+                        if ids.contains(tag.id) {
+                            Image(systemName: "checkmark")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .tint(.primary)
+                .accessibilityAddTraits(ids.contains(tag.id) ? .isSelected : [])
+            }
+        }
+        .expensesRowBackground()
+    }
+}

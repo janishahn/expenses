@@ -63,9 +63,6 @@ final class AppModel {
     var digest: DigestResponse?
     var forecast: ForecastResponse?
     var forecastScenario: ForecastScenarioResponse?
-    var insights: InsightsResponse?
-    var insightsFlow: InsightsFlowResponse?
-    var durablePurchases: DurablePurchasesResponse?
     var reconciliation: BankReconciliationResponse?
     var adminInfo: AdminInfo?
     var adminSystemHealth: AdminSystemHealth?
@@ -95,16 +92,12 @@ final class AppModel {
     private(set) var loadedTransactionQuery: TransactionQuery?
     private var loadedUncategorizedQuery: TransactionQuery?
     private var digestLoadState: PrimaryLoadState = .idle
-    private var insightsLoadState: PrimaryLoadState = .idle
-    private var insightsFlowLoadState: PrimaryLoadState = .idle
-    private var durablePurchasesLoadState: PrimaryLoadState = .idle
     private var forecastLoadState: PrimaryLoadState = .idle
     private var budgetsLoadState: PrimaryLoadState = .idle
     private var recurringLoadState: PrimaryLoadState = .idle
     private var dashboardLoadID = 0
     private var transactionsLoadID = 0
     private var digestLoadID = 0
-    private var insightsLoadID = 0
 
     private var apiClient: ExpensesAPIClient
     private let keychain = KeychainStore(service: ExpensesAppStorage.mobileKeychainService)
@@ -159,18 +152,11 @@ final class AppModel {
         digest == nil && digestLoadState.showsInitialPlaceholder
     }
 
-    var showsInsightsInitialLoading: Bool {
-        insights == nil && insightsLoadState.showsInitialPlaceholder
-    }
-
     // A cold load (no cached content) that failed — distinct from a successful
     // load that returned empty data, which leaves the response non-nil.
     var showsDashboardLoadFailed: Bool { dashboard == nil && dashboardLoadState == .failed }
     var showsTransactionsLoadFailed: Bool { transactions == nil && transactionsLoadState == .failed }
     var showsDigestLoadFailed: Bool { digest == nil && digestLoadState == .failed }
-    var showsInsightsLoadFailed: Bool { insights == nil && insightsLoadState == .failed }
-    var showsInsightsFlowLoadFailed: Bool { insightsFlow == nil && insightsFlowLoadState == .failed }
-    var showsDurablePurchasesLoadFailed: Bool { durablePurchases == nil && durablePurchasesLoadState == .failed }
     var showsForecastLoadFailed: Bool { forecast == nil && forecastLoadState == .failed }
     var showsBudgetsLoadFailed: Bool { budgets == nil && budgetsLoadState == .failed }
     var showsRecurringLoadFailed: Bool { recurring == nil && recurringLoadState == .failed }
@@ -1040,15 +1026,13 @@ final class AppModel {
         budgetsLoadState = budgets != nil ? .loaded : .failed
     }
 
-    /// Cumulative spending by day for a month's budget; `scope` is "overall" or a category id.
-    func budgetBurndown(month: String, scope: String, compareMonth: String?) async -> Result<BudgetBurndownResponse, APIErrorInfo> {
+    /// A read-only request for one chart or card, whose failure stays with it.
+    func chart<Response>(_ load: (ExpensesAPIClient, String) async throws -> Response) async -> Result<Response, APIErrorInfo> {
         guard let token else {
             return .failure(APIErrorInfo(message: "Sign in to Expenses first."))
         }
         let client = apiClient
-        return await Self.chartResult {
-            try await client.budgetBurndown(month: month, scope: scope, compareMonth: compareMonth, token: token)
-        }
+        return await Self.chartResult { try await load(client, token) }
     }
 
     func loadDigest(weekOf: String? = nil) async {
@@ -1125,93 +1109,6 @@ final class AppModel {
                 token: token
             )
         }
-    }
-
-    func loadInsights(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int?
-    ) async {
-        guard let token else {
-            return
-        }
-        insightsLoadID += 1
-        let loadID = insightsLoadID
-        let hadContent = insights != nil
-        if !hadContent {
-            insightsLoadState = .loading
-        }
-        isLoading = true
-        lastError = nil
-        defer {
-            if loadID == insightsLoadID {
-                isLoading = false
-            }
-        }
-        do {
-            let response = try await apiClient.insights(
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                trendCategoryID: trendCategoryID,
-                token: token
-            )
-            guard loadID == insightsLoadID else {
-                return
-            }
-            await waitForInitialLoadTransitionIfNeeded(hadContent: hadContent)
-            guard loadID == insightsLoadID else {
-                return
-            }
-            insights = response
-            insightsLoadState = .loaded
-        } catch let error as APIErrorInfo {
-            guard loadID == insightsLoadID else {
-                return
-            }
-            if !hadContent {
-                insightsLoadState = .failed
-            }
-            handleAPIError(error)
-        } catch {
-            guard loadID == insightsLoadID else {
-                return
-            }
-            if !hadContent {
-                insightsLoadState = .failed
-            }
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-    }
-
-    func loadInsightsFlow(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = []
-    ) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            insightsFlow = try await apiClient.insightsFlow(
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                token: token
-            )
-        }
-        insightsFlowLoadState = insightsFlow != nil ? .loaded : .failed
-    }
-
-    func loadDurablePurchases() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            durablePurchases = try await apiClient.durablePurchases(token: token)
-        }
-        durablePurchasesLoadState = durablePurchases != nil ? .loaded : .failed
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest) async -> AttachmentDownload? {
@@ -2113,9 +2010,6 @@ final class AppModel {
         if digest == nil {
             await loadDigest()
         }
-        if insights == nil {
-            await loadInsights(period: "all", tagID: nil, trendCategoryID: nil)
-        }
     }
 
     private func waitForInitialLoadTransitionIfNeeded(hadContent: Bool) async {
@@ -2193,7 +2087,6 @@ final class AppModel {
         dashboardLoadID += 1
         transactionsLoadID += 1
         digestLoadID += 1
-        insightsLoadID += 1
         dashboard = nil
         dashboardExcludedTagIDs = []
         dashboardBalanceHistory = nil
@@ -2227,12 +2120,6 @@ final class AppModel {
         forecast = nil
         forecastLoadState = .idle
         forecastScenario = nil
-        insights = nil
-        insightsLoadState = .idle
-        insightsFlow = nil
-        insightsFlowLoadState = .idle
-        durablePurchases = nil
-        durablePurchasesLoadState = .idle
         reconciliation = nil
         adminInfo = nil
         adminSystemHealth = nil

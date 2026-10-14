@@ -1565,6 +1565,15 @@ struct TransactionQuery: Equatable {
         search.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// "Only Travel" or "Excluding 2 tags", or nil without a tag filter.
+    func tagSummary(_ tags: [TransactionTag]) -> String? {
+        if tagIDs.isEmpty {
+            return nil
+        }
+        let names = tagIDs.count == 1 ? tags.first { tagIDs.contains($0.id) }?.name ?? "1 tag" : "\(tagIDs.count) tags"
+        return tagMode == .include ? "Only \(names)" : "Excluding \(names)"
+    }
+
     var queryItems: [URLQueryItem] {
         var items = period.queryItems
         if !trimmedSearch.isEmpty {
@@ -1946,190 +1955,138 @@ struct DashboardDurablePurchase: Codable, Equatable, Identifiable {
     }
 }
 
-struct DurablePurchasesResponse: Codable, Equatable {
-    let items: [DashboardDurablePurchase]
-}
-
-struct InsightsFilters: Codable, Equatable {
-    let tagID: Int?
-    let excludedTagIDs: [Int]
+/// Totals for a period and tag filter, and income and expenses for its whole months,
+/// at most 12.
+struct InsightsResponse: Codable, Equatable {
+    let tags: [TransactionTag]
+    let series: [InsightsMonthlySeriesPoint]
+    let incomeCents: Int
+    let expenseCents: Int
+    let recurringCents: Int
+    let monthCount: Int
 
     enum CodingKeys: String, CodingKey {
-        case tagID = "tag_id"
-        case excludedTagIDs = "excluded_tag_ids"
+        case tags
+        case series
+        case incomeCents = "income_cents"
+        case expenseCents = "expense_cents"
+        case recurringCents = "recurring_cents"
+        case monthCount = "month_count"
     }
 }
 
-struct InsightsCategory: Codable, Equatable, Identifiable {
-    let id: Int
-    let name: String
-    let type: String
-    let icon: String?
-}
-
-struct InsightsMonthlySeriesPoint: Codable, Equatable, Identifiable {
-    var id: String { label }
+struct InsightsMonthlySeriesPoint: Codable, Equatable {
     let year: Int
     let month: Int
-    let label: String
     let incomeCents: Int
     let expenseCents: Int
-    let netCents: Int
 
     enum CodingKeys: String, CodingKey {
         case year
         case month
-        case label
         case incomeCents = "income_cents"
         case expenseCents = "expense_cents"
-        case netCents = "net_cents"
     }
 }
 
-struct InsightsDeltaItem: Codable, Equatable, Identifiable {
-    var id: Int { categoryID }
-    let categoryID: Int
-    let categoryName: String
-    let currentCents: Int
-    let previousCents: Int
-    let deltaCents: Int
-
-    enum CodingKeys: String, CodingKey {
-        case categoryID = "category_id"
-        case categoryName = "category_name"
-        case currentCents = "current_cents"
-        case previousCents = "previous_cents"
-        case deltaCents = "delta_cents"
-    }
+/// Amounts by category or tag for the last 12 full months and the current one.
+struct InsightsMonthGridResponse: Codable, Equatable {
+    let months: [String]
+    let rows: [InsightsMonthGridRow]
 }
 
-struct InsightsDeltas: Codable, Equatable {
-    let increases: [InsightsDeltaItem]
-    let decreases: [InsightsDeltaItem]
-}
-
-struct InsightsTopTag: Codable, Equatable, Identifiable {
+struct InsightsMonthGridRow: Codable, Equatable, Identifiable, Hashable {
     let id: Int
     let name: String
-    let amountCents: Int
+    let icon: String?
+    let valuesCents: [Int]
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
-        case amountCents = "amount_cents"
+        case icon
+        case valuesCents = "values_cents"
     }
 }
 
-struct InsightsTrendPoint: Codable, Equatable, Identifiable {
-    var id: String { label }
-    let year: Int
-    let month: Int
-    let label: String
-    let amountCents: Int
+/// Spending posted by recurring rules and other spending, for the last 12 full months
+/// and the current one.
+struct InsightsRecurringSplitResponse: Codable, Equatable {
+    let rows: [InsightsRecurringSplitRow]
+}
+
+struct InsightsRecurringSplitRow: Codable, Equatable {
+    let month: String
+    let recurringCents: Int
+    let otherCents: Int
 
     enum CodingKeys: String, CodingKey {
-        case year
         case month
-        case label
+        case recurringCents = "recurring_cents"
+        case otherCents = "other_cents"
+    }
+}
+
+/// Spending by booking day without recurring transactions, over 53 weeks up to today.
+/// Days are "2026-10-14"; days without spending are left out.
+struct InsightsDayCalendarResponse: Codable, Equatable {
+    let start: String
+    let end: String
+    let days: [InsightsDayAmount]
+    // Monday first.
+    let weekdayAvgCents: [Int]
+    let weekendShare: Double
+
+    enum CodingKeys: String, CodingKey {
+        case start
+        case end
+        case days
+        case weekdayAvgCents = "weekday_avg_cents"
+        case weekendShare = "weekend_share"
+    }
+}
+
+struct InsightsDayAmount: Codable, Equatable {
+    let date: String
+    let amountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case date
         case amountCents = "amount_cents"
     }
 }
 
-struct InsightsBudgetEffective: Codable, Equatable, Identifiable {
-    var id: String { "\(scopeCategoryID.map(String.init) ?? "overall")-\(source)-\(sourceID)" }
-    let scopeCategoryID: Int?
-    let scopeLabel: String
-    let amountCents: Int
-    let source: String
-    let sourceID: Int
-
-    enum CodingKeys: String, CodingKey {
-        case scopeCategoryID = "scope_category_id"
-        case scopeLabel = "scope_label"
-        case amountCents = "amount_cents"
-        case source
-        case sourceID = "source_id"
-    }
+/// Spent against each month's budget, for the last 12 full months and the current one.
+struct InsightsBudgetHistoryResponse: Codable, Equatable {
+    let months: [String]
+    let rows: [InsightsBudgetHistoryRow]
 }
 
-struct InsightsBudgetProgress: Codable, Equatable {
-    let spentCents: Int
-    let remainingCents: Int
-
-    enum CodingKeys: String, CodingKey {
-        case spentCents = "spent_cents"
-        case remainingCents = "remaining_cents"
-    }
-}
-
-struct InsightsResponse: Codable, Equatable {
-    let period: Period
-    let filters: InsightsFilters
-    let tags: [TransactionTag]
-    let categories: [InsightsCategory]
-    let series: [InsightsMonthlySeriesPoint]
-    let expenseBreakdown: [BreakdownItem]
-    let incomeBreakdown: [BreakdownItem]
-    let deltas: InsightsDeltas
-    let topTags: [InsightsTopTag]
-    let trendCategoryID: Int?
-    let trend: [InsightsTrendPoint]
-    let budgetMonth: String
-    let budgetEffective: [InsightsBudgetEffective]
-    let budgetProgress: [String: InsightsBudgetProgress]
-
-    enum CodingKeys: String, CodingKey {
-        case period
-        case filters
-        case tags
-        case categories
-        case series
-        case expenseBreakdown = "expense_breakdown"
-        case incomeBreakdown = "income_breakdown"
-        case deltas
-        case topTags = "top_tags"
-        case trendCategoryID = "trend_category_id"
-        case trend
-        case budgetMonth = "budget_month"
-        case budgetEffective = "budget_effective"
-        case budgetProgress = "budget_progress"
-    }
-}
-
-struct InsightsFlowNode: Codable, Equatable, Identifiable {
-    let id: String
-    let label: String
-    let type: String
-    let amountCents: Int
+struct InsightsBudgetHistoryRow: Codable, Equatable {
     let categoryID: Int?
+    let name: String
+    let icon: String?
+    let cells: [InsightsBudgetHistoryCell]
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case label
-        case type
-        case amountCents = "amount_cents"
         case categoryID = "category_id"
+        case name
+        case icon
+        case cells
     }
 }
 
-struct InsightsFlowLink: Codable, Equatable, Identifiable {
-    var id: String { "\(from)-\(to)" }
-    let from: String
-    let to: String
-    let amountCents: Int
+struct InsightsBudgetHistoryCell: Codable, Equatable {
+    let month: String
+    // Nil for a month without a budget.
+    let budgetCents: Int?
+    let spentCents: Int
 
     enum CodingKeys: String, CodingKey {
-        case from
-        case to
-        case amountCents = "amount_cents"
+        case month
+        case budgetCents = "budget_cents"
+        case spentCents = "spent_cents"
     }
-}
-
-struct InsightsFlowResponse: Codable, Equatable {
-    let period: Period
-    let filters: InsightsFilters
-    let nodes: [InsightsFlowNode]
-    let links: [InsightsFlowLink]
 }
 
 struct ReportOptionsRequest: Codable, Equatable {

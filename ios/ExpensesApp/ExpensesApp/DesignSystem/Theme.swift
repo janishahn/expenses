@@ -24,6 +24,11 @@ enum ExpensesTheme {
         scheme == .dark ? Color(rgb: 0x1F1D1A) : Color(rgb: 0xFFFFFF)
     }
 
+    // Recurring spending and within-budget marks: a light ink.
+    static func recurring(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(rgb: 0x5B5853) : Color(rgb: 0xC7C7C4)
+    }
+
     // A recessed well inside a sheet, as behind a receipt preview.
     static func day(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(rgb: 0x1B1A17) : Color(rgb: 0xF2F2F0)
@@ -124,34 +129,6 @@ extension View {
 
     func expensesRowBackground() -> some View {
         modifier(ExpensesRowBackground())
-    }
-}
-
-struct GlassSurface<Content: View>: View {
-    @Environment(\.colorScheme) private var scheme
-
-    var padding: CGFloat
-    var content: Content
-
-    init(padding: CGFloat = 18, @ViewBuilder content: () -> Content) {
-        self.padding = padding
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(ExpensesTheme.surface(for: scheme).opacity(scheme == .dark ? 0.82 : 0.74))
-                    .shadow(color: .black.opacity(scheme == .dark ? 0.18 : 0.05), radius: 14, y: 8)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(scheme == .dark ? 0.08 : 0.38), lineWidth: 0.75)
-            }
-            .glassEffect(.regular.tint(ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.025 : 0.035)), in: .rect(cornerRadius: 18))
     }
 }
 
