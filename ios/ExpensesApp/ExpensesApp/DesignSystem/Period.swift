@@ -125,6 +125,11 @@ struct CalendarMonth: Hashable, Comparable {
         start.formatted(Date.FormatStyle(timeZone: .gmt).month(.wide).year())
     }
 
+    /// "Oct 2026".
+    var abbreviatedTitle: String {
+        start.formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated).year())
+    }
+
     /// "Oct".
     var shortTitle: String {
         start.formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated))

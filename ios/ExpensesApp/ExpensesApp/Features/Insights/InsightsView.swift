@@ -161,14 +161,14 @@ private struct MetricsSection: View {
         Section {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 16) {
                 GridRow {
-                    metric("Income") {
+                    Metric("Income") {
                         AmountText(data.incomeCents)
                     } detail: {
                         if months > 1 {
                             Text("\(months) months")
                         }
                     }
-                    metric("Spent") {
+                    Metric("Spent") {
                         AmountText(spent)
                     } detail: {
                         if months > 1 {
@@ -180,7 +180,7 @@ private struct MetricsSection: View {
                     }
                 }
                 GridRow {
-                    metric("Saved") {
+                    Metric("Saved") {
                         AmountText(saved, signed: saved < 0)
                             .foregroundStyle(saved > 0 ? ExpensesTheme.income(for: scheme) : .primary)
                     } detail: {
@@ -188,7 +188,7 @@ private struct MetricsSection: View {
                             Text("\(percent(saved, of: data.incomeCents)) of income")
                         }
                     }
-                    metric("Recurring") {
+                    Metric("Recurring") {
                         Text(spent > 0 ? percent(data.recurringCents, of: spent) : "–")
                     } detail: {
                         if spent > 0 {
@@ -200,27 +200,6 @@ private struct MetricsSection: View {
             .padding(.vertical, 6)
         }
         .expensesRowBackground()
-    }
-
-    private func metric<Value: View, Detail: View>(
-        _ label: String,
-        @ViewBuilder value: () -> Value,
-        @ViewBuilder detail: () -> Detail
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            value()
-                .font(.title3.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            detail()
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1004,85 +983,4 @@ private struct InProgressMark: View {
         RoundedRectangle(cornerRadius: 3)
             .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
     }
-}
-
-/// The values at a chart's chosen point, floating over the chart.
-private struct ChartTooltip<Rows: View>: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let title: String
-    @ViewBuilder let rows: Rows
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .fontWeight(.semibold)
-            rows
-        }
-        .font(.footnote)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .fixedSize()
-        .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.primary.opacity(0.08))
-        }
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
-    }
-}
-
-private struct TooltipRow<Value: View>: View {
-    let label: String
-    let color: Color?
-    @ViewBuilder let value: Value
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let color {
-                Circle()
-                    .fill(color)
-                    .frame(width: 7, height: 7)
-            }
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 16)
-            value
-        }
-    }
-}
-
-private struct ChartLegendItem: View {
-    enum Mark {
-        case line
-        case area
-    }
-
-    let title: String
-    let color: Color
-    let mark: Mark
-
-    var body: some View {
-        HStack(spacing: 6) {
-            switch mark {
-            case .line:
-                Capsule()
-                    .fill(color)
-                    .frame(width: 14, height: 2)
-            case .area:
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(color)
-                    .frame(width: 10, height: 10)
-            }
-            Text(title)
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-    }
-}
-
-/// "25 %": a share as a whole percent in the device's format.
-private func percent(_ part: Int, of whole: Int) -> String {
-    (Double(part) / Double(whole)).formatted(.percent.precision(.fractionLength(0)))
 }

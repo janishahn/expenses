@@ -114,6 +114,42 @@ struct BudgetBar: View {
     }
 }
 
+/// A budget in a summary list: its scope, what is left or over, and the bar.
+struct BudgetPulseRow: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let categoryID: Int?
+    let iconKey: String?
+    let label: String
+    let spentCents: Int
+    let budgetCents: Int
+    let pace: Double?
+
+    var body: some View {
+        let remaining = budgetCents - spentCents
+        HStack(spacing: 12) {
+            ScopeGlyph(categoryID: categoryID, iconKey: iconKey, name: label)
+            VStack(spacing: 8) {
+                HStack {
+                    Text(label)
+                        .lineLimit(1)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        AmountText(abs(remaining), decimals: false)
+                            .foregroundStyle(remaining < 0 ? ExpensesTheme.expense(for: scheme) : .secondary)
+                        Text(remaining < 0 ? "over" : "left")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                BudgetBar(spentCents: spentCents, budgetCents: budgetCents, pace: pace)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
 /// A transaction as one ledger line: category glyph, title, and amount. Income is
 /// green with a plus; an expense is ink with no sign.
 struct LedgerRow: View {
@@ -297,4 +333,126 @@ struct TagExclusionSection: View {
         }
         .expensesRowBackground()
     }
+}
+
+/// A figure in a screen's summary: its label, the value, and an optional detail line.
+struct Metric<Value: View, Detail: View>: View {
+    let label: String
+    let value: Value
+    let detail: Detail
+
+    init(_ label: String, @ViewBuilder value: () -> Value, @ViewBuilder detail: () -> Detail) {
+        self.label = label
+        self.value = value()
+        self.detail = detail()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            value
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            detail
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        // A grid row sizes before a detail wraps; without this the detail truncates
+        // and the value shrinks.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The values at a chart's chosen point, floating over the chart.
+struct ChartTooltip<Rows: View>: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let title: String
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .fontWeight(.semibold)
+            rows
+        }
+        .font(.footnote)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .fixedSize()
+        .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.08))
+        }
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+    }
+}
+
+struct TooltipRow<Value: View>: View {
+    let label: String
+    let color: Color?
+    @ViewBuilder let value: Value
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let color {
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+            }
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 16)
+            value
+        }
+    }
+}
+
+struct ChartLegendItem: View {
+    enum Mark {
+        case line
+        case dash
+        case area
+    }
+
+    let title: String
+    let color: Color
+    let mark: Mark
+
+    var body: some View {
+        HStack(spacing: 6) {
+            switch mark {
+            case .line:
+                Capsule()
+                    .fill(color)
+                    .frame(width: 14, height: 2)
+            case .dash:
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: 1))
+                    path.addLine(to: CGPoint(x: 14, y: 1))
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                .frame(width: 14, height: 2)
+            case .area:
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: 10, height: 10)
+            }
+            Text(title)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
+}
+
+/// "25 %": a share as a whole percent in the device's format.
+func percent(_ part: Int, of whole: Int) -> String {
+    (Double(part) / Double(whole)).formatted(.percent.precision(.fractionLength(0)))
 }

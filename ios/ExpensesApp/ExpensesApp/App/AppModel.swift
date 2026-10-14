@@ -60,9 +60,6 @@ final class AppModel {
     var rules: RulesResponse?
     var ruleSuggestions: [RuleSuggestion] = []
     var budgets: BudgetsResponse?
-    var digest: DigestResponse?
-    var forecast: ForecastResponse?
-    var forecastScenario: ForecastScenarioResponse?
     var reconciliation: BankReconciliationResponse?
     var adminInfo: AdminInfo?
     var adminSystemHealth: AdminSystemHealth?
@@ -91,13 +88,10 @@ final class AppModel {
     // The query the loaded rows belong to. A next page appends only to its own query.
     private(set) var loadedTransactionQuery: TransactionQuery?
     private var loadedUncategorizedQuery: TransactionQuery?
-    private var digestLoadState: PrimaryLoadState = .idle
-    private var forecastLoadState: PrimaryLoadState = .idle
     private var budgetsLoadState: PrimaryLoadState = .idle
     private var recurringLoadState: PrimaryLoadState = .idle
     private var dashboardLoadID = 0
     private var transactionsLoadID = 0
-    private var digestLoadID = 0
 
     private var apiClient: ExpensesAPIClient
     private let keychain = KeychainStore(service: ExpensesAppStorage.mobileKeychainService)
@@ -148,16 +142,10 @@ final class AppModel {
         transactions == nil && transactionsLoadState.showsInitialPlaceholder
     }
 
-    var showsDigestInitialLoading: Bool {
-        digest == nil && digestLoadState.showsInitialPlaceholder
-    }
-
     // A cold load (no cached content) that failed — distinct from a successful
     // load that returned empty data, which leaves the response non-nil.
     var showsDashboardLoadFailed: Bool { dashboard == nil && dashboardLoadState == .failed }
     var showsTransactionsLoadFailed: Bool { transactions == nil && transactionsLoadState == .failed }
-    var showsDigestLoadFailed: Bool { digest == nil && digestLoadState == .failed }
-    var showsForecastLoadFailed: Bool { forecast == nil && forecastLoadState == .failed }
     var showsBudgetsLoadFailed: Bool { budgets == nil && budgetsLoadState == .failed }
     var showsRecurringLoadFailed: Bool { recurring == nil && recurringLoadState == .failed }
 
@@ -1033,82 +1021,6 @@ final class AppModel {
         }
         let client = apiClient
         return await Self.chartResult { try await load(client, token) }
-    }
-
-    func loadDigest(weekOf: String? = nil) async {
-        guard let token else {
-            return
-        }
-        digestLoadID += 1
-        let loadID = digestLoadID
-        let hadContent = digest != nil
-        if !hadContent {
-            digestLoadState = .loading
-        }
-        isLoading = true
-        lastError = nil
-        defer {
-            if loadID == digestLoadID {
-                isLoading = false
-            }
-        }
-        do {
-            let response = try await apiClient.digest(weekOf: weekOf, token: token)
-            guard loadID == digestLoadID else {
-                return
-            }
-            await waitForInitialLoadTransitionIfNeeded(hadContent: hadContent)
-            guard loadID == digestLoadID else {
-                return
-            }
-            digest = response
-            digestLoadState = .loaded
-        } catch let error as APIErrorInfo {
-            guard loadID == digestLoadID else {
-                return
-            }
-            if !hadContent {
-                digestLoadState = .failed
-            }
-            handleAPIError(error)
-        } catch {
-            guard loadID == digestLoadID else {
-                return
-            }
-            if !hadContent {
-                digestLoadState = .failed
-            }
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-    }
-
-    func loadForecast(horizon: Int, mode: String) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            forecast = try await apiClient.forecast(horizon: horizon, mode: mode, token: token)
-            forecastScenario = nil
-        }
-        forecastLoadState = forecast != nil ? .loaded : .failed
-    }
-
-    func runForecastScenario(
-        horizon: Int,
-        mode: String,
-        modifications: [ForecastScenarioModificationRequest]
-    ) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            forecastScenario = try await apiClient.forecastScenario(
-                horizon: horizon,
-                mode: mode,
-                modifications: modifications,
-                token: token
-            )
-        }
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest) async -> AttachmentDownload? {
@@ -2007,9 +1919,6 @@ final class AppModel {
         if transactions == nil {
             await loadTransactions()
         }
-        if digest == nil {
-            await loadDigest()
-        }
     }
 
     private func waitForInitialLoadTransitionIfNeeded(hadContent: Bool) async {
@@ -2086,7 +1995,6 @@ final class AppModel {
         aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
-        digestLoadID += 1
         dashboard = nil
         dashboardExcludedTagIDs = []
         dashboardBalanceHistory = nil
@@ -2115,11 +2023,6 @@ final class AppModel {
         isAssistantStreaming = false
         budgets = nil
         budgetsLoadState = .idle
-        digest = nil
-        digestLoadState = .idle
-        forecast = nil
-        forecastLoadState = .idle
-        forecastScenario = nil
         reconciliation = nil
         adminInfo = nil
         adminSystemHealth = nil

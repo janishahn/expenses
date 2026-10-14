@@ -469,7 +469,6 @@ struct DigestCategory: Codable, Equatable, Identifiable {
     let name: String
     let icon: String?
     let amountCents: Int
-    let barPercent: Double
     let trailingWeeklyAvgCents: Int
     let isAboveTrailing50: Bool
 
@@ -478,7 +477,6 @@ struct DigestCategory: Codable, Equatable, Identifiable {
         case name
         case icon
         case amountCents = "amount_cents"
-        case barPercent = "bar_percent"
         case trailingWeeklyAvgCents = "trailing_weekly_avg_cents"
         case isAboveTrailing50 = "is_above_trailing_50"
     }
@@ -490,9 +488,6 @@ struct DigestBudgetPulse: Codable, Equatable, Identifiable {
     let scopeLabel: String
     let amountCents: Int
     let spentCents: Int
-    let usedPercent: Double
-    let daysLeft: Int
-    let velocityRatio: Double
     let paceState: String
 
     enum CodingKeys: String, CodingKey {
@@ -500,9 +495,6 @@ struct DigestBudgetPulse: Codable, Equatable, Identifiable {
         case scopeLabel = "scope_label"
         case amountCents = "amount_cents"
         case spentCents = "spent_cents"
-        case usedPercent = "used_percent"
-        case daysLeft = "days_left"
-        case velocityRatio = "velocity_ratio"
         case paceState = "pace_state"
     }
 }
@@ -537,6 +529,7 @@ struct DigestRecurringPosting: Codable, Equatable, Identifiable {
     let ruleID: Int?
     let ruleName: String
     let date: Date
+    let type: String
     let amountCents: Int
     let category: DigestCategoryReference?
 
@@ -545,6 +538,7 @@ struct DigestRecurringPosting: Codable, Equatable, Identifiable {
         case ruleID = "rule_id"
         case ruleName = "rule_name"
         case date
+        case type
         case amountCents = "amount_cents"
         case category
     }
@@ -2288,16 +2282,12 @@ struct DashboardCategoryBudgetPulse: Codable, Equatable, Identifiable {
     let scopeLabel: String
     let amountCents: Int
     let spentCents: Int
-    let remainingCents: Int
-    let velocityRatio: Double
 
     enum CodingKeys: String, CodingKey {
         case scopeCategoryID = "scope_category_id"
         case scopeLabel = "scope_label"
         case amountCents = "amount_cents"
         case spentCents = "spent_cents"
-        case remainingCents = "remaining_cents"
-        case velocityRatio = "velocity_ratio"
     }
 }
 

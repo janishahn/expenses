@@ -64,9 +64,12 @@ struct DashboardView: View {
                         } else {
                             ForEach(budgets) { budget in
                                 Button(action: openBudgets) {
-                                    CategoryBudgetRow(
-                                        budget: budget,
+                                    BudgetPulseRow(
+                                        categoryID: budget.scopeCategoryID,
                                         iconKey: categoriesByID[budget.scopeCategoryID]?.icon,
+                                        label: budget.scopeLabel,
+                                        spentCents: budget.spentCents,
+                                        budgetCents: budget.amountCents,
                                         pace: pace
                                     )
                                 }
@@ -382,38 +385,6 @@ private struct DashboardSummary: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct CategoryBudgetRow: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let budget: DashboardCategoryBudgetPulse
-    let iconKey: String?
-    let pace: Double
-
-    var body: some View {
-        let over = budget.remainingCents < 0
-        HStack(spacing: 12) {
-            CategoryGlyph(categoryID: budget.scopeCategoryID, iconKey: iconKey, name: budget.scopeLabel)
-            VStack(spacing: 8) {
-                HStack {
-                    Text(budget.scopeLabel)
-                        .lineLimit(1)
-                    Spacer()
-                    HStack(spacing: 4) {
-                        AmountText(abs(budget.remainingCents), decimals: false)
-                            .foregroundStyle(over ? ExpensesTheme.expense(for: scheme) : .secondary)
-                        Text(over ? "over" : "left")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                }
-                BudgetBar(spentCents: budget.spentCents, budgetCents: budget.amountCents, pace: pace)
-            }
-        }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
     }
 }
 

@@ -461,14 +461,12 @@ struct PaceChart: View {
             .frame(height: height)
 
             HStack(spacing: 14) {
-                legend("Actual", style: StrokeStyle(lineWidth: 2), color: .primary)
-                legend("Even pace", style: StrokeStyle(lineWidth: 1.25, dash: [4, 3]), color: .secondary)
+                ChartLegendItem(title: "Actual", color: .primary, mark: .line)
+                ChartLegendItem(title: "Even pace", color: .secondary, mark: .dash)
                 if !previous.isEmpty {
-                    legend("Previous month", style: StrokeStyle(lineWidth: 1.25), color: .secondary)
+                    ChartLegendItem(title: "Previous month", color: .secondary, mark: .line)
                 }
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
         }
     }
 
@@ -476,18 +474,5 @@ struct PaceChart: View {
         LineMark(x: .value("Day", point.day), y: .value("Amount", point.cents), series: .value("Series", point.series))
             .accessibilityLabel("\(point.series), \(month.day(point.day).formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated).day()))")
             .accessibilityValue(model.amountString(point.cents))
-    }
-
-    private func legend(_ title: String, style: StrokeStyle, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: 1))
-                path.addLine(to: CGPoint(x: 14, y: 1))
-            }
-            .stroke(color, style: style)
-            .frame(width: 14, height: 2)
-            Text(title)
-        }
-        .accessibilityHidden(true)
     }
 }

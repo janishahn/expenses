@@ -127,7 +127,7 @@ struct AddBudgetSheet: View {
     }
 
     private func label(_ period: CalendarMonth) -> String {
-        yearly ? String(period.year) : period.start.formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated).year())
+        yearly ? String(period.year) : period.abbreviatedTitle
     }
 
     private func submit() async {

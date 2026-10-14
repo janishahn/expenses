@@ -104,6 +104,14 @@ struct RootView: View {
         }
     }
 
+    // Opens the Transactions tab at its root on this query.
+    private func openTransactions(_ query: TransactionQuery) {
+        model.transactionQuery = query
+        transactionsPath = []
+        transactionsSelecting = false
+        selectedPrimaryDestination = .transactions
+    }
+
     @ViewBuilder
     private func destinationView(_ destination: AppDestination) -> some View {
         switch destination {
@@ -118,19 +126,11 @@ struct RootView: View {
         case .budgets:
             BudgetsView()
         case .insights:
-            InsightsView(
-                openTransactions: { query in
-                    model.transactionQuery = query
-                    transactionsPath = []
-                    transactionsSelecting = false
-                    selectedPrimaryDestination = .transactions
-                },
-                openBudgets: { selectedPrimaryDestination = .budgets }
-            )
+            InsightsView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
         case .forecast:
             ForecastView()
         case .digest:
-            DigestView()
+            DigestView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
         case .reports:
             ReportsView()
         case .reconcile:

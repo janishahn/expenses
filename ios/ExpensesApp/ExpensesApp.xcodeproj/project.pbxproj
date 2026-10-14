@@ -28,7 +28,7 @@
 		001000000000000000000019 /* BudgetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000021 /* BudgetsView.swift */; };
 		001000000000000000000020 /* RecurringView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000022 /* RecurringView.swift */; };
 		001000000000000000000021 /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000023 /* CameraCaptureView.swift */; };
-		001000000000000000000022 /* PlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000024 /* PlanningView.swift */; };
+		001000000000000000000022 /* ForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000024 /* ForecastView.swift */; };
 		001000000000000000000023 /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000025 /* InsightsView.swift */; };
 		001000000000000000000024 /* ReportsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000026 /* ReportsView.swift */; };
 		001000000000000000000025 /* DocumentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000027 /* DocumentPreviewView.swift */; };
@@ -52,6 +52,8 @@
 		001000000000000000000045 /* ReceiptPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000045 /* ReceiptPicker.swift */; };
 		001000000000000000000046 /* BudgetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000046 /* BudgetDetailView.swift */; };
 		001000000000000000000047 /* AddBudgetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000047 /* AddBudgetSheet.swift */; };
+		001000000000000000000048 /* WhatIfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000048 /* WhatIfView.swift */; };
+		001000000000000000000049 /* DigestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000049 /* DigestView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,7 +80,7 @@
 		002000000000000000000021 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
 		002000000000000000000022 /* RecurringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringView.swift; sourceTree = "<group>"; };
 		002000000000000000000023 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
-		002000000000000000000024 /* PlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanningView.swift; sourceTree = "<group>"; };
+		002000000000000000000024 /* ForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForecastView.swift; sourceTree = "<group>"; };
 		002000000000000000000025 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		002000000000000000000026 /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
 		002000000000000000000027 /* DocumentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPreviewView.swift; sourceTree = "<group>"; };
@@ -102,6 +104,8 @@
 		002000000000000000000045 /* ReceiptPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPicker.swift; sourceTree = "<group>"; };
 		002000000000000000000046 /* BudgetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetDetailView.swift; sourceTree = "<group>"; };
 		002000000000000000000047 /* AddBudgetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBudgetSheet.swift; sourceTree = "<group>"; };
+		002000000000000000000048 /* WhatIfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatIfView.swift; sourceTree = "<group>"; };
+		002000000000000000000049 /* DigestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigestView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -291,7 +295,9 @@
 		004000000000000000000017 /* Planning */ = {
 			isa = PBXGroup;
 			children = (
-				002000000000000000000024 /* PlanningView.swift */,
+				002000000000000000000024 /* ForecastView.swift */,
+				002000000000000000000048 /* WhatIfView.swift */,
+				002000000000000000000049 /* DigestView.swift */,
 			);
 			path = Planning;
 			sourceTree = "<group>";
@@ -406,6 +412,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000049 /* DigestView.swift in Sources */,
+				001000000000000000000048 /* WhatIfView.swift in Sources */,
 				001000000000000000000047 /* AddBudgetSheet.swift in Sources */,
 				001000000000000000000046 /* BudgetDetailView.swift in Sources */,
 				001000000000000000000045 /* ReceiptPicker.swift in Sources */,
@@ -437,7 +445,7 @@
 				001000000000000000000019 /* BudgetsView.swift in Sources */,
 				001000000000000000000020 /* RecurringView.swift in Sources */,
 				001000000000000000000021 /* CameraCaptureView.swift in Sources */,
-				001000000000000000000022 /* PlanningView.swift in Sources */,
+				001000000000000000000022 /* ForecastView.swift in Sources */,
 				001000000000000000000023 /* InsightsView.swift in Sources */,
 				001000000000000000000024 /* ReportsView.swift in Sources */,
 				001000000000000000000025 /* DocumentPreviewView.swift in Sources */,
