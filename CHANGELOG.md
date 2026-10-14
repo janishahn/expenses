@@ -12,9 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - On mobile, the dashboard opens with one summary card: Spent, the overall budget with what is left per day and the likely month total, then Balance, Cash in, and Net. Budgets and Recent follow, and Category share shows a small ring with its five largest shares.
-- The iOS app takes the web's colors and its dashboard layout: the same summary card, Budgets, Recent, a balance chart with the likely forecast and its 80% range, spending by category over six months, Category share, and Durable purchases. Hide amounts now covers every amount on the dashboard. Budgets is a tab, Digest moves to More, and the add button is a solid ink circle. Update the iOS app together with the server, because it reads the new `budget_pace` fields.
+- Redesigned the iOS app to match the web redesign in light and dark. Dashboard, Transactions, Budgets, and Insights are tabs; More lists Forecast, Uncategorized, the Manage screens, the Tools, Settings, and Admin. Every screen takes the web page's content: transaction and Manage details save each field as you edit it, Uncategorized accepts or rejects suggested categories, Trash restores or deletes in bulk, Budgets steps through months with pace, Insights shows the month grids, daily calendar, and budget history, Reconcile reviews statement rows in suggested, several-match, and no-match groups with ignore reasons and a Resolved view, Settings and Admin have the web's sections, and the Assistant lists each tool step with its result. Without a stored session the app opens on one sign-in screen.
+- Hide amounts on iOS covers every amount in the app, including Assistant answers, and blurs amounts instead of drawing gray boxes.
+- iOS CSV export moves from Reports to Settings > Import and Export, next to the portable archive. Reports builds the web's report, including category and tag scope, and opens the PDF in Quick Look.
+- Update the iOS app together with the server, because it reads the new `budget_pace` fields.
+
+### Removed
+- The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
 
 ### Fixed
+- iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
 - Category share on the dashboard included only the eight largest categories, so its total fell short of the period's spending.
 
 ## [0.7.0] - 2026-10-13
