@@ -220,6 +220,9 @@ private struct IncomeExpensesSection: View {
                         ChartLegendItem(title: "Income", color: ExpensesTheme.income(for: scheme), mark: .line)
                         ChartLegendItem(title: "Expenses", color: .primary, mark: .line)
                         ChartLegendItem(title: "Saved", color: savedColor, mark: .area)
+                        if series[..<cut].contains(where: { $0.expenseCents > $0.incomeCents }) {
+                            ChartLegendItem(title: "Overspent", color: overspentColor, mark: .area)
+                        }
                     }
                 }
                 .padding(.vertical, 8)
@@ -232,6 +235,42 @@ private struct IncomeExpensesSection: View {
         ExpensesTheme.income(for: scheme).opacity(scheme == .dark ? 0.12 : 0.1)
     }
 
+    private var overspentColor: Color {
+        ExpensesTheme.expense(for: scheme).opacity(scheme == .dark ? 0.12 : 0.1)
+    }
+
+    /// The month in progress: its lines are dashed and it has no band.
+    private var partial: Int? {
+        guard let point = series.last, CalendarMonth(year: point.year, month: point.month) == .current else {
+            return nil
+        }
+        return series.count - 1
+    }
+
+    private var cut: Int {
+        partial ?? series.count
+    }
+
+    /// The full months, plus a point where the lines cross, so the saved and overspent bands meet there.
+    private var bandPoints: [(x: Double, income: Double, expenses: Double)] {
+        var points: [(x: Double, income: Double, expenses: Double)] = []
+        for (index, point) in series[..<cut].enumerated() {
+            let income = Double(point.incomeCents)
+            let expenses = Double(point.expenseCents)
+            if let previous = points.last {
+                let before = previous.income - previous.expenses
+                let after = income - expenses
+                if before * after < 0 {
+                    let share = before / (before - after)
+                    let value = previous.income + share * (income - previous.income)
+                    points.append((previous.x + share, value, value))
+                }
+            }
+            points.append((Double(index), income, expenses))
+        }
+        return points
+    }
+
     private var chart: some View {
         let months = series.map { CalendarMonth(year: $0.year, month: $0.month) }
         let last = series.count - 1
@@ -239,23 +278,27 @@ private struct IncomeExpensesSection: View {
         // The latest month keeps its label; one month sits in the middle.
         let labeled = Array(stride(from: last % 3, through: last, by: 3))
         return Chart {
-            ForEach(Array(series.enumerated()), id: \.offset) { index, point in
-                // Saved: the band where income is above expenses.
+            ForEach(bandPoints, id: \.x) { point in
                 AreaMark(
-                    x: .value("Month", index),
-                    yStart: .value("Expenses", point.expenseCents),
-                    yEnd: .value("Income", max(point.incomeCents, point.expenseCents))
+                    x: .value("Month", point.x),
+                    yStart: .value("Expenses", point.expenses),
+                    yEnd: .value("Income", max(point.income, point.expenses)),
+                    series: .value("Band", "Saved")
                 )
                 .foregroundStyle(savedColor)
                 .accessibilityHidden(true)
-                LineMark(x: .value("Month", index), y: .value("Amount", point.incomeCents), series: .value("Series", "Income"))
-                    .foregroundStyle(income)
-                    .accessibilityLabel("\(months[index].title), income")
-                    .accessibilityValue(model.amountString(point.incomeCents))
-                LineMark(x: .value("Month", index), y: .value("Amount", point.expenseCents), series: .value("Series", "Expenses"))
-                    .foregroundStyle(Color.primary)
-                    .accessibilityLabel("\(months[index].title), expenses")
-                    .accessibilityValue(model.amountString(point.expenseCents))
+                AreaMark(
+                    x: .value("Month", point.x),
+                    yStart: .value("Income", point.income),
+                    yEnd: .value("Expenses", max(point.income, point.expenses)),
+                    series: .value("Band", "Overspent")
+                )
+                .foregroundStyle(overspentColor)
+                .accessibilityHidden(true)
+            }
+            line("Income", values: series.map(\.incomeCents), color: income, months: months)
+            line("Expenses", values: series.map(\.expenseCents), color: .primary, months: months)
+            ForEach(Array(series.enumerated()), id: \.offset) { index, point in
                 if series.count == 1 || index == selected {
                     PointMark(x: .value("Month", index), y: .value("Amount", point.incomeCents))
                         .foregroundStyle(income)
@@ -273,7 +316,7 @@ private struct IncomeExpensesSection: View {
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                         // Annotations render outside this view's environment.
-                        tooltip(series[selected], month: months[selected], current: selected == last)
+                        tooltip(series[selected], month: months[selected], partial: selected == partial)
                             .environment(model)
                     }
                     .accessibilityHidden(true)
@@ -298,17 +341,39 @@ private struct IncomeExpensesSection: View {
         .frame(height: 170)
     }
 
-    private func tooltip(_ point: InsightsMonthlySeriesPoint, month: CalendarMonth, current: Bool) -> some View {
+    /// One line, solid through the full months and dashed into the month in progress.
+    @ChartContentBuilder
+    private func line(_ name: String, values: [Int], color: Color, months: [CalendarMonth]) -> some ChartContent {
+        ForEach(0..<cut, id: \.self) { index in
+            LineMark(x: .value("Month", index), y: .value("Amount", values[index]), series: .value("Series", name))
+                .foregroundStyle(color)
+                .accessibilityLabel("\(months[index].title), \(name.lowercased())")
+                .accessibilityValue(model.amountString(values[index]))
+        }
+        if let partial {
+            ForEach(max(partial - 1, 0)...partial, id: \.self) { index in
+                LineMark(x: .value("Month", index), y: .value("Amount", values[index]), series: .value("Series", "\(name) so far"))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                    .accessibilityLabel("\(months[index].title) so far, \(name.lowercased())")
+                    .accessibilityValue(model.amountString(values[index]))
+                    .accessibilityHidden(index < partial)
+            }
+        }
+    }
+
+    private func tooltip(_ point: InsightsMonthlySeriesPoint, month: CalendarMonth, partial: Bool) -> some View {
         let saved = point.incomeCents - point.expenseCents
-        return ChartTooltip(title: current ? "\(month.title) so far" : month.title) {
+        let share = point.incomeCents > 0 ? " (\(percent(abs(saved), of: point.incomeCents)))" : ""
+        return ChartTooltip(title: partial ? "\(month.title) so far" : month.title) {
             TooltipRow(label: "Income", color: ExpensesTheme.income(for: scheme)) {
                 AmountText(point.incomeCents)
             }
             TooltipRow(label: "Expenses", color: .primary) {
                 AmountText(point.expenseCents)
             }
-            TooltipRow(label: "Saved", color: nil) {
-                AmountText(saved, signed: saved < 0)
+            TooltipRow(label: "\(saved < 0 ? "Overspent" : "Saved")\(share)", color: nil) {
+                AmountText(abs(saved))
             }
         }
     }

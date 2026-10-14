@@ -2404,6 +2404,11 @@ struct BankRowIDsRequest: Codable, Equatable {
     }
 }
 
+/// Without an account, every row to review is ignored.
+struct BankIgnoreOpenRequest: Encodable {
+    let account: String?
+}
+
 struct BankAcceptSuggestionsResponse: Codable, Equatable {
     struct Match: Codable, Equatable {
         let rowID: Int

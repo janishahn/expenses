@@ -1153,6 +1153,15 @@ final class AppModel {
         return matched
     }
 
+    func ignoreOpenBankRows(account: String?) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.ignoreOpenBankRows(account: account, token: token)
+        }
+    }
+
     func ignoreBankRow(_ row: BankStatementRow, reason: String) async -> Bool {
         guard let token else {
             return false

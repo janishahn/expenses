@@ -13,6 +13,7 @@ struct ReconciliationView: View {
     @State private var importing = false
     @State private var prompt: BankRowPrompt?
     @State private var matchingAll: [BankStatementRow]?
+    @State private var ignoringRemaining = false
     @State private var failure: String?
     @State private var changed = 0
 
@@ -84,6 +85,16 @@ struct ReconciliationView: View {
                 Button("Import Statement", systemImage: "square.and.arrow.down") {
                     importing = true
                 }
+                if !resolved {
+                    Menu {
+                        Button("Ignore Remaining Rows…", systemImage: "eye.slash") {
+                            ignoringRemaining = true
+                        }
+                        .disabled(openTotal == 0)
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                }
             }
         }
         .task(id: query) {
@@ -116,6 +127,17 @@ struct ReconciliationView: View {
                 Task { await matchAll(band) }
             }
         }
+        .alert(
+            "Ignore \(rowCount(openTotal)) to review\(account.map { " in \($0)" } ?? "")?",
+            isPresented: $ignoringRemaining
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Ignore All") {
+                Task { await finish(model.ignoreOpenBankRows(account: account)) }
+            }
+        } message: {
+            Text("They move to Resolved, where you can reopen them.")
+        }
         .bankRowPrompt($prompt, failure: $failure) {
             changed += 1
             await reload()
@@ -126,6 +148,10 @@ struct ReconciliationView: View {
 
     private var query: Query {
         Query(resolved: resolved, account: account, outcome: outcome)
+    }
+
+    private var openTotal: Int {
+        (try? rows?.get().total) ?? 0
     }
 
     private func filterMenu(_ accounts: [BankAccount]) -> some View {

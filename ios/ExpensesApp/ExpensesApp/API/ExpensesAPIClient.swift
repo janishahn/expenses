@@ -636,6 +636,15 @@ struct ExpensesAPIClient {
         )
     }
 
+    func ignoreOpenBankRows(account: String?, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/reconciliation/bank-rows/ignore-open",
+            method: "POST",
+            bearerToken: token,
+            body: BankIgnoreOpenRequest(account: account)
+        )
+    }
+
     func ignoreBankRow(rowID: Int, reason: String, token: String) async throws -> BankRowActionResponse {
         try await request(
             path: "/api/reconciliation/bank-rows/\(rowID)/ignore",
