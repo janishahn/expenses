@@ -28,6 +28,8 @@ struct AddTransactionSheet: View {
     @State private var tagsLoaded = false
     @State private var pending = false
     @State private var added = 0
+    // The added transaction whose receipt didn't upload; the receipt stays to try again.
+    @State private var failedReceipt: (transactionID: Int, message: String)?
     @State private var choosingDate = false
     @State private var picker: Choice?
     @FocusState private var focus: Focus?
@@ -214,6 +216,20 @@ struct AddTransactionSheet: View {
             } onFailure: { message in
                 formError = message
             }
+            .alert(
+                "Couldn't upload the receipt",
+                isPresented: Binding(get: { failedReceipt != nil }, set: { if !$0 { failedReceipt = nil } }),
+                presenting: failedReceipt
+            ) { failed in
+                Button("Discard Receipt", role: .destructive) {
+                    finish()
+                }
+                Button("Try Again") {
+                    Task { await uploadReceipt(to: failed.transactionID) }
+                }
+            } message: { failed in
+                Text("The transaction was added. \(failed.message)")
+            }
             .sensoryFeedback(.success, trigger: added)
         }
         .task {
@@ -331,15 +347,29 @@ struct AddTransactionSheet: View {
             formError = model.lastError?.message ?? "Unable to add transaction."
             return
         }
-        var receiptFailed = false
-        if let receipt {
-            receiptFailed = !(await model.uploadReceipt(receipt, transactionID: id))
-        }
         added += 1
-        if receiptFailed {
-            reset()
-            formError = "Transaction added, but the receipt could not be uploaded"
-        } else if addAnother {
+        if receipt != nil {
+            await uploadReceipt(to: id)
+        } else {
+            finish()
+        }
+    }
+
+    private func uploadReceipt(to transactionID: Int) async {
+        guard let receipt else {
+            return
+        }
+        pending = true
+        defer { pending = false }
+        if await model.uploadReceipt(receipt, transactionID: transactionID) {
+            finish()
+        } else {
+            failedReceipt = (transactionID, model.lastError?.message ?? "")
+        }
+    }
+
+    private func finish() {
+        if addAnother {
             reset()
             focus = .amount
         } else {

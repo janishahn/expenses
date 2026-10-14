@@ -235,8 +235,7 @@ struct CreateFromBankRowSheet: View {
     @Environment(\.colorScheme) private var scheme
 
     let row: BankStatementRow
-    /// Runs after the transaction exists, with a warning when its receipt didn't upload.
-    let onCreated: (String?) async -> Void
+    let onCreated: () async -> Void
 
     @State private var title: String
     @State private var date: Date
@@ -250,6 +249,8 @@ struct CreateFromBankRowSheet: View {
     @State private var titleError: String?
     @State private var formError: String?
     @State private var pending = false
+    // The created transaction whose receipt didn't upload; the receipt stays to try again.
+    @State private var failedReceipt: (transactionID: Int, message: String)?
 
     private enum Choice: Identifiable {
         case category
@@ -258,7 +259,7 @@ struct CreateFromBankRowSheet: View {
         var id: Self { self }
     }
 
-    init(row: BankStatementRow, onCreated: @escaping (String?) async -> Void) {
+    init(row: BankStatementRow, onCreated: @escaping () async -> Void) {
         self.row = row
         self.onCreated = onCreated
         _title = State(initialValue: row.title)
@@ -370,6 +371,20 @@ struct CreateFromBankRowSheet: View {
             } onFailure: { message in
                 formError = message
             }
+            .alert(
+                "Couldn't upload the receipt",
+                isPresented: Binding(get: { failedReceipt != nil }, set: { if !$0 { failedReceipt = nil } }),
+                presenting: failedReceipt
+            ) { failed in
+                Button("Discard Receipt", role: .destructive) {
+                    Task { await finish() }
+                }
+                Button("Try Again") {
+                    Task { await uploadReceipt(to: failed.transactionID) }
+                }
+            } message: { failed in
+                Text("The transaction was created. \(failed.message)")
+            }
         }
         .interactiveDismissDisabled(pending)
         .task {
@@ -404,11 +419,28 @@ struct CreateFromBankRowSheet: View {
             formError = model.lastError?.message ?? "Couldn't create the transaction."
             return
         }
-        var warning: String?
-        if let receipt, !(await model.uploadReceipt(receipt, transactionID: id)) {
-            warning = "\(trimmedTitle) was created, but the receipt could not be uploaded."
+        if receipt != nil {
+            await uploadReceipt(to: id)
+        } else {
+            await finish()
         }
+    }
+
+    private func uploadReceipt(to transactionID: Int) async {
+        guard let receipt else {
+            return
+        }
+        pending = true
+        defer { pending = false }
+        if await model.uploadReceipt(receipt, transactionID: transactionID) {
+            await finish()
+        } else {
+            failedReceipt = (transactionID, model.lastError?.message ?? "")
+        }
+    }
+
+    private func finish() async {
         dismiss()
-        await onCreated(warning)
+        await onCreated()
     }
 }

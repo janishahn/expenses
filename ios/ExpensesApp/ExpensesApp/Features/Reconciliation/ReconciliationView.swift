@@ -612,8 +612,7 @@ private struct BankRowPromptModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(item: creating) { row in
-                CreateFromBankRowSheet(row: row) { warning in
-                    failure = warning
+                CreateFromBankRowSheet(row: row) {
                     await onDone()
                 }
             }

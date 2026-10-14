@@ -46,6 +46,8 @@ final class AppModel {
     var dashboardBalanceHistory: Result<BalanceHistoryResponse, APIErrorInfo>?
     var dashboardForecast: Result<ForecastResponse, APIErrorInfo>?
     var dashboardSpendingBands: Result<CategoryBandsResponse, APIErrorInfo>?
+    // Counts edits to transactions, so the Dashboard charts reload with its summary.
+    private(set) var ledgerRevision = 0
     // Each list keeps its query, and the rows of every page loaded so far.
     var transactionQuery = TransactionQuery()
     var transactions: TransactionsResponse?
@@ -138,15 +140,12 @@ final class AppModel {
         dashboard == nil && dashboardLoadState.showsInitialPlaceholder
     }
 
-    var showsTransactionsInitialLoading: Bool {
-        transactions == nil && transactionsLoadState.showsInitialPlaceholder
-    }
-
     // A cold load (no cached content) that failed — distinct from a successful
     // load that returned empty data, which leaves the response non-nil.
     var showsDashboardLoadFailed: Bool { dashboard == nil && dashboardLoadState == .failed }
     var showsTransactionsLoadFailed: Bool { transactions == nil && transactionsLoadState == .failed }
-    var showsBudgetsLoadFailed: Bool { budgets == nil && budgetsLoadState == .failed }
+    // Budgets may still hold another month, so the screen checks the month it shows.
+    var showsBudgetsLoadFailed: Bool { budgetsLoadState == .failed }
     var showsRecurringLoadFailed: Bool { recurring == nil && recurringLoadState == .failed }
 
     func testConnection() async {
@@ -641,6 +640,8 @@ final class AppModel {
                 uncategorizedTransactions.total -= transactionIDs.count
                 self.uncategorizedTransactions = uncategorizedTransactions
             }
+            // Later rows move up a page once these leave, so paging starts again.
+            await loadUncategorizedTransactions()
             try await reloadPrimaryData()
         }
     }
@@ -878,15 +879,6 @@ final class AppModel {
         }
     }
 
-    func loadTransactionReimbursements(id: Int) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
-        }
-    }
-
     func searchReimbursementExpenses(reimbursementID: Int, query: String) async {
         guard let token else {
             return
@@ -1020,10 +1012,13 @@ final class AppModel {
         guard let token else {
             return
         }
-        await runRequest {
+        let loaded = await runRequestReturningSuccess {
             budgets = try await apiClient.budgets(month: month, token: token)
         }
-        budgetsLoadState = budgets != nil ? .loaded : .failed
+        // A load cancelled for another month leaves the state to that month's load.
+        if !Task.isCancelled {
+            budgetsLoadState = loaded ? .loaded : .failed
+        }
     }
 
     /// A read-only request for one chart or card, whose failure stays with it.
@@ -1597,8 +1592,13 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
-            selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+            let detail = try await apiClient.transactionDetail(id: id, token: token)
+            let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+            // A save can finish after another transaction opened; that one keeps its detail.
+            if selectedTransaction?.id == id {
+                selectedTransaction = detail
+                transactionReimbursements = reimbursements
+            }
             try await reloadLedger(token: token)
         }
     }
@@ -1908,6 +1908,7 @@ final class AppModel {
 
     // The views an edit to one transaction changes.
     private func reloadLedger(token: String) async throws {
+        ledgerRevision += 1
         dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
         dashboardLoadState = .loaded
         try await reloadTransactions(token: token)
@@ -1918,7 +1919,13 @@ final class AppModel {
     private func reloadTransactions(token: String) async throws {
         let query = transactionQuery
         transactionsLoadID += 1
-        transactions = try await apiClient.transactions(query, page: 1, token: token)
+        let loadID = transactionsLoadID
+        let response = try await apiClient.transactions(query, page: 1, token: token)
+        // A newer load, such as for another period, replaces this one.
+        guard loadID == transactionsLoadID else {
+            return
+        }
+        transactions = response
         loadedTransactionQuery = query
         transactionsLoadState = .loaded
     }

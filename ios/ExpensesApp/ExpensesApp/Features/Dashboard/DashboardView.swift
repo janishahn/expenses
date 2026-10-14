@@ -11,9 +11,10 @@ struct DashboardView: View {
     @State private var draftExcludedTagIDs: Set<Int> = []
     @State private var presentingFilters = false
 
+    // An edit to a transaction reloads the charts with the summary.
     private var reloadKey: String {
         let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
-        return "\(selectedPeriod.rawValue)-\(excluded)"
+        return "\(selectedPeriod.rawValue)-\(excluded)-\(model.ledgerRevision)"
     }
 
     var body: some View {
@@ -197,7 +198,7 @@ struct DashboardView: View {
                 async let balance: Void = model.loadDashboardBalance()
                 _ = await (period, balance)
             }
-            .task {
+            .task(id: model.ledgerRevision) {
                 await model.loadDashboardBalance()
             }
             .task(id: reloadKey) {

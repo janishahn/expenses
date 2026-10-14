@@ -73,7 +73,7 @@ enum AppFormatters {
         guard let value = Double(normalized), value.isFinite, value >= 0 else {
             return nil
         }
-        return Int((value * 100).rounded())
+        return Int(exactly: (value * 100).rounded())
     }
 
     /// "22 Oct", with the year outside the current one.

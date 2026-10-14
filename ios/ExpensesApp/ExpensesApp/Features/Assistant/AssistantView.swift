@@ -261,7 +261,7 @@ private struct AssistantTurnView: View {
                 if !turn.content.isEmpty {
                     AssistantMarkdownText(content: shown(turn.content, amountsHidden: model.amountsHidden))
                 } else if turn.isStreaming {
-                    AssistantProgressLine(narration: turn.progressNarration, tools: turn.tools)
+                    AssistantProgressLine(narration: shown(turn.progressNarration, amountsHidden: model.amountsHidden), tools: turn.tools)
                 }
                 if turn.isStopped {
                     Text("Stopped")

@@ -79,14 +79,15 @@ struct BudgetDetailView: View {
         let month: CalendarMonth
         let comparing: Bool
         let budgetCents: Int
+        let spentCents: Int
     }
 
-    // A month's pace reloads when its amount changes.
+    // A month's pace reloads when its amount or spending changes.
     private var burndownRequest: BurndownRequest? {
         guard key.kind == .month, let budgets = model.budgets, let budget else {
             return nil
         }
-        return BurndownRequest(month: budgets.budgetMonth, comparing: comparing, budgetCents: budget.amountCents)
+        return BurndownRequest(month: budgets.budgetMonth, comparing: comparing, budgetCents: budget.amountCents, spentCents: budgets.spent(.month, budget))
     }
 
     @ViewBuilder

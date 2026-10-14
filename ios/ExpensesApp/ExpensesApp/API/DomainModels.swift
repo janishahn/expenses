@@ -1155,16 +1155,9 @@ extension TagMutationRequest {
     }
 }
 
-/// A tag's totals and where its money went, for one period.
+/// Where a tag's money went, for one period.
 struct TagDetailResponse: Codable, Equatable {
-    let kpis: TagKPIs
     let donut: TagDonut
-}
-
-struct TagKPIs: Codable, Equatable {
-    let income: Int
-    let expenses: Int
-    let balance: Int
 }
 
 struct TagDonut: Codable, Equatable {
@@ -1384,10 +1377,6 @@ struct ReceiptAttachment: Codable, Equatable, Identifiable {
         case sha256Hex = "sha256_hex"
         case createdAt = "created_at"
     }
-}
-
-struct ReceiptAttachmentsResponse: Codable, Equatable {
-    let attachments: [ReceiptAttachment]
 }
 
 struct AttachmentDownload: Equatable {
@@ -1916,9 +1905,7 @@ struct IDResponse: Codable, Equatable {
 
 struct DashboardResponse: Codable, Equatable {
     let period: Period
-    let filters: DashboardFilters
     let kpis: DashboardKPIs
-    let sparklines: DashboardSparklines
     let deltas: DashboardKPIs?
     let donut: DashboardDonut
     let recent: [TransactionListItem]
@@ -1927,13 +1914,10 @@ struct DashboardResponse: Codable, Equatable {
     let durablePurchases: [DashboardDurablePurchase]?
     let budgetPace: DashboardBudgetPace?
     let categoryBudgetPulse: [DashboardCategoryBudgetPulse]?
-    let categoryBudgetSummary: DashboardCategoryBudgetSummary?
 
     enum CodingKeys: String, CodingKey {
         case period
-        case filters
         case kpis
-        case sparklines
         case deltas
         case donut
         case recent
@@ -1942,15 +1926,6 @@ struct DashboardResponse: Codable, Equatable {
         case durablePurchases = "durable_purchases"
         case budgetPace = "budget_pace"
         case categoryBudgetPulse = "category_budget_pulse"
-        case categoryBudgetSummary = "category_budget_summary"
-    }
-}
-
-struct DashboardFilters: Codable, Equatable {
-    let excludedTagIDs: [Int]
-
-    enum CodingKeys: String, CodingKey {
-        case excludedTagIDs = "excluded_tag_ids"
     }
 }
 
@@ -1958,12 +1933,6 @@ struct DashboardKPIs: Codable, Equatable {
     let income: Int
     let expenses: Int
     let balance: Int
-}
-
-struct DashboardSparklines: Codable, Equatable {
-    let income: String?
-    let expenses: String?
-    let balance: String?
 }
 
 struct DashboardDonut: Codable, Equatable {
@@ -2476,20 +2445,12 @@ struct BankRowActionResponse: Codable, Equatable {
 }
 
 struct DashboardBudgetPace: Codable, Equatable {
-    let velocityRatio: Double
-    let projectedCents: Int
     let budgetCents: Int
     let spentCents: Int
-    let remainingCents: Int
-    let sparkline: String
 
     enum CodingKeys: String, CodingKey {
-        case velocityRatio = "velocity_ratio"
-        case projectedCents = "projected_cents"
         case budgetCents = "budget_cents"
         case spentCents = "spent_cents"
-        case remainingCents = "remaining_cents"
-        case sparkline
     }
 }
 
@@ -2505,18 +2466,6 @@ struct DashboardCategoryBudgetPulse: Codable, Equatable, Identifiable {
         case scopeLabel = "scope_label"
         case amountCents = "amount_cents"
         case spentCents = "spent_cents"
-    }
-}
-
-struct DashboardCategoryBudgetSummary: Codable, Equatable {
-    let total: Int
-    let needsAttention: Int
-    let priority: DashboardCategoryBudgetPulse
-
-    enum CodingKeys: String, CodingKey {
-        case total
-        case needsAttention = "needs_attention"
-        case priority
     }
 }
 

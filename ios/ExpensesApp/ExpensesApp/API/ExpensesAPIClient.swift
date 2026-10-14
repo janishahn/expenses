@@ -998,10 +998,6 @@ struct ExpensesAPIClient {
         )
     }
 
-    func transactionAttachments(id: Int, token: String) async throws -> ReceiptAttachmentsResponse {
-        try await request(path: "/api/transactions/\(id)/attachments", bearerToken: token)
-    }
-
     /// `replacing` swaps that receipt for the new file in one request.
     func uploadAttachment(
         transactionID: Int,

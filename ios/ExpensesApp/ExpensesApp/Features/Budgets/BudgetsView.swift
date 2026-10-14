@@ -82,11 +82,12 @@ struct BudgetsView: View {
         let month: CalendarMonth
         let comparing: Bool
         let budgetCents: Int
+        let spentCents: Int
     }
 
     var body: some View {
         List {
-            if let budgets = model.budgets {
+            if let budgets = shownBudgets {
                 content(budgets)
             } else if model.showsBudgetsLoadFailed {
                 UnavailableStateSection(
@@ -123,10 +124,10 @@ struct BudgetsView: View {
                 } label: {
                     Label("Add budget", systemImage: "plus")
                 }
-                .disabled(model.budgets == nil)
+                .disabled(shownBudgets == nil)
                 Menu {
                     Toggle("Compare Previous Month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
-                        .disabled(model.budgets?.overall == nil)
+                        .disabled(shownBudgets?.overall == nil)
                     Toggle("Show Ended and Future Budgets", systemImage: "calendar.badge.clock", isOn: $showsInactive)
                 } label: {
                     Label("More", systemImage: "ellipsis")
@@ -137,7 +138,7 @@ struct BudgetsView: View {
             BudgetDetailView(key: key)
         }
         .sheet(isPresented: $adding) {
-            if let budgets = model.budgets {
+            if let budgets = shownBudgets {
                 AddBudgetSheet(budgets: budgets)
             }
         }
@@ -180,12 +181,17 @@ struct BudgetsView: View {
         }
     }
 
-    // The overall pace follows the loaded month and reloads when its budget changes.
+    // Until the selected month loads, the budgets still hold the previous one.
+    private var shownBudgets: BudgetsResponse? {
+        model.budgets.flatMap { $0.budgetMonth == month ? $0 : nil }
+    }
+
+    // The overall pace follows the loaded month and reloads when its budget or spending changes.
     private var paceRequest: PaceRequest? {
-        guard let budgets = model.budgets, budgets.budgetMonth == month, let overall = budgets.overall else {
+        guard let budgets = shownBudgets, let overall = budgets.overall else {
             return nil
         }
-        return PaceRequest(month: month, comparing: comparing, budgetCents: overall.amountCents)
+        return PaceRequest(month: month, comparing: comparing, budgetCents: overall.amountCents, spentCents: budgets.spent(.month, overall))
     }
 
     @ViewBuilder
