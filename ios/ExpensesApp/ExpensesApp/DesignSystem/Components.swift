@@ -306,11 +306,6 @@ struct ChartMessage: View {
     }
 }
 
-/// "2026-10" → the locale's short month name.
-func shortMonth(_ month: String) -> String {
-    Calendar.current.shortStandaloneMonthSymbols[Int(month.suffix(2))! - 1]
-}
-
 /// A screen's first load. The spinner waits 250 ms, so fast loads don't flash.
 struct LoadingStateSection: View {
     let title: String

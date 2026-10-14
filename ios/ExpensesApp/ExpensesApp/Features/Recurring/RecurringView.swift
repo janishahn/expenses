@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 /// Recurring rules as monthly commitments, or as an audit of what the expenses cost

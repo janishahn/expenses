@@ -190,21 +190,21 @@ struct PeriodMenu: View {
     var body: some View {
         Menu {
             Section {
-                Button("Previous month", systemImage: "chevron.backward") {
+                Button("Previous Month", systemImage: "chevron.backward") {
                     period = period.stepped(by: -1) ?? period
                 }
                 .disabled(period.stepped(by: -1) == nil)
-                Button("Next month", systemImage: "chevron.forward") {
+                Button("Next Month", systemImage: "chevron.forward") {
                     period = period.stepped(by: 1) ?? period
                 }
                 .disabled(period.stepped(by: 1) == nil)
             }
             Picker("Period", selection: $period) {
-                Text("This month").tag(PeriodSelection.thisMonth)
-                Text("Last month").tag(PeriodSelection.lastMonth)
-                Text("All time").tag(PeriodSelection.all)
+                Text("This Month").tag(PeriodSelection.thisMonth)
+                Text("Last Month").tag(PeriodSelection.lastMonth)
+                Text("All Time").tag(PeriodSelection.all)
             }
-            Button("Custom range", systemImage: "calendar") {
+            Button("Custom Range", systemImage: "calendar") {
                 editingRange = true
             }
         } label: {
@@ -242,7 +242,7 @@ private struct PeriodRangeSheet: View {
                 DatePicker("Start", selection: $start, displayedComponents: .date)
                 DatePicker("End", selection: $end, in: start..., displayedComponents: .date)
             }
-            .navigationTitle("Custom range")
+            .navigationTitle("Custom Range")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

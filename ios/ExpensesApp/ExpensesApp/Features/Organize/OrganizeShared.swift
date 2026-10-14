@@ -24,7 +24,7 @@ struct SortMenu<Key: ListSortKey>: View {
 
     var body: some View {
         Menu {
-            Picker("Sort by", selection: Binding(get: { sort.key }, set: { sort = ListSort(key: $0, ascending: $0.startsAscending) })) {
+            Picker("Sort By", selection: Binding(get: { sort.key }, set: { sort = ListSort(key: $0, ascending: $0.startsAscending) })) {
                 ForEach(Key.allCases) { key in
                     Text(key.title).tag(key)
                 }

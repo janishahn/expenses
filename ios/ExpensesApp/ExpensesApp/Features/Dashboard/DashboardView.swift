@@ -274,7 +274,7 @@ private struct DashboardFiltersSheet: View {
                     includedTagID: nil
                 )
             }
-            .navigationTitle("Dashboard filters")
+            .navigationTitle("Dashboard Filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -306,11 +306,11 @@ private enum DashboardPeriod: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .thisMonth:
-            "This month"
+            "This Month"
         case .lastMonth:
-            "Last month"
+            "Last Month"
         case .all:
-            "All time"
+            "All Time"
         }
     }
 }
@@ -434,7 +434,7 @@ private struct BalanceSection: View {
                     HStack(spacing: 4) {
                         Text("likely")
                         AmountText(final.endBalanceCents, decimals: false)
-                        Text("in \(shortMonth(final.month))")
+                        Text("in \(CalendarMonth(final.month).shortTitle)")
                     }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -448,8 +448,8 @@ private struct BalanceSection: View {
         let todayIndex = actual.count - 1
         let today = actual[todayIndex].balanceCents
         let labels = actual.enumerated().map { index, point in
-            index == todayIndex ? "Today" : shortMonth(point.month)
-        } + projected.map { shortMonth($0.month) }
+            index == todayIndex ? "Today" : CalendarMonth(point.month).shortTitle
+        } + projected.map { CalendarMonth($0.month).shortTitle }
         let actualPoints = actual.enumerated().map { Point(index: $0.offset, cents: $0.element.balanceCents) }
         // The likely line and its 80 % range start from today's balance.
         let likelyPoints = projected.isEmpty ? [] : [Point(index: todayIndex, cents: today)]
@@ -555,10 +555,10 @@ private struct SpendingBandsSection: View {
             ForEach(months.reversed()) { month in
                 let segments = month.segments.filter { $0.amountCents > 0 }
                 GridRow {
-                    Text(shortMonth(month.month))
+                    Text(CalendarMonth(month.month).shortTitle)
                         .foregroundStyle(.secondary)
                         .gridColumnAlignment(.leading)
-                        .accessibilityLabel("\(shortMonth(month.month)), \(model.amountString(month.totalCents))")
+                        .accessibilityLabel("\(CalendarMonth(month.month).shortTitle), \(model.amountString(month.totalCents))")
                         .accessibilityValue(segments.map { "\($0.name) \(model.amountString($0.amountCents))" }.joined(separator: ", "))
                     GeometryReader { geometry in
                         let width = geometry.size.width - CGFloat(max(segments.count - 1, 0))

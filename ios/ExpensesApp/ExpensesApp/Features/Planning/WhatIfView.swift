@@ -14,15 +14,15 @@ private enum AdjustmentKind: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .removeRule:
-            "Remove a recurring rule"
+            "Remove Recurring Rule"
         case .addRule:
-            "Add a recurring rule"
+            "Add Recurring Rule"
         case .modifyRule:
-            "Change a recurring rule"
+            "Change Recurring Rule"
         case .oneTime:
-            "One-time event"
+            "One-Time Event"
         case .adjustCategory:
-            "Category estimate"
+            "Category Estimate"
         }
     }
 
@@ -124,7 +124,7 @@ struct WhatIfView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 ForecastOptionsMenu(options: $options) {
                     Divider()
-                    Button("Clear all adjustments", systemImage: "eraser", role: .destructive) {
+                    Button("Clear All Adjustments", systemImage: "eraser", role: .destructive) {
                         adjustments = []
                     }
                     .disabled(adjustments.isEmpty)

@@ -43,11 +43,11 @@ struct UncategorizedView: View {
                                     Button("Accept \(suggested.name)", systemImage: "checkmark") {
                                         Task { await categorize([row.id], categoryID: suggested.id) }
                                     }
-                                    Button("Reject suggestion", systemImage: "xmark") {
+                                    Button("Reject Suggestion", systemImage: "xmark") {
                                         Task { await dismiss(row) }
                                     }
                                 }
-                                Button("Choose category", systemImage: "square.grid.2x2") {
+                                Button("Choose Category", systemImage: "square.grid.2x2") {
                                     choosingFor = .row(row)
                                 }
                             }

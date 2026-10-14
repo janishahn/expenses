@@ -941,7 +941,7 @@ private struct DurableSheet: View {
                     .expensesRowBackground()
                 }
             }
-            .navigationTitle("Durable purchase")
+            .navigationTitle("Durable Purchase")
             .navigationBarTitleDisplayMode(.inline)
             .expensesScreenStyle()
             .toolbar {

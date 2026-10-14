@@ -104,13 +104,13 @@ struct BudgetsView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
-                    Button("Previous month", systemImage: "chevron.backward") {
+                    Button("Previous Month", systemImage: "chevron.backward") {
                         month = month.adding(-1)
                     }
-                    Button("Next month", systemImage: "chevron.forward") {
+                    Button("Next Month", systemImage: "chevron.forward") {
                         month = month.adding(1)
                     }
-                    Button("This month", systemImage: "calendar") {
+                    Button("This Month", systemImage: "calendar") {
                         month = .current
                     }
                     .disabled(month == .current)
@@ -125,9 +125,9 @@ struct BudgetsView: View {
                 }
                 .disabled(model.budgets == nil)
                 Menu {
-                    Toggle("Compare previous month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
+                    Toggle("Compare Previous Month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
                         .disabled(model.budgets?.overall == nil)
-                    Toggle("Show ended and future budgets", systemImage: "calendar.badge.clock", isOn: $showsInactive)
+                    Toggle("Show Ended and Future Budgets", systemImage: "calendar.badge.clock", isOn: $showsInactive)
                 } label: {
                     Label("More", systemImage: "ellipsis")
                 }

@@ -34,7 +34,7 @@ struct TrashView: View {
                                 Button("Restore", systemImage: "arrow.uturn.backward") {
                                     Task { await restore([row.id]) }
                                 }
-                                Button("Delete forever", systemImage: "trash", role: .destructive) {
+                                Button("Delete Forever", systemImage: "trash", role: .destructive) {
                                     pendingPurge = [row.id]
                                 }
                             }
@@ -74,7 +74,7 @@ struct TrashView: View {
                     }
                     .disabled(selection.isEmpty)
                     Spacer()
-                    Button("Delete forever", systemImage: "trash", role: .destructive) {
+                    Button("Delete Forever", systemImage: "trash", role: .destructive) {
                         pendingPurge = selection.sorted()
                     }
                     .disabled(selection.isEmpty)
@@ -105,7 +105,7 @@ struct TrashView: View {
             presenting: pendingPurge
         ) { ids in
             Button("Cancel", role: .cancel) {}
-            Button("Delete forever", role: .destructive) {
+            Button("Delete Forever", role: .destructive) {
                 Task { await purge(ids) }
             }
         } message: { _ in

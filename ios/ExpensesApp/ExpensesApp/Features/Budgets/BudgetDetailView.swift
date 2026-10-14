@@ -222,21 +222,21 @@ struct BudgetDetailView: View {
         let template = budgets.activeTemplate(key.kind, scope: key.scopeCategoryID)
         return Menu {
             if key.kind == .month {
-                Toggle("Compare previous month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
+                Toggle("Compare Previous Month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
                 Divider()
             }
             if budget.source == "override" {
                 if let template {
-                    Button("Reset to usual \(model.amountString(template.amountCents))", systemImage: "arrow.counterclockwise") {
+                    Button("Reset to Usual \(model.amountString(template.amountCents))", systemImage: "arrow.counterclockwise") {
                         Task { await change { await model.deleteBudgetOverride(id: budget.sourceID) } }
                     }
                 } else {
-                    Button("Remove \(budgets.budgetMonth.title) budget", systemImage: "trash", role: .destructive) {
+                    Button("Remove \(budgets.budgetMonth.title) Budget", systemImage: "trash", role: .destructive) {
                         Task { await remove { await model.deleteBudgetOverride(id: budget.sourceID) } }
                     }
                 }
             } else {
-                Button("Remove budget", systemImage: "trash", role: .destructive) {
+                Button("Remove Budget", systemImage: "trash", role: .destructive) {
                     removingTemplate = true
                 }
             }

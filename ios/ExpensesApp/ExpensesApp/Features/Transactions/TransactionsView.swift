@@ -205,12 +205,12 @@ struct TransactionsView: View {
                     }
                 }
                 Divider()
-                Button("Clear tags", systemImage: "eraser") {
+                Button("Clear Tags", systemImage: "eraser") {
                     Task {
                         await prepareBulk(
                             BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: "clear", tags: []), lifecycle: "none"),
                             verb: "Clear tags on",
-                            confirmLabel: "Clear tags"
+                            confirmLabel: "Clear Tags"
                         )
                     }
                 }

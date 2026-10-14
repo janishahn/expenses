@@ -10,9 +10,9 @@ enum ForecastMode: String {
     var title: String {
         switch self {
         case .full:
-            "With estimates"
+            "With Estimates"
         case .recurring:
-            "Recurring only"
+            "Recurring Only"
         }
     }
 }
@@ -22,7 +22,7 @@ struct ForecastOptions: Hashable {
     var horizon = 6
     var mode = ForecastMode.full
 
-    /// "6 months · With estimates".
+    /// "6 months · With Estimates".
     var title: String {
         "\(horizon) months · \(mode.title)"
     }
@@ -36,9 +36,9 @@ struct ForecastOptionsMenu<Actions: View>: View {
     var body: some View {
         Menu {
             Picker("Horizon", selection: $options.horizon) {
-                Text("3 months").tag(3)
-                Text("6 months").tag(6)
-                Text("12 months").tag(12)
+                Text("3 Months").tag(3)
+                Text("6 Months").tag(6)
+                Text("12 Months").tag(12)
             }
             Picker("Model", selection: $options.mode) {
                 Text(ForecastMode.full.title).tag(ForecastMode.full)

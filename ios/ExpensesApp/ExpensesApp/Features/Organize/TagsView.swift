@@ -24,26 +24,26 @@ private enum TagSort: String, ListSortKey {
     var ascendingTitle: String {
         switch self {
         case .spent:
-            "Lowest first"
+            "Lowest First"
         case .usage:
-            "Least used first"
+            "Least Used First"
         case .name:
             "A to Z"
         case .created:
-            "Oldest first"
+            "Oldest First"
         }
     }
 
     var descendingTitle: String {
         switch self {
         case .spent:
-            "Highest first"
+            "Highest First"
         case .usage:
-            "Most used first"
+            "Most Used First"
         case .name:
             "Z to A"
         case .created:
-            "Newest first"
+            "Newest First"
         }
     }
 

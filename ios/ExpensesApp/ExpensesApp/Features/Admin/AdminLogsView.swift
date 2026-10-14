@@ -72,7 +72,7 @@ struct AdminLogsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Picker("Log type", selection: $query.filter) {
+                    Picker("Log Type", selection: $query.filter) {
                         ForEach(AdminLogFilter.allCases) { filter in
                             Text(filter.label).tag(filter)
                         }

@@ -11,11 +11,11 @@ private enum CategorySort: String, ListSortKey {
     }
 
     var ascendingTitle: String {
-        self == .usage ? "Least used first" : "A to Z"
+        self == .usage ? "Least Used First" : "A to Z"
     }
 
     var descendingTitle: String {
-        self == .usage ? "Most used first" : "Z to A"
+        self == .usage ? "Most Used First" : "Z to A"
     }
 
     var startsAscending: Bool {

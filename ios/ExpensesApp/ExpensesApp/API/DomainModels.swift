@@ -2719,7 +2719,7 @@ struct AssistantUsage: Decodable, Equatable {
             case .month:
                 "Month"
             case .all:
-                "All time"
+                "All Time"
             }
         }
     }
