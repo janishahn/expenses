@@ -590,7 +590,7 @@ private struct CategoryRow: View {
 
     var body: some View {
         HStack {
-            CategoryIconImage(iconKey: category.icon)
+            CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
             VStack(alignment: .leading, spacing: 4) {
                 Text(category.name)
                 if let detail {

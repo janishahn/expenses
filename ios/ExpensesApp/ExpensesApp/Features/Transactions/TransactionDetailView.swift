@@ -367,7 +367,7 @@ private struct TransactionSummaryCard: View {
                 Spacer(minLength: 0)
 
                 if let category = transaction.category {
-                    Label(category.name, systemImage: categorySymbolName(for: category.icon))
+                    Label(category.name, systemImage: categorySymbolName(for: resolvedCategoryIconKey(category.icon, name: category.name)))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(ExpensesTheme.accent(for: scheme))
                         .lineLimit(1)

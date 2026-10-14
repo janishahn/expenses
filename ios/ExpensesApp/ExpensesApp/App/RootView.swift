@@ -7,7 +7,7 @@ struct RootView: View {
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
     @State private var morePath: [AppDestination] = []
     @State private var dashboardPath: [Int] = []
-    @State private var transactionsPath: [Int] = []
+    @State private var transactionsPath: [TransactionsRoute] = []
     @State private var transactionsSelecting = false
     @State private var quickAddSheet: QuickAddSheet?
     @State private var quickAddTapTick = 0

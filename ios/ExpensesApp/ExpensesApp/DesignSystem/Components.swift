@@ -116,20 +116,83 @@ struct BudgetBar: View {
 struct LedgerRow: View {
     @Environment(\.colorScheme) private var scheme
 
-    let transaction: TransactionListItem
-    let category: CategorySummary?
+    let title: String
+    let detail: String?
+    let categoryID: Int?
+    let iconKey: String?
+    let categoryName: String?
+    let amountCents: Int
+    let income: Bool
+
+    init(transaction: TransactionListItem, category: CategorySummary?) {
+        self.init(
+            title: transaction.title ?? category?.name ?? "Untitled",
+            categoryID: category?.id,
+            iconKey: category?.icon,
+            categoryName: category?.name,
+            amountCents: transaction.amountCents,
+            income: transaction.type == "income"
+        )
+    }
+
+    /// `detail` is a second line, such as when a deleted transaction went to Trash.
+    init(
+        title: String,
+        detail: String? = nil,
+        categoryID: Int?,
+        iconKey: String?,
+        categoryName: String?,
+        amountCents: Int,
+        income: Bool
+    ) {
+        self.title = title
+        self.detail = detail
+        self.categoryID = categoryID
+        self.iconKey = iconKey
+        self.categoryName = categoryName
+        self.amountCents = amountCents
+        self.income = income
+    }
 
     var body: some View {
-        let income = transaction.type == "income"
         HStack(spacing: 12) {
-            CategoryGlyph(categoryID: category?.id, iconKey: category?.icon)
-            Text(transaction.title ?? "Untitled")
-                .lineLimit(1)
+            CategoryGlyph(categoryID: categoryID, iconKey: iconKey, name: categoryName)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .lineLimit(1)
+                if let detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 8)
-            AmountText(transaction.amountCents, signed: income)
+            AmountText(amountCents, signed: income)
                 .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
         }
         .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// An alert for an action that failed, with the server's message.
+    func failureAlert(_ title: String, message: Binding<String?>) -> some View {
+        alert(
+            title,
+            isPresented: Binding(
+                get: { message.wrappedValue != nil },
+                set: { presented in
+                    if !presented {
+                        message.wrappedValue = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(message.wrappedValue ?? "")
+        }
     }
 }
 

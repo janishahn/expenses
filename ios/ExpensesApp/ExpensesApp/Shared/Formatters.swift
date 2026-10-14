@@ -30,6 +30,26 @@ enum AppFormatters {
         date.formatted(date: .abbreviated, time: .omitted)
     }
 
+    /// "Thu 22 Oct" for a booking day, with the year outside the current one. Days
+    /// decode as UTC midnight, so they format in UTC.
+    static func bookingDay(_ date: Date) -> String {
+        let style = Date.FormatStyle(timeZone: .gmt).weekday(.abbreviated).day().month(.abbreviated)
+        let year = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: date).year
+        return date.formatted(year == Calendar.current.component(.year, from: .now) ? style : style.year())
+    }
+
+    /// "22 Oct", with the year outside the current one.
+    static func shortDay(_ date: Date) -> String {
+        let style = Date.FormatStyle().day().month(.abbreviated)
+        let sameYear = Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
+        return date.formatted(sameYear ? style : style.year())
+    }
+
+    /// "2026-10-22" for a calendar day in the device's time zone.
+    static func isoDay(_ date: Date) -> String {
+        date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+    }
+
     static func dateTime(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
     }

@@ -115,7 +115,7 @@ struct DashboardView: View {
                                     path.append(item.transactionID)
                                 } label: {
                                     HStack(spacing: 12) {
-                                        CategoryGlyph(categoryID: item.category?.id, iconKey: item.category?.icon)
+                                        CategoryGlyph(categoryID: item.category?.id, iconKey: item.category?.icon, name: item.category?.name)
                                         Text(item.title ?? "Untitled")
                                             .lineLimit(1)
                                         Spacer(minLength: 8)
@@ -399,7 +399,7 @@ private struct CategoryBudgetRow: View {
     var body: some View {
         let over = budget.remainingCents < 0
         HStack(spacing: 12) {
-            CategoryGlyph(categoryID: budget.scopeCategoryID, iconKey: iconKey)
+            CategoryGlyph(categoryID: budget.scopeCategoryID, iconKey: iconKey, name: budget.scopeLabel)
             VStack(spacing: 8) {
                 HStack {
                     Text(budget.scopeLabel)

@@ -44,6 +44,10 @@
 		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
 		001000000000000000000038 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* Components.swift */; };
 		001000000000000000000039 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000039 /* SignInView.swift */; };
+		001000000000000000000040 /* Period.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000040 /* Period.swift */; };
+		001000000000000000000041 /* Pickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000041 /* Pickers.swift */; };
+		001000000000000000000042 /* UncategorizedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000042 /* UncategorizedView.swift */; };
+		001000000000000000000043 /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000043 /* TrashView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -86,6 +90,10 @@
 		002000000000000000000037 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
 		002000000000000000000038 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		002000000000000000000039 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		002000000000000000000040 /* Period.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Period.swift; sourceTree = "<group>"; };
+		002000000000000000000041 /* Pickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pickers.swift; sourceTree = "<group>"; };
+		002000000000000000000042 /* UncategorizedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UncategorizedView.swift; sourceTree = "<group>"; };
+		002000000000000000000043 /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -156,6 +164,8 @@
 		004000000000000000000006 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000041 /* Pickers.swift */,
+				002000000000000000000040 /* Period.swift */,
 				002000000000000000000038 /* Components.swift */,
 				002000000000000000000007 /* Theme.swift */,
 			);
@@ -234,6 +244,8 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000016 /* TransactionsView.swift */,
+				002000000000000000000043 /* TrashView.swift */,
+				002000000000000000000042 /* UncategorizedView.swift */,
 				002000000000000000000017 /* TransactionDetailView.swift */,
 				002000000000000000000018 /* TransactionFormView.swift */,
 			);
@@ -382,6 +394,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000043 /* TrashView.swift in Sources */,
+				001000000000000000000042 /* UncategorizedView.swift in Sources */,
+				001000000000000000000041 /* Pickers.swift in Sources */,
+				001000000000000000000040 /* Period.swift in Sources */,
 				001000000000000000000039 /* SignInView.swift in Sources */,
 				001000000000000000000038 /* Components.swift in Sources */,
 				001000000000000000000001 /* ExpensesApp.swift in Sources */,

@@ -1181,30 +1181,6 @@ struct TransactionListItem: Codable, Equatable, Identifiable {
     }
 }
 
-struct TransactionSuggestion: Codable, Equatable, Identifiable {
-    let id: Int
-    let transactionID: Int
-    let status: String
-    let categoryID: Int?
-    let categoryName: String?
-    let cleanTitle: String?
-    let tags: [String]
-    let confidence: Double
-    let reason: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case transactionID = "transaction_id"
-        case status
-        case categoryID = "category_id"
-        case categoryName = "category_name"
-        case cleanTitle = "clean_title"
-        case tags
-        case confidence
-        case reason
-    }
-}
-
 struct TransactionDetail: Codable, Equatable, Identifiable {
     let id: Int
     let date: Date
@@ -1407,10 +1383,11 @@ struct AllocationIDResponse: Codable, Equatable {
 }
 
 struct TransactionsResponse: Codable, Equatable {
-    let items: [TransactionListItem]
+    var items: [TransactionListItem]
     let page: Int
     let limit: Int
     let hasMore: Bool
+    let total: Int
     let period: Period
     let filters: TransactionFilters
     let categories: [CategorySummary]
@@ -1421,6 +1398,7 @@ struct TransactionsResponse: Codable, Equatable {
         case page
         case limit
         case hasMore = "has_more"
+        case total
         case period
         case filters
         case categories
@@ -1438,12 +1416,41 @@ struct UncategorizedDefinition: Codable, Equatable {
     }
 }
 
-struct UncategorizedTransactionsResponse: Codable, Equatable {
-    let items: [TransactionListItem]
+/// A category the local model suggests for an uncategorized transaction.
+struct CategorySuggestion: Codable, Equatable {
+    let categoryID: Int
+    let confidence: Double
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+        case confidence
+    }
+}
+
+/// An Uncategorized row: the transaction, and the suggestion for it while automatic
+/// categorization is on.
+struct UncategorizedTransaction: Decodable, Equatable, Identifiable {
+    let transaction: TransactionListItem
+    let suggestion: CategorySuggestion?
+
+    var id: Int { transaction.id }
+
+    private enum CodingKeys: String, CodingKey {
+        case suggestion
+    }
+
+    init(from decoder: Decoder) throws {
+        transaction = try TransactionListItem(from: decoder)
+        suggestion = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(CategorySuggestion.self, forKey: .suggestion)
+    }
+}
+
+struct UncategorizedTransactionsResponse: Decodable, Equatable {
+    var items: [UncategorizedTransaction]
     let page: Int
     let limit: Int
     let hasMore: Bool
-    let total: Int
+    var total: Int
     let definition: UncategorizedDefinition
     let period: Period
     let filters: TransactionFilters
@@ -1487,7 +1494,91 @@ struct DeletedTransaction: Codable, Equatable, Identifiable {
 }
 
 struct DeletedTransactionsResponse: Codable, Equatable {
-    let transactions: [DeletedTransaction]
+    var transactions: [DeletedTransaction]
+    let total: Int
+}
+
+struct TransactionIDsRequest: Codable, Equatable {
+    let ids: [Int]
+}
+
+struct TransactionsRestoredResponse: Codable, Equatable {
+    let restored: Int
+}
+
+struct TransactionsPurgedResponse: Codable, Equatable {
+    let deleted: Int
+}
+
+struct CategorySuggestionDismissRequest: Codable, Equatable {
+    let categoryID: Int
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+    }
+}
+
+enum TransactionKind: String, Hashable {
+    case expense
+    case income
+}
+
+enum TagFilterMode: Hashable {
+    case include
+    case exclude
+}
+
+/// A transaction list's period, search and filters. The server takes included or
+/// excluded tags, never both.
+struct TransactionQuery: Equatable {
+    var period: PeriodSelection = .all
+    var search = ""
+    var type: TransactionKind?
+    var categoryID: Int?
+    var tagMode: TagFilterMode = .include
+    var tagIDs: Set<Int> = []
+
+    var hasFilters: Bool {
+        type != nil || categoryID != nil || !tagIDs.isEmpty
+    }
+
+    var trimmedSearch: String {
+        search.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var queryItems: [URLQueryItem] {
+        var items = period.queryItems
+        if !trimmedSearch.isEmpty {
+            items.append(URLQueryItem(name: "q", value: trimmedSearch))
+        }
+        if let type {
+            items.append(URLQueryItem(name: "type", value: type.rawValue))
+        }
+        if let categoryID {
+            items.append(URLQueryItem(name: "category", value: String(categoryID)))
+        }
+        if !tagIDs.isEmpty {
+            let ids = tagIDs.sorted().map(String.init).joined(separator: ",")
+            items.append(URLQueryItem(name: tagMode == .include ? "tags" : "exclude_tags", value: ids))
+        }
+        return items
+    }
+
+    /// Every transaction the query matches, for a bulk edit. `matchedCategoryIDs`
+    /// narrows it to Uncategorized.
+    func bulkSelection(matchedCategoryIDs: [Int]? = nil) -> BulkSelectionQueryRequest {
+        BulkSelectionQueryRequest(
+            period: period.slug,
+            start: period.range?.start,
+            end: period.range?.end,
+            type: type?.rawValue,
+            category: categoryID,
+            matchedCategoryIDs: matchedCategoryIDs,
+            tags: tagMode == .include ? tagIDs.sorted() : [],
+            excludeTags: tagMode == .exclude ? tagIDs.sorted() : [],
+            q: trimmedSearch.isEmpty ? nil : trimmedSearch
+        )
+    }
 }
 
 struct TransactionFilters: Codable, Equatable {
@@ -1541,7 +1632,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
     let type: String?
     let category: Int?
     let matchedCategoryIDs: [Int]?
-    let tag: Int?
+    let tags: [Int]
     let excludeTags: [Int]
     let q: String?
 
@@ -1552,7 +1643,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
         case type
         case category
         case matchedCategoryIDs = "matched_category_ids"
-        case tag
+        case tags
         case excludeTags = "exclude_tags"
         case q
     }

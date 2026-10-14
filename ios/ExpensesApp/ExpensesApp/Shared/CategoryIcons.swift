@@ -1,26 +1,15 @@
 import SwiftUI
 
-struct CategoryIconImage: View {
-    let iconKey: String?
-
-    var body: some View {
-        Image(systemName: categorySymbolName(for: iconKey))
-            .font(.system(size: 14, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .foregroundStyle(.secondary)
-            .background(.thinMaterial, in: Circle())
-    }
-}
-
-// A category's symbol in its color, as list rows show it.
+// A category's symbol in its color, as list rows show it. No category shows a question mark.
 struct CategoryGlyph: View {
     @Environment(\.colorScheme) private var scheme
 
     let categoryID: Int?
     let iconKey: String?
+    let name: String?
 
     var body: some View {
-        Image(systemName: categorySymbolName(for: iconKey))
+        Image(systemName: categoryID == nil ? "questionmark" : categorySymbolName(for: resolvedCategoryIconKey(iconKey, name: name)))
             .font(.callout)
             .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
             .frame(width: 26)
@@ -236,7 +225,46 @@ func categoryIconOption(for key: String?) -> CategoryIconOption? {
 
 func categorySymbolName(for key: String?) -> String {
     guard let key else {
-        return "folder"
+        return "dollarsign.circle"
     }
-    return categoryIconOption(for: key)?.symbolName ?? additionalCategorySymbolNames[key] ?? "folder"
+    return categoryIconOption(for: key)?.symbolName ?? additionalCategorySymbolNames[key] ?? "dollarsign.circle"
+}
+
+// A category without its own icon gets one from its name, as on the web.
+private let categoryIconHints: [(pattern: String, key: String)] = [
+    ("uncategorized", "receipt"),
+    ("restaurant|dining|takeaway|brunch", "fork-knife"),
+    ("coffee|cafe", "coffee"),
+    ("housing|rent|home", "house"),
+    ("grocer|food|supermarket", "shopping-cart"),
+    ("transport|transit|bus|train", "bus"),
+    ("travel|flight|holiday|vacation", "airplane"),
+    ("subscription|streaming|membership", "credit-card"),
+    ("health|medical|doctor|pharmacy", "stethoscope"),
+    ("shopping|retail|clothing", "shopping-cart"),
+    ("entertainment|cinema|movie|film", "film-strip"),
+    ("utilit|electric|energy", "lightning"),
+    ("salary|freelance|work", "briefcase"),
+    ("income|interest|investment", "trend-up"),
+    ("education|school|tuition", "graduation-cap"),
+    ("child|baby", "baby"),
+    ("pet|animal", "dog"),
+    ("overall|saving|reserve", "piggy-bank"),
+]
+
+private let categoryFallbackIconKeys = ["package", "gift", "palette", "book", "globe", "receipt"]
+
+func resolvedCategoryIconKey(_ icon: String?, name: String?) -> String {
+    let label = name?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    if let icon, !icon.isEmpty, icon != defaultCategoryIconKey || label.isEmpty {
+        return icon
+    }
+    if label.isEmpty {
+        return defaultCategoryIconKey
+    }
+    if let hint = categoryIconHints.first(where: { label.range(of: $0.pattern, options: .regularExpression) != nil }) {
+        return hint.key
+    }
+    let hash = label.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+    return categoryFallbackIconKeys[hash % categoryFallbackIconKeys.count]
 }

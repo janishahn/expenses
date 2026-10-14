@@ -15,6 +15,11 @@ enum ExpensesTheme {
         scheme == .dark ? Color(rgb: 0xF07A63) : Color(rgb: 0xB83A26)
     }
 
+    // Focus ring and checked state; the web's only chrome blue.
+    static func focus(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(rgb: 0x7C95FF) : Color(rgb: 0x3B5BDB)
+    }
+
     static func surface(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(rgb: 0x1F1D1A) : Color(rgb: 0xFFFFFF)
     }
@@ -51,6 +56,22 @@ extension View {
     /// sheet otherwise fall back to the light accent regardless of appearance.
     func themeAccentTint() -> some View {
         modifier(ThemeAccentTint())
+    }
+}
+
+extension View {
+    /// Tints list selection circles with the focus blue. The circle's check is always
+    /// white, so the light dark-mode ink would hide it.
+    func checkedTint() -> some View {
+        modifier(CheckedTint())
+    }
+}
+
+private struct CheckedTint: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.tint(ExpensesTheme.focus(for: scheme))
     }
 }
 
