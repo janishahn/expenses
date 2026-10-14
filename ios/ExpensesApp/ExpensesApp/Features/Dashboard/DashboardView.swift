@@ -19,128 +19,122 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if model.identity?.authenticated != true {
-                    SignedOutStateSection()
+                if !excludedTagIDs.isEmpty {
+                    Section {
+                        HStack(spacing: 10) {
+                            Button {
+                                draftExcludedTagIDs = excludedTagIDs
+                                presentingFilters = true
+                            } label: {
+                                Label(excludedTagLabels.joined(separator: " · "), systemImage: "line.3.horizontal.decrease.circle.fill")
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer(minLength: 8)
+
+                            Button {
+                                excludedTagIDs = []
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear tag exclusions")
+                        }
+                        .font(.callout.weight(.medium))
+                    }
+                    .expensesRowBackground()
+                }
+
+                if let dashboard = model.dashboard {
+                    let pace = budgetPace(for: dashboard.period)
+                    let categoriesByID = Dictionary(uniqueKeysWithValues: dashboard.categories.map { ($0.id, $0) })
+
+                    Section {
+                        DashboardSummary(dashboard: dashboard, pace: pace)
+                    }
+                    .expensesRowBackground()
+
+                    Section {
+                        let budgets = dashboard.categoryBudgetPulse ?? []
+                        if budgets.isEmpty {
+                            Text("No category budgets this month")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(budgets) { budget in
+                                Button(action: openBudgets) {
+                                    CategoryBudgetRow(
+                                        budget: budget,
+                                        iconKey: categoriesByID[budget.scopeCategoryID]?.icon,
+                                        pace: pace
+                                    )
+                                }
+                                .tint(.primary)
+                            }
+                        }
+                    } header: {
+                        SectionLink(title: "Budgets", destination: "Budgets", action: openBudgets)
+                    }
+                    .expensesRowBackground()
+
+                    Section {
+                        if dashboard.recent.isEmpty {
+                            Text("No transactions in this period")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(dashboard.recent.prefix(7)) { transaction in
+                                Button {
+                                    path.append(transaction.id)
+                                } label: {
+                                    LedgerRow(
+                                        transaction: transaction,
+                                        category: transaction.category.map { categoriesByID[$0.id] ?? $0 }
+                                    )
+                                }
+                                .tint(.primary)
+                            }
+                        }
+                    } header: {
+                        SectionLink(title: "Recent", destination: "Transactions", action: openTransactions)
+                    }
+                    .expensesRowBackground()
+
+                    BalanceSection(history: model.dashboardBalanceHistory, forecast: model.dashboardForecast)
+                    SpendingBandsSection(bands: model.dashboardSpendingBands)
+                    CategoryShareSection(donut: dashboard.donut)
+
+                    Section("Durable purchases") {
+                        let durable = dashboard.durablePurchases ?? []
+                        if durable.isEmpty {
+                            Text("No durable purchases are being tracked")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(durable) { item in
+                                Button {
+                                    path.append(item.transactionID)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        CategoryGlyph(categoryID: item.category?.id, iconKey: item.category?.icon)
+                                        Text(item.title ?? "Untitled")
+                                            .lineLimit(1)
+                                        Spacer(minLength: 8)
+                                        Text("\(item.daysOwned.formatted()) of \(item.expectedLifespanDays.formatted()) days")
+                                            .font(.subheadline)
+                                            .monospacedDigit()
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .tint(.primary)
+                            }
+                        }
+                    }
+                    .expensesRowBackground()
+                } else if model.showsDashboardLoadFailed {
+                    UnavailableStateSection(title: "Couldn't load the dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
                 } else {
-                    if !excludedTagIDs.isEmpty {
-                        Section {
-                            HStack(spacing: 10) {
-                                Button {
-                                    draftExcludedTagIDs = excludedTagIDs
-                                    presentingFilters = true
-                                } label: {
-                                    Label(excludedTagLabels.joined(separator: " · "), systemImage: "line.3.horizontal.decrease.circle.fill")
-                                        .lineLimit(1)
-                                }
-                                .buttonStyle(.plain)
-
-                                Spacer(minLength: 8)
-
-                                Button {
-                                    excludedTagIDs = []
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Clear tag exclusions")
-                            }
-                            .font(.callout.weight(.medium))
-                        }
-                        .expensesRowBackground()
-                    }
-
-                    if let dashboard = model.dashboard {
-                        let pace = budgetPace(for: dashboard.period)
-                        let categoriesByID = Dictionary(uniqueKeysWithValues: dashboard.categories.map { ($0.id, $0) })
-
-                        Section {
-                            DashboardSummary(dashboard: dashboard, pace: pace)
-                        }
-                        .expensesRowBackground()
-
-                        Section {
-                            let budgets = dashboard.categoryBudgetPulse ?? []
-                            if budgets.isEmpty {
-                                Text("No category budgets this month")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(budgets) { budget in
-                                    Button(action: openBudgets) {
-                                        CategoryBudgetRow(
-                                            budget: budget,
-                                            iconKey: categoriesByID[budget.scopeCategoryID]?.icon,
-                                            pace: pace
-                                        )
-                                    }
-                                    .tint(.primary)
-                                }
-                            }
-                        } header: {
-                            SectionLink(title: "Budgets", destination: "Budgets", action: openBudgets)
-                        }
-                        .expensesRowBackground()
-
-                        Section {
-                            if dashboard.recent.isEmpty {
-                                Text("No transactions in this period")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(dashboard.recent.prefix(7)) { transaction in
-                                    Button {
-                                        path.append(transaction.id)
-                                    } label: {
-                                        LedgerRow(
-                                            transaction: transaction,
-                                            category: transaction.category.map { categoriesByID[$0.id] ?? $0 }
-                                        )
-                                    }
-                                    .tint(.primary)
-                                }
-                            }
-                        } header: {
-                            SectionLink(title: "Recent", destination: "Transactions", action: openTransactions)
-                        }
-                        .expensesRowBackground()
-
-                        BalanceSection(history: model.dashboardBalanceHistory, forecast: model.dashboardForecast)
-                        SpendingBandsSection(bands: model.dashboardSpendingBands)
-                        CategoryShareSection(donut: dashboard.donut)
-
-                        Section("Durable purchases") {
-                            let durable = dashboard.durablePurchases ?? []
-                            if durable.isEmpty {
-                                Text("No durable purchases are being tracked")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(durable) { item in
-                                    Button {
-                                        path.append(item.transactionID)
-                                    } label: {
-                                        HStack(spacing: 12) {
-                                            CategoryGlyph(categoryID: item.category?.id, iconKey: item.category?.icon)
-                                            Text(item.title ?? "Untitled")
-                                                .lineLimit(1)
-                                            Spacer(minLength: 8)
-                                            Text("\(item.daysOwned.formatted()) of \(item.expectedLifespanDays.formatted()) days")
-                                                .font(.subheadline)
-                                                .monospacedDigit()
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        .contentShape(Rectangle())
-                                    }
-                                    .tint(.primary)
-                                }
-                            }
-                        }
-                        .expensesRowBackground()
-                    } else if model.showsDashboardInitialLoading {
-                        LoadingStateSection(title: "Loading dashboard")
-                    } else if model.showsDashboardLoadFailed {
-                        UnavailableStateSection(title: "Couldn't load dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                    } else {
-                        ContentUnavailableView("No dashboard loaded", systemImage: "chart.line.uptrend.xyaxis")
-                    }
+                    LoadingStateSection(title: "Loading dashboard")
                 }
             }
             .headerProminence(.increased)

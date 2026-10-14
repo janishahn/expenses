@@ -30,20 +30,36 @@ struct RootView: View {
     }
 
     var body: some View {
-        ZStack {
-            primaryTabs
+        Group {
+            if model.hasSession {
+                ZStack {
+                    primaryTabs
 
-            quickAddButton
-                .opacity(showsFloatingQuickAdd ? 1 : 0)
-                .allowsHitTesting(showsFloatingQuickAdd)
-                .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
+                    quickAddButton
+                        .opacity(showsFloatingQuickAdd ? 1 : 0)
+                        .allowsHitTesting(showsFloatingQuickAdd)
+                        .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
+                }
+                .sheet(item: $quickAddSheet) { sheet in
+                    switch sheet {
+                    case .transaction:
+                        TransactionFormView(mode: .create, categories: model.knownCategories)
+                    }
+                }
+            } else {
+                SignInView()
+            }
         }
         .tint(ExpensesTheme.accent(for: scheme))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
-        .sheet(item: $quickAddSheet) { sheet in
-            switch sheet {
-            case .transaction:
-                TransactionFormView(mode: .create, categories: model.knownCategories)
+        .onChange(of: model.hasSession) { _, hasSession in
+            // The next session starts on the Dashboard, not where the last one ended.
+            if !hasSession {
+                selectedPrimaryDestination = .dashboard
+                morePath = []
+                dashboardPath = []
+                transactionsPath = []
+                transactionsSelecting = false
             }
         }
         .task {
@@ -178,8 +194,6 @@ struct RootView: View {
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("Quick Add")
                 .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
-                .disabled(model.identity?.authenticated != true)
-                .opacity(model.identity?.authenticated == true ? 1 : 0.48)
                 .padding(.trailing, 18)
                 .padding(.bottom, 66)
             }

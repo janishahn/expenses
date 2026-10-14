@@ -4,10 +4,6 @@ import UniformTypeIdentifiers
 
 struct AuthView: View {
     @Environment(AppModel.self) private var model
-    @State private var username = ""
-    @State private var password = ""
-    @State private var setupToken = ""
-    @State private var deviceName = "iPhone"
     @State private var generatedIngestToken = ""
     @State private var statusText: String?
     @State private var formError: String?
@@ -50,8 +46,6 @@ struct AuthView: View {
                             .foregroundStyle(.red)
                     }
                 }
-            } else {
-                signedOutSection
             }
 
             appearanceSection
@@ -63,18 +57,10 @@ struct AuthView: View {
         .navigationTitle("Account")
         .expensesScreenStyle()
         .task {
-            if model.identity?.authenticated == true {
-                await model.loadAccountSettings()
-            } else if model.status == nil {
-                await model.testConnection()
-            }
+            await model.loadAccountSettings()
         }
         .refreshable {
-            if model.identity?.authenticated == true {
-                await model.loadAccountSettings()
-            } else {
-                await model.testConnection()
-            }
+            await model.loadAccountSettings()
         }
         .onChange(of: model.identity?.user?.id) {
             categorizationDraft = nil
@@ -127,134 +113,6 @@ struct AuthView: View {
                 Task { await model.logout() }
             }
         }
-    }
-
-    private var signedOutSection: some View {
-        Group {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Image(systemName: "lock.shield")
-                        .font(.system(size: 32, weight: .semibold))
-                        .foregroundStyle(.tint)
-                    Text("Connect to Expenses")
-                        .font(.title3.weight(.semibold))
-                    Text(authIntroText)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.vertical, 8)
-            }
-
-            Section("Credentials") {
-                TextField("Username", text: $username)
-                    .textInputAutocapitalization(.never)
-                    .textContentType(.username)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                if model.status?.setupTokenRequired == true {
-                    SecureField("Setup token", text: $setupToken)
-                        .textContentType(.oneTimeCode)
-                }
-                TextField("Device name", text: $deviceName)
-            }
-
-            Section("Access") {
-                Button {
-                    Task {
-                        await model.login(
-                            username: username,
-                            password: password,
-                            deviceName: deviceName
-                        )
-                        await model.loadAccountSettings()
-                    }
-                } label: {
-                    Label("Log in", systemImage: "person.crop.circle.badge.checkmark")
-                }
-                .fontWeight(.semibold)
-                .disabled(authFieldsAreEmpty || model.isLoading)
-
-                Button {
-                    Task {
-                        await model.setup(
-                            username: username,
-                            password: password,
-                            deviceName: deviceName,
-                            setupToken: setupToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                        await model.loadAccountSettings()
-                    }
-                } label: {
-                    Label("Run first-time setup", systemImage: "wand.and.stars")
-                }
-                .disabled(
-                    authFieldsAreEmpty ||
-                        setupTokenIsRequiredAndMissing ||
-                        model.status?.setupRequired != true ||
-                        model.isLoading
-                )
-
-                Button {
-                    Task {
-                        await model.signup(
-                            username: username,
-                            password: password,
-                            deviceName: deviceName
-                        )
-                        await model.loadAccountSettings()
-                    }
-                } label: {
-                    Label("Create account", systemImage: "person.crop.circle.badge.plus")
-                }
-                .disabled(
-                    authFieldsAreEmpty ||
-                        model.status?.setupRequired == true ||
-                        model.status?.signupAllowed != true ||
-                        model.isLoading
-                )
-
-                if let setupRequired = model.status?.setupRequired {
-                    Text(setupRequired ? "This tracker still needs first-time setup." : "First-time setup is complete.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if model.isLoading {
-                    Text("Checking tracker status...")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    HStack {
-                        Text("Couldn't reach the tracker.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Retry") {
-                            Task { await model.testConnection() }
-                        }
-                        .font(.footnote)
-                    }
-                }
-            }
-        }
-    }
-
-    private var authFieldsAreEmpty: Bool {
-        username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || password.isEmpty
-            || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var setupTokenIsRequiredAndMissing: Bool {
-        model.status?.setupTokenRequired == true
-            && setupToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var authIntroText: String {
-        if model.status?.setupRequired == true {
-            return "Create the first admin account for this tracker. Your device will keep a local mobile session after setup."
-        }
-        return "Sign in to reuse this device as a trusted mobile session."
     }
 
     private var autoCategorizationSection: some View {

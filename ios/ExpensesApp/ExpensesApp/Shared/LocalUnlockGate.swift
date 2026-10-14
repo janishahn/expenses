@@ -54,7 +54,7 @@ struct LocalUnlockGate<Content: View>: View {
     }
 
     private var unlockTaskID: String {
-        "\(scenePhase)-\(requiresLocalUnlock)-\(model.hasStoredToken)"
+        "\(scenePhase)-\(requiresLocalUnlock)-\(model.hasSession)"
     }
 
     private var isUnlocked: Bool {
@@ -81,7 +81,7 @@ struct LocalUnlockGate<Content: View>: View {
     }
 
     private var requiresLocalUnlock: Bool {
-        model.hasStoredToken
+        model.hasSession
             && !skipsLocalUnlockForSimulator
             && (!isUnlocked || didExceedReturnGrace)
     }
@@ -115,7 +115,7 @@ struct LocalUnlockGate<Content: View>: View {
     }
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        guard model.hasStoredToken, !skipsLocalUnlockForSimulator else {
+        guard model.hasSession, !skipsLocalUnlockForSimulator else {
             unlockState = .locked
             lastProtectedAt = nil
             coversProtectedContent = false

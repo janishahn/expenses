@@ -35,6 +35,8 @@ final class AppModel {
     }
     var status: MobileStatus?
     var llmEnabled: Bool { status?.llmEnabled ?? false }
+    // A mobile session token is stored. The app shows sign-in until there is one.
+    private(set) var hasSession = false
     var identity: MobileAuthIdentity?
     var dashboard: DashboardResponse?
     var dashboardPeriod = "this_month"
@@ -111,14 +113,11 @@ final class AppModel {
         appearancePreference = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey) ?? "system"
         amountsHidden = UserDefaults.standard.bool(forKey: Self.amountsHiddenKey)
         apiClient = ExpensesAPIClient(baseURL: URL(string: initialBaseURLString))
+        hasSession = token != nil
     }
 
     var token: String? {
         try? keychain.readString(account: ExpensesAppStorage.tokenKey)
-    }
-
-    var hasStoredToken: Bool {
-        token != nil
     }
 
     var knownCategories: [CategorySummary] {
@@ -1967,6 +1966,7 @@ final class AppModel {
             }
             if let token = response.token {
                 try keychain.save(token, account: ExpensesAppStorage.tokenKey)
+                hasSession = true
             }
             clearUserScopedState()
             identity = response.withoutToken()
@@ -2122,6 +2122,7 @@ final class AppModel {
     private func clearStoredSession() {
         try? keychain.delete(account: ExpensesAppStorage.tokenKey)
         identity = nil
+        hasSession = false
     }
 
     private func clearUserScopedState() {

@@ -43,6 +43,7 @@
 		001000000000000000000036 /* AISettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000036 /* AISettingsModels.swift */; };
 		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
 		001000000000000000000038 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* Components.swift */; };
+		001000000000000000000039 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000039 /* SignInView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +85,7 @@
 		002000000000000000000036 /* AISettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsModels.swift; sourceTree = "<group>"; };
 		002000000000000000000037 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
 		002000000000000000000038 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		002000000000000000000039 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,6 +186,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000008 /* AuthView.swift */,
+				002000000000000000000039 /* SignInView.swift */,
 				002000000000000000000037 /* AISettingsView.swift */,
 			);
 			path = Auth;
@@ -379,6 +382,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000039 /* SignInView.swift in Sources */,
 				001000000000000000000038 /* Components.swift in Sources */,
 				001000000000000000000001 /* ExpensesApp.swift in Sources */,
 				001000000000000000000002 /* AppModel.swift in Sources */,
