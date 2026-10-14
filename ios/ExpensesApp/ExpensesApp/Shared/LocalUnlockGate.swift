@@ -97,7 +97,7 @@ struct LocalUnlockGate<Content: View>: View {
         case .opticID:
             return "Optic ID"
         default:
-            return "device authentication"
+            return "Passcode"
         }
     }
 
@@ -219,104 +219,52 @@ private enum LocalUnlockState: Equatable {
 }
 
 private struct LocalUnlockView: View {
+    @Environment(\.colorScheme) private var scheme
     let state: LocalUnlockState
     let biometricLabel: String
     let biometricSystemImage: String
     var retry: () -> Void
 
     var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
-            Image(systemName: iconName)
-                .font(.system(size: 46, weight: .semibold))
-                .foregroundStyle(iconColor)
-                .symbolEffect(.pulse, options: .repeating, value: isAuthenticating)
-
-            VStack(spacing: 8) {
-                Text(title)
-                    .font(.title2.weight(.semibold))
-                Text(message)
-                    .font(.subheadline)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 28)
-
-            if isAuthenticating {
-                ProgressView()
-                    .controlSize(.regular)
-            } else {
-                Button(action: primaryAction) {
-                    Label(buttonTitle, systemImage: buttonSystemImage)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            }
+            Text(title)
+                .font(.title3.weight(.semibold))
 
             if let detail {
                 Text(detail)
                     .font(.footnote)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(detailColor)
-                    .padding(.horizontal, 28)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .foregroundStyle(ExpensesTheme.expense(for: scheme))
             }
 
-            Spacer()
+            // The ink tint is light in dark mode, so the label takes the page color.
+            Button(action: primaryAction) {
+                Label(buttonTitle, systemImage: buttonSystemImage)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(ExpensesTheme.background(for: scheme))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(ExpensesTheme.accent(for: scheme))
+            .controlSize(.large)
+            .disabled(state == .authenticating)
+            .padding(.top, 8)
         }
+        .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ExpensesBackground())
         .animation(.easeInOut(duration: 0.18), value: state)
     }
 
-    private var isAuthenticating: Bool {
-        state == .authenticating
-    }
-
-    private var iconName: String {
-        switch state {
-        case .unavailable:
-            "exclamationmark.lock"
-        case .failed:
-            "lock.trianglebadge.exclamationmark"
-        default:
-            biometricSystemImage
-        }
-    }
-
-    private var iconColor: Color {
-        switch state {
-        case .failed, .unavailable:
-            .red
-        default:
-            .accentColor
-        }
-    }
-
     private var title: String {
-        switch state {
-        case .authenticating:
-            "Unlocking Expenses"
-        case .failed:
-            "Try Again"
-        case .unavailable:
+        if case .unavailable = state {
             "Unlock Unavailable"
-        case .locked, .unlocked:
+        } else {
             "Unlock Expenses"
-        }
-    }
-
-    private var message: String {
-        switch state {
-        case .authenticating:
-            "Complete \(biometricLabel) or enter your device passcode."
-        case .failed:
-            "Expenses is still locked. Try \(biometricLabel) again or use your device passcode."
-        case .unavailable:
-            "Device authentication must be available before the saved mobile session can be used."
-        case .locked, .unlocked:
-            "Use \(biometricLabel) or your device passcode to access the saved mobile session."
         }
     }
 
@@ -325,9 +273,9 @@ private struct LocalUnlockView: View {
         case .failed:
             "Try Again"
         case .unavailable:
-            "Check Settings"
+            "Open Settings"
         default:
-            "Unlock"
+            "Unlock with \(biometricLabel)"
         }
     }
 
@@ -353,15 +301,6 @@ private struct LocalUnlockView: View {
             message
         default:
             nil
-        }
-    }
-
-    private var detailColor: Color {
-        switch state {
-        case .failed, .unavailable:
-            .red
-        default:
-            .secondary
         }
     }
 }
