@@ -8,7 +8,7 @@ from io import StringIO
 from typing import Literal
 
 from rapidfuzz import fuzz
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from expenses.core.periods import Period
@@ -396,15 +396,9 @@ class BankReconciliationService:
             "only_in_expenses": only_in_expenses["items"],
         }
 
-    def list_rows(
-        self,
-        *,
-        view: str,
-        outcome: str | None,
-        account: str | None,
-        page: int,
-        limit: int,
-    ) -> dict[str, object]:
+    def _row_conditions(
+        self, *, view: str, outcome: str | None, account: str | None
+    ) -> list[ColumnElement[bool]]:
         trashed_ids = select(Transaction.id).where(
             Transaction.user_id == self.user_id, Transaction.deleted_at.is_not(None)
         )
@@ -422,7 +416,6 @@ class BankReconciliationService:
                     match_purged,
                 )
             ]
-            order = (BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
         else:
             conditions = [
                 BankStatementRow.resolution.is_not(None),
@@ -431,12 +424,28 @@ class BankReconciliationService:
                 ),
                 ~match_purged,
             ]
-            order = (BankStatementRow.resolved_at.desc(), BankStatementRow.id.desc())
         conditions.append(BankStatementRow.user_id == self.user_id)
         if outcome is not None:
             conditions.append(BankStatementRow.resolution == outcome)
         if account is not None:
             conditions.append(BankStatementRow.account_label == account)
+        return conditions
+
+    def list_rows(
+        self,
+        *,
+        view: str,
+        outcome: str | None,
+        account: str | None,
+        page: int,
+        limit: int,
+    ) -> dict[str, object]:
+        conditions = self._row_conditions(view=view, outcome=outcome, account=account)
+        order = (
+            (BankStatementRow.booking_date.desc(), BankStatementRow.id.desc())
+            if view == "open"
+            else (BankStatementRow.resolved_at.desc(), BankStatementRow.id.desc())
+        )
 
         total = int(
             self.session.scalar(
@@ -594,13 +603,19 @@ class BankReconciliationService:
     def ignore(self, row_id: int, reason: str | None) -> None:
         row = self._get_row(row_id)
         self._require_unresolved(row)
-        now = datetime.now(UTC).replace(tzinfo=None)
-        row.matched_transaction_id = None
-        row.reviewed_at = now
-        row.resolution = "ignored"
-        row.resolved_at = now
-        row.ignore_reason = reason
+        self._resolve_ignored(row, reason)
         self.session.commit()
+
+    def ignore_open(self, account: str | None) -> list[int]:
+        rows = self.session.scalars(
+            select(BankStatementRow).where(
+                *self._row_conditions(view="open", outcome=None, account=account)
+            )
+        ).all()
+        for row in rows:
+            self._resolve_ignored(row, None)
+        self.session.commit()
+        return [row.id for row in rows]
 
     def reopen(
         self,
@@ -692,6 +707,14 @@ class BankReconciliationService:
         row.ignore_reason = None
         self.session.commit()
         return txn.id
+
+    def _resolve_ignored(self, row: BankStatementRow, reason: str | None) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        row.matched_transaction_id = None
+        row.reviewed_at = now
+        row.resolution = "ignored"
+        row.resolved_at = now
+        row.ignore_reason = reason
 
     def _resolve_matched(self, row: BankStatementRow, transaction_id: int) -> None:
         row.matched_transaction_id = transaction_id

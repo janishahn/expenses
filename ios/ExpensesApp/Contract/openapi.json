@@ -933,6 +933,39 @@
         "title": "BankAccountsResponseOut",
         "type": "object"
       },
+      "BankIgnoreOpenIn": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          }
+        },
+        "title": "BankIgnoreOpenIn",
+        "type": "object"
+      },
+      "BankIgnoreOpenOut": {
+        "properties": {
+          "row_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Row Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "row_ids"
+        ],
+        "title": "BankIgnoreOpenOut",
+        "type": "object"
+      },
       "BankReconciliationResponseOut": {
         "properties": {
           "only_in_expenses": {
@@ -12629,6 +12662,44 @@
           }
         },
         "summary": "Api Accept Bank Row Suggestions"
+      }
+    },
+    "/api/reconciliation/bank-rows/ignore-open": {
+      "post": {
+        "operationId": "api_ignore_open_bank_rows_api_reconciliation_bank_rows_ignore_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankIgnoreOpenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankIgnoreOpenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Ignore Open Bank Rows"
       }
     },
     "/api/reconciliation/bank-rows/{row_id}/accept-suggestion": {

@@ -233,6 +233,26 @@ test.describe("Reconcile (mobile)", () => {
     await expect(page.getByText("Nothing to review")).toBeVisible()
   })
 
+  test("ignores every remaining row from the More actions sheet and Undo reopens them", async ({ page }) => {
+    const user = await signIn(page)
+    await importRows(user, [
+      { date: "2026-05-06", payee: "ATM CITY", cents: -5000 },
+      { date: "2026-05-07", payee: "ODD CHARGE", cents: -777 },
+    ])
+    await page.goto("/reconciliation")
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    const sheet = page.getByRole("dialog", { name: "More actions" })
+    await expectSheet(page, sheet)
+    await sheet.getByRole("menuitem", { name: /^Ignore remaining rows…/ }).click()
+    await page.getByRole("dialog", { name: "Ignore 2 rows to review?" }).getByRole("button", { name: "Ignore all" }).click()
+    await expect(toast(page)).toContainText("Ignored 2 rows")
+    await expect(page.getByText("Nothing to review")).toBeVisible()
+
+    await toast(page).getByRole("button", { name: "Undo" }).click()
+    await expect(openList(page).getByRole("listitem")).toHaveCount(2)
+  })
+
   test("creates and matches a transaction from the sheet opened in the peek", async ({ page }) => {
     const user = await signIn(page)
     await importRows(user, [{ date: "2026-05-07", payee: "AMAZON EU", cents: -1395, purpose: "ORDER 123" }])

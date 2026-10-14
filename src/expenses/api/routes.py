@@ -125,6 +125,8 @@ from expenses.schemas import (
     BankAcceptSuggestionsIn,
     BankAcceptSuggestionsOut,
     BankAccountsResponseOut,
+    BankIgnoreOpenIn,
+    BankIgnoreOpenOut,
     BankReconciliationResponseOut,
     BankRowActionResponseOut,
     BankRowCandidatesOut,
@@ -3486,6 +3488,18 @@ def api_accept_bank_row_suggestions(
             for row_id, transaction_id in accepted
         ]
     }
+
+
+@router.post(
+    "/api/reconciliation/bank-rows/ignore-open", response_model=BankIgnoreOpenOut
+)
+def api_ignore_open_bank_rows(
+    data: BankIgnoreOpenIn, request: Request, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    row_ids = BankReconciliationService(db, user_id=user_id).ignore_open(data.account)
+    return {"row_ids": row_ids}
 
 
 @router.post(

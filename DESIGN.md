@@ -56,7 +56,7 @@ Four levels, from back to front:
 
 Hue belongs to data. Chrome is ink and gray. Blue appears only as the focus ring,
 checked checkboxes, and text links. Red appears only for problems: over budget,
-failed, destructive.
+overspent, failed, destructive.
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
@@ -75,7 +75,8 @@ failed, destructive.
 | `hover` | ink at 3.5% | white at 4% | Hover fill |
 | `selected` | ink at 7% | white at 8% | Selected row, active nav, active segment |
 | `band` | ink at 7% | white at 8% | Forecast and scenario ranges in charts |
-| `saved` | `income` at 10% | `income` at 12% | Area between income and expenses |
+| `saved` | `income` at 10% | `income` at 12% | Area where income exceeds expenses |
+| `overspent` | `over` at 10% | `over` at 12% | Area where expenses exceed income |
 | `rec` | budget fill at 38% on `sheet` | budget fill at 38% on `sheet` | Recurring share in charts, weekday bars |
 
 Light is near-neutral; dark is warm. Both are authored, not inverted. Text must
@@ -248,7 +249,9 @@ Chart styles:
   lists the amount and percentage.
 - Budgets: neutral fill, `over` when over budget, an `ink` tick at today's pace.
 - Income and expenses: an `income` line and an `ink` line with the gap between
-  them filled in `saved`. The title carries the saved share ("41 % saved").
+  them filled in `saved` where income is higher and `overspent` where expenses
+  are. The month in progress is dashed and unfilled. The title carries the
+  saved share ("41 % saved"), or the overspent share when it is negative.
 - Recurring split: monthly stacked columns, at most 26px wide, with spending
   posted by recurring rules in `rec` at the bottom and other spending in
   `ink-2` on top.
@@ -352,7 +355,9 @@ pages below fix the structure; the current pages show the content.
   preselected), and No match (Create… opens the create dialog filled from the
   row, ending in "Create and match"). Every row has an Ignore menu of reasons:
   Cash withdrawal, Transfer between my accounts, Not something I track, Other
-  reason… (free text). The peek shows Booked, Account, Purpose, the candidates
+  reason… (free text). ⋯ in the header holds "Ignore remaining rows…", which
+  confirms and then ignores every row to review in the account filter, on
+  every page. The peek shows Booked, Account, Purpose, the candidates
   as radio rows, and a search over all transactions; picking one with another
   amount adds a switch, on by default, to set it to the bank amount. The peek
   footer is always Match, Create…, then Ignore; only the ink fill moves (Match
