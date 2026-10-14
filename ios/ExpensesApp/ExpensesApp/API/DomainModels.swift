@@ -2785,15 +2785,25 @@ struct IngestTokenMetadata: Codable, Equatable {
 }
 
 struct AutoCategorizationSettings: Codable, Equatable {
-    var enabled: Bool = false
-    var threshold: Double = 0.8
-    var trainingStatus: String = "untrained"
-    var trainedAt: String?
+    enum TrainingStatus: String, Codable {
+        case untrained
+        case training
+        case ready
+        case insufficientData = "insufficient_data"
+        case failed
+    }
+
+    let enabled: Bool
+    let threshold: Double
+    let trainingStatus: TrainingStatus
+    let trainedAt: Date?
+    let minHistory: Int
 
     enum CodingKeys: String, CodingKey {
         case enabled, threshold
         case trainingStatus = "training_status"
         case trainedAt = "trained_at"
+        case minHistory = "min_history"
     }
 }
 

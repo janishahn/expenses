@@ -61,6 +61,9 @@ struct ValuePopover: View {
                 .focused($focused)
                 .submitLabel(.done)
                 .onSubmit(save)
+                .onChange(of: text) {
+                    error = nil
+                }
                 .fieldError(error)
             HStack {
                 Spacer()

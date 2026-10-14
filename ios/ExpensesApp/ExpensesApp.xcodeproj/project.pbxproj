@@ -14,7 +14,7 @@
 		001000000000000000000005 /* ExpensesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000005 /* ExpensesAPIClient.swift */; };
 		001000000000000000000006 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000006 /* KeychainStore.swift */; };
 		001000000000000000000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000007 /* Theme.swift */; };
-		001000000000000000000008 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000008 /* AuthView.swift */; };
+		001000000000000000000008 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000008 /* SettingsView.swift */; };
 		001000000000000000000009 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000009 /* DiagnosticsView.swift */; };
 		001000000000000000000010 /* PrivacyOverlayModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000010 /* PrivacyOverlayModifier.swift */; };
 		001000000000000000000011 /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000013 /* DomainModels.swift */; };
@@ -64,6 +64,10 @@
 		001000000000000000000058 /* TemplateDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000058 /* TemplateDetailView.swift */; };
 		001000000000000000000059 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000059 /* RulesView.swift */; };
 		001000000000000000000060 /* RuleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000060 /* RuleDetailView.swift */; };
+		001000000000000000000061 /* AccountSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000061 /* AccountSettingsView.swift */; };
+		001000000000000000000062 /* CategorizationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000062 /* CategorizationSettingsView.swift */; };
+		001000000000000000000063 /* BalanceSnapshotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000063 /* BalanceSnapshotsView.swift */; };
+		001000000000000000000064 /* ImportExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000064 /* ImportExportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -74,7 +78,7 @@
 		002000000000000000000005 /* ExpensesAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesAPIClient.swift; sourceTree = "<group>"; };
 		002000000000000000000006 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		002000000000000000000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		002000000000000000000008 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		002000000000000000000008 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		002000000000000000000009 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		002000000000000000000010 /* PrivacyOverlayModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyOverlayModifier.swift; sourceTree = "<group>"; };
 		002000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -126,6 +130,10 @@
 		002000000000000000000058 /* TemplateDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateDetailView.swift; sourceTree = "<group>"; };
 		002000000000000000000059 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
 		002000000000000000000060 /* RuleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000061 /* AccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSettingsView.swift; sourceTree = "<group>"; };
+		002000000000000000000062 /* CategorizationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationSettingsView.swift; sourceTree = "<group>"; };
+		002000000000000000000063 /* BalanceSnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceSnapshotsView.swift; sourceTree = "<group>"; };
+		002000000000000000000064 /* ImportExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportExportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -228,7 +236,11 @@
 		004000000000000000000008 /* Auth */ = {
 			isa = PBXGroup;
 			children = (
-				002000000000000000000008 /* AuthView.swift */,
+				002000000000000000000008 /* SettingsView.swift */,
+				002000000000000000000064 /* ImportExportView.swift */,
+				002000000000000000000063 /* BalanceSnapshotsView.swift */,
+				002000000000000000000062 /* CategorizationSettingsView.swift */,
+				002000000000000000000061 /* AccountSettingsView.swift */,
 				002000000000000000000039 /* SignInView.swift */,
 				002000000000000000000037 /* AISettingsView.swift */,
 			);
@@ -442,6 +454,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000064 /* ImportExportView.swift in Sources */,
+				001000000000000000000063 /* BalanceSnapshotsView.swift in Sources */,
+				001000000000000000000062 /* CategorizationSettingsView.swift in Sources */,
+				001000000000000000000061 /* AccountSettingsView.swift in Sources */,
 				001000000000000000000060 /* RuleDetailView.swift in Sources */,
 				001000000000000000000059 /* RulesView.swift in Sources */,
 				001000000000000000000058 /* TemplateDetailView.swift in Sources */,
@@ -473,7 +489,7 @@
 				001000000000000000000005 /* ExpensesAPIClient.swift in Sources */,
 				001000000000000000000006 /* KeychainStore.swift in Sources */,
 				001000000000000000000007 /* Theme.swift in Sources */,
-				001000000000000000000008 /* AuthView.swift in Sources */,
+				001000000000000000000008 /* SettingsView.swift in Sources */,
 				001000000000000000000013 /* DashboardView.swift in Sources */,
 				001000000000000000000009 /* DiagnosticsView.swift in Sources */,
 				001000000000000000000014 /* TransactionsView.swift in Sources */,

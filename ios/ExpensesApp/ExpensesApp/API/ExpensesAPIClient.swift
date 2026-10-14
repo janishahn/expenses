@@ -522,6 +522,32 @@ struct ExpensesAPIClient {
         )
     }
 
+    /// Streams the archive to a temporary file, since it holds every receipt.
+    func downloadPortableArchive(token: String) async throws -> URL {
+        let baseURL = try validatedBaseURL()
+        guard let url = URL(string: "/api/export/portable.zip", relativeTo: baseURL) else {
+            throw APIErrorInfo(message: "Request URL is invalid.")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (location, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIErrorInfo(message: "Backend returned an invalid response.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIErrorInfo(
+                message: parseErrorMessage((try? Data(contentsOf: location)) ?? Data()) ?? "Request failed.",
+                statusCode: http.statusCode,
+                requestID: http.value(forHTTPHeaderField: "X-Request-ID")
+            )
+        }
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(filename(from: http) ?? "expenses_portable_export.zip")
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: location, to: destination)
+        return destination
+    }
+
     func reconciliation(token: String) async throws -> BankReconciliationResponse {
         try await request(path: "/api/reconciliation", bearerToken: token)
     }

@@ -152,7 +152,7 @@ struct RootView: View {
         case .tags:
             TagsView(openTransactions: openTransactions)
         case .settings:
-            AuthView()
+            SettingsView()
         case .assistant:
             AssistantView()
         case .more:

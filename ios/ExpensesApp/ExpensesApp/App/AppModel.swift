@@ -71,7 +71,6 @@ final class AppModel {
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
     var aiSettings: AISettingsResponse?
-    var csvPreview: CSVPreviewResponse?
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
@@ -389,13 +388,11 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let preview = try await apiClient.previewCSV(
+            return try await apiClient.previewCSV(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            csvPreview = preview
-            return preview
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -418,7 +415,6 @@ final class AppModel {
                 data: data,
                 token: token
             )
-            csvPreview = nil
             try await reloadPrimaryData()
             settings = try await apiClient.settings(token: token)
             return response
@@ -1050,6 +1046,23 @@ final class AppModel {
         defer { isLoading = false }
         do {
             return try await apiClient.exportUserCSV(token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+        return nil
+    }
+
+    func downloadPortableArchive() async -> URL? {
+        guard let token else {
+            return nil
+        }
+        isLoading = true
+        lastError = nil
+        defer { isLoading = false }
+        do {
+            return try await apiClient.downloadPortableArchive(token: token)
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1974,7 +1987,6 @@ final class AppModel {
         legacySQLitePreview = nil
         mobileSessions = nil
         settings = nil
-        csvPreview = nil
         recurring = nil
         recurringLoadState = .idle
         selectedTransaction = nil

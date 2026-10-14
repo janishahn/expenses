@@ -102,12 +102,14 @@ struct EntryAmountField: View {
     @Binding var text: String
     let income: Bool
     var prompt = AppFormatters.euros(0)
+    // A balance can be negative, and the decimal pad has no minus key.
+    var keyboard = UIKeyboardType.decimalPad
 
     var body: some View {
         TextField("Amount", text: $text, prompt: Text(prompt))
             .font(.system(size: 34, weight: .semibold))
             .monospacedDigit()
-            .keyboardType(.decimalPad)
+            .keyboardType(keyboard)
             .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
     }
 }
