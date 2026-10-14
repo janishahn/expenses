@@ -1,579 +1,552 @@
+import Charts
 import SwiftUI
+
+/// A calendar month as the budgets API names it, such as "2026-10".
+struct BudgetMonth: Hashable, Comparable {
+    let year: Int
+    let month: Int
+
+    static var current: BudgetMonth {
+        let parts = Calendar.current.dateComponents([.year, .month], from: .now)
+        return BudgetMonth(year: parts.year!, month: parts.month!)
+    }
+
+    var value: String {
+        String(format: "%04d-%02d", year, month)
+    }
+
+    var days: Int {
+        Self.calendar.range(of: .day, in: .month, for: start)!.count
+    }
+
+    /// The first day at UTC midnight, as the API's days decode.
+    var start: Date {
+        Self.calendar.date(from: DateComponents(year: year, month: month, day: 1))!
+    }
+
+    /// "October 2026".
+    var title: String {
+        start.formatted(Date.FormatStyle(timeZone: .gmt).month(.wide).year())
+    }
+
+    /// Days that have passed: all of a past month, none of a future one.
+    var daysElapsed: Int {
+        let current = Self.current
+        if self < current {
+            return days
+        }
+        return self > current ? 0 : Calendar.current.component(.day, from: .now)
+    }
+
+    /// The share of the month that has passed, while it is under way.
+    var pace: Double? {
+        self == .current ? Double(daysElapsed) / Double(days) : nil
+    }
+
+    func adding(_ months: Int) -> BudgetMonth {
+        let index = year * 12 + month - 1 + months
+        return BudgetMonth(year: index / 12, month: index % 12 + 1)
+    }
+
+    func day(_ day: Int) -> Date {
+        Self.calendar.date(byAdding: .day, value: day - 1, to: start)!
+    }
+
+    static func < (lhs: BudgetMonth, rhs: BudgetMonth) -> Bool {
+        (lhs.year, lhs.month) < (rhs.year, rhs.month)
+    }
+
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        return calendar
+    }()
+}
+
+/// A budget's period: a month, or a year for an annual budget.
+enum BudgetKind: Hashable {
+    case month
+    case year
+}
+
+/// A budget on the Budgets screen; a nil scope is all expense categories.
+struct BudgetKey: Hashable {
+    let kind: BudgetKind
+    let scopeCategoryID: Int?
+}
+
+extension BudgetsResponse {
+    var budgetMonth: BudgetMonth {
+        BudgetMonth(year: year, month: month)
+    }
+
+    var overall: BudgetScope? {
+        budgets.first { $0.scopeCategoryID == nil }
+    }
+
+    var categoryBudgets: [BudgetScope] {
+        budgets.filter { $0.scopeCategoryID != nil }
+    }
+
+    func budget(_ key: BudgetKey) -> BudgetScope? {
+        (key.kind == .month ? budgets : yearlyBudgets).first { $0.scopeCategoryID == key.scopeCategoryID }
+    }
+
+    func progress(_ scope: Int?) -> BudgetProgress? {
+        progress.first { $0.scopeCategoryID == scope }
+    }
+
+    func spent(_ kind: BudgetKind, _ budget: BudgetScope) -> Int {
+        switch kind {
+        case .month:
+            progress(budget.scopeCategoryID)?.spentCents ?? 0
+        case .year:
+            yearlySpent.first { $0.scopeCategoryID == budget.scopeCategoryID }?.spentCents ?? 0
+        }
+    }
+
+    func category(_ id: Int?) -> BudgetCategory? {
+        categories.first { $0.id == id }
+    }
+
+    /// The template behind a scope's budget: the latest one that covers the period.
+    func activeTemplate(_ kind: BudgetKind, scope: Int?) -> BudgetTemplateRow? {
+        activeTemplates(kind).first { $0.category?.id == scope }
+    }
+
+    var inactiveTemplates: [BudgetTemplateRow] {
+        let active = Set((activeTemplates(.month) + activeTemplates(.year)).map(\.id))
+        return templates.filter { !active.contains($0.id) }
+    }
+
+    private func activeTemplates(_ kind: BudgetKind) -> [BudgetTemplateRow] {
+        let day = kind == .month ? budgetMonth.start : BudgetMonth(year: yearValue, month: 1).start
+        let frequency = kind == .month ? "monthly" : "yearly"
+        var scopes = Set<Int?>()
+        return templates
+            .filter { $0.frequency == frequency && $0.startsOn <= day && ($0.endsOn.map { $0 >= day } ?? true) }
+            .sorted { $0.startsOn > $1.startsOn }
+            .filter { scopes.insert($0.category?.id).inserted }
+    }
+}
 
 struct BudgetsView: View {
     @Environment(AppModel.self) private var model
-    @State private var viewMode: BudgetViewMode = .month
-    @State private var activeSheet: BudgetSheet?
-    @State private var pendingOverrideDelete: BudgetScope?
-    @State private var pendingTemplateDelete: BudgetTemplateRow?
+    @State private var month = BudgetMonth.current
+    @State private var comparing = false
+    @State private var showsInactive = false
+    @State private var adding = false
+    @State private var overallPace: (request: PaceRequest, result: Result<BudgetBurndownResponse, APIErrorInfo>)?
+    @State private var removing: BudgetTemplateRow?
+    @State private var failure: String?
+
+    private struct PaceRequest: Equatable {
+        let month: BudgetMonth
+        let comparing: Bool
+        let budgetCents: Int
+    }
 
     var body: some View {
         List {
-            if model.identity?.authenticated != true {
-                SignedOutStateSection()
+            if let budgets = model.budgets {
+                content(budgets)
+            } else if model.showsBudgetsLoadFailed {
+                UnavailableStateSection(
+                    title: "Couldn't load budgets",
+                    systemImage: "exclamationmark.triangle",
+                    message: model.lastError?.message
+                )
             } else {
-                Section {
-                    BudgetViewModePicker(viewMode: $viewMode)
-                }
-
-                if let budgets = model.budgets {
-                    switch viewMode {
-                    case .month:
-                        MonthBudgetsView(
-                            budgets: budgets,
-                            burndown: model.budgetBurndown,
-                            onDeleteOverride: { pendingOverrideDelete = $0 }
-                        )
-                    case .templates:
-                        BudgetTemplatesView(
-                            budgets: budgets,
-                            onDelete: { pendingTemplateDelete = $0 }
-                        )
-                    case .year:
-                        YearBudgetsView(budgets: budgets)
-                    }
-                } else if model.isLoading {
-                    LoadingStateSection(title: "Loading budgets")
-                } else if model.showsBudgetsLoadFailed {
-                    UnavailableStateSection(title: "Couldn't load budgets", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                } else {
-                    ContentUnavailableView("No budgets loaded", systemImage: "chart.bar")
-                }
+                LoadingStateSection(title: "Loading budgets")
             }
         }
         .navigationTitle("Budgets")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    if let sheet = viewMode.defaultSheet {
-                        activeSheet = sheet
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Add Budget")
-                .disabled(model.identity?.authenticated != true || viewMode.defaultSheet == nil)
-            }
-        }
+        .navigationSubtitle(month.title)
         .expensesScreenStyle()
-        .sheet(item: $activeSheet) { sheet in
-            Group {
-                switch sheet {
-                case .override:
-                    BudgetOverrideFormView(budgets: model.budgets)
-                case .template:
-                    BudgetTemplateFormView(budgets: model.budgets)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Button("Previous month", systemImage: "chevron.backward") {
+                        month = month.adding(-1)
+                    }
+                    Button("Next month", systemImage: "chevron.forward") {
+                        month = month.adding(1)
+                    }
+                    Button("This month", systemImage: "calendar") {
+                        month = .current
+                    }
+                    .disabled(month == .current)
+                } label: {
+                    Label("Month", systemImage: "calendar")
+                }
+                .sensoryFeedback(.selection, trigger: month)
+                Button {
+                    adding = true
+                } label: {
+                    Label("Add budget", systemImage: "plus")
+                }
+                .disabled(model.budgets == nil)
+                Menu {
+                    Toggle("Compare previous month", systemImage: "clock.arrow.circlepath", isOn: $comparing)
+                        .disabled(model.budgets?.overall == nil)
+                    Toggle("Show ended and future budgets", systemImage: "calendar.badge.clock", isOn: $showsInactive)
+                } label: {
+                    Label("More", systemImage: "ellipsis")
                 }
             }
-            .themeAccentTint()
         }
-        .confirmationDialog("Remove month budget?", isPresented: overrideDeletePresented) {
-            Button("Remove Month Budget", role: .destructive) {
-                if let budget = pendingOverrideDelete {
-                    Task { await model.deleteBudgetOverride(id: budget.sourceID, view: viewMode.rawValue) }
-                }
+        .navigationDestination(for: BudgetKey.self) { key in
+            BudgetDetailView(key: key)
+        }
+        .sheet(isPresented: $adding) {
+            if let budgets = model.budgets {
+                AddBudgetSheet(budgets: budgets)
             }
+        }
+        .alert(
+            "Remove the \(removing.map(Self.label) ?? "") budget?",
+            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+            presenting: removing
+        ) { template in
             Button("Cancel", role: .cancel) {}
-        }
-        .confirmationDialog("Delete recurring budget?", isPresented: templateDeletePresented) {
-            Button("Delete Recurring Budget", role: .destructive) {
-                if let template = pendingTemplateDelete {
-                    Task { await model.deleteBudgetTemplate(id: template.id, view: viewMode.rawValue) }
+            Button("Remove", role: .destructive) {
+                Task {
+                    if !(await model.deleteBudgetTemplate(id: template.id)) {
+                        failure = model.lastError?.message ?? "Unable to remove the budget."
+                    }
                 }
             }
-            Button("Cancel", role: .cancel) {}
         }
-        .task(id: viewMode) {
-            await model.loadBudgets(view: viewMode.rawValue)
+        .failureAlert("Couldn't remove the budget", message: $failure)
+        .task(id: month) {
+            await model.loadBudgets(month: month.value)
+        }
+        .task(id: paceRequest) {
+            guard let paceRequest else {
+                return
+            }
+            let result = await model.budgetBurndown(
+                month: paceRequest.month.value,
+                scope: "overall",
+                compareMonth: paceRequest.comparing ? paceRequest.month.adding(-1).value : nil
+            )
+            if !Task.isCancelled {
+                overallPace = (paceRequest, result)
+            }
         }
         .refreshable {
-            await model.loadBudgets(view: viewMode.rawValue)
-        }
-        .animation(.easeInOut(duration: 0.18), value: model.isLoading && model.budgets == nil)
-    }
-
-    private var overrideDeletePresented: Binding<Bool> {
-        Binding(
-            get: { pendingOverrideDelete != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingOverrideDelete = nil
-                }
-            }
-        )
-    }
-
-    private var templateDeletePresented: Binding<Bool> {
-        Binding(
-            get: { pendingTemplateDelete != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingTemplateDelete = nil
-                }
-            }
-        )
-    }
-}
-
-private struct BudgetViewModePicker: View {
-    @Binding var viewMode: BudgetViewMode
-
-    var body: some View {
-        Picker("View", selection: $viewMode) {
-            ForEach(BudgetViewMode.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .sensoryFeedback(.selection, trigger: viewMode)
-    }
-}
-
-private enum BudgetViewMode: String, CaseIterable, Identifiable {
-    case month
-    case templates
-    case year
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .month:
-            "Month"
-        case .templates:
-            "Recurring"
-        case .year:
-            "Year"
+            await model.loadBudgets(month: month.value)
         }
     }
 
-    var defaultSheet: BudgetSheet? {
-        switch self {
-        case .month:
-            .override
-        case .templates:
-            .template
-        case .year:
-            nil
-        }
-    }
-}
-
-private enum BudgetSheet: Identifiable {
-    case override
-    case template
-
-    var id: String {
-        switch self {
-        case .override:
-            "override"
-        case .template:
-            "template"
-        }
-    }
-}
-
-private struct MonthBudgetsView: View {
-    let budgets: BudgetsResponse
-    let burndown: BudgetBurndownResponse?
-    var onDeleteOverride: (BudgetScope) -> Void
-
-    private var progressByScope: [String: BudgetProgress] {
-        Dictionary(uniqueKeysWithValues: budgets.progress.map { ($0.id, $0) })
-    }
-
-    var body: some View {
-        if let burndown {
-            BudgetBurndownSection(burndown: burndown)
-        }
-
-        Section(budgets.monthValue) {
-            ForEach(budgets.budgets) { budget in
-                let progress = progressByScope[budget.scopeCategoryID.map(String.init) ?? "overall"]
-                BudgetScopeRow(
-                    budget: budget,
-                    progress: progress,
-                    onRemove: budget.source == "override" ? { onDeleteOverride(budget) } : nil
-                )
-                    .swipeActions(edge: .trailing) {
-                        if budget.source == "override" {
-                            Button("Remove", role: .destructive) {
-                                onDeleteOverride(budget)
-                            }
-                        }
-                    }
-            }
-        }
-    }
-}
-
-private struct BudgetBurndownSection: View {
-    let burndown: BudgetBurndownResponse
-
-    private var latestCumulative: Int {
-        burndown.dailySeries.last?.cumulativeCents ?? 0
-    }
-
-    private var daysElapsed: Int {
-        max(burndown.dailySeries.last?.day ?? 0, 1)
-    }
-
-    private var daysRemaining: Int {
-        max(0, burndown.daysInMonth - daysElapsed)
-    }
-
-    private var dailyAllowance: Int {
-        if daysRemaining > 0 {
-            return (burndown.budgetAmountCents - latestCumulative) / daysRemaining
-        }
-        return burndown.budgetAmountCents - latestCumulative
-    }
-
-    private var projectedFinish: Int {
-        latestCumulative + (latestCumulative / daysElapsed) * (burndown.daysInMonth - daysElapsed)
-    }
-
-    var body: some View {
-        Section("Overall Pace") {
-            LabeledContent("Budget", value: AppFormatters.euros(burndown.budgetAmountCents))
-            LabeledContent("Spent", value: AppFormatters.euros(latestCumulative))
-            LabeledContent("Daily allowance", value: "\(AppFormatters.euros(dailyAllowance)) / day")
-            LabeledContent("Projected finish", value: AppFormatters.euros(projectedFinish))
-            if let topDay = burndown.topSpendingDays.first {
-                LabeledContent(
-                    "Highest day",
-                    value: "\(topDayLabel(topDay)) · \(AppFormatters.euros(topDay.totalCents))"
-                )
-            }
-            if !burndown.compareDailySeries.isEmpty, let compareMonth = burndown.compareMonth {
-                LabeledContent("Compared with", value: compareMonth)
-            }
-        }
-    }
-
-    private func topDayLabel(_ topDay: BudgetBurndownTopDay) -> String {
-        topDay.date.map(AppFormatters.day) ?? "Day \(topDay.day)"
-    }
-}
-
-private struct YearBudgetsView: View {
-    let budgets: BudgetsResponse
-
-    private var spentByScope: [String: BudgetYearSpent] {
-        Dictionary(uniqueKeysWithValues: budgets.yearlySpent.map { ($0.id, $0) })
-    }
-
-    var body: some View {
-        Section(String(budgets.yearValue)) {
-            ForEach(budgets.yearlyBudgets) { budget in
-                let spent = spentByScope[budget.scopeCategoryID.map(String.init) ?? "overall"]?.spentCents ?? 0
-                let progress = BudgetProgress(
-                    scopeCategoryID: budget.scopeCategoryID,
-                    spentCents: spent,
-                    remainingCents: budget.amountCents - spent,
-                    velocityRatio: budget.amountCents > 0 ? Double(spent) / Double(budget.amountCents) : 0,
-                    dailyRemainingCents: 0,
-                    projectedTotalCents: spent,
-                    daysElapsed: 0,
-                    daysRemaining: 0
-                )
-                BudgetScopeRow(budget: budget, progress: progress)
-            }
-        }
-    }
-}
-
-private struct BudgetScopeRow: View {
-    let budget: BudgetScope
-    let progress: BudgetProgress?
-    var onRemove: (() -> Void)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(budget.scopeLabel)
-                        .font(.body.weight(.medium))
-                    Text(budget.source == "override" ? "Month budget" : "Recurring budget")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(AppFormatters.euros(budget.amountCents))
-                    .font(.body.weight(.semibold))
-                if let onRemove {
-                    Menu {
-                        Button("Remove Month Budget", role: .destructive) {
-                            onRemove()
-                        }
-                    } label: {
-                        Label("Budget actions", systemImage: "ellipsis.circle")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Budget actions")
-                }
-            }
-
-            if let progress {
-                ProgressView(value: min(1, Double(progress.spentCents) / Double(max(budget.amountCents, 1))))
-                    .tint(progress.remainingCents < 0 ? .red : .green)
-                HStack {
-                    Text("Spent \(AppFormatters.euros(progress.spentCents))")
-                    Spacer()
-                    Text("\(progress.remainingCents < 0 ? "Over" : "Left") \(AppFormatters.euros(abs(progress.remainingCents)))")
-                }
-                .font(.caption)
-                .foregroundStyle(progress.remainingCents < 0 ? .red : .secondary)
-                Text("Projected \(AppFormatters.euros(progress.projectedTotalCents)) · \(progress.velocityRatio.formatted(.number.precision(.fractionLength(2))))x pace")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-private struct BudgetTemplatesView: View {
-    let budgets: BudgetsResponse
-    var onDelete: (BudgetTemplateRow) -> Void
-
-    var body: some View {
-        Section("Recurring budgets") {
-            if budgets.templates.isEmpty {
-                ContentUnavailableView("No recurring budgets", systemImage: "calendar.badge.plus")
-            } else {
-                ForEach(budgets.templates) { template in
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(template.category?.name ?? "All expense categories")
-                                .font(.body.weight(.medium))
-                            Text("\(template.frequency.capitalized) from \(AppFormatters.day(template.startsOn))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(AppFormatters.euros(template.amountCents))
-                            .font(.body.weight(.semibold))
-                        Menu {
-                            Button("Delete template", role: .destructive) {
-                                onDelete(template)
-                            }
-                        } label: {
-                            Label("Budget template actions", systemImage: "ellipsis.circle")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Budget template actions")
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button("Delete", role: .destructive) {
-                            onDelete(template)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct BudgetOverrideFormView: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-
-    let budgets: BudgetsResponse?
-    @State private var categoryID: Int?
-    @State private var amount = ""
-    @State private var formError: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("Category", selection: $categoryID) {
-                        Text("All expense categories").tag(Int?.none)
-                        ForEach(expenseCategories) { category in
-                            Text(category.name).tag(Optional(category.id))
-                        }
-                    }
-                    TextField("Amount", text: $amount)
-                        .keyboardType(.decimalPad)
-                }
-                if let formError {
-                    Section {
-                        Text(formError)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Set Month Budget")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await save() }
-                    }
-                    .disabled(model.isLoading)
-                }
-            }
-        }
-    }
-
-    private var expenseCategories: [BudgetCategory] {
-        budgets?.categories.filter { $0.type == "expense" && $0.archivedAt == nil } ?? []
-    }
-
-    private func save() async {
-        guard let budgets else {
-            formError = "Budgets are not loaded."
-            return
-        }
-        guard let amountCents = BudgetFormParsing.parseAmount(amount) else {
-            formError = "Amount is invalid."
-            return
-        }
-        let body = BudgetOverrideRequest(
-            year: budgets.year,
-            month: budgets.month,
-            categoryID: categoryID,
-            amountCents: amountCents
-        )
-        if await model.saveBudgetOverride(body, view: "month") {
-            dismiss()
-        } else {
-            formError = model.lastError?.message ?? "Budget could not be saved."
-        }
-    }
-}
-
-private struct BudgetTemplateFormView: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-
-    let budgets: BudgetsResponse?
-    @State private var frequency = "monthly"
-    @State private var categoryID: Int?
-    @State private var amount = ""
-    @State private var startsOn: Date
-    @State private var endsOn: Date?
-    @State private var hasEndDate = false
-    @State private var formError: String?
-
-    init(budgets: BudgetsResponse?) {
-        self.budgets = budgets
-        _startsOn = State(initialValue: budgets?.defaultMonthTemplateStart ?? Date())
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("Frequency", selection: $frequency) {
-                        Text("Monthly").tag("monthly")
-                        Text("Yearly").tag("yearly")
-                    }
-                    .pickerStyle(.segmented)
-                    .sensoryFeedback(.selection, trigger: frequency)
-                    Picker("Category", selection: $categoryID) {
-                        Text("All expense categories").tag(Int?.none)
-                        ForEach(expenseCategories) { category in
-                            Text(category.name).tag(Optional(category.id))
-                        }
-                    }
-                    TextField("Amount", text: $amount)
-                        .keyboardType(.decimalPad)
-                }
-                Section {
-                    DatePicker("Starts on", selection: $startsOn, displayedComponents: .date)
-                    Toggle("Has end date", isOn: $hasEndDate)
-                        .sensoryFeedback(.selection, trigger: hasEndDate)
-                    if hasEndDate {
-                        DatePicker(
-                            "Ends on",
-                            selection: Binding(
-                                get: { endsOn ?? startsOn },
-                                set: { endsOn = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                    }
-                }
-                if let formError {
-                    Section {
-                        Text(formError)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Recurring Budget")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await save() }
-                    }
-                    .disabled(model.isLoading)
-                }
-            }
-            .onChange(of: frequency) { _, next in
-                if next == "yearly", let date = budgets?.defaultYearTemplateStart {
-                    startsOn = date
-                }
-                if next == "monthly", let date = budgets?.defaultMonthTemplateStart {
-                    startsOn = date
-                }
-            }
-        }
-    }
-
-    private var expenseCategories: [BudgetCategory] {
-        budgets?.categories.filter { $0.type == "expense" && $0.archivedAt == nil } ?? []
-    }
-
-    private func save() async {
-        guard let amountCents = BudgetFormParsing.parseAmount(amount) else {
-            formError = "Amount is invalid."
-            return
-        }
-        let body = BudgetTemplateRequest(
-            frequency: frequency,
-            categoryID: categoryID,
-            amountCents: amountCents,
-            startsOn: BudgetFormParsing.dateString(startsOn),
-            endsOn: hasEndDate ? BudgetFormParsing.dateString(endsOn ?? startsOn) : nil
-        )
-        if await model.saveBudgetTemplate(body, view: "templates") {
-            dismiss()
-        } else {
-            formError = model.lastError?.message ?? "Recurring budget could not be saved."
-        }
-    }
-}
-
-private enum BudgetFormParsing {
-    static func parseAmount(_ raw: String) -> Int? {
-        let normalized = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: ",", with: ".")
-        guard let value = Double(normalized), value >= 0, value.isFinite else {
+    // The overall pace follows the loaded month and reloads when its budget changes.
+    private var paceRequest: PaceRequest? {
+        guard let budgets = model.budgets, budgets.budgetMonth == month, let overall = budgets.overall else {
             return nil
         }
-        return Int((value * 100).rounded())
+        return PaceRequest(month: month, comparing: comparing, budgetCents: overall.amountCents)
     }
 
-    static func dateString(_ date: Date) -> String {
-        formatter.string(from: date)
+    @ViewBuilder
+    private func content(_ budgets: BudgetsResponse) -> some View {
+        let inactive = showsInactive ? budgets.inactiveTemplates : []
+        if budgets.budgets.isEmpty && budgets.yearlyBudgets.isEmpty && inactive.isEmpty {
+            Section {
+                ContentUnavailableView {
+                    Label("No budgets for \(budgets.budgetMonth.title)", systemImage: "target")
+                } actions: {
+                    Button("Add budget") {
+                        adding = true
+                    }
+                }
+            }
+            .listRowBackground(Color.clear)
+        } else {
+            if !budgets.budgets.isEmpty {
+                summary(budgets)
+            }
+            if budgets.overall != nil {
+                Section("Overall pace") {
+                    if let overallPace, overallPace.request.month == budgets.budgetMonth {
+                        switch overallPace.result {
+                        case .success(let data):
+                            PaceChart(data: data, month: budgets.budgetMonth, height: 150)
+                                .padding(.vertical, 8)
+                        case .failure:
+                            ChartMessage(text: "The pace chart is unavailable.")
+                        }
+                    } else {
+                        ChartMessage(text: "Loading…")
+                    }
+                }
+                .expensesRowBackground()
+            }
+            budgetSection(budgets, kind: .month)
+            budgetSection(budgets, kind: .year)
+            if !inactive.isEmpty {
+                Section("Ended and future") {
+                    ForEach(inactive) { template in
+                        inactiveRow(template)
+                    }
+                }
+                .expensesRowBackground()
+            }
+        }
     }
 
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+    private func summary(_ budgets: BudgetsResponse) -> some View {
+        let overall = budgets.overall
+        let categoryBudgets = budgets.categoryBudgets
+        let allocation = overall?.amountCents ?? categoryBudgets.reduce(0) { $0 + $1.amountCents }
+        let spent = budgets.progress(nil)?.spentCents ?? categoryBudgets.reduce(0) { $0 + budgets.spent(.month, $1) }
+        let head = VStack(alignment: .leading, spacing: 0) {
+            Text(overall == nil ? "Category budgets" : "Overall budget")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                AmountText(spent)
+                    .font(.title.weight(.semibold))
+                HStack(spacing: 4) {
+                    Text("of")
+                    AmountText(allocation)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 1)
+            BudgetBar(spentCents: spent, budgetCents: allocation, pace: budgets.budgetMonth.pace)
+                .padding(.top, 10)
+        }
+        .padding(.vertical, 6)
+        return Section {
+            if overall != nil {
+                NavigationLink(value: BudgetKey(kind: .month, scopeCategoryID: nil)) {
+                    head
+                }
+                .navigationLinkIndicatorVisibility(.hidden)
+            } else {
+                head
+            }
+        }
+        .expensesRowBackground()
+    }
+
+    private func budgetSection(_ budgets: BudgetsResponse, kind: BudgetKind) -> some View {
+        let rows = kind == .month ? budgets.categoryBudgets : budgets.yearlyBudgets
+        let period = kind == .month ? budgets.budgetMonth.title : String(budgets.yearValue)
+        return Section {
+            if rows.isEmpty {
+                Text(kind == .month ? "No category budgets for \(period)" : "No annual budgets for \(period)")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { budget in
+                    let category = budgets.category(budget.scopeCategoryID)
+                    NavigationLink(value: BudgetKey(kind: kind, scopeCategoryID: budget.scopeCategoryID)) {
+                        HStack(spacing: 12) {
+                            ScopeGlyph(categoryID: budget.scopeCategoryID, iconKey: category?.icon, name: budget.scopeLabel)
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Text(budget.scopeLabel)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    SpentAgainst(spentCents: budgets.spent(kind, budget), budgetCents: budget.amountCents)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                BudgetBar(
+                                    spentCents: budgets.spent(kind, budget),
+                                    budgetCents: budget.amountCents,
+                                    pace: kind == .month ? budgets.budgetMonth.pace : nil
+                                )
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
+                }
+            }
+        } header: {
+            HStack {
+                Text(kind == .month ? "Monthly" : "Annual · \(period)")
+                Spacer()
+                if !rows.isEmpty {
+                    SpentAgainst(
+                        spentCents: rows.reduce(0) { $0 + budgets.spent(kind, $1) },
+                        budgetCents: rows.reduce(0) { $0 + $1.amountCents }
+                    )
+                    .fontWeight(.regular)
+                }
+            }
+        }
+        .expensesRowBackground()
+    }
+
+    private func inactiveRow(_ template: BudgetTemplateRow) -> some View {
+        let yearly = template.frequency == "yearly"
+        let period = { (date: Date) in
+            date.formatted(yearly ? Date.FormatStyle(timeZone: .gmt).year() : Date.FormatStyle(timeZone: .gmt).month(.abbreviated).year())
+        }
+        return HStack(spacing: 12) {
+            ScopeGlyph(categoryID: template.category?.id, iconKey: template.category?.icon, name: Self.label(template))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.label(template))
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    AmountText(template.amountCents, decimals: false)
+                    Text("per \(yearly ? "year" : "month") · \(period(template.startsOn))\(template.endsOn.map { " – \(period($0))" } ?? " onward")")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button {
+                removing = template
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Remove the \(Self.label(template)) budget")
+        }
+        .opacity(0.75)
+        .swipeActions(edge: .trailing) {
+            Button("Remove", role: .destructive) {
+                removing = template
+            }
+        }
+    }
+
+    private static func label(_ template: BudgetTemplateRow) -> String {
+        template.category?.name ?? "All expense categories"
+    }
+}
+
+/// "120 € of 300 €": spent against a budget, in whole euros.
+struct SpentAgainst: View {
+    let spentCents: Int
+    let budgetCents: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            AmountText(spentCents, decimals: false)
+            Text("of")
+            AmountText(budgetCents, decimals: false)
+        }
+    }
+}
+
+/// A budget scope's glyph. All expense categories have no category, so they show the
+/// grid that stands for every category.
+struct ScopeGlyph: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let categoryID: Int?
+    let iconKey: String?
+    let name: String
+
+    var body: some View {
+        if let categoryID {
+            CategoryGlyph(categoryID: categoryID, iconKey: iconKey, name: name)
+        } else {
+            Image(systemName: "square.grid.2x2")
+                .font(.callout)
+                .foregroundStyle(ExpensesTheme.category(nil, for: scheme))
+                .frame(width: 26)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Cumulative spending by day against an even pace to the budget, with the previous
+/// month when it was loaded for comparison.
+struct PaceChart: View {
+    @Environment(AppModel.self) private var model
+
+    let data: BudgetBurndownResponse
+    let month: BudgetMonth
+    let height: CGFloat
+
+    private struct Point: Identifiable {
+        let series: String
+        let day: Int
+        let cents: Int
+        var id: String { "\(series)-\(day)" }
+    }
+
+    var body: some View {
+        let elapsed = month.daysElapsed
+        let even = (1...data.daysInMonth).map { day in
+            Point(series: "Even pace", day: day, cents: Int((Double(data.budgetAmountCents) * Double(day) / Double(data.daysInMonth)).rounded()))
+        }
+        let actual = data.dailySeries.filter { $0.day <= elapsed }.map { Point(series: "Actual", day: $0.day, cents: $0.cumulativeCents) }
+        let previous = data.compareDailySeries.filter { $0.day <= data.daysInMonth }.map {
+            Point(series: "Previous month", day: $0.day, cents: $0.cumulativeCents)
+        }
+        VStack(alignment: .leading, spacing: 10) {
+            Chart {
+                ForEach(even) { point in
+                    line(point)
+                        .foregroundStyle(Color.secondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1.25, dash: [4, 3]))
+                }
+                ForEach(previous) { point in
+                    line(point)
+                        .foregroundStyle(Color.secondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1.25))
+                }
+                ForEach(actual) { point in
+                    line(point)
+                        .foregroundStyle(Color.primary)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                }
+                if elapsed > 0 && elapsed < data.daysInMonth {
+                    RuleMark(x: .value("Day", elapsed))
+                        .foregroundStyle(Color.secondary.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                }
+            }
+            .chartXScale(domain: 1...data.daysInMonth, range: .plotDimension(padding: 8))
+            .chartXAxis {
+                AxisMarks(values: [1, 10, 20, 30].filter { $0 <= data.daysInMonth }) { _ in
+                    AxisValueLabel()
+                }
+            }
+            .chartYAxis {
+                AxisMarks(values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine()
+                }
+            }
+            .frame(height: height)
+
+            HStack(spacing: 14) {
+                legend("Actual", style: StrokeStyle(lineWidth: 2), color: .primary)
+                legend("Even pace", style: StrokeStyle(lineWidth: 1.25, dash: [4, 3]), color: .secondary)
+                if !previous.isEmpty {
+                    legend("Previous month", style: StrokeStyle(lineWidth: 1.25), color: .secondary)
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func line(_ point: Point) -> some ChartContent {
+        LineMark(x: .value("Day", point.day), y: .value("Amount", point.cents), series: .value("Series", point.series))
+            .accessibilityLabel("\(point.series), \(month.day(point.day).formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated).day()))")
+            .accessibilityValue(model.amountString(point.cents))
+    }
+
+    private func legend(_ title: String, style: StrokeStyle, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 1))
+                path.addLine(to: CGPoint(x: 14, y: 1))
+            }
+            .stroke(color, style: style)
+            .frame(width: 14, height: 2)
+            Text(title)
+        }
+        .accessibilityHidden(true)
+    }
 }

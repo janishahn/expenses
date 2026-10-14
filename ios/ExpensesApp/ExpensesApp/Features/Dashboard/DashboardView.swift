@@ -360,11 +360,7 @@ private struct DashboardSummary: View {
             HStack {
                 Text("Overall budget")
                 Spacer()
-                HStack(spacing: 4) {
-                    AmountText(budget.spentCents, decimals: false)
-                    Text("of")
-                    AmountText(budget.budgetCents, decimals: false)
-                }
+                SpentAgainst(spentCents: budget.spentCents, budgetCents: budget.budgetCents)
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)

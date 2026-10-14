@@ -292,7 +292,6 @@ struct BudgetProgress: Codable, Equatable, Identifiable {
     let scopeCategoryID: Int?
     let spentCents: Int
     let remainingCents: Int
-    let velocityRatio: Double
     let dailyRemainingCents: Int
     let projectedTotalCents: Int
     let daysElapsed: Int
@@ -302,7 +301,6 @@ struct BudgetProgress: Codable, Equatable, Identifiable {
         case scopeCategoryID = "scope_category_id"
         case spentCents = "spent_cents"
         case remainingCents = "remaining_cents"
-        case velocityRatio = "velocity_ratio"
         case dailyRemainingCents = "daily_remaining_cents"
         case projectedTotalCents = "projected_total_cents"
         case daysElapsed = "days_elapsed"
@@ -340,7 +338,6 @@ struct BudgetYearSpent: Codable, Equatable, Identifiable {
 }
 
 struct BudgetsResponse: Codable, Equatable {
-    let view: String
     let year: Int
     let month: Int
     let monthValue: String
@@ -351,11 +348,8 @@ struct BudgetsResponse: Codable, Equatable {
     let yearValue: Int
     let yearlyBudgets: [BudgetScope]
     let yearlySpent: [BudgetYearSpent]
-    let defaultMonthTemplateStart: Date
-    let defaultYearTemplateStart: Date
 
     enum CodingKeys: String, CodingKey {
-        case view
         case year
         case month
         case monthValue = "month_value"
@@ -366,8 +360,6 @@ struct BudgetsResponse: Codable, Equatable {
         case yearValue = "year_value"
         case yearlyBudgets = "yearly_budgets"
         case yearlySpent = "yearly_spent"
-        case defaultMonthTemplateStart = "default_month_template_start"
-        case defaultYearTemplateStart = "default_year_template_start"
     }
 }
 
@@ -445,7 +437,6 @@ struct BudgetBurndownResponse: Codable, Equatable {
     let budgetAmountCents: Int
     let daysInMonth: Int
     let dailySeries: [BudgetBurndownPoint]
-    let compareMonth: String?
     let compareDailySeries: [BudgetBurndownPoint]
     let topSpendingDays: [BudgetBurndownTopDay]
 
@@ -453,7 +444,6 @@ struct BudgetBurndownResponse: Codable, Equatable {
         case budgetAmountCents = "budget_amount_cents"
         case daysInMonth = "days_in_month"
         case dailySeries = "daily_series"
-        case compareMonth = "compare_month"
         case compareDailySeries = "compare_daily_series"
         case topSpendingDays = "top_spending_days"
     }

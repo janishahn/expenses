@@ -50,6 +50,8 @@
 		001000000000000000000043 /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000043 /* TrashView.swift */; };
 		001000000000000000000044 /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000044 /* Entry.swift */; };
 		001000000000000000000045 /* ReceiptPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000045 /* ReceiptPicker.swift */; };
+		001000000000000000000046 /* BudgetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000046 /* BudgetDetailView.swift */; };
+		001000000000000000000047 /* AddBudgetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000047 /* AddBudgetSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +100,8 @@
 		002000000000000000000043 /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
 		002000000000000000000044 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
 		002000000000000000000045 /* ReceiptPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPicker.swift; sourceTree = "<group>"; };
+		002000000000000000000046 /* BudgetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetDetailView.swift; sourceTree = "<group>"; };
+		002000000000000000000047 /* AddBudgetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBudgetSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -269,6 +273,8 @@
 		004000000000000000000015 /* Budgets */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000047 /* AddBudgetSheet.swift */,
+				002000000000000000000046 /* BudgetDetailView.swift */,
 				002000000000000000000021 /* BudgetsView.swift */,
 			);
 			path = Budgets;
@@ -400,6 +406,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000047 /* AddBudgetSheet.swift in Sources */,
+				001000000000000000000046 /* BudgetDetailView.swift in Sources */,
 				001000000000000000000045 /* ReceiptPicker.swift in Sources */,
 				001000000000000000000044 /* Entry.swift in Sources */,
 				001000000000000000000043 /* TrashView.swift in Sources */,

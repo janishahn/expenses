@@ -77,13 +77,14 @@ struct SectionLink: View {
     }
 }
 
-/// Spent against a budget, with a tick at even pace through the period.
+/// Spent against a budget, with a tick at even pace through the period when it is
+/// under way.
 struct BudgetBar: View {
     @Environment(\.colorScheme) private var scheme
 
     let spentCents: Int
     let budgetCents: Int
-    let pace: Double
+    let pace: Double?
 
     private var ratio: Double {
         if budgetCents > 0 {
@@ -100,10 +101,12 @@ struct BudgetBar: View {
                 Capsule()
                     .fill(spentCents > budgetCents ? ExpensesTheme.expense(for: scheme) : Color.primary.opacity(0.55))
                     .frame(width: geometry.size.width * min(max(ratio, 0), 1))
-                Rectangle()
-                    .fill(Color.primary)
-                    .frame(width: 1.5, height: 11)
-                    .offset(x: geometry.size.width * pace - 0.75)
+                if let pace {
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(width: 1.5, height: 11)
+                        .offset(x: geometry.size.width * pace - 0.75)
+                }
             }
         }
         .frame(height: 6)

@@ -60,7 +60,6 @@ final class AppModel {
     var rules: RulesResponse?
     var ruleSuggestions: [RuleSuggestion] = []
     var budgets: BudgetsResponse?
-    var budgetBurndown: BudgetBurndownResponse?
     var digest: DigestResponse?
     var forecast: ForecastResponse?
     var forecastScenario: ForecastScenarioResponse?
@@ -1030,15 +1029,26 @@ final class AppModel {
         }
     }
 
-    func loadBudgets(view: String) async {
+    /// Loads the budgets for `month`, such as "2026-10".
+    func loadBudgets(month: String) async {
         guard let token else {
             return
         }
         await runRequest {
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
+            budgets = try await apiClient.budgets(month: month, token: token)
         }
         budgetsLoadState = budgets != nil ? .loaded : .failed
+    }
+
+    /// Cumulative spending by day for a month's budget; `scope` is "overall" or a category id.
+    func budgetBurndown(month: String, scope: String, compareMonth: String?) async -> Result<BudgetBurndownResponse, APIErrorInfo> {
+        guard let token else {
+            return .failure(APIErrorInfo(message: "Sign in to Expenses first."))
+        }
+        let client = apiClient
+        return await Self.chartResult {
+            try await client.budgetBurndown(month: month, scope: scope, compareMonth: compareMonth, token: token)
+        }
     }
 
     func loadDigest(weekOf: String? = nil) async {
@@ -1568,51 +1578,53 @@ final class AppModel {
         }
     }
 
-    func saveBudgetOverride(_ body: BudgetOverrideRequest, view: String) async -> Bool {
+    func saveBudgetOverride(_ body: BudgetOverrideRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.saveBudgetOverride(body, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func deleteBudgetOverride(id: Int, view: String) async -> Bool {
+    func deleteBudgetOverride(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteBudgetOverride(id: id, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func saveBudgetTemplate(_ body: BudgetTemplateRequest, view: String) async -> Bool {
+    func saveBudgetTemplate(_ body: BudgetTemplateRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.saveBudgetTemplate(body, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func deleteBudgetTemplate(id: Int, view: String) async -> Bool {
+    func applyBudgetTemplateFrom(_ body: BudgetTemplateRequest) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.applyBudgetTemplateFrom(body, token: token)
+            try await reloadBudgetViews(token: token)
+        }
+    }
+
+    func deleteBudgetTemplate(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteBudgetTemplate(id: id, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
@@ -1681,7 +1693,9 @@ final class AppModel {
             try await reloadOrganizeData(token: token)
             dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
             try await reloadTransactions(token: token)
-            budgets = try await apiClient.budgets(view: "month", token: token)
+            if let month = budgets?.monthValue {
+                budgets = try await apiClient.budgets(month: month, token: token)
+            }
         }
     }
 
@@ -2146,33 +2160,12 @@ final class AppModel {
         }
     }
 
-    private func reloadBudgetBurndownIfNeeded(view: String, token: String) async throws {
-        guard view == "month", let month = budgets?.monthValue else {
-            budgetBurndown = nil
-            return
+    // Budgets also show on the Dashboard.
+    private func reloadBudgetViews(token: String) async throws {
+        if let month = budgets?.monthValue {
+            budgets = try await apiClient.budgets(month: month, token: token)
         }
-        budgetBurndown = try await apiClient.budgetBurndown(
-            month: month,
-            scope: "overall",
-            compareMonth: Self.previousMonth(month),
-            token: token
-        )
-    }
-
-    private static func previousMonth(_ monthValue: String) -> String? {
-        let parts = monthValue.split(separator: "-")
-        guard parts.count == 2,
-              var year = Int(parts[0]),
-              var month = Int(parts[1])
-        else {
-            return nil
-        }
-        month -= 1
-        if month == 0 {
-            month = 12
-            year -= 1
-        }
-        return String(format: "%04d-%02d", year, month)
+        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
     }
 
     private func readSecurityScopedData(from fileURL: URL) throws -> Data {
@@ -2229,7 +2222,6 @@ final class AppModel {
         isAssistantStreaming = false
         budgets = nil
         budgetsLoadState = .idle
-        budgetBurndown = nil
         digest = nil
         digestLoadState = .idle
         forecast = nil

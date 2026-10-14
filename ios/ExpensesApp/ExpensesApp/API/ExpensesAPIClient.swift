@@ -415,8 +415,9 @@ struct ExpensesAPIClient {
         try await request(path: "/api/ai/rules/suggestions/\(id)/reject", method: "POST", bearerToken: token)
     }
 
-    func budgets(view: String, token: String) async throws -> BudgetsResponse {
-        try await request(path: "/api/budgets?view=\(view)", bearerToken: token)
+    /// The month's budgets with the year's annual budgets and every template.
+    func budgets(month: String, token: String) async throws -> BudgetsResponse {
+        try await request(path: "/api/budgets?view=workspace&month=\(month)&year=\(month.prefix(4))", bearerToken: token)
     }
 
     func budgetBurndown(
@@ -686,6 +687,17 @@ struct ExpensesAPIClient {
     func saveBudgetTemplate(_ body: BudgetTemplateRequest, token: String) async throws {
         let _: EmptyResponse = try await request(
             path: "/api/budgets/templates",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
+    /// Changes the budget from `starts_on` on. The template that covered that day is split
+    /// there, and the new one keeps its end.
+    func applyBudgetTemplateFrom(_ body: BudgetTemplateRequest, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/budgets/templates/apply-from",
             method: "POST",
             bearerToken: token,
             body: body
