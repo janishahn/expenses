@@ -145,7 +145,6 @@ private struct InsightsFilterSheet: View {
             .sensoryFeedback(.selection, trigger: query)
         }
         .presentationDetents([.medium, .large])
-        .themeAccentTint()
     }
 }
 

@@ -61,15 +61,6 @@ private extension Color {
 }
 
 extension View {
-    /// Applies the app's theme accent as the tint using the current color scheme.
-    /// Sheets don't inherit the root tint, so menu-style pickers inside a presented
-    /// sheet otherwise fall back to the light accent regardless of appearance.
-    func themeAccentTint() -> some View {
-        modifier(ThemeAccentTint())
-    }
-}
-
-extension View {
     /// Tints list selection circles with the focus blue. The circle's check is always
     /// white, so the light dark-mode ink would hide it.
     func checkedTint() -> some View {
@@ -82,14 +73,6 @@ private struct CheckedTint: ViewModifier {
 
     func body(content: Content) -> some View {
         content.tint(ExpensesTheme.focus(for: scheme))
-    }
-}
-
-private struct ThemeAccentTint: ViewModifier {
-    @Environment(\.colorScheme) private var scheme
-
-    func body(content: Content) -> some View {
-        content.tint(ExpensesTheme.accent(for: scheme))
     }
 }
 

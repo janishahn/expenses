@@ -50,7 +50,8 @@ struct RootView: View {
                 SignInView()
             }
         }
-        .tint(ExpensesTheme.accent(for: scheme))
+        // The asset's light and dark ink; UIKit controls re-resolve it when the appearance changes.
+        .tint(Color("AccentColor"))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
         .onChange(of: model.hasSession) { _, hasSession in
             // The next session starts on the Dashboard, not where the last one ended.

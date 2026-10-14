@@ -587,6 +587,5 @@ private struct TransactionFilterSheet: View {
             .sensoryFeedback(.selection, trigger: query)
         }
         .presentationDetents([.medium, .large])
-        .themeAccentTint()
     }
 }

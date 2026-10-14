@@ -89,7 +89,6 @@ struct CategoryPickerSheet: View {
                 }
             }
         }
-        .themeAccentTint()
     }
 
     // The server files a transaction without a category under its Uncategorized one.
@@ -184,7 +183,6 @@ struct TagPickerSheet: View {
                 }
             }
         }
-        .themeAccentTint()
     }
 
     private var matches: [String] {
