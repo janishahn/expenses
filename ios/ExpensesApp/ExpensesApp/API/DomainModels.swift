@@ -2217,6 +2217,8 @@ struct ReportOptionsRequest: Codable, Equatable {
     let notes: String?
     let transactionType: String?
     let categoryIDs: [Int]?
+    let tagIDs: [Int]
+    let excludedTagIDs: [Int]
     let transactionsSort: String
     let showRunningBalance: Bool
     let includeCategorySubtotals: Bool
@@ -2229,6 +2231,8 @@ struct ReportOptionsRequest: Codable, Equatable {
         case notes
         case transactionType = "transaction_type"
         case categoryIDs = "category_ids"
+        case tagIDs = "tag_ids"
+        case excludedTagIDs = "excluded_tag_ids"
         case transactionsSort = "transactions_sort"
         case showRunningBalance = "show_running_balance"
         case includeCategorySubtotals = "include_category_subtotals"
