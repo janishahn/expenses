@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-14
+
 ### Added
 - Reconcile can ignore every remaining row to review at once from ⋯ › Ignore remaining rows…, within the account filter. `POST /api/reconciliation/bank-rows/ignore-open` ignores all open rows, optionally for one `account`, and returns their ids.
 - The dashboard's `budget_pace` includes the overall budget's `spent_cents`, `remaining_cents`, `daily_remaining_cents`, and `days_remaining`.
@@ -435,7 +437,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/janishahn/expenses/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/janishahn/expenses/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/janishahn/expenses/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/janishahn/expenses/compare/v0.5.3...v0.6.0
