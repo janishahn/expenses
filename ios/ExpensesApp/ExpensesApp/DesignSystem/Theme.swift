@@ -114,13 +114,3 @@ extension View {
         modifier(ExpensesRowBackground())
     }
 }
-
-struct SignedOutStateSection: View {
-    var body: some View {
-        UnavailableStateSection(
-            title: "Sign in required",
-            systemImage: "lock",
-            message: "Use Account to connect to your tracker."
-        )
-    }
-}

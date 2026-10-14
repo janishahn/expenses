@@ -697,10 +697,9 @@ final class AppModel {
             )
         )
         assistantTurnSeq += 1
-        let assistantTurnID = assistantTurnSeq
         assistantTurns.append(
             AssistantTurn(
-                id: assistantTurnID,
+                id: assistantTurnSeq,
                 role: .assistant,
                 content: "",
                 progressNarration: "",
@@ -710,10 +709,30 @@ final class AppModel {
                 errorMessage: nil
             )
         )
-        isAssistantStreaming = true
+        streamAssistantReply(to: trimmed, turnID: assistantTurnSeq, token: token)
+    }
 
+    /// Asks the question before a stopped or failed answer again, in that answer's place.
+    func retryAssistantTurn(_ turnID: Int) {
+        guard !isAssistantStreaming, let token,
+              let index = assistantTurns.firstIndex(where: { $0.id == turnID }),
+              index > 0, assistantTurns[index - 1].role == .user
+        else {
+            return
+        }
+        assistantTurns[index].content = ""
+        assistantTurns[index].progressNarration = ""
+        assistantTurns[index].tools = []
+        assistantTurns[index].isStreaming = true
+        assistantTurns[index].isStopped = false
+        assistantTurns[index].errorMessage = nil
+        streamAssistantReply(to: assistantTurns[index - 1].content, turnID: turnID, token: token)
+    }
+
+    private func streamAssistantReply(to question: String, turnID assistantTurnID: Int, token: String) {
+        isAssistantStreaming = true
         let request = AssistantStreamRequest(
-            messages: [AssistantStreamMessage(role: "user", content: trimmed)],
+            messages: [AssistantStreamMessage(role: "user", content: question)],
             messageHistory: assistantMessageHistory
         )
         let client = apiClient
@@ -755,13 +774,14 @@ final class AppModel {
             return
         }
         switch event {
-        case let .toolCallStart(toolCallID, toolName):
+        case let .toolCallStart(toolCallID, toolName, arguments):
             assistantTurns[index].tools.append(
-                AssistantToolActivity(id: toolCallID, toolName: toolName, status: .running)
+                AssistantToolActivity(id: toolCallID, toolName: toolName, arguments: arguments)
             )
-        case let .toolCallEnd(toolCallID, success):
+        case let .toolCallEnd(toolCallID, success, summary):
             if let toolIndex = assistantTurns[index].tools.firstIndex(where: { $0.id == toolCallID }) {
                 assistantTurns[index].tools[toolIndex].status = success ? .success : .failed
+                assistantTurns[index].tools[toolIndex].summary = summary
             }
         case let .progressNarration(content):
             assistantTurns[index].progressNarration = content

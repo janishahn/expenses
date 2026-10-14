@@ -1,6 +1,6 @@
-import Foundation
 import SwiftUI
 
+/// One conversation with the spending assistant, as on the web.
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
@@ -12,20 +12,16 @@ struct AssistantView: View {
     @State private var latestUserHeight: CGFloat = 0
     @State private var latestAnswerHeight: CGFloat = 0
 
-    private static let starterPrompts = [
-        "What changed in my spending this month?",
-        "Where did I spend the most recently?",
-        "How am I tracking against my budgets?",
+    private static let prompts = [
+        "How much did I spend last month?",
+        "What were my top spending categories this month?",
+        "Compare this month's spending to last month",
+        "Find my largest expenses this month",
     ]
 
     var body: some View {
         Group {
-            if model.identity?.authenticated != true {
-                List {
-                    SignedOutStateSection()
-                }
-                .expensesScreenStyle()
-            } else if model.llmEnabled {
+            if model.llmEnabled {
                 conversation
             } else {
                 List {
@@ -38,17 +34,20 @@ struct AssistantView: View {
                 .expensesScreenStyle()
             }
         }
-        .task { if model.identity?.authenticated == true { _ = try? await model.loadAISettings() } }
+        .task { _ = try? await model.loadAISettings() }
         .navigationTitle("Assistant")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if model.identity?.authenticated == true, !model.assistantTurns.isEmpty {
+            if let usageURL {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    Link("ChatGPT Plan", destination: usageURL)
+                }
+            }
+            if !model.assistantTurns.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("New Chat", systemImage: "square.and.pencil") {
                         model.resetAssistantConversation()
                         input = ""
-                    } label: {
-                        Label("New chat", systemImage: "square.and.pencil")
                     }
                     .disabled(model.isAssistantStreaming)
                     .accessibilityIdentifier("assistant.newChat")
@@ -57,18 +56,20 @@ struct AssistantView: View {
         }
     }
 
+    // The ChatGPT plan's usage page, when the assistant runs on it.
+    private var usageURL: URL? {
+        guard let settings = model.aiSettings,
+              settings.features.first(where: { $0.id == "spending_chat" })?.provider == "chatgpt"
+        else {
+            return nil
+        }
+        return URL(string: settings.connection.usageURL)
+    }
+
     private var conversation: some View {
         transcript
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 4) {
-                    if model.aiSettings?.features.first(where: { $0.id == "spending_chat" })?.provider == "chatgpt" {
-                        HStack {
-                            Text("Using ChatGPT plan")
-                            Link("Manage usage", destination: URL(string: "https://chatgpt.com/settings/usage")!)
-                        }.font(.caption)
-                    }
-                    composer
-                }
+            .safeAreaBar(edge: .bottom) {
+                composer
             }
             .background(ExpensesBackground())
     }
@@ -76,7 +77,7 @@ struct AssistantView: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 20) {
                     if model.assistantTurns.isEmpty {
                         emptyState
                     } else {
@@ -119,80 +120,72 @@ struct AssistantView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text("Ask about your spending in plain language.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            ForEach(Self.starterPrompts, id: \.self) { prompt in
-                Button(prompt) {
-                    input = prompt
-                    inputFocused = true
+        VStack(spacing: 14) {
+            Text("Ask about your spending")
+                .font(.headline)
+            VStack(spacing: 8) {
+                ForEach(Self.prompts, id: \.self) { prompt in
+                    Button {
+                        send(prompt)
+                    } label: {
+                        Text(prompt)
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 17))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 17)
+                                    .strokeBorder(Color.primary.opacity(0.14))
+                            }
+                    }
+                    .buttonStyle(.plain)
                 }
-                .disabled(model.isAssistantStreaming)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .containerRelativeFrame(.vertical)
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 6) {
-            TextField("Ask about your spending...", text: $input, axis: .vertical)
-                .lineLimit(1...5)
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Ask about your spending", text: $input, axis: .vertical)
+                .lineLimit(1...6)
                 .focused($inputFocused)
+                .padding(.vertical, 6)
+                .accessibilityLabel("Message the spending assistant")
                 .accessibilityIdentifier("assistant.input")
-                .padding(.leading, 16)
-                .padding(.vertical, 11)
 
-            if model.isAssistantStreaming {
-                Button {
+            Button {
+                if model.isAssistantStreaming {
                     stopTick += 1
                     model.cancelAssistantMessage()
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 40, height: 44)
+                } else {
+                    send(input)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ExpensesTheme.expense(for: scheme))
-                .accessibilityLabel("Stop")
-                .accessibilityIdentifier("assistant.stop")
-            } else {
-                Button {
-                    send()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .frame(width: 40, height: 44)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(ExpensesTheme.accent(for: scheme))
-                .opacity(canSend ? 1 : 0.4)
-                .disabled(!canSend)
-                .accessibilityLabel("Send")
-                .accessibilityIdentifier("assistant.send")
+            } label: {
+                Image(systemName: model.isAssistantStreaming ? "stop.fill" : "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(ExpensesTheme.surface(for: scheme))
+                    .frame(width: 32, height: 32)
+                    .background(ExpensesTheme.accent(for: scheme), in: .circle)
             }
+            .buttonStyle(.plain)
+            .opacity(model.isAssistantStreaming || canSend ? 1 : 0.45)
+            .disabled(!model.isAssistantStreaming && !canSend)
+            .accessibilityLabel(model.isAssistantStreaming ? "Stop" : "Send")
+            .accessibilityIdentifier(model.isAssistantStreaming ? "assistant.stop" : "assistant.send")
         }
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .sensoryFeedback(.impact(flexibility: .rigid), trigger: stopTick)
+        .padding(.leading, 16)
         .padding(.trailing, 6)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(ExpensesTheme.surface(for: scheme).opacity(scheme == .dark ? 0.82 : 0.74))
-                .shadow(color: .black.opacity(scheme == .dark ? 0.18 : 0.06), radius: 14, y: 6)
-        }
+        .padding(.vertical, 6)
+        .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 22))
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(scheme == .dark ? 0.08 : 0.38), lineWidth: 0.75)
+            RoundedRectangle(cornerRadius: 22)
+                .strokeBorder(Color.primary.opacity(0.1))
         }
-        .glassEffect(
-            .regular.tint(ExpensesTheme.accent(for: scheme).opacity(scheme == .dark ? 0.025 : 0.035)),
-            in: .rect(cornerRadius: 24)
-        )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
@@ -217,163 +210,114 @@ struct AssistantView: View {
         return max(0, viewportHeight - latestUserHeight - latestAnswerHeight)
     }
 
-    private func send() {
-        guard canSend else {
+    private func send(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !model.isAssistantStreaming else {
             return
         }
         sendTick += 1
-        model.sendAssistantMessage(input)
+        model.sendAssistantMessage(text)
         input = ""
     }
 }
 
+// Amounts in free text, masked like the web's: "€1,234.56", "1 234,56 €", "-12 EUR".
+private let textAmount = #/(?:€|\$|\bEUR|\bUSD)\s?[-−]?\d(?:[\d.,\x{00A0}\x{202F} ]*\d)?|[-−]?\d(?:[\d.,\x{00A0}\x{202F} ]*\d)?\s?(?:€|\$|EUR\b|USD\b)/#
+
+private func shown(_ text: String, amountsHidden: Bool) -> String {
+    amountsHidden ? text.replacing(textAmount, with: "••••") : text
+}
+
 private struct AssistantTurnView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let turn: AssistantTurn
+
+    @State private var copied = false
 
     var body: some View {
         switch turn.role {
         case .user:
-            UserMessageBubble(text: turn.content)
+            HStack {
+                Spacer(minLength: 48)
+                Text(shown(turn.content, amountsHidden: model.amountsHidden))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Color.primary.opacity(scheme == .dark ? 0.08 : 0.07),
+                        in: .rect(cornerRadius: 18)
+                    )
+                    .contextMenu {
+                        Button("Copy", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = turn.content
+                        }
+                    }
+            }
         case .assistant:
-            // Progress lives above/outside the bubble: the Activity disclosure, then the
-            // single-line spinner while the turn is still working. The answer bubble only
-            // materializes once final user-visible content exists, so thinking, tool calls,
-            // and intermediate reasoning never render inside a bubble.
             VStack(alignment: .leading, spacing: 6) {
                 if !turn.tools.isEmpty {
                     AssistantActivityDisclosure(tools: turn.tools)
                 }
-                if showsSpinner {
-                    AssistantProgressSpinner(
-                        narration: turn.progressNarration,
-                        tools: turn.tools
-                    )
-                    .padding(.leading, 14)
-                    .transition(reduceMotion ? .identity : .opacity)
-                }
                 if !turn.content.isEmpty {
-                    answerBubble
-                        .transition(reduceMotion ? .identity : .opacity)
-                } else {
-                    terminalStatus
+                    AssistantMarkdownText(content: shown(turn.content, amountsHidden: model.amountsHidden))
+                } else if turn.isStreaming {
+                    AssistantProgressLine(narration: turn.progressNarration, tools: turn.tools)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: turn.content.isEmpty)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: turn.isStreaming)
-        }
-    }
-
-    private var showsSpinner: Bool {
-        turn.isStreaming && turn.content.isEmpty && turn.errorMessage == nil
-    }
-
-    private var answerBubble: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 8) {
-                AssistantMarkdownText(content: turn.content, showsCaret: turn.isStreaming)
                 if turn.isStopped {
                     Text("Stopped")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 if let errorMessage = turn.errorMessage {
-                    Text(errorMessage)
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
                         .foregroundStyle(ExpensesTheme.expense(for: scheme))
                 }
+                if !turn.isStreaming, turn.isStopped || turn.errorMessage != nil || !turn.content.isEmpty {
+                    actions
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                ExpensesTheme.surface(for: scheme),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-            Spacer(minLength: 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    // A finished turn that produced no answer text reads as a quiet status line rather than
-    // an empty bubble: the stop/error/no-response outcome shown where the spinner used to be.
-    @ViewBuilder
-    private var terminalStatus: some View {
-        if !turn.isStreaming {
-            Group {
-                if let errorMessage = turn.errorMessage {
-                    Text(errorMessage)
-                        .foregroundStyle(ExpensesTheme.expense(for: scheme))
-                } else if turn.isStopped {
-                    Text("Stopped")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No response")
-                        .foregroundStyle(.secondary)
+    private var actions: some View {
+        HStack(spacing: 4) {
+            if turn.isStopped || turn.errorMessage != nil {
+                Button("Try again", systemImage: "arrow.clockwise") {
+                    model.retryAssistantTurn(turn.id)
                 }
+                .disabled(model.isAssistantStreaming)
+                .frame(minHeight: 44)
             }
-            .font(.footnote)
-            .padding(.leading, 14)
+            if !turn.content.isEmpty {
+                Button(copied ? "Copied" : "Copy response", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    UIPasteboard.general.string = turn.content
+                    copied = true
+                }
+                .labelStyle(.iconOnly)
+                .frame(minWidth: 44, minHeight: 44)
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .buttonStyle(.plain)
+        .padding(.leading, turn.content.isEmpty ? 0 : -12)
+        .sensoryFeedback(.success, trigger: copied) { _, copied in copied }
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
         }
     }
 }
 
-/// A right-aligned user turn. Ordinary questions render in full; only extremely long ones
-/// collapse to a few lines behind a "See more" toggle so a pasted wall of text can't dominate
-/// the transcript. Assistant answers are never truncated this way.
-private struct UserMessageBubble: View {
-    @Environment(\.colorScheme) private var scheme
-    let text: String
-    @State private var expanded = false
-
-    private var isCollapsible: Bool { text.count > 600 }
-
-    var body: some View {
-        HStack {
-            Spacer(minLength: 40)
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(text)
-                    .lineLimit(expanded || !isCollapsible ? nil : 6)
-                    .fixedSize(horizontal: false, vertical: true)
-                if isCollapsible {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text(expanded ? "See less" : "See more")
-                            Image(systemName: "chevron.down")
-                                .rotationEffect(.degrees(expanded ? 180 : 0))
-                        }
-                        .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(expanded ? "See less" : "See more")
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                ExpensesTheme.accent(for: scheme).opacity(0.14),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-        }
-    }
-}
-
-/// The single shimmering progress line shown above the answer bubble while a turn works.
-/// Exactly one phrase is visible at a time, chosen by a small precedence rule:
-///   1. a freshly started tool's verb phrase, shown for a bounded window (`toolWindow`);
-///   2. otherwise the latest user-visible intermediate reasoning (`narration`);
-///   3. otherwise the default "Thinking…".
-/// The backend emits a `progress_narration` immediately before each `tool_call_start`, so a
-/// running tool intentionally supersedes its own lead-in narration with the crisp verb. When
-/// a tool runs longer than the window with nothing newer, the phrase falls back so a slow tool
-/// never pins one label; each new tool resets the window, which also debounces rapid tool
-/// bursts into a smooth text roll instead of blinking back to "Thinking…".
-private struct AssistantProgressSpinner: View {
+/// The line shown while a turn works. A freshly started tool's verb phrase holds for a
+/// bounded window (`toolWindow`), then the latest narration, then "Thinking…". The backend
+/// emits a narration just before each tool starts, so a running tool supersedes its own
+/// lead-in; each new tool resets the window, so a slow tool never pins one label.
+private struct AssistantProgressLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .subheadline) private var lineHeight: CGFloat = 20
     let narration: String
     let tools: [AssistantToolActivity]
 
@@ -381,6 +325,7 @@ private struct AssistantProgressSpinner: View {
 
     // The tool whose verb currently overrides the base phrase; cleared when its window lapses.
     @State private var overrideToolID: String?
+    @State private var dimmed = false
 
     private var phrase: String {
         if let overrideToolID, let tool = tools.first(where: { $0.id == overrideToolID }) {
@@ -394,24 +339,21 @@ private struct AssistantProgressSpinner: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if reduceMotion {
-                ProgressView()
-                    .controlSize(.mini)
-            }
-            ZStack(alignment: .leading) {
-                ShimmerText(text: phrase, active: !reduceMotion)
-                    .id(phrase)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .transition(reduceMotion ? .identity : .push(from: .bottom).combined(with: .opacity))
-            }
-            .frame(minHeight: lineHeight, alignment: .leading)
-            .clipped()
+            Circle()
+                .fill(.tertiary)
+                .frame(width: 8, height: 8)
+                .opacity(dimmed ? 0.3 : 1)
+            Text(phrase)
+                .lineLimit(1)
         }
         .font(.subheadline)
         .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85), value: phrase)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                dimmed = true
+            }
+        }
         .onChange(of: tools.last?.id) { _, newID in
             if let newID {
                 overrideToolID = newID
@@ -430,48 +372,24 @@ private struct AssistantProgressSpinner: View {
     }
 }
 
-private struct ShimmerText: View {
-    let text: String
-    var active: Bool
-    @State private var phase: CGFloat = 0
-
-    var body: some View {
-        Text(text)
-            .overlay {
-                if active {
-                    GeometryReader { geo in
-                        let width = max(geo.size.width, 1)
-                        let band = width * 0.4
-                        LinearGradient(
-                            colors: [.clear, Color.white.opacity(0.6), .clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: band)
-                        .offset(x: -band + phase * (width + band))
-                    }
-                    .mask(alignment: .leading) { Text(text) }
-                    .allowsHitTesting(false)
-                }
-            }
-            .onAppear {
-                guard active else { return }
-                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                    phase = 1
-                }
-            }
-    }
-}
-
-/// A quiet, collapsed-by-default disclosure shown above the assistant bubble for turns
-/// that used tools. It exposes only high-level activity labels and statuses — never raw
-/// tool names or arguments — so the main chat flow stays uncluttered.
+/// One line for a turn's tool use, such as "Reviewed 3 ledger views", that expands to the steps.
 private struct AssistantActivityDisclosure: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let tools: [AssistantToolActivity]
     @State private var expanded = false
     @State private var stepsHeight: CGFloat = 0
+
+    private var summary: String {
+        if let running = tools.first(where: { $0.status == .running }) {
+            return "\(running.label)…"
+        }
+        if let failed = tools.first(where: { $0.status == .failed }) {
+            return "\(failed.label) failed"
+        }
+        return tools.count == 1 ? tools[0].label : "Reviewed \(tools.count) ledger views"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -482,20 +400,17 @@ private struct AssistantActivityDisclosure: View {
                     withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                 }
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Text("Activity")
-                    Text("· \(tools.count) \(tools.count == 1 ? "step" : "steps")")
                         .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Text(summary)
+                        .foregroundStyle(failedOnly ? ExpensesTheme.expense(for: scheme) : .secondary)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.subheadline)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Activity")
-            .accessibilityValue("\(tools.count) \(tools.count == 1 ? "step" : "steps")")
             .accessibilityHint(expanded ? "Collapse" : "Expand")
 
             // Reveal the steps by growing a top-anchored clip window so the list
@@ -509,28 +424,36 @@ private struct AssistantActivityDisclosure: View {
                 .clipped()
                 .accessibilityHidden(!expanded)
         }
-        .padding(.leading, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var failedOnly: Bool {
+        !tools.contains { $0.status == .running } && tools.contains { $0.status == .failed }
+    }
+
     private var stepsList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(tools) { tool in
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     statusIcon(for: tool.status)
-                        .font(.caption)
                         .frame(width: 14)
-                    Text(tool.label)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(tool.label) \(Text(shown(tool.detail, amountsHidden: model.amountsHidden)).foregroundStyle(.tertiary))")
+                        if let summary = tool.summary {
+                            Text(shown(summary, amountsHidden: model.amountsHidden))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
                 }
+                .font(.footnote)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(tool.label)
                 .accessibilityValue(statusWord(for: tool.status))
             }
         }
-        .padding(.top, 6)
-        .padding(.leading, 1)
+        .padding(.top, 4)
+        .padding(.leading, 20)
     }
 
     @ViewBuilder
@@ -540,10 +463,10 @@ private struct AssistantActivityDisclosure: View {
             Image(systemName: "circle.dotted")
                 .foregroundStyle(.secondary)
         case .success:
-            Image(systemName: "checkmark.circle")
+            Image(systemName: "checkmark")
                 .foregroundStyle(.secondary)
         case .failed:
-            Image(systemName: "exclamationmark.circle")
+            Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(ExpensesTheme.expense(for: scheme))
         }
     }
@@ -567,28 +490,25 @@ private struct AssistantActivityDisclosure: View {
 /// block restores paragraph/list spacing while keeping bold, emphasis, code, and links.
 private struct AssistantMarkdownText: View {
     let content: String
-    var showsCaret = false
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(content)
-        let lastIndex = blocks.count - 1
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                blockView(block, isLast: index == lastIndex)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(MarkdownBlock.parse(content).enumerated()), id: \.offset) { _, block in
+                blockView(block)
             }
         }
         .textSelection(.enabled)
     }
 
     @ViewBuilder
-    private func blockView(_ block: MarkdownBlock, isLast: Bool) -> some View {
-        let caret = showsCaret && isLast
+    private func blockView(_ block: MarkdownBlock) -> some View {
         switch block {
         case let .paragraph(text):
-            caretText(text, caret: caret, font: nil)
+            Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         case let .heading(level, text):
-            caretText(text, caret: caret, font: headingFont(for: level))
+            Text(text)
+                .font(headingFont(for: level))
                 .fixedSize(horizontal: false, vertical: true)
         case let .list(rows):
             VStack(alignment: .leading, spacing: 4) {
@@ -597,20 +517,11 @@ private struct AssistantMarkdownText: View {
                         Text(rows[index].marker)
                             .foregroundStyle(.secondary)
                             .frame(minWidth: 16, alignment: .trailing)
-                        caretText(rows[index].text, caret: caret && index == rows.count - 1, font: nil)
+                        Text(rows[index].text)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func caretText(_ text: AttributedString, caret: Bool, font: Font?) -> some View {
-        if caret {
-            StreamingCaretText(text: text, font: font)
-        } else {
-            Text(text).font(font)
         }
     }
 
@@ -623,38 +534,6 @@ private struct AssistantMarkdownText: View {
         default:
             .subheadline.weight(.semibold)
         }
-    }
-}
-
-/// A streamed text fragment with a trailing typing caret as its final inline glyph, so the
-/// caret hugs the end of the answer as it wraps. The caret blinks by toggling color (not
-/// width, so text never reflows); under Reduce Motion it holds steady. The caret glyph is
-/// kept out of VoiceOver by overriding the spoken label with the plain text.
-private struct StreamingCaretText: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
-    let text: AttributedString
-    let font: Font?
-
-    var body: some View {
-        let plain = String(text.characters)
-        if reduceMotion {
-            composed(caretVisible: true)
-                .accessibilityLabel(plain)
-        } else {
-            TimelineView(.periodic(from: .now, by: 0.6)) { context in
-                let visible = Int(context.date.timeIntervalSinceReferenceDate / 0.6).isMultiple(of: 2)
-                composed(caretVisible: visible)
-                    .accessibilityLabel(plain)
-            }
-        }
-    }
-
-    private func composed(caretVisible: Bool) -> Text {
-        let caret = Text(verbatim: "\u{200A}\u{258F}")
-            .font(font)
-            .foregroundStyle(caretVisible ? ExpensesTheme.accent(for: scheme) : Color.clear)
-        return Text("\(text)\(caret)").font(font)
     }
 }
 
