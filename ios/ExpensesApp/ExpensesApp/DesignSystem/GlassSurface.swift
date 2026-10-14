@@ -235,7 +235,6 @@ struct TagExclusionSection: View {
     let tags: [TransactionTag]
     @Binding var selectedIDs: Set<Int>
     var includedTagID: Int?
-    var footer: String?
 
     var body: some View {
         Section {
@@ -273,10 +272,6 @@ struct TagExclusionSection: View {
             }
         } header: {
             Text("Exclude tags")
-        } footer: {
-            if let footer {
-                Text(footer)
-            }
         }
     }
 }

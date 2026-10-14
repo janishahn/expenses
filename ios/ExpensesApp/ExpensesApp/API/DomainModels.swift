@@ -2158,8 +2158,6 @@ struct DashboardBudgetPace: Codable, Equatable {
     let budgetCents: Int
     let spentCents: Int
     let remainingCents: Int
-    let dailyRemainingCents: Int
-    let daysRemaining: Int
     let sparkline: String
 
     enum CodingKeys: String, CodingKey {
@@ -2168,8 +2166,6 @@ struct DashboardBudgetPace: Codable, Equatable {
         case budgetCents = "budget_cents"
         case spentCents = "spent_cents"
         case remainingCents = "remaining_cents"
-        case dailyRemainingCents = "daily_remaining_cents"
-        case daysRemaining = "days_remaining"
         case sparkline
     }
 }

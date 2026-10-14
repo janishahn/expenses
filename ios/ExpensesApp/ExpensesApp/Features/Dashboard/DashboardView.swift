@@ -47,8 +47,6 @@ struct DashboardView: View {
                                 .accessibilityLabel("Clear tag exclusions")
                             }
                             .font(.callout.weight(.medium))
-                        } footer: {
-                            Text("Available balance and budgets stay based on all activity.")
                         }
                         .expensesRowBackground()
                     }
@@ -278,8 +276,7 @@ private struct DashboardFiltersSheet: View {
                 TagExclusionSection(
                     tags: tags,
                     selectedIDs: $excludedTagIDs,
-                    includedTagID: nil,
-                    footer: "These exclusions affect transaction-based totals, charts, and recent activity only."
+                    includedTagID: nil
                 )
             }
             .navigationTitle("Dashboard filters")
@@ -399,8 +396,7 @@ private struct DashboardSummary: View {
     }
 
     private func overallBudget(_ budget: DashboardBudgetPace) -> some View {
-        let over = budget.remainingCents < 0
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             HStack {
                 Text("Overall budget")
                 Spacer()
@@ -411,30 +407,8 @@ private struct DashboardSummary: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
-            BudgetBar(ratio: usedRatio(spent: budget.spentCents, budget: budget.budgetCents), over: over, pace: pace)
-                .padding(.vertical, 9)
-
-            HStack {
-                if over {
-                    Text("\(Text(AppFormatters.euros(-budget.remainingCents, decimals: false)).foregroundStyle(ExpensesTheme.expense(for: scheme))) over")
-                        .foregroundStyle(.secondary)
-                } else if budget.daysRemaining > 0 {
-                    Text("\(AppFormatters.euros(budget.remainingCents, decimals: false)) left · \(AppFormatters.euros(budget.dailyRemainingCents, decimals: false))/day")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("\(AppFormatters.euros(budget.remainingCents, decimals: false)) left")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                // A finished month has no projection left to make.
-                if budget.daysRemaining > 0 {
-                    Text("Likely \(AppFormatters.euros(budget.projectedCents, decimals: false))")
-                        .foregroundStyle(budget.projectedCents > budget.budgetCents ? ExpensesTheme.expense(for: scheme) : .secondary)
-                }
-            }
-            .font(.subheadline)
-            .monospacedDigit()
-            .privacySensitive()
+            BudgetBar(ratio: usedRatio(spent: budget.spentCents, budget: budget.budgetCents), over: budget.remainingCents < 0, pace: pace)
+                .padding(.top, 9)
         }
     }
 
