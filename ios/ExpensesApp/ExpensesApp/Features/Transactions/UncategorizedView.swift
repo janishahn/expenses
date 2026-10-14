@@ -4,6 +4,7 @@ import SwiftUI
 /// each may carry a suggested category to accept or reject.
 struct UncategorizedView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
     @State private var search = ""
     @State private var loadFailed = false
     @State private var selecting = false
@@ -34,7 +35,7 @@ struct UncategorizedView: View {
                                     Button("Accept", systemImage: "checkmark") {
                                         Task { await categorize([row.id], categoryID: suggested.id) }
                                     }
-                                    .tint(.accentColor)
+                                    .tint(ExpensesTheme.focus(for: scheme))
                                 }
                             }
                             .contextMenu {
