@@ -129,6 +129,10 @@ struct RootView: View {
             InsightsView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
         case .forecast:
             ForecastView()
+        case .uncategorized:
+            UncategorizedView()
+        case .whatIf:
+            WhatIfView(options: ForecastOptions())
         case .digest:
             DigestView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
         case .reports:
@@ -147,10 +151,8 @@ struct RootView: View {
             CategoriesView(openTransactions: openTransactions)
         case .tags:
             TagsView(openTransactions: openTransactions)
-        case .account:
+        case .settings:
             AuthView()
-        case .diagnostics:
-            DiagnosticsView()
         case .assistant:
             AssistantView()
         case .more:
@@ -161,13 +163,16 @@ struct RootView: View {
     private var moreTab: some View {
         NavigationStack(path: $morePath) {
             List {
-                moreDestinationSection("Planning", destinations: AppDestination.planningDestinations)
-                moreDestinationSection("Manage", destinations: AppDestination.manageDestinations)
+                moreDestinationSection(nil, destinations: model.uncategorizedCount > 0 ? [.forecast, .uncategorized] : [.forecast])
+                moreDestinationSection("Manage", destinations: [.recurring, .templates, .rules, .categories, .tags])
                 moreDestinationSection("Tools", destinations: toolsDestinations)
-                moreDestinationSection("Account", destinations: AppDestination.accountDestinations)
+                moreDestinationSection(nil, destinations: model.identity?.user?.isAdmin == true ? [.settings, .admin] : [.settings])
             }
             .navigationTitle("More")
             .expensesScreenStyle()
+            .task {
+                await model.loadUncategorizedCount()
+            }
             .navigationDestination(for: AppDestination.self) { destination in
                 destinationView(destination)
             }
@@ -176,15 +181,21 @@ struct RootView: View {
     }
 
     private var toolsDestinations: [AppDestination] {
-        AppDestination.toolsDestinations.filter { $0 != .assistant || model.llmEnabled }
+        model.llmEnabled ? [.whatIf, .reconcile, .reports, .digest, .assistant] : [.whatIf, .reconcile, .reports, .digest]
     }
 
-    private func moreDestinationSection(_ title: String, destinations: [AppDestination]) -> some View {
-        Section(title) {
+    private func moreDestinationSection(_ title: String?, destinations: [AppDestination]) -> some View {
+        Section {
             ForEach(destinations) { destination in
                 NavigationLink(value: destination) {
                     Label(destination.title, systemImage: destination.systemImage)
+                        .badge(destination == .uncategorized ? model.uncategorizedCount : 0)
                 }
+                .navigationLinkIndicatorVisibility(.hidden)
+            }
+        } header: {
+            if let title {
+                Text(title)
             }
         }
         .expensesRowBackground()
@@ -250,6 +261,8 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case insights
     case more
     case forecast
+    case uncategorized
+    case whatIf
     case digest
     case reports
     case reconcile
@@ -259,8 +272,7 @@ private enum AppDestination: String, CaseIterable, Identifiable {
     case rules
     case categories
     case tags
-    case account
-    case diagnostics
+    case settings
     case assistant
 
     var id: String { rawValue }
@@ -279,6 +291,10 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "More"
         case .forecast:
             "Forecast"
+        case .uncategorized:
+            "Uncategorized"
+        case .whatIf:
+            "What If"
         case .digest:
             "Digest"
         case .reports:
@@ -297,10 +313,8 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "Categories"
         case .tags:
             "Tags"
-        case .account:
-            "Account"
-        case .diagnostics:
-            "Diagnostics"
+        case .settings:
+            "Settings"
         case .assistant:
             "Assistant"
         }
@@ -320,6 +334,10 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "line.3.horizontal"
         case .forecast:
             "chart.line.uptrend.xyaxis"
+        case .uncategorized:
+            "tray"
+        case .whatIf:
+            "flask"
         case .digest:
             "newspaper"
         case .reports:
@@ -338,10 +356,8 @@ private enum AppDestination: String, CaseIterable, Identifiable {
             "square.on.circle"
         case .tags:
             "tag"
-        case .account:
-            "person.crop.circle"
-        case .diagnostics:
-            "stethoscope"
+        case .settings:
+            "gearshape"
         case .assistant:
             "bubble.left.and.bubble.right"
         }
@@ -349,22 +365,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
 
     var hidesTabBar: Bool {
         self == .assistant
-    }
-
-    static var planningDestinations: [AppDestination] {
-        [.forecast]
-    }
-
-    static var manageDestinations: [AppDestination] {
-        [.recurring, .templates, .rules, .categories, .tags]
-    }
-
-    static var toolsDestinations: [AppDestination] {
-        [.assistant, .digest, .reconcile, .reports, .diagnostics]
-    }
-
-    static var accountDestinations: [AppDestination] {
-        [.account, .admin]
     }
 }
 

@@ -23,7 +23,9 @@ struct UncategorizedView: View {
                 } else {
                     Section {
                         ForEach(response.items) { row in
-                            NavigationLink(value: TransactionsRoute.transaction(row.id)) {
+                            NavigationLink {
+                                TransactionDetailView(transactionID: row.id)
+                            } label: {
                                 rowLabel(row, definition: response.definition)
                             }
                             .navigationLinkIndicatorVisibility(.hidden)

@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 enum TransactionsRoute: Hashable {
     case transaction(Int)
-    case uncategorized
     case trash
 }
 
@@ -27,16 +26,6 @@ struct TransactionsView: View {
         @Bindable var model = model
         NavigationStack(path: $path) {
             List(selection: $selection) {
-                if !selecting && model.uncategorizedCount > 0 {
-                    Section {
-                        NavigationLink(value: TransactionsRoute.uncategorized) {
-                            Label("Uncategorized", systemImage: "tray")
-                                .badge(model.uncategorizedCount)
-                        }
-                    }
-                    .expensesRowBackground()
-                }
-
                 if let transactions = model.transactions {
                     if transactions.items.isEmpty {
                         emptyState
@@ -104,12 +93,8 @@ struct TransactionsView: View {
                     model.transactionQuery.search = search
                 }
             }
-            .task {
-                await model.loadUncategorizedCount()
-            }
             .refreshable {
                 await model.loadTransactions()
-                await model.loadUncategorizedCount()
             }
             .onChange(of: model.transactionQuery) {
                 clearSelection()
@@ -182,8 +167,6 @@ struct TransactionsView: View {
                 switch route {
                 case let .transaction(id):
                     TransactionDetailView(transactionID: id)
-                case .uncategorized:
-                    UncategorizedView()
                 case .trash:
                     TrashView()
                 }

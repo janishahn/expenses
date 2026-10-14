@@ -50,11 +50,15 @@ struct AuthView: View {
 
             appearanceSection
 
+            Section {
+                NavigationLink("Diagnostics") { DiagnosticsView() }
+            }
+
             if formError == nil, let error = model.lastError {
                 ErrorDetailsView(error: error)
             }
         }
-        .navigationTitle("Account")
+        .navigationTitle("Settings")
         .expensesScreenStyle()
         .task {
             await model.loadAccountSettings()
