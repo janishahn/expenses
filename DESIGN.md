@@ -396,6 +396,15 @@ pages below fix the structure; the current pages show the content.
   requested path, and Go to dashboard. The calendar is decorative
   and hidden from assistive technology. Under reduced motion the cells only
   fade in.
+- **Can't reach the server.** When a page fails to load because the server does
+  not answer (a network failure, or a proxy's 502 or 504; never an error the app
+  returns), its error state is a receipt printing from a slot: the app name, the
+  time, NO ANSWER, Trying again, and one dot per retry (2s, doubling to 30s).
+  Below it: "Can't reach the server", "The page loads by itself when it
+  answers.", and Retry now. When the server answers, the receipt prints BACK
+  ONLINE with the time and tears off, and the page loads again. The receipt is
+  decorative and hidden from assistive technology; its paper shadow and
+  uppercase receipt type belong to it alone.
 
 ## Copy
 
@@ -413,7 +422,8 @@ name or a real example, never an instruction.
 ## Motion
 
 Motion is functional. If an action happens many times a day, it does not animate.
-The 404 page is the one decorative exception.
+The 404 calendar and the can't-reach-the-server receipt are the only
+decorative exceptions.
 
 | Element | Motion |
 | --- | --- |
@@ -424,6 +434,7 @@ The 404 page is the one decorative exception.
 | Charts | Re-animate only when the range changes (about 220ms); dimming 120ms; nothing on load |
 | Press | `scale(0.98)` |
 | 404 calendar | Cells fill in week by week once (about 2s, opacity and scale from 0.3); a few light cells then fade in and out slowly |
+| Server receipt | Feeds up from the slot in line steps once (about 1.3s); each dot fades and scales in; on an answer, feeds out, tears off with a slight tilt, and fades |
 
 Animate only `transform` and `opacity`. Under reduced motion, keep opacity
 changes and drop movement.
@@ -500,7 +511,8 @@ diff.
 - Red expenses and minus signs on expenses.
 - Per-row action buttons outside triage queues, and a global create button.
 - `transition: all`, `ease-in`, `scale(0)`, staggered entrances, load
-  animations (except the 404 calendar), and animated layout properties.
+  animations (except the 404 calendar and the server receipt), and animated
+  layout properties.
 - Two bottom-anchored layers at once; inputs in bottom-fixed bars other than
   the Assistant composer.
 - Native `alert`, `confirm`, and `prompt`.

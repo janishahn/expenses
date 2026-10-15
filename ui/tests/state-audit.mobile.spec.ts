@@ -184,4 +184,24 @@ test.describe("Mobile state audit", () => {
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Back to transactions" })).toHaveCount(0)
   })
+
+  test("a page that cannot reach the server loads by itself on mobile", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    let serverDown = true
+    await page.route("**/api/**", (route) =>
+      serverDown ? route.abort("connectionrefused") : route.continue(),
+    )
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Budgets" }).tap()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
+
+    serverDown = false
+    await expect(page.getByRole("button", { name: "Add budget" }).first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
 })

@@ -121,6 +121,32 @@ test.describe("State audit", () => {
     }
   })
 
+  test("a page that cannot reach the server keeps retrying and loads by itself", async ({
+    page,
+  }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    let serverDown = true
+    await page.route("**/api/**", (route) =>
+      serverDown ? route.abort("connectionrefused") : route.continue(),
+    )
+    await page
+      .getByRole("complementary", { name: "Application navigation" })
+      .getByRole("link", { name: "Budgets", exact: true })
+      .click()
+    await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
+
+    serverDown = false
+    await expect(page.getByRole("button", { name: "Add budget" }).first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
+
   test("transaction detail distinguishes server failure from a missing record", async ({
     page,
   }) => {

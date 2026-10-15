@@ -19,6 +19,28 @@ export class ApiError extends Error {
   }
 }
 
+// Whether the last API request got no answer: a network failure, or a proxy such as
+// Tailscale Serve reporting the app as down (the app itself sends 503, never 502 or 504).
+// Any other response, errors included, means the server answered.
+const PROXY_DOWN_STATUSES = new Set([502, 504])
+let serverUnreachable = false
+const reachabilityListeners = new Set<() => void>()
+
+function setServerUnreachable(unreachable: boolean): void {
+  if (serverUnreachable === unreachable) return
+  serverUnreachable = unreachable
+  reachabilityListeners.forEach((listener) => listener())
+}
+
+export function isServerUnreachable(): boolean {
+  return serverUnreachable
+}
+
+export function subscribeServerReachability(listener: () => void): () => void {
+  reachabilityListeners.add(listener)
+  return () => reachabilityListeners.delete(listener)
+}
+
 export function isApiErrorStatus(error: unknown, status: number): boolean {
   return error instanceof ApiError && error.status === status
 }
@@ -132,7 +154,14 @@ async function apiRequest<T>(
     if (setJsonContentType && !headers.has("Content-Type") && init.body) {
       headers.set("Content-Type", "application/json")
     }
-    const response = await fetch(path, { ...init, headers })
+    let response: Response
+    try {
+      response = await fetch(path, { ...init, headers })
+    } catch (error) {
+      if (error instanceof TypeError) setServerUnreachable(true)
+      throw error
+    }
+    setServerUnreachable(PROXY_DOWN_STATUSES.has(response.status))
     if (response.ok) {
       return parse(response)
     }
