@@ -486,31 +486,16 @@ test.describe("Mobile interaction audit", () => {
 
   test("assistant Send and Scroll to latest reach 44px", async ({ page }) => {
     await useAuditTheme(page)
-    const longAnswer = Array.from(
-      { length: 60 },
-      (_, index) => `Audit spending detail ${index + 1}.`,
-    ).join("\n\n")
-    const body = [
-      { type: "turn_started", turn_id: "audit-turn" },
-      { type: "text_chunk", content: longAnswer },
-      { type: "text_commit" },
-      { type: "result", assistant_message: longAnswer, message_history: [] },
-      { type: "done" },
-    ]
-      .map((event) => JSON.stringify(event))
-      .join("\n")
-    await page.route("**/api/ai/spending-chat/stream", (route) =>
-      route.fulfill({ status: 200, contentType: "application/x-ndjson", body: `${body}\n` }),
-    )
     await page.goto("/assistant")
-    const input = page.getByRole("textbox", { name: "Message the spending assistant" })
+    const input = page.getByRole("textbox", { name: "Message the Assistant" })
     await input.click()
-    await input.fill("Show the full audit")
+    // The stub AI backend answers "long" questions with eighty paragraphs (tests/e2e_ai_provider.py).
+    await input.fill("Show the full audit as a long review")
     const send = page.getByRole("button", { name: "Send" })
     await expectTouchTargets([["Assistant Send", send]])
     await send.click()
     await expect(
-      page.getByRole("log", { name: "Conversation" }).getByText("Audit spending detail 60."),
+      page.getByRole("log", { name: "Conversation" }).getByText("Spending detail 80."),
     ).toBeAttached()
     await expectTouchTargets([
       ["Assistant Scroll to latest", page.getByRole("button", { name: "Scroll to latest message" })],

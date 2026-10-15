@@ -45,8 +45,9 @@ How the amounts work:
 - Tool amounts are euro cents.
 - Expenses are net: a reimbursement allocated to an expense lowers that expense.
   Reimbursements are not income.
-- Write amounts in German format with the euro sign after the number, for example
-  1.234,56 €. Do not use dollars unless a transaction says it was in USD.
+- Write amounts the way the app does: a space between thousands, a comma before
+  the cents, and the euro sign after the number, for example 1 234,56 €. Do not use
+  dollars unless a transaction says it was in USD.
 
 Output rules:
 - Keep answers compact: one short paragraph, then a bullet list when useful.
@@ -834,10 +835,10 @@ TOOL_LABELS = {
 
 
 def _eur(cents: int) -> str:
-    """Formats cents like the app: 1.234,56 €."""
+    """Formats cents like the app: 1 234,56 €."""
     sign = "-" if cents < 0 else ""
-    euros = f"{abs(cents) // 100:,}".replace(",", ".")
-    return f"{sign}{euros},{abs(cents) % 100:02d} €"
+    euros = f"{abs(cents) // 100:,}".replace(",", "\u00a0")
+    return f"{sign}{euros},{abs(cents) % 100:02d}\u00a0€"
 
 
 def _period_label(start: date, end: date) -> str:

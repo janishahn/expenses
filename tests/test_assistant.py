@@ -465,7 +465,7 @@ def test_tool_labels_and_details_read_like_the_app() -> None:
                 "baseline": {"totals": {"net_cents": 99_900}},
             },
         )
-        == "2 transactions · 1.234,56 € vs 999,00 €"
+        == "2 transactions · 1 234,56 € vs 999,00 €"
     )
     assert (
         tool_detail(
