@@ -14,8 +14,11 @@ struct ReconciliationView: View {
     @State private var prompt: BankRowPrompt?
     @State private var matchingAll: [BankStatementRow]?
     @State private var ignoringRemaining = false
-    @State private var failure: String?
+    @State private var pending = false
+    @State private var failure: BankRowFailure?
     @State private var changed = 0
+    // Counts the reloads, so a page requested before one isn't appended to the rows it replaced.
+    @State private var reloads = 0
 
     private struct Query: Hashable {
         let resolved: Bool
@@ -74,6 +77,8 @@ struct ReconciliationView: View {
                     NextPageSection(page: loaded.pages) {
                         await loadNextPage()
                     }
+                    // A reload drops a page that was loading, so the page loads again.
+                    .id(reloads)
                 }
             }
         }
@@ -92,7 +97,7 @@ struct ReconciliationView: View {
                         Button("Ignore Remaining Rows…", systemImage: "eye.slash") {
                             ignoringRemaining = true
                         }
-                        .disabled(openTotal == 0)
+                        .disabled(openTotal == 0 || pending)
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
@@ -135,17 +140,19 @@ struct ReconciliationView: View {
         ) {
             Button("Cancel", role: .cancel) {}
             Button("Ignore All") {
-                Task { await finish(model.ignoreOpenBankRows(account: account)) }
+                Task { await run("Couldn't ignore the rows") { await model.ignoreOpenBankRows(account: account) } }
             }
         } message: {
             Text("They move to Resolved, where you can reopen them.")
         }
-        .bankRowPrompt($prompt, failure: $failure) {
-            changed += 1
+        .bankRowPrompt($prompt, failure: $failure) { succeeded in
+            if succeeded {
+                changed += 1
+            }
             await reload()
         }
         .sensoryFeedback(.success, trigger: changed)
-        .failureAlert("Couldn't update the bank row", message: $failure)
+        .failureAlert($failure)
     }
 
     private var query: Query {
@@ -206,6 +213,7 @@ struct ReconciliationView: View {
                             Task { await matchSuggestion(row) }
                         }
                         .tint(ExpensesTheme.focus(for: scheme))
+                        .disabled(pending)
                     }
                 }
                 .contextMenu {
@@ -213,6 +221,7 @@ struct ReconciliationView: View {
                         Button("Match", systemImage: "link") {
                             Task { await matchSuggestion(row) }
                         }
+                        .disabled(pending)
                     }
                     Button("Create Transaction…", systemImage: "plus.circle") {
                         prompt = .create(row)
@@ -222,6 +231,7 @@ struct ReconciliationView: View {
                     } otherReason: {
                         prompt = .ignore(row)
                     }
+                    .disabled(pending)
                 }
             }
         } header: {
@@ -237,6 +247,7 @@ struct ReconciliationView: View {
                     Button("Match all") {
                         matchingAll = rows
                     }
+                    .disabled(pending)
                     .font(.subheadline.weight(.medium))
                     .textCase(nil)
                 }
@@ -264,6 +275,7 @@ struct ReconciliationView: View {
                     Task { await reopen(row) }
                 }
             }
+            .disabled(pending)
         }
     }
 
@@ -337,6 +349,7 @@ struct ReconciliationView: View {
             accounts = list
         }
         rows = result.map { Rows(items: $0.items, total: $0.total, pages: pages) }
+        reloads += 1
     }
 
     private func loadNextPage() async {
@@ -344,6 +357,7 @@ struct ReconciliationView: View {
             return
         }
         let query = query
+        let reloads = reloads
         let page = loaded.pages + 1
         let result = await model.chart {
             try await $0.bankRows(
@@ -355,7 +369,7 @@ struct ReconciliationView: View {
                 token: $1
             )
         }
-        guard !Task.isCancelled, query == self.query else {
+        guard !Task.isCancelled, query == self.query, reloads == self.reloads else {
             return
         }
         switch result {
@@ -366,31 +380,48 @@ struct ReconciliationView: View {
             loaded.pages = page
             rows = .success(loaded)
         case let .failure(error):
-            failure = error.message
+            failure = BankRowFailure(title: "Couldn't load more rows", message: error.message)
         }
     }
 
     private func matchSuggestion(_ row: BankStatementRow) async {
-        await finish(model.acceptBankRowSuggestion(row))
+        await run("Couldn't match the row") { await model.acceptBankRowSuggestion(row) }
     }
 
     private func matchAll(_ band: [BankStatementRow]) async {
-        await finish(model.acceptBankRowSuggestions(band) != nil)
+        await run("Couldn't match the rows") {
+            guard let matched = await model.acceptBankRowSuggestions(band) else {
+                return false
+            }
+            if matched < band.count {
+                failure = BankRowFailure(
+                    title: "Matched \(matched) of \(rowCount(band.count))",
+                    message: "The others no longer have a single suggested match."
+                )
+            }
+            return true
+        }
     }
 
     private func ignore(_ row: BankStatementRow, reason: String) async {
-        await finish(model.ignoreBankRow(row, reason: reason))
+        await run("Couldn't ignore the row") { await model.ignoreBankRow(row, reason: reason) }
     }
 
     private func reopen(_ row: BankStatementRow) async {
-        await finish(model.reopenBankRow(row, trashCreatedTransaction: false))
+        await run("Couldn't reopen the row") { await model.reopenBankRow(row, trashCreatedTransaction: false) }
     }
 
-    private func finish(_ succeeded: Bool) async {
-        if succeeded {
+    // One action at a time, so a second tap can't send it again before the rows reload.
+    private func run(_ failedTitle: String, _ action: () async -> Bool) async {
+        guard !pending else {
+            return
+        }
+        pending = true
+        defer { pending = false }
+        if await action() {
             changed += 1
         } else {
-            failure = model.lastError?.message ?? "The bank row could not be updated."
+            failure = BankRowFailure(title: failedTitle, message: model.lastError?.message ?? "The bank row could not be updated.")
         }
         await reload()
     }
@@ -593,30 +624,44 @@ enum BankRowPrompt: Identifiable {
     }
 }
 
+/// A bank row action that failed; the title names the action.
+struct BankRowFailure {
+    let title: String
+    let message: String
+}
+
 extension View {
     /// Presents `prompt`: the create sheet, a reason for ignoring, or what happens to a
-    /// created transaction when its row reopens. `onDone` runs after a change.
+    /// created transaction when its row reopens. `onDone` runs after the action, with
+    /// whether it succeeded.
     func bankRowPrompt(
         _ prompt: Binding<BankRowPrompt?>,
-        failure: Binding<String?>,
-        onDone: @escaping () async -> Void
+        failure: Binding<BankRowFailure?>,
+        onDone: @escaping (_ succeeded: Bool) async -> Void
     ) -> some View {
         modifier(BankRowPromptModifier(prompt: prompt, failure: failure, onDone: onDone))
+    }
+
+    func failureAlert(_ failure: Binding<BankRowFailure?>) -> some View {
+        failureAlert(
+            failure.wrappedValue?.title ?? "",
+            message: Binding(get: { failure.wrappedValue?.message }, set: { if $0 == nil { failure.wrappedValue = nil } })
+        )
     }
 }
 
 private struct BankRowPromptModifier: ViewModifier {
     @Environment(AppModel.self) private var model
     @Binding var prompt: BankRowPrompt?
-    @Binding var failure: String?
-    let onDone: () async -> Void
+    @Binding var failure: BankRowFailure?
+    let onDone: (Bool) async -> Void
     @State private var reason = ""
 
     func body(content: Content) -> some View {
         content
             .sheet(item: creating) { row in
                 CreateFromBankRowSheet(row: row) {
-                    await onDone()
+                    await onDone(true)
                 }
             }
             .alert(
@@ -628,7 +673,7 @@ private struct BankRowPromptModifier: ViewModifier {
                 Button("Cancel", role: .cancel) {}
                 Button("Ignore") {
                     let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task { await run(model.ignoreBankRow(row, reason: trimmed)) }
+                    Task { await run("Couldn't ignore the row", model.ignoreBankRow(row, reason: trimmed)) }
                 }
                 .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -639,10 +684,10 @@ private struct BankRowPromptModifier: ViewModifier {
                 presenting: reopening.wrappedValue
             ) { row in
                 Button("Keep Transaction") {
-                    Task { await run(model.reopenBankRow(row, trashCreatedTransaction: false)) }
+                    Task { await run("Couldn't reopen the row", model.reopenBankRow(row, trashCreatedTransaction: false)) }
                 }
                 Button("Move Transaction to Trash", role: .destructive) {
-                    Task { await run(model.reopenBankRow(row, trashCreatedTransaction: true)) }
+                    Task { await run("Couldn't reopen the row", model.reopenBankRow(row, trashCreatedTransaction: true)) }
                 }
             } message: { row in
                 Text("The transaction “\(row.suggestedTransaction?.displayTitle ?? row.title)” was created from it.")
@@ -678,11 +723,10 @@ private struct BankRowPromptModifier: ViewModifier {
         Binding(get: { row.wrappedValue != nil }, set: { if !$0 { row.wrappedValue = nil } })
     }
 
-    private func run(_ succeeded: Bool) async {
-        if succeeded {
-            await onDone()
-        } else {
-            failure = model.lastError?.message ?? "The bank row could not be updated."
+    private func run(_ failedTitle: String, _ succeeded: Bool) async {
+        if !succeeded {
+            failure = BankRowFailure(title: failedTitle, message: model.lastError?.message ?? "The bank row could not be updated.")
         }
+        await onDone(succeeded)
     }
 }

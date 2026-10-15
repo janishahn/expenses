@@ -12,6 +12,10 @@ struct AdminHealthView: View {
             switch health {
             case nil:
                 LoadingStateSection(title: "Loading server health")
+            case .failure(let error) where error.statusCode == 403:
+                AdminUnlockSection(title: "Admin access expired") {
+                    await load()
+                }
             case .failure(let error):
                 UnavailableStateSection(title: "Couldn't load server health", systemImage: "exclamationmark.triangle", message: error.message) {
                     await load()

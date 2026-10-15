@@ -11,6 +11,10 @@ struct AdminSystemView: View {
             switch info {
             case nil:
                 LoadingStateSection(title: "Loading system information")
+            case .failure(let error) where error.statusCode == 403:
+                AdminUnlockSection(title: "Admin access expired") {
+                    await load()
+                }
             case .failure(let error):
                 UnavailableStateSection(title: "Couldn't load system information", systemImage: "exclamationmark.triangle", message: error.message) {
                     await load()

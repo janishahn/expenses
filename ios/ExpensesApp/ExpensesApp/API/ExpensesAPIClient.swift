@@ -1152,6 +1152,8 @@ struct ExpensesAPIClient {
         }
         let trimmedSearch = search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSearch.isEmpty {
+            // The search replaces a filter's text, as on the web; the server reads one.
+            items.removeAll { $0.name == "q" }
             items.append(URLQueryItem(name: "q", value: trimmedSearch))
         }
         components.queryItems = items
@@ -1369,7 +1371,11 @@ struct ExpensesAPIClient {
         if let detail = payload["detail"] as? String {
             return detail
         }
-        return nil
+        // A validation error lists each problem with its own message, which the web joins.
+        let messages = (payload["detail"] as? [Any] ?? [])
+            .compactMap { (($0 as? [String: Any])?["msg"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return messages.isEmpty ? nil : messages.joined(separator: " ")
     }
 }
 

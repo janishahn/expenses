@@ -37,6 +37,9 @@ final class AppModel {
     }
     var status: MobileStatus?
     var llmEnabled: Bool { status?.llmEnabled ?? false }
+    // The server stores transaction and balance snapshot times as wall-clock times in its
+    // zone, so a stored time shows and saves in it. The device's zone until it is known.
+    var serverTimeZone: TimeZone { status.flatMap { TimeZone(identifier: $0.timezone) } ?? .current }
     // A mobile session token is stored. The app shows sign-in until there is one.
     private(set) var hasSession = false
     var identity: MobileAuthIdentity?
@@ -279,7 +282,8 @@ final class AppModel {
     func disconnectChatGPT() async throws -> ChatGPTDisconnectResponse {
         guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
         let response = try await apiClient.disconnectChatGPT(token: token)
-        _ = try await loadAISettings()
+        // The disconnect happened, so its result stands even when the settings don't reload.
+        _ = try? await loadAISettings()
         return response
     }
 
@@ -344,7 +348,8 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let response = try await apiClient.createOrRotateIngestToken(token: token)
-            settings = try await apiClient.settings(token: token)
+            // The token shows only once, so it returns even when the settings don't reload.
+            settings = (try? await apiClient.settings(token: token)) ?? settings
             return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
@@ -550,6 +555,8 @@ final class AppModel {
         let loadID = transactionsLoadID
         let page = nextPage ? (transactions?.page ?? 0) + 1 : 1
         let hadContent = transactions != nil
+        // Rows of another query would read as this one's, so a failure shows instead.
+        let replacesRows = !nextPage && loadedTransactionQuery != query
         if !hadContent {
             transactionsLoadState = .loading
         }
@@ -579,7 +586,8 @@ final class AppModel {
             guard loadID == transactionsLoadID else {
                 return
             }
-            if !hadContent {
+            if !hadContent || (replacesRows && !Task.isCancelled) {
+                transactions = nil
                 transactionsLoadState = .failed
             }
             handleAPIError(error)
@@ -587,7 +595,8 @@ final class AppModel {
             guard loadID == transactionsLoadID else {
                 return
             }
-            if !hadContent {
+            if !hadContent || (replacesRows && !Task.isCancelled) {
+                transactions = nil
                 transactionsLoadState = .failed
             }
             lastError = APIErrorInfo(message: error.localizedDescription)
@@ -606,7 +615,7 @@ final class AppModel {
             return true
         }
         let page = nextPage ? (uncategorizedTransactions?.page ?? 0) + 1 : 1
-        return await runRequestReturningSuccess {
+        let loaded = await runRequestReturningSuccess {
             var response = try await apiClient.uncategorizedTransactions(query, page: page, token: token)
             // A newer search replaces this one.
             guard query == uncategorizedQuery else {
@@ -618,6 +627,11 @@ final class AppModel {
             uncategorizedTransactions = response
             loadedUncategorizedQuery = query
         }
+        // Rows of another search would read as this one's, so the failure shows instead.
+        if !loaded && !nextPage && loadedUncategorizedQuery != query && query == uncategorizedQuery && !Task.isCancelled {
+            uncategorizedTransactions = nil
+        }
+        return loaded
     }
 
     func loadUncategorizedCount() async {

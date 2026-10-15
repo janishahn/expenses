@@ -151,8 +151,9 @@ struct LocalUnlockGate<Content: View>: View {
                     lastProtectedAt = Date()
                 }
                 coversProtectedContent = true
-            } else if phase == .background, case .failed = unlockState {
-                // Opening the app again starts with Face ID again.
+            } else if phase == .background, !isAuthenticating {
+                // Opening the app again starts with Face ID again, or offers it once a
+                // device passcode was set.
                 unlockState = .locked
             }
         @unknown default:

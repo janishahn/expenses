@@ -73,7 +73,8 @@ export function applyTransactionChanges(detail: TransactionDetail, changes: Tran
 // Accepts "12,34", "12.34", and "1 234,56"; null for anything else.
 export function parseAmountCents(raw: string): number | null {
   const normalized = raw.replace(/[\s€]/g, "").replace(",", ".")
-  if (!normalized) return null
+  // A third decimal, as in "12,345", is no cent amount to round.
+  if (!/^\d*\.?\d{0,2}$/.test(normalized) || normalized === ".") return null
   const value = Number(normalized)
   if (!Number.isFinite(value) || value < 0) return null
   return Math.round(value * 100)

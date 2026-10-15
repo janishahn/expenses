@@ -28,6 +28,12 @@ struct AdminMaintenanceView: View {
 
     var body: some View {
         List {
+            if case .failure(let error) = purgeCount, error.statusCode == 403 {
+                AdminUnlockSection(title: "Admin access expired") {
+                    await loadPurgeCount()
+                }
+            }
+
             Section {
                 jobButton("Database backup", systemImage: "externaldrive", job: .backup)
                 jobButton("All users’ transactions as CSV", systemImage: "tablecells", job: .csv)
@@ -116,6 +122,11 @@ struct AdminMaintenanceView: View {
                 jobError = error.localizedDescription
             }
             exportedFile = nil
+        } onCancellation: { [exportedFile] in
+            // A canceled move leaves the file in the temporary directory.
+            if let exportedFile {
+                try? FileManager.default.removeItem(at: exportedFile)
+            }
         }
         .alert("Rebuild monthly totals now?", isPresented: $confirmingRebuild) {
             Button("Cancel", role: .cancel) {}

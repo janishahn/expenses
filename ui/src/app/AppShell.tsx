@@ -5,6 +5,7 @@ import { AppFrame } from "../components/ui/AppFrame"
 import { navLabel } from "../components/ui/nav"
 import { ErrorBody, Panel, PanelLoading } from "../components/ui/Panel"
 import { ServerReceipt } from "../components/ui/ServerReceipt"
+import { showToast } from "../components/ui/toast-store"
 import { apiFetch, serverAnswers } from "./api"
 import { useAuth } from "./auth"
 
@@ -52,6 +53,27 @@ function PageFailed({ pathname }: { pathname: string }) {
   )
 }
 
+// The add form failed to render, usually because its code could not load. React keeps a
+// failed lazy import failed, so recovering reloads the page.
+class AddTransactionBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch() {
+    showToast({
+      message: "Unable to open the add form.",
+      action: { label: "Reload", onClick: () => window.location.reload() },
+    })
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children
+  }
+}
+
 function AppShell() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -86,9 +108,11 @@ function AppShell() {
         <Outlet context={{ openAddTransaction } satisfies AppShellOutletContext} />
       </PageBoundary>
       {addTransactionKey > 0 ? (
-        <Suspense fallback={null}>
-          <AddTransactionDialog key={addTransactionKey} open={addTransactionOpen} onClose={() => setAddTransactionOpen(false)} />
-        </Suspense>
+        <AddTransactionBoundary key={addTransactionKey}>
+          <Suspense fallback={null}>
+            <AddTransactionDialog open={addTransactionOpen} onClose={() => setAddTransactionOpen(false)} />
+          </Suspense>
+        </AddTransactionBoundary>
       ) : null}
     </AppFrame>
   )

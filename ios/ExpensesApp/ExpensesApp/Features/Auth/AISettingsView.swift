@@ -82,7 +82,11 @@ struct AISettingsView: View {
                 if Task.isCancelled {
                     return
                 }
-                _ = try? await model.loadAISettings()
+                let wasReady = model.aiSettings.map(Self.chatGPTReady) ?? false
+                // The models of a connection that just finished load, as on the web.
+                if let settings = try? await model.loadAISettings(), !wasReady, Self.chatGPTReady(settings) {
+                    await refreshModels(settings)
+                }
             }
         }
         .alert("Disconnect ChatGPT?", isPresented: $confirmingDisconnect) {
@@ -243,7 +247,7 @@ struct AISettingsView: View {
     @ViewBuilder
     private func notesSection(_ settings: AISettingsResponse) -> some View {
         let providers = Set(choices.map(\.provider))
-        let chatGPTReady = settings.connection.status == "connected" && settings.connection.planAuthorized
+        let chatGPTReady = Self.chatGPTReady(settings)
         let errors = providers.sorted().compactMap { provider in
             catalogErrors[provider].map { (provider, $0) }
         }
@@ -345,6 +349,10 @@ struct AISettingsView: View {
         }
     }
 
+    private static func chatGPTReady(_ settings: AISettingsResponse) -> Bool {
+        settings.connection.status == "connected" && settings.connection.planAuthorized
+    }
+
     private func refreshModels(_ settings: AISettingsResponse) async {
         guard settings.enabled else {
             return
@@ -354,7 +362,7 @@ struct AISettingsView: View {
         for provider in ["configured", "chatgpt"] {
             let available = provider == "configured"
                 ? settings.configuredAvailable
-                : settings.connection.status == "connected" && settings.connection.planAuthorized
+                : Self.chatGPTReady(settings)
             guard available else {
                 catalogs[provider] = nil
                 catalogErrors[provider] = nil

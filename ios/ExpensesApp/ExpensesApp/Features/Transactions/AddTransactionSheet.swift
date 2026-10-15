@@ -344,6 +344,8 @@ struct AddTransactionSheet: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = TransactionMutationRequest(
             occurredAt: occurredAt,
+            // A new transaction takes the device's clock time, as on the web the browser's.
+            timeZone: .current,
             type: type,
             isReimbursement: isReimbursement,
             amountCents: cents,

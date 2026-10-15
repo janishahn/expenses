@@ -154,7 +154,8 @@ struct ImportStatementSheet: View {
                 Text("Every row in this file was imported before.")
                     .foregroundStyle(.secondary)
             }
-            ForEach(fresh.prefix(3)) { row in
+            // A statement can hold identical rows, so the rows' ids may repeat.
+            ForEach(Array(fresh.prefix(3).enumerated()), id: \.offset) { _, row in
                 TrailingRow {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title)

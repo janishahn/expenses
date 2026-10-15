@@ -42,7 +42,7 @@ struct BalanceSnapshotsView: View {
                             } label: {
                                 TrailingRow {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(AppFormatters.dateTime(anchor.asOfAt))
+                                        Text(AppFormatters.dateTime(anchor.asOfAt, in: model.serverTimeZone))
                                         if let note = anchor.note, !note.isEmpty {
                                             Text(note)
                                                 .font(.subheadline)
@@ -134,11 +134,12 @@ private struct SnapshotSheet: View {
                         Button {
                             choosingDate = true
                         } label: {
-                            EntryChip(AppFormatters.dateTime(asOf), systemImage: "calendar", isSet: true)
+                            EntryChip(AppFormatters.dateTime(asOf, in: timeZone), systemImage: "calendar", isSet: true)
                         }
                         .buttonStyle(.plain)
                         .popover(isPresented: $choosingDate) {
                             DatePicker("As of", selection: $asOf)
+                                .environment(\.timeZone, timeZone)
                                 .datePickerStyle(.graphical)
                                 .labelsHidden()
                                 .padding()
@@ -146,7 +147,7 @@ private struct SnapshotSheet: View {
                                 .presentationCompactAdaptation(.popover)
                         }
                         .accessibilityLabel("As of")
-                        .accessibilityValue(AppFormatters.dateTime(asOf))
+                        .accessibilityValue(AppFormatters.dateTime(asOf, in: timeZone))
                     }
 
                     TextField("Note", text: $note, axis: .vertical)
@@ -194,6 +195,12 @@ private struct SnapshotSheet: View {
         }
     }
 
+    // A stored time shows and saves in the server's zone, so it keeps its value; a new
+    // snapshot takes the device's clock time, as a new transaction does.
+    private var timeZone: TimeZone {
+        anchor == nil ? .current : model.serverTimeZone
+    }
+
     // A new snapshot's date is a default, so it alone is no input to lose.
     private var hasChanges: Bool {
         balance != (anchor.map { Self.balanceInput($0.balanceCents) } ?? "") || note != (anchor?.note ?? "")
@@ -218,7 +225,7 @@ private struct SnapshotSheet: View {
         defer { saving = false }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = BalanceAnchorRequest(
-            asOfAt: AppFormatters.isoDateTime(asOf),
+            asOfAt: AppFormatters.isoDateTime(asOf, in: timeZone),
             balanceCents: cents,
             note: trimmedNote.isEmpty ? nil : trimmedNote
         )

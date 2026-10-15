@@ -56,10 +56,11 @@ enum AppFormatters {
         return "\(date.formatted(sameYear ? style : style.year())), \(time)"
     }
 
-    /// A day that decoded as UTC midnight, as noon of the same calendar day on this device.
-    static func localDay(_ utcDay: Date) -> Date {
+    /// A day that decoded as UTC midnight, as noon of the same calendar day in `timeZone`,
+    /// the device's unless given.
+    static func localDay(_ utcDay: Date, in timeZone: TimeZone = .current) -> Date {
         let parts = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: utcDay)
-        return Calendar.current.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day, hour: 12))!
+        return Calendar.current.date(from: DateComponents(timeZone: timeZone, year: parts.year, month: parts.month, day: parts.day, hour: 12))!
     }
 
     /// "12,34" for an amount field: the locale's decimal separator and no grouping.
@@ -70,7 +71,8 @@ enum AppFormatters {
     /// Accepts "12,34", "12.34", and "1 234,56"; nil for anything else.
     static func parseAmountCents(_ raw: String) -> Int? {
         let normalized = raw.filter { !$0.isWhitespace && $0 != "€" }.replacingOccurrences(of: ",", with: ".")
-        guard let value = Double(normalized), value.isFinite, value >= 0 else {
+        // A third decimal, as in "12,345", is no cent amount to round.
+        guard normalized.wholeMatch(of: #/\d*\.?\d{0,2}/#) != nil, let value = Double(normalized), value.isFinite, value >= 0 else {
             return nil
         }
         return Int(exactly: (value * 100).rounded())
@@ -83,18 +85,27 @@ enum AppFormatters {
         return date.formatted(sameYear ? style : style.year())
     }
 
-    /// "2026-10-22T20:15:00", the device's wall-clock time as the server stores it.
-    static func isoDateTime(_ date: Date) -> String {
-        date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().time(includingFractionalSeconds: false))
+    /// "2026-10-22T20:15:00", the wall-clock time in `timeZone` as the server stores it.
+    static func isoDateTime(_ date: Date, in timeZone: TimeZone = .current) -> String {
+        date.formatted(Date.ISO8601FormatStyle(timeZone: timeZone).year().month().day().time(includingFractionalSeconds: false))
     }
 
     /// "2026-10-22" for a calendar day in the device's time zone.
     static func isoDay(_ date: Date) -> String {
-        date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+        isoDay(date, in: .current)
+    }
+
+    /// "2026-10-22" for a calendar day in `timeZone`.
+    static func isoDay(_ date: Date, in timeZone: TimeZone) -> String {
+        date.formatted(Date.ISO8601FormatStyle(timeZone: timeZone).year().month().day())
     }
 
     static func dateTime(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
+        dateTime(date, in: .current)
+    }
+
+    static func dateTime(_ date: Date, in timeZone: TimeZone) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: timeZone))
     }
 
     static func time(_ date: Date) -> String {

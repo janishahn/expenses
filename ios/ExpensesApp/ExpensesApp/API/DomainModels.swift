@@ -1737,6 +1737,8 @@ struct TransactionFilters: Codable, Equatable {
 /// The full body that creates or replaces a transaction.
 struct TransactionMutationRequest: Encodable, Equatable {
     var occurredAt: Date
+    // The zone `occurredAt` is written in. The server stores the wall-clock time without one.
+    var timeZone: TimeZone
     var type: TransactionKind
     var isReimbursement: Bool
     var amountCents: Int
@@ -1769,8 +1771,8 @@ struct TransactionMutationRequest: Encodable, Equatable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(AppFormatters.isoDay(occurredAt), forKey: .date)
-        try container.encode(AppFormatters.isoDateTime(occurredAt), forKey: .occurredAt)
+        try container.encode(AppFormatters.isoDay(occurredAt, in: timeZone), forKey: .date)
+        try container.encode(AppFormatters.isoDateTime(occurredAt, in: timeZone), forKey: .occurredAt)
         try container.encode(type.rawValue, forKey: .type)
         try container.encode(type == .income && isReimbursement, forKey: .isReimbursement)
         try container.encode(amountCents, forKey: .amountCents)
@@ -1792,10 +1794,12 @@ struct TransactionMutationRequest: Encodable, Equatable {
 }
 
 extension TransactionMutationRequest {
-    /// The stored transaction as a body, to change one field at a time.
-    init(_ transaction: TransactionDetail) {
+    /// The stored transaction as a body, to change one field at a time. Its time is written
+    /// in the server's zone, so it saves back as the wall-clock time the server stored.
+    init(_ transaction: TransactionDetail, serverTimeZone: TimeZone) {
         self.init(
-            occurredAt: transaction.occurredAt ?? AppFormatters.localDay(transaction.date),
+            occurredAt: transaction.occurredAt ?? AppFormatters.localDay(transaction.date, in: serverTimeZone),
+            timeZone: serverTimeZone,
             type: TransactionKind(rawValue: transaction.type) ?? .expense,
             isReimbursement: transaction.isReimbursement,
             amountCents: transaction.amountCents,

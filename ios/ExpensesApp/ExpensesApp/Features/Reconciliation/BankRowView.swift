@@ -16,7 +16,7 @@ struct BankRowView: View {
     @State private var setAmount = true
     @State private var selectionError: String?
     @State private var prompt: BankRowPrompt?
-    @State private var failure: String?
+    @State private var failure: BankRowFailure?
     @State private var pending = false
 
     init(row: BankStatementRow, resolved: Bool, onChange: @escaping () async -> Void) {
@@ -87,7 +87,7 @@ struct BankRowView: View {
                         if row.resolution == .created {
                             prompt = .reopen(row)
                         } else {
-                            Task { await run { await model.reopenBankRow(row, trashCreatedTransaction: false) } }
+                            Task { await run("Couldn't reopen the row") { await model.reopenBankRow(row, trashCreatedTransaction: false) } }
                         }
                     }
                     .disabled(pending)
@@ -101,13 +101,14 @@ struct BankRowView: View {
                             }
                         }
                         BankRowIgnoreMenu { reason in
-                            Task { await run { await model.ignoreBankRow(row, reason: reason) } }
+                            Task { await run("Couldn't ignore the row") { await model.ignoreBankRow(row, reason: reason) } }
                         } otherReason: {
                             prompt = .ignore(row)
                         }
                     } label: {
                         Label("More actions", systemImage: "ellipsis")
                     }
+                    .disabled(pending)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if matchIsPrimary {
@@ -130,11 +131,13 @@ struct BankRowView: View {
             selectionError = nil
             setAmount = true
         }
-        .bankRowPrompt($prompt, failure: $failure) {
-            await onChange()
-            dismiss()
+        .bankRowPrompt($prompt, failure: $failure) { succeeded in
+            if succeeded {
+                await onChange()
+                dismiss()
+            }
         }
-        .failureAlert("Couldn't update the bank row", message: $failure)
+        .failureAlert($failure)
     }
 
     private var matchSection: some View {
@@ -226,7 +229,7 @@ struct BankRowView: View {
         case let .success(items):
             found = items.filter { item in !row.candidates.contains { $0.id == item.id } }
         case let .failure(error):
-            failure = error.message
+            failure = BankRowFailure(title: "Couldn't search transactions", message: error.message)
         }
     }
 
@@ -235,17 +238,19 @@ struct BankRowView: View {
             selectionError = "Choose a transaction."
             return
         }
-        await run { await model.matchBankRow(row, transactionID: selected.id, updateAmountToBank: canSetAmount && setAmount) }
+        await run("Couldn't match the row") {
+            await model.matchBankRow(row, transactionID: selected.id, updateAmountToBank: canSetAmount && setAmount)
+        }
     }
 
-    private func run(_ action: () async -> Bool) async {
+    private func run(_ failedTitle: String, _ action: () async -> Bool) async {
         pending = true
         defer { pending = false }
         if await action() {
             await onChange()
             dismiss()
         } else {
-            failure = model.lastError?.message ?? "The bank row could not be updated."
+            failure = BankRowFailure(title: failedTitle, message: model.lastError?.message ?? "The bank row could not be updated.")
         }
     }
 }

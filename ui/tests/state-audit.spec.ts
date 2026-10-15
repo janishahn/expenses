@@ -207,6 +207,18 @@ test.describe("State audit", () => {
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
   })
 
+  test("an add form whose code cannot load keeps the page and offers Reload", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/transactions")
+    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
+
+    await page.route("**/assets/AddTransactionDialog-*.js", (route) => route.fulfill({ status: 404 }))
+    await page.getByRole("button", { name: "Add transaction", exact: true }).click()
+    await expect(page.getByRole("status")).toContainText("Unable to open the add form.")
+    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
+  })
+
   test("transaction detail distinguishes server failure from a missing record", async ({
     page,
   }) => {

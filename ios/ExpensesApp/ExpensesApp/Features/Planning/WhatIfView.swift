@@ -71,7 +71,8 @@ struct WhatIfView: View {
     @State private var adding: AdjustmentKind?
     @State private var baseline: (options: ForecastOptions, result: Result<ForecastResponse, APIErrorInfo>)?
     // The adjustments travel with their result, so rows keep their figures while a newer one loads.
-    @State private var scenario: (adjustments: [ForecastScenarioModificationRequest], response: ForecastScenarioResponse)?
+    // A result for other options never shows under the chosen ones.
+    @State private var scenario: (options: ForecastOptions, adjustments: [ForecastScenarioModificationRequest], response: ForecastScenarioResponse)?
     @State private var scenarioFailed = false
 
     private struct ScenarioRequest: Equatable {
@@ -101,7 +102,7 @@ struct WhatIfView: View {
                     await loadBaseline()
                 }
             case .success(let data):
-                let result = adjustments.isEmpty ? nil : scenario
+                let result = adjustments.isEmpty || scenario?.options != options ? nil : scenario
                 let base = result?.response.baseline
                 let months = base?.months ?? data.months
                 let baselineValues = [base?.startBalanceCents ?? data.startBalanceCents] + months.map(\.endBalanceCents)
@@ -112,7 +113,7 @@ struct WhatIfView: View {
                     differenceCents: result?.response.impact.finalDeltaCents,
                     adjustmentCount: result?.adjustments.count ?? 0,
                     lastMonth: months.last.map { CalendarMonth($0.month).abbreviatedTitle },
-                    horizon: baseline!.options.horizon
+                    horizon: (result?.options ?? baseline!.options).horizon
                 )
                 WhatIfBalanceSection(months: months, baseline: baselineValues, scenario: scenarioValues)
                 adjustmentsSection(result)
@@ -167,7 +168,9 @@ struct WhatIfView: View {
         }
     }
 
-    private func adjustmentsSection(_ result: (adjustments: [ForecastScenarioModificationRequest], response: ForecastScenarioResponse)?) -> some View {
+    private func adjustmentsSection(
+        _ result: (options: ForecastOptions, adjustments: [ForecastScenarioModificationRequest], response: ForecastScenarioResponse)?
+    ) -> some View {
         let impacts = result.map { result in
             Dictionary(uniqueKeysWithValues: result.response.impact.byModification.compactMap { row in
                 result.adjustments.indices.contains(row.index) ? (result.adjustments[row.index].id, row.finalDeltaCents) : nil
@@ -252,7 +255,7 @@ struct WhatIfView: View {
         }
         switch result {
         case .success(let response):
-            scenario = (request.adjustments, response)
+            scenario = (request.options, request.adjustments, response)
             scenarioFailed = false
         case .failure:
             scenarioFailed = true

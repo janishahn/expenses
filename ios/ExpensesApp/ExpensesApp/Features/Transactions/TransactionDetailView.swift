@@ -244,7 +244,9 @@ struct TransactionDetailView: View {
             .pickerStyle(.menu)
             .fieldError(saves.errors[.type])
 
+            // The stored time shows as the server stored it, wherever the device is.
             DatePicker("Date", selection: dateSelection(shown))
+                .environment(\.timeZone, model.serverTimeZone)
                 .fieldError(saves.errors[.date])
 
             Button {
@@ -446,7 +448,7 @@ struct TransactionDetailView: View {
     // MARK: Values
 
     private func shown(_ transaction: TransactionDetail) -> TransactionMutationRequest {
-        saves.shown(TransactionMutationRequest(transaction))
+        saves.shown(TransactionMutationRequest(transaction, serverTimeZone: model.serverTimeZone))
     }
 
     private func category(_ transaction: TransactionDetail, _ shown: TransactionMutationRequest) -> CategorySummary? {
@@ -473,7 +475,7 @@ struct TransactionDetailView: View {
     // MARK: Saving
 
     private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
-        saves.save(field, stored: { transaction.map { TransactionMutationRequest($0) } }, commit: { body in
+        saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
             await model.updateTransaction(id: transactionID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
         }, change)
     }

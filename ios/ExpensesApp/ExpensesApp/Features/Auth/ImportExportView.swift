@@ -75,7 +75,8 @@ struct ImportExportView: View {
                         Text("The file has no rows to import.")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(preview.rows.prefix(previewRows)) { row in
+                    // A file can hold identical rows, so the rows' ids may repeat.
+                    ForEach(Array(preview.rows.prefix(previewRows).enumerated()), id: \.offset) { _, row in
                         let category = model.knownCategories.first { $0.id == row.categoryID }
                         LedgerRow(
                             title: row.title,
@@ -113,6 +114,11 @@ struct ImportExportView: View {
                 exportError = error.localizedDescription
             }
             exportedFile = nil
+        } onCancellation: { [exportedFile] in
+            // A canceled move leaves the file in the temporary directory.
+            if let exportedFile {
+                try? FileManager.default.removeItem(at: exportedFile)
+            }
         }
     }
 

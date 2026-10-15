@@ -205,6 +205,18 @@ test.describe("Mobile state audit", () => {
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
 
+  test("an add form whose code cannot load keeps the page on mobile", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/transactions")
+    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
+
+    await page.route("**/assets/AddTransactionDialog-*.js", (route) => route.fulfill({ status: 404 }))
+    await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
+    await expect(page.getByRole("status")).toContainText("Unable to open the add form.")
+    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible()
+    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeVisible()
+  })
+
   // Playwright's WebKit keeps a failed page chunk failed for the tab, even across
   // reloads, so the reload after the server answers is covered on desktop only.
   // Safari fetches the chunk again on reload.

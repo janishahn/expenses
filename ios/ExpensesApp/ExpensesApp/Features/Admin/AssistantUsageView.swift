@@ -12,6 +12,10 @@ struct AssistantUsageView: View {
             switch usage {
             case nil:
                 LoadingStateSection(title: "Loading usage")
+            case .failure(let error) where error.statusCode == 403:
+                AdminUnlockSection(title: "Admin access expired") {
+                    await load()
+                }
             case .failure(let error):
                 UnavailableStateSection(title: "Usage is unavailable", systemImage: "exclamationmark.triangle", message: error.message) {
                     await load()

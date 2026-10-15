@@ -21,6 +21,10 @@ struct AdminLogsView: View {
             switch logs {
             case nil:
                 LoadingStateSection(title: "Loading logs")
+            case .failure(let error) where error.statusCode == 403:
+                AdminUnlockSection(title: "Admin access expired") {
+                    await load()
+                }
             case .failure(let error):
                 UnavailableStateSection(title: "Couldn't load logs", systemImage: "exclamationmark.triangle", message: error.message) {
                     await load()
