@@ -976,6 +976,7 @@ private struct AllocationSearchSection: View {
     @State private var query = ""
     @State private var allocating: ReimbursementExpenseSearchItem?
     @State private var amount = ""
+    @State private var amountError: String?
     @State private var error: String?
 
     var body: some View {
@@ -999,18 +1000,18 @@ private struct AllocationSearchSection: View {
                 isPresented: Binding(get: { allocating != nil }, set: { if !$0 { allocating = nil } }),
                 presenting: allocating
             ) { result in
+                let maxCents = result.allocatedToThisCents + result.suggestedAmountCents
                 TextField("Amount", text: $amount)
                     .keyboardType(.decimalPad)
                 Button("Cancel", role: .cancel) {}
                 Button("Allocate") {
-                    if let cents = AppFormatters.parseAmountCents(amount), cents > 0 {
-                        Task { await allocate(result, cents: cents) }
-                    } else {
-                        error = "Enter a valid amount."
+                    if let cents = AllocationAmountItems.enteredCents(amount, maxCents: maxCents) {
+                        Task { await allocateEntered(result, cents: cents) }
                     }
                 }
+                .disabled(AllocationAmountItems.enteredCents(amount, maxCents: maxCents) == nil)
             } message: { result in
-                Text("\(model.amountString(result.remainingUnreimbursedCents)) left")
+                Text(amountError ?? "Up to \(model.amountString(result.allocatedToThisCents + result.suggestedAmountCents))")
             }
 
             if let results = model.reimbursementExpenseSearch?.results {
@@ -1039,6 +1040,7 @@ private struct AllocationSearchSection: View {
                                 Task { await allocate(result, cents: cents) }
                             } other: {
                                 amount = AppFormatters.amountInput(result.allocatedToThisCents + result.suggestedAmountCents)
+                                amountError = nil
                                 allocating = result
                             }
                         }
@@ -1069,6 +1071,16 @@ private struct AllocationSearchSection: View {
             error = model.lastError?.message ?? "Unable to save allocation."
         }
     }
+
+    /// A rejected amount opens the prompt again with what was entered and why.
+    private func allocateEntered(_ result: ReimbursementExpenseSearchItem, cents: Int) async {
+        if await model.saveReimbursementAllocation(reimbursementID: transactionID, expenseID: result.expense.id, amountCents: cents) {
+            await search()
+        } else {
+            amountError = model.lastError?.message ?? "Unable to save allocation."
+            allocating = result
+        }
+    }
 }
 
 /// Remaining, Half and Third of the expense, then Other Amount…. Saving replaces the pair's
@@ -1087,6 +1099,14 @@ private struct AllocationAmountItems: View {
         item("Third", cents: Int((Double(expenseCents) / 3).rounded()))
         Divider()
         Button("Other Amount…", action: other)
+    }
+
+    /// The amount typed into Other Amount…, when it is above zero and fits.
+    static func enteredCents(_ text: String, maxCents: Int) -> Int? {
+        guard let cents = AppFormatters.parseAmountCents(text), cents > 0, cents <= maxCents else {
+            return nil
+        }
+        return cents
     }
 
     private func item(_ title: String, cents: Int) -> some View {
@@ -1109,60 +1129,70 @@ private struct ReimbursedRow: View {
 
     @State private var allocating: OpenReimbursement?
     @State private var amount = ""
+    @State private var amountError: String?
     @State private var error: String?
 
     var body: some View {
-        Menu {
-            let open = model.openReimbursements?.results ?? []
-            if open.isEmpty {
-                Text("No reimbursements left to allocate")
-            }
-            ForEach(open) { entry in
-                Menu {
-                    AllocationAmountItems(
-                        expenseCents: transaction.amountCents,
-                        maxCents: entry.allocatedToThisCents + entry.suggestedAmountCents
-                    ) { cents in
-                        Task { await allocate(entry, cents: cents) }
-                    } other: {
-                        amount = AppFormatters.amountInput(entry.allocatedToThisCents + entry.suggestedAmountCents)
-                        allocating = entry
+        // A server that can't list open reimbursements shows only the total.
+        if let open = model.openReimbursements?.results {
+            Menu {
+                if open.isEmpty {
+                    Text("No reimbursements left to allocate")
+                }
+                ForEach(open) { entry in
+                    Menu {
+                        AllocationAmountItems(
+                            expenseCents: transaction.amountCents,
+                            maxCents: entry.allocatedToThisCents + entry.suggestedAmountCents
+                        ) { cents in
+                            Task { await allocate(entry, cents: cents) }
+                        } other: {
+                            amount = AppFormatters.amountInput(entry.allocatedToThisCents + entry.suggestedAmountCents)
+                            amountError = nil
+                            allocating = entry
+                        }
+                    } label: {
+                        Text(entry.reimbursement.title ?? "Reimbursement")
+                        Text("\(AppFormatters.shortDay(AppFormatters.localDay(entry.reimbursement.date))) · \(model.amountString(entry.remainingToAllocateCents)) left")
                     }
-                } label: {
-                    Text(entry.reimbursement.title ?? "Reimbursement")
-                    Text("\(AppFormatters.shortDay(AppFormatters.localDay(entry.reimbursement.date))) · \(model.amountString(entry.remainingToAllocateCents)) left")
+                    .disabled(entry.suggestedAmountCents <= 0)
                 }
-                .disabled(entry.suggestedAmountCents <= 0)
+            } label: {
+                total
             }
-        } label: {
-            LabeledContent("Reimbursed") {
-                if transaction.reimbursedTotalCents > 0 {
-                    AmountText(transaction.reimbursedTotalCents, signed: true)
-                        .foregroundStyle(ExpensesTheme.income(for: scheme))
-                } else {
-                    Text("None")
+            .tint(.primary)
+            .fieldError(error)
+            .alert(
+                "Allocate from \(allocating?.reimbursement.title ?? "reimbursement")",
+                isPresented: Binding(get: { allocating != nil }, set: { if !$0 { allocating = nil } }),
+                presenting: allocating
+            ) { entry in
+                let maxCents = entry.allocatedToThisCents + entry.suggestedAmountCents
+                TextField("Amount", text: $amount)
+                    .keyboardType(.decimalPad)
+                Button("Cancel", role: .cancel) {}
+                Button("Allocate") {
+                    if let cents = AllocationAmountItems.enteredCents(amount, maxCents: maxCents) {
+                        Task { await allocateEntered(entry, cents: cents) }
+                    }
                 }
+                .disabled(AllocationAmountItems.enteredCents(amount, maxCents: maxCents) == nil)
+            } message: { entry in
+                Text(amountError ?? "Up to \(model.amountString(entry.allocatedToThisCents + entry.suggestedAmountCents))")
             }
+        } else {
+            total
         }
-        .tint(.primary)
-        .fieldError(error)
-        .alert(
-            "Allocate from \(allocating?.reimbursement.title ?? "reimbursement")",
-            isPresented: Binding(get: { allocating != nil }, set: { if !$0 { allocating = nil } }),
-            presenting: allocating
-        ) { entry in
-            TextField("Amount", text: $amount)
-                .keyboardType(.decimalPad)
-            Button("Cancel", role: .cancel) {}
-            Button("Allocate") {
-                if let cents = AppFormatters.parseAmountCents(amount), cents > 0 {
-                    Task { await allocate(entry, cents: cents) }
-                } else {
-                    error = "Enter a valid amount."
-                }
+    }
+
+    private var total: some View {
+        LabeledContent("Reimbursed") {
+            if transaction.reimbursedTotalCents > 0 {
+                AmountText(transaction.reimbursedTotalCents, signed: true)
+                    .foregroundStyle(ExpensesTheme.income(for: scheme))
+            } else {
+                Text("None")
             }
-        } message: { entry in
-            Text("\(model.amountString(entry.remainingToAllocateCents)) left")
         }
     }
 
@@ -1170,6 +1200,14 @@ private struct ReimbursedRow: View {
         error = nil
         if !(await model.saveReimbursementAllocation(reimbursementID: entry.reimbursement.id, expenseID: transaction.id, amountCents: cents)) {
             error = model.lastError?.message ?? "Unable to save allocation."
+        }
+    }
+
+    /// A rejected amount opens the prompt again with what was entered and why.
+    private func allocateEntered(_ entry: OpenReimbursement, cents: Int) async {
+        if !(await model.saveReimbursementAllocation(reimbursementID: entry.reimbursement.id, expenseID: transaction.id, amountCents: cents)) {
+            amountError = model.lastError?.message ?? "Unable to save allocation."
+            allocating = entry
         }
     }
 }

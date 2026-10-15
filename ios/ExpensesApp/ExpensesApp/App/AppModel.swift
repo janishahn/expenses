@@ -77,7 +77,7 @@ final class AppModel {
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
-    // For an open expense: the reimbursements it can draw from.
+    // For an open expense: the reimbursements it can draw from. Nil when the server can't list them.
     var openReimbursements: OpenReimbursementsResponse?
     var reimbursementExpenseSearch: ReimbursementExpenseSearchResponse?
     var lastError: APIErrorInfo?
@@ -908,7 +908,11 @@ final class AppModel {
         let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
         var open: OpenReimbursementsResponse?
         if detail.type == "expense" {
-            open = try await apiClient.openReimbursements(expenseID: id, token: token)
+            do {
+                open = try await apiClient.openReimbursements(expenseID: id, token: token)
+            } catch let error as APIErrorInfo where error.statusCode == 404 {
+                // A server from before this list answers 404; the expense still opens.
+            }
         }
         guard replacingShown || selectedTransaction?.id == id else {
             return
