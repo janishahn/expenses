@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
 - Saves made while an AI feature waited for its model, such as an Assistant answer, could stall for five seconds and fail with "database is locked". The AI job no longer holds the database's write lock during the model call.
 - CSV and statement imports, archive imports, receipt uploads, and email ingest no longer pause every other request while the server processes them.
+- When the iOS app's session expired or was revoked while the Dashboard or Transactions loaded, Sign in stayed disabled until the app restarted. Sign in now works right away.
 
 ## [0.7.1] - 2026-10-14
 

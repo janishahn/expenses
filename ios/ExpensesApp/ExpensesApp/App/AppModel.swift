@@ -2068,6 +2068,8 @@ final class AppModel {
         aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
+        // The superseded loads skip their own reset, which would keep Sign in disabled.
+        isLoading = false
         dashboard = nil
         dashboardExcludedTagIDs = []
         dashboardBalanceHistory = nil
