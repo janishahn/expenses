@@ -1007,7 +1007,11 @@ private struct AllocationSearchSection: View {
                     .keyboardType(.decimalPad)
                 Button("Cancel", role: .cancel) {}
                 Button("Allocate") {
-                    Task { await allocate(result) }
+                    if let cents = AppFormatters.parseAmountCents(amount), cents > 0 {
+                        Task { await allocate(result, cents: cents) }
+                    } else {
+                        error = "Enter a valid amount."
+                    }
                 }
             } message: { result in
                 Text("\(model.amountString(result.remainingUnreimbursedCents)) left")
@@ -1031,9 +1035,15 @@ private struct AllocationSearchSection: View {
                             .foregroundStyle(.secondary)
                         }
                     } trailing: {
-                        Button("Allocate") {
-                            amount = AppFormatters.amountInput(result.suggestedAmountCents)
-                            allocating = result
+                        Menu("Allocate") {
+                            allocateButton("Remaining", cents: result.suggestedAmountCents, to: result)
+                            allocateButton("Half", cents: Int((Double(result.expense.amountCents) / 2).rounded()), to: result)
+                            allocateButton("Third", cents: Int((Double(result.expense.amountCents) / 3).rounded()), to: result)
+                            Divider()
+                            Button("Other Amount…") {
+                                amount = AppFormatters.amountInput(result.suggestedAmountCents)
+                                allocating = result
+                            }
                         }
                         .buttonStyle(.borderless)
                         .disabled(result.suggestedAmountCents <= 0)
@@ -1054,11 +1064,16 @@ private struct AllocationSearchSection: View {
         )
     }
 
-    private func allocate(_ result: ReimbursementExpenseSearchItem) async {
-        guard let cents = AppFormatters.parseAmountCents(amount), cents > 0 else {
-            error = "Enter a valid amount."
-            return
+    private func allocateButton(_ title: String, cents: Int, to result: ReimbursementExpenseSearchItem) -> some View {
+        Button {
+            Task { await allocate(result, cents: cents) }
+        } label: {
+            Text(title)
+            Text(model.amountString(cents))
         }
+    }
+
+    private func allocate(_ result: ReimbursementExpenseSearchItem, cents: Int) async {
         error = nil
         if await model.saveReimbursementAllocation(reimbursementID: transactionID, expenseID: result.expense.id, amountCents: cents) {
             await search()
