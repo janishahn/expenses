@@ -51,7 +51,8 @@ final class AppModel {
     var dashboardBalanceHistory: Result<BalanceHistoryResponse, APIErrorInfo>?
     var dashboardForecast: Result<ForecastResponse, APIErrorInfo>?
     var dashboardSpendingBands: Result<CategoryBandsResponse, APIErrorInfo>?
-    // Counts edits to transactions and budgets, so the charts that show them reload.
+    // Counts edits to transactions, budgets and recurring rules, so the charts and
+    // forecasts that show them reload.
     private(set) var ledgerRevision = 0
     // Each list keeps its query, and the rows of every page loaded so far.
     var transactionQuery = TransactionQuery()
@@ -1382,6 +1383,7 @@ final class AppModel {
                 _ = try await apiClient.createRecurringRule(body, token: token)
                 created = true
             }
+            ledgerRevision += 1
             recurring = try await apiClient.recurring(token: token)
         }
         return saved || created
@@ -1393,6 +1395,8 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteRecurringRule(id: id, token: token)
+            // Its posted transactions stop counting as recurring.
+            ledgerRevision += 1
             recurring = try await apiClient.recurring(token: token)
         }
     }

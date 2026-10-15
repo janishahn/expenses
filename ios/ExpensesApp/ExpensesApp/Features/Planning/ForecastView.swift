@@ -64,6 +64,8 @@ struct ForecastView: View {
     @Environment(AppModel.self) private var model
     @State private var options = ForecastOptions()
     @State private var forecast: (options: ForecastOptions, result: Result<ForecastResponse, APIErrorInfo>)?
+    // The ledger revision the forecast was loaded at; an edit to the ledger or a rule reloads it.
+    @State private var revision: Int?
     // Recurring rules alone, drawn under a forecast with estimates.
     @State private var reference: ForecastResponse?
 
@@ -98,7 +100,7 @@ struct ForecastView: View {
             }
         }
         .task(id: options) {
-            if forecast?.options != options {
+            if forecast?.options != options || revision != model.ledgerRevision {
                 await load()
             }
         }
@@ -109,6 +111,7 @@ struct ForecastView: View {
 
     private func load() async {
         let options = options
+        let current = model.ledgerRevision
         async let full = model.chart { try await $0.forecast(horizon: options.horizon, mode: options.mode.rawValue, token: $1) }
         async let recurring = loadReference(options)
         let (result, referenceResult) = await (full, recurring)
@@ -117,6 +120,7 @@ struct ForecastView: View {
         }
         forecast = (options, result)
         reference = referenceResult
+        revision = current
     }
 
     private func loadReference(_ options: ForecastOptions) async -> ForecastResponse? {
