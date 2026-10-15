@@ -85,7 +85,7 @@ struct RootView: View {
         case .dashboard:
             DashboardView(
                 path: $dashboardPath,
-                openBudgets: { selectedPrimaryDestination = .budgets },
+                openBudgets: { openBudgets(.current) },
                 openTransactions: { openTransactions(TransactionQuery()) }
             )
         case .transactions:
@@ -101,7 +101,7 @@ struct RootView: View {
         case .whatIf:
             WhatIfView(options: ForecastOptions())
         case .digest:
-            DigestView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
+            DigestView(openTransactions: openTransactions, openBudgets: { openBudgets(.current) })
         case .reports:
             ReportsView()
         case .reconcile:
