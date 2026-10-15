@@ -113,7 +113,7 @@ function ReportBuilderPage() {
 
   const categories = useQuery({
     queryKey: ["categories", "options"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options").then((response) => response.categories),
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
   const tags = useQuery({
     queryKey: ["tags", "options", "archived"],
@@ -125,7 +125,7 @@ function ReportBuilderPage() {
     }
   }, [file])
 
-  const activeCategories = (categories.data ?? []).filter((category) => category.archived_at === null)
+  const activeCategories = (categories.data?.categories ?? []).filter((category) => category.archived_at === null)
   // Archived tags stay choosable for past periods; they sort last.
   const filterTags = (tags.data?.tags ?? [])
     .filter((tag) => !tag.is_hidden_from_filters)

@@ -1992,13 +1992,20 @@ final class AppModel {
         transactionsLoadID += 1
         let loadID = transactionsLoadID
         let pages = loadedTransactionQuery == query ? transactions?.page ?? 1 : 1
-        // All loaded pages at once, so a long scroll reloads as fast as one page.
+        // Four pages at a time, so a long scroll reloads quickly without flooding a small server.
         let client = apiClient
         let responses = try await withThrowingTaskGroup(of: TransactionsResponse.self) { group in
+            var responses: [TransactionsResponse] = []
             for page in 1...pages {
+                if page > 4, let response = try await group.next() {
+                    responses.append(response)
+                }
                 group.addTask { try await client.transactions(query, page: page, token: token) }
             }
-            return try await group.reduce(into: []) { $0.append($1) }.sorted { $0.page < $1.page }
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses.sorted { $0.page < $1.page }
         }
         // The list may have shrunk, so it ends at the first page with nothing after it.
         var response = responses[0]

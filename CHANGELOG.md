@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The server records a device's last use at most every five minutes instead of on every iOS request, so the iOS device list can show a last use up to five minutes old.
 - The web Transactions, Uncategorized, and Reconcile match searches ask the server once typing pauses instead of on every key. Printing the Transactions ledger loads 1,000 rows per request instead of 100, and Undo after Match All or Ignore Remaining Rows in Reconcile takes one request per 500 rows; rows that changed since stay as they are.
 - Saving a transaction on the web no longer reloads every category's and tag's all-time totals for the pickers, and the Insights month grids and daily calendar no longer redraw every cell while the pointer moves.
-- After a save, iOS reloads the Transactions pages already loaded all at once instead of one after another. The Dashboard reloads after a change, or when you return to it a minute or more after its last load, instead of each time it appears. Assistant answers redraw less while they stream, and receipt photos are prepared off the main thread.
+- After a save, iOS reloads the Transactions pages already loaded four at a time instead of one after another. The Dashboard reloads after a change, or when you return to it a minute or more after its last load, instead of each time it appears. Assistant answers redraw less while they stream, and receipt photos are prepared off the main thread.
 
 ### Removed
 - The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
