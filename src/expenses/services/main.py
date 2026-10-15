@@ -6566,6 +6566,10 @@ class RecurringRuleService:
                 raise ValueError("Category type mismatch")
         for attr_name, value in data.model_dump().items():
             setattr(rule, attr_name, value)
+        # The anchor is the schedule's first occurrence, so a later start must not
+        # leave an earlier next occurrence for catch-up to post.
+        if rule.anchor_date > rule.next_occurrence:
+            rule.next_occurrence = rule.anchor_date
         self.session.commit()
         self.session.refresh(rule)
         log_event(

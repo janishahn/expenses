@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -190,3 +190,80 @@ def test_recurring_rule_update_allows_omitted_end_date(
     rule = next(r for r in response.json()["rules"] if r["id"] == rule_id)
     assert rule["amount_cents"] == 1100
     assert rule["end_date"] is None
+
+
+def _rule_payload(category_id: int, anchor: date, next_occurrence: date) -> dict:
+    return {
+        "name": "Rent",
+        "type": "expense",
+        "currency_code": "EUR",
+        "amount_cents": 90000,
+        "category_id": category_id,
+        "anchor_date": anchor.isoformat(),
+        "interval_unit": "month",
+        "interval_count": 1,
+        "next_occurrence": next_occurrence.isoformat(),
+        "auto_post": True,
+        "skip_weekends": False,
+        "month_day_policy": "snap_to_end",
+    }
+
+
+def _next_occurrence_after_start_change(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    anchor: date,
+    next_occurrence: date,
+    new_anchor: date,
+) -> str:
+    category_id = _create_category(client, headers, "Rent", "expense")
+    response = client.post(
+        "/api/recurring",
+        headers=headers,
+        json=_rule_payload(category_id, anchor, next_occurrence),
+    )
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+
+    # Clients send the stored next occurrence back unchanged.
+    response = client.put(
+        f"/api/recurring/{rule_id}",
+        headers=headers,
+        json=_rule_payload(category_id, new_anchor, next_occurrence),
+    )
+    assert response.status_code == 200
+
+    response = client.get("/api/recurring")
+    assert response.status_code == 200
+    rule = next(r for r in response.json()["rules"] if r["id"] == rule_id)
+    assert rule["anchor_date"] == new_anchor.isoformat()
+    return rule["next_occurrence"]
+
+
+def test_recurring_rule_later_start_moves_next_occurrence(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    next_occurrence = _next_occurrence_after_start_change(
+        api_client,
+        csrf_headers,
+        anchor=today - timedelta(days=60),
+        next_occurrence=today + timedelta(days=5),
+        new_anchor=today + timedelta(days=35),
+    )
+    assert next_occurrence == (today + timedelta(days=35)).isoformat()
+
+
+def test_recurring_rule_earlier_start_keeps_next_occurrence(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    next_occurrence = _next_occurrence_after_start_change(
+        api_client,
+        csrf_headers,
+        anchor=today - timedelta(days=60),
+        next_occurrence=today + timedelta(days=5),
+        new_anchor=today - timedelta(days=90),
+    )
+    assert next_occurrence == (today + timedelta(days=5)).isoformat()

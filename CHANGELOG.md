@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editing a transaction on iOS while the phone is in another time zone than the server no longer moves its time or booking date: iOS shows and saves stored times in the server's time zone. Balance snapshot times no longer shift by the UTC offset on iOS, because `GET /api/settings` now returns each snapshot's `as_of_at` with the server zone's offset, as `occurred_at` already does.
 - Amounts with a third decimal, such as 12,345, are rejected on the web and iOS instead of being rounded to cents.
 - Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry. When the add-transaction form's code can't load, a message offers Reload and the page stays.
+- Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
 
 ## [0.7.1] - 2026-10-14
 
