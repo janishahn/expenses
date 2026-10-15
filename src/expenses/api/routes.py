@@ -1061,7 +1061,7 @@ def period_from_request(request: Request) -> Period:
     start = request.query_params.get("start")
     end = request.query_params.get("end")
     try:
-        return resolve_period(period_slug, start, end)
+        return resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1303,7 +1303,7 @@ def _filters_from_bulk_query(
     query: str | None,
 ) -> tuple[Period, TransactionFilters]:
     try:
-        period = resolve_period(period_slug, start, end)
+        period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return period, TransactionFilters(
@@ -2108,7 +2108,7 @@ def api_reorder_templates(
 @router.get("/api/budgets", response_model=BudgetsResponseOut)
 def api_budgets(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    today = date.today()
+    today = local_today()
     view = (request.query_params.get("view") or "month").strip().lower()
     if view not in {"month", "templates", "year", "workspace"}:
         view = "month"
@@ -2231,7 +2231,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
 @router.get("/api/budgets/burndown", response_model=BudgetBurndownResponseOut)
 def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    today = date.today()
+    today = local_today()
     month_param = (request.query_params.get("month") or "").strip()
     if month_param:
         try:
@@ -5654,7 +5654,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         item for item in durable_items if not bool(item["fully_amortized"])
     ][:10]
     budget_service = BudgetService(db, user_id=user_id)
-    today = date.today()
+    today = local_today()
     # Monthly budgets track the selected period's month: a completed last month
     # is evaluated as of its final day (so pace reflects actual spend, not a
     # partway projection), while this_month/all/custom stay on the current month.
