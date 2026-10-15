@@ -285,7 +285,7 @@ The SwiftUI client lives in [`ios/ExpensesApp`](ios/ExpensesApp) and targets iOS
 uv run run-ios-device
 ```
 
-Set its backend URL to your Expenses HTTPS address. Mobile sessions stay in Keychain, and the app supports Face ID, Touch ID, or device-passcode unlock.
+Set its backend URL to your Expenses HTTPS address. Mobile sessions stay in Keychain, and the app unlocks with Face ID, Touch ID, the device passcode, or the account password.
 
 <p>
   <img src="docs/screenshots/ios/dashboard-dark.png" alt="iPhone dashboard" height="530">

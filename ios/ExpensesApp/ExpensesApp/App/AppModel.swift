@@ -5,6 +5,8 @@ enum ExpensesAppStorage {
     static let baseURLKey = "expenses.baseURL"
     static let mobileKeychainService = "expenses.mobile"
     static let tokenKey = "mobileSessionToken"
+    // The stored session's username, which the lock screen fills in.
+    static let sessionUsernameKey = "expenses.sessionUsername"
     static let defaultLocalBackendURL = "http://localhost:8000"
 }
 
@@ -108,6 +110,10 @@ final class AppModel {
 
     var token: String? {
         try? keychain.readString(account: ExpensesAppStorage.tokenKey)
+    }
+
+    var sessionUsername: String? {
+        UserDefaults.standard.string(forKey: ExpensesAppStorage.sessionUsernameKey)
     }
 
     var knownCategories: [CategorySummary] {
@@ -1806,7 +1812,8 @@ final class AppModel {
         mode: AuthMode,
         setupToken: String? = nil
     ) async {
-        await runRequest {
+        // A 401 here means wrong credentials, so the lock screen keeps the stored session.
+        await runRequest(clearsSessionOnUnauthorized: false) {
             let response: MobileAuthIdentity
             switch mode {
             case .setup:
@@ -1818,6 +1825,7 @@ final class AppModel {
             }
             if let token = response.token {
                 try keychain.save(token, account: ExpensesAppStorage.tokenKey)
+                UserDefaults.standard.set(response.user?.username, forKey: ExpensesAppStorage.sessionUsernameKey)
                 hasSession = true
             }
             clearUserScopedState()
@@ -1964,6 +1972,7 @@ final class AppModel {
 
     private func clearStoredSession() {
         try? keychain.delete(account: ExpensesAppStorage.tokenKey)
+        UserDefaults.standard.removeObject(forKey: ExpensesAppStorage.sessionUsernameKey)
         identity = nil
         hasSession = false
     }

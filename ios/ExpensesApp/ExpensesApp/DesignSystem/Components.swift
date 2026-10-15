@@ -685,3 +685,108 @@ struct ChartLegend<Items: View>: View {
 func percent(_ part: Int, of whole: Int) -> String {
     (Double(part) / Double(whole)).formatted(.percent.precision(.fractionLength(0)))
 }
+
+/// A sign-in screen: the form sits mid-screen and its buttons in a bottom bar, within
+/// reach of a thumb. The bar rides above the keyboard.
+struct AuthScreen<Content: View, Actions: View>: View {
+    @ViewBuilder let content: Content
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 24) {
+                    content
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .safeAreaBar(edge: .bottom) {
+            VStack(spacing: 8) {
+                actions
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .background(ExpensesBackground())
+    }
+}
+
+/// Form rows on one rounded card with separators between them, as in a Form section.
+struct AuthCard<Rows: View>: View {
+    @Environment(\.colorScheme) private var scheme
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Group(subviews: rows) { subviews in
+                ForEach(subviews) { row in
+                    if row.id != subviews.first?.id {
+                        Divider()
+                            .padding(.horizontal, 16)
+                    }
+                    row
+                }
+            }
+        }
+        .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 26))
+    }
+}
+
+/// A sign-in screen's main button. The ink tint is light in dark mode, so the label
+/// takes the page color.
+struct AuthPrimaryButton: View {
+    @Environment(\.colorScheme) private var scheme
+    let title: String
+    let action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .fontWeight(.semibold)
+                .foregroundStyle(ExpensesTheme.background(for: scheme))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+    }
+}
+
+/// A full-width text button below a sign-in screen's main button.
+struct AuthTextButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(.rect)
+        }
+    }
+}
+
+extension View {
+    /// A Form-height row on an `AuthCard`.
+    func authRow() -> some View {
+        padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(minHeight: 52)
+    }
+
+    /// A field's `AuthCard` row, which focuses the field from anywhere in the row as a
+    /// Form row does.
+    func authFieldRow<Field: Hashable>(_ field: Field, focus: FocusState<Field?>.Binding) -> some View {
+        focused(focus, equals: field)
+            .authRow()
+            .contentShape(.rect)
+            .onTapGesture { focus.wrappedValue = field }
+    }
+}

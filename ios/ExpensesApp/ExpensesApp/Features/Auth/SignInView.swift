@@ -11,6 +11,14 @@ struct SignInView: View {
     @State private var password = ""
     @State private var setupToken = ""
     @State private var createsAccount = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case server
+        case username
+        case password
+        case setupToken
+    }
 
     private enum Mode {
         case signIn
@@ -45,9 +53,14 @@ struct SignInView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Server") {
+        AuthScreen {
+            Text(title)
+                .font(.title.bold())
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+
+            VStack(alignment: .leading, spacing: 16) {
+                AuthCard {
                     TextField("Server address", text: $server)
                         .keyboardType(.URL)
                         .textContentType(.URL)
@@ -55,10 +68,12 @@ struct SignInView: View {
                         .autocorrectionDisabled()
                         .submitLabel(.go)
                         .onSubmit { Task { await connect() } }
+                        .authFieldRow(.server, focus: $focusedField)
                     if model.status == nil {
                         if model.isLoading {
                             ProgressView()
                                 .frame(maxWidth: .infinity)
+                                .authRow()
                         } else {
                             HStack {
                                 Text("Can't reach this server")
@@ -68,60 +83,56 @@ struct SignInView: View {
                                     Task { await connect() }
                                 }
                             }
+                            .authRow()
                         }
                     }
                 }
-                .expensesRowBackground()
 
-                Section {
-                    TextField("Username", text: $username)
-                        .textContentType(.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("Password", text: $password)
-                        .textContentType(mode == .signIn ? .password : .newPassword)
-                        .submitLabel(.go)
-                        .onSubmit {
-                            if canSubmit {
-                                Task { await submit() }
+                VStack(alignment: .leading, spacing: 8) {
+                    AuthCard {
+                        TextField("Username", text: $username)
+                            .textContentType(.username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .password }
+                            .authFieldRow(.username, focus: $focusedField)
+                        SecureField("Password", text: $password)
+                            .textContentType(mode == .signIn ? .password : .newPassword)
+                            .submitLabel(.go)
+                            .onSubmit {
+                                if canSubmit {
+                                    Task { await submit() }
+                                }
                             }
+                            .authFieldRow(.password, focus: $focusedField)
+                        if mode == .setup && model.status?.setupTokenRequired == true {
+                            SecureField("Setup token", text: $setupToken)
+                                .textContentType(.oneTimeCode)
+                                .authFieldRow(.setupToken, focus: $focusedField)
                         }
-                    if mode == .setup && model.status?.setupTokenRequired == true {
-                        SecureField("Setup token", text: $setupToken)
-                            .textContentType(.oneTimeCode)
                     }
+
                     if model.status != nil, let error = model.lastError {
                         Text(error.message)
                             .foregroundStyle(ExpensesTheme.expense(for: scheme))
+                            .padding(.horizontal, 16)
                     }
                 }
-                .expensesRowBackground()
-
-                Section {
-                    Button {
-                        Task { await submit() }
-                    } label: {
-                        Text(title)
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!canSubmit)
-
-                    if mode != .setup && model.status?.signupAllowed == true {
-                        Button(createsAccount ? "Sign in instead" : "Create account") {
-                            createsAccount.toggle()
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets())
             }
-            .navigationTitle(title)
-            .expensesScreenStyle()
+        } actions: {
+            AuthPrimaryButton(title) {
+                Task { await submit() }
+            }
+            .disabled(!canSubmit)
+
+            if mode != .setup && model.status?.signupAllowed == true {
+                AuthTextButton {
+                    createsAccount.toggle()
+                } label: {
+                    Text(createsAccount ? "Sign in instead" : "Create account")
+                }
+            }
         }
         .onAppear {
             server = model.baseURLString

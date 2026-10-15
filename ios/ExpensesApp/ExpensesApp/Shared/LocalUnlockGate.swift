@@ -17,7 +17,21 @@ struct LocalUnlockGate<Content: View>: View {
     var body: some View {
         Group {
             if requiresLocalUnlock {
-                lockView(state: unlockState)
+                LockedSignInView(
+                    model: model,
+                    biometricLabel: biometricLabel,
+                    biometricSystemImage: biometricSystemImage,
+                    showsBiometricUnlock: unlockState != .unavailable,
+                    isAuthenticating: isAuthenticating,
+                    failure: failureMessage,
+                    unlockWithBiometrics: {
+                        Task { await unlock() }
+                    },
+                    signedIn: {
+                        unlockState = .unlocked
+                        lastProtectedAt = nil
+                    }
+                )
             } else {
                 content()
             }
@@ -27,7 +41,7 @@ struct LocalUnlockGate<Content: View>: View {
         }
         .onChange(of: coversProtectedContent) { _, covering in
             coverWindow.update(visible: covering) {
-                lockView(state: isUnlocked ? .locked : unlockState)
+                LockCover()
             }
         }
         .onChange(of: model.identity?.authenticated == true) { _, authenticated in
@@ -36,21 +50,11 @@ struct LocalUnlockGate<Content: View>: View {
             }
         }
         .task(id: unlockTaskID) {
-            if requiresLocalUnlock, scenePhase == .active {
+            // Face ID starts by itself on a fresh lock, not again after it was canceled.
+            if requiresLocalUnlock, scenePhase == .active, unlockState == .locked {
                 await unlock()
             }
         }
-    }
-
-    private func lockView(state: LocalUnlockState) -> some View {
-        LocalUnlockView(
-            state: state,
-            biometricLabel: biometricLabel,
-            biometricSystemImage: biometricSystemImage,
-            retry: {
-                Task { await unlock() }
-            }
-        )
     }
 
     private var unlockTaskID: String {
@@ -70,6 +74,14 @@ struct LocalUnlockGate<Content: View>: View {
             true
         } else {
             false
+        }
+    }
+
+    private var failureMessage: String? {
+        if case .failed(let message) = unlockState {
+            message
+        } else {
+            nil
         }
     }
 
@@ -139,6 +151,9 @@ struct LocalUnlockGate<Content: View>: View {
                     lastProtectedAt = Date()
                 }
                 coversProtectedContent = true
+            } else if phase == .background, case .failed = unlockState {
+                // Opening the app again starts with Face ID again.
+                unlockState = .locked
             }
         @unknown default:
             break
@@ -161,9 +176,9 @@ struct LocalUnlockGate<Content: View>: View {
 
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            unlockState = .unavailable(error?.localizedDescription ?? "Device authentication is unavailable.")
+        // Without a device passcode, only the account password unlocks the app.
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
+            unlockState = .unavailable
             return
         }
 
@@ -176,6 +191,8 @@ struct LocalUnlockGate<Content: View>: View {
             if success {
                 lastProtectedAt = nil
             }
+        } catch let error as LAError where [.userCancel, .systemCancel, .appCancel].contains(error.code) {
+            unlockState = .failed(nil)
         } catch {
             unlockState = .failed(error.localizedDescription)
         }
@@ -214,109 +231,132 @@ private enum LocalUnlockState: Equatable {
     case locked
     case authenticating
     case unlocked
-    case failed(String)
-    case unavailable(String)
+    // Canceled, with no message, or failed; the sign-in screen waits for the person.
+    case failed(String?)
+    case unavailable
 }
 
-private struct LocalUnlockView: View {
+/// The locked app's sign-in screen: the account password, or Face ID again.
+private struct LockedSignInView: View {
     @Environment(\.colorScheme) private var scheme
-    let state: LocalUnlockState
+    @State private var username = ""
+    @State private var password = ""
+    @State private var signInError: String?
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case username
+        case password
+    }
+
+    let model: AppModel
     let biometricLabel: String
     let biometricSystemImage: String
-    var retry: () -> Void
+    let showsBiometricUnlock: Bool
+    let isAuthenticating: Bool
+    let failure: String?
+    var unlockWithBiometrics: () -> Void
+    var signedIn: () -> Void
+
+    private var canSubmit: Bool {
+        !username.trimmingCharacters(in: .whitespaces).isEmpty
+            && !password.isEmpty
+            && !model.isLoading
+            && !isAuthenticating
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "lock.fill")
-                .font(.largeTitle.weight(.medium))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            Text(title)
-                .font(.title3.weight(.semibold))
-
-            if let detail {
-                Text(detail)
-                    .font(.footnote)
+        AuthScreen {
+            VStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.largeTitle.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("Unlock Expenses")
+                    .font(.title.bold())
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(ExpensesTheme.expense(for: scheme))
+                    .accessibilityAddTraits(.isHeader)
             }
 
-            // The ink tint is light in dark mode, so the label takes the page color.
-            Button(action: primaryAction) {
-                Label(buttonTitle, systemImage: buttonSystemImage)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(ExpensesTheme.background(for: scheme))
+            VStack(alignment: .leading, spacing: 8) {
+                AuthCard {
+                    TextField("Username", text: $username)
+                        .textContentType(.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .password }
+                        .authFieldRow(.username, focus: $focusedField)
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.go)
+                        .onSubmit {
+                            if canSubmit {
+                                Task { await signIn() }
+                            }
+                        }
+                        .authFieldRow(.password, focus: $focusedField)
+                }
+
+                if let message = signInError ?? failure {
+                    Text(message)
+                        .foregroundStyle(ExpensesTheme.expense(for: scheme))
+                        .padding(.horizontal, 16)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(ExpensesTheme.accent(for: scheme))
-            .controlSize(.large)
-            .disabled(state == .authenticating)
-            .padding(.top, 8)
+        } actions: {
+            AuthPrimaryButton("Sign in") {
+                Task { await signIn() }
+            }
+            .disabled(!canSubmit)
+
+            if showsBiometricUnlock {
+                AuthTextButton(action: unlockWithBiometrics) {
+                    Label("Unlock with \(biometricLabel)", systemImage: biometricSystemImage)
+                }
+                .disabled(isAuthenticating || model.isLoading)
+            }
         }
-        .padding(.horizontal, 28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(ExpensesBackground())
-        .animation(.easeInOut(duration: 0.18), value: state)
+        .onAppear {
+            username = model.sessionUsername ?? ""
+        }
     }
 
-    private var title: String {
-        if case .unavailable = state {
-            "Unlock Unavailable"
+    private func signIn() async {
+        signInError = nil
+        await model.login(
+            username: username.trimmingCharacters(in: .whitespaces),
+            password: password,
+            deviceName: UIDevice.current.name
+        )
+        if let error = model.lastError {
+            signInError = error.message
         } else {
-            "Unlock Expenses"
-        }
-    }
-
-    private var buttonTitle: String {
-        switch state {
-        case .failed:
-            "Try Again"
-        case .unavailable:
-            "Open Settings"
-        default:
-            "Unlock with \(biometricLabel)"
-        }
-    }
-
-    private var buttonSystemImage: String {
-        if case .unavailable = state {
-            "gearshape"
-        } else {
-            biometricSystemImage
-        }
-    }
-
-    private func primaryAction() {
-        if case .unavailable = state, let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url)
-        } else {
-            retry()
-        }
-    }
-
-    private var detail: String? {
-        switch state {
-        case .failed(let message), .unavailable(let message):
-            message
-        default:
-            nil
+            signedIn()
         }
     }
 }
 
-#Preview("Unlock Ready") {
-    LocalUnlockView(state: .locked, biometricLabel: "Face ID", biometricSystemImage: "faceid") {}
+/// Covers the app in the app switcher.
+private struct LockCover: View {
+    var body: some View {
+        Image(systemName: "lock.fill")
+            .font(.largeTitle.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(ExpensesBackground())
+    }
 }
 
-#Preview("Unlocking") {
-    LocalUnlockView(state: .authenticating, biometricLabel: "Face ID", biometricSystemImage: "faceid") {}
-}
-
-#Preview("Unlock Failed") {
-    LocalUnlockView(state: .failed("Authentication was canceled."), biometricLabel: "Face ID", biometricSystemImage: "faceid") {}
-}
-
-#Preview("Unlock Unavailable") {
-    LocalUnlockView(state: .unavailable("Face ID is not enrolled."), biometricLabel: "Face ID", biometricSystemImage: "faceid") {}
+#Preview("Locked") {
+    LockedSignInView(
+        model: AppModel(),
+        biometricLabel: "Face ID",
+        biometricSystemImage: "faceid",
+        showsBiometricUnlock: true,
+        isAuthenticating: false,
+        failure: nil,
+        unlockWithBiometrics: {},
+        signedIn: {}
+    )
 }
