@@ -16,20 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from pydantic_ai import RunContext
 from sqlalchemy.orm import Session
 
-from expenses.ai.client import (
-    LLMDisabledError,
-    _request_model_settings,
-    _retrying_http_client,
-)
+from expenses.ai.client import LLMDisabledError, model_settings
+from expenses.ai.features import ResolvedFeature, resolve
 from expenses.ai.usage import (
     LLMUsageMetadata,
-    OpenAICompatibleUsageCapture,
-    apply_captured_provider_usage,
     apply_usage_metadata,
     chat_input_trace,
     chat_output_trace,
-    enrich_openrouter_generation_usage,
-    usage_metadata_from_result,
+    usage_metadata as usage_metadata_for_run,
 )
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
@@ -668,22 +662,9 @@ class SpendingAnalysisService:
 
 
 class PydanticAISpendingRunner:
-    def __init__(self, configuration: Any = None) -> None:
-        settings = get_settings()
-        if not settings.llm_enabled:
-            raise LLMDisabledError("LLM usage is disabled")
-        if not settings.llm_base_url and not (
-            configuration and configuration.provider == "chatgpt"
-        ):
-            raise LLMDisabledError("EXPENSES_LLM_BASE_URL is not configured")
-        self.configuration = configuration
-        self.model_name = configuration.model if configuration else settings.llm_model
-        self.base_url = settings.llm_base_url
-        self.api_key = settings.llm_api_key
-        self.temperature = (
-            settings.llm_temperature if settings.llm_temperature is not None else 0.2
-        )
-        self.max_tokens = settings.llm_max_output_tokens or 4_096
+    def __init__(self, resolved: ResolvedFeature) -> None:
+        self.resolved = resolved
+        self.model_name = resolved.model
 
     async def stream_turn(
         self,
@@ -692,56 +673,15 @@ class PydanticAISpendingRunner:
         analysis: SpendingAnalysisService,
         context: SpendingAgentContext,
     ) -> AsyncIterator[dict[str, Any] | SpendingAgentTurnResult]:
-        try:
-            from openai import omit
-            from pydantic_ai import Agent, AgentRunResultEvent, Tool
-            from pydantic_ai import UsageLimits, messages as pydantic_message
-            from pydantic_ai.exceptions import AgentRunError, ModelAPIError
-            from pydantic_ai.models.openai import OpenAIChatModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-            from pydantic_ai.retries import (
-                AsyncTenacityTransport,
-                RetryConfig,
-                wait_retry_after,
-            )
-            from pydantic_ai.settings import ModelSettings
-        except ImportError as exc:
-            raise LLMDisabledError("Install pydantic-ai to enable LLM usage") from exc
+        from pydantic_ai import Agent, AgentRunResultEvent, Tool
+        from pydantic_ai import UsageLimits, messages as pydantic_message
+        from pydantic_ai.exceptions import AgentRunError, ModelAPIError
 
-        usage_capture = OpenAICompatibleUsageCapture()
-        if self.configuration and self.configuration.provider == "chatgpt":
-            from expenses.ai.chatgpt_model import build_model
+        from expenses.ai.backends import build_model
 
-            model, http_client, model_settings = await build_model(self.configuration)
-            self.base_url = "https://api.openai.com/v1"
-        else:
-            http_client = _retrying_http_client(
-                AsyncTenacityTransport=AsyncTenacityTransport,
-                RetryConfig=RetryConfig,
-                wait_retry_after=wait_retry_after,
-                usage_capture=usage_capture,
-            )
-            model_settings = _request_model_settings(
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                api_key=self.api_key,
-                reasoning_effort=self.configuration.reasoning_effort
-                if self.configuration
-                else "medium",
-                omit_authorization=omit,
-            )
-            model_settings["parallel_tool_calls"] = False
-            model = OpenAIChatModel(
-                self.model_name,
-                provider=OpenAIProvider(
-                    base_url=self.base_url,
-                    api_key=self.api_key or None,
-                    http_client=http_client,
-                ),
-            )
         agent: Agent[SpendingAgentContext, str] = Agent(
-            model=model,
-            model_settings=ModelSettings(**model_settings),
+            model=build_model(self.resolved.backend, self.resolved.model),
+            model_settings=model_settings(self.resolved, cache=True),
             deps_type=SpendingAgentContext,
             output_type=str,
             tools=[
@@ -774,165 +714,146 @@ class PydanticAISpendingRunner:
                 request.message_history
             )
             yield {"type": "turn_started", "turn_id": uuid4().hex}
-            async for event in agent.run_stream_events(
+            async with agent.run_stream_events(
                 request.current_message,
                 deps=context,
                 message_history=history,
                 usage_limits=UsageLimits(request_limit=16, tool_calls_limit=16),
-            ):
-                match event:
-                    case pydantic_message.FunctionToolCallEvent(part=part):
-                        narration = pending_text.strip()
-                        if narration:
-                            yield {
-                                "type": "progress_narration",
-                                "content": narration,
-                            }
-                            pending_text = ""
-                        tool_names_by_call_id[part.tool_call_id] = part.tool_name
-                        yield {
-                            "type": "tool_call_start",
-                            "tool_call_id": part.tool_call_id,
-                            "tool_name": part.tool_name,
-                            "arguments": part.args_as_dict(),
-                        }
-                    case pydantic_message.FunctionToolResultEvent(part=part):
-                        tool_name = part.tool_name or tool_names_by_call_id.get(
-                            part.tool_call_id
-                        )
-                        if tool_name is None:
-                            raise SpendingChatError("Tool result without tool name")
-                        if isinstance(part, pydantic_message.RetryPromptPart):
-                            result_preview = part.model_response()
-                            success = False
-                        else:
-                            result_preview = part.model_response_str()
-                            success = part.outcome == "success" and not (
-                                isinstance(part.content, dict)
-                                and part.content.get("ok") is False
-                            )
-                        result_summary = (
-                            _tool_result_summary(tool_name, part.content)
-                            if success and isinstance(part.content, dict)
-                            else None
-                        )
-                        yield {
-                            "type": "tool_call_end",
-                            "tool_call_id": part.tool_call_id,
-                            "tool_name": tool_name,
-                            "result_preview": result_preview[:500],
-                            "result_summary": result_summary,
-                            "success": success,
-                        }
-                    case pydantic_message.PartStartEvent(
-                        part=pydantic_message.TextPart(content=content)
-                    ):
-                        if content:
-                            if final_text_started:
-                                streamed_final_text += content
-                                yield {"type": "text_chunk", "content": content}
-                            else:
-                                pending_text += content
-                    case pydantic_message.PartDeltaEvent(
-                        delta=pydantic_message.TextPartDelta(
-                            content_delta=content_delta
-                        )
-                    ):
-                        if content_delta:
-                            if final_text_started:
-                                streamed_final_text += content_delta
-                                yield {
-                                    "type": "text_chunk",
-                                    "content": content_delta,
-                                }
-                            else:
-                                pending_text += content_delta
-                    case pydantic_message.FinalResultEvent():
-                        final_text_started = True
-                        if pending_text:
-                            narration, pending_text = _split_leading_progress_narration(
-                                pending_text
-                            )
+            ) as events:
+                async for event in events:
+                    match event:
+                        case pydantic_message.FunctionToolCallEvent(part=part):
+                            narration = pending_text.strip()
                             if narration:
                                 yield {
                                     "type": "progress_narration",
                                     "content": narration,
                                 }
-                        if pending_text:
-                            streamed_final_text += pending_text
-                            yield {"type": "text_chunk", "content": pending_text}
-                            pending_text = ""
-                    case AgentRunResultEvent(result=result):
-                        assistant_message = result.output.strip()
-                        narration, cleaned_assistant_message = (
-                            _split_leading_progress_narration(assistant_message)
-                        )
-                        if narration and cleaned_assistant_message:
-                            assistant_message = cleaned_assistant_message
-                        if not final_text_started and assistant_message:
-                            streamed_final_text = assistant_message
-                            yield {"type": "text_chunk", "content": assistant_message}
-                        if streamed_final_text:
-                            yield {"type": "text_commit"}
-                        messages = result.all_messages()
-                        usage_metadata = usage_metadata_from_result(
-                            usage=result.usage,
-                            messages=messages,
-                            base_url=self.base_url,
-                            configured_model=self.model_name,
-                        )
-                        if (
-                            self.configuration
-                            and self.configuration.provider == "chatgpt"
-                        ):
-                            from dataclasses import replace
-
-                            usage_metadata = replace(
-                                usage_metadata,
-                                llm_provider="chatgpt",
-                                cost_decimal=None,
-                                cost_unit=None,
+                                pending_text = ""
+                            tool_names_by_call_id[part.tool_call_id] = part.tool_name
+                            yield {
+                                "type": "tool_call_start",
+                                "tool_call_id": part.tool_call_id,
+                                "tool_name": part.tool_name,
+                                "arguments": part.args_as_dict(),
+                            }
+                        case pydantic_message.FunctionToolResultEvent(part=part):
+                            tool_name = part.tool_name or tool_names_by_call_id.get(
+                                part.tool_call_id
                             )
-                        usage_metadata = apply_captured_provider_usage(
-                            usage_metadata, usage_capture
-                        )
-                        usage_metadata = await enrich_openrouter_generation_usage(
-                            usage_metadata,
-                            http_client=http_client,
-                            api_key=self.api_key,
-                            base_url=self.base_url,
-                        )
-                        yield SpendingAgentTurnResult(
-                            assistant_message=assistant_message,
-                            message_history=json.loads(
-                                pydantic_message.ModelMessagesTypeAdapter.dump_json(
-                                    messages
+                            if tool_name is None:
+                                raise SpendingChatError("Tool result without tool name")
+                            if isinstance(part, pydantic_message.RetryPromptPart):
+                                result_preview = part.model_response()
+                                success = False
+                            else:
+                                result_preview = part.model_response_str()
+                                success = part.outcome == "success" and not (
+                                    isinstance(part.content, dict)
+                                    and part.content.get("ok") is False
                                 )
-                            ),
-                            usage_input_tokens=usage_metadata.input_tokens,
-                            usage_output_tokens=usage_metadata.output_tokens,
-                            usage_total_tokens=usage_metadata.total_tokens,
-                            usage_cached_input_tokens=usage_metadata.cached_input_tokens,
-                            usage_cache_write_tokens=usage_metadata.cache_write_tokens,
-                            usage_reasoning_tokens=usage_metadata.reasoning_tokens,
-                            usage_request_count=usage_metadata.request_count,
-                            usage_tool_call_count=usage_metadata.tool_call_count,
-                            usage_cost_decimal=usage_metadata.cost_decimal,
-                            usage_cost_unit=usage_metadata.cost_unit,
-                            llm_provider=usage_metadata.llm_provider,
-                            provider_name=usage_metadata.provider_name,
-                            provider_model=usage_metadata.provider_model,
-                            provider_response_id=usage_metadata.provider_response_id,
-                            provider_request_id=usage_metadata.provider_request_id,
-                            provider_usage_json=usage_metadata.provider_usage_json,
-                        )
-                        return
+                            result_summary = (
+                                _tool_result_summary(tool_name, part.content)
+                                if success and isinstance(part.content, dict)
+                                else None
+                            )
+                            yield {
+                                "type": "tool_call_end",
+                                "tool_call_id": part.tool_call_id,
+                                "tool_name": tool_name,
+                                "result_preview": result_preview[:500],
+                                "result_summary": result_summary,
+                                "success": success,
+                            }
+                        case pydantic_message.PartStartEvent(
+                            part=pydantic_message.TextPart(content=content)
+                        ):
+                            if content:
+                                if final_text_started:
+                                    streamed_final_text += content
+                                    yield {"type": "text_chunk", "content": content}
+                                else:
+                                    pending_text += content
+                        case pydantic_message.PartDeltaEvent(
+                            delta=pydantic_message.TextPartDelta(
+                                content_delta=content_delta
+                            )
+                        ):
+                            if content_delta:
+                                if final_text_started:
+                                    streamed_final_text += content_delta
+                                    yield {
+                                        "type": "text_chunk",
+                                        "content": content_delta,
+                                    }
+                                else:
+                                    pending_text += content_delta
+                        case pydantic_message.FinalResultEvent():
+                            final_text_started = True
+                            if pending_text:
+                                narration, pending_text = (
+                                    _split_leading_progress_narration(pending_text)
+                                )
+                                if narration:
+                                    yield {
+                                        "type": "progress_narration",
+                                        "content": narration,
+                                    }
+                            if pending_text:
+                                streamed_final_text += pending_text
+                                yield {"type": "text_chunk", "content": pending_text}
+                                pending_text = ""
+                        case AgentRunResultEvent(result=result):
+                            assistant_message = result.output.strip()
+                            narration, cleaned_assistant_message = (
+                                _split_leading_progress_narration(assistant_message)
+                            )
+                            if narration and cleaned_assistant_message:
+                                assistant_message = cleaned_assistant_message
+                            if not final_text_started and assistant_message:
+                                streamed_final_text = assistant_message
+                                yield {
+                                    "type": "text_chunk",
+                                    "content": assistant_message,
+                                }
+                            if streamed_final_text:
+                                yield {"type": "text_commit"}
+                            messages = result.all_messages()
+                            usage_metadata = usage_metadata_for_run(
+                                usage=result.usage,
+                                messages=messages,
+                                backend=self.resolved.backend,
+                                model=self.resolved.model,
+                            )
+                            yield SpendingAgentTurnResult(
+                                assistant_message=assistant_message,
+                                message_history=json.loads(
+                                    pydantic_message.ModelMessagesTypeAdapter.dump_json(
+                                        messages
+                                    )
+                                ),
+                                usage_input_tokens=usage_metadata.input_tokens,
+                                usage_output_tokens=usage_metadata.output_tokens,
+                                usage_total_tokens=usage_metadata.total_tokens,
+                                usage_cached_input_tokens=usage_metadata.cached_input_tokens,
+                                usage_cache_write_tokens=usage_metadata.cache_write_tokens,
+                                usage_reasoning_tokens=usage_metadata.reasoning_tokens,
+                                usage_request_count=usage_metadata.request_count,
+                                usage_tool_call_count=usage_metadata.tool_call_count,
+                                usage_cost_decimal=usage_metadata.cost_decimal,
+                                usage_cost_unit=usage_metadata.cost_unit,
+                                llm_provider=usage_metadata.llm_provider,
+                                provider_name=usage_metadata.provider_name,
+                                provider_model=usage_metadata.provider_model,
+                                provider_response_id=usage_metadata.provider_response_id,
+                                provider_request_id=usage_metadata.provider_request_id,
+                                provider_usage_json=usage_metadata.provider_usage_json,
+                            )
+                            return
         except (AgentRunError, ModelAPIError) as exc:
             raise SpendingChatError(
                 "The spending assistant is temporarily unavailable"
             ) from exc
-        finally:
-            await http_client.aclose()
 
         raise SpendingChatError("LLM response could not be completed")
 
@@ -1033,10 +954,8 @@ class SpendingChatService:
     ) -> None:
         self.session = session
         self.user_id = user_id
-        from expenses.ai.preferences import resolve
-
         self.runner = runner or PydanticAISpendingRunner(
-            resolve(session, user_id, "spending_chat")
+            resolve(session, "spending_chat")
         )
         local_now = datetime.now(ZoneInfo(get_settings().timezone))
         self.today = today or local_now.date()
@@ -1050,13 +969,12 @@ class SpendingChatService:
             len(request.messages),
             len(request.message_history),
         )
-        settings = get_settings()
         job = LLMJob(
             user_id=self.user_id,
             feature="spending_chat",
             status="running",
             prompt_version="spending_chat",
-            model=getattr(self.runner, "model_name", settings.llm_model),
+            model=getattr(self.runner, "model_name", "unknown"),
             input_hash=hashlib.sha256(input_json.encode("utf-8")).hexdigest(),
             input_json=input_json,
             created_at=datetime.utcnow(),

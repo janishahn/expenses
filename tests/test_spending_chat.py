@@ -21,8 +21,10 @@ from expenses.ai.spending_chat import (
     _split_leading_progress_narration,
     _tool_result_summary,
 )
-from expenses.core.config import get_settings
+from expenses.ai.features import ResolvedFeature
+from expenses.core.config import AIBackend, get_settings
 from expenses.db.models import (
+    AIFeatureSetting,
     BudgetFrequency,
     LLMJob,
     TransactionType,
@@ -40,6 +42,64 @@ from expenses.services import (
 @pytest.fixture()
 def anyio_backend() -> str:
     return "asyncio"
+
+
+LOCAL_CHAT = ResolvedFeature(
+    feature="spending_chat",
+    backend=AIBackend(
+        name="local",
+        kind="openai-compatible",
+        base_url="http://llm.local/v1",
+        api_key="",
+    ),
+    model="local-model",
+    thinking="auto",
+)
+
+
+class _EventsContext:
+    def __init__(self, events) -> None:
+        self.events = events
+
+    async def __aenter__(self):
+        return self.events
+
+    async def __aexit__(self, *exc) -> None:
+        return None
+
+
+def _configure_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXPENSES_AI_BACKENDS", "local")
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_KIND", "openai-compatible")
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_BASE_URL", "http://llm.local/v1")
+    get_settings.cache_clear()
+
+
+def _enable_chat(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_backend(monkeypatch)
+    sessions = app_main.app.dependency_overrides[app_main.get_db]()
+    session = next(sessions)
+    session.add(
+        AIFeatureSetting(
+            feature="spending_chat",
+            enabled=True,
+            backend="local",
+            model="local-model",
+            thinking="auto",
+        )
+    )
+    session.commit()
+    sessions.close()
+
+
+def _elevate_admin(client: TestClient) -> None:
+    token = client.get("/api/csrf").json()["token"]
+    response = client.post(
+        "/api/auth/admin-elevation",
+        headers={"X-CSRF-Token": token},
+        json={"password": "pw-12345"},
+    )
+    assert response.status_code == 200
 
 
 def make_session() -> Session:
@@ -520,16 +580,13 @@ def test_spending_chat_disabled_returns_503_before_stream(
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("EXPENSES_LLM_ENABLED", raising=False)
-    monkeypatch.delenv("EXPENSES_LLM_BASE_URL", raising=False)
-    get_settings.cache_clear()
     response = api_client.post(
         "/api/ai/spending-chat/stream",
         headers=csrf_headers,
         json={"messages": [{"role": "user", "content": "What changed this month?"}]},
     )
     assert response.status_code == 503
-    assert response.json()["detail"] == "LLM features are disabled"
+    assert response.json()["detail"] == "Assistant is turned off on this server"
 
 
 def test_spending_chat_stream_route_emits_ndjson_events(
@@ -537,9 +594,7 @@ def test_spending_chat_stream_route_emits_ndjson_events(
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _enable_chat(monkeypatch)
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -629,10 +684,6 @@ def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
     anonymous_api_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
-
     setup = anonymous_api_client.post(
         "/api/mobile/auth/setup",
         json={
@@ -644,6 +695,7 @@ def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
     )
     assert setup.status_code == 200
     token = setup.json()["token"]
+    _enable_chat(monkeypatch)
     anonymous_api_client.cookies.clear()
 
     engine = create_engine(
@@ -714,9 +766,7 @@ def test_spending_chat_stream_route_emits_terminal_error_event(
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _enable_chat(monkeypatch)
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -771,9 +821,7 @@ def test_spending_chat_rejects_invalid_message_history_before_stream(
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _enable_chat(monkeypatch)
 
     response = api_client.post(
         "/api/ai/spending-chat/stream",
@@ -793,9 +841,7 @@ async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _configure_backend(monkeypatch)
 
     from pydantic_ai import messages as pydantic_message
     import pydantic_ai
@@ -807,7 +853,10 @@ async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
         def instructions(self, func):
             return func
 
-        async def run_stream_events(self, *args, **kwargs):
+        def run_stream_events(self, *args, **kwargs):
+            return _EventsContext(self._events())
+
+        async def _events(self):
             yield pydantic_message.PartStartEvent(
                 index=0,
                 part=pydantic_message.TextPart(content="I'll inspect the details."),
@@ -851,7 +900,7 @@ async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
             today=date(2026, 6, 27),
             now=datetime(2026, 6, 27, 12, 0),
         )
-        stream = PydanticAISpendingRunner().stream_turn(
+        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
             request=SpendingChatRequest(
                 messages=[{"role": "user", "content": "What changed this month?"}]
             ),
@@ -893,9 +942,7 @@ async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _configure_backend(monkeypatch)
 
     from pydantic_ai import messages as pydantic_message
     import pydantic_ai
@@ -907,7 +954,10 @@ async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as
         def instructions(self, func):
             return func
 
-        async def run_stream_events(self, *args, **kwargs):
+        def run_stream_events(self, *args, **kwargs):
+            return _EventsContext(self._events())
+
+        async def _events(self):
             yield pydantic_message.FunctionToolCallEvent(
                 part=pydantic_message.ToolCallPart(
                     tool_name="compare_spending_periods",
@@ -953,7 +1003,7 @@ async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as
             today=date(2026, 6, 27),
             now=datetime(2026, 6, 27, 12, 0),
         )
-        stream = PydanticAISpendingRunner().stream_turn(
+        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
             request=SpendingChatRequest(
                 messages=[{"role": "user", "content": "What changed this month?"}]
             ),
@@ -987,9 +1037,7 @@ async def test_pydantic_spending_runner_builds_tool_schemas_without_model_reques
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "http://llm.local/v1")
-    get_settings.cache_clear()
+    _configure_backend(monkeypatch)
     with make_session() as session:
         analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
         context = SpendingAgentContext(
@@ -998,7 +1046,7 @@ async def test_pydantic_spending_runner_builds_tool_schemas_without_model_reques
             today=date(2026, 6, 27),
             now=datetime(2026, 6, 27, 12, 0),
         )
-        stream = PydanticAISpendingRunner().stream_turn(
+        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
             request=SpendingChatRequest(
                 messages=[{"role": "user", "content": "What changed this month?"}]
             ),
@@ -1144,7 +1192,6 @@ def test_ai_usage_summary_average_cost_keeps_division_precision(
 ) -> None:
     data_dir = tmp_path / "usage-avg-data"
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
     get_settings.cache_clear()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -1173,6 +1220,7 @@ def test_ai_usage_summary_average_cost_keeps_division_precision(
                 ).status_code
                 == 200
             )
+            _elevate_admin(client)
             with session_local() as session:
                 session.add_all(
                     [
@@ -1219,7 +1267,6 @@ def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
 ) -> None:
     data_dir = tmp_path / "usage-mixed-data"
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
     get_settings.cache_clear()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -1248,6 +1295,7 @@ def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
                 ).status_code
                 == 200
             )
+            _elevate_admin(client)
             with session_local() as session:
                 # The unitless costed job is inserted first, so an unordered scan
                 # sees it before the job that carries a real unit.
@@ -1296,7 +1344,6 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
 ) -> None:
     data_dir = tmp_path / "usage-data"
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
     get_settings.cache_clear()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -1331,6 +1378,7 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
                 json={"username": "bootstrap", "password": "pw-12345"},
             )
             assert setup_response.status_code == 200
+            _elevate_admin(client)
             now = datetime.utcnow()
             with session_local() as session:
                 session.add_all(

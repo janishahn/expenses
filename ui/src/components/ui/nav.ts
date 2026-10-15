@@ -1,4 +1,5 @@
 import type { Icon } from "@phosphor-icons/react"
+import type { AIFeature } from "../../app/auth-context"
 import { CalendarDotsIcon } from "@phosphor-icons/react/CalendarDots"
 import { ChartLineIcon } from "@phosphor-icons/react/ChartLine"
 import { ChecksIcon } from "@phosphor-icons/react/Checks"
@@ -15,7 +16,7 @@ import { TagIcon } from "@phosphor-icons/react/Tag"
 import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrendUpIcon } from "@phosphor-icons/react/TrendUp"
 
-export type NavItem = { to: string; label: string; icon: Icon; llm?: boolean }
+export type NavItem = { to: string; label: string; icon: Icon; feature?: AIFeature }
 
 export const PRIMARY: NavItem[] = [
   { to: "/", label: "Dashboard", icon: SquaresFourIcon },
@@ -43,7 +44,7 @@ export const GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/reconciliation", label: "Reconcile", icon: ChecksIcon },
       { to: "/reports/builder", label: "Reports", icon: FileTextIcon },
       { to: "/digest", label: "Digest", icon: CalendarDotsIcon },
-      { to: "/assistant", label: "Assistant", icon: SparkleIcon, llm: true },
+      { to: "/assistant", label: "Assistant", icon: SparkleIcon, feature: "spending_chat" },
     ],
   },
 ]

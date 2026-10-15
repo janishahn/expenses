@@ -179,7 +179,7 @@ struct RulesView: View {
     var body: some View {
         List {
             if let rules = model.rules {
-                let suggestions = model.llmEnabled ? model.ruleSuggestions : []
+                let suggestions = model.aiFeatures.contains("rule_mining") ? model.ruleSuggestions : []
                 if rules.rules.isEmpty && suggestions.isEmpty {
                     ContentUnavailableView {
                         Label("No rules yet", systemImage: "wand.and.stars")
@@ -230,7 +230,7 @@ struct RulesView: View {
                     adding = true
                 }
                 .disabled(model.rules == nil)
-                if model.llmEnabled {
+                if model.aiFeatures.contains("rule_mining") {
                     Menu {
                         Button(model.isMiningRuleSuggestions ? "Finding Rule Suggestions…" : "Find Rule Suggestions", systemImage: "sparkles") {
                             Task { await mine() }

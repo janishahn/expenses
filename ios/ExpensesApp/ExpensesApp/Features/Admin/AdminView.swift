@@ -12,9 +12,8 @@ struct AdminView: View {
                 Section {
                     link("Health", systemImage: "waveform.path.ecg") { AdminHealthView() }
                     link("Maintenance", systemImage: "wrench.and.screwdriver") { AdminMaintenanceView() }
-                    if model.llmEnabled {
-                        link("Assistant Usage", systemImage: "chart.bar") { AssistantUsageView() }
-                    }
+                    link("AI", systemImage: "cpu") { AdminAIView() }
+                    link("Assistant Usage", systemImage: "chart.bar") { AssistantUsageView() }
                     link("Logs", systemImage: "doc.text.magnifyingglass") { AdminLogsView() }
                     link("System", systemImage: "info.circle") { AdminSystemView() }
                 }

@@ -148,7 +148,7 @@ struct RootView: View {
     }
 
     private var toolsDestinations: [AppDestination] {
-        model.llmEnabled ? [.whatIf, .reconcile, .reports, .digest, .assistant] : [.whatIf, .reconcile, .reports, .digest]
+        model.aiFeatures.contains("spending_chat") ? [.whatIf, .reconcile, .reports, .digest, .assistant] : [.whatIf, .reconcile, .reports, .digest]
     }
 
     private func moreDestinationSection(_ title: String?, destinations: [AppDestination]) -> some View {

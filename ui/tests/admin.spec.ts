@@ -31,6 +31,7 @@ test.describe("Admin Page", () => {
     await expect(server.getByRole("link")).toHaveText([
       "Health",
       "Maintenance",
+      "AI",
       "Assistant usage",
       "Logs",
       "System",

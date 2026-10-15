@@ -9,8 +9,8 @@ import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { Navigate, useParams } from "react-router-dom"
 import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
 import type { AIUsageSummary } from "../app/api-types"
-import { useAuth } from "../app/auth"
 import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
+import AISettingsPanel from "../components/AISettingsPanel"
 import { confirmDialog } from "../components/confirm"
 import { Button, LinkButton } from "../components/ui/Button"
 import { EmptyState, Status } from "../components/ui/EmptyState"
@@ -496,11 +496,10 @@ function SystemSection() {
 
 function AdminPage() {
   const { section = "health" } = useParams()
-  const { llmEnabled } = useAuth()
   const groups = useSettingsGroups()
   const [usagePeriod, setUsagePeriod] = useState<AIUsageSummary["period"]>("week")
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
-  if (!ADMIN_SECTIONS.includes(section as AdminSectionKey) || (section === "usage" && !llmEnabled)) {
+  if (!ADMIN_SECTIONS.includes(section as AdminSectionKey)) {
     return <Navigate to="/admin" replace />
   }
   const key = section as AdminSectionKey
@@ -519,6 +518,7 @@ function AdminPage() {
     >
       {key === "health" ? <HealthSection /> : null}
       {key === "maintenance" ? <MaintenanceSection /> : null}
+      {key === "ai" ? <AISettingsPanel /> : null}
       {key === "usage" ? <UsageSection period={usagePeriod} /> : null}
       {key === "logs" ? <LogsSection selected={selectedLog} onSelect={setSelectedLog} /> : null}
       {key === "system" ? <SystemSection /> : null}

@@ -1,44 +1,49 @@
 {
   "components": {
     "schemas": {
-      "AIConnectionStatus": {
+      "AIBackendOut": {
         "properties": {
-          "email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+          "kind": {
+            "enum": [
+              "anthropic",
+              "openai",
+              "openrouter",
+              "openai-compatible"
             ],
-            "title": "Email"
-          },
-          "plan_authorized": {
-            "title": "Plan Authorized",
-            "type": "boolean"
-          },
-          "status": {
-            "title": "Status",
+            "title": "Kind",
             "type": "string"
           },
-          "usage_url": {
-            "title": "Usage Url",
+          "name": {
+            "title": "Name",
             "type": "string"
           }
         },
         "required": [
-          "status",
-          "email",
-          "plan_authorized",
-          "usage_url"
+          "name",
+          "kind"
         ],
-        "title": "AIConnectionStatus",
+        "title": "AIBackendOut",
         "type": "object"
       },
-      "AIFeatureSettings": {
+      "AIFeatureOut": {
         "properties": {
+          "backend": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Backend",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "id": {
+            "enum": [
+              "spending_chat",
+              "transaction_triage",
+              "rule_mining"
+            ],
             "title": "Id",
             "type": "string"
           },
@@ -52,27 +57,16 @@
             "title": "Name",
             "type": "string"
           },
-          "provider": {
-            "default": "configured",
-            "enum": [
-              "configured",
-              "chatgpt"
-            ],
-            "title": "Provider",
-            "type": "string"
-          },
-          "reasoning_effort": {
+          "thinking": {
             "default": "auto",
             "enum": [
               "auto",
-              "none",
-              "minimal",
+              "off",
               "low",
               "medium",
-              "high",
-              "xhigh"
+              "high"
             ],
-            "title": "Reasoning Effort",
+            "title": "Thinking",
             "type": "string"
           }
         },
@@ -80,14 +74,14 @@
           "id",
           "name"
         ],
-        "title": "AIFeatureSettings",
+        "title": "AIFeatureOut",
         "type": "object"
       },
-      "AIModelCatalog": {
+      "AIModelCatalogOut": {
         "properties": {
           "models": {
             "items": {
-              "$ref": "#/components/schemas/AIModelOption"
+              "$ref": "#/components/schemas/AIModelOut"
             },
             "title": "Models",
             "type": "array"
@@ -96,10 +90,10 @@
         "required": [
           "models"
         ],
-        "title": "AIModelCatalog",
+        "title": "AIModelCatalogOut",
         "type": "object"
       },
-      "AIModelOption": {
+      "AIModelOut": {
         "properties": {
           "id": {
             "title": "Id",
@@ -108,69 +102,50 @@
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "reasoning_efforts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Reasoning Efforts",
-            "type": "array"
           }
         },
         "required": [
           "id",
-          "name",
-          "reasoning_efforts"
+          "name"
         ],
-        "title": "AIModelOption",
+        "title": "AIModelOut",
         "type": "object"
       },
-      "AISettingsResponse": {
+      "AISettingsOut": {
         "properties": {
-          "configured_available": {
-            "title": "Configured Available",
-            "type": "boolean"
-          },
-          "configured_model": {
-            "title": "Configured Model",
-            "type": "string"
-          },
-          "connection": {
-            "$ref": "#/components/schemas/AIConnectionStatus"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/AIBackendOut"
+            },
+            "title": "Backends",
+            "type": "array"
           },
           "features": {
             "items": {
-              "$ref": "#/components/schemas/AIFeatureSettings"
+              "$ref": "#/components/schemas/AIFeatureOut"
             },
             "title": "Features",
             "type": "array"
           }
         },
         "required": [
-          "enabled",
-          "configured_available",
-          "configured_model",
-          "connection",
+          "backends",
           "features"
         ],
-        "title": "AISettingsResponse",
+        "title": "AISettingsOut",
         "type": "object"
       },
       "AISettingsUpdate": {
         "properties": {
           "features": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/FeatureChoice"
+              "$ref": "#/components/schemas/FeatureSettings"
             },
             "propertyNames": {
               "enum": [
+                "spending_chat",
                 "transaction_triage",
-                "rule_mining",
-                "spending_chat"
+                "rule_mining"
               ]
             },
             "title": "Features",
@@ -4167,39 +4142,39 @@
         "title": "DurablePurchasesResponseOut",
         "type": "object"
       },
-      "FeatureChoice": {
+      "FeatureSettings": {
         "properties": {
+          "backend": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Backend",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "model": {
             "default": "",
             "maxLength": 200,
             "title": "Model",
             "type": "string"
           },
-          "provider": {
-            "default": "configured",
-            "enum": [
-              "configured",
-              "chatgpt"
-            ],
-            "title": "Provider",
-            "type": "string"
-          },
-          "reasoning_effort": {
+          "thinking": {
             "default": "auto",
             "enum": [
               "auto",
-              "none",
-              "minimal",
+              "off",
               "low",
               "medium",
-              "high",
-              "xhigh"
+              "high"
             ],
-            "title": "Reasoning Effort",
+            "title": "Thinking",
             "type": "string"
           }
         },
-        "title": "FeatureChoice",
+        "title": "FeatureSettings",
         "type": "object"
       },
       "FilterTagOut": {
@@ -6426,13 +6401,16 @@
       },
       "MobileStatusOut": {
         "properties": {
+          "ai_features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Features",
+            "type": "array"
+          },
           "app": {
             "title": "App",
             "type": "string"
-          },
-          "llm_enabled": {
-            "title": "Llm Enabled",
-            "type": "boolean"
           },
           "receipt_max_bytes": {
             "title": "Receipt Max Bytes",
@@ -6467,7 +6445,7 @@
           "signup_allowed",
           "timezone",
           "receipt_max_bytes",
-          "llm_enabled"
+          "ai_features"
         ],
         "title": "MobileStatusOut",
         "type": "object"
@@ -6480,21 +6458,6 @@
         ],
         "title": "MonthDayPolicy",
         "type": "string"
-      },
-      "PairingStart": {
-        "properties": {
-          "port": {
-            "maximum": 65535.0,
-            "minimum": 1024.0,
-            "title": "Port",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "port"
-        ],
-        "title": "PairingStart",
-        "type": "object"
       },
       "PeriodOut": {
         "properties": {
@@ -8548,55 +8511,6 @@
         "title": "TemplatesResponseOut",
         "type": "object"
       },
-      "TokenGrant": {
-        "properties": {
-          "access_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Access Token",
-            "type": "string"
-          },
-          "client_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Client Id",
-            "type": "string"
-          },
-          "expires_in": {
-            "exclusiveMinimum": 0.0,
-            "maximum": 86400.0,
-            "title": "Expires In",
-            "type": "integer"
-          },
-          "id_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Id Token",
-            "type": "string"
-          },
-          "refresh_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Refresh Token",
-            "type": "string"
-          },
-          "scope": {
-            "maxLength": 2000,
-            "title": "Scope",
-            "type": "string"
-          }
-        },
-        "required": [
-          "client_id",
-          "access_token",
-          "refresh_token",
-          "id_token",
-          "scope",
-          "expires_in"
-        ],
-        "title": "TokenGrant",
-        "type": "object"
-      },
       "TransactionBankRowOut": {
         "properties": {
           "account_label": {
@@ -9749,6 +9663,99 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/ai/models": {
+      "get": {
+        "operationId": "models_api_admin_ai_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "backend",
+            "required": true,
+            "schema": {
+              "title": "Backend",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIModelCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Models"
+      }
+    },
+    "/api/admin/ai/settings": {
+      "get": {
+        "operationId": "settings_api_admin_ai_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "put": {
+        "operationId": "save_settings_api_admin_ai_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Settings"
+      }
+    },
     "/api/admin/balance-anchors": {
       "post": {
         "operationId": "api_admin_balance_anchors_removed_api_admin_balance_anchors_post",
@@ -10303,177 +10310,6 @@
         "summary": "Api Set Admin System Health Validation Override"
       }
     },
-    "/api/ai/chatgpt/connection": {
-      "delete": {
-        "operationId": "disconnect_api_ai_chatgpt_connection_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Disconnect"
-      }
-    },
-    "/api/ai/chatgpt/pairing": {
-      "post": {
-        "operationId": "create_pairing_api_ai_chatgpt_pairing_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Create Pairing"
-      }
-    },
-    "/api/ai/chatgpt/pairing/complete": {
-      "post": {
-        "operationId": "complete_pairing_api_ai_chatgpt_pairing_complete_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-chatgpt-pairing",
-            "required": true,
-            "schema": {
-              "maxLength": 200,
-              "title": "X-Chatgpt-Pairing",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TokenGrant"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Complete Pairing"
-      }
-    },
-    "/api/ai/chatgpt/pairing/start": {
-      "post": {
-        "operationId": "start_pairing_api_ai_chatgpt_pairing_start_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-chatgpt-pairing",
-            "required": true,
-            "schema": {
-              "maxLength": 200,
-              "title": "X-Chatgpt-Pairing",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PairingStart"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Pairing"
-      }
-    },
-    "/api/ai/models": {
-      "get": {
-        "operationId": "models_api_ai_models_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "provider",
-            "required": true,
-            "schema": {
-              "enum": [
-                "configured",
-                "chatgpt"
-              ],
-              "title": "Provider",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AIModelCatalog"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Models"
-      }
-    },
     "/api/ai/rules/mine": {
       "post": {
         "operationId": "api_ai_mine_rules_api_ai_rules_mine_post",
@@ -10594,60 +10430,6 @@
           }
         },
         "summary": "Api Ai Reject Rule Suggestion"
-      }
-    },
-    "/api/ai/settings": {
-      "get": {
-        "operationId": "settings_api_ai_settings_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AISettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Settings"
-      },
-      "put": {
-        "operationId": "save_settings_api_ai_settings_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AISettingsUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AISettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Save Settings"
       }
     },
     "/api/ai/spending-chat/stream": {

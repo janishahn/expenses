@@ -23,7 +23,6 @@ struct SettingsView: View {
 
             Section {
                 link("Categorization", systemImage: "square.on.circle") { CategorizationSettingsView() }
-                link("AI", systemImage: "sparkles") { AISettingsView() }
                 link("Balance Snapshots", systemImage: "scalemass") { BalanceSnapshotsView() }
                 link("Import and Export", systemImage: "arrow.up.arrow.down") { ImportExportView() }
             }

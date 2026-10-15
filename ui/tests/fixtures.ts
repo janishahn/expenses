@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ensureBootstrap } from "./auth-helpers"
+import { ADMIN_USER, ensureBootstrap } from "./auth-helpers"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
 
@@ -14,14 +14,12 @@ type Backend = {
   process: ChildProcess
 }
 
-async function startBackend(mockAIProvider = false): Promise<Backend> {
+async function startBackend(): Promise<Backend> {
   const dataDir = mkdtempSync(join(tmpdir(), "expenses-e2e-"))
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     EXPENSES_DATA_DIR: dataDir,
     EXPENSES_AUTH_SIGNUP_ENABLED: "true",
-    EXPENSES_LLM_ENABLED: "true",
-    EXPENSES_LLM_BASE_URL: "http://127.0.0.1:1/v1",
   }
   delete env.EXPENSES_DATABASE_URL
   // WeasyPrint loads Pango from Homebrew on macOS; `uv run dev` sets the same path (src/expenses/cli/dev.py).
@@ -46,14 +44,15 @@ async function startBackend(mockAIProvider = false): Promise<Backend> {
   const serverScript = [
     "import socket",
     "import uvicorn",
-    `import runpy; runpy.run_path("tests/e2e_ai_provider.py")["install"](mock_openai=${mockAIProvider ? "True" : "False"})`,
+    'import runpy; runpy.run_path("tests/e2e_ai_provider.py")["install"]()',
     'sock = socket.create_server(("127.0.0.1", 0))',
     'print(f"EXPENSES_E2E_PORT={sock.getsockname()[1]}", flush=True)',
     'uvicorn.run("expenses.app:app", fd=sock.fileno(), access_log=False)',
   ].join("\n")
   const child = spawn("uv", ["run", "python", "-c", serverScript], {
     cwd: repoRoot,
-    env,
+    // tests/e2e_ai_provider.py serves this backend and sets its base URL.
+    env: { ...env, EXPENSES_AI_BACKENDS: "local", EXPENSES_AI_LOCAL_KIND: "openai-compatible" },
     stdio: ["ignore", "pipe", "pipe"],
   })
   const output: Buffer[] = []
@@ -103,13 +102,32 @@ async function stopBackend(backend: Backend): Promise<void> {
   rmSync(backend.dataDir, { recursive: true, force: true })
 }
 
+// Turns every AI feature on with the stub backend, from a separate admin
+// session so the shared storage state stays unelevated.
+async function enableAIFeatures(url: string): Promise<void> {
+  const context = await request.newContext({ baseURL: url })
+  const csrf = async () => ({ "X-CSRF-Token": ((await (await context.get("/api/csrf")).json()) as { token: string }).token })
+  if (!(await context.post("/api/auth/login", { data: ADMIN_USER })).ok()) throw new Error("admin login failed")
+  if (!(await context.post("/api/auth/admin-elevation", { headers: await csrf(), data: { password: ADMIN_USER.password } })).ok()) {
+    throw new Error("admin elevation failed")
+  }
+  const feature = { enabled: true, backend: "local", model: "e2e-large", thinking: "auto" }
+  const response = await context.put("/api/admin/ai/settings", {
+    headers: await csrf(),
+    data: { features: { spending_chat: feature, transaction_triage: feature, rule_mining: feature } },
+  })
+  if (!response.ok()) throw new Error(`enabling AI features failed: ${await response.text()}`)
+  await context.dispose()
+}
+
 // Every worker gets its own migrated temporary database and FastAPI server, so
 // workers can run concurrently while tests within a worker stay serial.
-const backendTest = base.extend<object, { backend: Backend; mockAIProvider: boolean }>({
-  mockAIProvider: [false, { scope: "worker", option: true }],
+const backendTest = base.extend<object, { backend: Backend }>({
   backend: [
-    async ({ mockAIProvider }, use) => {
-      const backend = await startBackend(mockAIProvider)
+    // Playwright needs a destructuring pattern even when a fixture uses no other fixtures.
+    // oxlint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const backend = await startBackend()
       await use(backend)
       await stopBackend(backend)
     },
@@ -131,6 +149,7 @@ export const test = backendTest.extend<object, { workerStorageState: string }>({
       await ensureBootstrap(context)
       await context.storageState({ path: statePath })
       await context.dispose()
+      await enableAIFeatures(backend.url)
       await use(statePath)
     },
     { scope: "worker" },

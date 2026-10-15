@@ -36,7 +36,7 @@ final class AppModel {
         }
     }
     var status: MobileStatus?
-    var llmEnabled: Bool { status?.llmEnabled ?? false }
+    var aiFeatures: [String] { status?.aiFeatures ?? [] }
     // The server stores transaction and balance snapshot times as wall-clock times in its
     // zone, so a stored time shows and saves in it. The device's zone until it is known.
     var serverTimeZone: TimeZone { status.flatMap { TimeZone(identifier: $0.timezone) } ?? .current }
@@ -73,7 +73,6 @@ final class AppModel {
     var budgets: BudgetsResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
-    var aiSettings: AISettingsResponse?
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
@@ -252,40 +251,6 @@ final class AppModel {
             clearStoredSession()
             clearUserScopedState()
         }
-    }
-
-    func loadAISettings() async throws -> AISettingsResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.aiSettings(token: token)
-        guard self.token == token else { throw CancellationError() }
-        aiSettings = response
-        return response
-    }
-
-    func saveAISettings(_ features: [AIFeatureSettings]) async throws -> AISettingsResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.saveAISettings(features, token: token)
-        guard self.token == token else { throw CancellationError() }
-        aiSettings = response
-        return response
-    }
-
-    func aiModels(provider: String) async throws -> [AIModelOption] {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        return try await apiClient.aiModels(provider: provider, token: token).models
-    }
-
-    func createChatGPTPairing() async throws -> ChatGPTPairingResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        return try await apiClient.createChatGPTPairing(token: token)
-    }
-
-    func disconnectChatGPT() async throws -> ChatGPTDisconnectResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.disconnectChatGPT(token: token)
-        // The disconnect happened, so its result stands even when the settings don't reload.
-        _ = try? await loadAISettings()
-        return response
     }
 
     func loadAccountSettings() async {
@@ -961,7 +926,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             rules = try await apiClient.rules(token: token)
-            if llmEnabled {
+            if aiFeatures.contains("rule_mining") {
                 ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
             }
         }
@@ -1995,7 +1960,7 @@ final class AppModel {
         tags = try await apiClient.tags(period: tagsPeriod, token: token)
         templates = try await apiClient.templates(token: token)
         rules = try await apiClient.rules(token: token)
-        if llmEnabled {
+        if aiFeatures.contains("rule_mining") {
             ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
         }
     }
@@ -2031,7 +1996,6 @@ final class AppModel {
     }
 
     private func clearUserScopedState() {
-        aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
         dashboard = nil

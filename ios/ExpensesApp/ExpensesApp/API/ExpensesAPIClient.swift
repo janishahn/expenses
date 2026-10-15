@@ -83,25 +83,22 @@ struct ExpensesAPIClient {
         )
     }
 
-    func aiSettings(token: String) async throws -> AISettingsResponse {
-        try await request(path: "/api/ai/settings", bearerToken: token)
+    func adminAISettings(token: String) async throws -> AISettingsResponse {
+        try await request(path: "/api/admin/ai/settings", bearerToken: token)
     }
 
-    func saveAISettings(_ features: [AIFeatureSettings], token: String) async throws -> AISettingsResponse {
-        let body = AISettingsUpdate(features: Dictionary(uniqueKeysWithValues: features.map { ($0.id, $0) }))
-        return try await request(path: "/api/ai/settings", method: "PUT", bearerToken: token, body: body)
+    func saveAdminAISettings(_ features: [AIFeatureSettings], token: String) async throws -> AISettingsResponse {
+        let body = AISettingsUpdate(features: Dictionary(uniqueKeysWithValues: features.map {
+            ($0.id, AIFeatureChoice(enabled: $0.enabled, backend: $0.backend, model: $0.model, thinking: $0.thinking))
+        }))
+        return try await request(path: "/api/admin/ai/settings", method: "PUT", bearerToken: token, body: body)
     }
 
-    func aiModels(provider: String, token: String) async throws -> AIModelCatalog {
-        try await request(path: "/api/ai/models?provider=\(provider)", bearerToken: token)
-    }
-
-    func createChatGPTPairing(token: String) async throws -> ChatGPTPairingResponse {
-        try await request(path: "/api/ai/chatgpt/pairing", method: "POST", bearerToken: token)
-    }
-
-    func disconnectChatGPT(token: String) async throws -> ChatGPTDisconnectResponse {
-        try await request(path: "/api/ai/chatgpt/connection", method: "DELETE", bearerToken: token)
+    func adminAIModels(backend: String, token: String) async throws -> AIModelCatalog {
+        var components = URLComponents()
+        components.path = "/api/admin/ai/models"
+        components.queryItems = [URLQueryItem(name: "backend", value: backend)]
+        return try await request(path: components.string ?? "/api/admin/ai/models", bearerToken: token)
     }
 
     func settings(token: String) async throws -> SettingsResponse {

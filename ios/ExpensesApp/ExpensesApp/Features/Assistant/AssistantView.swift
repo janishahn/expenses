@@ -23,28 +23,22 @@ struct AssistantView: View {
 
     var body: some View {
         Group {
-            if model.llmEnabled {
+            if model.aiFeatures.contains("spending_chat") {
                 conversation
             } else {
                 List {
                     UnavailableStateSection(
                         title: "Assistant unavailable",
                         systemImage: "sparkles",
-                        message: "LLM features are turned off."
+                        message: "The Assistant is turned off on this server."
                     )
                 }
                 .expensesScreenStyle()
             }
         }
-        .task { _ = try? await model.loadAISettings() }
         .navigationTitle("Assistant")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let usageURL {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Link("ChatGPT Plan", destination: usageURL)
-                }
-            }
             if !model.assistantTurns.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New Chat", systemImage: "square.and.pencil") {
@@ -56,16 +50,6 @@ struct AssistantView: View {
                 }
             }
         }
-    }
-
-    // The ChatGPT plan's usage page, when the assistant runs on it.
-    private var usageURL: URL? {
-        guard let settings = model.aiSettings,
-              settings.features.first(where: { $0.id == "spending_chat" })?.provider == "chatgpt"
-        else {
-            return nil
-        }
-        return URL(string: settings.connection.usageURL)
     }
 
     private var conversation: some View {

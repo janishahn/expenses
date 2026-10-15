@@ -9,7 +9,6 @@ import { copyText } from "../app/clipboard"
 import { formatDateRange } from "../app/format"
 import { maskTextAmounts, usePrivacy } from "../app/privacy"
 import type { SpendingChatHistoryEntry, SpendingChatStreamEvent } from "../app/api-types"
-import { ChatGPTPlanLink } from "../components/AISettingsPanel"
 import { Button, IconButton } from "../components/ui/Button"
 import {
   ChatActions,
@@ -509,12 +508,7 @@ function SpendingAssistantPage() {
     <Panel
       title="Assistant"
       layout="fill"
-      actions={
-        <>
-          <ChatGPTPlanLink />
-          {messages.length > 0 ? <IconButton icon={NotePencilIcon} label="New chat" onClick={handleNewChat} /> : null}
-        </>
-      }
+      actions={messages.length > 0 ? <IconButton icon={NotePencilIcon} label="New chat" onClick={handleNewChat} /> : undefined}
     >
       <ChatThread ref={threadRef} empty={messages.length === 0} announcement={shown(announcement)} onScroll={updateScrollPill}>
         {messages.length === 0 ? (

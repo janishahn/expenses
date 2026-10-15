@@ -21,7 +21,7 @@ Expenses keeps transactions, budgets, receipts, reports, and bank reconciliation
 - Bank reconciliation imports Commerzbank transaction CSV files and keeps unresolved rows in one review queue.
 - Each user has separate data, so one private instance can serve a household.
 - A token-protected endpoint can record purchases from Apple Shortcuts or another automation.
-- Optional LLM tools can help with categorization and answer read-only questions about spending. They are off by default.
+- Optional AI tools can help with categorization and answer read-only questions about spending. They are off by default.
 
 ## A quick tour
 
@@ -57,7 +57,7 @@ Add salary, rent, subscriptions, and other regular payments once. Expenses can p
 
 ![Categorization rules](docs/screenshots/rules-light.png)
 
-Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you enable LLM help, Expenses can suggest rules from your history; you still review them before they take effect.
+Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you turn on rule suggestions, Expenses can suggest rules from your history; you still review them before they take effect.
 
 For local automatic categorization, enable **Automatic categorization** in **Settings → Categorization**
 on the web or iOS. It is off by default for each user.
@@ -85,7 +85,7 @@ stops predictions and scheduled training without changing existing transactions.
 - **Forecast and What If** project cash flow and let you test a change before it becomes real.
 - **Digest and Reports** turn recent activity into a short review or an exportable PDF.
 - **Reconcile** compares a Commerzbank transaction CSV with your ledger and guides you through unresolved rows.
-- **Assistant** answers read-only questions about your spending when optional LLM support is enabled.
+- **Assistant** answers read-only questions about your spending when an admin turns it on.
 - **Templates, categories, and tags** make frequent entries quick to create and old entries easier to find. Tags can be archived without losing historical assignments and hidden from filter menus independently.
 
 ## Run with Docker
@@ -147,65 +147,34 @@ Use [`.env.example`](.env.example) as a starting point. These are the main setti
 | `EXPENSES_FORWARDED_ALLOW_IPS` | Lists the direct proxy addresses that Uvicorn may trust for forwarded headers. | `127.0.0.1` |
 | `EXPENSES_TRUSTED_PROXY_IPS` | Lists direct proxy addresses whose `X-Forwarded-Proto` value the app may trust. | unset |
 
-### Optional LLM assistance
+### Optional AI assistance
 
-LLM features are off by default. To enable categorization help and the read-only spending assistant, configure an OpenAI-compatible endpoint that you trust with your financial data:
+AI features are off by default. They send the financial context a request needs to the AI provider you choose, so use only providers you trust with that data.
+
+First define one or more backends in the server environment. Each backend has a name, a kind, and its connection settings:
 
 ```env
-EXPENSES_LLM_ENABLED=true
-EXPENSES_LLM_BASE_URL=https://provider.example/v1
-EXPENSES_LLM_MODEL=your-model
-EXPENSES_LLM_API_KEY=your-api-key
+EXPENSES_AI_BACKENDS=claude,local
+
+EXPENSES_AI_CLAUDE_KIND=anthropic
+EXPENSES_AI_CLAUDE_API_KEY=sk-ant-...
+
+EXPENSES_AI_LOCAL_KIND=openai-compatible
+EXPENSES_AI_LOCAL_BASE_URL=http://example-tailnet-host:8080/v1
 ```
 
-Leave the API key blank only when a private endpoint intentionally accepts requests without one. Optional temperature and output-token settings are listed in [`.env.example`](.env.example).
+| Kind | Connects to | Required |
+| --- | --- | --- |
+| `anthropic` | The Anthropic API | `API_KEY`; `BASE_URL` is optional |
+| `openai` | The OpenAI Responses API | `API_KEY`; `BASE_URL` is optional |
+| `openrouter` | OpenRouter | `API_KEY` |
+| `openai-compatible` | Any OpenAI-compatible chat completions endpoint, such as a local model server | `BASE_URL`; `API_KEY` only if the endpoint needs one |
 
-You can also connect a ChatGPT Plus or Pro plan. Set `EXPENSES_LLM_ENABLED=true`;
-this option does not require an API key or `EXPENSES_LLM_BASE_URL`. Each Expenses
-user connects their own ChatGPT account in **Settings → AI settings** (or
-**Settings → AI** on iOS).
+Backend names use lowercase letters, digits, and underscores. Restart the server after changing backends.
 
-1. Choose **Continue with ChatGPT** to create a pairing code valid for 10 minutes.
-2. On a Mac or Linux computer with a browser and an Expenses checkout, run
-   `uv run connect-chatgpt --server https://your-expenses-server` from that checkout.
-3. Enter the pairing code at the private prompt and approve sign-in and plan usage
-   in the browser. The helper completes OpenAI's loopback callback locally and
-   transfers the credentials over HTTPS to your Expenses server. Plain HTTP is
-   accepted only for a localhost Expenses server.
-4. Return to AI settings and select **I've finished connecting**. Choose a provider,
-   model, and thinking level separately for categorization, rule suggestions, and
-   spending analysis, then save. Web and iOS use the same saved choices.
+Then an admin turns on each feature in **Admin → AI** on the web or iOS: the Assistant, categorization suggestions, and rule suggestions. Each feature has its own backend, model, and thinking level. Model menus list the backend's models; choose **Enter model ID…** for a model that is not listed. **Model default** leaves the thinking level to the model. A feature whose backend is removed from the environment turns off until an admin chooses another backend.
 
-Model menus load the selected provider's `/models` endpoint. For example, choose
-GPT-6 Luna with low thinking for categorization and GPT-6.1 Sol for analysis if
-those models are offered by your connected account. **Model default** leaves the
-thinking level to ChatGPT; for the configured provider it retains the feature's
-existing default. Providers without model discovery can still use **Server
-default**, configured by `EXPENSES_LLM_MODEL`.
-
-If a ChatGPT model is missing from the catalog, choose **Enter model ID…** and
-enter its exact ID. Saving checks each distinct custom model and thinking-level
-choice with a short request using your connected account's ChatGPT allowance.
-This check sends no financial data. Settings stay unchanged if any check fails.
-
-ChatGPT usage shares the user's plan limits. AI settings and the assistant link to
-ChatGPT's usage controls. Expenses does not switch to a paid API or another account
-when the plan reaches a limit. Financial context needed by a request goes to
-OpenAI. Existing AI features run on explicit user actions; connecting an account
-does not enable background AI jobs.
-
-The self-hosted runtime stores encrypted credentials under
-`EXPENSES_DATA_DIR/secrets/chatgpt/` with owner-only permissions. The default
-credential-encryption key is in that directory; set
-`EXPENSES_AI_CREDENTIAL_KEY_FILE` to an existing Fernet key file mounted separately
-if desired. Preserve the key with protected instance backups. If it is lost, remove the
-inaccessible encrypted connection files, disconnect the old access in ChatGPT,
-and reconnect. Do not include this directory in shared exports or source control.
-Each runtime keeps its own host ID; cloned deployments must generate a new one.
-The server renews tokens automatically. **Disconnect** clears saved tokens and
-attempts remote revocation; if OpenAI is unreachable, also disconnect Expenses in
-ChatGPT settings. Signing out of Expenses alone does not disconnect ChatGPT.
-
+**Admin → Assistant usage** shows token use and estimated cost for all users. Costs are estimates in US dollars from published model prices; models without a published price show no cost.
 
 ## Serving & Access
 

@@ -10,7 +10,6 @@ import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { useAuth } from "../app/auth"
 import { copyText } from "../app/clipboard"
 import { formatShortDate, formatShortDateTime } from "../app/format"
-import AISettingsPanel from "../components/AISettingsPanel"
 import AutoCategorizationSettings, { type AutoCategorizationSettingsData } from "../components/AutoCategorizationSettings"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
@@ -509,7 +508,6 @@ function SettingsPage() {
           }}
         />
       ) : null}
-      {key === "ai" ? <AISettingsPanel /> : null}
       {key === "snapshots" && data ? <SnapshotsCard data={data} /> : null}
       {key === "data" ? (
         <>

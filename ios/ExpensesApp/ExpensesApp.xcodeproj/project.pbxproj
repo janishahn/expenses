@@ -40,7 +40,7 @@
 		001000000000000000000032 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000034 /* AssistantView.swift */; };
 		001000000000000000000033 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000035 /* AppIcon.icon */; };
 		001000000000000000000036 /* AISettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000036 /* AISettingsModels.swift */; };
-		001000000000000000000037 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AISettingsView.swift */; };
+		001000000000000000000037 /* AdminAIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* AdminAIView.swift */; };
 		001000000000000000000038 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* Components.swift */; };
 		001000000000000000000039 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000039 /* SignInView.swift */; };
 		001000000000000000000040 /* Period.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000040 /* Period.swift */; };
@@ -114,7 +114,7 @@
 		002000000000000000000034 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		002000000000000000000035 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		002000000000000000000036 /* AISettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsModels.swift; sourceTree = "<group>"; };
-		002000000000000000000037 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
+		002000000000000000000037 /* AdminAIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAIView.swift; sourceTree = "<group>"; };
 		002000000000000000000038 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		002000000000000000000039 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 		002000000000000000000040 /* Period.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Period.swift; sourceTree = "<group>"; };
@@ -258,7 +258,6 @@
 				002000000000000000000062 /* CategorizationSettingsView.swift */,
 				002000000000000000000061 /* AccountSettingsView.swift */,
 				002000000000000000000039 /* SignInView.swift */,
-				002000000000000000000037 /* AISettingsView.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -390,6 +389,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000029 /* AdminView.swift */,
+				002000000000000000000037 /* AdminAIView.swift */,
 				002000000000000000000070 /* LegacyImportView.swift */,
 				002000000000000000000069 /* AssistantUsageView.swift */,
 				002000000000000000000068 /* AdminSystemView.swift */,
@@ -543,7 +543,7 @@
 				001000000000000000000029 /* CategoryIcons.swift in Sources */,
 				001000000000000000000031 /* AssistantModels.swift in Sources */,
 				001000000000000000000032 /* AssistantView.swift in Sources */,
-				001000000000000000000037 /* AISettingsView.swift in Sources */,
+				001000000000000000000037 /* AdminAIView.swift in Sources */,
 				001000000000000000000036 /* AISettingsModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -77,7 +77,7 @@ class AddTransactionBoundary extends Component<{ children: ReactNode }, { failed
 function AppShell() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { user, llmEnabled, logout } = useAuth()
+  const { user, aiFeatures, logout } = useAuth()
   const [addTransactionOpen, setAddTransactionOpen] = useState(false)
   // Each open mounts a fresh dialog under a new key; the dialog stays mounted after
   // closing so its exit animation can play.
@@ -100,7 +100,7 @@ function AppShell() {
   return (
     <AppFrame
       isAdmin={Boolean(user?.is_admin)}
-      llmEnabled={llmEnabled}
+      aiFeatures={aiFeatures}
       uncategorizedCount={uncategorizedQuery.data?.total ?? 0}
       onSignOut={() => void signOut()}
     >

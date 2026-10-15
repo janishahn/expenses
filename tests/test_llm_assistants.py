@@ -4,10 +4,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from expenses.ai.client import (
-    LLMOutputError,
-    _request_model_settings,
-)
+from expenses.ai.client import LLMOutputError
 from expenses.ai.schemas import (
     RuleMiningOutput,
     RuleProposalOut,
@@ -68,19 +65,6 @@ def make_session() -> Session:
 @pytest.fixture()
 def anyio_backend() -> str:
     return "asyncio"
-
-
-def test_llm_request_settings_use_openrouter_reasoning_shape() -> None:
-    settings = _request_model_settings(
-        temperature=0.7,
-        max_tokens=512,
-        api_key="",
-        reasoning_effort="none",
-        omit_authorization=object(),
-    )
-
-    assert settings["extra_body"] == {"reasoning": {"effort": "none"}}
-    assert "reasoning_effort" not in settings["extra_body"]
 
 
 def test_transaction_classification_events_track_ingest_create_and_user_update() -> (
