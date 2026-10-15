@@ -1060,3 +1060,36 @@
   .calEnter::after, .calTwinkle::after { animation: fadeIn 480ms both; animation-delay: var(--d); }
   .receiptDots span { animation-name: fadeIn; }
 }
+
+/* Printing Transactions. The ledger shows only in print, and while it is mounted printing
+   shows nothing else. Paper is always light, so the colors are fixed. */
+.print { display: none; }
+@media print {
+  body:has(> .print) > :not(.print) { display: none; }
+  .print { display: block; color: #111; font-size: 9.5pt; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .print h1 { margin: 18pt 0 1pt; font-size: 17pt; font-weight: 700; }
+  .printMast { display: flex; justify-content: space-between; color: #55554f; font-size: 8pt; }
+  .printMast strong { color: #111; }
+  .printPeriod { margin: 0; color: #55554f; font-size: 10pt; }
+  .printScope { margin: 5pt 0 0; color: #6b6b65; font-size: 8.5pt; }
+  .printTable { width: 100%; margin-top: 16pt; border-collapse: collapse; }
+  .printTable th { padding: 0 0 4pt; border-bottom: 1px solid #111; color: #55554f; font-size: 8pt; font-weight: 600; text-align: left; }
+  .printTable th:nth-child(2) { width: 30%; }
+  .printTable th:last-child, .printTable td:last-child { width: 1%; text-align: right; white-space: nowrap; }
+  .printTable tbody { break-inside: avoid; }
+  .printTable td { padding: 3pt 8pt 3pt 0; border-bottom: 0.5pt solid #e2e2de; vertical-align: top; }
+  .printTable td:last-child { padding-right: 0; }
+  .printTable .printDay td { padding-top: 9pt; border-bottom: 0; font-weight: 600; }
+  .printTable .printDay td:last-child { color: #55554f; font-weight: 500; }
+  .printTags, .printNet { margin-left: 5pt; color: #6b6b65; font-size: 8.5pt; }
+  .printNet { margin: 0 5pt 0 0; }
+  .printDot { display: inline-block; width: 6pt; height: 6pt; margin-right: 5pt; border: 0.5pt solid #111; border-radius: 1.5pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .printTotals { width: 220pt; margin: 18pt 0 0 auto; break-inside: avoid; }
+  .printTotals div { display: flex; justify-content: space-between; padding: 2pt 0; }
+  .printTotals dt { color: #55554f; }
+  .printTotals dd { margin: 0; }
+  /* The bookkeeper's double rule under the closing total. */
+  .printTotals .printNetTotal { margin-top: 4pt; padding-top: 4pt; border-top: 1px solid #111; border-bottom: 3px double #111; font-weight: 700; }
+  .printNetTotal dt { color: #111; }
+  .printCount { margin: 8pt 0 0; color: #6b6b65; font-size: 8.5pt; text-align: right; }
+}

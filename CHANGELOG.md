@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry.
+- Print the web Transactions ledger from ⋯ › Print… or with Cmd+P. The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
 - On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
 
 ### Changed

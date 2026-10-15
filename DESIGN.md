@@ -301,6 +301,13 @@ pages below fix the structure; the current pages show the content.
   is set, then Balance, Cash in, and Net in one row. Then Budgets, Recent,
   Balance, Spending by category, Category share as a small ring with its five
   largest shares, and Durable purchases.
+- **Printing Transactions.** ⋯ › Print… and Cmd+P load every row for the
+  current period and filters, then open the print dialog with a paper ledger:
+  the app name and print time, the title, period, and filters, then a
+  Description, Category, and Amount table whose headings repeat on each page,
+  with day rows that never split across pages, and the server's Spent, Cash in,
+  and Net under a double rule. Paper is always light, and hidden amounts stay
+  hidden.
 - **Budgets.** View row: month control. Strip: Overall budget, Spent, Left,
   Projected. Overall pace chart. One list with Monthly and Annual bands; each
   row shows the bar with the pace tick and "left" or "over". The peek shows the
@@ -475,7 +482,7 @@ changes and drop movement.
 `MonthPicker`, `Menu`, `Popover`, `Tooltip`, `Dialog`, `EntryDialog`,
 `BottomSheet`, `BulkBar`, `Peek` with its `PeekLayout` and `AsideLayout`,
 `PropertyList`, `SettingsShell`, `Notes`, `ReceiptSection`, `ReceiptViewer`,
-`LocationMap`, `Amount`,
+`LocationMap`, `PrintLedger`, `Amount`,
 `CategoryGlyph`, `SuggestionBox`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
