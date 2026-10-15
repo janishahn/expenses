@@ -180,6 +180,24 @@ test.describe("Report Builder Page", () => {
     expect(payload.include_category_subtotals).toBe(true)
   })
 
+  test("lists categories that another page already loaded", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const name = `E2E Report Cached ${Date.now()}`
+    await createCategory(request, token, "expense", name)
+
+    // Templates fills the category options cache that the Report Builder shares.
+    const loaded = page.waitForResponse("**/api/categories/options")
+    await page.goto("/templates")
+    await loaded
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/reports/builder")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    })
+    await page.getByRole("radiogroup", { name: "Categories" }).getByRole("radio", { name: "Selected" }).click()
+    await chooseOptions(page, "categories", [name])
+    await expect(page.getByRole("button", { name: "Choose categories, 1 chosen" })).toBeVisible()
+  })
+
   test("generates reports with include or exclude tag scope", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const suffix = Date.now()

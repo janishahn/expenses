@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import type { QueryClient } from "@tanstack/react-query"
 import type { ReceiptFile } from "../components/ui/receipt-file"
 import type { ReceiptAttachment, TransactionDetail, TransactionListItem } from "./api-types"
@@ -34,6 +35,16 @@ export function invalidateTransactionData(queryClient: QueryClient) {
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] })
   }
+}
+
+// A list search as the server sees it: typing reaches it once input pauses, and clearing applies at once.
+export function useSettledSearch(search: string): string {
+  const [settled, setSettled] = useState(search)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(search), search ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  }, [search])
+  return search ? settled : ""
 }
 
 // "2026-10-22T20:15" from a stored occurred_at, falling back to noon on the booking date.

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
@@ -12,6 +12,9 @@ from expenses.auth.mobile_sessions import (
 from expenses.auth.sessions import is_auth_session_elevated, lookup_auth_session
 from expenses.core.config import get_settings
 from expenses.db.models import AuthSession, MobileAuthSession, User
+
+# A write on every request would queue each iOS read behind SQLite's write lock.
+MOBILE_SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -107,9 +110,16 @@ def resolve_auth_context(
 
 
 def _touch_mobile_session(context: AuthContext, db: Session) -> None:
-    if context.mobile_session is None:
+    mobile_session = context.mobile_session
+    if mobile_session is None:
         return
-    touch_mobile_auth_session(context.mobile_session, now=context.checked_at)
+    if (
+        mobile_session.last_used_at is not None
+        and context.checked_at - mobile_session.last_used_at
+        < MOBILE_SESSION_TOUCH_INTERVAL
+    ):
+        return
+    touch_mobile_auth_session(mobile_session, now=context.checked_at)
     db.commit()
 
 

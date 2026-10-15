@@ -45,7 +45,12 @@ struct CameraCaptureView: UIViewControllerRepresentable {
 }
 
 enum ReceiptImageProcessor {
-    static func jpegData(from image: UIImage) -> Data? {
+    /// Runs off the main thread: scaling and encoding a full-size photo takes a noticeable moment.
+    static func jpegData(from image: UIImage) async -> Data? {
+        await Task.detached(priority: .userInitiated) { encode(image) }.value
+    }
+
+    private static func encode(_ image: UIImage) -> Data? {
         let maxDimension: CGFloat = 2000
         let size = image.size
         let scale = min(1, maxDimension / max(size.width, size.height))

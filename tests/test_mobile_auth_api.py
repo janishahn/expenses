@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -142,8 +145,12 @@ def test_mobile_bearer_can_use_existing_domain_endpoints_without_csrf(
     ]
 
 
-def test_mobile_domain_endpoint_updates_session_last_used_at(
-    anonymous_api_client: TestClient,
+@pytest.mark.parametrize(
+    ("stored_age", "updated"),
+    [(timedelta(days=365 * 20), True), (timedelta(minutes=1), False)],
+)
+def test_mobile_domain_endpoint_updates_stale_session_last_used_at(
+    anonymous_api_client: TestClient, stored_age: timedelta, updated: bool
 ) -> None:
     setup = anonymous_api_client.post(
         "/api/mobile/auth/setup",
@@ -157,13 +164,14 @@ def test_mobile_domain_endpoint_updates_session_last_used_at(
     db_iterator = override()
     db = next(db_iterator)
     try:
+        stored = (datetime.utcnow() - stored_age).replace(microsecond=0)
         db.execute(
             text(
                 "UPDATE mobile_auth_sessions "
-                "SET last_used_at = '2000-01-01 00:00:00' "
+                "SET last_used_at = :stored "
                 "WHERE id = :session_id"
             ),
-            {"session_id": session_id},
+            {"stored": stored, "session_id": session_id},
         )
         db.commit()
     finally:
@@ -183,7 +191,7 @@ def test_mobile_domain_endpoint_updates_session_last_used_at(
         ).scalar_one()
     finally:
         db_iterator.close()
-    assert str(last_used_at) != "2000-01-01 00:00:00"
+    assert (str(last_used_at) != str(stored)) is updated
 
 
 def test_web_cookie_mutations_still_require_csrf(

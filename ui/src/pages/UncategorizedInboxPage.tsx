@@ -12,7 +12,7 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { Navigate, useLocation, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { CategorySummary, TransactionListItem, TransactionsResponse } from "../app/api-types"
-import { dayLabel, invalidateTransactionData } from "../app/transactions"
+import { dayLabel, invalidateTransactionData, useSettledSearch } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
@@ -92,24 +92,29 @@ function UncategorizedInboxPage() {
   const [bulkPending, setBulkPending] = useState(false)
 
   // The server sees only the list's own parameters, never the open peek.
+  const settledSearch = useSettledSearch(searchQuery)
   const queryString = useMemo(() => {
     const params = new URLSearchParams()
     for (const key of LIST_KEYS) {
       const value = searchParams.get(key)
       if (value) params.set(key, value)
     }
+    if (settledSearch) params.set("q", settledSearch)
+    else params.delete("q")
     if (!params.get("period")) params.set("period", "all")
     if (!params.get("page")) params.set("page", "1")
     return params.toString()
-  }, [searchParams])
+  }, [searchParams, settledSearch])
 
   // A selection belongs to the search and page it was made on; a change starts a new one.
+  // The typed search counts at once, before the debounced query catches up.
+  const selectionKey = `${queryString}\n${searchQuery}`
   const [selectionState, setSelectionState] = useState<{ query: string; selection: Selection }>({
-    query: queryString,
+    query: selectionKey,
     selection: { mode: "ids", ids: [] },
   })
-  const selection: Selection = selectionState.query === queryString ? selectionState.selection : { mode: "ids", ids: [] }
-  const setSelection = (next: Selection) => setSelectionState({ query: queryString, selection: next })
+  const selection: Selection = selectionState.query === selectionKey ? selectionState.selection : { mode: "ids", ids: [] }
+  const setSelection = (next: Selection) => setSelectionState({ query: selectionKey, selection: next })
   // Mobile rows have no hover checkbox; Select in the ⋯ menu turns row taps into toggles.
   const [selectMode, setSelectMode] = useState(false)
   const selecting = selectMode && !isDesktop

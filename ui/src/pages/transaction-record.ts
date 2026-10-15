@@ -39,12 +39,12 @@ export function useTransactionRecord(id: number) {
     placeholderData: undefined,
   })
   const categoriesQuery = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
   const tagsQuery = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
   })
   const stored = detailQuery.data?.id === id ? detailQuery.data : undefined
   const reimbursementsQuery = useQuery({

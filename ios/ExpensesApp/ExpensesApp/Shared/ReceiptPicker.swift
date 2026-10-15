@@ -77,10 +77,12 @@ private struct ReceiptPicker: ViewModifier {
             .photosPicker(isPresented: presented(.photos), selection: $photoItem, matching: .images)
             .sheet(isPresented: presented(.camera)) {
                 CameraCaptureView { image in
-                    if let data = ReceiptImageProcessor.jpegData(from: image) {
-                        onPick(.photo(data))
-                    } else {
-                        onFailure("The photo could not be prepared.")
+                    Task {
+                        if let data = await ReceiptImageProcessor.jpegData(from: image) {
+                            onPick(.photo(data))
+                        } else {
+                            onFailure("The photo could not be prepared.")
+                        }
                     }
                 }
                 .ignoresSafeArea()
@@ -93,7 +95,7 @@ private struct ReceiptPicker: ViewModifier {
                 Task {
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let image = UIImage(data: data),
-                       let jpeg = ReceiptImageProcessor.jpegData(from: image)
+                       let jpeg = await ReceiptImageProcessor.jpegData(from: image)
                     {
                         onPick(.photo(jpeg))
                     } else {

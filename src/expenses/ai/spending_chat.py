@@ -1063,7 +1063,9 @@ class SpendingChatService:
             started_at=datetime.utcnow(),
         )
         self.session.add(job)
-        self.session.flush()
+        # Commit before streaming: a pending insert would hold SQLite's write
+        # lock, and every other writer, for the whole turn.
+        self.session.commit()
         log_event(
             logger,
             logging.INFO,
@@ -1163,7 +1165,8 @@ class SpendingChatService:
             )
             raise
         except LLMDisabledError:
-            self.session.rollback()
+            self.session.delete(job)
+            self.session.commit()
             raise
         except SpendingChatError as exc:
             job.status = "failed"

@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -62,7 +63,8 @@ export function ChatBubble({ children }: { children: ReactNode }) {
   return <div className={s.bubble}>{children}</div>
 }
 
-export function ChatMarkdown({ content }: { content: string }) {
+// Memoized: a streamed chunk re-renders the thread, and only the growing turn has new content.
+export const ChatMarkdown = memo(function ChatMarkdown({ content }: { content: string }) {
   return (
     <div className={clsx(s.md, s.chatMd)}>
       <Markdown
@@ -78,7 +80,7 @@ export function ChatMarkdown({ content }: { content: string }) {
       </Markdown>
     </div>
   )
-}
+})
 
 export function ChatProgress({ children }: { children: ReactNode }) {
   return (

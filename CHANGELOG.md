@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The redesigned iOS app needs a 0.7.1 or later server.
 - An expense's Durable property shows only while it is tracked. Start tracking from ⋯ › Track as durable… on the web, or ⋯ › Track as Durable… on iOS.
 - The amount a reimbursement suggests for an expense it already pays back now includes what is allocated there, because saving replaces that allocation.
+- The server records a device's last use at most every five minutes instead of on every iOS request, so the iOS device list can show a last use up to five minutes old.
+- The web Transactions, Uncategorized, and Reconcile match searches ask the server once typing pauses instead of on every key. Printing the Transactions ledger loads 1,000 rows per request instead of 100, and Undo after Match All or Ignore Remaining Rows in Reconcile takes one request per 500 rows; rows that changed since stay as they are.
+- Saving a transaction on the web no longer reloads every category's and tag's all-time totals for the pickers, and the Insights month grids and daily calendar no longer redraw every cell while the pointer moves.
+- After a save, iOS reloads the Transactions pages already loaded four at a time instead of one after another. The Dashboard reloads after a change, or when you return to it a minute or more after its last load, instead of each time it appears. Assistant answers redraw less while they stream, and receipt photos are prepared off the main thread.
 
 ### Removed
 - The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
@@ -39,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Amounts with a third decimal, such as 12,345, are rejected on the web and iOS instead of being rounded to cents.
 - Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry. When the add-transaction form's code can't load, a message offers Reload and the page stays.
 - Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
+- Saves made while an AI feature waited for its model, such as an Assistant answer, could stall for five seconds and fail with "database is locked". The AI job no longer holds the database's write lock during the model call.
+- CSV and statement imports, archive imports, receipt uploads, and email ingest no longer pause every other request while the server processes them.
+- When the iOS app's session expired or was revoked while the Dashboard or Transactions loaded, Sign in stayed disabled until the app restarted. Sign in now works right away.
 
 ## [0.7.1] - 2026-10-14
 

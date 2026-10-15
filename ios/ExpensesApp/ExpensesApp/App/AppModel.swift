@@ -760,17 +760,37 @@ final class AppModel {
         )
         let client = apiClient
         assistantStreamTask = Task {
+            // Text reaches the transcript at most every 50 ms instead of once per token.
+            var pendingText = ""
+            var lastFlush = ContinuousClock.now
+            @MainActor func flushText() {
+                guard !pendingText.isEmpty else { return }
+                applyAssistantEvent(.textChunk(content: pendingText), turnID: assistantTurnID)
+                pendingText = ""
+                lastFlush = .now
+            }
             do {
                 for try await event in client.spendingChatStream(request, token: token) {
+                    if case let .textChunk(content) = event {
+                        pendingText += content
+                        if ContinuousClock.now - lastFlush >= .milliseconds(50) {
+                            flushText()
+                        }
+                        continue
+                    }
+                    flushText()
                     applyAssistantEvent(event, turnID: assistantTurnID)
                 }
+                flushText()
                 finishAssistantStream(turnID: assistantTurnID, stopped: Task.isCancelled)
             } catch let error as APIErrorInfo {
+                flushText()
                 if error.statusCode == 401 {
                     handleAPIError(error)
                 }
                 failAssistantStream(turnID: assistantTurnID, message: error.message)
             } catch {
+                flushText()
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled {
                     finishAssistantStream(turnID: assistantTurnID, stopped: true)
                 } else {
@@ -904,16 +924,18 @@ final class AppModel {
     /// reimbursements it can draw from. Unless `replacingShown`, a refresh that finishes
     /// after another transaction opened leaves that one shown.
     private func refreshTransactionDetail(id: Int, token: String, replacingShown: Bool = false) async throws {
-        let detail = try await apiClient.transactionDetail(id: id, token: token)
-        let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+        let client = apiClient
+        async let reimbursementsRequest = client.transactionReimbursements(id: id, token: token)
+        let detail = try await client.transactionDetail(id: id, token: token)
         var open: OpenReimbursementsResponse?
         if detail.type == "expense" {
             do {
-                open = try await apiClient.openReimbursements(expenseID: id, token: token)
+                open = try await client.openReimbursements(expenseID: id, token: token)
             } catch let error as APIErrorInfo where error.statusCode == 404 {
                 // A server from before this list answers 404; the expense still opens.
             }
         }
+        let reimbursements = try await reimbursementsRequest
         guard replacingShown || selectedTransaction?.id == id else {
             return
         }
@@ -1491,9 +1513,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.updateCategory(id: id, body: body, token: token)
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1520,9 +1540,7 @@ final class AppModel {
                 CategoryMergeRequest(sourceCategoryID: sourceID, targetCategoryID: targetID),
                 token: token
             )
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
             if let month = budgets?.monthValue {
                 budgets = try await apiClient.budgets(month: month, token: token)
             }
@@ -1539,8 +1557,7 @@ final class AppModel {
             } else {
                 try await apiClient.createTag(body, token: token)
             }
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1567,8 +1584,7 @@ final class AppModel {
                 TagMergeRequest(sourceTagID: sourceID, targetTagID: targetID),
                 token: token
             )
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1578,8 +1594,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteTag(id: id, token: token)
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1646,8 +1661,9 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
+            async let ledger: Void = reloadLedger(token: token)
             try await refreshTransactionDetail(id: id, token: token)
-            try await reloadLedger(token: token)
+            try await ledger
         }
     }
 
@@ -1969,17 +1985,18 @@ final class AppModel {
         guard let token else {
             return
         }
-        try await reloadLedger(token: token)
-        try await reloadOrganizeData(token: token)
+        async let ledger: Void = reloadLedger(token: token)
+        async let organize: Void = reloadOrganizeData(token: token)
+        _ = try await (ledger, organize)
     }
 
-    // The views an edit to one transaction changes.
+    // The views an edit to one transaction changes. The Dashboard reloads itself for the new revision.
     private func reloadLedger(token: String) async throws {
         ledgerRevision += 1
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-        dashboardLoadState = .loaded
+        let client = apiClient
+        async let uncategorized = client.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token)
         try await reloadTransactions(token: token)
-        uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
+        uncategorizedCount = try await uncategorized.total
     }
 
     // The pages loaded for the current query, after a change made elsewhere, so the
@@ -1989,15 +2006,35 @@ final class AppModel {
         transactionsLoadID += 1
         let loadID = transactionsLoadID
         let pages = loadedTransactionQuery == query ? transactions?.page ?? 1 : 1
-        var response = try await apiClient.transactions(query, page: 1, token: token)
-        while loadID == transactionsLoadID && response.page < pages && response.hasMore {
-            var next = try await apiClient.transactions(query, page: response.page + 1, token: token)
-            next.items = response.items + next.items
-            response = next
+        // Four pages at a time, so a long scroll reloads quickly without flooding a small server.
+        let client = apiClient
+        let responses: [TransactionsResponse] = try await withThrowingTaskGroup(of: TransactionsResponse.self) { group in
+            var responses: [TransactionsResponse] = []
+            for page in 1...pages {
+                if page > 4, let response = try await group.next() {
+                    responses.append(response)
+                }
+                // A newer load, such as for another period, replaces this one.
+                guard loadID == transactionsLoadID else {
+                    group.cancelAll()
+                    return []
+                }
+                group.addTask { try await client.transactions(query, page: page, token: token) }
+            }
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses.sorted { $0.page < $1.page }
         }
-        // A newer load, such as for another period, replaces this one.
         guard loadID == transactionsLoadID else {
             return
+        }
+        // The list may have shrunk, so it ends at the first page with nothing after it.
+        var response = responses[0]
+        for page in responses.dropFirst() where response.hasMore {
+            var next = page
+            next.items = response.items + next.items
+            response = next
         }
         transactions = response
         loadedTransactionQuery = query
@@ -2005,22 +2042,30 @@ final class AppModel {
     }
 
     private func reloadOrganizeData(token: String) async throws {
-        categories = try await apiClient.categories(period: categoriesPeriod, token: token)
-        tags = try await apiClient.tags(period: tagsPeriod, token: token)
-        templates = try await apiClient.templates(token: token)
-        rules = try await apiClient.rules(token: token)
+        let client = apiClient
+        let categoriesPeriod = categoriesPeriod
+        let tagsPeriod = tagsPeriod
+        let llmEnabled = llmEnabled
+        async let loadedCategories = client.categories(period: categoriesPeriod, token: token)
+        async let loadedTags = client.tags(period: tagsPeriod, token: token)
+        async let loadedTemplates = client.templates(token: token)
+        async let loadedRules = client.rules(token: token)
+        async let loadedSuggestions = llmEnabled ? client.ruleSuggestions(token: token) : []
+        categories = try await loadedCategories
+        tags = try await loadedTags
+        templates = try await loadedTemplates
+        rules = try await loadedRules
         if llmEnabled {
-            ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+            ruleSuggestions = try await loadedSuggestions
         }
     }
 
-    // Budgets also show on the Dashboard and in the Insights budget history.
+    // Budgets also show on the Dashboard and in the Insights budget history, which reload for the new revision.
     private func reloadBudgetViews(token: String) async throws {
         ledgerRevision += 1
         if let month = budgets?.monthValue {
             budgets = try await apiClient.budgets(month: month, token: token)
         }
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
     }
 
     private func readSecurityScopedData(from fileURL: URL) throws -> Data {
@@ -2048,6 +2093,8 @@ final class AppModel {
         aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
+        // The superseded loads skip their own reset, which would keep Sign in disabled.
+        isLoading = false
         dashboard = nil
         dashboardExcludedTagIDs = []
         dashboardBalanceHistory = nil
