@@ -11,6 +11,8 @@ struct SignInView: View {
     @State private var password = ""
     @State private var setupToken = ""
     @State private var createsAccount = false
+    // The last status check failed. Until a check finishes, the screen shows progress.
+    @State private var statusCheckFailed = false
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -48,7 +50,7 @@ struct SignInView: View {
         !username.trimmingCharacters(in: .whitespaces).isEmpty
             && !password.isEmpty
             && model.status != nil
-            && !(mode == .setup && model.status?.setupTokenRequired == true && setupToken.isEmpty)
+            && !(mode == .setup && model.status?.setupTokenRequired == true && trimmedSetupToken.isEmpty)
             && !model.isLoading
     }
 
@@ -70,11 +72,7 @@ struct SignInView: View {
                         .onSubmit { Task { await connect() } }
                         .authFieldRow(.server, focus: $focusedField)
                     if model.status == nil {
-                        if model.isLoading {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                                .authRow()
-                        } else {
+                        if statusCheckFailed {
                             HStack {
                                 Text("Can't reach this server")
                                     .foregroundStyle(ExpensesTheme.expense(for: scheme))
@@ -84,6 +82,10 @@ struct SignInView: View {
                                 }
                             }
                             .authRow()
+                        } else {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .authRow()
                         }
                     }
                 }
@@ -137,6 +139,18 @@ struct SignInView: View {
         .onAppear {
             server = model.baseURLString
         }
+        // The server may have finished setup since its status was last read.
+        .task {
+            if model.status == nil {
+                await checkStatus()
+            } else {
+                await model.refreshStatus()
+            }
+        }
+    }
+
+    private var trimmedSetupToken: String {
+        setupToken.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // A new address replaces the old server's session state, so it applies on submit only.
@@ -145,7 +159,13 @@ struct SignInView: View {
         if address != model.baseURLString {
             model.baseURLString = address
         }
+        await checkStatus()
+    }
+
+    private func checkStatus() async {
+        statusCheckFailed = false
         await model.testConnection()
+        statusCheckFailed = model.status == nil
     }
 
     private func submit() async {
@@ -163,7 +183,7 @@ struct SignInView: View {
         case .createAccount:
             await model.signup(username: name, password: password, deviceName: device)
         case .setup:
-            await model.setup(username: name, password: password, deviceName: device, setupToken: setupToken)
+            await model.setup(username: name, password: password, deviceName: device, setupToken: trimmedSetupToken)
         }
     }
 }

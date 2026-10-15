@@ -100,8 +100,10 @@ struct AdminElevationRequest: Codable, Equatable {
     let password: String
 }
 
-struct APIErrorInfo: Error, Equatable {
+struct APIErrorInfo: LocalizedError, Equatable {
     var message: String
     var statusCode: Int?
     var requestID: String?
+
+    var errorDescription: String? { message }
 }

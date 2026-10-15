@@ -7,18 +7,24 @@ struct DiagnosticsView: View {
 
     @State private var testing = false
     @State private var connected = false
+    @State private var server = ""
+    @State private var confirmingSwitch = false
 
     var body: some View {
-        @Bindable var model = model
-
         List {
             Section("Server") {
-                TextField("Server URL", text: $model.baseURLString)
+                TextField("Server URL", text: $server)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
+                    .submitLabel(.go)
+                    .onSubmit { confirmingSwitch = serverChanged }
                 Button {
-                    Task { await test() }
+                    if serverChanged {
+                        confirmingSwitch = true
+                    } else {
+                        Task { await test() }
+                    }
                 } label: {
                     HStack {
                         Text("Test connection")
@@ -33,7 +39,8 @@ struct DiagnosticsView: View {
                 }
                 .disabled(testing)
                 Button("Use local server") {
-                    model.resetBaseURL()
+                    server = ExpensesAppStorage.defaultLocalBackendURL
+                    confirmingSwitch = serverChanged
                 }
             }
             .expensesRowBackground()
@@ -62,6 +69,24 @@ struct DiagnosticsView: View {
         .onChange(of: model.baseURLString) {
             connected = false
         }
+        .onAppear {
+            server = model.baseURLString
+        }
+        // A new address replaces this server's session, so it applies only once confirmed.
+        .alert("Switch server?", isPresented: $confirmingSwitch) {
+            Button("Cancel", role: .cancel) {
+                server = model.baseURLString
+            }
+            Button("Switch", role: .destructive) {
+                model.baseURLString = server.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        } message: {
+            Text("This signs you out. Sign in again on the new server.")
+        }
+    }
+
+    private var serverChanged: Bool {
+        server.trimmingCharacters(in: .whitespacesAndNewlines) != model.baseURLString
     }
 
     private func test() async {

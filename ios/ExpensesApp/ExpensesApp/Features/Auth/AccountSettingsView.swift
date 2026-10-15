@@ -12,6 +12,7 @@ struct AccountSettingsView: View {
     @State private var revokingSession: MobileSession?
     @State private var sessionError: String?
     @State private var loadError: String?
+    @State private var signOutError: String?
 
     var body: some View {
         List {
@@ -19,7 +20,10 @@ struct AccountSettingsView: View {
                 Section {
                     LabeledContent("Username", value: user.username)
                     Button("Sign out", role: .destructive) {
-                        Task { await model.logout() }
+                        Task { await signOut() }
+                    }
+                    if let signOutError {
+                        FieldError(signOutError)
                     }
                 }
                 .expensesRowBackground()
@@ -155,6 +159,15 @@ struct AccountSettingsView: View {
     private func load() async {
         await model.loadAccountSettings()
         loadError = model.settings == nil ? model.lastError?.message ?? "The server didn't respond." : nil
+    }
+
+    // The session stays until the server revokes it, so a failed sign-out shows why.
+    private func signOut() async {
+        signOutError = nil
+        await model.logout()
+        if model.hasSession {
+            signOutError = model.lastError?.message ?? "Couldn't sign out."
+        }
     }
 
     private func rotateToken() async {

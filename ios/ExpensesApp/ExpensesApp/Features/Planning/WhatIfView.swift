@@ -226,6 +226,9 @@ struct WhatIfView: View {
     private func loadBaseline() async {
         let options = options
         let result = await model.chart { try await $0.forecast(horizon: options.horizon, mode: options.mode.rawValue, token: $1) }
+        guard !Task.isCancelled else {
+            return
+        }
         baseline = (options, result)
     }
 

@@ -291,6 +291,8 @@ struct BudgetsView: View {
 
     private func budgetSection(_ budgets: BudgetsResponse, kind: BudgetKind) -> some View {
         let rows = kind == .month ? budgets.categoryBudgets : budgets.yearlyBudgets
+        // An overall annual budget already covers every category, so the header totals it alone.
+        let totals = rows.first { $0.scopeCategoryID == nil }.map { [$0] } ?? rows
         let period = kind == .month ? budgets.budgetMonth.title : String(budgets.yearValue)
         return Section {
             if rows.isEmpty {
@@ -328,8 +330,8 @@ struct BudgetsView: View {
             } trailing: {
                 if !rows.isEmpty {
                     SpentAgainst(
-                        spentCents: rows.reduce(0) { $0 + budgets.spent(kind, $1) },
-                        budgetCents: rows.reduce(0) { $0 + $1.amountCents }
+                        spentCents: totals.reduce(0) { $0 + budgets.spent(kind, $1) },
+                        budgetCents: totals.reduce(0) { $0 + $1.amountCents }
                     )
                     .fontWeight(.regular)
                 }

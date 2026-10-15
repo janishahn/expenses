@@ -5,7 +5,6 @@ import SwiftUI
 struct BankRowView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
 
     let row: BankStatementRow
     let resolved: Bool

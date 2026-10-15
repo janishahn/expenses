@@ -86,7 +86,7 @@ final class AppModel {
     private var transactionsLoadState: PrimaryLoadState = .idle
     // The query the loaded rows belong to. A next page appends only to its own query.
     private(set) var loadedTransactionQuery: TransactionQuery?
-    private var loadedUncategorizedQuery: TransactionQuery?
+    private(set) var loadedUncategorizedQuery: TransactionQuery?
     private var budgetsLoadState: PrimaryLoadState = .idle
     private var recurringLoadState: PrimaryLoadState = .idle
     private var dashboardLoadID = 0
@@ -157,6 +157,13 @@ final class AppModel {
     func testConnection() async {
         await runRequest {
             status = try await apiClient.mobileStatus()
+        }
+    }
+
+    // Re-reads whether the server still needs setup, keeping any error on screen.
+    func refreshStatus() async {
+        if let status = try? await apiClient.mobileStatus() {
+            self.status = status
         }
     }
 
@@ -320,10 +327,8 @@ final class AppModel {
         return await runRequestReturningSuccess {
             try await apiClient.revokeMobileSession(id: session.id, token: token)
             if identity?.session?.id == session.id {
-                try keychain.delete(account: ExpensesAppStorage.tokenKey)
-                identity = nil
-                mobileSessions = nil
-                settings = nil
+                clearStoredSession()
+                clearUserScopedState()
             } else {
                 mobileSessions = try await apiClient.mobileSessions(token: token)
             }
@@ -401,29 +406,23 @@ final class AppModel {
         return nil
     }
 
+    /// The import's result, also when refreshing afterwards fails, so it is not imported twice.
     func commitCSV(fileURL: URL) async -> CSVCommitResponse? {
         guard let token else {
             return nil
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
+        var committed: CSVCommitResponse?
+        _ = await runRequestReturningSuccess {
             let data = try readSecurityScopedData(from: fileURL)
-            let response = try await apiClient.commitCSV(
+            committed = try await apiClient.commitCSV(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
             try await reloadPrimaryData()
             settings = try await apiClient.settings(token: token)
-            return response
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
         }
-        return nil
+        return committed
     }
 
     func elevateAdmin(password: String) async -> Bool {
@@ -1323,23 +1322,17 @@ final class AppModel {
         return nil
     }
 
+    /// The import's result, also when refreshing afterwards fails, so it is not imported twice.
     func commitLegacySQLite(_ request: LegacySQLiteCommitRequest) async -> LegacySQLiteCommitResponse? {
         guard let token else {
             return nil
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.commitLegacySQLite(request, token: token)
+        var committed: LegacySQLiteCommitResponse?
+        _ = await runRequestReturningSuccess {
+            committed = try await apiClient.commitLegacySQLite(request, token: token)
             try await reloadPrimaryData()
-            return response
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
         }
-        return nil
+        return committed
     }
 
     func loadRecurring() async {
@@ -1356,14 +1349,19 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // A new rule exists once created, even when the list doesn't refresh, so Add
+        // must not create it again.
+        var created = false
+        let saved = await runRequestReturningSuccess {
             if let id {
                 _ = try await apiClient.updateRecurringRule(id: id, body: body, token: token)
             } else {
                 _ = try await apiClient.createRecurringRule(body, token: token)
+                created = true
             }
             recurring = try await apiClient.recurring(token: token)
         }
+        return saved || created
     }
 
     func deleteRecurringRule(id: Int) async -> Bool {
@@ -1620,7 +1618,10 @@ final class AppModel {
             } else {
                 try await apiClient.deleteDurablePurchase(transactionID: transactionID, token: token)
             }
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
         }
     }
 
@@ -1692,7 +1693,10 @@ final class AppModel {
                 replacing: replacing,
                 token: token
             )
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
             try await reloadTransactions(token: token)
         }
     }
@@ -1716,7 +1720,10 @@ final class AppModel {
                 replacing: replacing,
                 token: token
             )
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
             try await reloadTransactions(token: token)
         }
     }
@@ -1727,7 +1734,10 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteAttachment(id: attachment.id, token: token)
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
             try await reloadTransactions(token: token)
         }
     }
@@ -1803,10 +1813,6 @@ final class AppModel {
         return nil
     }
 
-    func resetBaseURL() {
-        baseURLString = ExpensesAppStorage.defaultLocalBackendURL
-    }
-
     private func authenticate(
         request: MobileAuthRequest,
         mode: AuthMode,
@@ -1817,7 +1823,13 @@ final class AppModel {
             let response: MobileAuthIdentity
             switch mode {
             case .setup:
-                response = try await apiClient.mobileSetup(request, setupToken: setupToken)
+                do {
+                    response = try await apiClient.mobileSetup(request, setupToken: setupToken)
+                } catch let error as APIErrorInfo where error.statusCode == 409 {
+                    // Setup finished elsewhere, so the sign-in screen switches to signing in.
+                    status = (try? await apiClient.mobileStatus()) ?? status
+                    throw error
+                }
             case .signup:
                 response = try await apiClient.mobileSignup(request)
             case .login:
@@ -1861,6 +1873,9 @@ final class AppModel {
                 error,
                 clearsSessionOnUnauthorized: clearsSessionOnUnauthorized
             )
+        } catch is CancellationError {
+            // A view cancelled the request, as when .task(id:) restarts.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
@@ -1881,6 +1896,9 @@ final class AppModel {
                 error,
                 clearsSessionOnUnauthorized: clearsSessionOnUnauthorized
             )
+        } catch is CancellationError {
+            // A view cancelled the request, as when .task(id:) restarts.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
@@ -1923,12 +1941,19 @@ final class AppModel {
         uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
     }
 
-    // The first page for the current query, after a change made elsewhere.
+    // The pages loaded for the current query, after a change made elsewhere, so the
+    // list keeps its place.
     private func reloadTransactions(token: String) async throws {
         let query = transactionQuery
         transactionsLoadID += 1
         let loadID = transactionsLoadID
-        let response = try await apiClient.transactions(query, page: 1, token: token)
+        let pages = loadedTransactionQuery == query ? transactions?.page ?? 1 : 1
+        var response = try await apiClient.transactions(query, page: 1, token: token)
+        while loadID == transactionsLoadID && response.page < pages && response.hasMore {
+            var next = try await apiClient.transactions(query, page: response.page + 1, token: token)
+            next.items = response.items + next.items
+            response = next
+        }
         // A newer load, such as for another period, replaces this one.
         guard loadID == transactionsLoadID else {
             return

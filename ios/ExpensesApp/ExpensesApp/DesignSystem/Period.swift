@@ -49,7 +49,7 @@ enum PeriodSelection: Hashable {
         guard case let .custom(start, end) = self else {
             return ""
         }
-        return (start..<end).formatted(.interval.day().month(.abbreviated).year())
+        return (min(start, end)..<max(start, end)).formatted(.interval.day().month(.abbreviated).year())
     }
 
     /// The neighbouring month, or nil when the period is not one calendar month.
@@ -253,7 +253,7 @@ private struct PeriodRangeSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", role: .confirm) {
                         let calendar = Calendar.current
-                        period = .custom(start: calendar.startOfDay(for: start), end: calendar.startOfDay(for: end))
+                        period = .custom(start: calendar.startOfDay(for: start), end: calendar.startOfDay(for: max(start, end)))
                         dismiss()
                     }
                 }

@@ -2,7 +2,10 @@ import Foundation
 
 struct ExpensesAPIClient {
     var baseURL: URL?
-    var session: URLSession = .shared
+    var session: URLSession = Self.ephemeralSession
+
+    // Responses such as receipt images are cached in memory only, never on disk.
+    private static let ephemeralSession = URLSession(configuration: .ephemeral)
 
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -1237,7 +1240,8 @@ struct ExpensesAPIClient {
         bodyData: Data?
     ) async throws -> ResponseBody {
         let baseURL = try validatedBaseURL()
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        // URLQueryItem leaves "+" as is, which the server reads as a space.
+        guard let url = URL(string: path.replacingOccurrences(of: "+", with: "%2B"), relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
 
@@ -1280,7 +1284,8 @@ struct ExpensesAPIClient {
         bodyData: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         let baseURL = try validatedBaseURL()
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        // URLQueryItem leaves "+" as is, which the server reads as a space.
+        guard let url = URL(string: path.replacingOccurrences(of: "+", with: "%2B"), relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
 

@@ -115,6 +115,8 @@ enum AppFormatters {
         formatter.numberStyle = .currency
         formatter.currencyCode = "EUR"
         formatter.maximumFractionDigits = 0
+        // Halves round away from zero, as the web's Intl formatting does.
+        formatter.roundingMode = .halfUp
         return formatter
     }()
 }

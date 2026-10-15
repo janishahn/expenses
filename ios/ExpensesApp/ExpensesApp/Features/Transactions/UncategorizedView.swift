@@ -255,7 +255,7 @@ struct UncategorizedView: View {
     }
 
     private func prepareBulk(categoryID: Int) async {
-        let query = model.uncategorizedQuery.bulkSelection(
+        let query = (model.loadedUncategorizedQuery ?? model.uncategorizedQuery).bulkSelection(
             matchedCategoryIDs: model.uncategorizedTransactions?.definition.matchedCategoryIDs ?? []
         )
         let request = BulkEditRequest(

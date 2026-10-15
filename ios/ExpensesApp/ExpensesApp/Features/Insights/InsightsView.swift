@@ -20,6 +20,8 @@ struct InsightsView: View {
     @State private var split: Result<InsightsRecurringSplitResponse, APIErrorInfo>?
     @State private var calendar: Result<InsightsDayCalendarResponse, APIErrorInfo>?
     @State private var budgetHistory: Result<InsightsBudgetHistoryResponse, APIErrorInfo>?
+    // The ledger revision the figures were loaded at; an edit to a transaction reloads them.
+    @State private var revision: Int?
 
     private var tags: [TransactionTag] {
         if case .success(let data) = insights?.result {
@@ -48,11 +50,7 @@ struct InsightsView: View {
                 }
             }
             .refreshable {
-                grids = [:]
-                async let insights: Void = loadInsights()
-                async let grid: Void = loadGrid()
-                async let windows: Void = loadWindows()
-                _ = await (insights, grid, windows)
+                await reload()
             }
             .headerProminence(.increased)
             .environment(\.defaultMinListRowHeight, 28)
@@ -85,12 +83,26 @@ struct InsightsView: View {
                     await loadGrid()
                 }
             }
-            .task {
-                if split == nil {
+            .task(id: model.ledgerRevision) {
+                let current = model.ledgerRevision
+                if let revision, revision != current {
+                    await reload()
+                } else if split == nil {
                     await loadWindows()
+                }
+                if !Task.isCancelled {
+                    revision = current
                 }
             }
         }
+    }
+
+    private func reload() async {
+        grids = [:]
+        async let insights: Void = loadInsights()
+        async let grid: Void = loadGrid()
+        async let windows: Void = loadWindows()
+        _ = await (insights, grid, windows)
     }
 
     private func loadInsights() async {
@@ -114,7 +126,11 @@ struct InsightsView: View {
         async let split = model.chart { try await $0.insightsRecurringSplit(token: $1) }
         async let calendar = model.chart { try await $0.insightsDayCalendar(token: $1) }
         async let budgetHistory = model.chart { try await $0.insightsBudgetHistory(token: $1) }
-        (self.split, self.calendar, self.budgetHistory) = await (split, calendar, budgetHistory)
+        let results = await (split, calendar, budgetHistory)
+        guard !Task.isCancelled else {
+            return
+        }
+        (self.split, self.calendar, self.budgetHistory) = results
     }
 }
 
@@ -627,7 +643,7 @@ private struct MonthGridRowView: View {
                     AmountText(values.reduce(0, +))
                         .foregroundStyle(.primary)
                 }
-                LabeledContent("Average per month") {
+                LabeledContent("Average, last \(full.count) full months") {
                     AmountText(Int((Double(full.reduce(0, +)) / Double(max(full.count, 1))).rounded()))
                         .foregroundStyle(.primary)
                 }
@@ -667,7 +683,8 @@ private struct MonthGridRowView: View {
 private struct DailySpendingSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
-    @State private var selected: Int?
+    // A date, so the choice stays on its day when a refresh moves the weeks.
+    @State private var selected: Date?
 
     let calendar: Result<InsightsDayCalendarResponse, APIErrorInfo>?
     let openTransactions: (TransactionQuery) -> Void
@@ -687,7 +704,7 @@ private struct DailySpendingSection: View {
                 ChartMessage(text: "Daily spending is unavailable.")
             case .success(let data):
                 let days = DayGrid(data)
-                let index = selected ?? days.today
+                let index = days.dates.indices.first { days.dates[$0] == selected && days.amounts[$0] != nil } ?? days.today
                 grid(days, selected: index)
                     .padding(.vertical, 6)
                 dayRow(days, index: index)
@@ -721,7 +738,7 @@ private struct DailySpendingSection: View {
         let week = min(max(Int(point.x / step), 0), days.weeks - 1)
         let index = week * 7 + min(max(Int(point.y / step), 0), 6)
         if days.amounts[index] != nil {
-            selected = index
+            selected = days.dates[index]
         }
     }
 
@@ -791,7 +808,7 @@ private struct DailySpendingSection: View {
         .accessibilityAdjustableAction { direction in
             let next = selected + (direction == .increment ? 1 : -1)
             if days.amounts.indices.contains(next), days.amounts[next] != nil {
-                self.selected = next
+                self.selected = days.dates[next]
             }
         }
     }

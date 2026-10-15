@@ -117,6 +117,10 @@ struct TagDetailView: View {
                 commitName()
             }
         }
+        // Back can close the screen before the field reports losing focus.
+        .onDisappear {
+            commitName()
+        }
         .task {
             if model.tags == nil {
                 _ = await model.loadTags()
@@ -197,7 +201,7 @@ struct TagDetailView: View {
                     confirm: "Save",
                     onTurnOff: shown.autoAttachPeriod == nil ? nil : { save(.auto) { $0.autoAttachPeriod = nil } }
                 ) { period in
-                    if period != tag.autoAttachPeriod || saves.errors[.auto] != nil {
+                    if period != shown.autoAttachPeriod || saves.errors[.auto] != nil {
                         save(.auto) { $0.autoAttachPeriod = period }
                     }
                 }
@@ -301,7 +305,7 @@ struct TagDetailView: View {
             return
         }
         nameDraft = name
-        if name != tag.name || saves.errors[.name] != nil {
+        if name != shown(tag).name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

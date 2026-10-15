@@ -268,6 +268,11 @@ struct RecurringRuleView: View {
                 break
             }
         }
+        // Back can close the screen before the focused field reports losing focus.
+        .onDisappear {
+            commitName()
+            commitAmount()
+        }
         .task {
             if model.recurring == nil {
                 await model.loadRecurring()
@@ -392,7 +397,12 @@ struct RecurringRuleView: View {
             .tint(.primary)
             .popover(isPresented: $choosingStart) {
                 DayPopover(day: AppFormatters.localDay(anchor), confirm: "Save") { day in
-                    save(.starts) { $0.anchorDate = AppFormatters.isoDay(day) }
+                    let start = AppFormatters.isoDay(day)
+                    // The server posts from the next occurrence, so a later start moves it too.
+                    save(.starts) {
+                        $0.anchorDate = start
+                        $0.nextOccurrence = max($0.nextOccurrence, start)
+                    }
                 }
             }
             .fieldError(saves.errors[.starts])
@@ -560,7 +570,7 @@ struct RecurringRuleView: View {
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         nameDraft = name
         let value = name.isEmpty ? nil : name
-        if value != rule.name || saves.errors[.name] != nil {
+        if value != shown(rule).name || saves.errors[.name] != nil {
             save(.name) { $0.name = value }
         }
     }
@@ -574,7 +584,7 @@ struct RecurringRuleView: View {
             return
         }
         editingAmount = false
-        if cents != rule.amountCents || saves.errors[.amount] != nil {
+        if cents != shown(rule).amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
     }

@@ -383,7 +383,8 @@ struct DayGroup: Identifiable {
     let date: Date
     var rows: [TransactionListItem]
 
-    var id: Date { date }
+    // A back-dated row can bring a date back further down, so the date alone is not unique.
+    var id: Int { rows[0].id }
 
     // Expenses count at their net after reimbursements; a reimbursement is not income.
     var net: Int {

@@ -94,6 +94,10 @@ struct TemplateDetailView: View {
                 commitName()
             }
         }
+        // Back can close the screen before the field reports losing focus.
+        .onDisappear {
+            commitName()
+        }
         .task {
             if model.templates == nil {
                 _ = await model.loadTemplates()
@@ -168,7 +172,7 @@ struct TemplateDetailView: View {
                     if amount == .invalid {
                         return "Default amount must be a valid number."
                     }
-                    if amount.cents != template.defaultAmountCents || saves.errors[.amount] != nil {
+                    if amount.cents != shown.defaultAmountCents || saves.errors[.amount] != nil {
                         save(.amount) { $0.defaultAmountCents = amount.cents }
                     }
                     return nil
@@ -190,7 +194,7 @@ struct TemplateDetailView: View {
                 ValuePopover(title: "Transaction title", text: shown.title ?? "", confirm: "Save") { raw in
                     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                     let title = trimmed.isEmpty ? nil : trimmed
-                    if title != template.title || saves.errors[.title] != nil {
+                    if title != shown.title || saves.errors[.title] != nil {
                         save(.title) { $0.title = title }
                     }
                     return nil
@@ -255,7 +259,7 @@ struct TemplateDetailView: View {
             return
         }
         nameDraft = name
-        if name != template.name || saves.errors[.name] != nil {
+        if name != shown(template).name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

@@ -112,6 +112,9 @@ struct ForecastView: View {
         async let full = model.chart { try await $0.forecast(horizon: options.horizon, mode: options.mode.rawValue, token: $1) }
         async let recurring = loadReference(options)
         let (result, referenceResult) = await (full, recurring)
+        guard !Task.isCancelled else {
+            return
+        }
         forecast = (options, result)
         reference = referenceResult
     }

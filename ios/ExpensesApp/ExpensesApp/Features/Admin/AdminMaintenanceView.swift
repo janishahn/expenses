@@ -98,6 +98,10 @@ struct AdminMaintenanceView: View {
         }
         .navigationTitle("Maintenance")
         .expensesScreenStyle()
+        // The count for other days must not show, or confirm a purge, while the new one loads.
+        .onChange(of: days) {
+            purgeCount = nil
+        }
         .task(id: days) {
             await loadPurgeCount()
         }
@@ -223,7 +227,7 @@ struct AdminMaintenanceView: View {
     private func loadPurgeCount() async {
         let days = days
         let result = await model.chart { try await $0.purgeDeletedPreview(days: days, token: $1).count }
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, days == self.days else {
             return
         }
         purgeCount = result

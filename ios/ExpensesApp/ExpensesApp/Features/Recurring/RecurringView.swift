@@ -257,7 +257,7 @@ private struct AnnualMixSection: View {
                     categoryID: id,
                     name: rules[0].category?.name ?? "Uncategorized",
                     cents: cents,
-                    share: percent(cents, of: totalCents)
+                    share: totalCents > 0 ? percent(cents, of: totalCents) : "–"
                 )
             }
             .sorted { $0.cents > $1.cents }

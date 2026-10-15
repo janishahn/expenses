@@ -178,6 +178,12 @@ struct TransactionDetailView: View {
                 break
             }
         }
+        // Back can close the screen before the focused field reports losing focus.
+        .onDisappear {
+            commitTitle()
+            commitAmount()
+            commitNotes()
+        }
         .task {
             await reload()
             if model.tags == nil {
@@ -222,11 +228,13 @@ struct TransactionDetailView: View {
     private func properties(_ transaction: TransactionDetail, _ shown: TransactionMutationRequest) -> some View {
         Section {
             Picker("Type", selection: Binding(get: { shown.type }, set: { next in
-                save(.type) { body in
-                    body.type = next
-                    body.categoryID = nil
-                    if next == .expense {
-                        body.isReimbursement = false
+                if next != shown.type || saves.errors[.type] != nil {
+                    save(.type) { body in
+                        body.type = next
+                        body.categoryID = nil
+                        if next == .expense {
+                            body.isReimbursement = false
+                        }
                     }
                 }
             })) {
@@ -503,7 +511,7 @@ struct TransactionDetailView: View {
             return
         }
         titleDraft = title
-        if title != transaction.title || saves.errors[.title] != nil {
+        if title != shown(transaction).title || saves.errors[.title] != nil {
             save(.title) { $0.title = title }
         }
     }
@@ -517,7 +525,7 @@ struct TransactionDetailView: View {
             return
         }
         editingAmount = false
-        if cents != transaction.amountCents || saves.errors[.amount] != nil {
+        if cents != shown(transaction).amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
     }
@@ -528,7 +536,7 @@ struct TransactionDetailView: View {
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = notes.isEmpty ? nil : notes
-        if description != transaction.description || saves.errors[.notes] != nil {
+        if description != shown(transaction).description || saves.errors[.notes] != nil {
             save(.notes) { $0.description = description }
         }
     }

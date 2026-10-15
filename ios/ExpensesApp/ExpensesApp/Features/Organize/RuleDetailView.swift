@@ -5,7 +5,6 @@ import SwiftUI
 struct RuleDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
 
     let ruleID: Int
 
@@ -43,8 +42,8 @@ struct RuleDetailView: View {
             if let rule, let rules = model.rules {
                 let shown = shown(rule)
                 head
-                general(rule, shown)
-                when(rule, shown)
+                general(shown)
+                when(shown)
                 then(rule, shown, rules: rules)
                 matchesSection
             } else if model.rules != nil {
@@ -107,6 +106,10 @@ struct RuleDetailView: View {
                 commitName()
             }
         }
+        // Back can close the screen before the field reports losing focus.
+        .onDisappear {
+            commitName()
+        }
         .task {
             if model.rules == nil {
                 _ = await model.loadRules()
@@ -140,7 +143,7 @@ struct RuleDetailView: View {
         .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
     }
 
-    private func general(_ rule: RuleRow, _ shown: RuleMutationRequest) -> some View {
+    private func general(_ shown: RuleMutationRequest) -> some View {
         Section {
             Toggle("Enabled", isOn: Binding(get: { shown.enabled }, set: { enabled in
                 save(.enabled) { $0.enabled = enabled }
@@ -161,7 +164,7 @@ struct RuleDetailView: View {
                 ValuePopover(title: "Priority", text: String(shown.priority), keyboard: .numberPad, confirm: "Save") { raw in
                     switch parsePriority(raw) {
                     case .success(let priority):
-                        if priority != rule.priority || saves.errors[.priority] != nil {
+                        if priority != shown.priority || saves.errors[.priority] != nil {
                             save(.priority) { $0.priority = priority }
                         }
                         return nil
@@ -175,7 +178,7 @@ struct RuleDetailView: View {
         .expensesRowBackground()
     }
 
-    private func when(_ rule: RuleRow, _ shown: RuleMutationRequest) -> some View {
+    private func when(_ shown: RuleMutationRequest) -> some View {
         Section("When") {
             Picker("Type", selection: Binding(get: { shown.transactionType }, set: { changeType($0, shown) })) {
                 Text("Any").tag(TransactionKind?.none)
@@ -197,7 +200,7 @@ struct RuleDetailView: View {
             .tint(.primary)
             .popover(isPresented: $choosingTitle) {
                 TitlePopover(matchType: shown.matchType, value: shown.matchValue, confirm: "Save") { matchType, value in
-                    if matchType != rule.matchType || value != rule.matchValue || saves.errors[.title] != nil {
+                    if matchType != shown.matchType || value != shown.matchValue || saves.errors[.title] != nil {
                         save(.title) {
                             $0.matchType = matchType
                             $0.matchValue = value
@@ -218,7 +221,7 @@ struct RuleDetailView: View {
             .tint(.primary)
             .popover(isPresented: $choosingAmount) {
                 AmountRangePopover(min: shown.minAmountCents, max: shown.maxAmountCents, confirm: "Save") { min, max in
-                    if min != rule.minAmountCents || max != rule.maxAmountCents || saves.errors[.amount] != nil {
+                    if min != shown.minAmountCents || max != shown.maxAmountCents || saves.errors[.amount] != nil {
                         save(.amount) {
                             $0.minAmountCents = min
                             $0.maxAmountCents = max
@@ -363,7 +366,7 @@ struct RuleDetailView: View {
             return
         }
         nameDraft = name
-        if name != rule.name || saves.errors[.name] != nil {
+        if name != shown(rule).name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

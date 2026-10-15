@@ -395,9 +395,13 @@ struct AISettingsView: View {
         disconnecting = true
         defer { disconnecting = false }
         do {
-            _ = try await model.disconnectChatGPT()
+            let result = try await model.disconnectChatGPT()
             pairing = nil
             catalogs["chatgpt"] = nil
+            // ChatGPT may still list Expenses, which the user then has to remove there.
+            if !result.revocationConfirmed {
+                connectionError = result.message
+            }
         } catch {
             connectionError = error.localizedDescription
         }

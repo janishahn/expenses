@@ -283,20 +283,23 @@ private struct WeekShareBar: View {
         let total = max(totalCents, top)
         let segments = categories.map { Segment(id: $0.categoryID, name: $0.name, cents: $0.amountCents) }
             + (total > top ? [Segment(id: nil, name: "Other", cents: total - top)] : [])
-        GeometryReader { geometry in
-            let width = geometry.size.width - CGFloat(segments.count - 1) * 2
-            HStack(spacing: 2) {
-                ForEach(segments) { segment in
-                    Rectangle()
-                        .fill(ExpensesTheme.category(segment.id, for: scheme))
-                        .frame(width: width * CGFloat(segment.cents) / CGFloat(total))
+        // A week whose spending was all reimbursed has nothing to split.
+        if total > 0 {
+            GeometryReader { geometry in
+                let width = geometry.size.width - CGFloat(segments.count - 1) * 2
+                HStack(spacing: 2) {
+                    ForEach(segments) { segment in
+                        Rectangle()
+                            .fill(ExpensesTheme.category(segment.id, for: scheme))
+                            .frame(width: width * CGFloat(segment.cents) / CGFloat(total))
+                    }
                 }
             }
+            .frame(height: 10)
+            .clipShape(.capsule)
+            .accessibilityElement()
+            .accessibilityLabel("Spending this week by category")
+            .accessibilityValue(segments.map { "\($0.name) \(percent($0.cents, of: total))" }.joined(separator: ", "))
         }
-        .frame(height: 10)
-        .clipShape(.capsule)
-        .accessibilityElement()
-        .accessibilityLabel("Spending this week by category")
-        .accessibilityValue(segments.map { "\($0.name) \(percent($0.cents, of: total))" }.joined(separator: ", "))
     }
 }

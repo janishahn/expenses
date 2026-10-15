@@ -77,7 +77,7 @@ struct CategoryDetailView: View {
         .sheet(isPresented: $choosingIcon) {
             if let category {
                 IconPickerSheet(selected: shown(category).icon) { icon in
-                    if icon != category.icon || saves.errors[.icon] != nil {
+                    if icon != shown(category).icon || saves.errors[.icon] != nil {
                         save(.icon) { $0.icon = icon }
                     }
                 }
@@ -116,6 +116,10 @@ struct CategoryDetailView: View {
             if !focused {
                 commitName()
             }
+        }
+        // Back can close the screen before the field reports losing focus.
+        .onDisappear {
+            commitName()
         }
         .task {
             if model.categories == nil {
@@ -181,7 +185,7 @@ struct CategoryDetailView: View {
                     guard let order = Int(raw.trimmingCharacters(in: .whitespaces)) else {
                         return "Enter a whole number."
                     }
-                    if order != category.order || saves.errors[.order] != nil {
+                    if order != shown.order || saves.errors[.order] != nil {
                         save(.order) { $0.order = order }
                     }
                     return nil
@@ -272,7 +276,7 @@ struct CategoryDetailView: View {
             return
         }
         nameDraft = name
-        if name != category.name || saves.errors[.name] != nil {
+        if name != shown(category).name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }
