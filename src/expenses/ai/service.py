@@ -508,6 +508,8 @@ class LLMAssistantService:
         )
 
     def _transaction_for_triage(self, transaction_id: int) -> Transaction | None:
+        # Reloads a row already in the session, so edits made during the model
+        # call reach the stale check.
         txn = self.session.scalar(
             select(Transaction)
             .options(joinedload(Transaction.category), joinedload(Transaction.tags))
@@ -516,6 +518,7 @@ class LLMAssistantService:
                 Transaction.id == transaction_id,
                 Transaction.deleted_at.is_(None),
             )
+            .execution_options(populate_existing=True)
         )
         if txn is None or txn.category is None:
             return None

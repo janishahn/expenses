@@ -62,14 +62,15 @@ class FailingLLMRunner:
 class WritingLLMRunner(FakeLLMRunner):
     """Writes through another connection while the model call is in flight."""
 
-    def __init__(self, output, engine):
+    def __init__(self, output, engine, sql="UPDATE llm_jobs SET error = error"):
         super().__init__(output)
         self.engine = engine
+        self.sql = sql
 
     async def run(self, **kwargs):
         with self.engine.connect() as other:
             other.exec_driver_sql("PRAGMA busy_timeout=0")
-            other.execute(text("UPDATE llm_jobs SET error = error"))
+            other.execute(text(self.sql))
             other.commit()
         return await super().run(**kwargs)
 
@@ -218,6 +219,46 @@ async def test_llm_job_leaves_database_writable_during_model_call(tmp_path) -> N
         # A no-op suggestion commits nothing else; request teardown rolls back.
         session.rollback()
         assert session.scalar(select(LLMJob)).status == "completed"
+
+
+@pytest.mark.anyio
+async def test_uncategorized_triage_drops_result_when_transaction_changes_during_call(
+    tmp_path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'expenses.db'}")
+    Base.metadata.create_all(engine)
+    # Like the app's sessions, this one keeps loaded rows across commits.
+    with Session(engine, expire_on_commit=False) as session:
+        groceries = CategoryService(session).create(
+            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
+        )
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2026, 5, 1),
+                occurred_at=datetime(2026, 5, 1, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=1299,
+                category_id=None,
+                title="Lidl",
+                tags=[],
+            )
+        )
+        runner = WritingLLMRunner(
+            TransactionTriageOutput(
+                category_id=groceries.id,
+                tags=[],
+                clean_title="Lidl",
+                confidence=0.9,
+                reason="Groceries.",
+            ),
+            engine,
+            f"UPDATE transactions SET title = 'Lidl Berlin' WHERE id = {txn.id}",
+        )
+        suggestion = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).suggest_uncategorized_transaction(txn.id)
+
+        assert suggestion is None
 
 
 @pytest.mark.anyio
