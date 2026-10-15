@@ -204,4 +204,26 @@ test.describe("Mobile state audit", () => {
     })
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
+
+  // Playwright's WebKit keeps a failed page chunk failed for the tab, even across
+  // reloads, so the reload after the server answers is covered on desktop only.
+  // Safari fetches the chunk again on reload.
+  test("a page whose code cannot load while the server is down keeps the tab bar on mobile", async ({
+    page,
+  }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    for (const url of ["**/assets/RulesPage-*.js", "**/api/**"]) {
+      await page.route(url, (route) => route.abort("connectionrefused"))
+    }
+    const tabs = page.getByRole("navigation", { name: "Tabs" })
+    await tabs.getByRole("button", { name: "More" }).tap()
+    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Rules" }).tap()
+    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
+    await expect(tabs).toBeVisible()
+  })
 })

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
 - Canceling Face ID on the iOS lock screen no longer starts Face ID again right away.
+- Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry.
 
 ## [0.7.1] - 2026-10-14
 

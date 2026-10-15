@@ -147,6 +147,47 @@ test.describe("State audit", () => {
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
 
+  test("a page whose code cannot load while the server is down reloads by itself", async ({
+    page,
+  }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    let serverDown = true
+    for (const url of ["**/assets/RulesPage-*.js", "**/api/**"]) {
+      await page.route(url, (route) =>
+        serverDown ? route.abort("connectionrefused") : route.continue(),
+      )
+    }
+    const sidebar = page.getByRole("complementary", { name: "Application navigation" })
+    await sidebar.getByRole("link", { name: "Rules", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(sidebar).toBeVisible()
+
+    serverDown = false
+    await expect(page.getByRole("button", { name: "Add rule" }).first()).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
+
+  test("a page whose code is gone after an update offers Retry", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    await page.route("**/assets/RulesPage-*.js", (route) => route.fulfill({ status: 404 }))
+    await page
+      .getByRole("complementary", { name: "Application navigation" })
+      .getByRole("link", { name: "Rules", exact: true })
+      .click()
+    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
+    await expect(page.getByRole("alert")).toHaveText("Unable to load this page.")
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
+  })
+
   test("transaction detail distinguishes server failure from a missing record", async ({
     page,
   }) => {
