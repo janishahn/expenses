@@ -9,7 +9,7 @@ struct InsightsView: View {
     @Environment(AppModel.self) private var model
 
     let openTransactions: (TransactionQuery) -> Void
-    let openBudgets: () -> Void
+    let openBudgets: (CalendarMonth) -> Void
 
     // The period and tags; Insights takes no type, category or search.
     @State private var query = TransactionQuery()
@@ -20,7 +20,7 @@ struct InsightsView: View {
     @State private var split: Result<InsightsRecurringSplitResponse, APIErrorInfo>?
     @State private var calendar: Result<InsightsDayCalendarResponse, APIErrorInfo>?
     @State private var budgetHistory: Result<InsightsBudgetHistoryResponse, APIErrorInfo>?
-    // The ledger revision the figures were loaded at; an edit to a transaction reloads them.
+    // The ledger revision the figures were loaded at; an edit to a transaction or budget reloads them.
     @State private var revision: Int?
 
     private var tags: [TransactionTag] {
@@ -72,6 +72,11 @@ struct InsightsView: View {
             }
             .navigationDestination(for: MonthGridRoute.self) { route in
                 MonthGridRowView(route: route, openTransactions: openTransactions)
+            }
+            .navigationDestination(for: BudgetHistoryRoute.self) { route in
+                if case .success(let data) = budgetHistory, let row = data.rows.first(where: { $0.categoryID == route.categoryID }) {
+                    BudgetHistoryRowView(row: row, openBudgets: openBudgets)
+                }
             }
             .task(id: query) {
                 if insights?.query != query {
@@ -961,13 +966,17 @@ private struct DayGrid {
     }
 }
 
+private struct BudgetHistoryRoute: Hashable {
+    let categoryID: Int?
+}
+
 /// Each budget's months: within, over, or no budget yet.
 private struct BudgetHistorySection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
 
     let history: Result<InsightsBudgetHistoryResponse, APIErrorInfo>?
-    let openBudgets: () -> Void
+    let openBudgets: (CalendarMonth) -> Void
 
     var body: some View {
         Section {
@@ -981,8 +990,11 @@ private struct BudgetHistorySection: View {
             case .success(let data):
                 MonthHeads(months: data.months, total: "Within")
                 ForEach(data.rows, id: \.categoryID) { row in
-                    line(row)
-                        .listRowInsets(gridRowInsets)
+                    NavigationLink(value: BudgetHistoryRoute(categoryID: row.categoryID)) {
+                        line(row)
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
+                    .listRowInsets(gridRowInsets)
                 }
                 ChipFlow(spacing: 10) {
                     legend("Within") { mark(over: false) }
@@ -996,7 +1008,9 @@ private struct BudgetHistorySection: View {
                 .accessibilityHidden(true)
             }
         } header: {
-            SectionLink(title: "Budget history", destination: "Budgets", action: openBudgets)
+            SectionLink(title: "Budget history", destination: "Budgets") {
+                openBudgets(.current)
+            }
         }
         .listRowSeparator(.hidden)
         .expensesRowBackground()
@@ -1039,6 +1053,7 @@ private struct BudgetHistorySection: View {
         }
         .font(.footnote)
         .frame(minHeight: 20)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.name)
         .accessibilityValue(row.cells.compactMap { cell in
@@ -1062,6 +1077,42 @@ private struct BudgetHistorySection: View {
                 .frame(width: 10, height: 10)
             Text(title)
         }
+    }
+}
+
+/// A budget's months, newest first. Each month with a budget opens that month's budgets.
+private struct BudgetHistoryRowView: View {
+    let row: InsightsBudgetHistoryRow
+    let openBudgets: (CalendarMonth) -> Void
+
+    var body: some View {
+        let last = row.cells.count - 1
+        List {
+            Section("Months") {
+                ForEach(row.cells.indices.reversed(), id: \.self) { index in
+                    let cell = row.cells[index]
+                    let month = CalendarMonth(cell.month)
+                    let title = index == last ? "\(month.title) so far" : month.title
+                    if let budget = cell.budgetCents {
+                        Button {
+                            openBudgets(month)
+                        } label: {
+                            LabeledContent(title) {
+                                SpentAgainst(spentCents: cell.spentCents, budgetCents: budget)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                        .tint(.primary)
+                        .accessibilityHint("Opens the budgets")
+                    } else {
+                        LabeledContent(title, value: "No budget")
+                    }
+                }
+            }
+            .expensesRowBackground()
+        }
+        .navigationTitle(row.name)
+        .expensesScreenStyle()
     }
 }
 

@@ -48,7 +48,8 @@ struct ImportExportView: View {
                         Task { await commit(file) }
                     }
                     .fontWeight(.semibold)
-                    .disabled(importing)
+                    // The server rejects the whole file while the preview has errors.
+                    .disabled(importing || preview?.errors.isEmpty == false)
                 }
 
                 if previewing {

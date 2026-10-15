@@ -8,6 +8,8 @@ struct RootView: View {
     @State private var dashboardPath: [Int] = []
     @State private var transactionsPath: [TransactionsRoute] = []
     @State private var transactionsSelecting = false
+    @State private var budgetsMonth = CalendarMonth.current
+    @State private var budgetsPath: [BudgetKey] = []
 
     var body: some View {
         Group {
@@ -26,6 +28,8 @@ struct RootView: View {
                 dashboardPath = []
                 transactionsPath = []
                 transactionsSelecting = false
+                budgetsMonth = .current
+                budgetsPath = []
             }
         }
         .task {
@@ -45,7 +49,7 @@ struct RootView: View {
             }
 
             Tab("Budgets", systemImage: "target", value: .budgets) {
-                NavigationStack {
+                NavigationStack(path: $budgetsPath) {
                     destinationView(.budgets)
                 }
             }
@@ -68,6 +72,13 @@ struct RootView: View {
         selectedPrimaryDestination = .transactions
     }
 
+    // Opens the Budgets tab at its root on this month.
+    private func openBudgets(_ month: CalendarMonth) {
+        budgetsMonth = month
+        budgetsPath = []
+        selectedPrimaryDestination = .budgets
+    }
+
     @ViewBuilder
     private func destinationView(_ destination: AppDestination) -> some View {
         switch destination {
@@ -75,14 +86,14 @@ struct RootView: View {
             DashboardView(
                 path: $dashboardPath,
                 openBudgets: { selectedPrimaryDestination = .budgets },
-                openTransactions: { selectedPrimaryDestination = .transactions }
+                openTransactions: { openTransactions(TransactionQuery()) }
             )
         case .transactions:
             TransactionsView(path: $transactionsPath, selecting: $transactionsSelecting)
         case .budgets:
-            BudgetsView()
+            BudgetsView(month: $budgetsMonth)
         case .insights:
-            InsightsView(openTransactions: openTransactions, openBudgets: { selectedPrimaryDestination = .budgets })
+            InsightsView(openTransactions: openTransactions, openBudgets: openBudgets)
         case .forecast:
             ForecastView()
         case .uncategorized:

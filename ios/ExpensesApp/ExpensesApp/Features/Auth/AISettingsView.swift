@@ -83,9 +83,10 @@ struct AISettingsView: View {
                     return
                 }
                 let wasReady = model.aiSettings.map(Self.chatGPTReady) ?? false
-                // The models of a connection that just finished load, as on the web.
+                // The models of a connection that just finished load, as on the web, and polling stops.
                 if let settings = try? await model.loadAISettings(), !wasReady, Self.chatGPTReady(settings) {
                     await refreshModels(settings)
+                    return
                 }
             }
         }

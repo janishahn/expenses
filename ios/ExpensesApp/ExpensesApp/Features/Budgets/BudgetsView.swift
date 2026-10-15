@@ -70,7 +70,7 @@ extension BudgetsResponse {
 
 struct BudgetsView: View {
     @Environment(AppModel.self) private var model
-    @State private var month = CalendarMonth.current
+    @Binding var month: CalendarMonth
     @State private var comparing = false
     @State private var showsInactive = false
     @State private var adding = false

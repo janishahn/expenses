@@ -29,7 +29,7 @@ struct AccountSettingsView: View {
                 .expensesRowBackground()
             }
 
-            if let settings = model.settings {
+            if let settings = model.settings, model.mobileSessions != nil {
                 tokenSection(settings.ingestToken)
                 sessionsSection
             } else if let loadError {
@@ -158,7 +158,7 @@ struct AccountSettingsView: View {
 
     private func load() async {
         await model.loadAccountSettings()
-        loadError = model.settings == nil ? model.lastError?.message ?? "The server didn't respond." : nil
+        loadError = model.settings == nil || model.mobileSessions == nil ? model.lastError?.message ?? "The server didn't respond." : nil
     }
 
     // The session stays until the server revokes it, so a failed sign-out shows why.

@@ -258,6 +258,7 @@ struct WhatIfView: View {
             scenario = (request.options, request.adjustments, response)
             scenarioFailed = false
         case .failure:
+            scenario = nil
             scenarioFailed = true
         }
     }

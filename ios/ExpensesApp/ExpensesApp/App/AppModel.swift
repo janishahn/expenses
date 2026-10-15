@@ -51,7 +51,7 @@ final class AppModel {
     var dashboardBalanceHistory: Result<BalanceHistoryResponse, APIErrorInfo>?
     var dashboardForecast: Result<ForecastResponse, APIErrorInfo>?
     var dashboardSpendingBands: Result<CategoryBandsResponse, APIErrorInfo>?
-    // Counts edits to transactions, so the Dashboard charts reload with its summary.
+    // Counts edits to transactions and budgets, so the charts that show them reload.
     private(set) var ledgerRevision = 0
     // Each list keeps its query, and the rows of every page loaded so far.
     var transactionQuery = TransactionQuery()
@@ -1996,8 +1996,9 @@ final class AppModel {
         }
     }
 
-    // Budgets also show on the Dashboard.
+    // Budgets also show on the Dashboard and in the Insights budget history.
     private func reloadBudgetViews(token: String) async throws {
+        ledgerRevision += 1
         if let month = budgets?.monthValue {
             budgets = try await apiClient.budgets(month: month, token: token)
         }
