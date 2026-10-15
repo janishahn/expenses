@@ -84,6 +84,14 @@ export type TransactionsResponse = {
   tags: TransactionTag[]
 }
 
+// `/api/transactions/summary`: the period's totals for the list filters. Expenses are net of reimbursements.
+export type TransactionsSummary = {
+  income_cents: number
+  expense_cents: number
+  net_cents: number
+  count: number
+}
+
 export type TransactionRouteState = {
   returnTo?: string
   // The breadcrumb name of returnTo; Transactions when unset.

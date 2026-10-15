@@ -16,11 +16,13 @@ struct CategorySummary: Codable, Equatable, Identifiable {
 struct CategoryListItem: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
-    let type: String
+    let type: TransactionKind
     let icon: String?
     let archivedAt: Date?
     let order: Int
     let usageCount: Int
+    let expenseCents: Int
+    let incomeCents: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -30,6 +32,8 @@ struct CategoryListItem: Codable, Equatable, Identifiable {
         case archivedAt = "archived_at"
         case order
         case usageCount = "usage_count"
+        case expenseCents = "expense_cents"
+        case incomeCents = "income_cents"
     }
 }
 
@@ -53,16 +57,26 @@ struct TagRow: Codable, Equatable, Identifiable {
     let name: String
     let color: String?
     let isHiddenFromBudget: Bool
+    let isHiddenFromFilters: Bool
     let autoAttachPeriod: TagAutoAttachPeriod?
+    let archivedAt: Date?
     let usageCount: Int
+    let expenseCents: Int
+    let incomeCents: Int
+    let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case isHiddenFromFilters = "is_hidden_from_filters"
         case autoAttachPeriod = "auto_attach_period"
+        case archivedAt = "archived_at"
         case usageCount = "usage_count"
+        case expenseCents = "expense_cents"
+        case incomeCents = "income_cents"
+        case createdAt = "created_at"
     }
 }
 
@@ -74,7 +88,7 @@ struct TagsResponse: Codable, Equatable {
 struct TemplateRow: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
-    let type: String
+    let type: TransactionKind
     let categoryID: Int
     let category: CategorySummary?
     let defaultAmountCents: Int?
@@ -116,14 +130,36 @@ struct RuleBudgetExcludeTag: Codable, Equatable, Identifiable {
     let name: String
 }
 
+enum MatchType: String, Codable, CaseIterable, Identifiable {
+    case contains
+    case startsWith = "starts_with"
+    case equals
+    case regex
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .contains:
+            "Contains"
+        case .startsWith:
+            "Starts with"
+        case .equals:
+            "Equals"
+        case .regex:
+            "Regex"
+        }
+    }
+}
+
 struct RuleRow: Codable, Equatable, Identifiable {
     let id: Int
     let name: String
     let enabled: Bool
     let priority: Int
-    let matchType: String
+    let matchType: MatchType
     let matchValue: String
-    let transactionType: String?
+    let transactionType: TransactionKind?
     let minAmountCents: Int?
     let maxAmountCents: Int?
     let setCategoryID: Int?
@@ -157,17 +193,17 @@ struct RulesResponse: Codable, Equatable {
 }
 
 struct RuleMutationRequest: Codable, Equatable {
-    let name: String
-    let enabled: Bool
-    let priority: Int
-    let matchType: String
-    let matchValue: String
-    let transactionType: String?
-    let minAmountCents: Int?
-    let maxAmountCents: Int?
-    let setCategoryID: Int?
-    let addTags: [String]
-    let budgetExcludeTagID: Int?
+    var name: String
+    var enabled: Bool
+    var priority: Int
+    var matchType: MatchType
+    var matchValue: String
+    var transactionType: TransactionKind?
+    var minAmountCents: Int?
+    var maxAmountCents: Int?
+    var setCategoryID: Int?
+    var addTags: [String]
+    var budgetExcludeTagID: Int?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -184,8 +220,22 @@ struct RuleMutationRequest: Codable, Equatable {
     }
 }
 
-struct RuleToggleRequest: Codable, Equatable {
-    let enabled: Bool
+extension RuleMutationRequest {
+    init(_ rule: RuleRow) {
+        self.init(
+            name: rule.name,
+            enabled: rule.enabled,
+            priority: rule.priority,
+            matchType: rule.matchType,
+            matchValue: rule.matchValue,
+            transactionType: rule.transactionType,
+            minAmountCents: rule.minAmountCents,
+            maxAmountCents: rule.maxAmountCents,
+            setCategoryID: rule.setCategoryID,
+            addTags: rule.addTags,
+            budgetExcludeTagID: rule.budgetExcludeTagID
+        )
+    }
 }
 
 struct RulePreviewSample: Codable, Equatable, Identifiable {
@@ -222,9 +272,9 @@ struct RuleSuggestion: Codable, Equatable, Identifiable {
     let id: Int
     let status: String
     let name: String
-    let matchType: String
+    let matchType: MatchType
     let matchValue: String
-    let transactionType: String?
+    let transactionType: TransactionKind?
     let minAmountCents: Int?
     let maxAmountCents: Int?
     let setCategoryID: Int?
@@ -292,7 +342,6 @@ struct BudgetProgress: Codable, Equatable, Identifiable {
     let scopeCategoryID: Int?
     let spentCents: Int
     let remainingCents: Int
-    let velocityRatio: Double
     let dailyRemainingCents: Int
     let projectedTotalCents: Int
     let daysElapsed: Int
@@ -302,7 +351,6 @@ struct BudgetProgress: Codable, Equatable, Identifiable {
         case scopeCategoryID = "scope_category_id"
         case spentCents = "spent_cents"
         case remainingCents = "remaining_cents"
-        case velocityRatio = "velocity_ratio"
         case dailyRemainingCents = "daily_remaining_cents"
         case projectedTotalCents = "projected_total_cents"
         case daysElapsed = "days_elapsed"
@@ -340,7 +388,6 @@ struct BudgetYearSpent: Codable, Equatable, Identifiable {
 }
 
 struct BudgetsResponse: Codable, Equatable {
-    let view: String
     let year: Int
     let month: Int
     let monthValue: String
@@ -351,11 +398,8 @@ struct BudgetsResponse: Codable, Equatable {
     let yearValue: Int
     let yearlyBudgets: [BudgetScope]
     let yearlySpent: [BudgetYearSpent]
-    let defaultMonthTemplateStart: Date
-    let defaultYearTemplateStart: Date
 
     enum CodingKeys: String, CodingKey {
-        case view
         case year
         case month
         case monthValue = "month_value"
@@ -366,8 +410,6 @@ struct BudgetsResponse: Codable, Equatable {
         case yearValue = "year_value"
         case yearlyBudgets = "yearly_budgets"
         case yearlySpent = "yearly_spent"
-        case defaultMonthTemplateStart = "default_month_template_start"
-        case defaultYearTemplateStart = "default_year_template_start"
     }
 }
 
@@ -445,7 +487,6 @@ struct BudgetBurndownResponse: Codable, Equatable {
     let budgetAmountCents: Int
     let daysInMonth: Int
     let dailySeries: [BudgetBurndownPoint]
-    let compareMonth: String?
     let compareDailySeries: [BudgetBurndownPoint]
     let topSpendingDays: [BudgetBurndownTopDay]
 
@@ -453,7 +494,6 @@ struct BudgetBurndownResponse: Codable, Equatable {
         case budgetAmountCents = "budget_amount_cents"
         case daysInMonth = "days_in_month"
         case dailySeries = "daily_series"
-        case compareMonth = "compare_month"
         case compareDailySeries = "compare_daily_series"
         case topSpendingDays = "top_spending_days"
     }
@@ -479,7 +519,6 @@ struct DigestCategory: Codable, Equatable, Identifiable {
     let name: String
     let icon: String?
     let amountCents: Int
-    let barPercent: Double
     let trailingWeeklyAvgCents: Int
     let isAboveTrailing50: Bool
 
@@ -488,7 +527,6 @@ struct DigestCategory: Codable, Equatable, Identifiable {
         case name
         case icon
         case amountCents = "amount_cents"
-        case barPercent = "bar_percent"
         case trailingWeeklyAvgCents = "trailing_weekly_avg_cents"
         case isAboveTrailing50 = "is_above_trailing_50"
     }
@@ -500,9 +538,6 @@ struct DigestBudgetPulse: Codable, Equatable, Identifiable {
     let scopeLabel: String
     let amountCents: Int
     let spentCents: Int
-    let usedPercent: Double
-    let daysLeft: Int
-    let velocityRatio: Double
     let paceState: String
 
     enum CodingKeys: String, CodingKey {
@@ -510,9 +545,6 @@ struct DigestBudgetPulse: Codable, Equatable, Identifiable {
         case scopeLabel = "scope_label"
         case amountCents = "amount_cents"
         case spentCents = "spent_cents"
-        case usedPercent = "used_percent"
-        case daysLeft = "days_left"
-        case velocityRatio = "velocity_ratio"
         case paceState = "pace_state"
     }
 }
@@ -547,6 +579,7 @@ struct DigestRecurringPosting: Codable, Equatable, Identifiable {
     let ruleID: Int?
     let ruleName: String
     let date: Date
+    let type: String
     let amountCents: Int
     let category: DigestCategoryReference?
 
@@ -555,6 +588,7 @@ struct DigestRecurringPosting: Codable, Equatable, Identifiable {
         case ruleID = "rule_id"
         case ruleName = "rule_name"
         case date
+        case type
         case amountCents = "amount_cents"
         case category
     }
@@ -882,24 +916,22 @@ struct ForecastScenarioResponse: Codable, Equatable {
     }
 }
 
-struct RecurringCategory: Codable, Equatable, Identifiable {
-    let id: Int
-    let name: String
-    let type: String?
-    let icon: String?
+enum IntervalUnit: String, Codable, CaseIterable, Identifiable {
+    case day
+    case week
+    case month
+    case year
+
+    var id: Self { self }
 }
 
-struct RecurringBreakdown: Codable, Equatable, Identifiable {
-    var id: String { name }
-    let name: String
-    let amountCents: Int
-    let percent: Double
+/// Where a monthly or yearly rule posts in a month that lacks its day.
+enum MonthDayPolicy: String, Codable, CaseIterable, Identifiable {
+    case snapToEnd = "snap_to_end"
+    case skip
+    case carryForward = "carry_forward"
 
-    enum CodingKeys: String, CodingKey {
-        case name
-        case amountCents = "amount_cents"
-        case percent
-    }
+    var id: Self { self }
 }
 
 struct RecurringRuleCounts: Codable, Equatable {
@@ -913,8 +945,6 @@ struct RecurringStats: Codable, Equatable {
     let totalMonthlyExpenses: Int
     let netMonthly: Int
     let coverageRatio: Double
-    let expenseBreakdown: [RecurringBreakdown]
-    let incomeBreakdown: [RecurringBreakdown]
     let ruleCounts: RecurringRuleCounts
 
     enum CodingKeys: String, CodingKey {
@@ -922,8 +952,6 @@ struct RecurringStats: Codable, Equatable {
         case totalMonthlyExpenses = "total_monthly_expenses"
         case netMonthly = "net_monthly"
         case coverageRatio = "coverage_ratio"
-        case expenseBreakdown = "expense_breakdown"
-        case incomeBreakdown = "income_breakdown"
         case ruleCounts = "rule_counts"
     }
 }
@@ -931,20 +959,21 @@ struct RecurringStats: Codable, Equatable {
 struct RecurringRule: Codable, Equatable, Identifiable {
     let id: Int
     let name: String?
-    let type: String
+    let type: TransactionKind
     let currencyCode: String
     let amountCents: Int
-    let monthlyEquivalentCents: Int?
-    let categoryID: Int?
-    let category: RecurringCategory?
+    // In euros, converted for dollar rules.
+    let monthlyEquivalentCents: Int
+    let categoryID: Int
+    let category: CategorySummary?
     let anchorDate: Date
-    let intervalUnit: String
+    let intervalUnit: IntervalUnit
     let intervalCount: Int
     let nextOccurrence: Date
     let endDate: Date?
     let autoPost: Bool
-    let skipWeekends: Bool?
-    let monthDayPolicy: String?
+    let skipWeekends: Bool
+    let monthDayPolicy: MonthDayPolicy
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -969,23 +998,24 @@ struct RecurringRule: Codable, Equatable, Identifiable {
 struct RecurringResponse: Codable, Equatable {
     let rules: [RecurringRule]
     let stats: RecurringStats
-    let categories: [RecurringCategory]
+    let categories: [CategorySummary]
 }
 
+/// The body of POST and PUT /api/recurring. Days are "yyyy-MM-dd".
 struct RecurringRuleRequest: Codable, Equatable {
-    let name: String?
-    let type: String
-    let currencyCode: String
-    let amountCents: Int
-    let categoryID: Int
-    let anchorDate: String
-    let intervalUnit: String
-    let intervalCount: Int
-    let nextOccurrence: String
-    let endDate: String?
-    let autoPost: Bool
-    let skipWeekends: Bool
-    let monthDayPolicy: String
+    var name: String?
+    var type: TransactionKind
+    var currencyCode: String
+    var amountCents: Int
+    var categoryID: Int
+    var anchorDate: String
+    var intervalUnit: IntervalUnit
+    var intervalCount: Int
+    var nextOccurrence: String
+    var endDate: String?
+    var autoPost: Bool
+    var skipWeekends: Bool
+    var monthDayPolicy: MonthDayPolicy
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -1004,15 +1034,39 @@ struct RecurringRuleRequest: Codable, Equatable {
     }
 }
 
+extension RecurringRuleRequest {
+    init(_ rule: RecurringRule) {
+        let day = Date.ISO8601FormatStyle().year().month().day()
+        self.init(
+            name: rule.name,
+            type: rule.type,
+            currencyCode: rule.currencyCode,
+            amountCents: rule.amountCents,
+            categoryID: rule.categoryID,
+            anchorDate: rule.anchorDate.formatted(day),
+            intervalUnit: rule.intervalUnit,
+            intervalCount: rule.intervalCount,
+            nextOccurrence: rule.nextOccurrence.formatted(day),
+            endDate: rule.endDate?.formatted(day),
+            autoPost: rule.autoPost,
+            skipWeekends: rule.skipWeekends,
+            monthDayPolicy: rule.monthDayPolicy
+        )
+    }
+}
+
 struct RecurringPreviewRequest: Codable, Equatable {
     let startDate: String
-    let intervalUnit: String
+    // A saved rule's anchor, when previewing from its next occurrence.
+    var ruleAnchorDate: String?
+    let intervalUnit: IntervalUnit
     let intervalCount: Int
-    let monthDayPolicy: String
+    let monthDayPolicy: MonthDayPolicy
     let skipWeekends: Bool
 
     enum CodingKeys: String, CodingKey {
         case startDate = "start_date"
+        case ruleAnchorDate = "rule_anchor_date"
         case intervalUnit = "interval_unit"
         case intervalCount = "interval_count"
         case monthDayPolicy = "month_day_policy"
@@ -1025,60 +1079,53 @@ struct RecurringPreviewResponse: Codable, Equatable {
     let error: String?
 }
 
-struct RecurringToggleRequest: Codable, Equatable {
-    let autoPost: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case autoPost = "auto_post"
-    }
-}
-
 struct RecurringOccurrence: Codable, Equatable, Identifiable {
     let id: Int
     let occurrenceDate: Date?
     let amountCents: Int
-    let category: RecurringCategory?
-    let title: String?
-    let createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case occurrenceDate = "occurrence_date"
         case amountCents = "amount_cents"
-        case category
-        case title
-        case createdAt = "created_at"
     }
 }
 
 struct RecurringOccurrencesResponse: Codable, Equatable {
-    let rule: RecurringRule
     let occurrences: [RecurringOccurrence]
 }
 
 struct CategoryCreateRequest: Codable, Equatable {
     let name: String
-    let type: String
+    let type: TransactionKind
     let icon: String?
     let order: Int
 }
 
 struct CategoryUpdateRequest: Codable, Equatable {
-    let name: String
-    let icon: String?
-    let order: Int
+    var name: String
+    var icon: String?
+    var order: Int
+}
+
+extension CategoryUpdateRequest {
+    init(_ category: CategoryListItem) {
+        self.init(name: category.name, icon: category.icon, order: category.order)
+    }
 }
 
 struct TagMutationRequest: Encodable, Equatable {
-    let name: String
-    let color: String?
-    let isHiddenFromBudget: Bool
-    let autoAttachPeriod: TagAutoAttachPeriod?
+    var name: String
+    var color: String?
+    var isHiddenFromBudget: Bool
+    var isHiddenFromFilters: Bool
+    var autoAttachPeriod: TagAutoAttachPeriod?
 
     enum CodingKeys: String, CodingKey {
         case name
         case color
         case isHiddenFromBudget = "is_hidden_from_budget"
+        case isHiddenFromFilters = "is_hidden_from_filters"
         case autoAttachPeriod = "auto_attach_period"
     }
 
@@ -1087,11 +1134,54 @@ struct TagMutationRequest: Encodable, Equatable {
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(color, forKey: .color)
         try container.encode(isHiddenFromBudget, forKey: .isHiddenFromBudget)
+        try container.encode(isHiddenFromFilters, forKey: .isHiddenFromFilters)
         if let autoAttachPeriod {
             try container.encode(autoAttachPeriod, forKey: .autoAttachPeriod)
         } else {
             try container.encodeNil(forKey: .autoAttachPeriod)
         }
+    }
+}
+
+extension TagMutationRequest {
+    init(_ tag: TagRow) {
+        self.init(
+            name: tag.name,
+            color: tag.color,
+            isHiddenFromBudget: tag.isHiddenFromBudget,
+            isHiddenFromFilters: tag.isHiddenFromFilters,
+            autoAttachPeriod: tag.autoAttachPeriod
+        )
+    }
+}
+
+/// Where a tag's money went, for one period.
+struct TagDetailResponse: Codable, Equatable {
+    let donut: TagDonut
+}
+
+struct TagDonut: Codable, Equatable {
+    let expenseBreakdown: [TagBreakdownItem]
+    let incomeBreakdown: [TagBreakdownItem]
+
+    enum CodingKeys: String, CodingKey {
+        case expenseBreakdown = "expense_breakdown"
+        case incomeBreakdown = "income_breakdown"
+    }
+}
+
+/// A category's share of a tag's money.
+struct TagBreakdownItem: Codable, Equatable, Identifiable {
+    let id: Int
+    let name: String
+    let amountCents: Int
+    let percent: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case amountCents = "amount_cents"
+        case percent
     }
 }
 
@@ -1120,12 +1210,12 @@ struct MergeResponse: Codable, Equatable {
 }
 
 struct TemplateMutationRequest: Codable, Equatable {
-    let name: String
-    let type: String
-    let categoryID: Int
-    let defaultAmountCents: Int?
-    let title: String?
-    let tags: [String]
+    var name: String
+    var type: TransactionKind
+    var categoryID: Int
+    var defaultAmountCents: Int?
+    var title: String?
+    var tags: [String]
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -1134,6 +1224,19 @@ struct TemplateMutationRequest: Codable, Equatable {
         case defaultAmountCents = "default_amount_cents"
         case title
         case tags
+    }
+}
+
+extension TemplateMutationRequest {
+    init(_ template: TemplateRow) {
+        self.init(
+            name: template.name,
+            type: template.type,
+            categoryID: template.categoryID,
+            defaultAmountCents: template.defaultAmountCents,
+            title: template.title,
+            tags: template.tags
+        )
     }
 }
 
@@ -1181,30 +1284,6 @@ struct TransactionListItem: Codable, Equatable, Identifiable {
     }
 }
 
-struct TransactionSuggestion: Codable, Equatable, Identifiable {
-    let id: Int
-    let transactionID: Int
-    let status: String
-    let categoryID: Int?
-    let categoryName: String?
-    let cleanTitle: String?
-    let tags: [String]
-    let confidence: Double
-    let reason: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case transactionID = "transaction_id"
-        case status
-        case categoryID = "category_id"
-        case categoryName = "category_name"
-        case cleanTitle = "clean_title"
-        case tags
-        case confidence
-        case reason
-    }
-}
-
 struct TransactionDetail: Codable, Equatable, Identifiable {
     let id: Int
     let date: Date
@@ -1219,8 +1298,11 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
     let longitude: Double?
     let isReimbursement: Bool
     let tags: [String]
+    let netAmountCents: Int
+    let reimbursedTotalCents: Int
     let durablePurchase: DurablePurchase?
     let attachments: [ReceiptAttachment]
+    let bankRow: TransactionBankRow?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1236,14 +1318,40 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
         case longitude
         case isReimbursement = "is_reimbursement"
         case tags
+        case netAmountCents = "net_amount_cents"
+        case reimbursedTotalCents = "reimbursed_total_cents"
         case durablePurchase = "durable_purchase"
         case attachments
+        case bankRow = "bank_row"
+    }
+}
+
+/// The bank statement row a transaction was matched to or created from.
+struct TransactionBankRow: Codable, Equatable {
+    let id: Int
+    let accountLabel: String
+    let bookingDate: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case accountLabel = "account_label"
+        case bookingDate = "booking_date"
     }
 }
 
 struct DurablePurchase: Codable, Equatable {
     let expectedLifespanDays: Int
     let acquiredOn: Date
+
+    enum CodingKeys: String, CodingKey {
+        case expectedLifespanDays = "expected_lifespan_days"
+        case acquiredOn = "acquired_on"
+    }
+}
+
+struct DurablePurchaseRequest: Encodable, Equatable {
+    let expectedLifespanDays: Int
+    let acquiredOn: String
 
     enum CodingKeys: String, CodingKey {
         case expectedLifespanDays = "expected_lifespan_days"
@@ -1269,10 +1377,6 @@ struct ReceiptAttachment: Codable, Equatable, Identifiable {
         case sha256Hex = "sha256_hex"
         case createdAt = "created_at"
     }
-}
-
-struct ReceiptAttachmentsResponse: Codable, Equatable {
-    let attachments: [ReceiptAttachment]
 }
 
 struct AttachmentDownload: Equatable {
@@ -1407,10 +1511,11 @@ struct AllocationIDResponse: Codable, Equatable {
 }
 
 struct TransactionsResponse: Codable, Equatable {
-    let items: [TransactionListItem]
+    var items: [TransactionListItem]
     let page: Int
     let limit: Int
     let hasMore: Bool
+    let total: Int
     let period: Period
     let filters: TransactionFilters
     let categories: [CategorySummary]
@@ -1421,6 +1526,7 @@ struct TransactionsResponse: Codable, Equatable {
         case page
         case limit
         case hasMore = "has_more"
+        case total
         case period
         case filters
         case categories
@@ -1438,12 +1544,41 @@ struct UncategorizedDefinition: Codable, Equatable {
     }
 }
 
-struct UncategorizedTransactionsResponse: Codable, Equatable {
-    let items: [TransactionListItem]
+/// A category the local model suggests for an uncategorized transaction.
+struct CategorySuggestion: Codable, Equatable {
+    let categoryID: Int
+    let confidence: Double
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+        case confidence
+    }
+}
+
+/// An Uncategorized row: the transaction, and the suggestion for it while automatic
+/// categorization is on.
+struct UncategorizedTransaction: Decodable, Equatable, Identifiable {
+    let transaction: TransactionListItem
+    let suggestion: CategorySuggestion?
+
+    var id: Int { transaction.id }
+
+    private enum CodingKeys: String, CodingKey {
+        case suggestion
+    }
+
+    init(from decoder: Decoder) throws {
+        transaction = try TransactionListItem(from: decoder)
+        suggestion = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(CategorySuggestion.self, forKey: .suggestion)
+    }
+}
+
+struct UncategorizedTransactionsResponse: Decodable, Equatable {
+    var items: [UncategorizedTransaction]
     let page: Int
     let limit: Int
     let hasMore: Bool
-    let total: Int
+    var total: Int
     let definition: UncategorizedDefinition
     let period: Period
     let filters: TransactionFilters
@@ -1487,7 +1622,100 @@ struct DeletedTransaction: Codable, Equatable, Identifiable {
 }
 
 struct DeletedTransactionsResponse: Codable, Equatable {
-    let transactions: [DeletedTransaction]
+    var transactions: [DeletedTransaction]
+    let total: Int
+}
+
+struct TransactionIDsRequest: Codable, Equatable {
+    let ids: [Int]
+}
+
+struct TransactionsRestoredResponse: Codable, Equatable {
+    let restored: Int
+}
+
+struct TransactionsPurgedResponse: Codable, Equatable {
+    let deleted: Int
+}
+
+struct CategorySuggestionDismissRequest: Codable, Equatable {
+    let categoryID: Int
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+    }
+}
+
+enum TransactionKind: String, Hashable, Codable {
+    case expense
+    case income
+}
+
+enum TagFilterMode: Hashable {
+    case include
+    case exclude
+}
+
+/// A transaction list's period, search and filters. The server takes included or
+/// excluded tags, never both.
+struct TransactionQuery: Equatable {
+    var period: PeriodSelection = .all
+    var search = ""
+    var type: TransactionKind?
+    var categoryID: Int?
+    var tagMode: TagFilterMode = .include
+    var tagIDs: Set<Int> = []
+
+    var hasFilters: Bool {
+        type != nil || categoryID != nil || !tagIDs.isEmpty
+    }
+
+    var trimmedSearch: String {
+        search.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// "Only Travel" or "Excluding 2 tags", or nil without a tag filter.
+    func tagSummary(_ tags: [TransactionTag]) -> String? {
+        if tagIDs.isEmpty {
+            return nil
+        }
+        let names = tagIDs.count == 1 ? tags.first { tagIDs.contains($0.id) }?.name ?? "1 tag" : "\(tagIDs.count) tags"
+        return tagMode == .include ? "Only \(names)" : "Excluding \(names)"
+    }
+
+    var queryItems: [URLQueryItem] {
+        var items = period.queryItems
+        if !trimmedSearch.isEmpty {
+            items.append(URLQueryItem(name: "q", value: trimmedSearch))
+        }
+        if let type {
+            items.append(URLQueryItem(name: "type", value: type.rawValue))
+        }
+        if let categoryID {
+            items.append(URLQueryItem(name: "category", value: String(categoryID)))
+        }
+        if !tagIDs.isEmpty {
+            let ids = tagIDs.sorted().map(String.init).joined(separator: ",")
+            items.append(URLQueryItem(name: tagMode == .include ? "tags" : "exclude_tags", value: ids))
+        }
+        return items
+    }
+
+    /// Every transaction the query matches, for a bulk edit. `matchedCategoryIDs`
+    /// narrows it to Uncategorized.
+    func bulkSelection(matchedCategoryIDs: [Int]? = nil) -> BulkSelectionQueryRequest {
+        BulkSelectionQueryRequest(
+            period: period.slug,
+            start: period.range?.start,
+            end: period.range?.end,
+            type: type?.rawValue,
+            category: categoryID,
+            matchedCategoryIDs: matchedCategoryIDs,
+            tags: tagMode == .include ? tagIDs.sorted() : [],
+            excludeTags: tagMode == .exclude ? tagIDs.sorted() : [],
+            q: trimmedSearch.isEmpty ? nil : trimmedSearch
+        )
+    }
 }
 
 struct TransactionFilters: Codable, Equatable {
@@ -1506,18 +1734,26 @@ struct TransactionFilters: Codable, Equatable {
     }
 }
 
-struct TransactionMutationRequest: Codable, Equatable {
-    let date: String
-    let occurredAt: String
-    let type: String
-    let isReimbursement: Bool
-    let amountCents: Int
-    let categoryID: Int?
-    let title: String
-    let description: String?
-    let latitude: Double?
-    let longitude: Double?
-    let tags: [String]
+/// The full body that creates or replaces a transaction.
+struct TransactionMutationRequest: Encodable, Equatable {
+    var occurredAt: Date
+    // The zone `occurredAt` is written in. The server stores the wall-clock time without one.
+    var timeZone: TimeZone
+    var type: TransactionKind
+    var isReimbursement: Bool
+    var amountCents: Int
+    var categoryID: Int?
+    var title: String
+    var description: String?
+    var location: LocationUpdate = .keep
+    var tags: [String]
+
+    /// Omitted coordinates keep the stored ones; clearing needs explicit nulls.
+    enum LocationUpdate: Equatable {
+        case keep
+        case clear
+        case set(latitude: Double, longitude: Double)
+    }
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -1532,6 +1768,47 @@ struct TransactionMutationRequest: Codable, Equatable {
         case longitude
         case tags
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(AppFormatters.isoDay(occurredAt, in: timeZone), forKey: .date)
+        try container.encode(AppFormatters.isoDateTime(occurredAt, in: timeZone), forKey: .occurredAt)
+        try container.encode(type.rawValue, forKey: .type)
+        try container.encode(type == .income && isReimbursement, forKey: .isReimbursement)
+        try container.encode(amountCents, forKey: .amountCents)
+        try container.encode(categoryID, forKey: .categoryID)
+        try container.encode(title, forKey: .title)
+        try container.encode(description, forKey: .description)
+        switch location {
+        case .keep:
+            break
+        case .clear:
+            try container.encodeNil(forKey: .latitude)
+            try container.encodeNil(forKey: .longitude)
+        case let .set(latitude, longitude):
+            try container.encode(latitude, forKey: .latitude)
+            try container.encode(longitude, forKey: .longitude)
+        }
+        try container.encode(tags, forKey: .tags)
+    }
+}
+
+extension TransactionMutationRequest {
+    /// The stored transaction as a body, to change one field at a time. Its time is written
+    /// in the server's zone, so it saves back as the wall-clock time the server stored.
+    init(_ transaction: TransactionDetail, serverTimeZone: TimeZone) {
+        self.init(
+            occurredAt: transaction.occurredAt ?? AppFormatters.localDay(transaction.date, in: serverTimeZone),
+            timeZone: serverTimeZone,
+            type: TransactionKind(rawValue: transaction.type) ?? .expense,
+            isReimbursement: transaction.isReimbursement,
+            amountCents: transaction.amountCents,
+            categoryID: transaction.categoryID,
+            title: transaction.title,
+            description: transaction.description,
+            tags: transaction.tags
+        )
+    }
 }
 
 struct BulkSelectionQueryRequest: Codable, Equatable {
@@ -1541,7 +1818,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
     let type: String?
     let category: Int?
     let matchedCategoryIDs: [Int]?
-    let tag: Int?
+    let tags: [Int]
     let excludeTags: [Int]
     let q: String?
 
@@ -1552,7 +1829,7 @@ struct BulkSelectionQueryRequest: Codable, Equatable {
         case type
         case category
         case matchedCategoryIDs = "matched_category_ids"
-        case tag
+        case tags
         case excludeTags = "exclude_tags"
         case q
     }
@@ -1632,9 +1909,7 @@ struct IDResponse: Codable, Equatable {
 
 struct DashboardResponse: Codable, Equatable {
     let period: Period
-    let filters: DashboardFilters
     let kpis: DashboardKPIs
-    let sparklines: DashboardSparklines
     let deltas: DashboardKPIs?
     let donut: DashboardDonut
     let recent: [TransactionListItem]
@@ -1643,13 +1918,10 @@ struct DashboardResponse: Codable, Equatable {
     let durablePurchases: [DashboardDurablePurchase]?
     let budgetPace: DashboardBudgetPace?
     let categoryBudgetPulse: [DashboardCategoryBudgetPulse]?
-    let categoryBudgetSummary: DashboardCategoryBudgetSummary?
 
     enum CodingKeys: String, CodingKey {
         case period
-        case filters
         case kpis
-        case sparklines
         case deltas
         case donut
         case recent
@@ -1658,15 +1930,6 @@ struct DashboardResponse: Codable, Equatable {
         case durablePurchases = "durable_purchases"
         case budgetPace = "budget_pace"
         case categoryBudgetPulse = "category_budget_pulse"
-        case categoryBudgetSummary = "category_budget_summary"
-    }
-}
-
-struct DashboardFilters: Codable, Equatable {
-    let excludedTagIDs: [Int]
-
-    enum CodingKeys: String, CodingKey {
-        case excludedTagIDs = "excluded_tag_ids"
     }
 }
 
@@ -1674,12 +1937,6 @@ struct DashboardKPIs: Codable, Equatable {
     let income: Int
     let expenses: Int
     let balance: Int
-}
-
-struct DashboardSparklines: Codable, Equatable {
-    let income: String?
-    let expenses: String?
-    let balance: String?
 }
 
 struct DashboardDonut: Codable, Equatable {
@@ -1698,15 +1955,63 @@ struct DashboardDonut: Codable, Equatable {
 
 struct BreakdownItem: Codable, Equatable, Identifiable {
     var id: String { name }
+    let categoryID: Int?
     let name: String
     let amountCents: Int
     let percent: Double
 
     enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
         case name
         case amountCents = "amount_cents"
         case percent
     }
+}
+
+struct BalanceHistoryPoint: Codable, Equatable, Identifiable {
+    var id: String { month }
+    let month: String
+    let balanceCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case month
+        case balanceCents = "balance_cents"
+    }
+}
+
+struct BalanceHistoryResponse: Codable, Equatable {
+    let months: [BalanceHistoryPoint]
+}
+
+struct CategoryBandSegment: Codable, Equatable {
+    let categoryID: Int?
+    let name: String
+    let icon: String?
+    let amountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case categoryID = "category_id"
+        case name
+        case icon
+        case amountCents = "amount_cents"
+    }
+}
+
+struct CategoryBandMonth: Codable, Equatable, Identifiable {
+    var id: String { month }
+    let month: String
+    let totalCents: Int
+    let segments: [CategoryBandSegment]
+
+    enum CodingKeys: String, CodingKey {
+        case month
+        case totalCents = "total_cents"
+        case segments
+    }
+}
+
+struct CategoryBandsResponse: Codable, Equatable {
+    let months: [CategoryBandMonth]
 }
 
 struct DashboardDurablePurchase: Codable, Equatable, Identifiable {
@@ -1743,190 +2048,138 @@ struct DashboardDurablePurchase: Codable, Equatable, Identifiable {
     }
 }
 
-struct DurablePurchasesResponse: Codable, Equatable {
-    let items: [DashboardDurablePurchase]
-}
-
-struct InsightsFilters: Codable, Equatable {
-    let tagID: Int?
-    let excludedTagIDs: [Int]
+/// Totals for a period and tag filter, and income and expenses for its whole months,
+/// at most 12.
+struct InsightsResponse: Codable, Equatable {
+    let tags: [TransactionTag]
+    let series: [InsightsMonthlySeriesPoint]
+    let incomeCents: Int
+    let expenseCents: Int
+    let recurringCents: Int
+    let monthCount: Int
 
     enum CodingKeys: String, CodingKey {
-        case tagID = "tag_id"
-        case excludedTagIDs = "excluded_tag_ids"
+        case tags
+        case series
+        case incomeCents = "income_cents"
+        case expenseCents = "expense_cents"
+        case recurringCents = "recurring_cents"
+        case monthCount = "month_count"
     }
 }
 
-struct InsightsCategory: Codable, Equatable, Identifiable {
-    let id: Int
-    let name: String
-    let type: String
-    let icon: String?
-}
-
-struct InsightsMonthlySeriesPoint: Codable, Equatable, Identifiable {
-    var id: String { label }
+struct InsightsMonthlySeriesPoint: Codable, Equatable {
     let year: Int
     let month: Int
-    let label: String
     let incomeCents: Int
     let expenseCents: Int
-    let netCents: Int
 
     enum CodingKeys: String, CodingKey {
         case year
         case month
-        case label
         case incomeCents = "income_cents"
         case expenseCents = "expense_cents"
-        case netCents = "net_cents"
     }
 }
 
-struct InsightsDeltaItem: Codable, Equatable, Identifiable {
-    var id: Int { categoryID }
-    let categoryID: Int
-    let categoryName: String
-    let currentCents: Int
-    let previousCents: Int
-    let deltaCents: Int
-
-    enum CodingKeys: String, CodingKey {
-        case categoryID = "category_id"
-        case categoryName = "category_name"
-        case currentCents = "current_cents"
-        case previousCents = "previous_cents"
-        case deltaCents = "delta_cents"
-    }
+/// Amounts by category or tag for the last 12 full months and the current one.
+struct InsightsMonthGridResponse: Codable, Equatable {
+    let months: [String]
+    let rows: [InsightsMonthGridRow]
 }
 
-struct InsightsDeltas: Codable, Equatable {
-    let increases: [InsightsDeltaItem]
-    let decreases: [InsightsDeltaItem]
-}
-
-struct InsightsTopTag: Codable, Equatable, Identifiable {
+struct InsightsMonthGridRow: Codable, Equatable, Identifiable, Hashable {
     let id: Int
     let name: String
-    let amountCents: Int
+    let icon: String?
+    let valuesCents: [Int]
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
-        case amountCents = "amount_cents"
+        case icon
+        case valuesCents = "values_cents"
     }
 }
 
-struct InsightsTrendPoint: Codable, Equatable, Identifiable {
-    var id: String { label }
-    let year: Int
-    let month: Int
-    let label: String
-    let amountCents: Int
+/// Spending posted by recurring rules and other spending, for the last 12 full months
+/// and the current one.
+struct InsightsRecurringSplitResponse: Codable, Equatable {
+    let rows: [InsightsRecurringSplitRow]
+}
+
+struct InsightsRecurringSplitRow: Codable, Equatable {
+    let month: String
+    let recurringCents: Int
+    let otherCents: Int
 
     enum CodingKeys: String, CodingKey {
-        case year
         case month
-        case label
+        case recurringCents = "recurring_cents"
+        case otherCents = "other_cents"
+    }
+}
+
+/// Spending by booking day without recurring transactions, over 53 weeks up to today.
+/// Days are "2026-10-14"; days without spending are left out.
+struct InsightsDayCalendarResponse: Codable, Equatable {
+    let start: String
+    let end: String
+    let days: [InsightsDayAmount]
+    // Monday first.
+    let weekdayAvgCents: [Int]
+    let weekendShare: Double
+
+    enum CodingKeys: String, CodingKey {
+        case start
+        case end
+        case days
+        case weekdayAvgCents = "weekday_avg_cents"
+        case weekendShare = "weekend_share"
+    }
+}
+
+struct InsightsDayAmount: Codable, Equatable {
+    let date: String
+    let amountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case date
         case amountCents = "amount_cents"
     }
 }
 
-struct InsightsBudgetEffective: Codable, Equatable, Identifiable {
-    var id: String { "\(scopeCategoryID.map(String.init) ?? "overall")-\(source)-\(sourceID)" }
-    let scopeCategoryID: Int?
-    let scopeLabel: String
-    let amountCents: Int
-    let source: String
-    let sourceID: Int
-
-    enum CodingKeys: String, CodingKey {
-        case scopeCategoryID = "scope_category_id"
-        case scopeLabel = "scope_label"
-        case amountCents = "amount_cents"
-        case source
-        case sourceID = "source_id"
-    }
+/// Spent against each month's budget, for the last 12 full months and the current one.
+struct InsightsBudgetHistoryResponse: Codable, Equatable {
+    let months: [String]
+    let rows: [InsightsBudgetHistoryRow]
 }
 
-struct InsightsBudgetProgress: Codable, Equatable {
-    let spentCents: Int
-    let remainingCents: Int
-
-    enum CodingKeys: String, CodingKey {
-        case spentCents = "spent_cents"
-        case remainingCents = "remaining_cents"
-    }
-}
-
-struct InsightsResponse: Codable, Equatable {
-    let period: Period
-    let filters: InsightsFilters
-    let tags: [TransactionTag]
-    let categories: [InsightsCategory]
-    let series: [InsightsMonthlySeriesPoint]
-    let expenseBreakdown: [BreakdownItem]
-    let incomeBreakdown: [BreakdownItem]
-    let deltas: InsightsDeltas
-    let topTags: [InsightsTopTag]
-    let trendCategoryID: Int?
-    let trend: [InsightsTrendPoint]
-    let budgetMonth: String
-    let budgetEffective: [InsightsBudgetEffective]
-    let budgetProgress: [String: InsightsBudgetProgress]
-
-    enum CodingKeys: String, CodingKey {
-        case period
-        case filters
-        case tags
-        case categories
-        case series
-        case expenseBreakdown = "expense_breakdown"
-        case incomeBreakdown = "income_breakdown"
-        case deltas
-        case topTags = "top_tags"
-        case trendCategoryID = "trend_category_id"
-        case trend
-        case budgetMonth = "budget_month"
-        case budgetEffective = "budget_effective"
-        case budgetProgress = "budget_progress"
-    }
-}
-
-struct InsightsFlowNode: Codable, Equatable, Identifiable {
-    let id: String
-    let label: String
-    let type: String
-    let amountCents: Int
+struct InsightsBudgetHistoryRow: Codable, Equatable {
     let categoryID: Int?
+    let name: String
+    let icon: String?
+    let cells: [InsightsBudgetHistoryCell]
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case label
-        case type
-        case amountCents = "amount_cents"
         case categoryID = "category_id"
+        case name
+        case icon
+        case cells
     }
 }
 
-struct InsightsFlowLink: Codable, Equatable, Identifiable {
-    var id: String { "\(from)-\(to)" }
-    let from: String
-    let to: String
-    let amountCents: Int
+struct InsightsBudgetHistoryCell: Codable, Equatable {
+    let month: String
+    // Nil for a month without a budget.
+    let budgetCents: Int?
+    let spentCents: Int
 
     enum CodingKeys: String, CodingKey {
-        case from
-        case to
-        case amountCents = "amount_cents"
+        case month
+        case budgetCents = "budget_cents"
+        case spentCents = "spent_cents"
     }
-}
-
-struct InsightsFlowResponse: Codable, Equatable {
-    let period: Period
-    let filters: InsightsFilters
-    let nodes: [InsightsFlowNode]
-    let links: [InsightsFlowLink]
 }
 
 struct ReportOptionsRequest: Codable, Equatable {
@@ -1937,6 +2190,8 @@ struct ReportOptionsRequest: Codable, Equatable {
     let notes: String?
     let transactionType: String?
     let categoryIDs: [Int]?
+    let tagIDs: [Int]
+    let excludedTagIDs: [Int]
     let transactionsSort: String
     let showRunningBalance: Bool
     let includeCategorySubtotals: Bool
@@ -1949,6 +2204,8 @@ struct ReportOptionsRequest: Codable, Equatable {
         case notes
         case transactionType = "transaction_type"
         case categoryIDs = "category_ids"
+        case tagIDs = "tag_ids"
+        case excludedTagIDs = "excluded_tag_ids"
         case transactionsSort = "transactions_sort"
         case showRunningBalance = "show_running_balance"
         case includeCategorySubtotals = "include_category_subtotals"
@@ -2006,34 +2263,31 @@ struct BankStatementImportResponse: Codable, Equatable {
     }
 }
 
-struct BankReconciliationSummary: Codable, Equatable {
-    let rowCount: Int
-    let unresolvedCount: Int
-    let suggestedCount: Int
-    let matchedCount: Int
-    let reviewedCount: Int
-    let bankTotalCents: Int
-    let onlyInExpensesCount: Int
+enum BankRowStatus: String, Codable {
+    case matched
+    case suggested
+    case ambiguous
+    case missing
+    case reviewed
+}
 
-    enum CodingKeys: String, CodingKey {
-        case rowCount = "row_count"
-        case unresolvedCount = "unresolved_count"
-        case suggestedCount = "suggested_count"
-        case matchedCount = "matched_count"
-        case reviewedCount = "reviewed_count"
-        case bankTotalCents = "bank_total_cents"
-        case onlyInExpensesCount = "only_in_expenses_count"
-    }
+enum BankRowResolution: String, Codable, CaseIterable, Identifiable {
+    case matched
+    case created
+    case ignored
+
+    var id: Self { self }
 }
 
 struct BankReconciliationTransaction: Codable, Equatable, Identifiable {
     let id: Int
     let date: Date
-    let type: String
+    let type: TransactionKind
     let amountCents: Int
-    let signedAmountCents: Int
     let title: String?
     let category: String?
+    let categoryID: Int?
+    let categoryIcon: String?
     let dateDeltaDays: Int
 
     enum CodingKeys: String, CodingKey {
@@ -2041,9 +2295,10 @@ struct BankReconciliationTransaction: Codable, Equatable, Identifiable {
         case date
         case type
         case amountCents = "amount_cents"
-        case signedAmountCents = "signed_amount_cents"
         case title
         case category
+        case categoryID = "category_id"
+        case categoryIcon = "category_icon"
         case dateDeltaDays = "date_delta_days"
     }
 }
@@ -2059,8 +2314,11 @@ struct BankStatementRow: Codable, Equatable, Identifiable {
     let bookingText: String?
     let purpose: String?
     let rawDescription: String
-    let reviewedAt: Date?
-    let status: String
+    let resolution: BankRowResolution?
+    let resolvedAt: Date?
+    let ignoreReason: String?
+    let status: BankRowStatus
+    let candidates: [BankReconciliationTransaction]
     let candidateCount: Int
     let suggestedTransaction: BankReconciliationTransaction?
 
@@ -2075,46 +2333,128 @@ struct BankStatementRow: Codable, Equatable, Identifiable {
         case bookingText = "booking_text"
         case purpose
         case rawDescription = "raw_description"
-        case reviewedAt = "reviewed_at"
+        case resolution
+        case resolvedAt = "resolved_at"
+        case ignoreReason = "ignore_reason"
         case status
+        case candidates
         case candidateCount = "candidate_count"
         case suggestedTransaction = "suggested_transaction"
     }
 }
 
-struct BankReconciliationResponse: Codable, Equatable {
-    let summary: BankReconciliationSummary
-    let rows: [BankStatementRow]
-    let onlyInExpenses: [BankReconciliationTransaction]
+struct BankRowsPage: Codable, Equatable {
+    let items: [BankStatementRow]
+    let total: Int
+}
+
+struct BankAccount: Codable, Equatable, Identifiable {
+    var id: String { label }
+    let label: String
+    let rowCount: Int
+    let lastImportAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case summary
-        case rows
-        case onlyInExpenses = "only_in_expenses"
+        case label
+        case rowCount = "row_count"
+        case lastImportAt = "last_import_at"
+    }
+}
+
+struct BankAccountsResponse: Codable, Equatable {
+    let accounts: [BankAccount]
+}
+
+struct BankRowCandidatesResponse: Codable, Equatable {
+    let items: [BankReconciliationTransaction]
+}
+
+struct BankRowIDsRequest: Codable, Equatable {
+    let rowIDs: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case rowIDs = "row_ids"
+    }
+}
+
+/// Without an account, every row to review is ignored.
+struct BankIgnoreOpenRequest: Encodable {
+    let account: String?
+}
+
+struct BankAcceptSuggestionsResponse: Codable, Equatable {
+    struct Match: Codable, Equatable {
+        let rowID: Int
+        let transactionID: Int
+
+        enum CodingKeys: String, CodingKey {
+            case rowID = "row_id"
+            case transactionID = "transaction_id"
+        }
+    }
+
+    let matches: [Match]
+}
+
+struct BankRowIgnoreRequest: Codable, Equatable {
+    let reason: String
+}
+
+struct BankRowReopenRequest: Codable, Equatable {
+    let trashCreatedTransaction: Bool
+    // The shown outcome, so the server leaves a row changed elsewhere since as it is.
+    let expectedResolution: BankRowResolution?
+    let expectedTransactionID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case trashCreatedTransaction = "trash_created_transaction"
+        case expectedResolution = "expected_resolution"
+        case expectedTransactionID = "expected_transaction_id"
+    }
+}
+
+struct BankRowMatchRequest: Codable, Equatable {
+    let transactionID: Int
+    let updateAmountToBank: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case transactionID = "transaction_id"
+        case updateAmountToBank = "update_amount_to_bank"
+    }
+}
+
+struct BankTransactionCreateRequest: Codable, Equatable {
+    /// yyyy-MM-dd
+    let date: String
+    let categoryID: Int?
+    let title: String
+    let description: String?
+    let tagIDs: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case categoryID = "category_id"
+        case title
+        case description
+        case tagIDs = "tag_ids"
     }
 }
 
 struct BankRowActionResponse: Codable, Equatable {
-    let status: String?
     let transactionID: Int?
 
     enum CodingKeys: String, CodingKey {
-        case status
         case transactionID = "transaction_id"
     }
 }
 
 struct DashboardBudgetPace: Codable, Equatable {
-    let velocityRatio: Double
-    let projectedCents: Int
     let budgetCents: Int
-    let sparkline: String
+    let spentCents: Int
 
     enum CodingKeys: String, CodingKey {
-        case velocityRatio = "velocity_ratio"
-        case projectedCents = "projected_cents"
         case budgetCents = "budget_cents"
-        case sparkline
+        case spentCents = "spent_cents"
     }
 }
 
@@ -2124,28 +2464,12 @@ struct DashboardCategoryBudgetPulse: Codable, Equatable, Identifiable {
     let scopeLabel: String
     let amountCents: Int
     let spentCents: Int
-    let remainingCents: Int
-    let velocityRatio: Double
 
     enum CodingKeys: String, CodingKey {
         case scopeCategoryID = "scope_category_id"
         case scopeLabel = "scope_label"
         case amountCents = "amount_cents"
         case spentCents = "spent_cents"
-        case remainingCents = "remaining_cents"
-        case velocityRatio = "velocity_ratio"
-    }
-}
-
-struct DashboardCategoryBudgetSummary: Codable, Equatable {
-    let total: Int
-    let needsAttention: Int
-    let priority: DashboardCategoryBudgetPulse
-
-    enum CodingKeys: String, CodingKey {
-        case total
-        case needsAttention = "needs_attention"
-        case priority
     }
 }
 
@@ -2159,7 +2483,6 @@ struct AdminInfo: Codable, Equatable {
     let logSizeMB: Double
     let logModified: Date?
     let logRetainedFiles: Int
-    let usersCount: Int
 
     enum CodingKeys: String, CodingKey {
         case appVersion = "app_version"
@@ -2171,11 +2494,14 @@ struct AdminInfo: Codable, Equatable {
         case logSizeMB = "log_size_mb"
         case logModified = "log_modified"
         case logRetainedFiles = "log_retained_files"
-        case usersCount = "users_count"
     }
 }
 
 struct AdminSystemHealth: Codable, Equatable {
+    enum Status: String, Codable {
+        case healthy, warm, critical
+    }
+
     let cpuTempCelsius: Double?
     let cpuLoadPercent: Double
     let ramUsedBytes: Int
@@ -2185,21 +2511,7 @@ struct AdminSystemHealth: Codable, Equatable {
     let diskFreeBytes: Int
     let dbSizeBytes: Int
     let receiptsSizeBytes: Int
-    let status: String
-
-    var ramUsagePercent: Double {
-        guard ramTotalBytes > 0 else {
-            return 0
-        }
-        return Double(ramUsedBytes) / Double(ramTotalBytes) * 100
-    }
-
-    var diskUsagePercent: Double {
-        guard diskTotalBytes > 0 else {
-            return 0
-        }
-        return Double(diskUsedBytes) / Double(diskTotalBytes) * 100
-    }
+    let status: Status
 
     enum CodingKeys: String, CodingKey {
         case cpuTempCelsius = "cpu_temp_celsius"
@@ -2251,9 +2563,9 @@ enum AdminLogFilter: String, CaseIterable, Equatable, Identifiable {
 }
 
 struct AdminLogEntry: Decodable, Equatable, Identifiable {
-    var id: String { "\(timestamp)-\(event)-\(requestID ?? "")" }
+    var id: String { "\(timestamp?.timeIntervalSince1970 ?? 0)-\(event)-\(requestID ?? "")" }
 
-    let timestamp: String
+    let timestamp: Date?
     let level: String
     let logger: String?
     let event: String
@@ -2282,7 +2594,7 @@ struct AdminLogEntry: Decodable, Equatable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let known = try decoder.container(keyedBy: KnownKeys.self)
-        timestamp = try known.decodeIfPresent(String.self, forKey: .timestamp) ?? "-"
+        timestamp = try known.decodeIfPresent(Date.self, forKey: .timestamp)
         level = try known.decodeIfPresent(String.self, forKey: .level) ?? "INFO"
         logger = try known.decodeIfPresent(String.self, forKey: .logger)
         event = try known.decodeIfPresent(String.self, forKey: .event) ?? "log_entry"
@@ -2309,6 +2621,10 @@ struct AdminLogEntry: Decodable, Equatable, Identifiable {
 
 struct AdminPurgeDeletedRequest: Codable, Equatable {
     let days: Int
+}
+
+struct AdminPurgeDeletedPreview: Decodable, Equatable {
+    let count: Int
 }
 
 struct AdminPurgeDeletedResponse: Codable, Equatable {
@@ -2344,6 +2660,54 @@ struct AdminRecurringCatchUpResponse: Codable, Equatable {
         case advancedRules = "advanced_rules"
         case overdueRules = "overdue_rules"
         case updated
+    }
+}
+
+/// The assistant's chats, tokens, and cost in a period.
+struct AssistantUsage: Decodable, Equatable {
+    enum Period: String, CaseIterable, Identifiable {
+        case week, month, all
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .week:
+                "Week"
+            case .month:
+                "Month"
+            case .all:
+                "All Time"
+            }
+        }
+    }
+
+    let totalChats: Int
+    let completedChats: Int
+    let failedChats: Int
+    let costedChats: Int
+    let totalTokens: Int
+    let cachedInputTokens: Int
+    let reasoningTokens: Int
+    let totalCostDecimal: String
+    let averageCostDecimal: String
+    let costUnit: String?
+    let averageTotalTokens: Int
+    let p95DurationMS: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case totalChats = "total_chats"
+        case completedChats = "completed_chats"
+        case failedChats = "failed_chats"
+        case costedChats = "costed_chats"
+        case totalTokens = "total_tokens"
+        case cachedInputTokens = "cached_input_tokens"
+        case reasoningTokens = "reasoning_tokens"
+        case totalCostDecimal = "total_cost_decimal"
+        case averageCostDecimal = "average_cost_decimal"
+        case costUnit = "cost_unit"
+        case averageTotalTokens = "average_total_tokens"
+        case p95DurationMS = "p95_duration_ms"
     }
 }
 
@@ -2505,15 +2869,25 @@ struct IngestTokenMetadata: Codable, Equatable {
 }
 
 struct AutoCategorizationSettings: Codable, Equatable {
-    var enabled: Bool = false
-    var threshold: Double = 0.8
-    var trainingStatus: String = "untrained"
-    var trainedAt: String?
+    enum TrainingStatus: String, Codable {
+        case untrained
+        case training
+        case ready
+        case insufficientData = "insufficient_data"
+        case failed
+    }
+
+    let enabled: Bool
+    let threshold: Double
+    let trainingStatus: TrainingStatus
+    let trainedAt: Date?
+    let minHistory: Int
 
     enum CodingKeys: String, CodingKey {
         case enabled, threshold
         case trainingStatus = "training_status"
         case trainedAt = "trained_at"
+        case minHistory = "min_history"
     }
 }
 
@@ -2639,12 +3013,9 @@ enum JSONValue: Codable, Equatable {
     }
 
     func prettyDescription() -> String {
-        guard
-            let data = try? JSONEncoder().encode(self),
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
-            let string = String(data: prettyData, encoding: .utf8)
-        else {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(self), let string = String(data: data, encoding: .utf8) else {
             return String(describing: self)
         }
         return string

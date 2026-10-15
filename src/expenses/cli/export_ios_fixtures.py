@@ -98,10 +98,20 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             "has_any_transactions": True,
             "mode": "both",
             "expense_breakdown": [
-                {"name": "Groceries", "amount_cents": 34200, "percent": 40.45}
+                {
+                    "category_id": 10,
+                    "name": "Groceries",
+                    "amount_cents": 34200,
+                    "percent": 40.45,
+                }
             ],
             "income_breakdown": [
-                {"name": "Salary", "amount_cents": 320000, "percent": 100.0}
+                {
+                    "category_id": 20,
+                    "name": "Salary",
+                    "amount_cents": 320000,
+                    "percent": 100.0,
+                }
             ],
         },
         "recent": [transaction],
@@ -114,6 +124,10 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             "velocity_ratio": 0.82,
             "projected_cents": 178000,
             "budget_cents": 220000,
+            "spent_cents": 84550,
+            "remaining_cents": 135450,
+            "daily_remaining_cents": 9030,
+            "days_remaining": 15,
             "sparkline": "0.61,0.66,0.7,0.75,0.78,0.8,0.82",
         },
         "category_budget_pulse": [

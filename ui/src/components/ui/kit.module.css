@@ -336,6 +336,30 @@
 .empty { display: grid; justify-items: center; gap: 10px; padding: 48px 16px; color: var(--ink-2); text-align: center; }
 .empty > svg { width: 22px; height: 22px; color: var(--ink-3); }
 .emptyInline { padding: 16px; }
+/* Can't reach the server: a receipt prints from a slot while the page retries. The feed
+   clips the paper at the slot until it tears off; its padding leaves room for the shadow. */
+.receipt { display: grid; justify-items: center; padding: 8px 16px 48px; text-align: center; transition: opacity 260ms var(--ease-out); }
+.receiptLeaving { opacity: 0; }
+.receiptFeed { padding: 24px 28px 30px; clip-path: inset(0 0 30px 0); }
+.receiptTorn { clip-path: none; }
+.receiptSlot { width: 246px; max-width: 100%; height: 3px; margin: -30px 0 22px; border-radius: 2px; background: var(--ink-3); opacity: 0.45; transition: opacity 400ms ease; }
+.receiptTorn + .receiptSlot { opacity: 0; }
+.receiptShadow { filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.08)) drop-shadow(0 10px 18px rgb(0 0 0 / 0.1)); }
+.receiptPaper {
+  --zig: 6px;
+  position: relative; width: 212px; padding: 22px 18px 20px; background: var(--float); color: var(--ink);
+  mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / calc(2 * var(--zig)) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--zig)) 51% repeat-x;
+}
+.receiptHead { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.16em; }
+.receiptLine { margin: 0; font-size: 12.5px; font-weight: 600; letter-spacing: 0.06em; }
+.receiptSub { margin: 3px 0 0; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.receiptRule { margin: 11px 0; border-top: 1px dashed var(--ink-3); opacity: 0.6; }
+.receiptDots { display: flex; justify-content: center; align-items: center; gap: 7px; height: 14px; margin-top: 4px; }
+.receiptDots span { width: 4px; height: 4px; border-radius: 50%; background: var(--ink); animation: receiptDot 180ms var(--ease-out); }
+@keyframes receiptDot { from { opacity: 0; transform: scale(0.4); } }
+.receiptDetail { margin: 0 0 14px; color: var(--ink-3); }
 .skeleton { display: grid; gap: 16px; padding-top: 16px; }
 .skel { display: block; height: 12px; border-radius: 4px; background: var(--chip); }
 
@@ -1034,4 +1058,39 @@
   .dialog[data-state="closed"] { animation: fadeOut 120ms ease; }
   .btn:active, .ib:active, .pill:active, .send:active { transform: none !important; }
   .calEnter::after, .calTwinkle::after { animation: fadeIn 480ms both; animation-delay: var(--d); }
+  .receiptDots span { animation-name: fadeIn; }
+}
+
+/* Printing Transactions. The ledger shows only in print, and while it is mounted printing
+   shows nothing else. Paper is always light, so text and rules use fixed colors; the
+   category dots keep the current theme's palette. */
+.print { display: none; }
+@media print {
+  body:has(> .print) > :not(.print) { display: none; }
+  .print { display: block; color: #111; font-size: 9.5pt; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .print h1 { margin: 18pt 0 1pt; font-size: 17pt; font-weight: 700; }
+  .printMast { display: flex; justify-content: space-between; color: #55554f; font-size: 8pt; }
+  .printMast strong { color: #111; }
+  .printPeriod { margin: 0; color: #55554f; font-size: 10pt; }
+  .printScope { margin: 5pt 0 0; color: #6b6b65; font-size: 8.5pt; }
+  .printTable { width: 100%; margin-top: 16pt; border-collapse: collapse; }
+  .printTable th { padding: 0 0 4pt; border-bottom: 1px solid #111; color: #55554f; font-size: 8pt; font-weight: 600; text-align: left; }
+  .printTable th:nth-child(2) { width: 30%; }
+  .printTable th:last-child, .printTable td:last-child { width: 1%; text-align: right; white-space: nowrap; }
+  .printTable tbody { break-inside: avoid; }
+  .printTable td { padding: 3pt 8pt 3pt 0; border-bottom: 0.5pt solid #e2e2de; vertical-align: top; }
+  .printTable td:last-child { padding-right: 0; }
+  .printTable .printDay td { padding-top: 9pt; border-bottom: 0; font-weight: 600; }
+  .printTable .printDay td:last-child { color: #55554f; font-weight: 500; }
+  .printTags, .printNet { margin-left: 5pt; color: #6b6b65; font-size: 8.5pt; }
+  .printNet { margin: 0 5pt 0 0; }
+  .printDot { display: inline-block; width: 6pt; height: 6pt; margin-right: 5pt; border: 0.5pt solid #111; border-radius: 1.5pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .printTotals { width: 220pt; margin: 18pt 0 0 auto; break-inside: avoid; }
+  .printTotals div { display: flex; justify-content: space-between; padding: 2pt 0; }
+  .printTotals dt { color: #55554f; }
+  .printTotals dd { margin: 0; }
+  /* The bookkeeper's double rule under the closing total. */
+  .printTotals .printNetTotal { margin-top: 4pt; padding-top: 4pt; border-top: 1px solid #111; border-bottom: 3px double #111; font-weight: 700; }
+  .printNetTotal dt { color: #111; }
+  .printCount { margin: 8pt 0 0; color: #6b6b65; font-size: 8.5pt; text-align: right; }
 }

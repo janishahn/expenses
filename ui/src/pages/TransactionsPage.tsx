@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowsDownUpIcon } from "@phosphor-icons/react/ArrowsDownUp"
 import { CaretLeftIcon } from "@phosphor-icons/react/CaretLeft"
@@ -12,6 +12,7 @@ import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { MinusIcon } from "@phosphor-icons/react/Minus"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
+import { PrinterIcon } from "@phosphor-icons/react/Printer"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { SwapIcon } from "@phosphor-icons/react/Swap"
 import { TagIcon } from "@phosphor-icons/react/Tag"
@@ -19,9 +20,9 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useLocation, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import type { TagsResponse, TransactionListItem, TransactionsResponse } from "../app/api-types"
+import type { TagsResponse, TransactionsResponse, TransactionsSummary } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
-import { dayLabel, dayNet, invalidateTransactionData } from "../app/transactions"
+import { dayLabel, dayNet, groupByDay, invalidateTransactionData, rowTitle } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -49,6 +50,7 @@ import {
 } from "../components/ui/period"
 import { Pill } from "../components/ui/Pill"
 import { Popover } from "../components/ui/Popover"
+import { PrintLedger } from "../components/ui/PrintLedger"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
 import { TagChip } from "../components/ui/TagChip"
 import { Field, FieldGrid, Select, TextField } from "../components/ui/TextField"
@@ -86,15 +88,12 @@ const ORIGINS = {
   digest: { label: "Digest", to: "/digest" },
 }
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const MAC = navigator.userAgent.includes("Mac")
 
 const TAG_PATCH_COPY: Record<TagPatchMode, { title: string; verb: string }> = {
   add: { title: "Add tags", verb: "Add tags to" },
   remove: { title: "Remove tags", verb: "Remove tags from" },
   replace: { title: "Replace tags", verb: "Replace tags on" },
-}
-
-function rowTitle(row: TransactionListItem): string {
-  return row.title || row.category?.name || "Untitled"
 }
 
 function countLabel(count: number): string {
@@ -164,6 +163,51 @@ function TransactionsPage() {
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
+
+  // Printing loads every row for the filters first; the ledger then opens the print dialog.
+  const [printout, setPrintout] = useState<{ list: TransactionsResponse; summary: TransactionsSummary } | "loading" | null>(
+    null
+  )
+  const endPrint = useCallback(() => setPrintout(null), [])
+  const startPrint = useCallback(async () => {
+    setPrintout("loading")
+    const params = new URLSearchParams(listParams)
+    params.delete("page")
+    const listAll = async () => {
+      const pages: TransactionsResponse[] = []
+      do {
+        const pageParams = new URLSearchParams(params)
+        pageParams.set("page", String(pages.length + 1))
+        pageParams.set("limit", "100")
+        pages.push(await apiFetch<TransactionsResponse>(`/api/transactions?${pageParams.toString()}`))
+      } while (pages[pages.length - 1].has_more)
+      return { ...pages[0], items: pages.flatMap((entry) => entry.items) }
+    }
+    try {
+      const [list, summary] = await Promise.all([
+        listAll(),
+        apiFetch<TransactionsSummary>(`/api/transactions/summary?${params.toString()}`),
+      ])
+      setPrintout({ list, summary })
+    } catch (failure) {
+      setPrintout(null)
+      showToast({ message: getApiErrorMessage(failure, "Unable to prepare the printout.") })
+    }
+  }, [listParams])
+  // Cmd+P (Ctrl+P off the Mac, where Ctrl+P moves the text cursor) prints the whole ledger
+  // rather than the screen, once there is a ledger to print.
+  const printable = !error && (data?.total ?? 0) > 0
+  useEffect(() => {
+    if (!printable) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = MAC ? event.metaKey : event.ctrlKey
+      if (event.key.toLowerCase() !== "p" || !command || event.altKey || event.shiftKey) return
+      event.preventDefault()
+      if (printout === null) void startPrint()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [printable, printout, startPrint])
 
   if (isLoading) {
     return <PanelLoading title="Transactions" label="Loading transactions…" />
@@ -336,12 +380,7 @@ function TransactionsPage() {
 
   // Rows by day. A band at a page edge may continue on the next or previous page, so it
   // shows no net rather than a partial one.
-  const groups: Array<{ date: string; rows: TransactionListItem[] }> = []
-  for (const row of items) {
-    const last = groups[groups.length - 1]
-    if (last && last.date === row.date) last.rows.push(row)
-    else groups.push({ date: row.date, rows: [row] })
-  }
+  const groups = groupByDay(items)
   const bandNet = (index: number): ReactNode => {
     if ((index === 0 && page > 1) || (index === groups.length - 1 && has_more)) return null
     return <Amount cents={dayNet(groups[index].rows)} kind="signed" />
@@ -522,6 +561,9 @@ function TransactionsPage() {
             </MenuLink>
             <MenuItem icon={DownloadSimpleIcon} onSelect={() => window.location.assign(exportHref)}>
               Export CSV
+            </MenuItem>
+            <MenuItem icon={PrinterIcon} disabled={printout !== null || total === 0} onSelect={() => void startPrint()}>
+              Print…
             </MenuItem>
           </Menu>
         </>
@@ -737,6 +779,9 @@ function TransactionsPage() {
           </EntryChips>
         ) : null}
       </Dialog>
+      {printout !== null && printout !== "loading" ? (
+        <PrintLedger list={printout.list} summary={printout.summary} onDone={endPrint} />
+      ) : null}
     </Panel>
   )
 }

@@ -1,10 +1,13 @@
-import { Fragment, type ReactNode } from "react"
+import { Fragment, useCallback, useState, useSyncExternalStore, type ReactNode } from "react"
 import { CaretRightIcon } from "@phosphor-icons/react/CaretRight"
+import { useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import clsx from "clsx"
+import { isServerUnreachable, subscribeServerReachability } from "../../app/api"
 import { Button, LinkButton } from "./Button"
 import { EmptyState } from "./EmptyState"
 import { useLoadingDelayElapsed } from "./layout-state"
+import { ServerReceipt } from "./ServerReceipt"
 import s from "./kit.module.css"
 
 export type Crumb = { label: string; to: string }
@@ -115,6 +118,18 @@ export function PanelError({
 }
 
 export function ErrorBody({ message, returnTo }: { message: string; returnTo?: Crumb }) {
+  const queryClient = useQueryClient()
+  const unreachable = useSyncExternalStore(subscribeServerReachability, isServerUnreachable)
+  // The receipt stays after the server answers its retries, until the failed loads have run
+  // again. If the server is gone again by then, a new receipt starts.
+  const [receipt, setReceipt] = useState<number | null>(null)
+  if (unreachable && receipt === null) setReceipt(0)
+  const reload = useCallback(async () => {
+    await queryClient.refetchQueries({ type: "active", predicate: (query) => query.state.status === "error" })
+    setReceipt((current) => (isServerUnreachable() && current !== null ? current + 1 : null))
+  }, [queryClient])
+
+  if (receipt !== null) return <ServerReceipt key={receipt} onAnswered={reload} />
   return (
     <section className={s.card}>
       <EmptyState

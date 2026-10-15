@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry, and so does a proxy's 502 or 504 for one request while the server itself still answers.
+- Print the web Transactions ledger from ⋯ › Print… or with Cmd+P (Ctrl+P on Windows and Linux). The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
+- On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
+
+### Changed
+- Redesigned the iOS app to match the web redesign in light and dark. Dashboard, Transactions, Budgets, and Insights are tabs; More lists Forecast, Uncategorized, the Manage screens, the Tools, Settings, and Admin. Every screen takes the web page's content: transaction and Manage details save each field as you edit it, Uncategorized accepts or rejects suggested categories, Trash restores or deletes in bulk, Budgets steps through months with pace, Insights shades overspent months and shows the month grids, daily calendar, and budget history, Reconcile reviews statement rows in suggested, several-match, and no-match groups with ignore reasons, Ignore Remaining Rows, and a Resolved view, Settings and Admin have the web's sections, and the Assistant lists each tool step with its result. Without a stored session the app opens on one sign-in screen.
+- The redesigned iOS app adapts to every text size, including the accessibility sizes, and follows Increase Contrast and Reduce Motion. Entry sheets ask before discarding what you entered, screens that fail to load offer Try Again, and the Insights, Forecast, and What If charts label their amounts.
+- The iOS Transactions search field starts hidden. Pull down at the top of the list to show it.
+- When the iOS app is locked and Face ID is canceled, the app shows a sign-in screen. Sign in with the server account there, or tap Unlock with Face ID to try again.
+- Hide amounts on iOS covers every amount in the app, including Assistant answers, and blurs amounts instead of drawing gray boxes.
+- iOS CSV export moves from Reports to Settings > Import and Export, next to the portable archive. Reports builds the web's report, including category and tag scope, and opens the PDF in Quick Look.
+- The redesigned iOS app needs a 0.7.1 or later server.
+
+### Removed
+- The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
+- The Add another switch in the web and iOS add-transaction forms. The form now closes after each add.
+
 ### Fixed
+- iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
+- Canceling Face ID on the iOS lock screen no longer starts Face ID again right away.
+- The web Budgets Annual band no longer counts spending and limits twice when an overall annual budget sits next to category budgets. With an overall annual budget, the band shows its figures.
+- iOS searches and account labels that contain + no longer reach the server with a space in its place.
+- The iOS app no longer keeps server responses, such as receipt images, in its disk cache.
+- Editing a transaction on iOS while the phone is in another time zone than the server no longer moves its time or booking date: iOS shows and saves stored times in the server's time zone. Balance snapshot times no longer shift by the UTC offset on iOS, because `GET /api/settings` now returns each snapshot's `as_of_at` with the server zone's offset, as `occurred_at` already does.
+- Amounts with a third decimal, such as 12,345, are rejected on the web and iOS instead of being rounded to cents.
+- Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry. When the add-transaction form's code can't load, a message offers Reload and the page stays.
 - Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
 
 ## [0.7.1] - 2026-10-14

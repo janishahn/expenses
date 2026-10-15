@@ -73,7 +73,9 @@ export function applyTransactionChanges(detail: TransactionDetail, changes: Tran
 // Accepts "12,34", "12.34", and "1 234,56"; null for anything else.
 export function parseAmountCents(raw: string): number | null {
   const normalized = raw.replace(/[\s€]/g, "").replace(",", ".")
-  if (!normalized) return null
+  if (!normalized || normalized === ".") return null
+  // A third decimal, as in "12,345", is no cent amount to round.
+  if (!/^\d*\.?\d{0,2}$/.test(normalized)) return null
   const value = Number(normalized)
   if (!Number.isFinite(value) || value < 0) return null
   return Math.round(value * 100)
@@ -146,6 +148,21 @@ export function currentLocalDateTime(): string {
   const now = new Date()
   now.setSeconds(0, 0)
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
+export function rowTitle(row: TransactionListItem): string {
+  return row.title || row.category?.name || "Untitled"
+}
+
+// Runs of consecutive rows that share a date, in list order.
+export function groupByDay(rows: TransactionListItem[]): Array<{ date: string; rows: TransactionListItem[] }> {
+  const days: Array<{ date: string; rows: TransactionListItem[] }> = []
+  for (const row of rows) {
+    const last = days[days.length - 1]
+    if (last && last.date === row.date) last.rows.push(row)
+    else days.push({ date: row.date, rows: [row] })
+  }
+  return days
 }
 
 // A day's net with the summary's rules: income that is not a reimbursement, minus expenses

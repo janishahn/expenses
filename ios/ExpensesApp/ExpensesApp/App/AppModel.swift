@@ -5,6 +5,8 @@ enum ExpensesAppStorage {
     static let baseURLKey = "expenses.baseURL"
     static let mobileKeychainService = "expenses.mobile"
     static let tokenKey = "mobileSessionToken"
+    // The stored session's username, which the lock screen fills in.
+    static let sessionUsernameKey = "expenses.sessionUsername"
     static let defaultLocalBackendURL = "http://localhost:8000"
 }
 
@@ -27,47 +29,58 @@ final class AppModel {
             UserDefaults.standard.set(appearancePreference, forKey: Self.appearancePreferenceKey)
         }
     }
+    // Privacy mode hides every amount on screen, as the web's privacy toggle does.
+    var amountsHidden: Bool {
+        didSet {
+            UserDefaults.standard.set(amountsHidden, forKey: Self.amountsHiddenKey)
+        }
+    }
     var status: MobileStatus?
     var llmEnabled: Bool { status?.llmEnabled ?? false }
+    // The server stores transaction and balance snapshot times as wall-clock times in its
+    // zone, so a stored time shows and saves in it. The device's zone until it is known.
+    var serverTimeZone: TimeZone { status.flatMap { TimeZone(identifier: $0.timezone) } ?? .current }
+    // A mobile session token is stored. The app shows sign-in until there is one.
+    private(set) var hasSession = false
     var identity: MobileAuthIdentity?
     var dashboard: DashboardResponse?
     var dashboardPeriod = "this_month"
     var dashboardExcludedTagIDs: [Int] = []
+    // Dashboard charts load beside the summary. nil means not loaded yet; a
+    // failure stays inside its chart instead of replacing the dashboard.
+    var dashboardBalanceHistory: Result<BalanceHistoryResponse, APIErrorInfo>?
+    var dashboardForecast: Result<ForecastResponse, APIErrorInfo>?
+    var dashboardSpendingBands: Result<CategoryBandsResponse, APIErrorInfo>?
+    // Counts edits to transactions, budgets and recurring rules, so the charts and
+    // forecasts that show them reload.
+    private(set) var ledgerRevision = 0
+    // Each list keeps its query, and the rows of every page loaded so far.
+    var transactionQuery = TransactionQuery()
     var transactions: TransactionsResponse?
+    var uncategorizedQuery = TransactionQuery()
     var uncategorizedTransactions: UncategorizedTransactionsResponse?
+    // Every uncategorized transaction, whatever the Uncategorized screen's search.
+    var uncategorizedCount = 0
     var deletedTransactions: DeletedTransactionsResponse?
+    // The Categories and Tags screens' periods, which set their usage and sums.
+    var categoriesPeriod = PeriodSelection.all
     var categories: CategoriesResponse?
+    var tagsPeriod = PeriodSelection.all
     var tags: TagsResponse?
     var templates: TemplatesResponse?
     var rules: RulesResponse?
-    var transactionSuggestions: [TransactionSuggestion] = []
     var ruleSuggestions: [RuleSuggestion] = []
     var budgets: BudgetsResponse?
-    var budgetBurndown: BudgetBurndownResponse?
-    var digest: DigestResponse?
-    var forecast: ForecastResponse?
-    var forecastScenario: ForecastScenarioResponse?
-    var insights: InsightsResponse?
-    var insightsFlow: InsightsFlowResponse?
-    var durablePurchases: DurablePurchasesResponse?
-    var reconciliation: BankReconciliationResponse?
-    var adminInfo: AdminInfo?
-    var adminSystemHealth: AdminSystemHealth?
-    var adminLogs: AdminLogsResponse?
-    var legacySQLitePreview: LegacySQLitePreviewResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
     var aiSettings: AISettingsResponse?
-    var csvPreview: CSVPreviewResponse?
     var recurring: RecurringResponse?
-    var recurringOccurrences: RecurringOccurrencesResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
     var reimbursementExpenseSearch: ReimbursementExpenseSearchResponse?
     var lastError: APIErrorInfo?
     var isLoading = false
     var isMiningRuleSuggestions = false
-    var ruleMiningStatus: RuleMiningStatus = .idle
     var assistantTurns: [AssistantTurn] = []
     var isAssistantStreaming = false
     private var assistantMessageHistory: [JSONValue] = []
@@ -75,43 +88,42 @@ final class AppModel {
     private var assistantTurnSeq = 0
     private var dashboardLoadState: PrimaryLoadState = .idle
     private var transactionsLoadState: PrimaryLoadState = .idle
-    private var digestLoadState: PrimaryLoadState = .idle
-    private var insightsLoadState: PrimaryLoadState = .idle
-    private var insightsFlowLoadState: PrimaryLoadState = .idle
-    private var durablePurchasesLoadState: PrimaryLoadState = .idle
-    private var forecastLoadState: PrimaryLoadState = .idle
+    // The query the loaded rows belong to. A next page appends only to its own query.
+    private(set) var loadedTransactionQuery: TransactionQuery?
+    private(set) var loadedUncategorizedQuery: TransactionQuery?
     private var budgetsLoadState: PrimaryLoadState = .idle
     private var recurringLoadState: PrimaryLoadState = .idle
     private var dashboardLoadID = 0
     private var transactionsLoadID = 0
-    private var digestLoadID = 0
-    private var insightsLoadID = 0
 
     private var apiClient: ExpensesAPIClient
     private let keychain = KeychainStore(service: ExpensesAppStorage.mobileKeychainService)
 
     private static let appearancePreferenceKey = "expenses.appearancePreference"
+    private static let amountsHiddenKey = "expenses.amountsHidden"
 
     init() {
         let storedURL = UserDefaults.standard.string(forKey: ExpensesAppStorage.baseURLKey)
         let initialBaseURLString = storedURL ?? ExpensesAppStorage.defaultLocalBackendURL
         baseURLString = initialBaseURLString
         appearancePreference = UserDefaults.standard.string(forKey: Self.appearancePreferenceKey) ?? "system"
+        amountsHidden = UserDefaults.standard.bool(forKey: Self.amountsHiddenKey)
         apiClient = ExpensesAPIClient(baseURL: URL(string: initialBaseURLString))
+        hasSession = token != nil
     }
 
     var token: String? {
         try? keychain.readString(account: ExpensesAppStorage.tokenKey)
     }
 
-    var hasStoredToken: Bool {
-        token != nil
+    var sessionUsername: String? {
+        UserDefaults.standard.string(forKey: ExpensesAppStorage.sessionUsernameKey)
     }
 
     var knownCategories: [CategorySummary] {
         if let categories {
             return categories.categories.map {
-                CategorySummary(id: $0.id, name: $0.name, type: $0.type, icon: $0.icon)
+                CategorySummary(id: $0.id, name: $0.name, type: $0.type.rawValue, icon: $0.icon)
             }
         }
         if let transactions {
@@ -124,41 +136,38 @@ final class AppModel {
         if let categories {
             return categories.categories
                 .filter { $0.archivedAt == nil }
-                .map { CategorySummary(id: $0.id, name: $0.name, type: $0.type, icon: $0.icon) }
+                .map { CategorySummary(id: $0.id, name: $0.name, type: $0.type.rawValue, icon: $0.icon) }
         }
         return knownCategories
+    }
+
+    // Tags to choose from; archived ones stay on the Tags screen.
+    var activeTags: [TagRow] {
+        tags?.tags.filter { $0.archivedAt == nil } ?? []
     }
 
     var showsDashboardInitialLoading: Bool {
         dashboard == nil && dashboardLoadState.showsInitialPlaceholder
     }
 
-    var showsTransactionsInitialLoading: Bool {
-        transactions == nil && transactionsLoadState.showsInitialPlaceholder
-    }
-
-    var showsDigestInitialLoading: Bool {
-        digest == nil && digestLoadState.showsInitialPlaceholder
-    }
-
-    var showsInsightsInitialLoading: Bool {
-        insights == nil && insightsLoadState.showsInitialPlaceholder
-    }
-
     // A cold load (no cached content) that failed — distinct from a successful
     // load that returned empty data, which leaves the response non-nil.
     var showsDashboardLoadFailed: Bool { dashboard == nil && dashboardLoadState == .failed }
-    var showsDigestLoadFailed: Bool { digest == nil && digestLoadState == .failed }
-    var showsInsightsLoadFailed: Bool { insights == nil && insightsLoadState == .failed }
-    var showsInsightsFlowLoadFailed: Bool { insightsFlow == nil && insightsFlowLoadState == .failed }
-    var showsDurablePurchasesLoadFailed: Bool { durablePurchases == nil && durablePurchasesLoadState == .failed }
-    var showsForecastLoadFailed: Bool { forecast == nil && forecastLoadState == .failed }
-    var showsBudgetsLoadFailed: Bool { budgets == nil && budgetsLoadState == .failed }
+    var showsTransactionsLoadFailed: Bool { transactions == nil && transactionsLoadState == .failed }
+    // Budgets may still hold another month, so the screen checks the month it shows.
+    var showsBudgetsLoadFailed: Bool { budgetsLoadState == .failed }
     var showsRecurringLoadFailed: Bool { recurring == nil && recurringLoadState == .failed }
 
     func testConnection() async {
         await runRequest {
             status = try await apiClient.mobileStatus()
+        }
+    }
+
+    // Re-reads whether the server still needs setup, keeping any error on screen.
+    func refreshStatus() async {
+        if let status = try? await apiClient.mobileStatus() {
+            self.status = status
         }
     }
 
@@ -274,7 +283,8 @@ final class AppModel {
     func disconnectChatGPT() async throws -> ChatGPTDisconnectResponse {
         guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
         let response = try await apiClient.disconnectChatGPT(token: token)
-        _ = try await loadAISettings()
+        // The disconnect happened, so its result stands even when the settings don't reload.
+        _ = try? await loadAISettings()
         return response
     }
 
@@ -322,10 +332,8 @@ final class AppModel {
         return await runRequestReturningSuccess {
             try await apiClient.revokeMobileSession(id: session.id, token: token)
             if identity?.session?.id == session.id {
-                try keychain.delete(account: ExpensesAppStorage.tokenKey)
-                identity = nil
-                mobileSessions = nil
-                settings = nil
+                clearStoredSession()
+                clearUserScopedState()
             } else {
                 mobileSessions = try await apiClient.mobileSessions(token: token)
             }
@@ -341,7 +349,8 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let response = try await apiClient.createOrRotateIngestToken(token: token)
-            settings = try await apiClient.settings(token: token)
+            // The token shows only once, so it returns even when the settings don't reload.
+            settings = (try? await apiClient.settings(token: token)) ?? settings
             return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
@@ -390,13 +399,11 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let preview = try await apiClient.previewCSV(
+            return try await apiClient.previewCSV(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            csvPreview = preview
-            return preview
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -405,30 +412,23 @@ final class AppModel {
         return nil
     }
 
+    /// The import's result, also when refreshing afterwards fails, so it is not imported twice.
     func commitCSV(fileURL: URL) async -> CSVCommitResponse? {
         guard let token else {
             return nil
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
+        var committed: CSVCommitResponse?
+        _ = await runRequestReturningSuccess {
             let data = try readSecurityScopedData(from: fileURL)
-            let response = try await apiClient.commitCSV(
+            committed = try await apiClient.commitCSV(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            csvPreview = nil
             try await reloadPrimaryData()
             settings = try await apiClient.settings(token: token)
-            return response
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
         }
-        return nil
+        return committed
     }
 
     func elevateAdmin(password: String) async -> Bool {
@@ -500,20 +500,64 @@ final class AppModel {
         }
     }
 
-    func loadTransactions(
-        query: String? = nil,
-        type: String? = nil,
-        categoryID: Int? = nil,
-        tagID: Int? = nil,
-        excludedTagIDs: [Int] = [],
-        period: String = "all"
-    ) async {
+    // Month-end balances and the forecast do not depend on the dashboard period.
+    func loadDashboardBalance() async {
         guard let token else {
+            return
+        }
+        let client = apiClient
+        async let history = Self.chartResult { try await client.balanceHistory(months: 6, token: token) }
+        async let forecast = Self.chartResult { try await client.forecast(horizon: 6, mode: "full", token: token) }
+        let (historyResult, forecastResult) = await (history, forecast)
+        guard !Task.isCancelled else {
+            return
+        }
+        dashboardBalanceHistory = historyResult
+        dashboardForecast = forecastResult
+    }
+
+    func loadDashboardSpendingBands(period: String, excludedTagIDs: [Int]) async {
+        guard let token else {
+            return
+        }
+        let client = apiClient
+        let result = await Self.chartResult {
+            try await client.categorySpendingBands(period: period, excludedTagIDs: excludedTagIDs, months: 6, token: token)
+        }
+        guard !Task.isCancelled else {
+            return
+        }
+        dashboardSpendingBands = result
+    }
+
+    private nonisolated static func chartResult<Response>(
+        _ load: () async throws -> Response
+    ) async -> Result<Response, APIErrorInfo> {
+        do {
+            return .success(try await load())
+        } catch let error as APIErrorInfo {
+            return .failure(error)
+        } catch {
+            return .failure(APIErrorInfo(message: error.localizedDescription))
+        }
+    }
+
+    /// Loads the first page for `transactionQuery`, or with `nextPage` the page after
+    /// the loaded ones.
+    func loadTransactions(nextPage: Bool = false) async {
+        guard let token else {
+            return
+        }
+        let query = transactionQuery
+        if nextPage && (loadedTransactionQuery != query || transactions?.hasMore != true) {
             return
         }
         transactionsLoadID += 1
         let loadID = transactionsLoadID
+        let page = nextPage ? (transactions?.page ?? 0) + 1 : 1
         let hadContent = transactions != nil
+        // Rows of another query would read as this one's, so a failure shows instead.
+        let replacesRows = !nextPage && loadedTransactionQuery != query
         if !hadContent {
             transactionsLoadState = .loading
         }
@@ -525,15 +569,7 @@ final class AppModel {
             }
         }
         do {
-            let response = try await apiClient.transactions(
-                query: query,
-                type: type,
-                categoryID: categoryID,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                period: period,
-                token: token
-            )
+            var response = try await apiClient.transactions(query, page: page, token: token)
             guard loadID == transactionsLoadID else {
                 return
             }
@@ -541,13 +577,18 @@ final class AppModel {
             guard loadID == transactionsLoadID else {
                 return
             }
+            if nextPage, let transactions {
+                response.items = transactions.items + response.items
+            }
             transactions = response
+            loadedTransactionQuery = query
             transactionsLoadState = .loaded
         } catch let error as APIErrorInfo {
             guard loadID == transactionsLoadID else {
                 return
             }
-            if !hadContent {
+            if !hadContent || (replacesRows && !Task.isCancelled) {
+                transactions = nil
                 transactionsLoadState = .failed
             }
             handleAPIError(error)
@@ -555,47 +596,106 @@ final class AppModel {
             guard loadID == transactionsLoadID else {
                 return
             }
-            if !hadContent {
+            if !hadContent || (replacesRows && !Task.isCancelled) {
+                transactions = nil
                 transactionsLoadState = .failed
             }
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
     }
 
-    func loadUncategorizedTransactions(
-        query: String? = nil,
-        type: String? = nil,
-        categoryID: Int? = nil,
-        tagID: Int? = nil,
-        excludedTagIDs: [Int] = [],
-        period: String = "all"
-    ) async {
+    /// Loads the first page for `uncategorizedQuery`, or with `nextPage` the page after
+    /// the loaded ones.
+    @discardableResult
+    func loadUncategorizedTransactions(nextPage: Bool = false) async -> Bool {
+        guard let token else {
+            return false
+        }
+        let query = uncategorizedQuery
+        if nextPage && (loadedUncategorizedQuery != query || uncategorizedTransactions?.hasMore != true) {
+            return true
+        }
+        let page = nextPage ? (uncategorizedTransactions?.page ?? 0) + 1 : 1
+        let loaded = await runRequestReturningSuccess {
+            var response = try await apiClient.uncategorizedTransactions(query, page: page, token: token)
+            // A newer search replaces this one.
+            guard query == uncategorizedQuery else {
+                return
+            }
+            if nextPage, let uncategorizedTransactions {
+                response.items = uncategorizedTransactions.items + response.items
+            }
+            uncategorizedTransactions = response
+            loadedUncategorizedQuery = query
+        }
+        // Rows of another search would read as this one's, so the failure shows instead.
+        if !loaded && !nextPage && loadedUncategorizedQuery != query && query == uncategorizedQuery && !Task.isCancelled {
+            uncategorizedTransactions = nil
+        }
+        return loaded
+    }
+
+    func loadUncategorizedCount() async {
         guard let token else {
             return
         }
         await runRequest {
-            uncategorizedTransactions = try await apiClient.uncategorizedTransactions(
-                query: query,
-                type: type,
-                categoryID: categoryID,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                period: period,
-                token: token
-            )
-            if llmEnabled {
-                transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
-            }
+            uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
         }
     }
 
-    func loadTransactionSuggestions() async {
-        guard llmEnabled, let token else {
-            return
+    /// Files transactions under a category, as accepting a suggestion or choosing one does.
+    func categorize(_ transactionIDs: [Int], categoryID: Int) async -> Bool {
+        guard let token else {
+            return false
         }
-        await runRequest {
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+        let request = BulkEditRequest(
+            selection: BulkSelectionRequest(mode: "ids", transactionIDs: transactionIDs, query: nil),
+            operation: BulkOperationRequest(setCategoryID: categoryID, tagPatch: nil, lifecycle: "none")
+        )
+        return await runRequestReturningSuccess {
+            _ = try await apiClient.applyBulkEdit(request, token: token)
+            if var uncategorizedTransactions {
+                uncategorizedTransactions.items.removeAll { transactionIDs.contains($0.id) }
+                uncategorizedTransactions.total -= transactionIDs.count
+                self.uncategorizedTransactions = uncategorizedTransactions
+            }
+            // Later rows move up a page once these leave, so paging starts again.
+            await loadUncategorizedTransactions()
+            try await reloadPrimaryData()
         }
+    }
+
+    /// Keeps the transaction uncategorized and stops suggesting that category for it.
+    func dismissCategorySuggestion(_ row: UncategorizedTransaction) async -> Bool {
+        guard let token, let suggestion = row.suggestion else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.dismissCategorySuggestion(
+                transactionID: row.id,
+                categoryID: suggestion.categoryID,
+                token: token
+            )
+            await loadUncategorizedTransactions()
+        }
+    }
+
+    func exportTransactionsCSV() async -> AttachmentDownload? {
+        guard let token else {
+            return nil
+        }
+        isLoading = true
+        lastError = nil
+        defer { isLoading = false }
+        do {
+            return try await apiClient.exportTransactionsCSV(transactionQuery, token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+        return nil
     }
 
     func sendAssistantMessage(_ text: String) {
@@ -618,10 +718,9 @@ final class AppModel {
             )
         )
         assistantTurnSeq += 1
-        let assistantTurnID = assistantTurnSeq
         assistantTurns.append(
             AssistantTurn(
-                id: assistantTurnID,
+                id: assistantTurnSeq,
                 role: .assistant,
                 content: "",
                 progressNarration: "",
@@ -631,10 +730,30 @@ final class AppModel {
                 errorMessage: nil
             )
         )
-        isAssistantStreaming = true
+        streamAssistantReply(to: trimmed, turnID: assistantTurnSeq, token: token)
+    }
 
+    /// Asks the question before a stopped or failed answer again, in that answer's place.
+    func retryAssistantTurn(_ turnID: Int) {
+        guard !isAssistantStreaming, let token,
+              let index = assistantTurns.firstIndex(where: { $0.id == turnID }),
+              index > 0, assistantTurns[index - 1].role == .user
+        else {
+            return
+        }
+        assistantTurns[index].content = ""
+        assistantTurns[index].progressNarration = ""
+        assistantTurns[index].tools = []
+        assistantTurns[index].isStreaming = true
+        assistantTurns[index].isStopped = false
+        assistantTurns[index].errorMessage = nil
+        streamAssistantReply(to: assistantTurns[index - 1].content, turnID: turnID, token: token)
+    }
+
+    private func streamAssistantReply(to question: String, turnID assistantTurnID: Int, token: String) {
+        isAssistantStreaming = true
         let request = AssistantStreamRequest(
-            messages: [AssistantStreamMessage(role: "user", content: trimmed)],
+            messages: [AssistantStreamMessage(role: "user", content: question)],
             messageHistory: assistantMessageHistory
         )
         let client = apiClient
@@ -676,13 +795,14 @@ final class AppModel {
             return
         }
         switch event {
-        case let .toolCallStart(toolCallID, toolName):
+        case let .toolCallStart(toolCallID, toolName, arguments):
             assistantTurns[index].tools.append(
-                AssistantToolActivity(id: toolCallID, toolName: toolName, status: .running)
+                AssistantToolActivity(id: toolCallID, toolName: toolName, arguments: arguments)
             )
-        case let .toolCallEnd(toolCallID, success):
+        case let .toolCallEnd(toolCallID, success, summary):
             if let toolIndex = assistantTurns[index].tools.firstIndex(where: { $0.id == toolCallID }) {
                 assistantTurns[index].tools[toolIndex].status = success ? .success : .failed
+                assistantTurns[index].tools[toolIndex].summary = summary
             }
         case let .progressNarration(content):
             assistantTurns[index].progressNarration = content
@@ -724,44 +844,48 @@ final class AppModel {
         assistantStreamTask = nil
     }
 
-    func triageTransaction(_ transaction: TransactionListItem) async -> Bool {
+    /// Loads the first page of Trash, or with `nextPage` the page after the loaded ones.
+    @discardableResult
+    func loadDeletedTransactions(nextPage: Bool = false) async -> Bool {
         guard let token else {
             return false
         }
+        let loaded = nextPage ? deletedTransactions?.transactions ?? [] : []
+        if nextPage && loaded.count >= deletedTransactions?.total ?? 0 {
+            return true
+        }
         return await runRequestReturningSuccess {
-            _ = try await apiClient.triageTransaction(id: transaction.id, token: token)
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+            var response = try await apiClient.deletedTransactions(page: loaded.count / 50 + 1, token: token)
+            response.transactions = loaded + response.transactions
+            deletedTransactions = response
         }
     }
 
-    func acceptTransactionSuggestion(_ suggestion: TransactionSuggestion) async -> Bool {
+    /// The number restored, or nil when the request failed.
+    func restoreDeletedTransactions(_ ids: [Int]) async -> Int? {
         guard let token else {
-            return false
+            return nil
         }
-        return await runRequestReturningSuccess {
-            _ = try await apiClient.acceptTransactionSuggestion(id: suggestion.id, token: token)
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+        var restored: Int?
+        _ = await runRequestReturningSuccess {
+            restored = try await apiClient.restoreDeletedTransactions(ids: ids, token: token).restored
             try await reloadPrimaryData()
+            await loadDeletedTransactions()
         }
+        return restored
     }
 
-    func rejectTransactionSuggestion(_ suggestion: TransactionSuggestion) async -> Bool {
+    /// The number deleted forever, or nil when the request failed.
+    func purgeDeletedTransactions(_ ids: [Int]) async -> Int? {
         guard let token else {
-            return false
+            return nil
         }
-        return await runRequestReturningSuccess {
-            _ = try await apiClient.rejectTransactionSuggestion(id: suggestion.id, token: token)
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
+        var deleted: Int?
+        _ = await runRequestReturningSuccess {
+            deleted = try await apiClient.purgeDeletedTransactions(ids: ids, token: token).deleted
+            await loadDeletedTransactions()
         }
-    }
-
-    func loadDeletedTransactions() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            deletedTransactions = try await apiClient.deletedTransactions(token: token)
-        }
+        return deleted
     }
 
     func loadTransactionDetail(id: Int) async {
@@ -772,15 +896,6 @@ final class AppModel {
             selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
             transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
             reimbursementExpenseSearch = nil
-        }
-    }
-
-    func loadTransactionReimbursements(id: Int) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
         }
     }
 
@@ -807,6 +922,51 @@ final class AppModel {
         }
     }
 
+    func loadCategories() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+        }
+    }
+
+    func loadTags() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            tags = try await apiClient.tags(period: tagsPeriod, token: token)
+        }
+    }
+
+    func loadTemplates() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            templates = try await apiClient.templates(token: token)
+            if categories == nil {
+                categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+            }
+            if tags == nil {
+                tags = try await apiClient.tags(period: tagsPeriod, token: token)
+            }
+        }
+    }
+
+    func loadRules() async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            rules = try await apiClient.rules(token: token)
+            if llmEnabled {
+                ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+            }
+        }
+    }
+
     func saveRule(id: Int?, body: RuleMutationRequest) async -> Bool {
         guard let token else {
             return false
@@ -818,16 +978,7 @@ final class AppModel {
                 _ = try await apiClient.createRule(body, token: token)
             }
             rules = try await apiClient.rules(token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
-        }
-    }
-
-    func loadRuleSuggestions() async {
-        guard llmEnabled, let token else {
-            return
-        }
-        await runRequest {
-            ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+            try await reloadTransactions(token: token)
         }
     }
 
@@ -839,25 +990,16 @@ final class AppModel {
             return false
         }
         isMiningRuleSuggestions = true
-        ruleMiningStatus = .idle
         defer { isMiningRuleSuggestions = false }
-
-        let success = await runRequestReturningSuccess {
-            let minedSuggestions = try await apiClient.mineRuleSuggestions(token: token)
-            ruleSuggestions = minedSuggestions
-            ruleMiningStatus = minedSuggestions.isEmpty ? .noneFound : .idle
+        return await runRequestReturningSuccess {
+            ruleSuggestions = try await apiClient.mineRuleSuggestions(token: token)
         }
-        if !success {
-            ruleMiningStatus = .idle
-        }
-        return success
     }
 
     func acceptRuleSuggestion(_ suggestion: RuleSuggestion) async -> Bool {
         guard let token else {
             return false
         }
-        ruleMiningStatus = .idle
         return await runRequestReturningSuccess {
             _ = try await apiClient.acceptRuleSuggestion(id: suggestion.id, token: token)
             rules = try await apiClient.rules(token: token)
@@ -869,226 +1011,43 @@ final class AppModel {
         guard let token else {
             return false
         }
-        ruleMiningStatus = .idle
         return await runRequestReturningSuccess {
             _ = try await apiClient.rejectRuleSuggestion(id: suggestion.id, token: token)
             ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
         }
     }
 
-    func previewRule(_ body: RuleMutationRequest) async -> RulePreview? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            return try await apiClient.previewRule(body, token: token)
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
-    }
-
-    func toggleRule(_ rule: RuleRow, enabled: Bool) async -> Bool {
+    func deleteRule(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.toggleRule(
-                id: rule.id,
-                body: RuleToggleRequest(enabled: enabled),
-                token: token
-            )
+            try await apiClient.deleteRule(id: id, token: token)
             rules = try await apiClient.rules(token: token)
         }
     }
 
-    func deleteRule(_ rule: RuleRow) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.deleteRule(id: rule.id, token: token)
-            rules = try await apiClient.rules(token: token)
-        }
-    }
-
-    func loadBudgets(view: String) async {
+    /// Loads the budgets for `month`, such as "2026-10".
+    func loadBudgets(month: String) async {
         guard let token else {
             return
         }
-        await runRequest {
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
+        let loaded = await runRequestReturningSuccess {
+            budgets = try await apiClient.budgets(month: month, token: token)
         }
-        budgetsLoadState = budgets != nil ? .loaded : .failed
-    }
-
-    func loadDigest(weekOf: String? = nil) async {
-        guard let token else {
-            return
-        }
-        digestLoadID += 1
-        let loadID = digestLoadID
-        let hadContent = digest != nil
-        if !hadContent {
-            digestLoadState = .loading
-        }
-        isLoading = true
-        lastError = nil
-        defer {
-            if loadID == digestLoadID {
-                isLoading = false
-            }
-        }
-        do {
-            let response = try await apiClient.digest(weekOf: weekOf, token: token)
-            guard loadID == digestLoadID else {
-                return
-            }
-            await waitForInitialLoadTransitionIfNeeded(hadContent: hadContent)
-            guard loadID == digestLoadID else {
-                return
-            }
-            digest = response
-            digestLoadState = .loaded
-        } catch let error as APIErrorInfo {
-            guard loadID == digestLoadID else {
-                return
-            }
-            if !hadContent {
-                digestLoadState = .failed
-            }
-            handleAPIError(error)
-        } catch {
-            guard loadID == digestLoadID else {
-                return
-            }
-            if !hadContent {
-                digestLoadState = .failed
-            }
-            lastError = APIErrorInfo(message: error.localizedDescription)
+        // A load cancelled for another month leaves the state to that month's load.
+        if !Task.isCancelled {
+            budgetsLoadState = loaded ? .loaded : .failed
         }
     }
 
-    func loadForecast(horizon: Int, mode: String) async {
+    /// A read-only request for one chart or card, whose failure stays with it.
+    func chart<Response>(_ load: (ExpensesAPIClient, String) async throws -> Response) async -> Result<Response, APIErrorInfo> {
         guard let token else {
-            return
+            return .failure(APIErrorInfo(message: "Sign in to Expenses first."))
         }
-        await runRequest {
-            forecast = try await apiClient.forecast(horizon: horizon, mode: mode, token: token)
-            forecastScenario = nil
-        }
-        forecastLoadState = forecast != nil ? .loaded : .failed
-    }
-
-    func runForecastScenario(
-        horizon: Int,
-        mode: String,
-        modifications: [ForecastScenarioModificationRequest]
-    ) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            forecastScenario = try await apiClient.forecastScenario(
-                horizon: horizon,
-                mode: mode,
-                modifications: modifications,
-                token: token
-            )
-        }
-    }
-
-    func loadInsights(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int?
-    ) async {
-        guard let token else {
-            return
-        }
-        insightsLoadID += 1
-        let loadID = insightsLoadID
-        let hadContent = insights != nil
-        if !hadContent {
-            insightsLoadState = .loading
-        }
-        isLoading = true
-        lastError = nil
-        defer {
-            if loadID == insightsLoadID {
-                isLoading = false
-            }
-        }
-        do {
-            let response = try await apiClient.insights(
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                trendCategoryID: trendCategoryID,
-                token: token
-            )
-            guard loadID == insightsLoadID else {
-                return
-            }
-            await waitForInitialLoadTransitionIfNeeded(hadContent: hadContent)
-            guard loadID == insightsLoadID else {
-                return
-            }
-            insights = response
-            insightsLoadState = .loaded
-        } catch let error as APIErrorInfo {
-            guard loadID == insightsLoadID else {
-                return
-            }
-            if !hadContent {
-                insightsLoadState = .failed
-            }
-            handleAPIError(error)
-        } catch {
-            guard loadID == insightsLoadID else {
-                return
-            }
-            if !hadContent {
-                insightsLoadState = .failed
-            }
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-    }
-
-    func loadInsightsFlow(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = []
-    ) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            insightsFlow = try await apiClient.insightsFlow(
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                token: token
-            )
-        }
-        insightsFlowLoadState = insightsFlow != nil ? .loaded : .failed
-    }
-
-    func loadDurablePurchases() async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            durablePurchases = try await apiClient.durablePurchases(token: token)
-        }
-        durablePurchasesLoadState = durablePurchases != nil ? .loaded : .failed
+        let client = apiClient
+        return await Self.chartResult { try await load(client, token) }
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest) async -> AttachmentDownload? {
@@ -1125,13 +1084,21 @@ final class AppModel {
         return nil
     }
 
-    func loadReconciliation() async {
+    func downloadPortableArchive() async -> URL? {
         guard let token else {
-            return
+            return nil
         }
-        await runRequest {
-            reconciliation = try await apiClient.reconciliation(token: token)
+        isLoading = true
+        lastError = nil
+        defer { isLoading = false }
+        do {
+            return try await apiClient.downloadPortableArchive(token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
         }
+        return nil
     }
 
     func previewCommerzbankCSV(fileURL: URL, accountLabel: String) async -> BankStatementPreviewResponse? {
@@ -1166,14 +1133,12 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let result = try await apiClient.commitCommerzbankCSV(
+            return try await apiClient.commitCommerzbankCSV(
                 accountLabel: accountLabel,
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            reconciliation = try await apiClient.reconciliation(token: token)
-            return result
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1188,68 +1153,81 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.acceptBankRowSuggestion(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
         }
     }
 
-    func markBankRowReviewed(_ row: BankStatementRow) async -> Bool {
+    /// The number of rows matched. The server skips rows that no longer have exactly one candidate.
+    func acceptBankRowSuggestions(_ rows: [BankStatementRow]) async -> Int? {
+        guard let token else {
+            return nil
+        }
+        var matched: Int?
+        _ = await runRequestReturningSuccess {
+            matched = try await apiClient.acceptBankRowSuggestions(rowIDs: rows.map(\.id), token: token).matches.count
+        }
+        return matched
+    }
+
+    func ignoreOpenBankRows(account: String?) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            _ = try await apiClient.markBankRowReviewed(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
+            try await apiClient.ignoreOpenBankRows(account: account, token: token)
         }
     }
 
-    func reopenBankRow(_ row: BankStatementRow) async -> Bool {
+    func ignoreBankRow(_ row: BankStatementRow, reason: String) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            _ = try await apiClient.reopenBankRow(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
+            _ = try await apiClient.ignoreBankRow(rowID: row.id, reason: reason, token: token)
         }
     }
 
-    func createTransactionFromBankRow(_ row: BankStatementRow) async -> Bool {
+    // The shown outcome goes along, so the server leaves a row changed elsewhere since as it is.
+    func reopenBankRow(_ row: BankStatementRow, trashCreatedTransaction: Bool) async -> Bool {
         guard let token else {
             return false
         }
+        let body = BankRowReopenRequest(
+            trashCreatedTransaction: trashCreatedTransaction,
+            expectedResolution: row.resolution,
+            expectedTransactionID: row.suggestedTransaction?.id
+        )
         return await runRequestReturningSuccess {
-            _ = try await apiClient.createTransactionFromBankRow(rowID: row.id, token: token)
-            reconciliation = try await apiClient.reconciliation(token: token)
-            try await reloadPrimaryData()
+            _ = try await apiClient.reopenBankRow(rowID: row.id, body: body, token: token)
+            if trashCreatedTransaction {
+                try await reloadLedger(token: token)
+            }
         }
     }
 
-    func loadAdmin() async {
+    func matchBankRow(_ row: BankStatementRow, transactionID: Int, updateAmountToBank: Bool) async -> Bool {
         guard let token else {
-            return
+            return false
         }
-        await runRequest {
-            adminInfo = try await apiClient.adminInfo(token: token)
-            adminSystemHealth = try await apiClient.adminSystemHealth(token: token)
-            adminLogs = try await apiClient.adminLogs(filter: .errors, search: "", cursor: nil, token: token)
+        let body = BankRowMatchRequest(transactionID: transactionID, updateAmountToBank: updateAmountToBank)
+        return await runRequestReturningSuccess {
+            _ = try await apiClient.matchBankRow(rowID: row.id, body: body, token: token)
+            if updateAmountToBank {
+                try await reloadLedger(token: token)
+            }
         }
     }
 
-    func loadAdminHealth() async {
+    /// The new transaction's id, also when refreshing the ledger afterwards fails.
+    func createTransactionFromBankRow(_ row: BankStatementRow, body: BankTransactionCreateRequest) async -> Int? {
         guard let token else {
-            return
+            return nil
         }
-        await runRequest {
-            adminSystemHealth = try await apiClient.adminSystemHealth(token: token)
+        var created: Int?
+        _ = await runRequestReturningSuccess {
+            created = try await apiClient.createTransactionFromBankRow(rowID: row.id, body: body, token: token).transactionID
+            try await reloadLedger(token: token)
         }
-    }
-
-    func loadAdminLogs(filter: AdminLogFilter, search: String, cursor: String?) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            adminLogs = try await apiClient.adminLogs(filter: filter, search: search, cursor: cursor, token: token)
-        }
+        return created
     }
 
     func downloadAdminDatabase() async -> AttachmentDownload? {
@@ -1311,7 +1289,10 @@ final class AppModel {
         lastError = nil
         defer { isLoading = false }
         do {
-            return try await apiClient.rebuildRollups(token: token)
+            let response = try await apiClient.rebuildRollups(token: token)
+            // A new ledger revision makes Insights read the rebuilt totals.
+            try? await reloadLedger(token: token)
+            return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1328,7 +1309,13 @@ final class AppModel {
         lastError = nil
         defer { isLoading = false }
         do {
-            return try await apiClient.recurringCatchUp(token: token)
+            let response = try await apiClient.recurringCatchUp(token: token)
+            // Catch-up can post transactions and move rules on.
+            try? await reloadLedger(token: token)
+            if let rules = try? await apiClient.recurring(token: token) {
+                recurring = rules
+            }
+            return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1346,13 +1333,11 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let data = try readSecurityScopedData(from: fileURL)
-            let preview = try await apiClient.previewLegacySQLite(
+            return try await apiClient.previewLegacySQLite(
                 filename: fileURL.lastPathComponent,
                 data: data,
                 token: token
             )
-            legacySQLitePreview = preview
-            return preview
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1361,24 +1346,17 @@ final class AppModel {
         return nil
     }
 
+    /// The import's result, also when refreshing afterwards fails, so it is not imported twice.
     func commitLegacySQLite(_ request: LegacySQLiteCommitRequest) async -> LegacySQLiteCommitResponse? {
         guard let token else {
             return nil
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.commitLegacySQLite(request, token: token)
-            legacySQLitePreview = nil
+        var committed: LegacySQLiteCommitResponse?
+        _ = await runRequestReturningSuccess {
+            committed = try await apiClient.commitLegacySQLite(request, token: token)
             try await reloadPrimaryData()
-            return response
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
         }
-        return nil
+        return committed
     }
 
     func loadRecurring() async {
@@ -1391,169 +1369,123 @@ final class AppModel {
         recurringLoadState = recurring != nil ? .loaded : .failed
     }
 
-    func loadRecurringOccurrences(ruleID: Int) async {
-        guard let token else {
-            return
-        }
-        await runRequest {
-            recurringOccurrences = try await apiClient.recurringOccurrences(ruleID: ruleID, token: token)
-        }
-    }
-
-    func previewRecurring(_ body: RecurringPreviewRequest) async -> RecurringPreviewResponse? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            return try await apiClient.previewRecurring(body, token: token)
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
-    }
-
     func saveRecurringRule(id: Int?, body: RecurringRuleRequest) async -> Bool {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // A new rule exists once created, even when the list doesn't refresh, so Add
+        // must not create it again.
+        var created = false
+        let saved = await runRequestReturningSuccess {
             if let id {
                 _ = try await apiClient.updateRecurringRule(id: id, body: body, token: token)
             } else {
                 _ = try await apiClient.createRecurringRule(body, token: token)
+                created = true
             }
+            ledgerRevision += 1
             recurring = try await apiClient.recurring(token: token)
         }
+        return saved || created
     }
 
-    func toggleRecurringRule(_ rule: RecurringRule, autoPost: Bool) async -> Bool {
+    func deleteRecurringRule(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.toggleRecurringRule(
-                id: rule.id,
-                body: RecurringToggleRequest(autoPost: autoPost),
-                token: token
-            )
+            try await apiClient.deleteRecurringRule(id: id, token: token)
+            // Its posted transactions stop counting as recurring.
+            ledgerRevision += 1
             recurring = try await apiClient.recurring(token: token)
         }
     }
 
-    func deleteRecurringRule(_ rule: RecurringRule) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.deleteRecurringRule(id: rule.id, token: token)
-            recurring = try await apiClient.recurring(token: token)
-        }
-    }
-
-    func saveBudgetOverride(_ body: BudgetOverrideRequest, view: String) async -> Bool {
+    func saveBudgetOverride(_ body: BudgetOverrideRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.saveBudgetOverride(body, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func deleteBudgetOverride(id: Int, view: String) async -> Bool {
+    func deleteBudgetOverride(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteBudgetOverride(id: id, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func saveBudgetTemplate(_ body: BudgetTemplateRequest, view: String) async -> Bool {
+    func saveBudgetTemplate(_ body: BudgetTemplateRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.saveBudgetTemplate(body, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func deleteBudgetTemplate(id: Int, view: String) async -> Bool {
+    func applyBudgetTemplateFrom(_ body: BudgetTemplateRequest) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.applyBudgetTemplateFrom(body, token: token)
+            try await reloadBudgetViews(token: token)
+        }
+    }
+
+    func deleteBudgetTemplate(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteBudgetTemplate(id: id, token: token)
-            budgets = try await apiClient.budgets(view: view, token: token)
-            try await reloadBudgetBurndownIfNeeded(view: view, token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadBudgetViews(token: token)
         }
     }
 
-    func saveCategory(id: Int?, create: CategoryCreateRequest, update: CategoryUpdateRequest) async -> Bool {
+    func createCategory(_ body: CategoryCreateRequest) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            if let id {
-                try await apiClient.updateCategory(id: id, body: update, token: token)
-            } else {
-                try await apiClient.createCategory(create, token: token)
-            }
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            try await apiClient.createCategory(body, token: token)
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
         }
     }
 
-    func setCategoryArchived(_ category: CategoryListItem, archived: Bool) async -> Bool {
+    // Names and icons also show on the Dashboard, in transactions, and in rules.
+    func updateCategory(id: Int, body: CategoryUpdateRequest) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            try await apiClient.updateCategory(id: id, body: body, token: token)
+            try await reloadOrganizeData(token: token)
+            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+            try await reloadTransactions(token: token)
+        }
+    }
+
+    func setCategoryArchived(id: Int, archived: Bool) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
             if archived {
-                try await apiClient.archiveCategory(id: category.id, token: token)
+                try await apiClient.archiveCategory(id: id, token: token)
             } else {
-                try await apiClient.restoreCategory(id: category.id, token: token)
+                try await apiClient.restoreCategory(id: id, token: token)
             }
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            categories = try await apiClient.categories(period: categoriesPeriod, token: token)
         }
-    }
-
-    func previewCategoryMerge(sourceID: Int, targetID: Int) async -> [String: Int]? {
-        guard let token else {
-            return nil
-        }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.previewCategoryMerge(
-                CategoryMergeRequest(sourceCategoryID: sourceID, targetCategoryID: targetID),
-                token: token
-            )
-            return response.counts
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
-        }
-        return nil
     }
 
     func mergeCategories(sourceID: Int, targetID: Int) async -> Bool {
@@ -1567,8 +1499,10 @@ final class AppModel {
             )
             try await reloadOrganizeData(token: token)
             dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
-            budgets = try await apiClient.budgets(view: "month", token: token)
+            try await reloadTransactions(token: token)
+            if let month = budgets?.monthValue {
+                budgets = try await apiClient.budgets(month: month, token: token)
+            }
         }
     }
 
@@ -1583,29 +1517,22 @@ final class AppModel {
                 try await apiClient.createTag(body, token: token)
             }
             try await reloadOrganizeData(token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            try await reloadTransactions(token: token)
         }
     }
 
-    func previewTagMerge(sourceID: Int, targetID: Int) async -> [String: Int]? {
+    func setTagArchived(id: Int, archived: Bool) async -> Bool {
         guard let token else {
-            return nil
+            return false
         }
-        isLoading = true
-        lastError = nil
-        defer { isLoading = false }
-        do {
-            let response = try await apiClient.previewTagMerge(
-                TagMergeRequest(sourceTagID: sourceID, targetTagID: targetID),
-                token: token
-            )
-            return response.counts
-        } catch let error as APIErrorInfo {
-            handleAPIError(error)
-        } catch {
-            lastError = APIErrorInfo(message: error.localizedDescription)
+        return await runRequestReturningSuccess {
+            if archived {
+                try await apiClient.archiveTag(id: id, token: token)
+            } else {
+                try await apiClient.restoreTag(id: id, token: token)
+            }
+            tags = try await apiClient.tags(period: tagsPeriod, token: token)
         }
-        return nil
     }
 
     func mergeTags(sourceID: Int, targetID: Int) async -> Bool {
@@ -1618,18 +1545,18 @@ final class AppModel {
                 token: token
             )
             try await reloadOrganizeData(token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            try await reloadTransactions(token: token)
         }
     }
 
-    func deleteTag(_ tag: TagRow) async -> Bool {
+    func deleteTag(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.deleteTag(id: tag.id, token: token)
+            try await apiClient.deleteTag(id: id, token: token)
             try await reloadOrganizeData(token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            try await reloadTransactions(token: token)
         }
     }
 
@@ -1647,39 +1574,47 @@ final class AppModel {
         }
     }
 
-    func deleteTemplate(_ template: TemplateRow) async -> Bool {
+    func deleteTemplate(id: Int) async -> Bool {
         guard let token else {
             return false
         }
         return await runRequestReturningSuccess {
-            try await apiClient.deleteTemplate(id: template.id, token: token)
+            try await apiClient.deleteTemplate(id: id, token: token)
             templates = try await apiClient.templates(token: token)
         }
     }
 
-    func moveTemplate(from source: IndexSet, to destination: Int) async {
-        guard let token, var rows = templates?.templates else {
-            return
+    // The new order shows at once and goes back if it does not save.
+    func moveTemplate(from source: IndexSet, to destination: Int) async -> Bool {
+        guard let token, let previous = templates?.templates else {
+            return false
         }
+        var rows = previous
         rows.move(fromOffsets: source, toOffset: destination)
         templates = TemplatesResponse(templates: rows)
-        await runRequest {
+        let saved = await runRequestReturningSuccess {
             try await apiClient.reorderTemplates(
                 TemplateReorderRequest(templateIDs: rows.map(\.id)),
                 token: token
             )
-            templates = try await apiClient.templates(token: token)
         }
+        if !saved {
+            templates = TemplatesResponse(templates: previous)
+        }
+        return saved
     }
 
-    func createTransaction(_ body: TransactionMutationRequest) async -> Bool {
+    /// Returns the new transaction's id.
+    func createTransaction(_ body: TransactionMutationRequest) async -> Int? {
         guard let token else {
-            return false
+            return nil
         }
-        return await runRequestReturningSuccess {
-            _ = try await apiClient.createTransaction(body, token: token)
+        var createdID: Int?
+        _ = await runRequestReturningSuccess {
+            createdID = try await apiClient.createTransaction(body, token: token).id
             try await reloadPrimaryData()
         }
+        return createdID
     }
 
     func updateTransaction(id: Int, body: TransactionMutationRequest) async -> Bool {
@@ -1688,10 +1623,41 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
-            selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
-            try await reloadPrimaryData()
+            let detail = try await apiClient.transactionDetail(id: id, token: token)
+            let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+            // A save can finish after another transaction opened; that one keeps its detail.
+            if selectedTransaction?.id == id {
+                selectedTransaction = detail
+                transactionReimbursements = reimbursements
+            }
+            try await reloadLedger(token: token)
         }
+    }
+
+    /// Tracks the transaction as a durable purchase, or stops tracking it when `body` is nil.
+    func saveDurablePurchase(transactionID: Int, _ body: DurablePurchaseRequest?) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            if let body {
+                try await apiClient.saveDurablePurchase(transactionID: transactionID, body: body, token: token)
+            } else {
+                try await apiClient.deleteDurablePurchase(transactionID: transactionID, token: token)
+            }
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+        }
+    }
+
+    /// An image receipt's preview, or nil when there is none, as for a PDF.
+    func attachmentThumbnail(_ attachment: ReceiptAttachment) async -> Data? {
+        guard let token else {
+            return nil
+        }
+        return try? await apiClient.attachmentThumbnail(id: attachment.id, token: token)
     }
 
     func saveReimbursementAllocation(
@@ -1734,7 +1700,7 @@ final class AppModel {
         }
     }
 
-    func uploadAttachment(transactionID: Int, fileURL: URL) async -> Bool {
+    func uploadAttachment(transactionID: Int, fileURL: URL, replacing: Int? = nil) async -> Bool {
         guard let token else {
             return false
         }
@@ -1751,10 +1717,14 @@ final class AppModel {
                 filename: fileURL.lastPathComponent,
                 mimeType: mimeType(for: fileURL),
                 data: data,
+                replacing: replacing,
                 token: token
             )
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+            try await reloadTransactions(token: token)
         }
     }
 
@@ -1762,7 +1732,8 @@ final class AppModel {
         transactionID: Int,
         filename: String,
         mimeType: String,
-        data: Data
+        data: Data,
+        replacing: Int? = nil
     ) async -> Bool {
         guard let token else {
             return false
@@ -1773,10 +1744,14 @@ final class AppModel {
                 filename: filename,
                 mimeType: mimeType,
                 data: data,
+                replacing: replacing,
                 token: token
             )
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+            try await reloadTransactions(token: token)
         }
     }
 
@@ -1786,8 +1761,11 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteAttachment(id: attachment.id, token: token)
-            selectedTransaction = try await apiClient.transactionDetail(id: transactionID, token: token)
-            transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+            try await reloadTransactions(token: token)
         }
     }
 
@@ -1853,14 +1831,6 @@ final class AppModel {
         do {
             let result = try await apiClient.applyBulkEdit(body, token: token)
             try await reloadPrimaryData()
-            uncategorizedTransactions = try await apiClient.uncategorizedTransactions(
-                query: nil,
-                type: nil,
-                categoryID: nil,
-                tagID: nil,
-                token: token
-            )
-            deletedTransactions = try await apiClient.deletedTransactions(token: token)
             return result
         } catch let error as APIErrorInfo {
             handleAPIError(error)
@@ -1870,41 +1840,23 @@ final class AppModel {
         return nil
     }
 
-    func restoreTransaction(_ transaction: DeletedTransaction) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.restoreTransaction(id: transaction.id, token: token)
-            try await reloadPrimaryData()
-            deletedTransactions = try await apiClient.deletedTransactions(token: token)
-        }
-    }
-
-    func permanentlyDeleteTransaction(_ transaction: DeletedTransaction) async -> Bool {
-        guard let token else {
-            return false
-        }
-        return await runRequestReturningSuccess {
-            try await apiClient.permanentlyDeleteTransaction(id: transaction.id, token: token)
-            deletedTransactions = try await apiClient.deletedTransactions(token: token)
-        }
-    }
-
-    func resetBaseURL() {
-        baseURLString = ExpensesAppStorage.defaultLocalBackendURL
-    }
-
     private func authenticate(
         request: MobileAuthRequest,
         mode: AuthMode,
         setupToken: String? = nil
     ) async {
-        await runRequest {
+        // A 401 here means wrong credentials, so the lock screen keeps the stored session.
+        await runRequest(clearsSessionOnUnauthorized: false) {
             let response: MobileAuthIdentity
             switch mode {
             case .setup:
-                response = try await apiClient.mobileSetup(request, setupToken: setupToken)
+                do {
+                    response = try await apiClient.mobileSetup(request, setupToken: setupToken)
+                } catch let error as APIErrorInfo where error.statusCode == 409 {
+                    // Setup finished elsewhere, so the sign-in screen switches to signing in.
+                    status = (try? await apiClient.mobileStatus()) ?? status
+                    throw error
+                }
             case .signup:
                 response = try await apiClient.mobileSignup(request)
             case .login:
@@ -1912,6 +1864,8 @@ final class AppModel {
             }
             if let token = response.token {
                 try keychain.save(token, account: ExpensesAppStorage.tokenKey)
+                UserDefaults.standard.set(response.user?.username, forKey: ExpensesAppStorage.sessionUsernameKey)
+                hasSession = true
             }
             clearUserScopedState()
             identity = response.withoutToken()
@@ -1946,6 +1900,9 @@ final class AppModel {
                 error,
                 clearsSessionOnUnauthorized: clearsSessionOnUnauthorized
             )
+        } catch is CancellationError {
+            // A view cancelled the request, as when .task(id:) restarts.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
@@ -1966,6 +1923,9 @@ final class AppModel {
                 error,
                 clearsSessionOnUnauthorized: clearsSessionOnUnauthorized
             )
+        } catch is CancellationError {
+            // A view cancelled the request, as when .task(id:) restarts.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
@@ -1982,12 +1942,6 @@ final class AppModel {
         if transactions == nil {
             await loadTransactions()
         }
-        if digest == nil {
-            await loadDigest()
-        }
-        if insights == nil {
-            await loadInsights(period: "all", tagID: nil, trendCategoryID: nil)
-        }
     }
 
     private func waitForInitialLoadTransitionIfNeeded(hadContent: Bool) async {
@@ -2001,19 +1955,44 @@ final class AppModel {
         guard let token else {
             return
         }
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-        dashboardLoadState = .loaded
-        transactions = try await apiClient.transactions(query: nil, type: nil, categoryID: nil, tagID: nil, token: token)
-        transactionsLoadState = .loaded
-        if llmEnabled {
-            transactionSuggestions = try await apiClient.transactionSuggestions(token: token)
-        }
+        try await reloadLedger(token: token)
         try await reloadOrganizeData(token: token)
     }
 
+    // The views an edit to one transaction changes.
+    private func reloadLedger(token: String) async throws {
+        ledgerRevision += 1
+        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
+        dashboardLoadState = .loaded
+        try await reloadTransactions(token: token)
+        uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
+    }
+
+    // The pages loaded for the current query, after a change made elsewhere, so the
+    // list keeps its place.
+    private func reloadTransactions(token: String) async throws {
+        let query = transactionQuery
+        transactionsLoadID += 1
+        let loadID = transactionsLoadID
+        let pages = loadedTransactionQuery == query ? transactions?.page ?? 1 : 1
+        var response = try await apiClient.transactions(query, page: 1, token: token)
+        while loadID == transactionsLoadID && response.page < pages && response.hasMore {
+            var next = try await apiClient.transactions(query, page: response.page + 1, token: token)
+            next.items = response.items + next.items
+            response = next
+        }
+        // A newer load, such as for another period, replaces this one.
+        guard loadID == transactionsLoadID else {
+            return
+        }
+        transactions = response
+        loadedTransactionQuery = query
+        transactionsLoadState = .loaded
+    }
+
     private func reloadOrganizeData(token: String) async throws {
-        categories = try await apiClient.categories(token: token)
-        tags = try await apiClient.tags(token: token)
+        categories = try await apiClient.categories(period: categoriesPeriod, token: token)
+        tags = try await apiClient.tags(period: tagsPeriod, token: token)
         templates = try await apiClient.templates(token: token)
         rules = try await apiClient.rules(token: token)
         if llmEnabled {
@@ -2021,33 +2000,13 @@ final class AppModel {
         }
     }
 
-    private func reloadBudgetBurndownIfNeeded(view: String, token: String) async throws {
-        guard view == "month", let month = budgets?.monthValue else {
-            budgetBurndown = nil
-            return
+    // Budgets also show on the Dashboard and in the Insights budget history.
+    private func reloadBudgetViews(token: String) async throws {
+        ledgerRevision += 1
+        if let month = budgets?.monthValue {
+            budgets = try await apiClient.budgets(month: month, token: token)
         }
-        budgetBurndown = try await apiClient.budgetBurndown(
-            month: month,
-            scope: "overall",
-            compareMonth: Self.previousMonth(month),
-            token: token
-        )
-    }
-
-    private static func previousMonth(_ monthValue: String) -> String? {
-        let parts = monthValue.split(separator: "-")
-        guard parts.count == 2,
-              var year = Int(parts[0]),
-              var month = Int(parts[1])
-        else {
-            return nil
-        }
-        month -= 1
-        if month == 0 {
-            month = 12
-            year -= 1
-        }
-        return String(format: "%04d-%02d", year, month)
+        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
     }
 
     private func readSecurityScopedData(from fileURL: URL) throws -> Data {
@@ -2066,29 +2025,37 @@ final class AppModel {
 
     private func clearStoredSession() {
         try? keychain.delete(account: ExpensesAppStorage.tokenKey)
+        UserDefaults.standard.removeObject(forKey: ExpensesAppStorage.sessionUsernameKey)
         identity = nil
+        hasSession = false
     }
 
     private func clearUserScopedState() {
         aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
-        digestLoadID += 1
-        insightsLoadID += 1
         dashboard = nil
         dashboardExcludedTagIDs = []
+        dashboardBalanceHistory = nil
+        dashboardForecast = nil
+        dashboardSpendingBands = nil
+        transactionQuery = TransactionQuery()
         transactions = nil
+        loadedTransactionQuery = nil
         dashboardLoadState = .idle
         transactionsLoadState = .idle
+        uncategorizedQuery = TransactionQuery()
         uncategorizedTransactions = nil
+        loadedUncategorizedQuery = nil
+        uncategorizedCount = 0
         deletedTransactions = nil
+        categoriesPeriod = .all
         categories = nil
+        tagsPeriod = .all
         tags = nil
         templates = nil
         rules = nil
-        transactionSuggestions = []
         ruleSuggestions = []
-        ruleMiningStatus = .idle
         assistantStreamTask?.cancel()
         assistantStreamTask = nil
         assistantTurns = []
@@ -2096,29 +2063,10 @@ final class AppModel {
         isAssistantStreaming = false
         budgets = nil
         budgetsLoadState = .idle
-        budgetBurndown = nil
-        digest = nil
-        digestLoadState = .idle
-        forecast = nil
-        forecastLoadState = .idle
-        forecastScenario = nil
-        insights = nil
-        insightsLoadState = .idle
-        insightsFlow = nil
-        insightsFlowLoadState = .idle
-        durablePurchases = nil
-        durablePurchasesLoadState = .idle
-        reconciliation = nil
-        adminInfo = nil
-        adminSystemHealth = nil
-        adminLogs = nil
-        legacySQLitePreview = nil
         mobileSessions = nil
         settings = nil
-        csvPreview = nil
         recurring = nil
         recurringLoadState = .idle
-        recurringOccurrences = nil
         selectedTransaction = nil
         transactionReimbursements = nil
         reimbursementExpenseSearch = nil
@@ -2144,11 +2092,6 @@ private enum AuthMode {
     case setup
     case signup
     case login
-}
-
-enum RuleMiningStatus: Equatable {
-    case idle
-    case noneFound
 }
 
 private enum PrimaryLoadState: Equatable {

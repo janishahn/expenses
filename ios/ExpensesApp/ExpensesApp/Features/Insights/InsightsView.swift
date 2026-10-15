@@ -1,1249 +1,1191 @@
 import Charts
 import SwiftUI
+import UIKit
 
+/// The period's totals and its income and expenses by month, then the last 12 full
+/// months and the current one: recurring spending, amounts by month, daily spending,
+/// and budget history.
 struct InsightsView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
-    @State private var section: InsightsViewSection = .charts
-    @State private var presentingFilters = false
-    @State private var period = "all"
-    @State private var selectedTagID: Int?
-    @State private var excludedTagIDs: Set<Int> = []
-    @State private var selectedTrendCategoryID: Int?
-    @State private var draftPeriod = "all"
-    @State private var draftTagID: Int?
-    @State private var draftExcludedTagIDs: Set<Int> = []
 
-    private var reloadKey: String {
-        let excluded = excludedTagIDs.sorted().map(String.init).joined(separator: ",")
-        return "\(section.rawValue)-\(period)-\(selectedTagID ?? -1)-\(excluded)-\(selectedTrendCategoryID ?? -1)"
+    let openTransactions: (TransactionQuery) -> Void
+    let openBudgets: (CalendarMonth) -> Void
+
+    // The period and tags; Insights takes no type, category or search.
+    @State private var query = TransactionQuery()
+    @State private var presentingFilter = false
+    @State private var gridKind = GridKind.expense
+    @State private var insights: (query: TransactionQuery, result: Result<InsightsResponse, APIErrorInfo>)?
+    @State private var grids: [GridKind: Result<InsightsMonthGridResponse, APIErrorInfo>] = [:]
+    @State private var split: Result<InsightsRecurringSplitResponse, APIErrorInfo>?
+    @State private var calendar: Result<InsightsDayCalendarResponse, APIErrorInfo>?
+    @State private var budgetHistory: Result<InsightsBudgetHistoryResponse, APIErrorInfo>?
+    // The ledger revision the figures were loaded at; an edit to a transaction or budget reloads them.
+    @State private var revision: Int?
+
+    private var tags: [TransactionTag] {
+        if case .success(let data) = insights?.result {
+            return data.tags
+        }
+        return []
     }
 
     var body: some View {
         NavigationStack {
             List {
-                if model.identity?.authenticated != true {
-                    SignedOutStateSection()
-                } else {
-                    Section {
-                        InsightsSectionPicker(section: $section)
+                switch insights?.result {
+                case nil:
+                    LoadingStateSection(title: "Loading insights")
+                case .failure(let error):
+                    UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: error.message) {
+                        await loadInsights()
                     }
-
-                    if section != .durables, hasAppliedFilters {
-                        InsightsFilterSummarySection(
-                            labels: activeFilterLabels,
-                            onOpen: {
-                                resetDraftFiltersToApplied()
-                                presentingFilters = true
-                            },
-                            onClear: {
-                                clearFilters()
-                            }
-                        )
-                    }
-
-                    switch section {
-                    case .charts:
-                        if let insights = model.insights {
-                            InsightsChartsSection(insights: insights)
-                            InsightsBreakdownSection(title: "Expenses", rows: insights.expenseBreakdown, color: ExpensesTheme.expense(for: scheme))
-                            InsightsBreakdownSection(title: "Income", rows: insights.incomeBreakdown, color: ExpensesTheme.income(for: scheme))
-                            InsightsTrendSection(
-                                insights: insights,
-                                selectedTrendCategoryID: $selectedTrendCategoryID
-                            )
-                            InsightsBudgetSection(
-                                insights: insights,
-                                hasViewExclusions: !excludedTagIDs.isEmpty
-                            )
-                        } else if model.showsInsightsInitialLoading {
-                            LoadingStateSection(title: "Loading insights")
-                        } else if model.showsInsightsLoadFailed {
-                            UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                        } else {
-                            ContentUnavailableView("No insights loaded", systemImage: "chart.xyaxis.line")
-                        }
-                    case .net:
-                        if let flow = model.insightsFlow {
-                            InsightsNetSection(flow: flow)
-                        } else if model.isLoading {
-                            LoadingStateSection(title: "Loading net view")
-                        } else if model.showsInsightsFlowLoadFailed {
-                            UnavailableStateSection(title: "Couldn't load income and spending", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                        } else {
-                            ContentUnavailableView("No income or spending loaded", systemImage: "chart.bar.xaxis")
-                        }
-                    case .durables:
-                        if let durablePurchases = model.durablePurchases {
-                            DurablePurchasesSection(items: durablePurchases.items)
-                        } else if model.isLoading {
-                            LoadingStateSection(title: "Loading durable purchases")
-                        } else if model.showsDurablePurchasesLoadFailed {
-                            UnavailableStateSection(title: "Couldn't load durable purchases", systemImage: "exclamationmark.triangle", message: model.lastError?.message ?? "Pull to refresh to try again.")
-                        } else {
-                            ContentUnavailableView("No durable purchases loaded", systemImage: "shippingbox")
-                        }
-                    }
+                case .success(let data):
+                    MetricsSection(data: data)
+                    IncomeExpensesSection(series: data.series)
+                    RecurringSection(split: split)
+                    MonthGridSection(kind: $gridKind, grid: grids[gridKind])
+                    DailySpendingSection(calendar: calendar, openTransactions: openTransactions)
+                    BudgetHistorySection(history: budgetHistory, openBudgets: openBudgets)
                 }
-            }
-            .navigationTitle("Insights")
-            .expensesScreenStyle()
-            .toolbar {
-                if section != .durables {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            resetDraftFiltersToApplied()
-                            presentingFilters = true
-                        } label: {
-                            Label("Filters", systemImage: hasAppliedFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFiltersToApplied) {
-                InsightsFiltersSheet(
-                    period: $draftPeriod,
-                    selectedTagID: $draftTagID,
-                    excludedTagIDs: $draftExcludedTagIDs,
-                    tags: model.insights?.tags ?? [],
-                    onApply: applyFilters,
-                    onClear: clearFilters
-                )
-                .presentationDetents([.medium, .large])
-            }
-            .task(id: reloadKey) {
-                await loadSelectedSection()
             }
             .refreshable {
-                await loadSelectedSection()
+                await reload()
             }
-            .animation(.easeInOut(duration: 0.18), value: model.showsInsightsInitialLoading)
-        }
-    }
-
-    private func loadSelectedSection() async {
-        switch section {
-        case .charts:
-            await model.loadInsights(
-                period: period,
-                tagID: selectedTagID,
-                excludedTagIDs: excludedTagIDs.sorted(),
-                trendCategoryID: selectedTrendCategoryID
-            )
-        case .net:
-            await model.loadInsightsFlow(
-                period: period,
-                tagID: selectedTagID,
-                excludedTagIDs: excludedTagIDs.sorted()
-            )
-        case .durables:
-            await model.loadDurablePurchases()
-        }
-    }
-
-    private var hasAppliedFilters: Bool {
-        period != "all" || selectedTagID != nil || !excludedTagIDs.isEmpty
-    }
-
-    private var activeFilterLabels: [String] {
-        var labels: [String] = []
-        if period != "all" {
-            labels.append(periodTitle(period))
-        }
-        if let selectedTagID,
-           let tag = model.insights?.tags.first(where: { $0.id == selectedTagID }) {
-            labels.append(tag.name)
-        }
-        labels.append(contentsOf: excludedTagIDs.sorted().compactMap { id in
-            model.insights?.tags.first(where: { $0.id == id }).map { "Excluding: \($0.name)" }
-        })
-        return labels
-    }
-
-    private func applyFilters() {
-        period = draftPeriod
-        selectedTagID = draftTagID
-        if let selectedTagID {
-            draftExcludedTagIDs.remove(selectedTagID)
-        }
-        excludedTagIDs = draftExcludedTagIDs
-    }
-
-    private func clearFilters() {
-        draftPeriod = "all"
-        draftTagID = nil
-        draftExcludedTagIDs = []
-        period = "all"
-        selectedTagID = nil
-        excludedTagIDs = []
-    }
-
-    private func resetDraftFiltersToApplied() {
-        draftPeriod = period
-        draftTagID = selectedTagID
-        draftExcludedTagIDs = excludedTagIDs
-    }
-}
-
-private struct InsightsSectionPicker: View {
-    @Binding var section: InsightsViewSection
-
-    var body: some View {
-        Picker("View", selection: $section) {
-            ForEach(InsightsViewSection.allCases) { item in
-                Text(item.title).tag(item)
+            .headerProminence(.increased)
+            .environment(\.defaultMinListRowHeight, 28)
+            .navigationTitle("Insights")
+            .navigationSubtitle(([query.period.title] + [query.tagSummary(tags)].compactMap { $0 }).joined(separator: " · "))
+            .expensesScreenStyle()
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    PeriodMenu(period: $query.period)
+                    Button {
+                        presentingFilter = true
+                    } label: {
+                        Label("Filter", systemImage: query.tagIDs.isEmpty ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                    }
+                }
+            }
+            .sheet(isPresented: $presentingFilter) {
+                InsightsFilterSheet(query: $query, tags: tags)
+            }
+            .navigationDestination(for: MonthGridRoute.self) { route in
+                MonthGridRowView(route: route, openTransactions: openTransactions)
+            }
+            .navigationDestination(for: BudgetHistoryRoute.self) { route in
+                if case .success(let data) = budgetHistory, let row = data.rows.first(where: { $0.categoryID == route.categoryID }) {
+                    BudgetHistoryRowView(row: row, openBudgets: openBudgets)
+                }
+            }
+            .task(id: query) {
+                if insights?.query != query {
+                    await loadInsights()
+                }
+            }
+            .task(id: gridKind) {
+                if grids[gridKind] == nil {
+                    await loadGrid()
+                }
+            }
+            .task(id: model.ledgerRevision) {
+                let current = model.ledgerRevision
+                if let revision, revision != current {
+                    await reload()
+                } else if split == nil {
+                    await loadWindows()
+                }
+                if !Task.isCancelled {
+                    revision = current
+                }
             }
         }
-        .pickerStyle(.segmented)
-        .sensoryFeedback(.selection, trigger: section)
     }
-}
 
-private enum InsightsViewSection: String, CaseIterable, Identifiable {
-    case charts
-    case net
-    case durables
+    private func reload() async {
+        grids = [:]
+        async let insights: Void = loadInsights()
+        async let grid: Void = loadGrid()
+        async let windows: Void = loadWindows()
+        _ = await (insights, grid, windows)
+    }
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .charts:
-            "Charts"
-        case .net:
-            "Net"
-        case .durables:
-            "Durables"
+    private func loadInsights() async {
+        let query = query
+        let result = await model.chart { try await $0.insights(query, token: $1) }
+        if !Task.isCancelled {
+            insights = (query, result)
         }
     }
+
+    private func loadGrid() async {
+        let kind = gridKind
+        let result = await model.chart { try await $0.insightsMonthGrid(kind: kind.rawValue, token: $1) }
+        if !Task.isCancelled {
+            grids[kind] = result
+        }
+    }
+
+    // The fixed windows, which follow neither the period nor the tags.
+    private func loadWindows() async {
+        async let split = model.chart { try await $0.insightsRecurringSplit(token: $1) }
+        async let calendar = model.chart { try await $0.insightsDayCalendar(token: $1) }
+        async let budgetHistory = model.chart { try await $0.insightsBudgetHistory(token: $1) }
+        let results = await (split, calendar, budgetHistory)
+        guard !Task.isCancelled else {
+            return
+        }
+        (self.split, self.calendar, self.budgetHistory) = results
+    }
 }
 
-private struct InsightsFiltersSheet: View {
+/// Tags to include or exclude. Changes apply as they are made.
+private struct InsightsFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Binding var period: String
-    @Binding var selectedTagID: Int?
-    @Binding var excludedTagIDs: Set<Int>
+    @Binding var query: TransactionQuery
     let tags: [TransactionTag]
-    var onApply: () -> Void
-    var onClear: () -> Void
 
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Period", selection: $period) {
-                    Text("All time").tag("all")
-                    Text("This month").tag("this_month")
-                    Text("Last month").tag("last_month")
-                    Text("This year").tag("this_year")
-                }
-                Picker("Tag", selection: $selectedTagID) {
-                    Text("All tags").tag(Optional<Int>.none)
-                    ForEach(tags) { tag in
-                        Text(tag.name).tag(Optional(tag.id))
-                    }
-                }
-                TagExclusionSection(
-                    tags: tags,
-                    selectedIDs: $excludedTagIDs,
-                    includedTagID: selectedTagID
-                )
+                TagFilterSection(mode: $query.tagMode, ids: $query.tagIDs, tags: tags)
             }
-            .pickerStyle(.navigationLink)
-            .navigationTitle("Filters")
+            .navigationTitle("Filter")
             .navigationBarTitleDisplayMode(.inline)
+            .expensesScreenStyle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        onClear()
-                        dismiss()
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Clear") {
+                        query.tagIDs = []
                     }
-                    .disabled(period == "all" && selectedTagID == nil && excludedTagIDs.isEmpty)
+                    .disabled(query.tagIDs.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onApply()
+                    Button("Done", role: .confirm) {
                         dismiss()
                     }
-                    .fontWeight(.semibold)
                 }
             }
-            .onChange(of: selectedTagID) { _, newValue in
-                if let newValue {
-                    excludedTagIDs.remove(newValue)
-                }
-            }
+            .sensoryFeedback(.selection, trigger: query)
         }
+        .presentationDetents([.medium, .large])
     }
 }
 
-private struct InsightsFilterSummarySection: View {
-    let labels: [String]
-    var onOpen: () -> Void
-    var onClear: () -> Void
+private struct MetricsSection: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let data: InsightsResponse
 
     var body: some View {
         Section {
-            HStack(spacing: 10) {
-                Button(action: onOpen) {
-                    Label(labels.joined(separator: " · "), systemImage: "line.3.horizontal.decrease.circle.fill")
-                        .lineLimit(1)
+            // At large text sizes the four figures stack.
+            ViewThatFits(in: .horizontal) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 16) {
+                    GridRow {
+                        income
+                        spent
+                    }
+                    GridRow {
+                        saved
+                        recurring
+                    }
                 }
-                .buttonStyle(.plain)
-
-                Spacer(minLength: 8)
-
-                Button(action: onClear) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 16) {
+                    income
+                    spent
+                    saved
+                    recurring
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear filters")
             }
-            .font(.callout.weight(.medium))
+            .padding(.vertical, 6)
+        }
+        .expensesRowBackground()
+    }
+
+    private var income: some View {
+        Metric("Income") {
+            AmountText(data.incomeCents)
+        } detail: {
+            if data.monthCount > 1 {
+                Text("\(data.monthCount) months")
+            }
+        }
+    }
+
+    private var spent: some View {
+        Metric("Spent") {
+            AmountText(data.expenseCents)
+        } detail: {
+            if data.monthCount > 1 {
+                HStack(spacing: 4) {
+                    AmountText(Int((Double(data.expenseCents) / Double(data.monthCount)).rounded()))
+                    Text("per month")
+                }
+            }
+        }
+    }
+
+    private var saved: some View {
+        let saved = data.incomeCents - data.expenseCents
+        return Metric("Saved") {
+            AmountText(saved, signed: saved < 0)
+                .foregroundStyle(saved > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+        } detail: {
+            if data.incomeCents > 0 {
+                Text("\(percent(saved, of: data.incomeCents)) of income")
+            }
+        }
+    }
+
+    private var recurring: some View {
+        Metric("Recurring") {
+            Text(data.expenseCents > 0 ? percent(data.recurringCents, of: data.expenseCents) : "–")
+        } detail: {
+            if data.expenseCents > 0 {
+                Text("of spending")
+            }
         }
     }
 }
 
-private func periodTitle(_ period: String) -> String {
-    switch period {
-    case "this_month":
-        "This month"
-    case "last_month":
-        "Last month"
-    case "this_year":
-        "This year"
-    default:
-        "All time"
-    }
-}
-
-private struct InsightsChartsSection: View {
+private struct IncomeExpensesSection: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @State private var selected: Int?
+    // Room for the first and last month's label at every text size.
+    @ScaledMetric(relativeTo: .caption2) private var edge = 14.0
 
-    let insights: InsightsResponse
-
-    var body: some View {
-        Section("Monthly Trend") {
-            if insights.series.isEmpty {
-                Text("No monthly data for this period.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Chart {
-                    ForEach(insights.series.suffix(12)) { point in
-                        LineMark(
-                            x: .value("Month", point.label),
-                            y: .value("Income", Double(point.incomeCents) / 100),
-                            series: .value("Series", "Income")
-                        )
-                        .foregroundStyle(ExpensesTheme.income(for: scheme))
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        .interpolationMethod(.monotone)
-
-                        LineMark(
-                            x: .value("Month", point.label),
-                            y: .value("Expenses", Double(point.expenseCents) / 100),
-                            series: .value("Series", "Expenses")
-                        )
-                        .foregroundStyle(ExpensesTheme.expense(for: scheme))
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        .interpolationMethod(.monotone)
-                    }
-                }
-                .chartLegend(.hidden)
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(position: .trailing) {
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color(.separator))
-                        AxisValueLabel(format: .currency(code: "EUR").precision(.fractionLength(0)))
-                            .font(.caption2)
-                            .foregroundStyle(Color(.secondaryLabel))
-                    }
-                }
-                .frame(height: 220)
-
-                HStack(spacing: 16) {
-                    ChartLegendLabel(title: "Income", color: ExpensesTheme.income(for: scheme))
-                    ChartLegendLabel(title: "Expenses", color: ExpensesTheme.expense(for: scheme))
-                }
-            }
-        }
-
-        Section("Movement") {
-            InsightDeltaRows(title: "Increases", rows: insights.deltas.increases, color: ExpensesTheme.expense(for: scheme))
-            InsightDeltaRows(title: "Decreases", rows: insights.deltas.decreases, color: ExpensesTheme.income(for: scheme))
-        }
-
-        Section("Top Tags") {
-            if insights.topTags.isEmpty {
-                Text("No tag spending for this filter.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(insights.topTags) { tag in
-                    LabeledContent(tag.name, value: AppFormatters.euros(tag.amountCents))
-                }
-            }
-        }
-    }
-
-}
-
-private struct InsightsBreakdownSection: View {
-    let title: String
-    let rows: [BreakdownItem]
-    let color: Color
+    let series: [InsightsMonthlySeriesPoint]
 
     var body: some View {
-        Section(title) {
-            if rows.isEmpty {
-                Text("No data.")
-                    .foregroundStyle(.secondary)
+        Section("Income and expenses") {
+            if series.isEmpty {
+                ChartMessage(text: "No transactions in this period.")
             } else {
-                CategoryRingChart(title: title, rows: rows, tint: color)
-                ForEach(rows) { row in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(row.name)
-                                .font(.body.weight(.medium))
-                            Spacer()
-                            Text(AppFormatters.euros(row.amountCents))
-                                .font(.body.monospacedDigit())
+                VStack(alignment: .leading, spacing: 10) {
+                    chart
+                    ChartLegend {
+                        ChartLegendItem(title: "Income", color: ExpensesTheme.income(for: scheme), mark: .line)
+                        ChartLegendItem(title: "Expenses", color: .primary, mark: .line)
+                        ChartLegendItem(title: "Saved", color: savedColor, mark: .area)
+                        if series[..<cut].contains(where: { $0.expenseCents > $0.incomeCents }) {
+                            ChartLegendItem(title: "Overspent", color: overspentColor, mark: .area)
                         }
-                        ProgressView(value: min(100, max(0, row.percent)), total: 100)
-                            .tint(color)
                     }
                 }
+                .padding(.vertical, 8)
+            }
+        }
+        .expensesRowBackground()
+    }
+
+    private var savedColor: Color {
+        ExpensesTheme.income(for: scheme).opacity(scheme == .dark ? 0.12 : 0.1)
+    }
+
+    private var overspentColor: Color {
+        ExpensesTheme.expense(for: scheme).opacity(scheme == .dark ? 0.12 : 0.1)
+    }
+
+    /// The month in progress: its lines are dashed and it has no band.
+    private var partial: Int? {
+        guard let point = series.last, CalendarMonth(year: point.year, month: point.month) == .current else {
+            return nil
+        }
+        return series.count - 1
+    }
+
+    private var cut: Int {
+        partial ?? series.count
+    }
+
+    /// The full months, plus a point where the lines cross, so the saved and overspent bands meet there.
+    private var bandPoints: [(x: Double, income: Double, expenses: Double)] {
+        var points: [(x: Double, income: Double, expenses: Double)] = []
+        for (index, point) in series[..<cut].enumerated() {
+            let income = Double(point.incomeCents)
+            let expenses = Double(point.expenseCents)
+            if let previous = points.last {
+                let before = previous.income - previous.expenses
+                let after = income - expenses
+                if before * after < 0 {
+                    let share = before / (before - after)
+                    let value = previous.income + share * (income - previous.income)
+                    points.append((previous.x + share, value, value))
+                }
+            }
+            points.append((Double(index), income, expenses))
+        }
+        return points
+    }
+
+    private var chart: some View {
+        let months = series.map { CalendarMonth(year: $0.year, month: $0.month) }
+        let last = series.count - 1
+        let income = ExpensesTheme.income(for: scheme)
+        // The latest month keeps its label; one month sits in the middle.
+        let labeled = Array(stride(from: last % 3, through: last, by: 3))
+        return Chart {
+            ForEach(bandPoints, id: \.x) { point in
+                AreaMark(
+                    x: .value("Month", point.x),
+                    yStart: .value("Expenses", point.expenses),
+                    yEnd: .value("Income", max(point.income, point.expenses)),
+                    series: .value("Band", "Saved")
+                )
+                .foregroundStyle(savedColor)
+                .accessibilityHidden(true)
+                AreaMark(
+                    x: .value("Month", point.x),
+                    yStart: .value("Income", point.income),
+                    yEnd: .value("Expenses", max(point.income, point.expenses)),
+                    series: .value("Band", "Overspent")
+                )
+                .foregroundStyle(overspentColor)
+                .accessibilityHidden(true)
+            }
+            line("Income", values: series.map(\.incomeCents), color: income, months: months)
+            line("Expenses", values: series.map(\.expenseCents), color: .primary, months: months)
+            ForEach(Array(series.enumerated()), id: \.offset) { index, point in
+                if series.count == 1 || index == selected {
+                    PointMark(x: .value("Month", index), y: .value("Amount", point.incomeCents))
+                        .foregroundStyle(income)
+                        .symbolSize(30)
+                        .accessibilityHidden(true)
+                    PointMark(x: .value("Month", index), y: .value("Amount", point.expenseCents))
+                        .foregroundStyle(Color.primary)
+                        .symbolSize(30)
+                        .accessibilityHidden(true)
+                }
+            }
+            if let selected {
+                RuleMark(x: .value("Month", selected))
+                    .foregroundStyle(Color.secondary.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                        // Annotations render outside this view's environment.
+                        tooltip(series[selected], month: months[selected], partial: selected == partial)
+                            .environment(model)
+                    }
+                    .accessibilityHidden(true)
+            }
+        }
+        .chartXSelection(value: Binding(get: { selected }, set: { selected = $0.map { min(max($0, 0), last) } }))
+        .chartXScale(domain: series.count == 1 ? -1...1 : 0...last, range: .plotDimension(padding: edge))
+        .chartXAxis {
+            AxisMarks(values: labeled) { value in
+                AxisValueLabel(anchor: .top) {
+                    if let index = value.as(Int.self) {
+                        Text(months[index].shortTitle)
+                    }
+                }
+            }
+        }
+        .amountYAxis()
+        .frame(height: 170)
+    }
+
+    /// One line, solid through the full months and dashed into the month in progress.
+    @ChartContentBuilder
+    private func line(_ name: String, values: [Int], color: Color, months: [CalendarMonth]) -> some ChartContent {
+        ForEach(0..<cut, id: \.self) { index in
+            LineMark(x: .value("Month", index), y: .value("Amount", values[index]), series: .value("Series", name))
+                .foregroundStyle(color)
+                .accessibilityLabel("\(months[index].title), \(name.lowercased())")
+                .accessibilityValue(model.amountString(values[index]))
+        }
+        if let partial {
+            ForEach(max(partial - 1, 0)...partial, id: \.self) { index in
+                LineMark(x: .value("Month", index), y: .value("Amount", values[index]), series: .value("Series", "\(name) so far"))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                    .accessibilityLabel("\(months[index].title) so far, \(name.lowercased())")
+                    .accessibilityValue(model.amountString(values[index]))
+                    .accessibilityHidden(index < partial)
+            }
+        }
+    }
+
+    private func tooltip(_ point: InsightsMonthlySeriesPoint, month: CalendarMonth, partial: Bool) -> some View {
+        let saved = point.incomeCents - point.expenseCents
+        let share = point.incomeCents > 0 ? " (\(percent(abs(saved), of: point.incomeCents)))" : ""
+        return ChartTooltip(title: partial ? "\(month.title) so far" : month.title) {
+            TooltipRow(label: "Income", color: ExpensesTheme.income(for: scheme)) {
+                AmountText(point.incomeCents)
+            }
+            TooltipRow(label: "Expenses", color: .primary) {
+                AmountText(point.expenseCents)
+            }
+            TooltipRow(label: "\(saved < 0 ? "Overspent" : "Saved")\(share)", color: nil) {
+                AmountText(abs(saved))
             }
         }
     }
 }
 
-private struct InsightsTrendSection: View {
+private struct RecurringSection: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @State private var selected: String?
 
-    let insights: InsightsResponse
-    @Binding var selectedTrendCategoryID: Int?
-
-    private var expenseCategories: [InsightsCategory] {
-        insights.categories.filter { $0.type == "expense" }
-    }
-
-    private var trendCategorySelection: Binding<Int?> {
-        Binding(
-            get: { selectedTrendCategoryID ?? insights.trendCategoryID },
-            set: { selectedTrendCategoryID = $0 }
-        )
-    }
+    let split: Result<InsightsRecurringSplitResponse, APIErrorInfo>?
 
     var body: some View {
-        Section("Selected Category Trend") {
-            if expenseCategories.isEmpty {
-                Text("No expense categories available.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Category", selection: trendCategorySelection) {
-                    ForEach(expenseCategories) { category in
-                        Text(category.name).tag(Optional(category.id))
+        Section {
+            switch split {
+            case nil:
+                ChartMessage(text: "Loading…")
+            case .failure:
+                ChartMessage(text: "Recurring spending is unavailable.")
+            case .success(let data):
+                VStack(alignment: .leading, spacing: 10) {
+                    chart(data.rows)
+                    ChartLegend {
+                        ChartLegendItem(title: "Recurring", color: ExpensesTheme.recurring(for: scheme), mark: .area)
+                        ChartLegendItem(title: "Other", color: otherColor, mark: .area)
                     }
                 }
+                .padding(.vertical, 8)
             }
-
-            if insights.trend.isEmpty {
-                Text("No trend data.")
-                    .foregroundStyle(.secondary)
-            } else {
-                Chart {
-                    ForEach(insights.trend) { point in
-                        BarMark(
-                            x: .value("Month", point.label),
-                            y: .value("Amount", point.amountCents)
-                        )
-                        .foregroundStyle(ExpensesTheme.accent(for: scheme))
-                        .cornerRadius(6)
+        } header: {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recurring spending")
+                Spacer()
+                // The full months only; the current one is still under way.
+                if case .success(let data) = split {
+                    let full = data.rows.dropLast()
+                    let recurring = full.reduce(0) { $0 + $1.recurringCents }
+                    let spent = recurring + full.reduce(0) { $0 + $1.otherCents }
+                    if spent > 0 {
+                        Text("\(percent(recurring, of: spent)) of spending")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .chartLegend(.hidden)
-                .chartXAxis(.hidden)
-                .frame(height: 220)
             }
         }
+        .expensesRowBackground()
+    }
+
+    private var otherColor: Color {
+        Color.primary.opacity(0.55)
+    }
+
+    private func chart(_ rows: [InsightsRecurringSplitRow]) -> some View {
+        let current = rows.last?.month
+        return Chart {
+            ForEach(rows, id: \.month) { row in
+                let month = CalendarMonth(row.month)
+                let opacity = selected == nil || selected == row.month ? 1.0 : 0.4
+                BarMark(x: .value("Month", row.month), y: .value("Amount", row.recurringCents), width: .ratio(0.62))
+                    .foregroundStyle(ExpensesTheme.recurring(for: scheme).opacity(opacity))
+                    .accessibilityLabel("\(month.title), recurring")
+                    .accessibilityValue(model.amountString(row.recurringCents))
+                BarMark(x: .value("Month", row.month), y: .value("Amount", row.otherCents), width: .ratio(0.62))
+                    .foregroundStyle(otherColor.opacity(opacity))
+                    .accessibilityLabel("\(month.title), other")
+                    .accessibilityValue(model.amountString(row.otherCents))
+            }
+            if let selected, let row = rows.first(where: { $0.month == selected }) {
+                RuleMark(x: .value("Month", selected))
+                    .foregroundStyle(.clear)
+                    .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                        let month = CalendarMonth(row.month)
+                        ChartTooltip(title: row.month == current ? "\(month.title) so far" : month.title) {
+                            TooltipRow(label: "Recurring", color: ExpensesTheme.recurring(for: scheme)) {
+                                AmountText(row.recurringCents)
+                            }
+                            TooltipRow(label: "Other", color: otherColor) {
+                                AmountText(row.otherCents)
+                            }
+                        }
+                        .environment(model)
+                    }
+                    .accessibilityHidden(true)
+            }
+        }
+        .chartXSelection(value: $selected)
+        .chartXAxis {
+            AxisMarks(values: rows.map(\.month)) { value in
+                AxisValueLabel {
+                    if let month = value.as(String.self) {
+                        Text(CalendarMonth(month).shortTitle.prefix(1))
+                    }
+                }
+            }
+        }
+        .amountYAxis()
+        .frame(height: 150)
     }
 }
 
-private struct ChartLegendLabel: View {
-    let title: String
-    let color: Color
+private enum GridKind: String {
+    case expense
+    case income
+    case tag
+}
+
+private struct MonthGridRoute: Hashable {
+    let kind: GridKind
+    let months: [String]
+    let row: InsightsMonthGridRow
+}
+
+/// One line per category or tag, one cell per month, shaded from the line's lowest to
+/// its highest full month. The current month is outlined and left out of the shading.
+private struct MonthGridSection: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    @Binding var kind: GridKind
+
+    let grid: Result<InsightsMonthGridResponse, APIErrorInfo>?
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.caption.weight(.semibold))
+        Section("By month") {
+            Picker("Rows", selection: $kind) {
+                Text("Expenses").tag(GridKind.expense)
+                Text("Income").tag(GridKind.income)
+                Text("Tags").tag(GridKind.tag)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .sensoryFeedback(.selection, trigger: kind)
+
+            switch grid {
+            case nil:
+                ChartMessage(text: "Loading…")
+            case .failure:
+                ChartMessage(text: "The month grid is unavailable.")
+            case .success(let data) where data.rows.isEmpty:
+                ChartMessage(text: kind == .tag ? "No tagged spending in these months." : "Nothing in these months.")
+            case .success(let data):
+                MonthHeads(months: data.months, total: "Total")
+                ForEach(data.rows) { row in
+                    NavigationLink(value: MonthGridRoute(kind: kind, months: data.months, row: row)) {
+                        line(row)
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
+                    .listRowInsets(gridRowInsets)
+                }
+                ChipFlow(spacing: 10) {
+                    HStack(spacing: 4) {
+                        Text("Lowest")
+                        ForEach([0.1, 0.26, 0.42, 0.58, 0.75], id: \.self) { share in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.primary.opacity(share))
+                                .frame(width: 10, height: 10)
+                        }
+                        Text("Highest")
+                    }
+                    HStack(spacing: 4) {
+                        InProgressMark()
+                            .frame(width: 10, height: 10)
+                        Text("In progress")
+                    }
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct InsightsBudgetSection: View {
-    let insights: InsightsResponse
-    let hasViewExclusions: Bool
-
-    var body: some View {
-        Section("Budget Pulse") {
-            if hasViewExclusions {
-                Text("Budget figures stay based on your full budget activity.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if insights.budgetEffective.isEmpty {
-                Text("No budgets for \(insights.budgetMonth).")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(insights.budgetEffective) { budget in
-                    let progress = insights.budgetProgress[progressKey(budget.scopeCategoryID)]
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(budget.scopeLabel)
-                                .font(.body.weight(.medium))
-                            Spacer()
-                            Text(AppFormatters.euros(budget.amountCents))
-                        }
-                        if let progress {
-                            ProgressView(
-                                value: Double(progress.spentCents),
-                                total: Double(max(budget.amountCents, 1))
-                            )
-                            .tint(progress.remainingCents < 0 ? .red : .blue)
-                            Text("Spent \(AppFormatters.euros(progress.spentCents)) · remaining \(AppFormatters.euros(progress.remainingCents))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-    }
-
-    private func progressKey(_ categoryID: Int?) -> String {
-        categoryID.map(String.init) ?? "null"
-    }
-}
-
-private struct InsightDeltaRows: View {
-    let title: String
-    let rows: [InsightsDeltaItem]
-    let color: Color
-
-    var body: some View {
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(rows) { row in
-                    LabeledContent(row.categoryName, value: signedEuros(row.deltaCents))
-                        .foregroundStyle(color)
-                }
-            }
-        }
-    }
-
-    private func signedEuros(_ amount: Int) -> String {
-        "\(amount >= 0 ? "+" : "")\(AppFormatters.euros(amount))"
-    }
-}
-
-private struct InsightsNetSection: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let flow: InsightsFlowResponse
-
-    @State private var selectedStepID: String?
-    @State private var detailStepID = "result"
-    @State private var presentingData = false
-
-    private let maxIncomeSteps = 3
-    private let maxExpenseSteps = 5
-
-    private var steps: [CashFlowWaterfallStep] {
-        let incomeNodes = flow.nodes.filter { $0.type == "income" && $0.amountCents > 0 }
-        let expenseNodes = flow.nodes.filter { $0.type == "expense" && $0.amountCents > 0 }
-        let changes = collapsedSteps(incomeNodes, kind: .income, maximum: maxIncomeSteps)
-            + collapsedSteps(expenseNodes, kind: .expense, maximum: maxExpenseSteps)
-
-        var runningBalance = 0
-        var result = changes.map { step in
-            let start = runningBalance
-            runningBalance += step.amountCents
-            return CashFlowWaterfallStep(
-                id: step.id,
-                label: step.label,
-                kind: step.kind,
-                amountCents: step.amountCents,
-                startCents: start,
-                endCents: runningBalance,
-                members: step.members
-            )
-        }
-        result.append(
-            CashFlowWaterfallStep(
-                id: "result",
-                label: "Net",
-                kind: .result,
-                amountCents: runningBalance,
-                startCents: 0,
-                endCents: runningBalance,
-                members: []
-            )
-        )
-        return result
-    }
-
-    private var totalIncome: Int {
-        flow.nodes.filter { $0.type == "income" }.reduce(0) { $0 + $1.amountCents }
-    }
-
-    private var totalSpending: Int {
-        flow.nodes.filter { $0.type == "expense" }.reduce(0) { $0 + $1.amountCents }
-    }
-
-    private var detailStep: CashFlowWaterfallStep? {
-        steps.first { $0.id == detailStepID } ?? steps.last
-    }
-
-    private var periodLabel: String {
-        if flow.period.slug == "all" {
-            return "All time"
-        }
-        return "\(flow.period.start.formatted(date: .abbreviated, time: .omitted))–\(flow.period.end.formatted(date: .abbreviated, time: .omitted))"
-    }
-
-    var body: some View {
-        Group {
-            if steps.count <= 1 {
-                Section {
-                    ContentUnavailableView("No income or spending data", systemImage: "chart.bar.xaxis")
-                }
-            } else {
-                Section {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Income & spending")
-                                    .font(.title3.weight(.bold))
-                                Text("\(periodLabel) · Recorded totals")
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            Button {
-                                presentingData = true
-                            } label: {
-                                Image(systemName: "tablecells")
-                                    .frame(width: 32, height: 32)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("View chart data")
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedStepID = nil
-                        }
-
-                        HStack(spacing: 14) {
-                            CashFlowLegendLabel(title: "Income", color: ExpensesTheme.income(for: scheme))
-                            CashFlowLegendLabel(title: "Spending", color: ExpensesTheme.expense(for: scheme))
-                            CashFlowLegendLabel(title: "Net", color: ExpensesTheme.accent(for: scheme))
-                        }
-
-                        CashFlowWaterfallChart(
-                            steps: steps,
-                            selectedStepID: $selectedStepID
-                        )
-                    }
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
-                .onChange(of: selectedStepID) { _, selectedID in
-                    if let selectedID {
-                        detailStepID = selectedID
-                    }
-                }
-
-                if let detailStep {
-                    Section {
-                        CashFlowStepDetails(
-                            step: detailStep,
-                            totalIncome: totalIncome,
-                            totalSpending: totalSpending
-                        )
-                        .onTapGesture {
-                            selectedStepID = nil
-                        }
-                    }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    .listRowBackground(Color.clear)
-                }
-
-                Text("Expenses are not assigned to specific income sources.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-            }
-        }
-        .sheet(isPresented: $presentingData) {
-            CashFlowDataSheet(steps: steps)
-        }
-        .onChange(of: flow) { _, _ in
-            selectedStepID = nil
-            detailStepID = "result"
-        }
-    }
-
-    private func collapsedSteps(
-        _ nodes: [InsightsFlowNode],
-        kind: CashFlowWaterfallStep.Kind,
-        maximum: Int
-    ) -> [CashFlowWaterfallStep] {
-        let sorted = nodes.sorted {
-            $0.amountCents == $1.amountCents
-                ? $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
-                : $0.amountCents > $1.amountCents
-        }
-        if sorted.count <= maximum {
-            return sorted.map { node in
-                CashFlowWaterfallStep(
-                    id: node.id,
-                    label: node.label,
-                    kind: kind,
-                    amountCents: kind == .expense ? -node.amountCents : node.amountCents,
-                    startCents: 0,
-                    endCents: 0,
-                    members: [node]
-                )
-            }
-        }
-
-        let visible = sorted.prefix(maximum - 1).map { node in
-            CashFlowWaterfallStep(
-                id: node.id,
-                label: node.label,
-                kind: kind,
-                amountCents: kind == .expense ? -node.amountCents : node.amountCents,
-                startCents: 0,
-                endCents: 0,
-                members: [node]
-            )
-        }
-        let remainder = Array(sorted.dropFirst(maximum - 1))
-        let remainderAmount = remainder.reduce(0) { $0 + $1.amountCents }
-        return visible + [
-            CashFlowWaterfallStep(
-                id: "\(kind.rawValue):other",
-                label: kind == .income ? "Other income" : "Other spending",
-                kind: kind,
-                amountCents: kind == .expense ? -remainderAmount : remainderAmount,
-                startCents: 0,
-                endCents: 0,
-                members: remainder
-            )
-        ]
-    }
-}
-
-private struct CashFlowWaterfallStep: Identifiable, Equatable {
-    enum Kind: String {
-        case income
-        case expense
-        case result
-    }
-
-    let id: String
-    let label: String
-    let kind: Kind
-    let amountCents: Int
-    let startCents: Int
-    let endCents: Int
-    let members: [InsightsFlowNode]
-}
-
-private struct CashFlowConnector: Identifiable {
-    var id: String { "\(fromID)-\(toID)" }
-    let fromID: String
-    let toID: String
-    let balanceCents: Int
-}
-
-private struct CashFlowAxis {
-    let minimum: Int
-    let maximum: Int
-    let ticks: [Int]
-}
-
-private struct CashFlowWaterfallChart: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let steps: [CashFlowWaterfallStep]
-    @Binding var selectedStepID: String?
-
-    private var connectors: [CashFlowConnector] {
-        zip(steps, steps.dropFirst()).map { current, next in
-            CashFlowConnector(fromID: current.id, toID: next.id, balanceCents: current.endCents)
-        }
-    }
-
-    private var axis: CashFlowAxis {
-        cashFlowAxis(for: steps)
-    }
-
-    var body: some View {
-        Chart {
-            ForEach(connectors) { connector in
-                RuleMark(
-                    x: .value("Balance", connector.balanceCents),
-                    yStart: .value("From", connector.fromID),
-                    yEnd: .value("To", connector.toID)
-                )
-                .foregroundStyle(Color.secondary.opacity(0.38))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            }
-
-            ForEach(steps) { step in
-                if selectedStepID == step.id {
-                    BarMark(
-                        xStart: .value("Start balance", step.startCents),
-                        xEnd: .value("End balance", step.endCents),
-                        y: .value("Step", step.id),
-                        height: .fixed(20)
-                    )
-                    .foregroundStyle(Color.primary.opacity(0.82))
-                    .cornerRadius(5)
-
-                    PointMark(
-                        x: .value("Balance after", step.endCents),
-                        y: .value("Step", step.id)
-                    )
-                    .symbolSize(54)
-                    .foregroundStyle(Color.primary.opacity(0.82))
-                }
-
-                BarMark(
-                    xStart: .value("Start balance", step.startCents),
-                    xEnd: .value("End balance", step.endCents),
-                    y: .value("Step", step.id),
-                    height: .fixed(14)
-                )
-                .foregroundStyle(color(for: step.kind))
-                .cornerRadius(4)
-                .accessibilityLabel(step.label)
-                .accessibilityValue("\(signedEuros(step.amountCents)); balance after \(signedEuros(step.endCents))")
-
-                PointMark(
-                    x: .value("Balance after", step.endCents),
-                    y: .value("Step", step.id)
-                )
-                .symbolSize(24)
-                .foregroundStyle(color(for: step.kind))
+                .padding(.vertical, 4)
                 .accessibilityHidden(true)
             }
         }
-        .chartLegend(.hidden)
-        .chartXScale(domain: axis.minimum ... axis.maximum)
-        .chartYScale(domain: Array(steps.map(\.id).reversed()))
-        .chartXAxis {
-            AxisMarks(position: .top, values: axis.ticks) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                    .foregroundStyle(Color.secondary.opacity(0.28))
-                AxisValueLabel {
-                    if let cents = value.as(Int.self) {
-                        Text(shortEuros(cents))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: steps.map(\.id)) { value in
-                AxisValueLabel {
-                    if let id = value.as(String.self),
-                       let step = steps.first(where: { $0.id == id }) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(step.label)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(2)
-                            Text(signedEuros(step.amountCents))
-                                .font(.caption2.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(color(for: step.kind))
-                        }
-                        .frame(width: 94, alignment: .leading)
-                    }
-                }
-            }
-        }
-        .chartYSelection(value: $selectedStepID)
-        .frame(height: CGFloat(steps.count * 58 + 26))
+        .listRowSeparator(.hidden)
+        .expensesRowBackground()
     }
 
-    private func color(for kind: CashFlowWaterfallStep.Kind) -> Color {
-        switch kind {
-        case .income:
-            ExpensesTheme.income(for: scheme)
-        case .expense:
-            ExpensesTheme.expense(for: scheme)
-        case .result:
-            ExpensesTheme.accent(for: scheme)
-        }
-    }
-}
-
-private struct CashFlowLegendLabel: View {
-    let title: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct CashFlowStepDetails: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let step: CashFlowWaterfallStep
-    let totalIncome: Int
-    let totalSpending: Int
-
-    private var share: Int {
-        let base = step.kind == .income ? totalIncome : totalSpending
-        guard base > 0 else { return 0 }
-        return Int((Double(abs(step.amountCents)) / Double(base) * 100).rounded())
-    }
-
-    var body: some View {
-        GlassSurface(padding: 16) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+    private func line(_ row: InsightsMonthGridRow) -> some View {
+        let full = row.valuesCents.dropLast()
+        let low = full.min() ?? 0
+        let high = full.max() ?? 0
+        let color = kind == .tag ? Color.primary : ExpensesTheme.category(row.id, for: scheme)
+        let total = row.valuesCents.reduce(0, +)
+        return GridLine(count: row.valuesCents.count) {
+            HStack(spacing: 5) {
+                if kind != .tag {
+                    Image(systemName: categorySymbolName(for: resolvedCategoryIconKey(row.icon, name: row.name)))
+                        .font(.caption2)
                         .foregroundStyle(color)
-                        .frame(width: 36, height: 36)
-                        .background(color.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.label)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text(kindLabel.uppercased())
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
+                        .glyphColumn(14, relativeTo: .caption2)
+                }
+                Text(row.name)
+                    .lineLimit(1)
+            }
+        } cell: { index in
+            let value = row.valuesCents[index]
+            let shade = high > low ? 0.1 + 0.65 * min(1, max(0, Double(value - low) / Double(high - low))) : 0.16
+            RoundedRectangle(cornerRadius: 3)
+                .fill(value == 0 ? Color.primary.opacity(0.08) : color.opacity(shade))
+                .overlay {
+                    if index == row.valuesCents.count - 1 {
+                        InProgressMark()
                     }
                 }
+                .frame(height: 20)
+        } total: {
+            AmountText(total, decimals: false)
+        }
+        .font(.footnote)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(row.name)
+        .accessibilityValue("\(model.amountString(total, decimals: false)) in \(row.valuesCents.count) months")
+    }
+}
 
-                Text(signedEuros(step.amountCents))
-                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(color)
+/// A category's or tag's months, newest first. Each opens its transactions.
+private struct MonthGridRowView: View {
+    let route: MonthGridRoute
+    let openTransactions: (TransactionQuery) -> Void
 
-                if step.kind == .result {
-                    VStack(spacing: 0) {
-                        CashFlowDetailRow(title: "Income", value: signedEuros(totalIncome))
-                        Divider()
-                        CashFlowDetailRow(title: "Spending", value: signedEuros(-totalSpending))
+    var body: some View {
+        let values = route.row.valuesCents
+        let full = values.dropLast()
+        let last = values.count - 1
+        List {
+            Section {
+                LabeledContent("Total") {
+                    AmountText(values.reduce(0, +))
+                        .foregroundStyle(.primary)
+                }
+                LabeledContent("Average, last \(full.count) full months") {
+                    AmountText(Int((Double(full.reduce(0, +)) / Double(max(full.count, 1))).rounded()))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .expensesRowBackground()
+
+            Section("Months") {
+                ForEach((0...last).reversed(), id: \.self) { index in
+                    let month = CalendarMonth(route.months[index])
+                    Button {
+                        var query = TransactionQuery(period: month.period)
+                        if route.kind == .tag {
+                            query.tagIDs = [route.row.id]
+                        } else {
+                            query.categoryID = route.row.id
+                        }
+                        openTransactions(query)
+                    } label: {
+                        LabeledContent(index == last ? "\(month.title) so far" : month.title) {
+                            AmountText(values[index])
+                                .foregroundStyle(.primary)
+                        }
                     }
-                } else {
-                    HStack(spacing: 8) {
-                        CashFlowMetric(
-                            title: step.kind == .income ? "Share of income" : "Share of spending",
-                            value: "\(share)%"
-                        )
-                        CashFlowMetric(title: "Balance after", value: signedEuros(step.endCents))
-                    }
+                    .tint(.primary)
+                    .accessibilityHint("Opens the transactions")
+                }
+            }
+            .expensesRowBackground()
+        }
+        .navigationTitle(route.row.name)
+        .expensesScreenStyle()
+    }
+}
 
-                    if step.members.count > 1 {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("BREAKDOWN")
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                                .padding(.bottom, 4)
-                            ForEach(step.members.prefix(5)) { member in
-                                CashFlowDetailRow(
-                                    title: member.label,
-                                    value: signedEuros(step.kind == .expense ? -member.amountCents : member.amountCents)
-                                )
-                                if member.id != step.members.prefix(5).last?.id {
-                                    Divider()
+/// Spending by day in week columns, Monday first, in five ink levels. The weeks scroll
+/// and start at the latest one; a chosen day shows its amount and opens its transactions.
+private struct DailySpendingSection: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    // A date, so the choice stays on its day when a refresh moves the weeks.
+    @State private var selected: Date?
+
+    let calendar: Result<InsightsDayCalendarResponse, APIErrorInfo>?
+    let openTransactions: (TransactionQuery) -> Void
+
+    private static let cell: CGFloat = 12
+    private static let gap: CGFloat = 3
+    private static let levels = [0.11, 0.24, 0.46, 0.82]
+    // Heavier days tick harder while scrubbing, so a busy week feels bumpier.
+    private static let tickIntensities = [0.3, 0.45, 0.6, 0.8, 1.0]
+
+    var body: some View {
+        Section {
+            switch calendar {
+            case nil:
+                ChartMessage(text: "Loading…")
+            case .failure:
+                ChartMessage(text: "Daily spending is unavailable.")
+            case .success(let data):
+                let days = DayGrid(data)
+                let index = days.dates.indices.first { days.dates[$0] == selected && days.amounts[$0] != nil } ?? days.today
+                grid(days, selected: index)
+                    .padding(.vertical, 6)
+                dayRow(days, index: index)
+                levelLegend
+                weekdays(data)
+            }
+        } header: {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Daily spending")
+                Spacer()
+                Text("without recurring")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .expensesRowBackground()
+    }
+
+    private static func level(_ cents: Int) -> Int {
+        cents <= 0 ? 0 : cents < 2500 ? 1 : cents < 6000 ? 2 : cents < 12000 ? 3 : 4
+    }
+
+    private func color(_ cents: Int) -> Color {
+        let level = Self.level(cents)
+        return Color.primary.opacity(level == 0 ? 0.08 : Self.levels[level - 1])
+    }
+
+    // The day under a point in the grid, clamped to the grid; future days keep the selection.
+    private func select(_ days: DayGrid, at point: CGPoint) {
+        let step = Self.cell + Self.gap
+        let week = min(max(Int(point.x / step), 0), days.weeks - 1)
+        let index = week * 7 + min(max(Int(point.y / step), 0), 6)
+        if days.amounts[index] != nil {
+            selected = days.dates[index]
+        }
+    }
+
+    private func grid(_ days: DayGrid, selected: Int) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: Self.gap) {
+                Color.clear
+                    .frame(height: 14)
+                ForEach(["Mon", "", "Wed", "", "Fri", "", ""].indices, id: \.self) { row in
+                    Text(["Mon", "", "Wed", "", "Fri", "", ""][row])
+                        .frame(height: Self.cell)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: Self.gap) {
+                    HStack(spacing: Self.gap) {
+                        ForEach(0..<days.weeks, id: \.self) { week in
+                            Color.clear
+                                .frame(width: Self.cell, height: 14)
+                                .overlay(alignment: .leading) {
+                                    if let label = days.monthLabels[week] {
+                                        Text(label)
+                                            .fixedSize()
+                                    }
+                                }
+                        }
+                    }
+                    HStack(spacing: Self.gap) {
+                        ForEach(0..<days.weeks, id: \.self) { week in
+                            VStack(spacing: Self.gap) {
+                                ForEach(0..<7, id: \.self) { weekday in
+                                    let index = week * 7 + weekday
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(days.amounts[index].map(color) ?? .clear)
+                                        .frame(width: Self.cell, height: Self.cell)
+                                        .overlay {
+                                            if index == selected {
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .stroke(Color.primary, lineWidth: 1.5)
+                                                    .padding(-2)
+                                            }
+                                        }
                                 }
                             }
-                            if step.members.count > 5 {
-                                Text("\(step.members.count - 5) more in the data view")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 8)
-                            }
                         }
                     }
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { tap in
+                        select(days, at: tap.location)
+                    })
+                    .gesture(DayScrub { select(days, at: $0) })
                 }
+                .padding(2)
+            }
+            .defaultScrollAnchor(.trailing)
+            .scrollIndicators(.hidden)
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .sensoryFeedback(trigger: selected) { _, index in
+            .impact(weight: .medium, intensity: Self.tickIntensities[Self.level(days.amounts[index] ?? 0)])
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Daily spending")
+        .accessibilityValue(dayDescription(days, index: selected))
+        .accessibilityAdjustableAction { direction in
+            let next = selected + (direction == .increment ? 1 : -1)
+            if days.amounts.indices.contains(next), days.amounts[next] != nil {
+                self.selected = days.dates[next]
             }
         }
     }
 
-    private var color: Color {
-        switch step.kind {
-        case .income:
-            ExpensesTheme.income(for: scheme)
-        case .expense:
-            ExpensesTheme.expense(for: scheme)
-        case .result:
-            ExpensesTheme.accent(for: scheme)
-        }
+    private func dayTitle(_ days: DayGrid, index: Int) -> String {
+        index == days.today ? "Today" : AppFormatters.bookingDay(days.dates[index])
     }
 
-    private var icon: String {
-        switch step.kind {
-        case .income: "arrow.up.right"
-        case .expense: "basket"
-        case .result: "checkmark.circle"
-        }
+    private func dayDescription(_ days: DayGrid, index: Int) -> String {
+        let cents = days.amounts[index] ?? 0
+        return "\(dayTitle(days, index: index)), \(cents > 0 ? model.amountString(cents) : "nothing")"
     }
 
-    private var kindLabel: String {
-        switch step.kind {
-        case .income: "Income source"
-        case .expense: "Expense group"
-        case .result: "Period result"
+    private func dayRow(_ days: DayGrid, index: Int) -> some View {
+        let cents = days.amounts[index] ?? 0
+        return Button {
+            let day = AppFormatters.localDay(days.dates[index])
+            openTransactions(TransactionQuery(period: .custom(start: day, end: day)))
+        } label: {
+            LabeledContent(dayTitle(days, index: index)) {
+                if cents > 0 {
+                    AmountText(cents)
+                        .foregroundStyle(.primary)
+                } else {
+                    Text("Nothing")
+                }
+            }
+        }
+        .tint(.primary)
+        .accessibilityHint("Opens the transactions")
+    }
+
+    private var levelLegend: some View {
+        let labels = [
+            "None",
+            "Under \(AppFormatters.euros(2500, decimals: false))",
+            "\(AppFormatters.euros(2500, decimals: false))–\(AppFormatters.euros(6000, decimals: false))",
+            "\(AppFormatters.euros(6000, decimals: false))–\(AppFormatters.euros(12000, decimals: false))",
+            "\(AppFormatters.euros(12000, decimals: false)) or more",
+        ]
+        return ChipFlow(spacing: 10) {
+            ForEach(labels.indices, id: \.self) { level in
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.primary.opacity(level == 0 ? 0.08 : Self.levels[level - 1]))
+                        .frame(width: 10, height: 10)
+                    Text(labels[level])
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
+        .accessibilityHidden(true)
+    }
+
+    private func weekdays(_ data: InsightsDayCalendarResponse) -> some View {
+        let symbols = Calendar.current.standaloneWeekdaySymbols
+        let names = Array(symbols[1...] + symbols[..<1])
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Average by weekday")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Weekends \(data.weekendShare.formatted(.percent.precision(.fractionLength(0))))")
+            }
+            .font(.subheadline)
+            Chart {
+                ForEach(names.indices, id: \.self) { index in
+                    BarMark(x: .value("Weekday", names[index]), y: .value("Average", data.weekdayAvgCents[index]), width: .ratio(0.7))
+                        .foregroundStyle(index >= 5 ? Color.primary.opacity(0.55) : ExpensesTheme.recurring(for: scheme))
+                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3))
+                        .accessibilityLabel(names[index])
+                        .accessibilityValue(model.amountString(data.weekdayAvgCents[index]))
+                }
+            }
+            .chartXAxis {
+                AxisMarks { value in
+                    AxisValueLabel {
+                        if let name = value.as(String.self) {
+                            Text(name.prefix(1))
+                        }
+                    }
+                }
+            }
+            .chartYAxis(.hidden)
+            .frame(height: 80)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+/// Touch and hold, then drag to scrub through the days. UIKit's long press fails as soon
+/// as the finger moves before the hold ends, so a quick drag still scrolls the weeks.
+private struct DayScrub: UIGestureRecognizerRepresentable {
+    let onChange: (CGPoint) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = 0.25
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        if recognizer.state == .began || recognizer.state == .changed {
+            onChange(context.converter.localLocation)
         }
     }
 }
 
-private struct CashFlowMetric: View {
-    let title: String
-    let value: String
+/// The calendar's days in week columns, Monday first. Days outside the response's range
+/// have no amount.
+private struct DayGrid {
+    // UTC midnight, as `bookingDay` formats it.
+    let dates: [Date]
+    let amounts: [Int?]
+    let monthLabels: [String?]
+    let today: Int
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+    var weeks: Int {
+        dates.count / 7
+    }
+
+    init(_ data: InsightsDayCalendarResponse) {
+        let calendar = CalendarMonth.calendar
+        func day(_ value: String) -> Date {
+            let parts = value.split(separator: "-").map { Int($0)! }
+            return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))!
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(11)
-        .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        let start = day(data.start)
+        let end = day(data.end)
+        // Weekday 1 is Sunday.
+        let lead = (calendar.component(.weekday, from: start) + 5) % 7
+        let first = calendar.date(byAdding: .day, value: -lead, to: start)!
+        let span = calendar.dateComponents([.day], from: first, to: end).day!
+        let count = (span / 7 + 1) * 7
+        var amounts: [Int?] = (0..<count).map { $0 >= lead && $0 <= span ? 0 : nil }
+        for entry in data.days {
+            amounts[calendar.dateComponents([.day], from: first, to: day(entry.date)).day!] = entry.amountCents
+        }
+        let dates = (0..<count).map { calendar.date(byAdding: .day, value: $0, to: first)! }
+        var labels = [String?](repeating: nil, count: count / 7)
+        for index in lead...span where calendar.component(.day, from: dates[index]) == 1 {
+            labels[index / 7] = dates[index].formatted(Date.FormatStyle(timeZone: .gmt).month(.abbreviated))
+        }
+        self.dates = dates
+        self.amounts = amounts
+        self.monthLabels = labels
+        today = span
     }
 }
 
-private struct CashFlowDetailRow: View {
-    let title: String
-    let value: String
+private struct BudgetHistoryRoute: Hashable {
+    let categoryID: Int?
+}
+
+/// Each budget's months: within, over, or no budget yet.
+private struct BudgetHistorySection: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    let history: Result<InsightsBudgetHistoryResponse, APIErrorInfo>?
+    let openBudgets: (CalendarMonth) -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(title)
+        Section {
+            switch history {
+            case nil:
+                ChartMessage(text: "Loading…")
+            case .failure:
+                ChartMessage(text: "Budget history is unavailable.")
+            case .success(let data) where data.rows.isEmpty:
+                ChartMessage(text: "No budgets yet.")
+            case .success(let data):
+                MonthHeads(months: data.months, total: "Within")
+                ForEach(data.rows, id: \.categoryID) { row in
+                    NavigationLink(value: BudgetHistoryRoute(categoryID: row.categoryID)) {
+                        line(row)
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
+                    .listRowInsets(gridRowInsets)
+                }
+                ChipFlow(spacing: 10) {
+                    legend("Within") { mark(over: false) }
+                    legend("Over") { mark(over: true) }
+                    legend("In progress") { InProgressMark() }
+                    legend("No budget") { noBudgetMark }
+                }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .padding(.vertical, 4)
+                .accessibilityHidden(true)
+            }
+        } header: {
+            SectionLink(title: "Budget history", destination: "Budgets") {
+                openBudgets(.current)
+            }
         }
-        .frame(minHeight: 40)
+        .listRowSeparator(.hidden)
+        .expensesRowBackground()
+    }
+
+    private func line(_ row: InsightsBudgetHistoryRow) -> some View {
+        // The current month is still under way, so it is not counted.
+        let full = row.cells.dropLast().filter { $0.budgetCents != nil }
+        let within = full.filter { $0.spentCents <= $0.budgetCents! }.count
+        return GridLine(count: row.cells.count) {
+            HStack(spacing: 5) {
+                if let categoryID = row.categoryID {
+                    Image(systemName: categorySymbolName(for: resolvedCategoryIconKey(row.icon, name: row.name)))
+                        .font(.caption2)
+                        .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
+                        .glyphColumn(14, relativeTo: .caption2)
+                }
+                Text(row.name)
+                    .lineLimit(1)
+            }
+        } cell: { index in
+            let cell = row.cells[index]
+            Group {
+                if let budget = cell.budgetCents {
+                    mark(over: cell.spentCents > budget)
+                } else {
+                    noBudgetMark
+                }
+            }
+            .overlay {
+                if index == row.cells.count - 1 {
+                    InProgressMark()
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 12)
+        } total: {
+            Text("\(within) of \(full.count)")
+                .monospacedDigit()
+        }
+        .font(.footnote)
+        .frame(minHeight: 20)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(row.name)
+        .accessibilityValue(row.cells.compactMap { cell in
+            cell.budgetCents.map { "\(CalendarMonth(cell.month).title): \(model.amountString(cell.spentCents, decimals: false)) of \(model.amountString($0, decimals: false))" }
+        }.joined(separator: "; "))
+    }
+
+    private func mark(over: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(over ? ExpensesTheme.expense(for: scheme).opacity(0.8) : ExpensesTheme.recurring(for: scheme))
+    }
+
+    private var noBudgetMark: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .strokeBorder(Color.primary.opacity(0.15))
+    }
+
+    private func legend<Mark: View>(_ title: String, @ViewBuilder mark: () -> Mark) -> some View {
+        HStack(spacing: 5) {
+            mark()
+                .frame(width: 10, height: 10)
+            Text(title)
+        }
     }
 }
 
-private struct CashFlowDataSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let steps: [CashFlowWaterfallStep]
+/// A budget's months, newest first. Each month with a budget opens that month's budgets.
+private struct BudgetHistoryRowView: View {
+    let row: InsightsBudgetHistoryRow
+    let openBudgets: (CalendarMonth) -> Void
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(steps) { step in
-                    if step.members.count > 1 {
-                        DisclosureGroup {
-                            ForEach(step.members) { member in
-                                LabeledContent(
-                                    member.label,
-                                    value: signedEuros(
-                                        step.kind == .expense ? -member.amountCents : member.amountCents
-                                    )
-                                )
-                                .font(.caption)
-                            }
+        let last = row.cells.count - 1
+        List {
+            Section("Months") {
+                ForEach(row.cells.indices.reversed(), id: \.self) { index in
+                    let cell = row.cells[index]
+                    let month = CalendarMonth(cell.month)
+                    let title = index == last ? "\(month.title) so far" : month.title
+                    if let budget = cell.budgetCents {
+                        Button {
+                            openBudgets(month)
                         } label: {
-                            CashFlowDataRow(step: step)
+                            LabeledContent(title) {
+                                SpentAgainst(spentCents: cell.spentCents, budgetCents: budget)
+                                    .foregroundStyle(.primary)
+                            }
                         }
+                        .tint(.primary)
+                        .accessibilityHint("Opens the budgets")
                     } else {
-                        CashFlowDataRow(step: step)
-                    }
-                }
-
-                Section {
-                    Text("Expenses are not assigned to specific income sources.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("Chart data")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
+                        LabeledContent(title, value: "No budget")
                     }
                 }
             }
+            .expensesRowBackground()
         }
-        .themeAccentTint()
+        .navigationTitle(row.name)
+        .expensesScreenStyle()
     }
 }
 
-private struct CashFlowDataRow: View {
-    let step: CashFlowWaterfallStep
+private let gridRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+
+/// A grid line: a name, one cell per month, and a total, in fixed columns so that the
+/// lines of a grid align.
+private struct GridLine<Name: View, Cell: View, Total: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    let count: Int
+    @ViewBuilder let name: Name
+    @ViewBuilder let cell: (Int) -> Cell
+    @ViewBuilder let total: Total
 
     var body: some View {
-        LabeledContent {
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(signedEuros(step.amountCents))
-                    .font(.body.monospacedDigit().weight(.semibold))
-                Text("Balance \(signedEuros(step.endCents))")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        // At accessibility sizes the name and total take a line above the months.
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                AdaptiveRow {
+                    name
+                } trailing: {
+                    total
+                }
+                cells
             }
-        } label: {
-            Text(step.label)
-                .font(.body.weight(.medium))
+        } else {
+            HStack(spacing: 3) {
+                name
+                    .frame(width: 96, alignment: .leading)
+                cells
+                total
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 58, alignment: .trailing)
+            }
+        }
+    }
+
+    private var cells: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<count, id: \.self) { index in
+                cell(index)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 }
 
-private func cashFlowAxis(for steps: [CashFlowWaterfallStep]) -> CashFlowAxis {
-    let rawMinimum = min(0, steps.flatMap { [$0.startCents, $0.endCents] }.min() ?? 0)
-    let rawMaximum = max(0, steps.flatMap { [$0.startCents, $0.endCents] }.max() ?? 0)
-    let span = max(100, rawMaximum - rawMinimum)
-    let roughStep = Double(span) / 4
-    let magnitude = pow(10, floor(log10(roughStep)))
-    let normalized = roughStep / magnitude
-    let multiplier = normalized <= 1 ? 1.0 : normalized <= 2 ? 2.0 : normalized <= 5 ? 5.0 : 10.0
-    let tickSize = max(100, Int(multiplier * magnitude))
-    var minimum = Int(floor(Double(rawMinimum) / Double(tickSize))) * tickSize
-    var maximum = Int(ceil(Double(rawMaximum) / Double(tickSize))) * tickSize
-    if minimum == maximum {
-        maximum += tickSize
-    }
-    var ticks = Array(stride(from: minimum, through: maximum, by: tickSize))
-    if ticks.count < 2 {
-        minimum = min(0, minimum - tickSize)
-        maximum = max(tickSize, maximum + tickSize)
-        ticks = [minimum, maximum]
-    }
-    return CashFlowAxis(minimum: minimum, maximum: maximum, ticks: ticks)
-}
-
-private func signedEuros(_ cents: Int) -> String {
-    if cents == 0 {
-        return AppFormatters.euros(0)
-    }
-    return "\(cents > 0 ? "+" : "−")\(AppFormatters.euros(abs(cents)))"
-}
-
-private func shortEuros(_ cents: Int) -> String {
-    let euros = abs(Double(cents) / 100)
-    let sign = cents < 0 ? "−" : ""
-    if euros >= 1000 {
-        let thousands = euros / 1000
-        let formatted = thousands.formatted(.number.precision(.fractionLength(thousands >= 10 ? 0 : 1)))
-        return "\(sign)\(formatted)k €"
-    }
-    return "\(sign)\(euros.formatted(.number.precision(.fractionLength(0)))) €"
-}
-
-private struct DurablePurchasesSection: View {
-    let items: [DashboardDurablePurchase]
+/// The month initials over a grid, and its total column's name.
+private struct MonthHeads: View {
+    let months: [String]
+    let total: String
 
     var body: some View {
-        Section("Durable Purchases") {
-            if items.isEmpty {
-                Text("No durable purchases.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(items) { item in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(item.title ?? item.category?.name ?? "Durable purchase")
-                                .font(.body.weight(.medium))
-                            Spacer()
-                            Text(AppFormatters.euros(item.remainingCents))
-                                .font(.body.monospacedDigit())
-                        }
-                        ProgressView(value: min(100, max(0, item.percentAmortized)), total: 100)
-                            .tint(item.fullyAmortized ? .green : .blue)
-                        Text("\(item.daysOwned) of \(item.expectedLifespanDays) days · paid for itself on \(AppFormatters.day(item.paidForItselfOn))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+        GridLine(count: months.count) {
+            Color.clear
+        } cell: { index in
+            Text(CalendarMonth(months[index]).shortTitle.prefix(1))
+        } total: {
+            Text(total)
         }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .listRowInsets(gridRowInsets)
+        .accessibilityHidden(true)
     }
 }
 
-#Preview("Net chart") {
-    List {
-        InsightsNetSection(
-            flow: InsightsFlowResponse(
-                period: Period(
-                    slug: "this_month",
-                    start: Date.now.addingTimeInterval(-14 * 86_400),
-                    end: .now
-                ),
-                filters: InsightsFilters(tagID: nil, excludedTagIDs: []),
-                nodes: [
-                    InsightsFlowNode(id: "income:1", label: "Salary", type: "income", amountCents: 325_000, categoryID: 1),
-                    InsightsFlowNode(id: "income:2", label: "Bank transfer", type: "income", amountCents: 145_000, categoryID: 2),
-                    InsightsFlowNode(id: "expense:3", label: "Groceries", type: "expense", amountCents: 121_000, categoryID: 3),
-                    InsightsFlowNode(id: "expense:4", label: "Food and dining", type: "expense", amountCents: 71_000, categoryID: 4),
-                    InsightsFlowNode(id: "expense:5", label: "Travel", type: "expense", amountCents: 61_500, categoryID: 5),
-                    InsightsFlowNode(id: "expense:6", label: "Health", type: "expense", amountCents: 40_500, categoryID: 6),
-                    InsightsFlowNode(id: "savings", label: "Net savings", type: "savings", amountCents: 176_000, categoryID: nil)
-                ],
-                links: []
-            )
-        )
+/// The dashed outline of a month that is still under way.
+private struct InProgressMark: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
     }
-    .expensesScreenStyle()
-}
-
-#Preview("Net chart empty") {
-    List {
-        InsightsNetSection(
-            flow: InsightsFlowResponse(
-                period: Period(slug: "all", start: .now, end: .now),
-                filters: InsightsFilters(tagID: nil, excludedTagIDs: []),
-                nodes: [],
-                links: []
-            )
-        )
-    }
-    .expensesScreenStyle()
-}
-
-#Preview {
-    InsightsView()
-        .environment(AppModel())
 }

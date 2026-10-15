@@ -1,42 +1,60 @@
 import SwiftUI
 
+/// The server this device talks to, and what that server reports about itself.
 struct DiagnosticsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    @State private var testing = false
+    @State private var connected = false
+    @State private var server = ""
+    @State private var confirmingSwitch = false
 
     var body: some View {
-        @Bindable var model = model
-
         List {
-            Section("Connection") {
-                TextField("Backend URL", text: $model.baseURLString)
+            Section("Server") {
+                TextField("Server URL", text: $server)
                     .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .keyboardType(.URL)
-                Button("Test connection") {
-                    Task { await model.testConnection() }
+                    .submitLabel(.go)
+                    .onSubmit { confirmingSwitch = serverChanged }
+                Button {
+                    if serverChanged {
+                        confirmingSwitch = true
+                    } else {
+                        Task { await test() }
+                    }
+                } label: {
+                    HStack {
+                        Text("Test connection")
+                        Spacer()
+                        if testing {
+                            ProgressView()
+                        } else if connected {
+                            Text("\(Image(systemName: "checkmark.circle")) Connected")
+                                .foregroundStyle(ExpensesTheme.income(for: scheme))
+                        }
+                    }
                 }
-                Button("Reset to local backend") {
-                    model.resetBaseURL()
+                .disabled(testing)
+                Button("Use local server") {
+                    server = ExpensesAppStorage.defaultLocalBackendURL
+                    confirmingSwitch = serverChanged
                 }
             }
+            .expensesRowBackground()
 
             if let status = model.status {
-                Section("Backend") {
-                    LabeledContent("App", value: status.app)
+                Section {
                     LabeledContent("Version", value: status.version)
-                    LabeledContent("Setup required", value: status.setupRequired ? "Yes" : "No")
-                    LabeledContent("Timezone", value: status.timezone)
+                    LabeledContent("Time zone", value: status.timezone)
                     LabeledContent("Receipt limit", value: ByteCountFormatter.string(
                         fromByteCount: Int64(status.receiptMaxBytes),
                         countStyle: .file
                     ))
                 }
-            }
-
-            if let session = model.identity?.session {
-                Section("Mobile session") {
-                    LabeledContent("Device", value: session.deviceName)
-                    LabeledContent("Expires", value: AppFormatters.dateTime(session.expiresAt))
-                }
+                .expensesRowBackground()
             }
 
             if let error = model.lastError {
@@ -46,14 +64,36 @@ struct DiagnosticsView: View {
         .navigationTitle("Diagnostics")
         .expensesScreenStyle()
         .refreshable {
-            await model.testConnection()
+            await test()
         }
-        .overlay {
-            if model.isLoading {
-                ProgressView()
-                    .controlSize(.large)
+        .onChange(of: model.baseURLString) {
+            connected = false
+        }
+        .onAppear {
+            server = model.baseURLString
+        }
+        // A new address replaces this server's session, so it applies only once confirmed.
+        .alert("Switch server?", isPresented: $confirmingSwitch) {
+            Button("Cancel", role: .cancel) {
+                server = model.baseURLString
             }
+            Button("Switch", role: .destructive) {
+                model.baseURLString = server.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        } message: {
+            Text("This signs you out. Sign in again on the new server.")
         }
+    }
+
+    private var serverChanged: Bool {
+        server.trimmingCharacters(in: .whitespacesAndNewlines) != model.baseURLString
+    }
+
+    private func test() async {
+        testing = true
+        defer { testing = false }
+        await model.testConnection()
+        connected = model.lastError == nil
     }
 }
 
@@ -62,7 +102,7 @@ struct ErrorDetailsView: View {
 
     var body: some View {
         Section("Error") {
-            Text(error.message)
+            FieldError(error.message)
             if let statusCode = error.statusCode {
                 LabeledContent("Status", value: "\(statusCode)")
             }
@@ -71,5 +111,6 @@ struct ErrorDetailsView: View {
                     .textSelection(.enabled)
             }
         }
+        .expensesRowBackground()
     }
 }

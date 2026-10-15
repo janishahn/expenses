@@ -55,7 +55,7 @@ struct AISettingsUpdate: Encodable {
 
 struct ChatGPTPairingResponse: Codable {
     let pairingCode: String
-    let expiresAt: String
+    let expiresAt: Date
     enum CodingKeys: String, CodingKey {
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"

@@ -100,6 +100,67 @@ test.describe("Transactions Page", () => {
     await expect(page.locator("main h1")).toContainText("Trash")
   })
 
+  test("prints every row for the filters with the server's totals", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const expenseId = await ensureCategory(request, token, "expense", "E2E Print")
+    const incomeId = await ensureCategory(request, token, "income", "E2E Print Income")
+    const marker = `printx${Date.now()}x`
+    await createExpense(request, token, expenseId, `${marker} lunch`, { date: "2026-03-11", amount_cents: 2000 })
+    await createExpense(request, token, expenseId, `${marker} train`, { date: "2026-03-10", amount_cents: 1500 })
+    await createTransaction(request, token, {
+      date: "2026-03-10",
+      occurred_at: "2026-03-10T09:00:00",
+      type: "income",
+      amount_cents: 5000,
+      category_id: incomeId,
+      title: `${marker} salary`,
+      tags: [],
+    })
+    // Pages of two rows, so the printout has to gather a second page.
+    let printPages = 0
+    await page.route(/\/api\/transactions\?/, (route) => {
+      const url = route.request().url()
+      if (!url.includes("limit=100")) return route.continue()
+      printPages += 1
+      return route.continue({ url: url.replace("limit=100", "limit=2") })
+    })
+    await page.addInitScript(() => {
+      window.print = () => {
+        document.body.dataset.printed = String(Number(document.body.dataset.printed ?? 0) + 1)
+      }
+    })
+
+    await page.goto(`/transactions?q=${marker}`)
+    const screenTitle = await page.title()
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Print…" }).click()
+    await expect(page.locator("body")).toHaveAttribute("data-printed", "1")
+    expect(printPages).toBe(2)
+    await expect(page).toHaveTitle("Transactions · All time")
+    await expect(page.getByRole("table", { includeHidden: true })).toBeHidden()
+
+    await page.emulateMedia({ media: "print" })
+    await expect(page.getByTestId("app-shell-root")).toBeHidden()
+    const ledger = page.getByRole("table")
+    for (const name of ["lunch", "train", "salary"]) await expect(ledger).toContainText(`${marker} ${name}`)
+    await expect(page.getByText(`Matching “${marker}”`)).toBeVisible()
+    for (const [term, amount] of [
+      ["Spent", "35,00 €"],
+      ["Cash in", "50,00 €"],
+      ["Net", "+ 15,00 €"],
+    ]) {
+      await expect(page.getByRole("term").filter({ hasText: term }).locator("..")).toContainText(amount)
+    }
+    await expect(page.getByText("3 transactions")).toBeVisible()
+
+    await page.evaluate(() => window.dispatchEvent(new Event("afterprint")))
+    await expect(ledger).toHaveCount(0)
+    await expect(page).toHaveTitle(screenTitle)
+    await page.emulateMedia({ media: "screen" })
+    await page.keyboard.press("ControlOrMeta+p")
+    await expect(page.locator("body")).toHaveAttribute("data-printed", "2")
+  })
+
   test("keeps header actions free of an outline-like shadow", async ({ page }) => {
     await page.goto("/transactions")
     for (const name of ["Search", "More actions"]) {
@@ -588,31 +649,6 @@ test.describe("Transactions Page", () => {
       await expect(dialog.getByLabel("Amount")).toHaveValue("4,50")
       await expect(dialog.getByLabel("Title")).toHaveValue(`Template title ${stamp}`)
       await expect(dialog.getByRole("button", { name: categoryName })).toBeVisible()
-    })
-
-    test("keeps the dialog open and resets the entry with Add another", async ({ page, request }) => {
-      const token = await getCsrfToken(request)
-      await ensureCategory(request, token, "income", "E2E Add Another Income")
-      const title = `E2E Add another ${Date.now()}`
-
-      await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
-      const dialog = page.getByRole("dialog", { name: "Add transaction" })
-      await dialog.getByRole("radio", { name: "Income" }).click()
-      await dialog.getByRole("switch", { name: "Add another" }).click()
-      await dialog.getByLabel("Amount").fill("20")
-      await dialog.getByLabel("Title").fill(title)
-      await dialog.getByRole("button", { name: "Add transaction" }).click()
-
-      await expect(page.getByRole("status")).toContainText("Transaction added")
-      await expect(dialog).toBeVisible()
-      await expect(dialog.getByLabel("Amount")).toHaveValue("")
-      await expect(dialog.getByLabel("Title")).toHaveValue("")
-      await expect(dialog.getByRole("radio", { name: "Income" })).toBeChecked()
-
-      await dialog.getByRole("button", { name: "Cancel" }).click()
-      await expect(dialog).toBeHidden()
-      await expect(page.getByRole("listitem", { name: title })).toBeVisible()
     })
 
     test("dismisses on an outside click", async ({ page }) => {

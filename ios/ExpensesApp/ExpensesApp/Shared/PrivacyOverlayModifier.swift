@@ -8,15 +8,10 @@ struct PrivacyOverlayModifier: ViewModifier {
             .overlay {
                 if scenePhase != .active {
                     ZStack {
-                        Rectangle()
-                            .fill(.regularMaterial)
-                            .ignoresSafeArea()
-                        VStack(spacing: 12) {
-                            Image(systemName: "lock.shield")
-                                .font(.system(size: 42))
-                            Text("Expenses")
-                                .font(.title2.bold())
-                        }
+                        ExpensesBackground()
+                        Image(systemName: "lock.fill")
+                            .font(.largeTitle.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

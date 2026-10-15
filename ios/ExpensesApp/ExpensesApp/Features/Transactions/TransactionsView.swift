@@ -1,1149 +1,642 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+enum TransactionsRoute: Hashable {
+    case transaction(Int)
+    case trash
+}
 
 struct TransactionsView: View {
     @Environment(AppModel.self) private var model
-    @Binding var path: [Int]
-    @Binding var selectingTransactions: Bool
-    @State private var listMode: TransactionListMode = .active
-    @State private var selectedTransactionIDs: Set<Int> = []
-    @State private var presentingBulkEdit = false
-    @State private var pendingPermanentDelete: DeletedTransaction?
+    @Environment(\.colorScheme) private var scheme
+    @Binding var path: [TransactionsRoute]
+    @Binding var selecting: Bool
+    @State private var search = ""
     @State private var presentingFilters = false
-    @State private var draftSearchQuery = ""
-    @State private var draftType = ""
-    @State private var draftCategoryID: Int?
-    @State private var draftTagID: Int?
-    @State private var draftExcludedTagIDs: Set<Int> = []
-    @State private var draftPeriod: TransactionPeriodFilter = .all
-    @State private var liveSearchTask: Task<Void, Never>?
-    @State private var appliedSearchQuery = ""
-    @State private var appliedType = ""
-    @State private var appliedCategoryID: Int?
-    @State private var appliedTagID: Int?
-    @State private var appliedExcludedTagIDs: Set<Int> = []
-    @State private var appliedPeriod: TransactionPeriodFilter = .all
-
-    init(path: Binding<[Int]> = .constant([]), selecting: Binding<Bool> = .constant(false)) {
-        _path = path
-        _selectingTransactions = selecting
-    }
+    @State private var selection: Set<Int> = []
+    // Every transaction the query matches, across pages, rather than the rows picked.
+    @State private var selectsAllMatching = false
+    @State private var bulkSheet: BulkSheet?
+    @State private var pendingBulk: PendingBulkEdit?
+    @State private var appliedBulk = 0
+    @State private var export: CSVFile?
+    @State private var failure: String?
+    @State private var searchStartsHidden = true
 
     var body: some View {
+        @Bindable var model = model
         NavigationStack(path: $path) {
-            List {
-                if model.identity?.authenticated != true {
-                    SignedOutStateSection()
+            List(selection: $selection) {
+                if let transactions = model.transactions {
+                    if transactions.items.isEmpty {
+                        emptyState
+                    } else {
+                        ledger(transactions)
+                    }
+                } else if model.showsTransactionsLoadFailed {
+                    UnavailableStateSection(
+                        title: "Couldn't load transactions",
+                        systemImage: "exclamationmark.triangle",
+                        message: model.lastError?.message
+                    ) {
+                        await model.loadTransactions()
+                    }
                 } else {
-                    if listMode != .deleted, hasStructuredFilters {
-                        FilterSummarySection(
-                            labels: activeFilterLabels,
-                            onOpen: {
-                                resetDraftFiltersToApplied()
-                                presentingFilters = true
-                            },
-                            onClear: {
-                                clearFilters()
-                            }
-                        )
-                    }
-
-                    switch listMode {
-                    case .active:
-                        if let transactions = model.transactions {
-                            if transactions.items.isEmpty {
-                                if hasActiveQueryOrFilters {
-                                    ContentUnavailableView(
-                                        "No matching transactions",
-                                        systemImage: "magnifyingglass",
-                                        description: Text("Try a different search or clear your filters.")
-                                    )
-                                } else {
-                                    ContentUnavailableView(
-                                        "No transactions yet",
-                                        systemImage: "list.bullet.rectangle",
-                                        description: Text("Add your first transaction with the + button.")
-                                    )
-                                }
-                            } else {
-                                TransactionRows(
-                                    transactions: transactions.items,
-                                    categories: transactions.categories,
-                                    selecting: selectingTransactions,
-                                    selectedIDs: $selectedTransactionIDs
-                                )
-                            }
-                        } else if model.showsTransactionsInitialLoading {
-                            LoadingStateSection(title: "Loading transactions")
-                        } else {
-                            ContentUnavailableView("No transactions loaded", systemImage: "list.bullet.rectangle")
-                        }
-                    case .uncategorized:
-                        if let transactions = model.uncategorizedTransactions {
-                            if transactions.total == 0 {
-                                if hasActiveQueryOrFilters {
-                                    ContentUnavailableView(
-                                        "No matching transactions",
-                                        systemImage: "magnifyingglass",
-                                        description: Text("Try a different search or clear your filters.")
-                                    )
-                                } else {
-                                    ContentUnavailableView(
-                                        "Inbox zero",
-                                        systemImage: "checkmark.circle",
-                                        description: Text("Every transaction has a category.")
-                                    )
-                                }
-                            } else {
-                                Section {
-                                    LabeledContent("Open items", value: "\(transactions.total)")
-                                }
-                                UncategorizedTriageRows(
-                                transactions: transactions.items,
-                                categories: transactions.categories,
-                                suggestions: model.transactionSuggestions,
-                                llmEnabled: model.llmEnabled,
-                                selecting: selectingTransactions,
-                                selectedIDs: $selectedTransactionIDs,
-                                onSuggest: { transaction in
-                                    Task { await model.triageTransaction(transaction) }
-                                },
-                                onAccept: { suggestion in
-                                    Task {
-                                        if await model.acceptTransactionSuggestion(suggestion) {
-                                            await loadSelectedMode()
-                                        }
-                                    }
-                                },
-                                onReject: { suggestion in
-                                    Task { await model.rejectTransactionSuggestion(suggestion) }
-                                }
-                                )
-                            }
-                        } else {
-                            ContentUnavailableView("No uncategorized transactions loaded", systemImage: "tray")
-                        }
-                    case .deleted:
-                        DeletedTransactionsList(
-                            transactions: model.deletedTransactions?.transactions ?? [],
-                            onRestore: { transaction in
-                                Task { await model.restoreTransaction(transaction) }
-                            },
-                            onPermanentDelete: { transaction in
-                                pendingPermanentDelete = transaction
-                            }
-                        )
-                    }
+                    LoadingStateSection(title: "Loading transactions")
                 }
-            }
-            .navigationTitle("Transactions")
-            .expensesScreenStyle()
-            .searchable(
-                text: $draftSearchQuery,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search titles and descriptions"
-            )
-            .onSubmit(of: .search, applyFilters)
-            .onChange(of: draftSearchQuery) { _, _ in
-                scheduleLiveSearch()
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    TransactionListModeMenu(listMode: $listMode)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        resetDraftFiltersToApplied()
-                        presentingFilters = true
-                    } label: {
-                        Label("Filters", systemImage: hasStructuredFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    }
-                    .disabled(listMode == .deleted)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(selectingTransactions ? "Done" : "Select") {
-                        selectingTransactions.toggle()
-                        if !selectingTransactions {
-                            selectedTransactionIDs.removeAll()
-                        }
-                    }
-                    .disabled(!listMode.supportsBulkEdit || currentTransactions.isEmpty)
-                }
-            }
-            .sheet(isPresented: $presentingFilters, onDismiss: resetDraftFiltersToApplied) {
-                TransactionFiltersSheet(
-                    period: $draftPeriod,
-                    type: $draftType,
-                    categoryID: $draftCategoryID,
-                    tagID: $draftTagID,
-                    excludedTagIDs: $draftExcludedTagIDs,
-                    categories: currentCategories,
-                    tags: currentTags,
-                    onApply: applyFilters,
-                    onClear: clearFilters
-                )
-                .presentationDetents([.medium, .large])
-            }
-            .sheet(isPresented: $presentingBulkEdit) {
-                BulkEditSheet(
-                    mode: listMode,
-                    selectedIDs: selectedTransactionIDs,
-                    categories: currentCategories,
-                    uncategorizedDefinition: model.uncategorizedTransactions?.definition,
-                    query: appliedSearchQuery,
-                    type: appliedType,
-                    filterCategoryID: appliedCategoryID,
-                    filterTagID: appliedTagID,
-                    filterExcludedTagIDs: appliedExcludedTagIDs,
-                    period: appliedPeriod.rawValue
-                ) { request in
-                    await model.previewBulkEdit(request)
-                } onApply: { request in
-                    await model.applyBulkEdit(request)
-                }
-            }
-            .confirmationDialog(
-                "Permanently delete this transaction?",
-                isPresented: Binding(
-                    get: { pendingPermanentDelete != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            pendingPermanentDelete = nil
-                        }
-                    }
-                )
-            ) {
-                Button("Delete Forever", role: .destructive) {
-                    if let transaction = pendingPermanentDelete {
-                        Task { await model.permanentlyDeleteTransaction(transaction) }
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            }
-            .task(id: listMode) {
-                await loadSelectedMode()
             }
             .refreshable {
-                await loadSelectedMode()
+                await model.loadTransactions()
             }
-            .navigationDestination(for: Int.self) { id in
-                TransactionDetailView(transactionID: id)
-            }
-            .safeAreaInset(edge: .bottom) {
-                if selectingTransactions && listMode.supportsBulkEdit {
-                    BulkSelectionBar(
-                        selectedCount: selectedTransactionIDs.count,
-                        canUseFilteredMode: listMode != .deleted,
-                        onSelectPage: {
-                            selectedTransactionIDs = Set(currentTransactions.map(\.id))
-                        },
-                        onClear: {
-                            selectedTransactionIDs.removeAll()
-                        },
-                        onBulkEdit: {
-                            presentingBulkEdit = true
+            .checkedTint()
+            .quickAddButton(shown: !selecting)
+            .environment(\.editMode, .constant(selecting ? .active : .inactive))
+            .navigationTitle(selecting ? "\(selectionCount) Selected" : "Transactions")
+            .navigationSubtitle(selecting ? "" : subtitle)
+            .expensesScreenStyle()
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic))
+            .toolbar {
+                if selecting {
+                    selectionToolbar
+                } else {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        PeriodMenu(period: $model.transactionQuery.period)
+                        Button {
+                            presentingFilters = true
+                        } label: {
+                            Label(
+                                "Filter",
+                                systemImage: model.transactionQuery.hasFilters
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease"
+                            )
                         }
+                        Menu {
+                            Button("Select", systemImage: "checkmark.circle") {
+                                selecting = true
+                            }
+                            .disabled(model.transactions?.items.isEmpty != false)
+                            Button("Trash", systemImage: "trash") {
+                                path.append(.trash)
+                            }
+                            Button("Export CSV", systemImage: "square.and.arrow.up") {
+                                Task { await exportCSV() }
+                            }
+                        } label: {
+                            Label("More", systemImage: "ellipsis")
+                        }
+                    }
+                }
+            }
+            .toolbar(selecting ? .hidden : .automatic, for: .tabBar)
+            .task(id: model.transactionQuery) {
+                if model.transactions == nil || model.loadedTransactionQuery != model.transactionQuery {
+                    await model.loadTransactions()
+                }
+            }
+            .task(id: search) {
+                try? await Task.sleep(for: .milliseconds(250))
+                if !Task.isCancelled && search != model.transactionQuery.search {
+                    model.transactionQuery.search = search
+                }
+            }
+            .onChange(of: model.transactionQuery) {
+                clearSelection()
+            }
+            // Insights opens the ledger on a new query.
+            .onChange(of: model.transactionQuery.search) { _, value in
+                search = value
+            }
+            .onChange(of: selecting) {
+                clearSelection()
+            }
+            .onChange(of: selection) {
+                if selectsAllMatching && selection != loadedIDs {
+                    selectsAllMatching = false
+                }
+            }
+            .onChange(of: model.transactions?.items.count) {
+                if selectsAllMatching {
+                    selection = loadedIDs
+                }
+            }
+            .sheet(isPresented: $presentingFilters) {
+                TransactionFilterSheet(
+                    query: $model.transactionQuery,
+                    categories: model.transactions?.categories ?? model.knownCategories,
+                    tags: model.transactions?.tags ?? []
+                )
+            }
+            .sheet(item: $bulkSheet) { sheet in
+                switch sheet {
+                case .category:
+                    CategoryPickerSheet(title: "Set category", categories: model.activeKnownCategories) { category in
+                        Task {
+                            await prepareBulk(
+                                BulkOperationRequest(setCategoryID: category.id, tagPatch: nil, lifecycle: "none"),
+                                verb: "Change the category of",
+                                confirmLabel: "Apply"
+                            )
+                        }
+                    }
+                case let .tags(mode):
+                    TagPickerSheet(title: mode.title, options: tagOptions) { names in
+                        guard !names.isEmpty else {
+                            return
+                        }
+                        Task {
+                            await prepareBulk(
+                                BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: mode.rawValue, tags: names), lifecycle: "none"),
+                                verb: mode.verb,
+                                confirmLabel: "Apply"
+                            )
+                        }
+                    }
+                }
+            }
+            .bulkConfirmation($pendingBulk) { pending in
+                await applyBulk(pending)
+            }
+            .sensoryFeedback(.success, trigger: appliedBulk)
+            .fileExporter(
+                isPresented: Binding(get: { export != nil }, set: { if !$0 { export = nil } }),
+                document: export,
+                contentType: .commaSeparatedText,
+                defaultFilename: export?.filename
+            ) { _ in
+                export = nil
+            }
+            .failureAlert("Couldn't complete the action", message: $failure)
+            .navigationDestination(for: TransactionsRoute.self) { route in
+                switch route {
+                case let .transaction(id):
+                    TransactionDetailView(transactionID: id)
+                case .trash:
+                    TrashView()
+                }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var selectionToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(selectsAllMatching ? "Deselect All" : "Select All") {
+                if selectsAllMatching {
+                    clearSelection()
+                } else {
+                    selection = loadedIDs
+                    selectsAllMatching = true
+                }
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Done", role: .confirm) {
+                selecting = false
+            }
+        }
+        ToolbarItemGroup(placement: .bottomBar) {
+            // Bulk edits move rows to a category; they cannot clear one.
+            Button("Category", systemImage: "square.on.circle") {
+                bulkSheet = .category
+            }
+            .disabled(selectionCount == 0)
+            Spacer()
+            Menu {
+                ForEach(TagPatchMode.allCases) { mode in
+                    Button(mode.title, systemImage: mode.systemImage) {
+                        bulkSheet = .tags(mode)
+                    }
+                }
+                Divider()
+                Button("Clear Tags", systemImage: "eraser") {
+                    Task {
+                        await prepareBulk(
+                            BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: "clear", tags: []), lifecycle: "none"),
+                            verb: "Clear tags on",
+                            confirmLabel: "Clear Tags"
+                        )
+                    }
+                }
+            } label: {
+                Label("Tags", systemImage: "tag")
+            }
+            .disabled(selectionCount == 0)
+            Spacer()
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                Task {
+                    await prepareBulk(
+                        BulkOperationRequest(setCategoryID: nil, tagPatch: nil, lifecycle: "soft_delete"),
+                        verb: "Delete",
+                        confirmLabel: "Delete"
                     )
                 }
             }
-            .animation(.easeInOut(duration: 0.18), value: model.showsTransactionsInitialLoading)
+            .disabled(selectionCount == 0)
         }
     }
 
-    private func loadSelectedMode() async {
-        selectedTransactionIDs.removeAll()
-        selectingTransactions = false
-        if listMode == .deleted {
-            presentingFilters = false
-        }
-        switch listMode {
-        case .active:
-            await model.loadTransactions(
-                query: appliedSearchQuery,
-                type: appliedType,
-                categoryID: appliedCategoryID,
-                tagID: appliedTagID,
-                excludedTagIDs: appliedExcludedTagIDs.sorted(),
-                period: appliedPeriod.rawValue
-            )
-        case .uncategorized:
-            await model.loadUncategorizedTransactions(
-                query: appliedSearchQuery,
-                type: appliedType,
-                categoryID: appliedCategoryID,
-                tagID: appliedTagID,
-                excludedTagIDs: appliedExcludedTagIDs.sorted(),
-                period: appliedPeriod.rawValue
-            )
-        case .deleted:
-            await model.loadDeletedTransactions()
-        }
-    }
-
-    private func applyFilters() {
-        liveSearchTask?.cancel()
-        appliedSearchQuery = draftSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        appliedType = draftType
-        appliedCategoryID = draftCategoryID
-        appliedTagID = draftTagID
-        if let appliedTagID {
-            draftExcludedTagIDs.remove(appliedTagID)
-        }
-        appliedExcludedTagIDs = draftExcludedTagIDs
-        appliedPeriod = draftPeriod
-        Task { await loadSelectedMode() }
-    }
-
-    private func scheduleLiveSearch() {
-        liveSearchTask?.cancel()
-        guard listMode != .deleted else {
-            return
-        }
-
-        let query = draftSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query != appliedSearchQuery else {
-            return
-        }
-
-        liveSearchTask = Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else {
-                return
-            }
-            await MainActor.run {
-                guard query != appliedSearchQuery else {
-                    return
+    @ViewBuilder
+    private func ledger(_ transactions: TransactionsResponse) -> some View {
+        let categoriesByID = Dictionary(uniqueKeysWithValues: transactions.categories.map { ($0.id, $0) })
+        let days = DayGroup.groups(transactions.items)
+        ForEach(days) { day in
+            Section {
+                ForEach(day.rows) { row in
+                    NavigationLink(value: TransactionsRoute.transaction(row.id)) {
+                        LedgerRow(transaction: row, category: row.category.map { categoriesByID[$0.id] ?? $0 })
+                    }
+                    .navigationLinkIndicatorVisibility(.hidden)
                 }
-                appliedSearchQuery = query
-                Task { await loadSelectedMode() }
+            } header: {
+                AdaptiveRow {
+                    Text(AppFormatters.bookingDay(day.date))
+                        .background {
+                            if searchStartsHidden && day.id == days.first?.id {
+                                HiddenSearchStart { searchStartsHidden = false }
+                            }
+                        }
+                } trailing: {
+                    // The last day may continue on the next page, so it shows no partial net.
+                    if !(transactions.hasMore && day.id == days.last?.id) {
+                        AmountText(day.net, signed: true)
+                    }
+                }
+            }
+            .expensesRowBackground()
+        }
+        if transactions.hasMore {
+            NextPageSection(page: transactions.page) {
+                await model.loadTransactions(nextPage: true)
             }
         }
     }
 
-    private func clearFilters() {
-        draftType = ""
-        draftCategoryID = nil
-        draftTagID = nil
-        draftExcludedTagIDs = []
-        draftPeriod = .all
-        appliedType = ""
-        appliedCategoryID = nil
-        appliedTagID = nil
-        appliedExcludedTagIDs = []
-        appliedPeriod = .all
-        Task { await loadSelectedMode() }
+    @ViewBuilder
+    private var emptyState: some View {
+        let query = model.transactionQuery
+        Section {
+            if query.hasFilters || !query.trimmedSearch.isEmpty {
+                ContentUnavailableView {
+                    Label("No matching transactions", systemImage: "magnifyingglass")
+                } actions: {
+                    Button("Clear filters") {
+                        search = ""
+                        model.transactionQuery = TransactionQuery(period: query.period)
+                    }
+                }
+            } else if query.period != .all {
+                ContentUnavailableView {
+                    Label("No matching transactions", systemImage: "calendar")
+                } actions: {
+                    Button("Show all time") {
+                        model.transactionQuery.period = .all
+                    }
+                }
+            } else {
+                ContentUnavailableView("No transactions yet", systemImage: "list.bullet")
+            }
+        }
+        .listRowBackground(Color.clear)
     }
 
-    private func resetDraftFiltersToApplied() {
-        draftSearchQuery = appliedSearchQuery
-        draftType = appliedType
-        draftCategoryID = appliedCategoryID
-        draftTagID = appliedTagID
-        draftExcludedTagIDs = appliedExcludedTagIDs
-        draftPeriod = appliedPeriod
+    // "October 2026 · Expenses · Groceries"
+    private var subtitle: String {
+        let query = model.transactionQuery
+        var parts = [query.period.title]
+        if let type = query.type {
+            parts.append(type == .income ? "Income" : "Expenses")
+        }
+        if let categoryID = query.categoryID {
+            parts.append(model.knownCategories.first { $0.id == categoryID }?.name ?? "1 category")
+        }
+        if let tags = query.tagSummary(model.transactions?.tags ?? []) {
+            parts.append(tags)
+        }
+        return parts.joined(separator: " · ")
     }
 
-    private var currentTransactions: [TransactionListItem] {
-        switch listMode {
-        case .active:
-            model.transactions?.items ?? []
-        case .uncategorized:
-            model.uncategorizedTransactions?.items ?? []
-        case .deleted:
-            []
+    private var loadedIDs: Set<Int> {
+        Set(model.transactions?.items.map(\.id) ?? [])
+    }
+
+    private var selectionCount: Int {
+        selectsAllMatching ? model.transactions?.total ?? 0 : selection.count
+    }
+
+    private var tagOptions: [String] {
+        (model.transactions?.tags.map(\.name) ?? []).sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
     }
 
-    private var currentCategories: [CategorySummary] {
-        switch listMode {
-        case .active:
-            model.transactions?.categories ?? model.knownCategories
-        case .uncategorized:
-            model.uncategorizedTransactions?.categories ?? model.knownCategories
-        case .deleted:
-            model.knownCategories
-        }
+    private func clearSelection() {
+        selection = []
+        selectsAllMatching = false
     }
 
-    private var currentTags: [TransactionTag] {
-        switch listMode {
-        case .active:
-            model.transactions?.tags ?? model.tags?.tags.map { TransactionTag(id: $0.id, name: $0.name) } ?? []
-        case .uncategorized:
-            model.uncategorizedTransactions?.tags ?? model.tags?.tags.map { TransactionTag(id: $0.id, name: $0.name) } ?? []
-        case .deleted:
-            []
+    // Previews the change, then asks to confirm it with the affected count.
+    private func prepareBulk(_ operation: BulkOperationRequest, verb: String, confirmLabel: String) async {
+        let request = BulkEditRequest(
+            selection: selectsAllMatching
+                ? BulkSelectionRequest(
+                    mode: "query",
+                    transactionIDs: [],
+                    query: (model.loadedTransactionQuery ?? model.transactionQuery).bulkSelection()
+                )
+                : BulkSelectionRequest(mode: "ids", transactionIDs: selection.sorted(), query: nil),
+            operation: operation
+        )
+        guard let preview = await model.previewBulkEdit(request) else {
+            failure = model.lastError?.message ?? "The change could not be previewed."
+            return
         }
+        pendingBulk = PendingBulkEdit(
+            request: request,
+            preview: preview,
+            verb: verb,
+            confirmLabel: confirmLabel,
+            destructive: operation.lifecycle == "soft_delete"
+        )
     }
 
-    private var hasStructuredFilters: Bool {
-        appliedPeriod != .all || !appliedType.isEmpty || appliedCategoryID != nil || appliedTagID != nil || !appliedExcludedTagIDs.isEmpty
+    private func applyBulk(_ pending: PendingBulkEdit) async {
+        guard await model.applyBulkEdit(pending.request) != nil else {
+            failure = model.lastError?.message ?? "The change could not be applied."
+            return
+        }
+        appliedBulk += 1
+        selecting = false
     }
 
-    private var hasActiveQueryOrFilters: Bool {
-        hasStructuredFilters || !appliedSearchQuery.isEmpty
-    }
-
-    private var activeFilterLabels: [String] {
-        var labels: [String] = []
-        if appliedPeriod != .all {
-            labels.append(appliedPeriod.title)
+    private func exportCSV() async {
+        guard let download = await model.exportTransactionsCSV() else {
+            failure = model.lastError?.message ?? "The export could not be created."
+            return
         }
-        if !appliedType.isEmpty {
-            labels.append(appliedType == "income" ? "Income" : "Expenses")
-        }
-        if let appliedCategoryID,
-           let category = currentCategories.first(where: { $0.id == appliedCategoryID }) {
-            labels.append(category.name)
-        }
-        if let appliedTagID,
-           let tag = currentTags.first(where: { $0.id == appliedTagID }) {
-            labels.append(tag.name)
-        }
-        labels.append(contentsOf: appliedExcludedTagIDs.sorted().compactMap { id in
-            currentTags.first(where: { $0.id == id }).map { "Excluding: \($0.name)" }
-        })
-        return labels
+        export = CSVFile(data: download.data, filename: download.filename)
     }
 }
 
-private struct TransactionListModeMenu: View {
-    @Binding var listMode: TransactionListMode
+/// Booking days with their rows, in list order, and each day's net.
+struct DayGroup: Identifiable {
+    let date: Date
+    var rows: [TransactionListItem]
 
-    var body: some View {
-        Menu {
-            Picker("List", selection: $listMode) {
-                ForEach(TransactionListMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.systemImage).tag(mode)
-                }
+    // A back-dated row can bring a date back further down, so the date alone is not unique.
+    var id: Int { rows[0].id }
+
+    // Expenses count at their net after reimbursements; a reimbursement is not income.
+    var net: Int {
+        rows.reduce(0) { total, row in
+            if row.type == "expense" {
+                return total - row.netAmountCents
             }
-        } label: {
-            Label(listMode.title, systemImage: listMode.systemImage)
-                .labelStyle(.titleAndIcon)
+            return row.isReimbursement ? total : total + row.amountCents
         }
-        .menuOrder(.fixed)
+    }
+
+    static func groups(_ rows: [TransactionListItem]) -> [DayGroup] {
+        var groups: [DayGroup] = []
+        for row in rows {
+            if groups.last?.date == row.date {
+                groups[groups.count - 1].rows.append(row)
+            } else {
+                groups.append(DayGroup(date: row.date, rows: [row]))
+            }
+        }
+        return groups
     }
 }
 
-private struct FilterSummarySection: View {
-    let labels: [String]
-    var onOpen: () -> Void
-    var onClear: () -> Void
+/// Loads the next page when it scrolls into view.
+struct NextPageSection: View {
+    let page: Int
+    let load: () async -> Void
 
     var body: some View {
         Section {
-            HStack(spacing: 10) {
-                Button(action: onOpen) {
-                    Label(labels.joined(separator: " · "), systemImage: "line.3.horizontal.decrease.circle.fill")
-                        .lineLimit(1)
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .task(id: page) {
+                    await load()
                 }
-                .buttonStyle(.plain)
+        }
+        .listRowBackground(Color.clear)
+    }
+}
 
-                Spacer(minLength: 8)
+/// A bulk edit that was previewed and waits for confirmation.
+struct PendingBulkEdit {
+    let request: BulkEditRequest
+    let title: String
+    let message: String?
+    let confirmLabel: String
+    let destructive: Bool
 
-                Button(action: onClear) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear filters")
+    init(request: BulkEditRequest, preview: BulkEditResponse, verb: String, confirmLabel: String, destructive: Bool) {
+        self.request = request
+        title = "\(verb) \(transactionCount(preview.eligibleCount))?"
+        message = preview.skippedCount > 0 ? "\(transactionCount(preview.skippedCount)) will be skipped." : nil
+        self.confirmLabel = confirmLabel
+        self.destructive = destructive
+    }
+}
+
+extension View {
+    func bulkConfirmation(_ pending: Binding<PendingBulkEdit?>, apply: @escaping (PendingBulkEdit) async -> Void) -> some View {
+        alert(
+            pending.wrappedValue?.title ?? "",
+            isPresented: Binding(get: { pending.wrappedValue != nil }, set: { if !$0 { pending.wrappedValue = nil } }),
+            presenting: pending.wrappedValue
+        ) { edit in
+            Button("Cancel", role: .cancel) {}
+            Button(edit.confirmLabel, role: edit.destructive ? .destructive : .confirm) {
+                Task { await apply(edit) }
             }
-            .font(.callout.weight(.medium))
+        } message: { edit in
+            if let message = edit.message {
+                Text(message)
+            }
         }
     }
 }
 
-private enum TransactionPeriodFilter: String, CaseIterable, Identifiable {
-    case all
-    case thisMonth = "this_month"
-    case lastMonth = "last_month"
+/// "1 transaction", "3 transactions".
+func transactionCount(_ count: Int) -> String {
+    "\(count) transaction\(count == 1 ? "" : "s")"
+}
+
+private enum BulkSheet: Identifiable {
+    case category
+    case tags(TagPatchMode)
+
+    var id: String {
+        switch self {
+        case .category:
+            "category"
+        case let .tags(mode):
+            mode.rawValue
+        }
+    }
+}
+
+private enum TagPatchMode: String, CaseIterable, Identifiable {
+    case add
+    case remove
+    case replace
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .all:
-            "All time"
-        case .thisMonth:
-            "This month"
-        case .lastMonth:
-            "Last month"
+        case .add:
+            "Add tags"
+        case .remove:
+            "Remove tags"
+        case .replace:
+            "Replace tags"
         }
     }
-}
 
-private struct TransactionFiltersSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var period: TransactionPeriodFilter
-    @Binding var type: String
-    @Binding var categoryID: Int?
-    @Binding var tagID: Int?
-    @Binding var excludedTagIDs: Set<Int>
-    let categories: [CategorySummary]
-    let tags: [TransactionTag]
-    var onApply: () -> Void
-    var onClear: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Picker("Time range", selection: $period) {
-                    ForEach(TransactionPeriodFilter.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-
-                Picker("Type", selection: $type) {
-                    Text("All").tag("")
-                    Text("Income").tag("income")
-                    Text("Expenses").tag("expense")
-                }
-
-                Picker("Category", selection: $categoryID) {
-                    Text("All categories").tag(Int?.none)
-                    ForEach(categories) { category in
-                        Text("\(category.type?.capitalized ?? "Category") · \(category.name)")
-                            .tag(Optional(category.id))
-                    }
-                }
-
-                Picker("Tag", selection: $tagID) {
-                    Text("All tags").tag(Int?.none)
-                    ForEach(tags) { tag in
-                        Text(tag.name).tag(Optional(tag.id))
-                    }
-                }
-
-                TagExclusionSection(
-                    tags: tags,
-                    selectedIDs: $excludedTagIDs,
-                    includedTagID: tagID
-                )
-            }
-            .pickerStyle(.navigationLink)
-            .navigationTitle("Filters")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Reset") {
-                        onClear()
-                        dismiss()
-                    }
-                    .disabled(period == .all && type.isEmpty && categoryID == nil && tagID == nil && excludedTagIDs.isEmpty)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onApply()
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-            .onChange(of: tagID) { _, newValue in
-                if let newValue {
-                    excludedTagIDs.remove(newValue)
-                }
-            }
-        }
-    }
-}
-
-private enum TransactionListMode: String, CaseIterable, Identifiable {
-    case active
-    case uncategorized
-    case deleted
-
-    var id: String { rawValue }
-
-    var title: String {
+    var verb: String {
         switch self {
-        case .active:
-            "Current"
-        case .uncategorized:
-            "Inbox"
-        case .deleted:
-            "Deleted"
-        }
-    }
-
-    var supportsBulkEdit: Bool {
-        switch self {
-        case .active, .uncategorized:
-            true
-        case .deleted:
-            false
+        case .add:
+            "Add tags to"
+        case .remove:
+            "Remove tags from"
+        case .replace:
+            "Replace tags on"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .active:
-            "list.bullet.rectangle"
-        case .uncategorized:
-            "tray"
-        case .deleted:
-            "trash"
+        case .add:
+            "plus"
+        case .remove:
+            "minus"
+        case .replace:
+            "arrow.left.arrow.right"
         }
     }
 }
 
-private struct TransactionRows: View {
-    let transactions: [TransactionListItem]
-    let categories: [CategorySummary]
-    let selecting: Bool
-    @Binding var selectedIDs: Set<Int>
+private struct CSVFile: FileDocument {
+    static let readableContentTypes: [UTType] = [.commaSeparatedText]
 
-    var body: some View {
-        let categoriesByID = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
-        ForEach(transactions) { transaction in
-            let category = transaction.category.map { categoriesByID[$0.id] ?? $0 }
-            if selecting {
-                Button {
-                    toggle(transaction.id)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedIDs.contains(transaction.id) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(selectedIDs.contains(transaction.id) ? .blue : .secondary)
-                        TransactionRow(transaction: transaction, category: category)
-                    }
-                }
-                .buttonStyle(.plain)
-            } else {
-                NavigationLink(value: transaction.id) {
-                    TransactionRow(transaction: transaction, category: category)
-                }
-            }
-        }
+    let data: Data
+    let filename: String
+
+    init(data: Data, filename: String) {
+        self.data = data
+        self.filename = filename
     }
 
-    private func toggle(_ id: Int) {
-        if selectedIDs.contains(id) {
-            selectedIDs.remove(id)
-        } else {
-            selectedIDs.insert(id)
-        }
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+        filename = configuration.file.filename ?? "transactions.csv"
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 
-private struct UncategorizedTriageRows: View {
-    let transactions: [TransactionListItem]
-    let categories: [CategorySummary]
-    let suggestions: [TransactionSuggestion]
-    let llmEnabled: Bool
-    let selecting: Bool
-    @Binding var selectedIDs: Set<Int>
-    var onSuggest: (TransactionListItem) -> Void
-    var onAccept: (TransactionSuggestion) -> Void
-    var onReject: (TransactionSuggestion) -> Void
-
-    var body: some View {
-        let categoriesByID = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
-        let suggestionsByTransaction = suggestions.reduce(into: [Int: TransactionSuggestion]()) { result, suggestion in
-            result[suggestion.transactionID] = result[suggestion.transactionID] ?? suggestion
-        }
-        ForEach(transactions) { transaction in
-            let category = transaction.category.map { categoriesByID[$0.id] ?? $0 }
-            let suggestion = suggestionsByTransaction[transaction.id]
-            VStack(alignment: .leading, spacing: 10) {
-                if selecting {
-                    Button {
-                        toggle(transaction.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: selectedIDs.contains(transaction.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selectedIDs.contains(transaction.id) ? .blue : .secondary)
-                            TransactionRow(transaction: transaction, category: category)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    NavigationLink(value: transaction.id) {
-                        TransactionRow(transaction: transaction, category: category)
-                    }
-                }
-
-                if llmEnabled {
-                    if let suggestion {
-                        TransactionSuggestionReview(
-                            suggestion: suggestion,
-                            onAccept: { onAccept(suggestion) },
-                            onReject: { onReject(suggestion) }
-                        )
-                    } else if !selecting {
-                        HStack {
-                            Spacer()
-                            Button {
-                                onSuggest(transaction)
-                            } label: {
-                                Label("Suggest", systemImage: "sparkles")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func toggle(_ id: Int) {
-        if selectedIDs.contains(id) {
-            selectedIDs.remove(id)
-        } else {
-            selectedIDs.insert(id)
-        }
-    }
-}
-
-private struct TransactionSuggestionReview: View {
-    let suggestion: TransactionSuggestion
-    var onAccept: () -> Void
-    var onReject: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label("Suggested", systemImage: "sparkles")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(Int((suggestion.confidence * 100).rounded()))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(suggestion.categoryName ?? "Uncategorized")
-                .font(.callout.weight(.semibold))
-
-            if let cleanTitle = suggestion.cleanTitle {
-                Text(cleanTitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if !suggestion.tags.isEmpty {
-                Text("Tags: \(suggestion.tags.joined(separator: ", "))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(suggestion.reason)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Button("Reject", role: .destructive, action: onReject)
-                    .buttonStyle(.bordered)
-                Spacer()
-                Button("Accept", action: onAccept)
-                    .buttonStyle(.borderedProminent)
-            }
-            .font(.caption.weight(.semibold))
-        }
-        .padding(12)
-        .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
-struct TransactionRow: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let transaction: TransactionListItem
-    let category: CategorySummary?
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            CategoryIconImage(iconKey: category?.icon)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(transaction.title ?? "Untitled")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(AppFormatters.day(transaction.date))
-                        .fixedSize(horizontal: true, vertical: false)
-                    if let category {
-                        Text("·")
-                            .foregroundStyle(.secondary)
-                        Text(category.name)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    if transaction.hasAttachments {
-                        Text("·")
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "paperclip")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(AppFormatters.euros(signedAmount))
-                .font(.body.weight(.semibold))
-                .foregroundStyle(transaction.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .layoutPriority(1)
-        }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-    }
-
-    private var signedAmount: Int {
-        transaction.type == "income" ? transaction.amountCents : -transaction.netAmountCents
-    }
-}
-
-private struct BulkSelectionBar: View {
-    let selectedCount: Int
-    let canUseFilteredMode: Bool
-    var onSelectPage: () -> Void
-    var onClear: () -> Void
-    var onBulkEdit: () -> Void
-
-    var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 12) {
-                Text("\(selectedCount) selected")
-                    .font(.callout.weight(.semibold))
-                Spacer()
-                Button("Page", action: onSelectPage)
-                Button("Clear", action: onClear)
-                    .disabled(selectedCount == 0)
-                Button("Bulk Edit", action: onBulkEdit)
-                    .buttonStyle(.glassProminent)
-                    .disabled(selectedCount == 0 && !canUseFilteredMode)
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-    }
-}
-
-private struct BulkEditSheet: View {
+/// Type, category and tags. Changes apply as they are made.
+private struct TransactionFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
-
-    let mode: TransactionListMode
-    let selectedIDs: Set<Int>
+    @Binding var query: TransactionQuery
     let categories: [CategorySummary]
-    let uncategorizedDefinition: UncategorizedDefinition?
-    let query: String
-    let type: String
-    let filterCategoryID: Int?
-    let filterTagID: Int?
-    let filterExcludedTagIDs: Set<Int>
-    let period: String
-    var onPreview: (BulkEditRequest) async -> BulkEditResponse?
-    var onApply: (BulkEditRequest) async -> BulkEditResponse?
-
-    @State private var selectionScope: BulkSelectionScope
-    @State private var lifecycle = "none"
-    @State private var categoryID: Int?
-    @State private var tagPatchMode = "none"
-    @State private var tags = ""
-    @State private var preview: BulkEditResponse?
-    @State private var formError: String?
-    @State private var confirmingApply = false
-
-    init(
-        mode: TransactionListMode,
-        selectedIDs: Set<Int>,
-        categories: [CategorySummary],
-        uncategorizedDefinition: UncategorizedDefinition?,
-        query: String,
-        type: String,
-        filterCategoryID: Int?,
-        filterTagID: Int?,
-        filterExcludedTagIDs: Set<Int>,
-        period: String,
-        onPreview: @escaping (BulkEditRequest) async -> BulkEditResponse?,
-        onApply: @escaping (BulkEditRequest) async -> BulkEditResponse?
-    ) {
-        self.mode = mode
-        self.selectedIDs = selectedIDs
-        self.categories = categories
-        self.uncategorizedDefinition = uncategorizedDefinition
-        self.query = query
-        self.type = type
-        self.filterCategoryID = filterCategoryID
-        self.filterTagID = filterTagID
-        self.filterExcludedTagIDs = filterExcludedTagIDs
-        self.period = period
-        self.onPreview = onPreview
-        self.onApply = onApply
-        _selectionScope = State(initialValue: selectedIDs.isEmpty ? .filtered : .selected)
-    }
+    let tags: [TransactionTag]
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Selection") {
-                    Picker("Apply to", selection: $selectionScope) {
-                        Text("Selected").tag(BulkSelectionScope.selected)
-                            .disabled(selectedIDs.isEmpty)
-                        Text(mode == .uncategorized ? "All inbox" : "All filtered").tag(BulkSelectionScope.filtered)
-                    }
-                    LabeledContent("Selected rows", value: "\(selectedIDs.count)")
-                }
-
-                Section("Operation") {
-                    Picker("Lifecycle", selection: $lifecycle) {
-                        Text("No lifecycle change").tag("none")
-                        Text("Soft delete").tag("soft_delete")
-                    }
-                    Picker("Set category", selection: $categoryID) {
-                        Text("Leave unchanged").tag(Int?.none)
-                        ForEach(categories) { category in
-                            Text("\(category.type?.capitalized ?? "Category") · \(category.name)")
-                                .tag(Optional(category.id))
-                        }
-                    }
-                    .disabled(lifecycle != "none")
-                    Picker("Tags", selection: $tagPatchMode) {
-                        Text("No tag change").tag("none")
-                        Text("Add").tag("add")
-                        Text("Remove").tag("remove")
-                        Text("Replace").tag("replace")
-                        Text("Clear").tag("clear")
-                    }
-                    .disabled(lifecycle != "none")
-                    TextField("Tag names", text: $tags)
-                        .textInputAutocapitalization(.never)
-                        .disabled(lifecycle != "none" || tagPatchMode == "none" || tagPatchMode == "clear")
-                }
-
-                if let formError {
-                    Section {
-                        Text(formError)
-                            .foregroundStyle(.red)
-                    }
-                }
-
                 Section {
-                    Button {
-                        Task { await previewChanges() }
-                    } label: {
-                        Label("Preview", systemImage: "checklist")
+                    Picker("Type", selection: $query.type) {
+                        Text("All").tag(TransactionKind?.none)
+                        Text("Expense").tag(TransactionKind?.some(.expense))
+                        Text("Income").tag(TransactionKind?.some(.income))
                     }
-                    Button(role: lifecycle == "soft_delete" ? .destructive : nil) {
-                        if buildRequest() != nil {
-                            confirmingApply = true
-                        }
-                    } label: {
-                        Label("Apply", systemImage: "checkmark.circle")
-                    }
-                }
+                    .pickerStyle(.segmented)
 
-                if let preview {
-                    BulkPreviewSection(response: preview)
-                }
-            }
-            .navigationTitle("Bulk Edit")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .confirmationDialog("Apply bulk changes?", isPresented: $confirmingApply) {
-                Button("Apply Changes", role: lifecycle == "soft_delete" ? .destructive : nil) {
-                    Task { await applyChanges() }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will update every transaction in the selection.")
-            }
-        }
-    }
-
-    private func previewChanges() async {
-        guard let request = buildRequest() else {
-            return
-        }
-        preview = await onPreview(request)
-        if preview == nil {
-            formError = "Bulk preview failed."
-        }
-    }
-
-    private func applyChanges() async {
-        guard let request = buildRequest() else {
-            return
-        }
-        preview = await onApply(request)
-        if preview != nil {
-            dismiss()
-        } else {
-            formError = "Bulk apply failed."
-        }
-    }
-
-    private func buildRequest() -> BulkEditRequest? {
-        if lifecycle == "none", categoryID == nil, tagPatchMode == "none" {
-            formError = "Choose at least one change."
-            return nil
-        }
-        let cleanTags = parseTags(tags)
-        if lifecycle == "none", tagPatchMode != "none", tagPatchMode != "clear", cleanTags.isEmpty {
-            formError = "Enter at least one tag."
-            return nil
-        }
-        if selectionScope == .selected, selectedIDs.isEmpty {
-            formError = "Select at least one transaction."
-            return nil
-        }
-
-        formError = nil
-        let tagPatch = tagPatchMode == "none"
-            ? nil
-            : BulkTagPatchRequest(mode: tagPatchMode, tags: tagPatchMode == "clear" ? [] : cleanTags)
-        let operation = BulkOperationRequest(
-            setCategoryID: lifecycle == "none" ? categoryID : nil,
-            tagPatch: lifecycle == "none" ? tagPatch : nil,
-            lifecycle: lifecycle
-        )
-        let selection: BulkSelectionRequest
-        if selectionScope == .selected {
-            selection = BulkSelectionRequest(
-                mode: "ids",
-                transactionIDs: selectedIDs.sorted(),
-                query: nil
-            )
-        } else {
-            selection = BulkSelectionRequest(
-                mode: "query",
-                transactionIDs: [],
-                query: BulkSelectionQueryRequest(
-                    period: period,
-                    start: nil,
-                    end: nil,
-                    type: type.isEmpty ? nil : type,
-                    category: filterCategoryID,
-                    matchedCategoryIDs: mode == .uncategorized
-                        ? uncategorizedDefinition?.matchedCategoryIDs
-                        : nil,
-                    tag: filterTagID,
-                    excludeTags: filterExcludedTagIDs.sorted(),
-                    q: query.isEmpty ? nil : query
-                )
-            )
-        }
-        return BulkEditRequest(selection: selection, operation: operation)
-    }
-
-    private func parseTags(_ raw: String) -> [String] {
-        var seen: Set<String> = []
-        var result: [String] = []
-        for part in raw.split(separator: ",") {
-            let clean = part.trimmingCharacters(in: .whitespacesAndNewlines)
-            let lower = clean.lowercased()
-            if clean.isEmpty || seen.contains(lower) {
-                continue
-            }
-            seen.insert(lower)
-            result.append(clean)
-        }
-        return result
-    }
-}
-
-private enum BulkSelectionScope: String, CaseIterable, Identifiable {
-    case selected
-    case filtered
-
-    var id: String { rawValue }
-}
-
-private struct BulkPreviewSection: View {
-    let response: BulkEditResponse
-
-    var body: some View {
-        Section("Preview") {
-            LabeledContent("Resolved", value: "\(response.resolvedCount)")
-            LabeledContent("Skipped", value: "\(response.skippedCount)")
-            LabeledContent("Category changes", value: "\(response.changes.categoryChanged)")
-            LabeledContent("Tags added", value: "\(response.changes.tagsAdded)")
-            LabeledContent("Tags removed", value: "\(response.changes.tagsRemoved)")
-            LabeledContent("Tags replaced", value: "\(response.changes.tagsReplaced)")
-            if response.changes.deleted > 0 {
-                LabeledContent("Deleted", value: "\(response.changes.deleted)")
-            }
-            if response.changes.restored > 0 {
-                LabeledContent("Restored", value: "\(response.changes.restored)")
-            }
-        }
-    }
-}
-
-private struct DeletedTransactionsList: View {
-    @Environment(\.colorScheme) private var scheme
-
-    let transactions: [DeletedTransaction]
-    var onRestore: (DeletedTransaction) -> Void
-    var onPermanentDelete: (DeletedTransaction) -> Void
-
-    var body: some View {
-        if transactions.isEmpty {
-            ContentUnavailableView(
-                "No deleted transactions",
-                systemImage: "trash",
-                description: Text("Deleted transactions will appear here for recovery.")
-            )
-        } else {
-            ForEach(transactions) { transaction in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(transaction.title ?? transaction.category?.name ?? "Untitled")
-                            .font(.body.weight(.medium))
-                        HStack(spacing: 6) {
-                            Text(AppFormatters.day(transaction.date))
-                            if let category = transaction.category {
+                    Picker("Category", selection: $query.categoryID) {
+                        Text("All categories").tag(Int?.none)
+                        ForEach(categories) { category in
+                            Label {
                                 Text(category.name)
+                            } icon: {
+                                CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
                             }
-                            if let deletedAt = transaction.deletedAt {
-                                Text("Deleted \(AppFormatters.day(deletedAt))")
-                            }
+                            .tag(Optional(category.id))
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Text(AppFormatters.euros(signedAmount(transaction)))
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(transaction.type == "income" ? ExpensesTheme.income(for: scheme) : ExpensesTheme.expense(for: scheme))
-                    Menu {
-                        Button("Restore") {
-                            onRestore(transaction)
-                        }
-                        Button("Delete Forever", role: .destructive) {
-                            onPermanentDelete(transaction)
-                        }
-                    } label: {
-                        Label("Deleted transaction actions", systemImage: "ellipsis.circle")
-                            .labelStyle(.iconOnly)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Deleted transaction actions")
+                    .pickerStyle(.navigationLink)
                 }
-                .swipeActions(edge: .leading) {
-                    Button("Restore") {
-                        onRestore(transaction)
+                .expensesRowBackground()
+
+                TagFilterSection(mode: $query.tagMode, ids: $query.tagIDs, tags: tags)
+            }
+            .navigationTitle("Filter")
+            .navigationBarTitleDisplayMode(.inline)
+            .expensesScreenStyle()
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Clear") {
+                        query = TransactionQuery(period: query.period, search: query.search)
                     }
-                    .tint(.green)
+                    .disabled(!query.hasFilters)
                 }
-                .swipeActions(edge: .trailing) {
-                    Button("Delete Forever", role: .destructive) {
-                        onPermanentDelete(transaction)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", role: .confirm) {
+                        dismiss()
                     }
                 }
             }
+            .sensoryFeedback(.selection, trigger: query)
         }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// Collapses the search field under the title once, so the ledger opens with it hidden;
+/// SwiftUI opens it partly shown below a subtitle. Pull down at the top to show it.
+private struct HiddenSearchStart: UIViewRepresentable {
+    var onCollapse: () -> Void
+
+    func makeUIView(context: Context) -> Anchor {
+        let anchor = Anchor()
+        anchor.onCollapse = onCollapse
+        return anchor
     }
 
-    private func signedAmount(_ transaction: DeletedTransaction) -> Int {
-        transaction.type == "income" ? transaction.amountCents : -transaction.amountCents
+    func updateUIView(_ anchor: Anchor, context: Context) {}
+
+    final class Anchor: UIView {
+        var onCollapse: () -> Void = {}
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            // The navigation bar settles its layout after the first rows appear.
+            DispatchQueue.main.async { [weak self] in self?.collapse() }
+        }
+
+        private func collapse() {
+            onCollapse()
+            guard
+                let scrollView = sequence(first: self as UIView, next: \.superview).first(where: { $0 is UIScrollView }) as? UIScrollView,
+                let controller = sequence(first: scrollView as UIResponder, next: \.next).first(where: { $0 is UIViewController }) as? UIViewController,
+                let searchController = controller.navigationItem.searchController,
+                !searchController.isActive
+            else { return }
+            let searchBar = searchController.searchBar
+            // Scrolling by the field's height collapses it, but UIKit then keeps the rows
+            // in place by scrolling further, so settle on the top of the shortened list.
+            scrollView.contentOffset.y += searchBar.frame.height
+            controller.navigationController?.view.layoutIfNeeded()
+            scrollView.contentOffset.y = -scrollView.adjustedContentInset.top
+        }
     }
 }

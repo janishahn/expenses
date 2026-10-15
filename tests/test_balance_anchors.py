@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -144,3 +145,22 @@ def test_multiple_anchors_per_day_last_anchor_wins() -> None:
     assert metrics["income"] == 3_000
     assert metrics["expenses"] == 1_500
     assert metrics["balance"] == 19_500
+
+
+def test_settings_balance_anchor_time_is_timezone_aware(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    # as_of_at is stored as a naive local datetime, like occurred_at; without an offset
+    # the native iOS app reads it as UTC and saves the shift back on the next edit.
+    response = api_client.post(
+        "/api/settings/balance-anchors",
+        headers=csrf_headers,
+        json={"as_of_at": "2026-01-01T10:00:00", "balance_cents": 12_345},
+    )
+    assert response.status_code == 200
+
+    response = api_client.get("/api/settings")
+    assert response.status_code == 200
+    parsed = datetime.fromisoformat(response.json()["balance_anchors"][0]["as_of_at"])
+    assert parsed.utcoffset() is not None
+    assert parsed.replace(tzinfo=None) == datetime(2026, 1, 1, 10, 0)

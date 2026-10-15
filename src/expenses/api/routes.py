@@ -1131,7 +1131,7 @@ def _serialize_attachment(attachment) -> dict[str, object]:
 def _serialize_balance_anchor(anchor) -> dict[str, object]:
     return {
         "id": anchor.id,
-        "as_of_at": anchor.as_of_at.isoformat() if anchor.as_of_at else None,
+        "as_of_at": _occurred_at_iso(anchor.as_of_at),
         "balance_cents": anchor.balance_cents,
         "note": anchor.note,
     }
@@ -1217,10 +1217,11 @@ def _purge_deleted_for_all_users(db: Session, cutoff_date: datetime) -> tuple[in
 def _occurred_at_iso(value: datetime | None) -> str | None:
     """Serialize an occurred_at as a timezone-aware ISO string.
 
-    occurred_at is stored as a naive datetime in the configured local zone. Emitting
-    it without an offset is ambiguous: clients that assume UTC (the native iOS app)
-    render it shifted by the local offset. Attaching the configured zone makes the
-    wall-clock unambiguous while staying correct across DST.
+    occurred_at is stored as a naive datetime in the configured local zone, as is a
+    balance anchor's as_of_at, which serializes the same way. Emitting it without an
+    offset is ambiguous: clients that assume UTC (the native iOS app) render it
+    shifted by the local offset. Attaching the configured zone makes the wall-clock
+    unambiguous while staying correct across DST.
     """
     if value is None:
         return None

@@ -1,14 +1,19 @@
 import SwiftUI
 
-struct CategoryIconImage: View {
+// A category's symbol in its color, as list rows show it. No category shows a question mark.
+struct CategoryGlyph: View {
+    @Environment(\.colorScheme) private var scheme
+
+    let categoryID: Int?
     let iconKey: String?
+    let name: String?
 
     var body: some View {
-        Image(systemName: categorySymbolName(for: iconKey))
-            .font(.system(size: 14, weight: .semibold))
-            .frame(width: 28, height: 28)
-            .foregroundStyle(.secondary)
-            .background(.thinMaterial, in: Circle())
+        Image(systemName: categoryID == nil ? "questionmark" : categorySymbolName(for: resolvedCategoryIconKey(iconKey, name: name)))
+            .font(.callout)
+            .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
+            .glyphColumn()
+            .accessibilityHidden(true)
     }
 }
 
@@ -211,6 +216,21 @@ private let additionalCategorySymbolNames: [String: String] = [
     "x-square": "xmark.square",
 ]
 
+// Every icon the app can draw: the curated ones first, then the rest by name.
+let allCategoryIconOptions = categoryIconOptions + additionalCategorySymbolNames.keys
+    .filter { key in !categoryIconOptions.contains { $0.key == key } }
+    .sorted()
+    .map { CategoryIconOption(key: $0, label: categoryIconLabel($0), symbolName: additionalCategorySymbolNames[$0]!) }
+
+/// "Housing" for a curated icon, or "Shopping bag" from the key "shopping-bag".
+func categoryIconLabel(_ key: String) -> String {
+    if let option = categoryIconOption(for: key) {
+        return option.label
+    }
+    let words = key.replacingOccurrences(of: "-", with: " ")
+    return words.prefix(1).uppercased() + words.dropFirst()
+}
+
 func categoryIconOption(for key: String?) -> CategoryIconOption? {
     guard let key else {
         return nil
@@ -220,7 +240,46 @@ func categoryIconOption(for key: String?) -> CategoryIconOption? {
 
 func categorySymbolName(for key: String?) -> String {
     guard let key else {
-        return "folder"
+        return "dollarsign.circle"
     }
-    return categoryIconOption(for: key)?.symbolName ?? additionalCategorySymbolNames[key] ?? "folder"
+    return categoryIconOption(for: key)?.symbolName ?? additionalCategorySymbolNames[key] ?? "dollarsign.circle"
+}
+
+// A category without its own icon gets one from its name, as on the web.
+private let categoryIconHints: [(pattern: String, key: String)] = [
+    ("uncategorized", "receipt"),
+    ("restaurant|dining|takeaway|brunch", "fork-knife"),
+    ("coffee|cafe", "coffee"),
+    ("housing|rent|home", "house"),
+    ("grocer|food|supermarket", "shopping-cart"),
+    ("transport|transit|bus|train", "bus"),
+    ("travel|flight|holiday|vacation", "airplane"),
+    ("subscription|streaming|membership", "credit-card"),
+    ("health|medical|doctor|pharmacy", "stethoscope"),
+    ("shopping|retail|clothing", "shopping-cart"),
+    ("entertainment|cinema|movie|film", "film-strip"),
+    ("utilit|electric|energy", "lightning"),
+    ("salary|freelance|work", "briefcase"),
+    ("income|interest|investment", "trend-up"),
+    ("education|school|tuition", "graduation-cap"),
+    ("child|baby", "baby"),
+    ("pet|animal", "dog"),
+    ("overall|saving|reserve", "piggy-bank"),
+]
+
+private let categoryFallbackIconKeys = ["package", "gift", "palette", "book", "globe", "receipt"]
+
+func resolvedCategoryIconKey(_ icon: String?, name: String?) -> String {
+    let label = name?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    if let icon, !icon.isEmpty, icon != defaultCategoryIconKey || label.isEmpty {
+        return icon
+    }
+    if label.isEmpty {
+        return defaultCategoryIconKey
+    }
+    if let hint = categoryIconHints.first(where: { label.range(of: $0.pattern, options: .regularExpression) != nil }) {
+        return hint.key
+    }
+    let hash = label.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+    return categoryFallbackIconKeys[hash % categoryFallbackIconKeys.count]
 }

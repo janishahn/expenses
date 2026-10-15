@@ -60,7 +60,7 @@ Add salary, rent, subscriptions, and other regular payments once. Expenses can p
 Rules take care of repeated sorting. Match a title, amount, or transaction type, then apply a category and tags to new or existing entries. If you enable LLM help, Expenses can suggest rules from your history; you still review them before they take effect.
 
 For local automatic categorization, enable **Automatic categorization** in **Settings → Categorization**
-(**Account → Automatic Categorization** on iOS). It is off by default for each user.
+on the web or iOS. It is off by default for each user.
 The recommended minimum confidence is **80%**; a higher value leaves more
 expenses uncategorized. Confidence estimates can still be wrong.
 
@@ -163,7 +163,7 @@ Leave the API key blank only when a private endpoint intentionally accepts reque
 You can also connect a ChatGPT Plus or Pro plan. Set `EXPENSES_LLM_ENABLED=true`;
 this option does not require an API key or `EXPENSES_LLM_BASE_URL`. Each Expenses
 user connects their own ChatGPT account in **Settings → AI settings** (or
-**Account → AI settings** on iOS).
+**Settings → AI** on iOS).
 
 1. Choose **Continue with ChatGPT** to create a pairing code valid for 10 minutes.
 2. On a Mac or Linux computer with a browser and an Expenses checkout, run
@@ -285,7 +285,7 @@ The SwiftUI client lives in [`ios/ExpensesApp`](ios/ExpensesApp) and targets iOS
 uv run run-ios-device
 ```
 
-Set its backend URL to your Expenses HTTPS address. Mobile sessions stay in Keychain, and the app supports Face ID, Touch ID, or device-passcode unlock.
+Set its backend URL to your Expenses HTTPS address. Mobile sessions stay in Keychain, and the app unlocks with Face ID, Touch ID, the device passcode, or the account password.
 
 <p>
   <img src="docs/screenshots/ios/dashboard-dark.png" alt="iPhone dashboard" height="530">

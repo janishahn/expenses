@@ -357,6 +357,31 @@ test.describe("Budgets Page", () => {
     await expect(peek.getByText("Left")).toBeVisible()
   })
 
+  test("totals the annual band from the overall budget when there is one", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await createCategory(request, token, "expense", `E2E Annual Scope ${Date.now()}`)
+    for (const [categoryIdOrOverall, amount] of [
+      [categoryId, 300_000],
+      [null, 1_200_000],
+    ] as const) {
+      await createTemplate(request, token, {
+        frequency: "yearly",
+        category_id: categoryIdOrOverall,
+        amount_cents: amount,
+        starts_on: "2098-01-01",
+        ends_on: "2098-12-31",
+      })
+    }
+
+    await page.goto("/budgets?month=2098-06")
+    await expect(page.getByText("Annual · 2098", { exact: true }).locator("..")).toContainText(
+      /0\s?€ of 12\.?\s?000\s?€/,
+    )
+  })
+
   test("does not assign a pace before a future budget month starts", async ({
     page,
     request,

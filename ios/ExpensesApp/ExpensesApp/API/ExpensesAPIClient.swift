@@ -2,7 +2,10 @@ import Foundation
 
 struct ExpensesAPIClient {
     var baseURL: URL?
-    var session: URLSession = .shared
+    var session: URLSession = Self.ephemeralSession
+
+    // Responses such as receipt images are cached in memory only, never on disk.
+    private static let ephemeralSession = URLSession(configuration: .ephemeral)
 
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -174,49 +177,65 @@ struct ExpensesAPIClient {
         )
     }
 
-    func transactions(
-        query: String?,
-        type: String?,
-        categoryID: Int?,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        period: String = "all",
+    func balanceHistory(months: Int, token: String) async throws -> BalanceHistoryResponse {
+        try await request(path: "/api/dashboard/balance-history?months=\(months)", bearerToken: token)
+    }
+
+    func categorySpendingBands(
+        period: String,
+        excludedTagIDs: [Int],
+        months: Int,
         token: String
-    ) async throws -> TransactionsResponse {
-        try await request(
-            path: transactionListPath(
-                base: "/api/transactions",
-                query: query,
-                type: type,
-                categoryID: categoryID,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                period: period
-            ),
+    ) async throws -> CategoryBandsResponse {
+        var components = URLComponents()
+        components.path = "/api/category-breakdown"
+        var items = [
+            URLQueryItem(name: "period", value: period),
+            URLQueryItem(name: "view", value: "monthly"),
+            URLQueryItem(name: "months", value: String(months)),
+        ]
+        appendExcludedTags(excludedTagIDs, to: &items)
+        components.queryItems = items
+        return try await request(
+            path: components.string ?? "/api/category-breakdown?period=\(period)&view=monthly&months=\(months)",
             bearerToken: token
         )
     }
 
+    func transactions(_ query: TransactionQuery, page: Int, limit: Int = 50, token: String) async throws -> TransactionsResponse {
+        try await request(path: listPath("/api/transactions", query.queryItems, page: page, limit: limit), bearerToken: token)
+    }
+
     func uncategorizedTransactions(
-        query: String?,
-        type: String?,
-        categoryID: Int?,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        period: String = "all",
+        _ query: TransactionQuery,
+        page: Int,
+        limit: Int = 50,
         token: String
     ) async throws -> UncategorizedTransactionsResponse {
         try await request(
-            path: transactionListPath(
-                base: "/api/transactions/uncategorized",
-                query: query,
-                type: type,
-                categoryID: categoryID,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                period: period
-            ),
+            path: listPath("/api/transactions/uncategorized", query.queryItems, page: page, limit: limit),
             bearerToken: token
+        )
+    }
+
+    func exportTransactionsCSV(_ query: TransactionQuery, token: String) async throws -> AttachmentDownload {
+        var components = URLComponents()
+        components.path = "/api/transactions/export.csv"
+        components.queryItems = query.queryItems
+        let (data, response) = try await dataRequest(path: components.string!, bearerToken: token)
+        return AttachmentDownload(
+            data: data,
+            filename: filename(from: response) ?? "transactions.csv",
+            mimeType: response.value(forHTTPHeaderField: "Content-Type") ?? "text/csv"
+        )
+    }
+
+    func dismissCategorySuggestion(transactionID: Int, categoryID: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/transactions/\(transactionID)/category-suggestion/dismiss",
+            method: "POST",
+            bearerToken: token,
+            body: CategorySuggestionDismissRequest(categoryID: categoryID)
         )
     }
 
@@ -263,8 +282,26 @@ struct ExpensesAPIClient {
         )
     }
 
-    func deletedTransactions(token: String) async throws -> DeletedTransactionsResponse {
-        try await request(path: "/api/transactions/deleted", bearerToken: token)
+    func deletedTransactions(page: Int, token: String) async throws -> DeletedTransactionsResponse {
+        try await request(path: "/api/transactions/deleted?page=\(page)&limit=50", bearerToken: token)
+    }
+
+    func restoreDeletedTransactions(ids: [Int], token: String) async throws -> TransactionsRestoredResponse {
+        try await request(
+            path: "/api/transactions/deleted/restore",
+            method: "POST",
+            bearerToken: token,
+            body: TransactionIDsRequest(ids: ids)
+        )
+    }
+
+    func purgeDeletedTransactions(ids: [Int], token: String) async throws -> TransactionsPurgedResponse {
+        try await request(
+            path: "/api/transactions/deleted/purge",
+            method: "POST",
+            bearerToken: token,
+            body: TransactionIDsRequest(ids: ids)
+        )
     }
 
     func spendingChatStream(
@@ -320,48 +357,26 @@ struct ExpensesAPIClient {
         }
     }
 
-    func transactionSuggestions(transactionID: Int? = nil, token: String) async throws -> [TransactionSuggestion] {
-        if let transactionID {
-            try await request(path: "/api/ai/transaction-suggestions?transaction_id=\(transactionID)", bearerToken: token)
-        } else {
-            try await request(path: "/api/ai/transaction-suggestions", bearerToken: token)
-        }
+    func categories(period: PeriodSelection, token: String) async throws -> CategoriesResponse {
+        var components = URLComponents()
+        components.path = "/api/categories"
+        components.queryItems = period.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
-    func triageTransaction(id: Int, token: String) async throws -> TransactionSuggestion? {
-        try await request(path: "/api/ai/transactions/\(id)/triage", method: "POST", bearerToken: token)
+    // Archived tags too, which the Tags screen lists and pickers leave out.
+    func tags(period: PeriodSelection, token: String) async throws -> TagsResponse {
+        var components = URLComponents()
+        components.path = "/api/tags"
+        components.queryItems = period.queryItems + [URLQueryItem(name: "include_archived", value: "1")]
+        return try await request(path: components.string!, bearerToken: token)
     }
 
-    func acceptTransactionSuggestion(id: Int, token: String) async throws -> IDResponse {
-        try await request(path: "/api/ai/transaction-suggestions/\(id)/accept", method: "POST", bearerToken: token)
-    }
-
-    func rejectTransactionSuggestion(id: Int, token: String) async throws -> IDResponse {
-        try await request(path: "/api/ai/transaction-suggestions/\(id)/reject", method: "POST", bearerToken: token)
-    }
-
-    func restoreTransaction(id: Int, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/transactions/\(id)/restore",
-            method: "POST",
-            bearerToken: token
-        )
-    }
-
-    func permanentlyDeleteTransaction(id: Int, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/transactions/\(id)/permanent",
-            method: "DELETE",
-            bearerToken: token
-        )
-    }
-
-    func categories(token: String) async throws -> CategoriesResponse {
-        try await request(path: "/api/categories?period=all", bearerToken: token)
-    }
-
-    func tags(token: String) async throws -> TagsResponse {
-        try await request(path: "/api/tags?period=all", bearerToken: token)
+    func tagDetail(id: Int, period: PeriodSelection, token: String) async throws -> TagDetailResponse {
+        var components = URLComponents()
+        components.path = "/api/tags/\(id)"
+        components.queryItems = period.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
     func templates(token: String) async throws -> TemplatesResponse {
@@ -378,15 +393,6 @@ struct ExpensesAPIClient {
 
     func updateRule(id: Int, body: RuleMutationRequest, token: String) async throws -> IDResponse {
         try await request(path: "/api/rules/\(id)", method: "PUT", bearerToken: token, body: body)
-    }
-
-    func toggleRule(id: Int, body: RuleToggleRequest, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/rules/\(id)/toggle",
-            method: "POST",
-            bearerToken: token,
-            body: body
-        )
     }
 
     func deleteRule(id: Int, token: String) async throws {
@@ -417,8 +423,9 @@ struct ExpensesAPIClient {
         try await request(path: "/api/ai/rules/suggestions/\(id)/reject", method: "POST", bearerToken: token)
     }
 
-    func budgets(view: String, token: String) async throws -> BudgetsResponse {
-        try await request(path: "/api/budgets?view=\(view)", bearerToken: token)
+    /// The month's budgets with the year's annual budgets and every template.
+    func budgets(month: String, token: String) async throws -> BudgetsResponse {
+        try await request(path: "/api/budgets?view=workspace&month=\(month)&year=\(month.prefix(4))", bearerToken: token)
     }
 
     func budgetBurndown(
@@ -466,44 +473,29 @@ struct ExpensesAPIClient {
         )
     }
 
-    func insights(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int?,
-        token: String
-    ) async throws -> InsightsResponse {
-        try await request(
-            path: insightsPath(
-                base: "/api/insights",
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs,
-                trendCategoryID: trendCategoryID
-            ),
-            bearerToken: token
-        )
+    /// Insights for the query's period and tags; it takes no type, category or search.
+    func insights(_ query: TransactionQuery, token: String) async throws -> InsightsResponse {
+        var components = URLComponents()
+        components.path = "/api/insights"
+        components.queryItems = query.queryItems
+        return try await request(path: components.string!, bearerToken: token)
     }
 
-    func insightsFlow(
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        token: String
-    ) async throws -> InsightsFlowResponse {
-        try await request(
-            path: insightsPath(
-                base: "/api/insights/flow",
-                period: period,
-                tagID: tagID,
-                excludedTagIDs: excludedTagIDs
-            ),
-            bearerToken: token
-        )
+    /// `kind` is "expense", "income" or "tag".
+    func insightsMonthGrid(kind: String, token: String) async throws -> InsightsMonthGridResponse {
+        try await request(path: "/api/insights/month-grid?kind=\(kind)", bearerToken: token)
     }
 
-    func durablePurchases(token: String) async throws -> DurablePurchasesResponse {
-        try await request(path: "/api/durable-purchases", bearerToken: token)
+    func insightsRecurringSplit(token: String) async throws -> InsightsRecurringSplitResponse {
+        try await request(path: "/api/insights/recurring-split", bearerToken: token)
+    }
+
+    func insightsDayCalendar(token: String) async throws -> InsightsDayCalendarResponse {
+        try await request(path: "/api/insights/day-calendar", bearerToken: token)
+    }
+
+    func insightsBudgetHistory(token: String) async throws -> InsightsBudgetHistoryResponse {
+        try await request(path: "/api/insights/budget-history", bearerToken: token)
     }
 
     func generateReportPDF(_ body: ReportOptionsRequest, token: String) async throws -> AttachmentDownload {
@@ -533,8 +525,71 @@ struct ExpensesAPIClient {
         )
     }
 
-    func reconciliation(token: String) async throws -> BankReconciliationResponse {
-        try await request(path: "/api/reconciliation", bearerToken: token)
+    /// Streams the archive to a temporary file, since it holds every receipt.
+    func downloadPortableArchive(token: String) async throws -> URL {
+        let baseURL = try validatedBaseURL()
+        guard let url = URL(string: "/api/export/portable.zip", relativeTo: baseURL) else {
+            throw APIErrorInfo(message: "Request URL is invalid.")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (location, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIErrorInfo(message: "Backend returned an invalid response.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIErrorInfo(
+                message: parseErrorMessage((try? Data(contentsOf: location)) ?? Data()) ?? "Request failed.",
+                statusCode: http.statusCode,
+                requestID: http.value(forHTTPHeaderField: "X-Request-ID")
+            )
+        }
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(filename(from: http) ?? "expenses_portable_export.zip")
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: location, to: destination)
+        return destination
+    }
+
+    func bankRows(
+        resolved: Bool,
+        outcome: BankRowResolution?,
+        account: String?,
+        page: Int,
+        limit: Int,
+        token: String
+    ) async throws -> BankRowsPage {
+        var components = URLComponents()
+        components.path = "/api/reconciliation/bank-rows"
+        var items = [
+            URLQueryItem(name: "view", value: resolved ? "resolved" : "open"),
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+        ]
+        if let outcome {
+            items.append(URLQueryItem(name: "outcome", value: outcome.rawValue))
+        }
+        if let account {
+            items.append(URLQueryItem(name: "account", value: account))
+        }
+        components.queryItems = items
+        return try await request(path: components.string ?? components.path, bearerToken: token)
+    }
+
+    func bankAccounts(token: String) async throws -> [BankAccount] {
+        let response: BankAccountsResponse = try await request(path: "/api/reconciliation/accounts", bearerToken: token)
+        return response.accounts
+    }
+
+    func bankRowCandidates(rowID: Int, query: String, token: String) async throws -> [BankReconciliationTransaction] {
+        var components = URLComponents()
+        components.path = "/api/reconciliation/bank-rows/\(rowID)/candidates"
+        components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "limit", value: "8")]
+        let response: BankRowCandidatesResponse = try await request(
+            path: components.string ?? components.path,
+            bearerToken: token
+        )
+        return response.items
     }
 
     func previewCommerzbankCSV(
@@ -575,27 +630,61 @@ struct ExpensesAPIClient {
         )
     }
 
-    func markBankRowReviewed(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func acceptBankRowSuggestions(rowIDs: [Int], token: String) async throws -> BankAcceptSuggestionsResponse {
         try await request(
-            path: "/api/reconciliation/bank-rows/\(rowID)/review",
+            path: "/api/reconciliation/bank-rows/accept-suggestions",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: BankRowIDsRequest(rowIDs: rowIDs)
         )
     }
 
-    func reopenBankRow(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func ignoreOpenBankRows(account: String?, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/reconciliation/bank-rows/ignore-open",
+            method: "POST",
+            bearerToken: token,
+            body: BankIgnoreOpenRequest(account: account)
+        )
+    }
+
+    func ignoreBankRow(rowID: Int, reason: String, token: String) async throws -> BankRowActionResponse {
+        try await request(
+            path: "/api/reconciliation/bank-rows/\(rowID)/ignore",
+            method: "POST",
+            bearerToken: token,
+            body: BankRowIgnoreRequest(reason: reason)
+        )
+    }
+
+    func reopenBankRow(rowID: Int, body: BankRowReopenRequest, token: String) async throws -> BankRowActionResponse {
         try await request(
             path: "/api/reconciliation/bank-rows/\(rowID)/reopen",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: body
         )
     }
 
-    func createTransactionFromBankRow(rowID: Int, token: String) async throws -> BankRowActionResponse {
+    func matchBankRow(rowID: Int, body: BankRowMatchRequest, token: String) async throws -> BankRowActionResponse {
+        try await request(
+            path: "/api/reconciliation/bank-rows/\(rowID)/match-transaction",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
+    func createTransactionFromBankRow(
+        rowID: Int,
+        body: BankTransactionCreateRequest,
+        token: String
+    ) async throws -> BankRowActionResponse {
         try await request(
             path: "/api/reconciliation/bank-rows/\(rowID)/create-transaction",
             method: "POST",
-            bearerToken: token
+            bearerToken: token,
+            body: body
         )
     }
 
@@ -646,6 +735,14 @@ struct ExpensesAPIClient {
         )
     }
 
+    func purgeDeletedPreview(days: Int, token: String) async throws -> AdminPurgeDeletedPreview {
+        try await request(path: "/api/admin/purge-deleted/preview?days=\(days)", bearerToken: token)
+    }
+
+    func assistantUsage(period: AssistantUsage.Period, token: String) async throws -> AssistantUsage {
+        try await request(path: "/api/ai/usage/summary?feature=spending_chat&period=\(period.rawValue)", bearerToken: token)
+    }
+
     func rebuildRollups(token: String) async throws -> AdminRebuildRollupsResponse {
         try await request(path: "/api/admin/rebuild-rollups", method: "POST", bearerToken: token)
     }
@@ -694,6 +791,17 @@ struct ExpensesAPIClient {
         )
     }
 
+    /// Changes the budget from `starts_on` on. The template that covered that day is split
+    /// there, and the new one keeps its end.
+    func applyBudgetTemplateFrom(_ body: BudgetTemplateRequest, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/budgets/templates/apply-from",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
     func deleteBudgetTemplate(id: Int, token: String) async throws {
         let _: EmptyResponse = try await request(
             path: "/api/budgets/templates/\(id)",
@@ -720,15 +828,6 @@ struct ExpensesAPIClient {
 
     func updateRecurringRule(id: Int, body: RecurringRuleRequest, token: String) async throws -> IDResponse {
         try await request(path: "/api/recurring/\(id)", method: "PUT", bearerToken: token, body: body)
-    }
-
-    func toggleRecurringRule(id: Int, body: RecurringToggleRequest, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            path: "/api/recurring/\(id)/toggle",
-            method: "POST",
-            bearerToken: token,
-            body: body
-        )
     }
 
     func deleteRecurringRule(id: Int, token: String) async throws {
@@ -817,6 +916,22 @@ struct ExpensesAPIClient {
         )
     }
 
+    func archiveTag(id: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/tags/\(id)/archive",
+            method: "POST",
+            bearerToken: token
+        )
+    }
+
+    func restoreTag(id: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/tags/\(id)/restore",
+            method: "POST",
+            bearerToken: token
+        )
+    }
+
     func previewTagMerge(_ body: TagMergeRequest, token: String) async throws -> MergeResponse {
         try await request(
             path: "/api/tags/merge/preview",
@@ -886,19 +1001,21 @@ struct ExpensesAPIClient {
         )
     }
 
-    func transactionAttachments(id: Int, token: String) async throws -> ReceiptAttachmentsResponse {
-        try await request(path: "/api/transactions/\(id)/attachments", bearerToken: token)
-    }
-
+    /// `replacing` swaps that receipt for the new file in one request.
     func uploadAttachment(
         transactionID: Int,
         filename: String,
         mimeType: String,
         data: Data,
+        replacing: Int? = nil,
         token: String
     ) async throws -> ReceiptAttachment {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
+        if let replacing {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"replaces_attachment_id\"\r\n\r\n\(replacing)\r\n".data(using: .utf8)!)
+        }
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append(
             "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
@@ -914,6 +1031,28 @@ struct ExpensesAPIClient {
             bearerToken: token,
             contentType: "multipart/form-data; boundary=\(boundary)",
             bodyData: body
+        )
+    }
+
+    /// A WebP preview of an image receipt. The server makes none for PDFs.
+    func attachmentThumbnail(id: Int, token: String) async throws -> Data {
+        try await dataRequest(path: "/api/attachments/\(id)/thumbnail", bearerToken: token).0
+    }
+
+    func saveDurablePurchase(transactionID: Int, body: DurablePurchaseRequest, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/transactions/\(transactionID)/durable",
+            method: "POST",
+            bearerToken: token,
+            body: body
+        )
+    }
+
+    func deleteDurablePurchase(transactionID: Int, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/api/transactions/\(transactionID)/durable",
+            method: "DELETE",
+            bearerToken: token
         )
     }
 
@@ -975,58 +1114,14 @@ struct ExpensesAPIClient {
         )
     }
 
-    private func insightsPath(
-        base: String,
-        period: String,
-        tagID: Int?,
-        excludedTagIDs: [Int] = [],
-        trendCategoryID: Int? = nil
-    ) -> String {
+    private func listPath(_ base: String, _ queryItems: [URLQueryItem], page: Int, limit: Int = 50) -> String {
         var components = URLComponents()
         components.path = base
-        var items = [URLQueryItem(name: "period", value: period)]
-        if let tagID {
-            items.append(URLQueryItem(name: "tag", value: String(tagID)))
-        }
-        appendExcludedTags(excludedTagIDs, to: &items)
-        if let trendCategoryID {
-            items.append(URLQueryItem(name: "trend_category", value: String(trendCategoryID)))
-        }
-        components.queryItems = items
-        return components.string ?? "\(base)?period=\(period)"
-    }
-
-    private func transactionListPath(
-        base: String,
-        query: String?,
-        type: String?,
-        categoryID: Int?,
-        tagID: Int?,
-        excludedTagIDs: [Int],
-        period: String
-    ) -> String {
-        var components = URLComponents()
-        components.path = base
-        var items = [
-            URLQueryItem(name: "period", value: period),
-            URLQueryItem(name: "limit", value: "50"),
+        components.queryItems = queryItems + [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "limit", value: String(limit)),
         ]
-        let trimmedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedQuery.isEmpty {
-            items.append(URLQueryItem(name: "q", value: trimmedQuery))
-        }
-        if let type, !type.isEmpty {
-            items.append(URLQueryItem(name: "type", value: type))
-        }
-        if let categoryID {
-            items.append(URLQueryItem(name: "category", value: String(categoryID)))
-        }
-        if let tagID {
-            items.append(URLQueryItem(name: "tag", value: String(tagID)))
-        }
-        appendExcludedTags(excludedTagIDs, to: &items)
-        components.queryItems = items
-        return components.string ?? "\(base)?period=\(period)&limit=50"
+        return components.string!
     }
 
     private func appendExcludedTags(_ tagIDs: [Int], to items: inout [URLQueryItem]) {
@@ -1057,6 +1152,8 @@ struct ExpensesAPIClient {
         }
         let trimmedSearch = search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSearch.isEmpty {
+            // The search replaces a filter's text, as on the web; the server reads one.
+            items.removeAll { $0.name == "q" }
             items.append(URLQueryItem(name: "q", value: trimmedSearch))
         }
         components.queryItems = items
@@ -1145,7 +1242,8 @@ struct ExpensesAPIClient {
         bodyData: Data?
     ) async throws -> ResponseBody {
         let baseURL = try validatedBaseURL()
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        // URLQueryItem leaves "+" as is, which the server reads as a space.
+        guard let url = URL(string: path.replacingOccurrences(of: "+", with: "%2B"), relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
 
@@ -1188,7 +1286,8 @@ struct ExpensesAPIClient {
         bodyData: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         let baseURL = try validatedBaseURL()
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        // URLQueryItem leaves "+" as is, which the server reads as a space.
+        guard let url = URL(string: path.replacingOccurrences(of: "+", with: "%2B"), relativeTo: baseURL) else {
             throw APIErrorInfo(message: "Request URL is invalid.")
         }
 
@@ -1272,7 +1371,11 @@ struct ExpensesAPIClient {
         if let detail = payload["detail"] as? String {
             return detail
         }
-        return nil
+        // A validation error lists each problem with its own message, which the web joins.
+        let messages = (payload["detail"] as? [Any] ?? [])
+            .compactMap { (($0 as? [String: Any])?["msg"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return messages.isEmpty ? nil : messages.joined(separator: " ")
     }
 }
 

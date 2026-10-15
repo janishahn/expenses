@@ -42,7 +42,9 @@ API contracts, and tests for those facts.
 - Keep loading, empty, failed, unavailable, disabled, and destructive states
   distinct.
 - Use haptics only for committed actions and clear state changes. Do not add them
-  to navigation, scrolling, or continuous updates.
+  to navigation, scrolling, or continuous updates. The one exception is scrubbing
+  the Insights daily calendar (touch and hold, then drag): it ticks once per day
+  passed, like a picker's detents, harder on days with more spending.
 - Keep in-progress text readable without animation. Do not use fake percentages
   or motion as the only sign that work continues.
 - Preserve user input after errors and show a readable error with a next action.

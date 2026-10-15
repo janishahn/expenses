@@ -663,6 +663,9 @@ function BudgetsPage() {
 
   const overall = data.budgets.find((row) => row.scope_category_id === null)
   const categoryBudgets = data.budgets.filter((row) => row.scope_category_id !== null)
+  // The overall annual budget already covers every category, so the band totals only one of them.
+  const overallYearly = data.yearly_budgets.find((row) => row.scope_category_id === null)
+  const annualTotals = overallYearly ? [overallYearly] : data.yearly_budgets
   const overallProgress = progressByScope.get("overall")
   const spentFor = (row: BudgetRow) => progressByScope.get(scopeKey(row.scope_category_id))?.spent_cents ?? 0
   const sum = (rows: BudgetRow[], value: (row: BudgetRow) => number) => rows.reduce((total, row) => total + value(row), 0)
@@ -972,8 +975,8 @@ function BudgetsPage() {
                   end={
                     data.yearly_budgets.length ? (
                       <SpentAgainst
-                        spent={sum(data.yearly_budgets, (row) => yearlySpent.get(scopeKey(row.scope_category_id)) ?? 0)}
-                        amount={sum(data.yearly_budgets, (row) => row.amount_cents)}
+                        spent={sum(annualTotals, (row) => yearlySpent.get(scopeKey(row.scope_category_id)) ?? 0)}
+                        amount={sum(annualTotals, (row) => row.amount_cents)}
                       />
                     ) : undefined
                   }

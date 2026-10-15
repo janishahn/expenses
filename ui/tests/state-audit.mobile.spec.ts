@@ -184,4 +184,58 @@ test.describe("Mobile state audit", () => {
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Back to transactions" })).toHaveCount(0)
   })
+
+  test("a page that cannot reach the server loads by itself on mobile", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    let serverDown = true
+    await page.route("**/api/**", (route) =>
+      serverDown ? route.abort("connectionrefused") : route.continue(),
+    )
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Budgets" }).tap()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
+
+    serverDown = false
+    await expect(page.getByRole("button", { name: "Add budget" }).first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
+
+  test("an add form whose code cannot load keeps the page on mobile", async ({ page }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/transactions")
+    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
+
+    await page.route("**/assets/AddTransactionDialog-*.js", (route) => route.fulfill({ status: 404 }))
+    await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
+    await expect(page.getByRole("status")).toContainText("Unable to open the add form.")
+    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible()
+    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeVisible()
+  })
+
+  // Playwright's WebKit keeps a failed page chunk failed for the tab, even across
+  // reloads, so the reload after the server answers is covered on desktop only.
+  // Safari fetches the chunk again on reload.
+  test("a page whose code cannot load while the server is down keeps the tab bar on mobile", async ({
+    page,
+  }) => {
+    await useAuditTheme(page, "light")
+    await page.goto("/")
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
+
+    for (const url of ["**/assets/RulesPage-*.js", "**/api/**"]) {
+      await page.route(url, (route) => route.abort("connectionrefused"))
+    }
+    const tabs = page.getByRole("navigation", { name: "Tabs" })
+    await tabs.getByRole("button", { name: "More" }).tap()
+    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Rules" }).tap()
+    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
+    await expect(tabs).toBeVisible()
+  })
 })

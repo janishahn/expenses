@@ -1,24 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import type { Icon } from "@phosphor-icons/react"
-import { CalendarDotsIcon } from "@phosphor-icons/react/CalendarDots"
 import { CaretDownIcon } from "@phosphor-icons/react/CaretDown"
-import { ChartLineIcon } from "@phosphor-icons/react/ChartLine"
-import { ChecksIcon } from "@phosphor-icons/react/Checks"
-import { FileTextIcon } from "@phosphor-icons/react/FileText"
-import { FlaskIcon } from "@phosphor-icons/react/Flask"
 import { GearIcon } from "@phosphor-icons/react/Gear"
-import { LayoutIcon } from "@phosphor-icons/react/Layout"
 import { ListIcon } from "@phosphor-icons/react/List"
-import { ListBulletsIcon } from "@phosphor-icons/react/ListBullets"
-import { MagicWandIcon } from "@phosphor-icons/react/MagicWand"
-import { RepeatIcon } from "@phosphor-icons/react/Repeat"
-import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { ShieldCheckIcon } from "@phosphor-icons/react/ShieldCheck"
 import { SignOutIcon } from "@phosphor-icons/react/SignOut"
-import { SparkleIcon } from "@phosphor-icons/react/Sparkle"
-import { SquaresFourIcon } from "@phosphor-icons/react/SquaresFour"
-import { TagIcon } from "@phosphor-icons/react/Tag"
-import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrayIcon } from "@phosphor-icons/react/Tray"
 import { TrendUpIcon } from "@phosphor-icons/react/TrendUp"
 import { WalletIcon } from "@phosphor-icons/react/Wallet"
@@ -27,51 +12,11 @@ import clsx from "clsx"
 import { ConfirmDialogHost } from "./Dialog"
 import { FrameSidebarContext } from "./frame-context"
 import { useBottomLayerActive } from "./layout-state"
+import { GROUPS, PRIMARY, TABS, UNCATEGORIZED, isActive, type NavItem } from "./nav"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "./Menu"
 import { ToastHost } from "./Toast"
 import { TooltipProvider } from "./Tooltip"
 import s from "./kit.module.css"
-
-type NavItem = { to: string; label: string; icon: Icon; llm?: boolean }
-
-const PRIMARY: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: SquaresFourIcon },
-  { to: "/transactions", label: "Transactions", icon: ListBulletsIcon },
-  { to: "/budgets", label: "Budgets", icon: TargetIcon },
-  { to: "/insights", label: "Insights", icon: ChartLineIcon },
-  { to: "/forecast", label: "Forecast", icon: TrendUpIcon },
-]
-const UNCATEGORIZED = "/transactions/inbox"
-const GROUPS: Array<{ label: string; items: NavItem[] }> = [
-  {
-    label: "Manage",
-    items: [
-      { to: "/recurring", label: "Recurring", icon: RepeatIcon },
-      { to: "/templates", label: "Templates", icon: LayoutIcon },
-      { to: "/rules", label: "Rules", icon: MagicWandIcon },
-      { to: "/categories", label: "Categories", icon: ShapesIcon },
-      { to: "/tags", label: "Tags", icon: TagIcon },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { to: "/scenarios", label: "What If", icon: FlaskIcon },
-      { to: "/reconciliation", label: "Reconcile", icon: ChecksIcon },
-      { to: "/reports/builder", label: "Reports", icon: FileTextIcon },
-      { to: "/digest", label: "Digest", icon: CalendarDotsIcon },
-      { to: "/assistant", label: "Assistant", icon: SparkleIcon, llm: true },
-    ],
-  },
-]
-const TABS = PRIMARY.slice(0, 4)
-
-function isActive(to: string, pathname: string): boolean {
-  if (to === "/") return pathname === "/"
-  if (to === "/transactions" && pathname.startsWith(UNCATEGORIZED)) return false
-  const base = to === "/reports/builder" ? "/reports" : to
-  return pathname === base || pathname.startsWith(`${base}/`)
-}
 
 // Text entry hides the mobile tab bar so the keyboard has the bottom edge to itself.
 const TEXT_ENTRY =

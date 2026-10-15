@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowBendUpLeftIcon } from "@phosphor-icons/react/ArrowBendUpLeft"
 import { CalendarBlankIcon } from "@phosphor-icons/react/CalendarBlank"
@@ -15,7 +15,6 @@ import { Pill } from "../components/ui/Pill"
 import { Popover, PopoverActions } from "../components/ui/Popover"
 import { RECEIPT_ACCEPT } from "../components/ui/receipt-file"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
-import { Switch } from "../components/ui/Switch"
 import { Field, FieldGrid, TextField } from "../components/ui/TextField"
 import { showToast } from "../components/ui/toast-store"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "./api"
@@ -79,7 +78,6 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
   const navigate = useNavigate()
   const amountRef = useRef<HTMLInputElement | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const addAnotherId = useId()
 
   const [type, setType] = useState<TransactionType>("expense")
   const [occurredAt, setOccurredAt] = useState(currentLocalDateTime)
@@ -91,21 +89,8 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [isReimbursement, setIsReimbursement] = useState(false)
   const [notes, setNotes] = useState("")
   const [receipt, setReceipt] = useState<File | null>(null)
-  const [addAnother, setAddAnother] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [pending, setPending] = useState(false)
-
-  const resetEntry = () => {
-    setAmount("")
-    setTitle("")
-    setCategoryId(null)
-    setExplicitTags([])
-    setExcludedScheduledTags([])
-    setIsReimbursement(false)
-    setNotes("")
-    setReceipt(null)
-    setErrors({})
-  }
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", "all"],
@@ -215,12 +200,7 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
       message: receiptFailed ? "Transaction added, but the receipt could not be uploaded" : "Transaction added",
       action: { label: "Open", onClick: () => navigate(`/transactions?peek=${createdId}`) },
     })
-    if (addAnother) {
-      resetEntry()
-      window.setTimeout(() => amountRef.current?.focus(), 0)
-    } else {
-      onClose()
-    }
+    onClose()
   }
 
   return (
@@ -279,12 +259,6 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
       onSubmit={() => void submit()}
       pending={pending}
       error={errors.form}
-      footerStart={
-        <>
-          <Switch id={addAnotherId} checked={addAnother} onCheckedChange={setAddAnother} />
-          <label htmlFor={addAnotherId}>Add another</label>
-        </>
-      }
     >
       <EntryAmount
         ref={amountRef}
