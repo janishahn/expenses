@@ -1288,7 +1288,10 @@ final class AppModel {
         lastError = nil
         defer { isLoading = false }
         do {
-            return try await apiClient.rebuildRollups(token: token)
+            let response = try await apiClient.rebuildRollups(token: token)
+            // A new ledger revision makes Insights read the rebuilt totals.
+            try? await reloadLedger(token: token)
+            return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
@@ -1305,7 +1308,13 @@ final class AppModel {
         lastError = nil
         defer { isLoading = false }
         do {
-            return try await apiClient.recurringCatchUp(token: token)
+            let response = try await apiClient.recurringCatchUp(token: token)
+            // Catch-up can post transactions and move rules on.
+            try? await reloadLedger(token: token)
+            if let rules = try? await apiClient.recurring(token: token) {
+                recurring = rules
+            }
+            return response
         } catch let error as APIErrorInfo {
             handleAPIError(error)
         } catch {
