@@ -517,7 +517,10 @@ test.describe("Transactions Page", () => {
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${transactionId}`)
     const peek = page.getByRole("complementary", { name: title })
-    await peek.getByRole("button", { name: "Durable Not tracked" }).click()
+    await expect(peek.getByText("Reimbursed", { exact: true })).toBeVisible()
+    await expect(peek.getByRole("button", { name: /^Durable/ })).toHaveCount(0)
+    await peek.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Track as durable…" }).click()
     const popover = page.getByRole("dialog", { name: "Durable purchase" })
     await popover.getByLabel("Lifespan").selectOption("730")
     await expect(popover).toContainText("per day")
@@ -542,8 +545,61 @@ test.describe("Transactions Page", () => {
     )
     await page.getByRole("dialog", { name: "Durable purchase" }).getByRole("button", { name: "Stop tracking" }).click()
     await removed
-    await expect(peek.getByRole("button", { name: "Durable Not tracked" })).toBeVisible()
+    await expect(peek.getByRole("button", { name: /^Durable/ })).toHaveCount(0)
     expect((await fetchTransaction(request, transactionId)).durable_purchase).toBeNull()
+    await peek.getByRole("button", { name: "More actions" }).click()
+    await expect(page.getByRole("menuitem", { name: "Track as durable…" })).toBeVisible()
+  })
+
+  test("allocates part of a reimbursement from the expense peek", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const expenseCategoryId = await ensureCategory(request, token, "expense", "E2E Expense Reimbursed")
+    const incomeCategoryId = await ensureCategory(request, token, "income", "E2E Reimbursement Source")
+    const title = `E2E reimbursed hotel ${stamp}`
+    const expenseId = await createExpense(request, token, expenseCategoryId, title, { amount_cents: 8000 })
+    const reimbursementTitle = `E2E trip share ${stamp}`
+    const reimbursementId = await createTransaction(request, token, {
+      date: today(),
+      occurred_at: `${today()}T13:00:00`,
+      type: "income",
+      amount_cents: 12_000,
+      category_id: incomeCategoryId,
+      title: reimbursementTitle,
+      tags: [],
+      is_reimbursement: true,
+    })
+    const smallId = await createTransaction(request, token, {
+      date: today(),
+      occurred_at: `${today()}T14:00:00`,
+      type: "income",
+      amount_cents: 3000,
+      category_id: incomeCategoryId,
+      title: `E2E small share ${stamp}`,
+      tags: [],
+      is_reimbursement: true,
+    })
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${expenseId}`)
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: "Add reimbursement" }).click()
+    const popover = page.getByRole("dialog", { name: "Add reimbursement" })
+    // 30,00 € left holds a third of the expense but not half.
+    await popover.getByLabel("From").selectOption(String(smallId))
+    await expect(popover.getByRole("textbox", { name: "Amount" })).toHaveValue("30,00")
+    await expect(popover.getByRole("button", { name: "½" })).toBeDisabled()
+    await expect(popover.getByRole("button", { name: "⅓" })).toBeEnabled()
+    await popover.getByLabel("From").selectOption(String(reimbursementId))
+    await expect(popover.getByRole("textbox", { name: "Amount" })).toHaveValue("80,00")
+    await popover.getByRole("button", { name: "½" }).click()
+    await expect(popover.getByRole("textbox", { name: "Amount" })).toHaveValue("40,00")
+    await popover.getByRole("button", { name: "Allocate" }).click()
+
+    await expect(popover).toBeHidden()
+    await expect(peek.getByRole("link", { name: new RegExp(reimbursementTitle) })).toContainText("40,00")
+    await expect(peek.getByText("Net", { exact: true })).toBeVisible()
+    const saved = await request.get(`/api/transactions/${expenseId}`)
+    expect(((await saved.json()) as { reimbursed_total_cents: number }).reimbursed_total_cents).toBe(4000)
   })
 
   test("preserves an archived tag on a record without offering it for new transactions", async ({

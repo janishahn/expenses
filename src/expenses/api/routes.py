@@ -193,6 +193,7 @@ from expenses.schemas import (
     ReceiptAttachmentsResponseOut,
     ReimbursementAllocationIn,
     ReimbursementExpenseSearchResponseOut,
+    OpenReimbursementsResponseOut,
     TransactionReimbursementsResponseOut,
     ReportOptions,
     RuleIn,
@@ -4468,6 +4469,48 @@ def api_transaction_reimbursements(
                 },
             }
             for alloc in allocations_in
+        ],
+    }
+
+
+@router.get(
+    "/api/transactions/{transaction_id:int}/open-reimbursements",
+    response_model=OpenReimbursementsResponseOut,
+)
+def api_transaction_open_reimbursements(
+    request: Request, transaction_id: int, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    try:
+        data = ReimbursementService(
+            db, user_id=user_id
+        ).open_reimbursements_for_expense(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "remaining_unreimbursed_cents": data["remaining_unreimbursed_cents"],
+        "results": [
+            {
+                "reimbursement": {
+                    "id": row["reimbursement"].id,
+                    "date": row["reimbursement"].date.isoformat(),
+                    "amount_cents": row["reimbursement"].amount_cents,
+                    "title": row["reimbursement"].title,
+                    "category": (
+                        {
+                            "id": row["reimbursement"].category.id,
+                            "name": row["reimbursement"].category.name,
+                            "type": row["reimbursement"].category.type.value,
+                        }
+                        if row["reimbursement"].category
+                        else None
+                    ),
+                },
+                "remaining_to_allocate_cents": row["remaining_to_allocate_cents"],
+                "allocated_to_this_cents": row["allocated_to_this_cents"],
+                "suggested_amount_cents": row["suggested_amount_cents"],
+            }
+            for row in data["results"]
         ],
     }
 

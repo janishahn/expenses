@@ -5,6 +5,7 @@ import { BankIcon } from "@phosphor-icons/react/Bank"
 import { LinkSimpleIcon } from "@phosphor-icons/react/LinkSimple"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
+import { PackageIcon } from "@phosphor-icons/react/Package"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ReceiptIcon } from "@phosphor-icons/react/Receipt"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
@@ -12,11 +13,12 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate } from "react-router-dom"
 import { apiFetch, getApiErrorMessage, isApiErrorStatus } from "../app/api"
 import type {
+  OpenReimbursementsResponse,
   ReimbursementExpenseSearchResponse,
   ReimbursementExpenseSearchResult,
   TransactionReimbursementsIncome,
 } from "../app/api-types"
-import { formatCoordinate } from "../app/format"
+import { formatAmountPrivate, formatCoordinate } from "../app/format"
 import {
   amountInput,
   invalidateTransactionData,
@@ -240,18 +242,19 @@ function DurableForm({
   )
 }
 
+// Shown while tracked, or while the ⋯ menu's Track as durable… has its editor open.
 function DurableProperty({ record }: { record: TransactionRecordState }) {
-  const [open, setOpen] = useState(false)
   const view = record.view
   if (!view) return null
   const durable = view.durable_purchase
+  if (!durable && !record.durableOpen && !record.errors.durable) return null
   return (
     <Property label="Durable" editable error={record.errors.durable}>
       <Popover
         form
         label="Durable purchase"
-        open={open}
-        onOpenChange={setOpen}
+        open={record.durableOpen}
+        onOpenChange={record.setDurableOpen}
         trigger={
           <PropertyButton empty={!durable}>
             {durable ? (
@@ -265,9 +268,98 @@ function DurableProperty({ record }: { record: TransactionRecordState }) {
           </PropertyButton>
         }
       >
-        <DurableForm record={record} onDone={() => setOpen(false)} />
+        <DurableForm record={record} onDone={() => record.setDurableOpen(false)} />
       </Popover>
     </Property>
+  )
+}
+
+// The expense's reimbursements, with an editor that allocates from one that has money left.
+function ReimbursedProperty({
+  record,
+  linkTo,
+  variant,
+}: {
+  record: TransactionRecordState
+  linkTo: LinkTo
+  variant: "peek" | "full"
+}) {
+  const [open, setOpen] = useState(false)
+  const view = record.view
+  if (!view) return null
+  const reimbursements = record.reimbursements
+  return (
+    <>
+      <Property label="Reimbursed">
+        {view.reimbursed_total_cents > 0 ? (
+          variant === "peek" && reimbursements?.mode === "expense" ? (
+            reimbursements.allocations_in.map((allocation) => (
+              <PropertyLink
+                key={allocation.allocation_id}
+                to={linkTo(allocation.reimbursement_transaction.id)}
+                icon={ArrowBendUpLeftIcon}
+                iconTone="income"
+                end={<Amount cents={allocation.amount_cents} kind="income" />}
+              >
+                {allocation.reimbursement_transaction.title || "Reimbursement"}
+              </PropertyLink>
+            ))
+          ) : (
+            <Amount cents={view.reimbursed_total_cents} kind="income" />
+          )
+        ) : null}
+        <Popover
+          form
+          label="Add reimbursement"
+          open={open}
+          onOpenChange={setOpen}
+          trigger={<IconButton icon={PlusIcon} label="Add reimbursement" size="small" />}
+        >
+          <OpenReimbursementForm record={record} onDone={() => setOpen(false)} />
+        </Popover>
+      </Property>
+      {view.reimbursed_total_cents > 0 ? (
+        <Property label="Net" strong>
+          <Amount cents={view.net_amount_cents} kind="expense" />
+        </Property>
+      ) : null}
+    </>
+  )
+}
+
+function OpenReimbursementForm({ record, onDone }: { record: TransactionRecordState; onDone: () => void }) {
+  const open = useQuery({
+    queryKey: ["transaction", record.id, "open-reimbursements"],
+    queryFn: () => apiFetch<OpenReimbursementsResponse>(`/api/transactions/${record.id}/open-reimbursements`),
+  })
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const view = record.view
+  if (!view) return null
+  if (open.isError) return <FieldError>Unable to load reimbursements.</FieldError>
+  if (!open.data) return <Status>Loading…</Status>
+  const results = open.data.results
+  if (!results.length) return <Status>No reimbursements left to allocate.</Status>
+  const selected = results.find((entry) => entry.reimbursement.id === selectedId) ?? results[0]
+  return (
+    <AllocateForm
+      key={selected.reimbursement.id}
+      reimbursementId={selected.reimbursement.id}
+      expenseId={record.id}
+      expenseCents={view.amount_cents}
+      maxCents={selected.allocated_to_this_cents + selected.suggested_amount_cents}
+      onDone={onDone}
+    >
+      <Field label="From">
+        <Select value={selected.reimbursement.id} onChange={(event) => setSelectedId(Number(event.target.value))}>
+          {results.map((entry) => (
+            <option key={entry.reimbursement.id} value={entry.reimbursement.id}>
+              {entry.reimbursement.title || "Reimbursement"} · {shortDateLabel(entry.reimbursement.date)} ·{" "}
+              {formatAmountPrivate(entry.remaining_to_allocate_cents)} left
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </AllocateForm>
   )
 }
 
@@ -363,30 +455,7 @@ export function TransactionProperties({
       <Property label="Location" empty={!hasLocation} icon={hasLocation ? MapPinIcon : undefined}>
         {hasLocation ? `${formatCoordinate(view.latitude ?? 0)}, ${formatCoordinate(view.longitude ?? 0)}` : "None"}
       </Property>
-      {isExpense && view.reimbursed_total_cents > 0 ? (
-        <>
-          <Property label="Reimbursed">
-            {variant === "peek" && reimbursements?.mode === "expense" ? (
-              reimbursements.allocations_in.map((allocation) => (
-                <PropertyLink
-                  key={allocation.allocation_id}
-                  to={linkTo(allocation.reimbursement_transaction.id)}
-                  icon={ArrowBendUpLeftIcon}
-                  iconTone="income"
-                  end={<Amount cents={allocation.amount_cents} kind="income" />}
-                >
-                  {allocation.reimbursement_transaction.title || "Reimbursement"}
-                </PropertyLink>
-              ))
-            ) : (
-              <Amount cents={view.reimbursed_total_cents} kind="income" />
-            )}
-          </Property>
-          <Property label="Net" strong>
-            <Amount cents={view.net_amount_cents} kind="expense" />
-          </Property>
-        </>
-      ) : null}
+      {isExpense ? <ReimbursedProperty record={record} linkTo={linkTo} variant={variant} /> : null}
       {!isExpense && view.is_reimbursement && reimbursements?.mode === "income" ? (
         <>
           {variant === "peek" && reimbursements.allocations_out.length ? (
@@ -457,17 +526,27 @@ export function TransactionReceipts({ record }: { record: TransactionRecordState
   )
 }
 
+// Saving replaces the pair's allocation, so the most it can hold, maxCents, is what it has plus
+// what is left. The amount starts there, and ½ and ⅓ above it are disabled.
 function AllocateForm({
-  record,
-  result,
+  reimbursementId,
+  expenseId,
+  expenseCents,
+  maxCents,
   onDone,
+  children,
 }: {
-  record: TransactionRecordState
-  result: ReimbursementExpenseSearchResult
+  reimbursementId: number
+  expenseId: number
+  expenseCents: number
+  maxCents: number
   onDone: () => void
+  children?: ReactNode
 }) {
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState(amountInput(result.suggested_amount_cents))
+  const [amount, setAmount] = useState(amountInput(maxCents))
+  const half = Math.round(expenseCents / 2)
+  const third = Math.round(expenseCents / 3)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -479,9 +558,9 @@ function AllocateForm({
     }
     setSaving(true)
     try {
-      await apiFetch(`/api/reimbursements/${record.id}/allocations`, {
+      await apiFetch(`/api/reimbursements/${reimbursementId}/allocations`, {
         method: "POST",
-        body: JSON.stringify({ expense_transaction_id: result.expense.id, amount_cents: cents }),
+        body: JSON.stringify({ expense_transaction_id: expenseId, amount_cents: cents }),
       })
     } catch (failure) {
       setError(getApiErrorMessage(failure, "Unable to save allocation."))
@@ -489,12 +568,13 @@ function AllocateForm({
       return
     }
     invalidateTransactionData(queryClient)
-    void queryClient.invalidateQueries({ queryKey: ["reimbursement-search", record.id] })
+    void queryClient.invalidateQueries({ queryKey: ["reimbursement-search", reimbursementId] })
     onDone()
   }
   return (
     <form onSubmit={(event) => void submit(event)}>
       <FieldGrid narrow>
+        {children}
         <Field label="Amount" error={error}>
           <TextField
             autoFocus
@@ -508,10 +588,10 @@ function AllocateForm({
       <PopoverActions
         start={
           <>
-            <Button variant="ghost" size="small" onClick={() => setAmount(amountInput(Math.round(result.expense.amount_cents / 2)))}>
+            <Button variant="ghost" size="small" disabled={half > maxCents} onClick={() => setAmount(amountInput(half))}>
               ½
             </Button>
-            <Button variant="ghost" size="small" onClick={() => setAmount(amountInput(Math.round(result.expense.amount_cents / 3)))}>
+            <Button variant="ghost" size="small" disabled={third > maxCents} onClick={() => setAmount(amountInput(third))}>
               ⅓
             </Button>
           </>
@@ -540,7 +620,13 @@ function AllocateButton({ record, result }: { record: TransactionRecordState; re
         </Button>
       }
     >
-      <AllocateForm record={record} result={result} onDone={() => setOpen(false)} />
+      <AllocateForm
+        reimbursementId={record.id}
+        expenseId={result.expense.id}
+        expenseCents={result.expense.amount_cents}
+        maxCents={result.allocated_to_this_cents + result.suggested_amount_cents}
+        onDone={() => setOpen(false)}
+      />
     </Popover>
   )
 }
@@ -712,8 +798,14 @@ export function TransactionMenuItems({
   record: TransactionRecordState
   onDeleted: () => void
 }) {
+  const view = record.view
   return (
     <>
+      {view?.type === "expense" && !view.durable_purchase ? (
+        <MenuItem icon={PackageIcon} onSelect={() => record.setDurableOpen(true)}>
+          Track as durable…
+        </MenuItem>
+      ) : null}
       <MenuItem icon={LinkSimpleIcon} onSelect={() => void record.copyLink()}>
         Copy link
       </MenuItem>
