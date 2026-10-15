@@ -169,7 +169,7 @@ class PydanticAILLMRunner(LLMRunner):
         metadata = usage_metadata(
             usage=result.usage,
             messages=result.all_messages(),
-            backend=self.resolved.backend,
+            llm_provider=self.resolved.backend.kind,
             model=self.resolved.model,
         )
         return LLMRunResult(

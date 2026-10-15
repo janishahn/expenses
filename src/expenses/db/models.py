@@ -82,6 +82,43 @@ class AIFeatureSetting(Base):
     thinking: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
+class AssistantChat(Base):
+    __tablename__ = "assistant_chats"
+    __table_args__ = (
+        Index("ix_assistant_chats_user_updated", "user_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AssistantTurn(Base):
+    """One question and the assistant's work on it.
+
+    items_json is what the chat shows; messages_json holds the model messages the
+    turn added to the conversation, which later turns send as history.
+    """
+
+    __tablename__ = "assistant_turns"
+    __table_args__ = (UniqueConstraint("chat_id", "seq"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[str] = mapped_column(
+        ForeignKey("assistant_chats.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_text: Mapped[str] = mapped_column(Text, nullable=False)
+    items_json: Mapped[str] = mapped_column(Text, nullable=False)
+    messages_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class AutoCategorizationPreference(Base):
     __tablename__ = "auto_categorization_preferences"
     __table_args__ = (CheckConstraint("threshold >= 0 AND threshold <= 1"),)

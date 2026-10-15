@@ -601,6 +601,154 @@
         "title": "AllocationIDOut",
         "type": "object"
       },
+      "AssistantChatOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantTurnOut"
+            },
+            "title": "Turns",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "updated_at",
+          "turns"
+        ],
+        "title": "AssistantChatOut",
+        "type": "object"
+      },
+      "AssistantChatSummaryOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "updated_at"
+        ],
+        "title": "AssistantChatSummaryOut",
+        "type": "object"
+      },
+      "AssistantMessageIn": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AssistantMessageIn",
+        "type": "object"
+      },
+      "AssistantTurnOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "note": "#/components/schemas/NoteItem",
+                  "text": "#/components/schemas/TextItem",
+                  "thinking": "#/components/schemas/ThinkingItem",
+                  "tool": "#/components/schemas/ToolItem"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ThinkingItem"
+                },
+                {
+                  "$ref": "#/components/schemas/NoteItem"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolItem"
+                },
+                {
+                  "$ref": "#/components/schemas/TextItem"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "stopped",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_text": {
+            "title": "User Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_text",
+          "items",
+          "status",
+          "created_at"
+        ],
+        "title": "AssistantTurnOut",
+        "type": "object"
+      },
       "AuthCredentialsIn": {
         "properties": {
           "password": {
@@ -6459,6 +6607,40 @@
         "title": "MonthDayPolicy",
         "type": "string"
       },
+      "NoteItem": {
+        "description": "What the model says about its next step before it calls a tool.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "note",
+            "default": "note",
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "state"
+        ],
+        "title": "NoteItem",
+        "type": "object"
+      },
       "PeriodOut": {
         "properties": {
           "end": {
@@ -8140,59 +8322,6 @@
         "title": "SettingsResponseOut",
         "type": "object"
       },
-      "SpendingChatMessage": {
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Content",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "user",
-              "assistant"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role",
-          "content"
-        ],
-        "title": "SpendingChatMessage",
-        "type": "object"
-      },
-      "SpendingChatRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "message_history": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 200,
-            "title": "Message History",
-            "type": "array"
-          },
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/SpendingChatMessage"
-            },
-            "maxItems": 40,
-            "minItems": 1,
-            "title": "Messages",
-            "type": "array"
-          }
-        },
-        "required": [
-          "messages"
-        ],
-        "title": "SpendingChatRequest",
-        "type": "object"
-      },
       "StatusOut": {
         "properties": {
           "status": {
@@ -8509,6 +8638,134 @@
           "templates"
         ],
         "title": "TemplatesResponseOut",
+        "type": "object"
+      },
+      "TextItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "streaming",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "state"
+        ],
+        "title": "TextItem",
+        "type": "object"
+      },
+      "ThinkingItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "thinking",
+            "default": "thinking",
+            "title": "Kind",
+            "type": "string"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "state"
+        ],
+        "title": "ThinkingItem",
+        "type": "object"
+      },
+      "ToolItem": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "tool",
+            "default": "tool",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "stopped"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "state"
+        ],
+        "title": "ToolItem",
         "type": "object"
       },
       "TransactionBankRowOut": {
@@ -10432,37 +10689,6 @@
         "summary": "Api Ai Reject Rule Suggestion"
       }
     },
-    "/api/ai/spending-chat/stream": {
-      "post": {
-        "operationId": "api_ai_spending_chat_stream_api_ai_spending_chat_stream_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SpendingChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Api Ai Spending Chat Stream"
-      }
-    },
     "/api/ai/transaction-suggestions": {
       "get": {
         "operationId": "api_ai_transaction_suggestions_api_ai_transaction_suggestions_get",
@@ -10663,6 +10889,160 @@
           }
         },
         "summary": "Api Ai Usage Summary"
+      }
+    },
+    "/api/assistant/chats": {
+      "get": {
+        "operationId": "chats_api_assistant_chats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantChatSummaryOut"
+                  },
+                  "title": "Response Chats Api Assistant Chats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chats"
+      }
+    },
+    "/api/assistant/chats/{chat_id}": {
+      "delete": {
+        "operationId": "delete_chat_api_assistant_chats__chat_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Chat"
+      },
+      "get": {
+        "operationId": "chat_api_assistant_chats__chat_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantChatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat"
+      }
+    },
+    "/api/assistant/chats/{chat_id}/retry/stream": {
+      "post": {
+        "operationId": "retry_api_assistant_chats__chat_id__retry_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry"
+      }
+    },
+    "/api/assistant/messages/stream": {
+      "post": {
+        "operationId": "send_message_api_assistant_messages_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Message"
       }
     },
     "/api/attachments/{attachment_id}": {

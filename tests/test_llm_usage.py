@@ -35,7 +35,10 @@ def test_usage_metadata_reads_run_usage_and_last_response() -> None:
     ]
 
     metadata = usage_metadata(
-        usage=usage, messages=messages, backend=LOCAL, model="configured-model"
+        usage=usage,
+        messages=messages,
+        llm_provider="openai-compatible",
+        model="configured-model",
     )
 
     assert metadata.input_tokens == 12
@@ -56,7 +59,10 @@ def test_usage_metadata_reads_run_usage_and_last_response() -> None:
 
 def test_usage_metadata_without_a_price_leaves_cost_empty() -> None:
     metadata = usage_metadata(
-        usage=RunUsage(input_tokens=1), messages=[], backend=LOCAL, model="m"
+        usage=RunUsage(input_tokens=1),
+        messages=[],
+        llm_provider="openai-compatible",
+        model="m",
     )
 
     assert metadata.cost_decimal is None

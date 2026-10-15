@@ -15,7 +15,7 @@ FEATURE_POST_ENDPOINTS = {
     "/api/ai/transactions/1/triage": "Categorization suggestions",
     "/api/ai/transaction-suggestions/1/accept": "Categorization suggestions",
     "/api/ai/transaction-suggestions/1/reject": "Categorization suggestions",
-    "/api/ai/spending-chat/stream": "Assistant",
+    "/api/assistant/messages/stream": "Assistant",
 }
 
 

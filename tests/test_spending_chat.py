@@ -1,33 +1,36 @@
 import asyncio
 import json
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import expenses.app as app_main
-from expenses.api import routes
-from expenses.ai.spending_chat import (
-    PydanticAISpendingRunner,
-    SpendingAgentContext,
-    SpendingAgentTurnResult,
-    SpendingAnalysisService,
-    SpendingChatError,
-    SpendingChatRequest,
-    SpendingChatService,
-    _split_leading_progress_narration,
-    _tool_result_summary,
+from expenses.ai import assistant
+from expenses.ai.assistant import (
+    ITEMS,
+    AssistantModel,
+    AssistantService,
+    stream_turn,
 )
-from expenses.ai.features import ResolvedFeature
-from expenses.core.config import AIBackend, get_settings
+from expenses.ai.spending_chat import SpendingAnalysisService, tool_detail
+from expenses.api import assistant_routes
+from expenses.core.config import get_settings
 from expenses.db.models import (
     AIFeatureSetting,
+    AssistantChat,
+    AssistantTurn,
     BudgetFrequency,
     LLMJob,
     TransactionType,
+    User,
 )
 from expenses.db.session import Base, _enable_sqlite_pragmas
 from expenses.schemas import BudgetTemplateIn, CategoryIn, TransactionIn
@@ -42,30 +45,6 @@ from expenses.services import (
 @pytest.fixture()
 def anyio_backend() -> str:
     return "asyncio"
-
-
-LOCAL_CHAT = ResolvedFeature(
-    feature="spending_chat",
-    backend=AIBackend(
-        name="local",
-        kind="openai-compatible",
-        base_url="http://llm.local/v1",
-        api_key="",
-    ),
-    model="local-model",
-    thinking="auto",
-)
-
-
-class _EventsContext:
-    def __init__(self, events) -> None:
-        self.events = events
-
-    async def __aenter__(self):
-        return self.events
-
-    async def __aexit__(self, *exc) -> None:
-        return None
 
 
 def _configure_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -213,36 +192,16 @@ def _seed_spending_fixture(session: Session) -> dict[str, int]:
     }
 
 
-def test_leading_progress_split_uses_sentence_boundary() -> None:
-    narration, answer = _split_leading_progress_narration(
-        "I'll summarize the 3.2% increase. Groceries drove the change."
-    )
-    assert narration == "I'll summarize the 3.2% increase."
-    assert answer == "Groceries drove the change."
-
-    narration, answer = _split_leading_progress_narration(
-        "I'll summarize e.g. grocery changes. Food spending increased."
-    )
-    assert narration == "I'll summarize e.g. grocery changes."
-    assert answer == "Food spending increased."
-
-    narration, answer = _split_leading_progress_narration(
-        "I'll summarize the 3.2% increase."
-    )
-    assert narration == "I'll summarize the 3.2% increase."
-    assert answer == ""
-
-
-def test_tool_result_summary_formats_tool_outputs() -> None:
+def test_tool_detail_formats_tool_outputs() -> None:
     assert (
-        _tool_result_summary(
+        tool_detail(
             "get_spending_overview",
             {"totals": {"expense_cents": 123400, "income_cents": 200050}},
         )
         == "€1,234.00 spent · €2,000.50 income"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "compare_spending_periods",
             {
                 "totals": {
@@ -255,21 +214,21 @@ def test_tool_result_summary_formats_tool_outputs() -> None:
         == "€1,200.00 vs €1,320.00 · -€120.00"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "breakdown_spending",
             {"group_by": "category", "rows": [{}, {}, {}], "transaction_count": 45},
         )
         == "3 categories · 45 transactions"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "breakdown_spending",
             {"group_by": "month", "rows": [{}], "transaction_count": 1},
         )
         == "1 month · 1 transaction"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "search_transactions",
             {
                 "count": 23,
@@ -283,21 +242,21 @@ def test_tool_result_summary_formats_tool_outputs() -> None:
         == "23 matches · €412.80 total"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "search_transactions",
             {"count": 60, "truncated": True, "transactions": []},
         )
         == "60 matches"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "search_transactions",
             {"count": 0, "truncated": False, "transactions": []},
         )
         == "No matches"
     )
     assert (
-        _tool_result_summary(
+        tool_detail(
             "get_budget_context",
             {
                 "budgets": [
@@ -308,17 +267,15 @@ def test_tool_result_summary_formats_tool_outputs() -> None:
         )
         == "2 budgets · 1 over limit"
     )
-    assert _tool_result_summary("get_budget_context", {"budgets": []}) == (
-        "No budgets set"
-    )
+    assert tool_detail("get_budget_context", {"budgets": []}) == ("No budgets set")
     assert (
-        _tool_result_summary(
+        tool_detail(
             "get_transaction_detail",
             {"transaction": {"title": "Rewe", "net_amount_cents": 2345}},
         )
         == "Rewe · €23.45"
     )
-    assert _tool_result_summary("unknown_tool", {"ok": True}) is None
+    assert tool_detail("unknown_tool", {"ok": True}) is None
 
 
 def test_spending_analysis_uses_net_amounts_across_tools() -> None:
@@ -575,112 +532,157 @@ def test_search_transactions_amount_desc_finds_largest_beyond_candidate_window()
         assert result["transactions"][0]["net_amount_cents"] == 500_000
 
 
-def test_spending_chat_disabled_returns_503_before_stream(
-    api_client: TestClient,
-    csrf_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    response = api_client.post(
-        "/api/ai/spending-chat/stream",
-        headers=csrf_headers,
-        json={"messages": [{"role": "user", "content": "What changed this month?"}]},
-    )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Assistant is turned off on this server"
-
-
-def test_spending_chat_stream_route_emits_ndjson_events(
-    api_client: TestClient,
-    csrf_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _enable_chat(monkeypatch)
-
+def _session_factory():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with factory() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        session.commit()
+    return factory
 
-    def session_factory() -> Session:
-        return session_local()
 
-    class FakeSpendingChatService:
-        def __init__(self, session: Session, *, user_id: int) -> None:
-            self.session = session
-            self.user_id = user_id
-
-        async def stream_turn(self, *, request):
-            yield {"type": "turn_started", "turn_id": "turn-test"}
-            yield {
-                "type": "tool_call_start",
-                "tool_call_id": "call-1",
-                "tool_name": "search_transactions",
-                "arguments": {"sort": "amount_desc"},
-            }
-            yield {
-                "type": "tool_call_end",
-                "tool_call_id": "call-1",
-                "tool_name": "search_transactions",
-                "result_preview": '{"ok":true}',
-                "success": True,
-            }
-            yield {"type": "text_chunk", "content": "Big grocery run"}
-            yield {"type": "text_commit"}
-            yield {
-                "type": "result",
-                "assistant_message": "Big grocery run",
-                "message_history": [{"kind": "fake"}],
-            }
-
-    app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
-        lambda: session_factory
+def _test_model(stream_function) -> AssistantModel:
+    return AssistantModel(
+        model=FunctionModel(stream_function=stream_function, model_name="test-model"),
+        settings={},
+        llm_provider="test",
     )
-    app_main.app.dependency_overrides[routes.get_spending_chat_service_class] = (
-        lambda: FakeSpendingChatService
-    )
-    try:
-        with api_client.stream(
-            "POST",
-            "/api/ai/spending-chat/stream",
-            headers=csrf_headers,
-            json={
-                "messages": [{"role": "user", "content": "What did I spend most on?"}]
-            },
-        ) as response:
-            assert response.status_code == 200
-            # The stream must not be gzip-compressed: GZipMiddleware buffers
-            # deflate output until close, which would withhold every event until
-            # the turn ends. The route marks the body as identity-encoded so it
-            # streams unbuffered.
-            assert response.headers.get("content-encoding") == "identity"
-            rows = [json.loads(line) for line in response.iter_lines() if line.strip()]
-    finally:
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_session_factory, None
-        )
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_service_class, None
-        )
-        get_settings.cache_clear()
 
-    assert [row["type"] for row in rows] == [
-        "turn_started",
-        "tool_call_start",
-        "tool_call_end",
-        "text_chunk",
-        "text_commit",
-        "result",
-        "done",
+
+def _after_tool(messages: list[ModelMessage]) -> bool:
+    return any(isinstance(part, ToolReturnPart) for part in messages[-1].parts)
+
+
+def _apply(items: dict[str, dict], row: dict) -> None:
+    """Applies a stream event the way clients do."""
+    if row["type"] == "item":
+        items[row["item"]["id"]] = row["item"]
+    elif row["type"] == "delta":
+        items[row["id"]]["text"] += row["text"]
+
+
+async def _collect(
+    factory, stream_function, text: str, *, chat_id: str | None = None
+) -> list[dict]:
+    with factory() as session:
+        service = AssistantService(session, user_id=1)
+        turn = service.new_turn(chat_id=chat_id, text=text)
+    return [
+        json.loads(line)
+        async for line in stream_turn(
+            turn, model=_test_model(stream_function), session_factory=factory
+        )
     ]
-    assert rows[2]["result_preview"] == '{"ok":true}'
-    assert rows[5]["assistant_message"] == "Big grocery run"
-    assert rows[5]["message_history"] == [{"kind": "fake"}]
 
 
-def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
+def _final_items(events: list[dict]) -> list[dict]:
+    items: dict[str, dict] = {}
+    for row in events:
+        _apply(items, row)
+    return list(items.values())
+
+
+def test_assistant_disabled_returns_503_before_stream(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    response = api_client.post(
+        "/api/assistant/messages/stream",
+        headers=csrf_headers,
+        json={"message": "What changed this month?"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Assistant is turned off on this server"
+
+
+def test_assistant_route_streams_and_saves_a_turn(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_chat(monkeypatch)
+    answer = "Nothing matched in June.\n\n- No transactions"
+    seen_instructions: list[str] = []
+
+    async def stream(messages, info):
+        if not _after_tool(messages):
+            seen_instructions.append(info.instructions)
+            yield {0: DeltaThinkingPart(content="Look up June.")}
+            yield "Checking June."
+            yield {
+                1: DeltaToolCall(
+                    name="search_transactions",
+                    json_args='{"sort": "amount_desc"}',
+                    tool_call_id="call-1",
+                )
+            }
+            return
+        yield answer[:10]
+        yield answer[10:]
+
+    sessions = app_main.app.dependency_overrides[app_main.get_db]
+    db_engine = next(sessions()).get_bind()
+    factory = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
+    app_main.app.dependency_overrides[assistant_routes.get_assistant_model] = (
+        lambda: _test_model(stream)
+    )
+    app_main.app.dependency_overrides[assistant_routes.get_stream_session_factory] = (
+        lambda: factory
+    )
+    with api_client.stream(
+        "POST",
+        "/api/assistant/messages/stream",
+        headers=csrf_headers,
+        json={"message": "What did I spend most on?"},
+    ) as response:
+        assert response.status_code == 200
+        # GZipMiddleware would withhold every line until the turn ends.
+        assert response.headers.get("content-encoding") == "identity"
+        events = [json.loads(line) for line in response.iter_lines() if line.strip()]
+
+    assert events[0]["type"] == "start"
+    assert events[0]["title"] == "What did I spend most on?"
+    assert events[-1] == {"type": "end", "status": "completed"}
+    items = _final_items(events)
+    assert [(item["kind"], item["state"]) for item in items] == [
+        ("thinking", "done"),
+        ("note", "done"),
+        ("tool", "done"),
+        ("text", "done"),
+    ]
+    assert items[0]["text"] == "Look up June."
+    assert items[1]["text"] == "Checking June."
+    assert items[2]["label"] == "Transaction search"
+    assert items[2]["detail"] == "No matches"
+    assert items[3]["text"] == answer
+    assert "Current date:" in seen_instructions[0]
+
+    chat_id = events[0]["chat_id"]
+    listed = api_client.get("/api/assistant/chats")
+    assert [chat["id"] for chat in listed.json()] == [chat_id]
+    chat = api_client.get(f"/api/assistant/chats/{chat_id}").json()
+    assert chat["title"] == "What did I spend most on?"
+    [turn] = chat["turns"]
+    assert turn["user_text"] == "What did I spend most on?"
+    assert turn["status"] == "completed"
+    assert turn["items"] == items
+
+    with factory() as session:
+        job = session.scalars(select(LLMJob)).one()
+    assert job.feature == "spending_chat"
+    assert job.status == "completed"
+    assert job.prompt_version == "assistant"
+    assert job.llm_provider == "test"
+    assert job.usage_tool_call_count == 1
+    assert "What did I spend most on?" not in (job.input_json or "")
+
+
+def test_assistant_allows_mobile_bearer_without_csrf(
     anonymous_api_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -698,492 +700,219 @@ def test_spending_chat_stream_allows_mobile_bearer_without_csrf(
     _enable_chat(monkeypatch)
     anonymous_api_client.cookies.clear()
 
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    async def stream(messages, info):
+        yield "Net spending is down."
+
+    sessions = app_main.app.dependency_overrides[app_main.get_db]
+    db_engine = next(sessions()).get_bind()
+    app_main.app.dependency_overrides[assistant_routes.get_assistant_model] = (
+        lambda: _test_model(stream)
     )
-    Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    app_main.app.dependency_overrides[assistant_routes.get_stream_session_factory] = (
+        lambda: sessionmaker(bind=db_engine, expire_on_commit=False)
+    )
+    with anonymous_api_client.stream(
+        "POST",
+        "/api/assistant/messages/stream",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"message": "How does my spending look?"},
+    ) as response:
+        assert response.status_code == 200
+        events = [json.loads(line) for line in response.iter_lines() if line.strip()]
 
-    def session_factory() -> Session:
-        return session_local()
+    assert events[-1] == {"type": "end", "status": "completed"}
+    assert _final_items(events)[0]["text"] == "Net spending is down."
 
-    class FakeSpendingChatService:
-        def __init__(self, session: Session, *, user_id: int) -> None:
-            self.session = session
-            self.user_id = user_id
 
-        async def stream_turn(self, *, request):
-            yield {"type": "turn_started", "turn_id": "turn-mobile"}
-            yield {"type": "text_chunk", "content": "Net spending is down."}
-            yield {"type": "text_commit"}
+def test_assistant_chats_belong_to_their_user(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_chat(monkeypatch)
+    now = datetime(2026, 6, 1, 12, 0)
+    db_session.add(User(id=2, username="other", password_hash="unused"))
+    db_session.flush()
+    db_session.add_all(
+        [
+            AssistantChat(
+                id="a" * 32, user_id=1, title="Mine", created_at=now, updated_at=now
+            ),
+            AssistantChat(
+                id="b" * 32, user_id=2, title="Theirs", created_at=now, updated_at=now
+            ),
+        ]
+    )
+    db_session.commit()
+
+    assert [
+        chat["title"] for chat in api_client.get("/api/assistant/chats").json()
+    ] == ["Mine"]
+    assert api_client.get(f"/api/assistant/chats/{'b' * 32}").status_code == 404
+    other = api_client.post(
+        "/api/assistant/messages/stream",
+        headers=csrf_headers,
+        json={"chat_id": "b" * 32, "message": "Hi"},
+    )
+    assert other.status_code == 404
+    assert (
+        api_client.delete(
+            f"/api/assistant/chats/{'b' * 32}", headers=csrf_headers
+        ).status_code
+        == 404
+    )
+    assert (
+        api_client.delete(
+            f"/api/assistant/chats/{'a' * 32}", headers=csrf_headers
+        ).status_code
+        == 204
+    )
+    assert api_client.get("/api/assistant/chats").json() == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("chunks", "calls_tool", "kind"),
+    [
+        (["Checking ", "June."], True, "note"),
+        (["Net spending ", "is down."], False, "text"),
+        (["June looks calm.\n", "- Groceries"], True, "text"),
+        (["  " + "x" * 160], True, "text"),
+    ],
+)
+async def test_assistant_text_before_a_tool_call_is_a_note(
+    chunks: list[str], calls_tool: bool, kind: str
+) -> None:
+    async def stream(messages, info):
+        if _after_tool(messages):
+            yield "Done."
+            return
+        for chunk in chunks:
+            yield chunk
+        if calls_tool:
             yield {
-                "type": "result",
-                "assistant_message": "Net spending is down.",
-                "message_history": [{"kind": "fake"}],
+                1: DeltaToolCall(
+                    name="get_budget_context",
+                    json_args='{"year": 2026, "month": 6}',
+                    tool_call_id="call-1",
+                )
             }
 
-    app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
-        lambda: session_factory
-    )
-    app_main.app.dependency_overrides[routes.get_spending_chat_service_class] = (
-        lambda: FakeSpendingChatService
-    )
-    try:
-        with anonymous_api_client.stream(
-            "POST",
-            "/api/ai/spending-chat/stream",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "messages": [{"role": "user", "content": "How does my spending look?"}]
-            },
-        ) as response:
-            assert response.status_code == 200
-            rows = [json.loads(line) for line in response.iter_lines() if line.strip()]
-    finally:
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_session_factory, None
-        )
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_service_class, None
-        )
-        get_settings.cache_clear()
+    events = await _collect(_session_factory(), stream, "How is June?")
 
-    assert [row["type"] for row in rows] == [
-        "turn_started",
-        "text_chunk",
-        "text_commit",
-        "result",
-        "done",
-    ]
-    assert rows[-2]["assistant_message"] == "Net spending is down."
-    assert rows[-2]["message_history"] == [{"kind": "fake"}]
-
-
-def test_spending_chat_stream_route_emits_terminal_error_event(
-    api_client: TestClient,
-    csrf_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _enable_chat(monkeypatch)
-
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    def session_factory() -> Session:
-        return session_local()
-
-    class FakeSpendingChatService:
-        def __init__(self, session: Session, *, user_id: int) -> None:
-            self.session = session
-            self.user_id = user_id
-
-        async def stream_turn(self, *, request):
-            yield {"type": "turn_started", "turn_id": "turn-error"}
-            raise SpendingChatError("The spending assistant is temporarily unavailable")
-
-    app_main.app.dependency_overrides[routes.get_spending_chat_session_factory] = (
-        lambda: session_factory
-    )
-    app_main.app.dependency_overrides[routes.get_spending_chat_service_class] = (
-        lambda: FakeSpendingChatService
-    )
-    try:
-        with api_client.stream(
-            "POST",
-            "/api/ai/spending-chat/stream",
-            headers=csrf_headers,
-            json={"messages": [{"role": "user", "content": "Summarize June"}]},
-        ) as response:
-            assert response.status_code == 200
-            rows = [json.loads(line) for line in response.iter_lines() if line.strip()]
-    finally:
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_session_factory, None
-        )
-        app_main.app.dependency_overrides.pop(
-            routes.get_spending_chat_service_class, None
-        )
-        get_settings.cache_clear()
-
-    assert [row["type"] for row in rows] == ["turn_started", "error", "done"]
-    assert rows[1]["message"] == "The spending assistant is temporarily unavailable"
-
-
-def test_spending_chat_rejects_invalid_message_history_before_stream(
-    api_client: TestClient,
-    csrf_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _enable_chat(monkeypatch)
-
-    response = api_client.post(
-        "/api/ai/spending-chat/stream",
-        headers=csrf_headers,
-        json={
-            "messages": [{"role": "user", "content": "Summarize June"}],
-            "message_history": [{"not": "a pydantic-ai message"}],
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid message_history"
+    first = _final_items(events)[0]
+    assert first["kind"] == kind
+    assert first["text"] == "".join(chunks).strip()
 
 
 @pytest.mark.anyio
-async def test_pydantic_spending_runner_routes_pre_tool_text_as_progress(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    _configure_backend(monkeypatch)
+async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
+    factory = _session_factory()
+    history_sizes: list[int] = []
 
-    from pydantic_ai import messages as pydantic_message
-    import pydantic_ai
+    async def stream(messages, info):
+        history_sizes.append(len(messages))
+        yield f"Answer {len(history_sizes)}."
 
-    class FakeAgent:
-        def __init__(self, *args, **kwargs) -> None:
-            pass
-
-        def instructions(self, func):
-            return func
-
-        def run_stream_events(self, *args, **kwargs):
-            return _EventsContext(self._events())
-
-        async def _events(self):
-            yield pydantic_message.PartStartEvent(
-                index=0,
-                part=pydantic_message.TextPart(content="I'll inspect the details."),
-            )
-            yield pydantic_message.FunctionToolCallEvent(
-                part=pydantic_message.ToolCallPart(
-                    tool_name="search_transactions",
-                    args={"sort": "amount_desc"},
-                    tool_call_id="call-1",
-                )
-            )
-            yield pydantic_message.FunctionToolResultEvent(
-                part=pydantic_message.ToolReturnPart(
-                    tool_name="search_transactions",
-                    content={
-                        "ok": True,
-                        "count": 0,
-                        "truncated": False,
-                        "transactions": [],
-                    },
-                    tool_call_id="call-1",
-                )
-            )
-            yield pydantic_message.PartStartEvent(
-                index=0,
-                part=pydantic_message.TextPart(content="Final answer"),
-            )
-            yield pydantic_message.FinalResultEvent(tool_name=None, tool_call_id=None)
-            yield pydantic_message.PartDeltaEvent(
-                index=0,
-                delta=pydantic_message.TextPartDelta(content_delta=" with detail."),
-            )
-
-    monkeypatch.setattr(pydantic_ai, "Agent", FakeAgent)
-
-    with make_session() as session:
-        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        context = SpendingAgentContext(
-            analysis=analysis,
-            user_id=1,
-            today=date(2026, 6, 27),
-            now=datetime(2026, 6, 27, 12, 0),
+    first = await _collect(factory, stream, "First question")
+    chat_id = first[0]["chat_id"]
+    await _collect(factory, stream, "Second question", chat_id=chat_id)
+    with factory() as session:
+        retry = AssistantService(session, user_id=1).retry_turn(chat_id)
+    events = [
+        json.loads(line)
+        async for line in stream_turn(
+            retry, model=_test_model(stream), session_factory=factory
         )
-        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
-            request=SpendingChatRequest(
-                messages=[{"role": "user", "content": "What changed this month?"}]
-            ),
-            analysis=analysis,
-            context=context,
-        )
-        events = []
-        try:
-            async for event in stream:
-                events.append(event)
-                if (
-                    isinstance(event, dict)
-                    and event["type"] == "text_chunk"
-                    and event["content"].endswith(" with detail.")
-                ):
-                    break
-        finally:
-            await stream.aclose()
-            get_settings.cache_clear()
-
-    assert [event["type"] for event in events] == [
-        "turn_started",
-        "progress_narration",
-        "tool_call_start",
-        "tool_call_end",
-        "text_chunk",
-        "text_chunk",
     ]
-    assert events[1]["content"] == "I'll inspect the details."
-    assert events[3]["result_summary"] == "No matches"
-    assert [event["content"] for event in events if event["type"] == "text_chunk"] == [
-        "Final answer",
-        " with detail.",
+
+    # Each turn adds a request and a response; a retry drops the turn it replaces.
+    assert history_sizes == [1, 3, 3]
+    assert _final_items(events)[0]["text"] == "Answer 3."
+    with factory() as session:
+        chat = AssistantService(session, user_id=1).chat_out(chat_id)
+    assert [(turn.user_text, turn.items[0].text) for turn in chat.turns] == [
+        ("First question", "Answer 1."),
+        ("Second question", "Answer 3."),
     ]
 
 
 @pytest.mark.anyio
-async def test_pydantic_spending_runner_routes_leading_final_process_sentence_as_progress(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    _configure_backend(monkeypatch)
+async def test_assistant_stop_saves_the_partial_turn() -> None:
+    factory = _session_factory()
+    streaming = asyncio.Event()
 
-    from pydantic_ai import messages as pydantic_message
-    import pydantic_ai
+    async def stream(messages, info):
+        yield "Partial answer"
+        streaming.set()
+        await asyncio.sleep(30)
+        yield " never sent"
 
-    class FakeAgent:
-        def __init__(self, *args, **kwargs) -> None:
-            pass
-
-        def instructions(self, func):
-            return func
-
-        def run_stream_events(self, *args, **kwargs):
-            return _EventsContext(self._events())
-
-        async def _events(self):
-            yield pydantic_message.FunctionToolCallEvent(
-                part=pydantic_message.ToolCallPart(
-                    tool_name="compare_spending_periods",
-                    args={},
-                    tool_call_id="call-1",
-                )
-            )
-            yield pydantic_message.FunctionToolResultEvent(
-                part=pydantic_message.ToolReturnPart(
-                    tool_name="compare_spending_periods",
-                    content={
-                        "ok": True,
-                        "totals": {
-                            "current_expense_cents": 120000,
-                            "baseline_expense_cents": 98000,
-                            "expense_delta_cents": 22000,
-                        },
-                    },
-                    tool_call_id="call-1",
-                )
-            )
-            yield pydantic_message.PartStartEvent(
-                index=0,
-                part=pydantic_message.TextPart(
-                    content="Let me dig into the biggest changes."
-                ),
-            )
-            yield pydantic_message.FinalResultEvent(tool_name=None, tool_call_id=None)
-            yield pydantic_message.PartDeltaEvent(
-                index=0,
-                delta=pydantic_message.TextPartDelta(
-                    content_delta="Here is what changed."
-                ),
-            )
-
-    monkeypatch.setattr(pydantic_ai, "Agent", FakeAgent)
-
-    with make_session() as session:
-        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        context = SpendingAgentContext(
-            analysis=analysis,
-            user_id=1,
-            today=date(2026, 6, 27),
-            now=datetime(2026, 6, 27, 12, 0),
+    with factory() as session:
+        turn = AssistantService(session, user_id=1).new_turn(
+            chat_id=None, text="Summarize June"
         )
-        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
-            request=SpendingChatRequest(
-                messages=[{"role": "user", "content": "What changed this month?"}]
-            ),
-            analysis=analysis,
-            context=context,
-        )
-        events = []
-        try:
-            async for event in stream:
-                events.append(event)
-                if isinstance(event, dict) and event["type"] == "text_chunk":
-                    break
-        finally:
-            await stream.aclose()
-            get_settings.cache_clear()
+    lines = stream_turn(turn, model=_test_model(stream), session_factory=factory)
+    assert json.loads(await anext(lines))["type"] == "start"
+    await streaming.wait()
+    # Closing the response stops the run, as a client disconnect does.
+    await lines.aclose()
+    await asyncio.gather(*assistant._RUNNING)
 
-    assert [event["type"] for event in events] == [
-        "turn_started",
-        "tool_call_start",
-        "tool_call_end",
-        "progress_narration",
-        "text_chunk",
-    ]
-    assert events[2]["result_summary"] == "€1,200.00 vs €980.00 · +€220.00"
-    assert events[3]["content"] == "Let me dig into the biggest changes."
-    assert events[4]["content"] == "Here is what changed."
-
-
-@pytest.mark.anyio
-async def test_pydantic_spending_runner_builds_tool_schemas_without_model_request(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    _configure_backend(monkeypatch)
-    with make_session() as session:
-        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        context = SpendingAgentContext(
-            analysis=analysis,
-            user_id=1,
-            today=date(2026, 6, 27),
-            now=datetime(2026, 6, 27, 12, 0),
-        )
-        stream = PydanticAISpendingRunner(LOCAL_CHAT).stream_turn(
-            request=SpendingChatRequest(
-                messages=[{"role": "user", "content": "What changed this month?"}]
-            ),
-            analysis=analysis,
-            context=context,
-        )
-        try:
-            event = await anext(stream)
-            assert event["type"] == "turn_started"
-            assert isinstance(event["turn_id"], str)
-        finally:
-            await stream.aclose()
-            get_settings.cache_clear()
-
-
-@pytest.mark.anyio
-async def test_spending_chat_stream_logs_one_job_with_fake_runner() -> None:
-    with make_session() as session:
-
-        class FakeRunner:
-            async def stream_turn(self, *, request, analysis, context):
-                yield {"type": "turn_started", "turn_id": "job-test"}
-                yield {"type": "text_chunk", "content": "Answer"}
-                yield {"type": "text_commit"}
-                yield SpendingAgentTurnResult(
-                    assistant_message="Answer",
-                    message_history=[{"kind": "fake"}],
-                    usage_input_tokens=11,
-                    usage_output_tokens=7,
-                    usage_total_tokens=18,
-                    usage_cached_input_tokens=3,
-                    usage_cache_write_tokens=2,
-                    usage_reasoning_tokens=4,
-                    usage_request_count=2,
-                    usage_tool_call_count=1,
-                    usage_cost_decimal="0.000000125",
-                    usage_cost_unit="openrouter_credits",
-                    provider_name="openrouter",
-                    provider_model="openai/gpt-test",
-                    provider_response_id="gen-test",
-                    provider_usage_json={"total_cost": 0.000000125},
-                )
-
-        from expenses.ai.spending_chat import SpendingChatService, SpendingChatRequest
-
-        request = SpendingChatRequest(
-            messages=[{"role": "user", "content": "Summarize June"}],
-            message_history=[{"parts": [{"content": "SENSITIVE-TXN-DETAIL-42"}]}],
-        )
-
-        service = SpendingChatService(session, user_id=1, runner=FakeRunner())
-        events = []
-        async for event in service.stream_turn(request=request):
-            events.append(event)
-        assert [event["type"] for event in events[:-1]] == [
-            "turn_started",
-            "text_chunk",
-            "text_commit",
-        ]
+    with factory() as session:
+        saved = session.scalars(select(AssistantTurn)).one()
         job = session.scalars(select(LLMJob)).one()
-        assert job.feature == "spending_chat"
-        assert job.prompt_version == "spending_chat"
-        assert job.status == "completed"
-        assert job.usage_input_tokens == 11
-        assert job.usage_output_tokens == 7
-        assert job.usage_total_tokens == 18
-        assert job.usage_cached_input_tokens == 3
-        assert job.usage_cache_write_tokens == 2
-        assert job.usage_reasoning_tokens == 4
-        assert job.usage_request_count == 2
-        assert job.usage_tool_call_count == 1
-        assert job.usage_cost_decimal == "0.000000125"
-        assert job.usage_cost_unit == "openrouter_credits"
-        assert job.provider_name == "openrouter"
-        assert job.provider_model == "openai/gpt-test"
-        assert job.provider_response_id == "gen-test"
-        output_trace = json.loads(job.output_json or "{}")
-        assert "assistant_message" not in output_trace
-        assert "message_history" not in output_trace
-        input_trace = json.loads(job.input_json or "{}")
-        assert input_trace["kind"] == "request"
-        assert input_trace["message_count"] == 1
-        assert input_trace["message_history_entries"] == 1
-        assert input_trace["current_message_chars"] == len("Summarize June")
-        assert "Summarize June" not in (job.input_json or "")
-        assert "SENSITIVE-TXN-DETAIL-42" not in (job.input_json or "")
-        assert output_trace["assistant_message_sha256"] == (
-            "b2a3aa602762a782e47a4f8e93bb5ae1b8819d1b92b7e6ceb3ef46a3c7077eb0"
-        )
-        assert output_trace["assistant_message_chars"] == 6
+    assert saved.status == "stopped"
+    [item] = ITEMS.validate_json(saved.items_json)
+    assert (item.kind, item.text, item.state) == ("text", "Partial answer", "done")
+    assert job.status == "stopped"
 
 
 @pytest.mark.anyio
-async def test_spending_chat_stream_records_cancelled_turn() -> None:
-    with make_session() as session:
+async def test_assistant_failure_ends_with_a_message() -> None:
+    factory = _session_factory()
 
-        class FakeRunner:
-            async def stream_turn(self, *, request, analysis, context):
-                yield {"type": "turn_started", "turn_id": "cancel-test"}
-                raise asyncio.CancelledError
+    async def stream(messages, info):
+        raise ModelHTTPError(status_code=429, model_name="test-model")
+        yield
 
-        request = SpendingChatRequest(
-            messages=[{"role": "user", "content": "Summarize June"}]
-        )
+    events = await _collect(factory, stream, "Summarize June")
 
-        service = SpendingChatService(session, user_id=1, runner=FakeRunner())
-        events = []
-        with pytest.raises(asyncio.CancelledError):
-            async for event in service.stream_turn(request=request):
-                events.append(event)
-
-        assert events == [{"type": "turn_started", "turn_id": "cancel-test"}]
+    assert events[-1] == {
+        "type": "end",
+        "status": "failed",
+        "message": "The AI backend is busy or over its limit. Try again in a moment.",
+    }
+    with factory() as session:
+        saved = session.scalars(select(AssistantTurn)).one()
         job = session.scalars(select(LLMJob)).one()
-        assert job.feature == "spending_chat"
-        assert job.status == "failed"
-        assert job.error == "stream_cancelled"
-        assert job.finished_at is not None
-        assert job.duration_ms is not None
+    assert saved.status == "failed"
+    # A failed turn adds nothing to what the model sees next time.
+    assert saved.messages_json == "[]"
+    assert job.status == "failed"
+    assert "429" in (job.error or "")
 
 
-def test_spending_chat_service_defaults_dates_to_configured_timezone(
+@pytest.mark.anyio
+async def test_assistant_dates_use_the_configured_timezone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _UnusedRunner:
-        async def stream_turn(self, *, request, analysis, context):
-            raise AssertionError("runner should not run")
-            yield  # pragma: no cover
-
     monkeypatch.setenv("EXPENSES_TIMEZONE", "Etc/GMT-14")
     get_settings.cache_clear()
+    seen_instructions: list[str] = []
+
+    async def stream(messages, info):
+        seen_instructions.append(info.instructions)
+        yield "Done."
+
     try:
-        with make_session() as session:
-            service = SpendingChatService(session, user_id=1, runner=_UnusedRunner())
-        assert service.now.utcoffset() == timedelta(hours=14)
-        assert service.today == service.now.date()
+        await _collect(_session_factory(), stream, "What day is it?")
     finally:
         get_settings.cache_clear()
+
+    today = datetime.now(ZoneInfo("Etc/GMT-14")).date()
+    assert f"Current date: {today.isoformat()}." in seen_instructions[0]
 
 
 def test_ai_usage_summary_average_cost_keeps_division_precision(
@@ -1443,11 +1172,10 @@ def test_ai_usage_summary_returns_precise_spending_chat_accounting(
                         LLMJob(
                             user_id=1,
                             feature="spending_chat",
-                            status="failed",
-                            prompt_version="spending_chat",
+                            status="stopped",
+                            prompt_version="assistant",
                             model="openai/gpt-test",
                             input_hash="hash-4",
-                            error="stream_cancelled",
                             duration_ms=600,
                             created_at=now - timedelta(minutes=30),
                             finished_at=now - timedelta(minutes=30),

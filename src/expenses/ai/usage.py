@@ -5,7 +5,6 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from expenses.core.config import AIBackend
 from expenses.db.models import LLMJob
 
 if TYPE_CHECKING:
@@ -37,7 +36,7 @@ def usage_metadata(
     *,
     usage: RunUsage,
     messages: list[ModelMessage],
-    backend: AIBackend,
+    llm_provider: str,
     model: str,
 ) -> LLMUsageMetadata:
     from pydantic_ai.messages import ModelResponse
@@ -63,7 +62,7 @@ def usage_metadata(
         tool_call_count=usage.tool_calls or None,
         cost_decimal=format(usage.cost, "f") if usage.cost is not None else None,
         cost_unit="usd" if usage.cost is not None else None,
-        llm_provider=backend.kind,
+        llm_provider=llm_provider,
         provider_name=response.provider_name if response else None,
         provider_model=(response.model_name if response else None) or model,
         provider_response_id=response.provider_response_id if response else None,
@@ -95,30 +94,23 @@ def apply_usage_metadata(job: LLMJob, metadata: LLMUsageMetadata) -> None:
         )
 
 
-def chat_input_trace(
-    current_message: str, message_count: int, message_history_entries: int
-) -> str:
+def chat_input_trace(current_message: str, history_messages: int) -> str:
     payload = {
         "kind": "request",
         "current_message_sha256": hashlib.sha256(
             current_message.encode("utf-8")
         ).hexdigest(),
         "current_message_chars": len(current_message),
-        "message_count": message_count,
-        "message_history_entries": message_history_entries,
+        "message_history_entries": history_messages,
     }
     return json.dumps(payload, ensure_ascii=True, sort_keys=True)
 
 
-def chat_output_trace(
-    assistant_message: str, message_history: list[dict[str, Any]]
-) -> str:
+def chat_output_trace(answer: str, new_messages: int) -> str:
     payload = {
         "kind": "message",
-        "assistant_message_sha256": hashlib.sha256(
-            assistant_message.encode("utf-8")
-        ).hexdigest(),
-        "assistant_message_chars": len(assistant_message),
-        "message_history_entries": len(message_history),
+        "assistant_message_sha256": hashlib.sha256(answer.encode("utf-8")).hexdigest(),
+        "assistant_message_chars": len(answer),
+        "new_message_entries": new_messages,
     }
     return json.dumps(payload, ensure_ascii=True, sort_keys=True)
