@@ -346,7 +346,7 @@ function OpenReimbursementForm({ record, onDone }: { record: TransactionRecordSt
       reimbursementId={selected.reimbursement.id}
       expenseId={record.id}
       expenseCents={view.amount_cents}
-      initialCents={selected.allocated_to_this_cents + selected.suggested_amount_cents}
+      maxCents={selected.allocated_to_this_cents + selected.suggested_amount_cents}
       onDone={onDone}
     >
       <Field label="From">
@@ -526,24 +526,27 @@ export function TransactionReceipts({ record }: { record: TransactionRecordState
   )
 }
 
-// Saving replaces the pair's allocation, so initialCents is what it has plus what is left.
+// Saving replaces the pair's allocation, so the most it can hold, maxCents, is what it has plus
+// what is left. The amount starts there, and ½ and ⅓ above it are disabled.
 function AllocateForm({
   reimbursementId,
   expenseId,
   expenseCents,
-  initialCents,
+  maxCents,
   onDone,
   children,
 }: {
   reimbursementId: number
   expenseId: number
   expenseCents: number
-  initialCents: number
+  maxCents: number
   onDone: () => void
   children?: ReactNode
 }) {
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState(amountInput(initialCents))
+  const [amount, setAmount] = useState(amountInput(maxCents))
+  const half = Math.round(expenseCents / 2)
+  const third = Math.round(expenseCents / 3)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -585,10 +588,10 @@ function AllocateForm({
       <PopoverActions
         start={
           <>
-            <Button variant="ghost" size="small" onClick={() => setAmount(amountInput(Math.round(expenseCents / 2)))}>
+            <Button variant="ghost" size="small" disabled={half > maxCents} onClick={() => setAmount(amountInput(half))}>
               ½
             </Button>
-            <Button variant="ghost" size="small" onClick={() => setAmount(amountInput(Math.round(expenseCents / 3)))}>
+            <Button variant="ghost" size="small" disabled={third > maxCents} onClick={() => setAmount(amountInput(third))}>
               ⅓
             </Button>
           </>
@@ -621,7 +624,7 @@ function AllocateButton({ record, result }: { record: TransactionRecordState; re
         reimbursementId={record.id}
         expenseId={result.expense.id}
         expenseCents={result.expense.amount_cents}
-        initialCents={result.allocated_to_this_cents + result.suggested_amount_cents}
+        maxCents={result.allocated_to_this_cents + result.suggested_amount_cents}
         onDone={() => setOpen(false)}
       />
     </Popover>

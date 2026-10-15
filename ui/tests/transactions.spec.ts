@@ -569,11 +569,26 @@ test.describe("Transactions Page", () => {
       tags: [],
       is_reimbursement: true,
     })
+    const smallId = await createTransaction(request, token, {
+      date: today(),
+      occurred_at: `${today()}T14:00:00`,
+      type: "income",
+      amount_cents: 3000,
+      category_id: incomeCategoryId,
+      title: `E2E small share ${stamp}`,
+      tags: [],
+      is_reimbursement: true,
+    })
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${expenseId}`)
     const peek = page.getByRole("complementary", { name: title })
     await peek.getByRole("button", { name: "Add reimbursement" }).click()
     const popover = page.getByRole("dialog", { name: "Add reimbursement" })
+    // 30,00 € left holds a third of the expense but not half.
+    await popover.getByLabel("From").selectOption(String(smallId))
+    await expect(popover.getByRole("textbox", { name: "Amount" })).toHaveValue("30,00")
+    await expect(popover.getByRole("button", { name: "½" })).toBeDisabled()
+    await expect(popover.getByRole("button", { name: "⅓" })).toBeEnabled()
     await popover.getByLabel("From").selectOption(String(reimbursementId))
     await expect(popover.getByRole("textbox", { name: "Amount" })).toHaveValue("80,00")
     await popover.getByRole("button", { name: "½" }).click()
