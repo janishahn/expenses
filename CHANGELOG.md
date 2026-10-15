@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry, and so does a proxy's 502 or 504 for one request while the server itself still answers.
 - Print the web Transactions ledger from ⋯ › Print… or with Cmd+P (Ctrl+P on Windows and Linux). The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
 - On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
+- The Assistant reads recurring payments, the forecast, balance history, reimbursements, and durable purchases. It can filter transactions by several categories and tags, amount, and text, and group them by category, tag, merchant, month, week, or weekday, with a comparison period.
 
 ### Changed
 - **Breaking:** AI configuration moves from `EXPENSES_LLM_*` to named backends in `EXPENSES_AI_BACKENDS`, with `EXPENSES_AI_<NAME>_KIND`, `_BASE_URL`, and `_API_KEY` for each. Kinds are `anthropic`, `openai`, `openrouter`, and `openai-compatible`, so the Anthropic API now works directly. The server refuses to start while any `EXPENSES_LLM_*` variable is set; see the AI section of the README.

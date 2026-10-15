@@ -41,13 +41,12 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from expenses.ai.spending_chat import (
+from expenses.ai.assistant_tools import (
     INSTRUCTIONS,
-    SPENDING_TOOLS,
-    TOOL_LABELS,
-    SpendingAgentContext,
-    SpendingAnalysisService,
+    TOOLS,
+    AssistantReader,
     tool_detail,
+    tool_label,
 )
 from expenses.ai.usage import (
     apply_usage_metadata,
@@ -148,9 +147,7 @@ def _item_id() -> str:
 
 
 @dataclass
-class AssistantEventStream(
-    UIEventStream[None, dict[str, Any], SpendingAgentContext, str]
-):
+class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, str]):
     """Turns pydantic-ai events into item upserts and text deltas."""
 
     items: list[AssistantItem] = field(default_factory=list)
@@ -274,10 +271,14 @@ class AssistantEventStream(
         self, event: FunctionToolCallEvent
     ) -> AsyncIterator[dict[str, Any]]:
         part = event.part
+        try:
+            args = part.args_as_dict()
+        except ValueError:
+            args = {}
         item = ToolItem(
             id=f"tool-{part.tool_call_id}",
             name=part.tool_name,
-            label=TOOL_LABELS.get(part.tool_name, part.tool_name),
+            label=tool_label(part.tool_name, args),
             state="running",
         )
         self._tools[part.tool_call_id] = item
@@ -330,27 +331,21 @@ class AssistantEventStream(
         return "\n\n".join(item.text for item in self.items if item.kind == "text")
 
 
-def _agent(model: AssistantModel) -> Agent[SpendingAgentContext, str]:
+def _agent(model: AssistantModel) -> Agent[AssistantReader, str]:
     agent = Agent(
         model.model,
         model_settings=model.settings,
-        deps_type=SpendingAgentContext,
+        deps_type=AssistantReader,
         output_type=str,
         tools=[
-            Tool(tool, takes_ctx=True, strict=True, sequential=True)
-            for tool in SPENDING_TOOLS
+            Tool(tool, takes_ctx=True, strict=True, sequential=True) for tool in TOOLS
         ],
         instructions=INSTRUCTIONS,
     )
 
     @agent.instructions
-    def current_date(ctx: RunContext[SpendingAgentContext]) -> str:
-        return (
-            f"Current date: {ctx.deps.today.isoformat()}.\n"
-            f"Current timestamp: {ctx.deps.now.isoformat()}.\n"
-            "Use these values to resolve relative periods such as this month, "
-            "last month, last week, or today."
-        )
+    def reference(ctx: RunContext[AssistantReader]) -> str:
+        return ctx.deps.reference()
 
     return agent
 
@@ -531,14 +526,7 @@ async def _run_turn(
         put({"type": "start", "chat_id": request.chat_id, "title": request.title})
         history = _history(session, request.chat_id, request.replace_seq)
         now = datetime.now(ZoneInfo(get_settings().timezone))
-        deps = SpendingAgentContext(
-            analysis=SpendingAnalysisService(
-                session, user_id=request.user_id, today=now.date()
-            ),
-            user_id=request.user_id,
-            today=now.date(),
-            now=now,
-        )
+        deps = AssistantReader(session, user_id=request.user_id, now=now)
         stream = AssistantEventStream()
         started_at = datetime.utcnow()
         started = perf_counter()

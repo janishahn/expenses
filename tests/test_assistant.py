@@ -20,7 +20,7 @@ from expenses.ai.assistant import (
     AssistantService,
     stream_turn,
 )
-from expenses.ai.spending_chat import SpendingAnalysisService, tool_detail
+from expenses.ai.assistant_tools import AssistantReader, tool_detail, tool_label
 from expenses.api import assistant_routes
 from expenses.core.config import get_settings
 from expenses.db.models import (
@@ -192,142 +192,53 @@ def _seed_spending_fixture(session: Session) -> dict[str, int]:
     }
 
 
-def test_tool_detail_formats_tool_outputs() -> None:
-    assert (
-        tool_detail(
-            "get_spending_overview",
-            {"totals": {"expense_cents": 123400, "income_cents": 200050}},
-        )
-        == "€1,234.00 spent · €2,000.50 income"
+def _reader(session: Session, today: date = date(2026, 6, 27)) -> AssistantReader:
+    return AssistantReader(
+        session, user_id=1, now=datetime.combine(today, datetime.min.time())
     )
-    assert (
-        tool_detail(
-            "compare_spending_periods",
-            {
-                "totals": {
-                    "current_expense_cents": 120000,
-                    "baseline_expense_cents": 132000,
-                    "expense_delta_cents": -12000,
-                }
-            },
-        )
-        == "€1,200.00 vs €1,320.00 · -€120.00"
-    )
-    assert (
-        tool_detail(
-            "breakdown_spending",
-            {"group_by": "category", "rows": [{}, {}, {}], "transaction_count": 45},
-        )
-        == "3 categories · 45 transactions"
-    )
-    assert (
-        tool_detail(
-            "breakdown_spending",
-            {"group_by": "month", "rows": [{}], "transaction_count": 1},
-        )
-        == "1 month · 1 transaction"
-    )
-    assert (
-        tool_detail(
-            "search_transactions",
-            {
-                "count": 23,
-                "truncated": False,
-                "transactions": [
-                    {"net_amount_cents": 40000},
-                    {"net_amount_cents": 1280},
-                ],
-            },
-        )
-        == "23 matches · €412.80 total"
-    )
-    assert (
-        tool_detail(
-            "search_transactions",
-            {"count": 60, "truncated": True, "transactions": []},
-        )
-        == "60 matches"
-    )
-    assert (
-        tool_detail(
-            "search_transactions",
-            {"count": 0, "truncated": False, "transactions": []},
-        )
-        == "No matches"
-    )
-    assert (
-        tool_detail(
-            "get_budget_context",
-            {
-                "budgets": [
-                    {"remaining_cents": 5000},
-                    {"remaining_cents": -2500},
-                ]
-            },
-        )
-        == "2 budgets · 1 over limit"
-    )
-    assert tool_detail("get_budget_context", {"budgets": []}) == ("No budgets set")
-    assert (
-        tool_detail(
-            "get_transaction_detail",
-            {"transaction": {"title": "Rewe", "net_amount_cents": 2345}},
-        )
-        == "Rewe · €23.45"
-    )
-    assert tool_detail("unknown_tool", {"ok": True}) is None
 
 
-def test_spending_analysis_uses_net_amounts_across_tools() -> None:
+def test_query_transactions_uses_net_amounts() -> None:
     with make_session() as session:
         ids = _seed_spending_fixture(session)
-        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
+        reader = _reader(session)
+        june = {"start": date(2026, 6, 1), "end": date(2026, 6, 30)}
 
-        overview = service.get_spending_overview(
-            start=date(2026, 6, 1), end=date(2026, 6, 30)
-        )
-        assert overview["ok"] is True
-        assert overview["totals"]["expense_cents"] == 49_000
-        assert overview["category_breakdown"][0]["name"] == "Groceries"
-        assert overview["category_breakdown"][0]["amount_cents"] == 31_000
-        assert overview["category_breakdown"][1]["name"] == "Free time"
-        assert overview["category_breakdown"][1]["amount_cents"] == 18_000
+        by_category = reader.query_transactions(**june, group_by="category")
+        assert by_category["totals"] == {
+            "count": 3,
+            "net_cents": 49_000,
+            "gross_cents": 61_000,
+            "reimbursed_cents": 12_000,
+        }
+        assert [
+            (row["label"], row["net_cents"], row["share_percent"])
+            for row in by_category["groups"]
+        ] == [("Groceries", 31_000, 63.3), ("Free time", 18_000, 36.7)]
 
-        results = service.search_transactions(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            sort="amount_desc",
-            limit=2,
-        )
-        assert results["ok"] is True
-        assert [row["title"] for row in results["transactions"]] == [
+        largest = reader.query_transactions(**june, sort="amount_desc", limit=2)
+        assert [row["title"] for row in largest["transactions"]] == [
             "Big grocery run",
             "Concert weekend",
         ]
-        assert results["transactions"][1]["id"] == ids["concert_id"]
-        assert results["transactions"][1]["net_amount_cents"] == 18_000
+        concert = largest["transactions"][1]
+        assert concert["id"] == ids["concert_id"]
+        assert (concert["net_cents"], concert["gross_cents"]) == (18_000, 30_000)
+        assert largest["next_offset"] == 2
 
-        fuzzy_results = service.search_transactions(
-            query="grocerry run",
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-        )
-        assert fuzzy_results["ok"] is True
-        assert [row["title"] for row in fuzzy_results["transactions"]] == [
-            "Big grocery run"
+        fuzzy = reader.query_transactions(**june, text="grocerry run")
+        assert [row["title"] for row in fuzzy["transactions"]] == ["Big grocery run"]
+
+        reimbursements = reader.query_transactions(**june, kind="reimbursement")
+        assert [row["title"] for row in reimbursements["transactions"]] == [
+            "Friend paid back ticket"
         ]
-
-        detail = service.get_transaction_detail(transaction_id=ids["reimbursement_id"])
-        assert detail["transaction"]["net_amount_cents"] == 12_000
-        assert (
-            detail["reimbursement_allocations"][0]["expense_transaction_id"]
-            == ids["concert_id"]
-        )
+        assert reader.query_transactions(**june, kind="income")["totals"]["count"] == 0
 
 
-def test_spending_analysis_compares_periods_and_reports_budget_context() -> None:
+def test_query_transactions_compares_groups_with_a_baseline() -> None:
     with make_session() as session:
-        ids = _seed_spending_fixture(session)
+        _seed_spending_fixture(session)
         category_service = CategoryService(session, user_id=1)
         transaction_service = TransactionService(session, user_id=1)
         for index in range(9):
@@ -345,44 +256,26 @@ def test_spending_analysis_compares_periods_and_reports_budget_context() -> None
                 txn_date=date(2026, 5, 10),
                 category_id=category.id,
             )
-        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
 
-        comparison = service.compare_spending_periods(
-            current_start=date(2026, 6, 1),
-            current_end=date(2026, 6, 30),
-            baseline_start=date(2026, 5, 1),
-            baseline_end=date(2026, 5, 31),
+        comparison = _reader(session).query_transactions(
+            start=date(2026, 6, 1),
+            end=date(2026, 6, 30),
+            group_by="category",
+            compare_start=date(2026, 5, 1),
+            compare_end=date(2026, 5, 31),
         )
-        assert comparison["totals"]["current_expense_cents"] == 49_000
-        assert comparison["totals"]["baseline_expense_cents"] == 28_500
-        assert comparison["category_deltas"][0]["name"] == "Free time"
-        assert comparison["category_deltas"][0]["delta_cents"] == 18_000
-        baseline_small = next(
-            row
-            for row in comparison["category_deltas"]
-            if row["name"] == "Baseline small 1"
-        )
-        assert baseline_small["current_amount_cents"] == 0
-        assert baseline_small["baseline_amount_cents"] == 100
 
-        budget_context = service.get_budget_context(year=2026, month=6)
-        groceries = next(
-            row
-            for row in budget_context["budgets"]
-            if row["scope_category_id"] == ids["groceries_id"]
-        )
-        leisure = next(
-            row
-            for row in budget_context["budgets"]
-            if row["scope_category_id"] == ids["leisure_id"]
-        )
-        assert groceries["spent_cents"] == 31_000
-        assert groceries["remaining_cents"] == 4_000
-        assert leisure["spent_cents"] == 18_000
-        assert leisure["remaining_cents"] == -6_000
+        assert comparison["baseline"]["totals"]["net_cents"] == 28_500
+        assert comparison["baseline"]["net_delta_cents"] == 20_500
+        groups = {row["label"]: row for row in comparison["groups"]}
+        assert comparison["groups"][0]["label"] == "Free time"
+        assert groups["Free time"]["delta_cents"] == 18_000
+        assert groups["Groceries"]["delta_cents"] == 7_000
+        assert groups["Baseline small 1"]["net_cents"] == 0
+        assert groups["Baseline small 1"]["baseline_net_cents"] == 100
 
 
-def test_breakdown_spending_tag_aggregates_beyond_search_page_limit() -> None:
+def test_query_transactions_groups_by_tag_title_and_time() -> None:
     with make_session() as session:
         snacks = CategoryService(session, user_id=1).create(
             CategoryIn(name="Snacks", type=TransactionType.expense, order=0)
@@ -391,120 +284,64 @@ def test_breakdown_spending_tag_aggregates_beyond_search_page_limit() -> None:
         for day in range(1, 31):
             _create_txn(
                 transaction_service,
-                title=f"Snack run {day}",
+                title="REWE" if day % 2 else "rewe ",
                 amount_cents=100,
                 txn_date=date(2026, 6, day),
                 category_id=snacks.id,
                 tags=["Snacks"],
             )
-            _create_txn(
-                transaction_service,
-                title=f"Second snack run {day}",
-                amount_cents=100,
-                txn_date=date(2026, 6, day),
-                category_id=snacks.id,
-                tags=["Snacks"],
-            )
-
-        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        breakdown = service.breakdown_spending(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            group_by="tag",
+        _create_txn(
+            transaction_service,
+            title="Kiosk",
+            amount_cents=250,
+            txn_date=date(2026, 6, 1),
+            category_id=snacks.id,
         )
+        reader = _reader(session)
+        june = {"start": date(2026, 6, 1), "end": date(2026, 6, 30)}
 
-        assert breakdown["ok"] is True
-        assert breakdown["transaction_count"] == 60
-        assert breakdown["candidate_truncated"] is False
-        assert breakdown["rows"] == [{"id": 1, "name": "Snacks", "amount_cents": 6_000}]
-
-
-def test_breakdown_spending_category_limit_is_not_dashboard_truncated() -> None:
-    with make_session() as session:
-        category_service = CategoryService(session, user_id=1)
-        transaction_service = TransactionService(session, user_id=1)
-        for index in range(10):
-            category = category_service.create(
-                CategoryIn(
-                    name=f"Category {index + 1}",
-                    type=TransactionType.expense,
-                    order=index,
-                )
-            )
-            _create_txn(
-                transaction_service,
-                title=f"Spend {index + 1}",
-                amount_cents=(index + 1) * 1_000,
-                txn_date=date(2026, 6, 1),
-                category_id=category.id,
-            )
-
-        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        breakdown = service.breakdown_spending(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            group_by="category",
-            limit=10,
-        )
-
-        assert breakdown["ok"] is True
-        assert len(breakdown["rows"]) == 10
-        assert breakdown["rows"][0]["name"] == "Category 10"
-        assert breakdown["rows"][-1]["name"] == "Category 1"
-
-
-def test_breakdown_spending_category_uses_sql_aggregation() -> None:
-    with make_session() as session:
-        ids = _seed_spending_fixture(session)
-        select_statements: list[str] = []
-
-        @event.listens_for(session.bind, "before_cursor_execute")
-        def capture_select(conn, cursor, statement, parameters, context, executemany):
-            if statement.lstrip().lower().startswith("select"):
-                select_statements.append(statement.lower())
-
-        service = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 27))
-        breakdown = service.breakdown_spending(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            group_by="category",
-            limit=10,
-        )
-
-        assert breakdown["ok"] is True
-        assert breakdown["transaction_count"] == 3
-        assert breakdown["candidate_truncated"] is False
-        assert breakdown["rows"] == [
-            {
-                "id": ids["groceries_id"],
-                "name": "Groceries",
-                "amount_cents": 31_000,
-                "percent": pytest.approx(63.26530612244898),
-            },
-            {
-                "id": ids["leisure_id"],
-                "name": "Free time",
-                "amount_cents": 18_000,
-                "percent": pytest.approx(36.734693877551024),
-            },
+        by_tag = reader.query_transactions(**june, group_by="tag")
+        assert [
+            (row["label"], row["count"], row["net_cents"]) for row in by_tag["groups"]
+        ] == [
+            ("Snacks", 30, 3_000),
+            ("No tag", 1, 250),
         ]
-        assert not any(
-            "select transactions.id, transactions.user_id" in statement
-            and "order by transactions.occurred_at desc" in statement
-            and "limit" in statement
-            for statement in select_statements
-        )
+
+        by_title = reader.query_transactions(**june, group_by="title")
+        assert [(row["count"], row["net_cents"]) for row in by_title["groups"]] == [
+            (30, 3_000),
+            (1, 250),
+        ]
+
+        by_week = reader.query_transactions(**june, group_by="week")
+        # 1 June 2026 is a Monday.
+        assert [row["key"] for row in by_week["groups"]] == [
+            "2026-06-01",
+            "2026-06-08",
+            "2026-06-15",
+            "2026-06-22",
+            "2026-06-29",
+        ]
+        assert by_week["groups"][0]["net_cents"] == 950
+
+        by_weekday = reader.query_transactions(**june, group_by="weekday")
+        assert [row["label"] for row in by_weekday["groups"]][:2] == [
+            "Monday",
+            "Tuesday",
+        ]
+        assert by_weekday["groups"][-1]["label"] == "Sunday"
+
+        months = reader.query_transactions(**june, group_by="month", limit=1)
+        assert [row["key"] for row in months["groups"]] == ["2026-06"]
 
 
-def test_search_transactions_amount_desc_finds_largest_beyond_candidate_window() -> (
-    None
-):
+def test_query_transactions_sorts_by_amount_across_all_matches() -> None:
     with make_session() as session:
         category = CategoryService(session, user_id=1).create(
             CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
         )
         transaction_service = TransactionService(session, user_id=1)
-        # 250 recent small expenses fill the date-ordered candidate window.
         for index in range(250):
             _create_txn(
                 transaction_service,
@@ -513,8 +350,6 @@ def test_search_transactions_amount_desc_finds_largest_beyond_candidate_window()
                 txn_date=date(2026, 6, 1),
                 category_id=category.id,
             )
-        # The single largest expense is the oldest, so a date-ordered candidate
-        # slice would drop it before the amount sort runs.
         _create_txn(
             transaction_service,
             title="Largest oldest",
@@ -523,13 +358,131 @@ def test_search_transactions_amount_desc_finds_largest_beyond_candidate_window()
             category_id=category.id,
         )
 
-        analysis = SpendingAnalysisService(session, user_id=1, today=date(2026, 6, 30))
-        result = analysis.search_transactions(sort="amount_desc", limit=1)
+        result = _reader(session).query_transactions(
+            start=date(2020, 1, 1), end=date(2026, 6, 30), sort="amount_desc", limit=1
+        )
 
-        assert result["ok"] is True
-        assert result["candidate_truncated"] is True
+        assert result["totals"]["count"] == 251
         assert [txn["title"] for txn in result["transactions"]] == ["Largest oldest"]
-        assert result["transactions"][0]["net_amount_cents"] == 500_000
+
+
+def test_query_transactions_rejects_bad_periods() -> None:
+    with make_session() as session:
+        reader = _reader(session)
+        backwards = reader.query_transactions(
+            start=date(2026, 6, 30), end=date(2026, 6, 1)
+        )
+        half_comparison = reader.query_transactions(
+            start=date(2026, 6, 1),
+            end=date(2026, 6, 30),
+            compare_start=date(2026, 5, 1),
+        )
+    assert backwards["ok"] is False
+    assert half_comparison["status"] == "invalid_comparison"
+
+
+def test_reader_reports_budgets_links_and_reimbursements() -> None:
+    with make_session() as session:
+        ids = _seed_spending_fixture(session)
+        salary = CategoryService(session, user_id=1).list_all()[2]
+        _create_txn(
+            TransactionService(session, user_id=1),
+            title="Deposit back",
+            amount_cents=5_000,
+            txn_date=date(2026, 6, 20),
+            category_id=salary.id,
+            txn_type=TransactionType.income,
+            is_reimbursement=True,
+        )
+        reader = _reader(session)
+
+        budgets = {
+            row["scope_category_id"]: row
+            for row in reader.get_budgets(year=2026, month=6)["budgets"]
+        }
+        assert budgets[ids["groceries_id"]]["remaining_cents"] == 4_000
+        assert budgets[ids["leisure_id"]]["remaining_cents"] == -6_000
+
+        reimbursement = reader.get_transaction(transaction_id=ids["reimbursement_id"])
+        assert (
+            reimbursement["transaction"]["allocated_to"][0]["transaction_id"]
+            == (ids["concert_id"])
+        )
+        concert = reader.get_transaction(transaction_id=ids["concert_id"])
+        assert concert["transaction"]["net_cents"] == 18_000
+        assert concert["transaction"]["reimbursed_by"][0]["amount_cents"] == 12_000
+
+        open_only = reader.list_reimbursements(
+            start=date(2026, 6, 1), end=date(2026, 6, 30), only_open=True
+        )
+        assert [
+            (row["title"], row["unallocated_cents"])
+            for row in open_only["reimbursements"]
+        ] == [("Deposit back", 5_000)]
+
+        reference = reader.reference()
+        assert "Today is Saturday, 2026-06-27." in reference
+        assert f"- {ids['groceries_id']}: Groceries, expense" in reference
+        assert ": Food" in reference
+
+        assert reader.list_recurring()["rules"] == []
+        assert reader.list_durable_purchases()["purchases"] == []
+        assert reader.get_balance_history(months=3)["ok"] is True
+        assert len(reader.get_forecast(horizon_months=3)["months"]) == 3
+
+
+def test_tool_labels_and_details_read_like_the_app() -> None:
+    june = {"start": "2026-06-01", "end": "2026-06-30"}
+    assert (
+        tool_label("query_transactions", {**june, "group_by": "category"})
+        == "Spending by category, Jun 2026"
+    )
+    assert (
+        tool_label(
+            "query_transactions",
+            {
+                **june,
+                "text": "rewe",
+                "compare_start": "2026-05-01",
+                "compare_end": "2026-05-31",
+            },
+        )
+        == "Spending matching “rewe”, Jun 2026 vs May 2026"
+    )
+    assert (
+        tool_label("query_transactions", {"start": "2026-06-03", "end": "2026-07-09"})
+        == "Spending, 3 Jun – 9 Jul 2026"
+    )
+    assert tool_label("query_transactions", {"start": "soon"}) == "Spending"
+    assert tool_label("get_budgets", {"year": 2026, "month": 6}) == "Budgets, Jun 2026"
+
+    assert (
+        tool_detail(
+            "query_transactions",
+            {
+                "totals": {"count": 2, "net_cents": 123_456},
+                "transactions": [],
+                "baseline": {"totals": {"net_cents": 99_900}},
+            },
+        )
+        == "2 transactions · 1.234,56 € vs 999,00 €"
+    )
+    assert (
+        tool_detail(
+            "query_transactions",
+            {
+                "totals": {"count": 5, "net_cents": 5},
+                "group_by": "title",
+                "groups": [{}, {}],
+                "more_groups": 1,
+            },
+        )
+        == "3 merchants · 0,05 €"
+    )
+    assert (
+        tool_detail("get_budgets", {"budgets": [{"remaining_cents": -1}]})
+        == "1 budget · 1 over"
+    )
 
 
 def _session_factory():
@@ -616,8 +569,8 @@ def test_assistant_route_streams_and_saves_a_turn(
             yield "Checking June."
             yield {
                 1: DeltaToolCall(
-                    name="search_transactions",
-                    json_args='{"sort": "amount_desc"}',
+                    name="query_transactions",
+                    json_args='{"start": "2026-06-01", "end": "2026-06-30"}',
                     tool_call_id="call-1",
                 )
             }
@@ -657,10 +610,10 @@ def test_assistant_route_streams_and_saves_a_turn(
     ]
     assert items[0]["text"] == "Look up June."
     assert items[1]["text"] == "Checking June."
-    assert items[2]["label"] == "Transaction search"
+    assert items[2]["label"] == "Spending, Jun 2026"
     assert items[2]["detail"] == "No matches"
     assert items[3]["text"] == answer
-    assert "Current date:" in seen_instructions[0]
+    assert "Today is" in seen_instructions[0]
 
     chat_id = events[0]["chat_id"]
     listed = api_client.get("/api/assistant/chats")
@@ -793,7 +746,7 @@ async def test_assistant_text_before_a_tool_call_is_a_note(
         if calls_tool:
             yield {
                 1: DeltaToolCall(
-                    name="get_budget_context",
+                    name="get_budgets",
                     json_args='{"year": 2026, "month": 6}',
                     tool_call_id="call-1",
                 )
@@ -912,7 +865,7 @@ async def test_assistant_dates_use_the_configured_timezone(
         get_settings.cache_clear()
 
     today = datetime.now(ZoneInfo("Etc/GMT-14")).date()
-    assert f"Current date: {today.isoformat()}." in seen_instructions[0]
+    assert f"{today.isoformat()}." in seen_instructions[0]
 
 
 def test_ai_usage_summary_average_cost_keeps_division_precision(
