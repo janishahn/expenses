@@ -590,31 +590,6 @@ test.describe("Transactions Page", () => {
       await expect(dialog.getByRole("button", { name: categoryName })).toBeVisible()
     })
 
-    test("keeps the dialog open and resets the entry with Add another", async ({ page, request }) => {
-      const token = await getCsrfToken(request)
-      await ensureCategory(request, token, "income", "E2E Add Another Income")
-      const title = `E2E Add another ${Date.now()}`
-
-      await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-      await page.getByRole("button", { name: "Add transaction", exact: true }).click()
-      const dialog = page.getByRole("dialog", { name: "Add transaction" })
-      await dialog.getByRole("radio", { name: "Income" }).click()
-      await dialog.getByRole("switch", { name: "Add another" }).click()
-      await dialog.getByLabel("Amount").fill("20")
-      await dialog.getByLabel("Title").fill(title)
-      await dialog.getByRole("button", { name: "Add transaction" }).click()
-
-      await expect(page.getByRole("status")).toContainText("Transaction added")
-      await expect(dialog).toBeVisible()
-      await expect(dialog.getByLabel("Amount")).toHaveValue("")
-      await expect(dialog.getByLabel("Title")).toHaveValue("")
-      await expect(dialog.getByRole("radio", { name: "Income" })).toBeChecked()
-
-      await dialog.getByRole("button", { name: "Cancel" }).click()
-      await expect(dialog).toBeHidden()
-      await expect(page.getByRole("listitem", { name: title })).toBeVisible()
-    })
-
     test("dismisses on an outside click", async ({ page }) => {
       await page.goto("/transactions")
       await page.getByRole("button", { name: "Add transaction", exact: true }).click()

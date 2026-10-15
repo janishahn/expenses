@@ -238,7 +238,6 @@ test.describe("Mobile interaction audit", () => {
     const addDialog = page.getByRole("dialog", { name: "Add transaction" })
     await expectTouchTargets([
       ["Add transaction Close", addDialog.getByRole("button", { name: "Close" })],
-      ["Add transaction Add another", addDialog.getByRole("switch", { name: "Add another" })],
     ])
     await capture(page, "add-transaction-dialog-targets.png")
     await page.keyboard.press("Escape")

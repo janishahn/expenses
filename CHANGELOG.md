@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.
+- The Add another switch in the web and iOS add-transaction forms. The form now closes after each add.
 
 ### Fixed
 - iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.

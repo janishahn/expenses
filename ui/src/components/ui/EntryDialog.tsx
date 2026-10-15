@@ -16,7 +16,6 @@ export function EntryDialog({
   onSubmit,
   pending = false,
   submitDisabled = false,
-  footerStart,
   error,
   children,
 }: {
@@ -31,8 +30,6 @@ export function EntryDialog({
   onSubmit: () => void
   pending?: boolean
   submitDisabled?: boolean
-  // Left side of the footer, such as the "Add another" switch.
-  footerStart?: ReactNode
   error?: string | null
   children: ReactNode
 }) {
@@ -52,7 +49,6 @@ export function EntryDialog({
       header={direction}
       footer={
         <>
-          {footerStart}
           <span className={s.sp} />
           <Button variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
             Cancel

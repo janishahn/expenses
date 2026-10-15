@@ -21,7 +21,6 @@ struct AddTransactionSheet: View {
     @State private var coordinate: CLLocationCoordinate2D?
     @State private var locating = false
     @State private var locationProvider = LocationProvider()
-    @State private var addAnother = false
     @State private var amountError: String?
     @State private var titleError: String?
     @State private var formError: String?
@@ -172,8 +171,6 @@ struct AddTransactionSheet: View {
                         .lineLimit(2...6)
                         .focused($focus, equals: .notes)
 
-                    Toggle("Add another", isOn: $addAnother)
-
                     if let formError {
                         FieldError(formError)
                     }
@@ -228,7 +225,7 @@ struct AddTransactionSheet: View {
                 presenting: failedReceipt
             ) { failed in
                 Button("Discard Receipt", role: .destructive) {
-                    finish()
+                    dismiss()
                 }
                 Button("Try Again") {
                     Task { await uploadReceipt(to: failed.transactionID) }
@@ -364,7 +361,7 @@ struct AddTransactionSheet: View {
         if receipt != nil {
             await uploadReceipt(to: id)
         } else {
-            finish()
+            dismiss()
         }
     }
 
@@ -375,34 +372,10 @@ struct AddTransactionSheet: View {
         pending = true
         defer { pending = false }
         if await model.uploadReceipt(receipt, transactionID: transactionID) {
-            finish()
+            dismiss()
         } else {
             failedReceipt = (transactionID, model.lastError?.message ?? "")
         }
-    }
-
-    private func finish() {
-        if addAnother {
-            reset()
-            focus = .amount
-        } else {
-            dismiss()
-        }
-    }
-
-    // The date, direction and location carry over to the next entry.
-    private func reset() {
-        amount = ""
-        title = ""
-        categoryID = nil
-        explicitTags = []
-        excludedScheduledTags = []
-        isReimbursement = false
-        notes = ""
-        receipt = nil
-        amountError = nil
-        titleError = nil
-        formError = nil
     }
 }
 

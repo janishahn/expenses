@@ -213,8 +213,8 @@ then chips for the remaining properties; a set chip shows its value with the
 one muted line below the chips. The footer holds Cancel and the ink create
 button named for the record ("Add transaction", "Add budget").
 
-Add transaction also shows template chips above the amount, Notes below the
-chips, and an "Add another" switch in the footer.
+Add transaction also shows template chips above the amount and Notes below the
+chips.
 
 ## Charts
 
