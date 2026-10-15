@@ -424,7 +424,9 @@ class LLMAssistantService:
             started_at=datetime.utcnow(),
         )
         self.session.add(job)
-        self.session.flush()
+        # Commit before the model call: a pending insert would hold SQLite's
+        # write lock, and every other writer, for the whole round trip.
+        self.session.commit()
         start = perf_counter()
         try:
             result = await runner.run(
@@ -443,7 +445,8 @@ class LLMAssistantService:
             else:
                 output = result
         except LLMDisabledError:
-            self.session.rollback()
+            self.session.delete(job)
+            self.session.commit()
             raise
         except Exception as exc:
             job.status = "failed"

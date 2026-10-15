@@ -112,12 +112,12 @@ function ReportBuilderPage() {
   const [file, setFile] = useState<GeneratedFile | null>(null)
 
   const categories = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories").then((response) => response.categories),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options").then((response) => response.categories),
   })
   const tags = useQuery({
-    queryKey: ["tags", "report-builder"],
-    queryFn: () => apiFetch<{ tags: ReportTag[] }>("/api/tags?period=all&include_archived=1"),
+    queryKey: ["tags", "options", "archived"],
+    queryFn: () => apiFetch<{ tags: ReportTag[] }>("/api/tags/options?include_archived=1"),
   })
   useEffect(() => {
     return () => {

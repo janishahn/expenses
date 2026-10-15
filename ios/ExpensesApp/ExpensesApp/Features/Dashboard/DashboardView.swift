@@ -11,6 +11,11 @@ struct DashboardView: View {
     @State private var excludedTagIDs: Set<Int> = []
     @State private var draftExcludedTagIDs: Set<Int> = []
     @State private var presentingFilters = false
+    // What last loaded in full and when, so coming back to the tab within a minute does
+    // not load it again. Edits on another device show after that minute.
+    @State private var loadedKey: String?
+    @State private var loadedBalanceRevision: Int?
+    @State private var loadedAt = Date.distantPast
 
     // An edit to a transaction reloads the charts with the summary.
     private var reloadKey: String {
@@ -204,16 +209,35 @@ struct DashboardView: View {
                 .presentationDetents([.medium, .large])
             }
             .task(id: model.ledgerRevision) {
+                let revision = model.ledgerRevision
+                guard revision != loadedBalanceRevision || !loadedRecently else {
+                    return
+                }
                 await model.loadDashboardBalance()
+                if !Task.isCancelled, case .success = model.dashboardBalanceHistory, case .success = model.dashboardForecast {
+                    loadedBalanceRevision = revision
+                }
             }
             .task(id: reloadKey) {
+                let key = reloadKey
+                guard key != loadedKey || !loadedRecently else {
+                    return
+                }
                 await loadPeriodData()
+                if !Task.isCancelled, model.lastError == nil, case .success = model.dashboardSpendingBands {
+                    loadedKey = key
+                    loadedAt = .now
+                }
             }
             .navigationDestination(for: Int.self) { id in
                 TransactionDetailView(transactionID: id)
             }
             .animation(.easeInOut(duration: 0.18), value: model.showsDashboardInitialLoading)
         }
+    }
+
+    private var loadedRecently: Bool {
+        loadedAt.timeIntervalSinceNow > -60
     }
 
     private var periodSubtitle: String {

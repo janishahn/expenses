@@ -71,12 +71,12 @@ function parseDefaultAmount(raw: string): number | null | "invalid" {
 
 function useTemplateData() {
   const categories = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
   const tags = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
   })
   return {
     categories: (categories.data?.categories ?? []).filter((category) => !category.archived_at),

@@ -22,7 +22,7 @@ import { useLocation, useOutletContext, useSearchParams } from "react-router-dom
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { TagsResponse, TransactionsResponse, TransactionsSummary } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
-import { dayLabel, dayNet, groupByDay, invalidateTransactionData, rowTitle } from "../app/transactions"
+import { dayLabel, dayNet, groupByDay, invalidateTransactionData, rowTitle, useSettledSearch } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -125,11 +125,14 @@ function TransactionsPage() {
     if (!canonical.get("period")) canonical.set("period", "all")
     return canonical
   }, [searchParams])
+  const settledSearch = useSettledSearch(searchQuery)
   const queryString = useMemo(() => {
     const params = new URLSearchParams(listParams)
+    if (settledSearch) params.set("q", settledSearch)
+    else params.delete("q")
     if (!params.get("page")) params.set("page", "1")
     return params.toString()
-  }, [listParams])
+  }, [listParams, settledSearch])
 
   useEffect(() => {
     if (!searchParams.has("exclude_tags") || (!searchParams.has("tag") && !searchParams.has("tags"))) return
@@ -154,8 +157,8 @@ function TransactionsPage() {
     queryFn: () => apiFetch<TransactionsResponse>(`/api/transactions?${queryString}`),
   })
   const { data: tagsData } = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
   })
   // Query-wide bulk edits trust only a count fetched for the current filters.
   const settled = isFetching || isPlaceholderData ? undefined : data
@@ -178,7 +181,7 @@ function TransactionsPage() {
       do {
         const pageParams = new URLSearchParams(params)
         pageParams.set("page", String(pages.length + 1))
-        pageParams.set("limit", "100")
+        pageParams.set("limit", "1000")
         pages.push(await apiFetch<TransactionsResponse>(`/api/transactions?${pageParams.toString()}`))
       } while (pages[pages.length - 1].has_more)
       return { ...pages[0], items: pages.flatMap((entry) => entry.items) }

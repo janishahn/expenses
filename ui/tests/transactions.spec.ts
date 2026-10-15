@@ -120,9 +120,9 @@ test.describe("Transactions Page", () => {
     let printPages = 0
     await page.route(/\/api\/transactions\?/, (route) => {
       const url = route.request().url()
-      if (!url.includes("limit=100")) return route.continue()
+      if (!url.includes("limit=1000")) return route.continue()
       printPages += 1
-      return route.continue({ url: url.replace("limit=100", "limit=2") })
+      return route.continue({ url: url.replace("limit=1000", "limit=2") })
     })
     await page.addInitScript(() => {
       window.print = () => {
@@ -868,7 +868,10 @@ test.describe("Transactions Page", () => {
     await sidebar.getByRole("link", { name: "Transactions", exact: true }).click()
     await sidebar.getByRole("link", { name: /^Uncategorized/ }).click()
     await expect(page.getByRole("heading", { name: "Uncategorized", level: 1 })).toBeVisible()
+    // A selection belongs to the search it was made on, so it waits for the search to apply.
+    const searched = page.waitForResponse((response) => response.url().includes(`q=${marker}`))
     await page.getByRole("searchbox", { name: "Search uncategorized transactions" }).fill(marker)
+    await searched
 
     for (const name of ["one", "two"]) {
       await page.getByRole("listitem", { name: `${marker} ${name}` }).hover()
