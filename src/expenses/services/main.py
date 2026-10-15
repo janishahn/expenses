@@ -2686,6 +2686,9 @@ class ReimbursementService:
                 ).where(
                     ReimbursementAllocation.user_id == self.user_id,
                     ReimbursementAllocation.expense_transaction_id == expense.id,
+                    ReimbursementAllocation.reimbursement_transaction_id.in_(
+                        [reimbursement.id for reimbursement, _ in rows]
+                    ),
                 )
             )
         }
