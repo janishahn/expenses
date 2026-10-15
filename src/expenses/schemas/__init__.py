@@ -733,6 +733,17 @@ class BankRowReopenIn(BaseModel):
     restore_amount_cents: Optional[int] = Field(None, ge=0)
 
 
+class BankRowsReopenItemIn(BaseModel):
+    row_id: int
+    expected_resolution: Literal["matched", "ignored"]
+    expected_transaction_id: Optional[int] = None
+
+
+class BankRowsReopenIn(BaseModel):
+    # An Undo of a bulk action; rows changed since are left as they are.
+    rows: list[BankRowsReopenItemIn] = Field(..., max_length=500)
+
+
 class BankAcceptSuggestionsIn(BaseModel):
     row_ids: list[int] = Field(..., max_length=500)
 

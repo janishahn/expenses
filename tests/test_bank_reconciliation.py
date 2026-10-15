@@ -836,6 +836,46 @@ def test_ignore_open_ignores_only_rows_to_review_in_the_account(
     assert api_client.get("/api/reconciliation/bank-rows").json()["total"] == 0
 
 
+def test_bulk_undo_reopens_only_rows_still_in_the_undone_outcome(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    _create_transaction(
+        api_client, csrf_headers, date="2026-05-04", amount_cents=1_200, title="Cafe"
+    )
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(
+            [
+                "06.05.2026;06.05.2026;Karte;Cafe;-12,00;EUR;",
+                "07.05.2026;07.05.2026;Karte;Amazon;-13,95;EUR;",
+            ]
+        ),
+    )
+    rows = _rows(api_client)
+    row_ids = _post(api_client, csrf_headers, "ignore-open", {}).json()["row_ids"]
+    # Cafe is matched after the bulk ignore, so its Undo leaves it matched.
+    _post(api_client, csrf_headers, f"{rows['Cafe']['id']}/reopen")
+    _post(api_client, csrf_headers, f"{rows['Cafe']['id']}/accept-suggestion")
+
+    response = _post(
+        api_client,
+        csrf_headers,
+        "reopen",
+        {
+            "rows": [
+                {"row_id": row_id, "expected_resolution": "ignored"}
+                for row_id in [*row_ids, 999_999]
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    after = _rows(api_client)
+    assert after["Amazon"]["resolution"] is None
+    assert after["Cafe"]["resolution"] == "matched"
+
+
 def test_foreign_rows_suggest_only_the_amount_entered_in_their_currency(
     api_client: TestClient, csrf_headers: dict[str, str], db_session
 ) -> None:

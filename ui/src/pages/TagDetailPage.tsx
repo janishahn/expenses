@@ -85,8 +85,8 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
   const { view, errors, setError, save } = useTagSave(tag)
   const { archive, restore, confirmDelete } = useTagLifecycle(tag, () => navigate("/tags", { replace: true }))
   const tags = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<{ tags: TagRecord[] }>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<{ tags: TagRecord[] }>("/api/tags/options"),
     enabled: merging,
   })
 

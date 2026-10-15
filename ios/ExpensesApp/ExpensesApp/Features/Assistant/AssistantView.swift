@@ -5,11 +5,8 @@ struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .subheadline) private var sendSize = 32.0
     @State private var input = ""
-    @FocusState private var inputFocused: Bool
     @State private var sendTick = 0
-    @State private var stopTick = 0
     @State private var viewportHeight: CGFloat = 0
     @State private var latestUserHeight: CGFloat = 0
     @State private var latestAnswerHeight: CGFloat = 0
@@ -71,7 +68,8 @@ struct AssistantView: View {
     private var conversation: some View {
         transcript
             .safeAreaBar(edge: .bottom) {
-                composer
+                AssistantComposer(input: $input, send: send)
+                    .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
             }
             .background(ExpensesBackground())
     }
@@ -150,7 +148,43 @@ struct AssistantView: View {
         .containerRelativeFrame(.vertical)
     }
 
-    private var composer: some View {
+    private var latestUserTurnID: Int? {
+        model.assistantTurns.last(where: { $0.role == .user })?.id
+    }
+
+    private var latestAssistantTurnID: Int? {
+        model.assistantTurns.last(where: { $0.role == .assistant })?.id
+    }
+
+    // Space to leave below the newest exchange so its question can sit at the top of the
+    // viewport. As the answer streams and grows, the reserve shrinks to keep the total near
+    // one screen; once the exchange is taller than the screen no reserve is needed.
+    private var bottomReserve: CGFloat {
+        guard viewportHeight > 0, latestUserTurnID != nil else { return 0 }
+        return max(0, viewportHeight - latestUserHeight - latestAnswerHeight)
+    }
+
+    private func send(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !model.isAssistantStreaming else {
+            return
+        }
+        sendTick += 1
+        model.sendAssistantMessage(text)
+        input = ""
+    }
+}
+
+/// The message field, in its own view so typing does not re-render the transcript.
+private struct AssistantComposer: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .subheadline) private var sendSize = 32.0
+    @Binding var input: String
+    let send: (String) -> Void
+    @FocusState private var inputFocused: Bool
+    @State private var stopTick = 0
+
+    var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Ask about your spending", text: $input, axis: .vertical)
                 .lineLimit(1...6)
@@ -180,7 +214,6 @@ struct AssistantView: View {
             .accessibilityLabel(model.isAssistantStreaming ? "Stop" : "Send")
             .accessibilityIdentifier(model.isAssistantStreaming ? "assistant.stop" : "assistant.send")
         }
-        .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .sensoryFeedback(.impact(flexibility: .rigid), trigger: stopTick)
         .padding(.leading, 16)
         .padding(.trailing, 6)
@@ -196,31 +229,6 @@ struct AssistantView: View {
 
     private var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isAssistantStreaming
-    }
-
-    private var latestUserTurnID: Int? {
-        model.assistantTurns.last(where: { $0.role == .user })?.id
-    }
-
-    private var latestAssistantTurnID: Int? {
-        model.assistantTurns.last(where: { $0.role == .assistant })?.id
-    }
-
-    // Space to leave below the newest exchange so its question can sit at the top of the
-    // viewport. As the answer streams and grows, the reserve shrinks to keep the total near
-    // one screen; once the exchange is taller than the screen no reserve is needed.
-    private var bottomReserve: CGFloat {
-        guard viewportHeight > 0, latestUserTurnID != nil else { return 0 }
-        return max(0, viewportHeight - latestUserHeight - latestAnswerHeight)
-    }
-
-    private func send(_ text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !model.isAssistantStreaming else {
-            return
-        }
-        sendTick += 1
-        model.sendAssistantMessage(text)
-        input = ""
     }
 }
 
@@ -264,6 +272,7 @@ private struct AssistantTurnView: View {
                 }
                 if !turn.content.isEmpty {
                     AssistantMarkdownText(content: shown(turn.content, amountsHidden: model.amountsHidden))
+                        .equatable()
                 } else if turn.isStreaming {
                     AssistantProgressLine(narration: shown(turn.progressNarration, amountsHidden: model.amountsHidden), tools: turn.tools)
                 }
@@ -491,7 +500,8 @@ private struct AssistantActivityDisclosure: View {
 /// turn into line breaks, which flattens multi-paragraph answers into one run and jams
 /// sentences together. Splitting into blocks first and parsing only inline syntax per
 /// block restores paragraph/list spacing while keeping bold, emphasis, code, and links.
-private struct AssistantMarkdownText: View {
+/// Equatable, so a turn whose text has not changed is not parsed again.
+private struct AssistantMarkdownText: View, Equatable {
     let content: String
 
     var body: some View {

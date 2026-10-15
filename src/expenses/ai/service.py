@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -424,7 +425,9 @@ class LLMAssistantService:
             started_at=datetime.utcnow(),
         )
         self.session.add(job)
-        self.session.flush()
+        # Commit before the model call: a pending insert would hold SQLite's
+        # write lock, and every other writer, for the whole round trip.
+        self.session.commit()
         start = perf_counter()
         try:
             result = await runner.run(
@@ -443,7 +446,24 @@ class LLMAssistantService:
             else:
                 output = result
         except LLMDisabledError:
-            self.session.rollback()
+            self.session.delete(job)
+            self.session.commit()
+            raise
+        except asyncio.CancelledError:
+            job.status = "failed"
+            job.error = "cancelled"
+            job.finished_at = datetime.utcnow()
+            job.duration_ms = int((perf_counter() - start) * 1000)
+            self.session.commit()
+            log_event(
+                logger,
+                logging.WARNING,
+                "llm_job_cancelled",
+                job_id=job.id,
+                feature=feature,
+                model=job.model,
+                duration_ms=job.duration_ms,
+            )
             raise
         except Exception as exc:
             job.status = "failed"
@@ -467,7 +487,9 @@ class LLMAssistantService:
         job.output_json = output.model_dump_json()
         job.finished_at = datetime.utcnow()
         job.duration_ms = int((perf_counter() - start) * 1000)
-        self.session.flush()
+        # The running row is already committed, so a caller that stores nothing
+        # must not roll this back to running.
+        self.session.commit()
         log_event(
             logger,
             logging.INFO,
@@ -503,6 +525,8 @@ class LLMAssistantService:
         )
 
     def _transaction_for_triage(self, transaction_id: int) -> Transaction | None:
+        # Reloads a row already in the session, so edits made during the model
+        # call reach the stale check.
         txn = self.session.scalar(
             select(Transaction)
             .options(joinedload(Transaction.category), joinedload(Transaction.tags))
@@ -511,6 +535,7 @@ class LLMAssistantService:
                 Transaction.id == transaction_id,
                 Transaction.deleted_at.is_(None),
             )
+            .execution_options(populate_existing=True)
         )
         if txn is None or txn.category is None:
             return None

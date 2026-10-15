@@ -105,12 +105,12 @@ export function CreateFromRowDialog({
   const [titleError, setTitleError] = useState<string | null>(null)
 
   const { data: categoriesData } = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
   const { data: tagsData } = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
   })
   const categories = (categoriesData?.categories ?? []).filter(
     (category) => category.archived_at === null && category.type === type
