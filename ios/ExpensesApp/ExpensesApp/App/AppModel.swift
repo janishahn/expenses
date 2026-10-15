@@ -77,6 +77,8 @@ final class AppModel {
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
+    // For an open expense: the reimbursements it can draw from.
+    var openReimbursements: OpenReimbursementsResponse?
     var reimbursementExpenseSearch: ReimbursementExpenseSearchResponse?
     var lastError: APIErrorInfo?
     var isLoading = false
@@ -893,10 +895,27 @@ final class AppModel {
             return
         }
         await runRequest {
-            selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+            try await refreshTransactionDetail(id: id, token: token, replacingShown: true)
             reimbursementExpenseSearch = nil
         }
+    }
+
+    /// Fetches the transaction's detail, its reimbursement links and, for an expense, the
+    /// reimbursements it can draw from. Unless `replacingShown`, a refresh that finishes
+    /// after another transaction opened leaves that one shown.
+    private func refreshTransactionDetail(id: Int, token: String, replacingShown: Bool = false) async throws {
+        let detail = try await apiClient.transactionDetail(id: id, token: token)
+        let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+        var open: OpenReimbursementsResponse?
+        if detail.type == "expense" {
+            open = try await apiClient.openReimbursements(expenseID: id, token: token)
+        }
+        guard replacingShown || selectedTransaction?.id == id else {
+            return
+        }
+        selectedTransaction = detail
+        transactionReimbursements = reimbursements
+        openReimbursements = open
     }
 
     func searchReimbursementExpenses(reimbursementID: Int, query: String) async {
@@ -1623,13 +1642,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
-            let detail = try await apiClient.transactionDetail(id: id, token: token)
-            let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
-            // A save can finish after another transaction opened; that one keeps its detail.
-            if selectedTransaction?.id == id {
-                selectedTransaction = detail
-                transactionReimbursements = reimbursements
-            }
+            try await refreshTransactionDetail(id: id, token: token)
             try await reloadLedger(token: token)
         }
     }
@@ -1677,10 +1690,10 @@ final class AppModel {
                 ),
                 token: token
             )
-            transactionReimbursements = try await apiClient.transactionReimbursements(
-                id: reimbursementID,
-                token: token
-            )
+            // Either side of the allocation can be the open transaction.
+            if let shownID = selectedTransaction?.id {
+                try await refreshTransactionDetail(id: shownID, token: token)
+            }
             reimbursementExpenseSearch = nil
             try await reloadPrimaryData()
         }
@@ -1692,10 +1705,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteReimbursementAllocation(id: allocationID, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(
-                id: transactionID,
-                token: token
-            )
+            try await refreshTransactionDetail(id: transactionID, token: token)
             try await reloadPrimaryData()
         }
     }
@@ -2069,6 +2079,7 @@ final class AppModel {
         recurringLoadState = .idle
         selectedTransaction = nil
         transactionReimbursements = nil
+        openReimbursements = nil
         reimbursementExpenseSearch = nil
     }
 

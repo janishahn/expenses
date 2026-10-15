@@ -1618,6 +1618,18 @@ class ReimbursementExpenseSearchResponseOut(BaseModel):
     results: list[ReimbursementExpenseSearchItemOut]
 
 
+class OpenReimbursementItemOut(BaseModel):
+    reimbursement: ReimbursementExpenseSummaryOut
+    remaining_to_allocate_cents: int
+    allocated_to_this_cents: int
+    suggested_amount_cents: int
+
+
+class OpenReimbursementsResponseOut(BaseModel):
+    remaining_unreimbursed_cents: int
+    results: list[OpenReimbursementItemOut]
+
+
 class AllocationIDOut(BaseModel):
     allocation_id: int
 

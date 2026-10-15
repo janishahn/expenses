@@ -199,6 +199,18 @@ export type ReimbursementExpenseSearchResponse = {
   results: ReimbursementExpenseSearchResult[]
 }
 
+export type OpenReimbursement = {
+  reimbursement: ReimbursementExpenseSearchResult["expense"]
+  remaining_to_allocate_cents: number
+  allocated_to_this_cents: number
+  suggested_amount_cents: number
+}
+
+export type OpenReimbursementsResponse = {
+  remaining_unreimbursed_cents: number
+  results: OpenReimbursement[]
+}
+
 export type BankReconciliationTransaction = {
   id: number
   date: string

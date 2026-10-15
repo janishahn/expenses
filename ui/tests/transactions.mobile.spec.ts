@@ -540,6 +540,61 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(row).toContainText(categoryName)
   })
 
+  test("allocates a reimbursement from the expense peek and tracks it as durable from More actions", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const title = `Mobile reimbursed ${stamp}`
+    const id = await seed(request, token, title, { amount_cents: 6000 })
+    const incomeCategory = await request.post("/api/categories", {
+      headers: { "X-CSRF-Token": token },
+      data: { name: `Mobile reimbursement source ${stamp}`, type: "income", order: 0 },
+    })
+    expect(incomeCategory.ok()).toBeTruthy()
+    const today = new Date().toISOString().slice(0, 10)
+    const reimbursementId = await createTransaction(request, token, {
+      date: today,
+      occurred_at: `${today}T13:00:00`,
+      type: "income",
+      amount_cents: 9000,
+      category_id: ((await incomeCategory.json()) as { id: number }).id,
+      title: `Mobile share ${stamp}`,
+      tags: [],
+      is_reimbursement: true,
+    })
+
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    await page.getByRole("listitem", { name: title }).tap()
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.getByRole("button", { name: /^Durable/ })).toHaveCount(0)
+    await peek.getByRole("button", { name: "Add reimbursement" }).tap()
+    const sheet = page.getByRole("dialog", { name: "Add reimbursement" })
+    await sheet.getByLabel("From").selectOption(String(reimbursementId))
+    await sheet.getByRole("button", { name: "⅓" }).tap()
+    await expect(sheet.getByRole("textbox", { name: "Amount" })).toHaveValue("20,00")
+    await sheet.getByRole("button", { name: "Allocate" }).tap()
+    await expect(sheet).toBeHidden()
+    await expect(peek.getByText("Net", { exact: true })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+
+    await peek.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitem", { name: "Track as durable…" }).tap()
+    await page.getByRole("dialog", { name: "Durable purchase" }).getByRole("button", { name: "Track" }).tap()
+    await expect(peek.getByRole("button", { name: /^Durable / })).toBeVisible()
+
+    await expect
+      .poll(async () => {
+        const saved = (await (await request.get(`/api/transactions/${id}`)).json()) as {
+          reimbursed_total_cents: number
+          durable_purchase: object | null
+        }
+        return [saved.reimbursed_total_cents, saved.durable_purchase !== null]
+      })
+      .toEqual([2000, true])
+  })
+
   test("deletes a transaction from the peek menu and restores it with Undo", async ({
     page,
     request,

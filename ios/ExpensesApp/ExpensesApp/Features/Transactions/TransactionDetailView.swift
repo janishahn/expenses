@@ -97,6 +97,11 @@ struct TransactionDetailView: View {
             if transaction != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        if transaction?.type == "expense", transaction?.durablePurchase == nil {
+                            Button("Track as Durable…", systemImage: "shippingbox") {
+                                sheet = .durable
+                            }
+                        }
                         Button("Copy Link", systemImage: "link") {
                             let base = model.baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                             UIPasteboard.general.string = "\(base)/transactions/\(transactionID)"
@@ -311,11 +316,10 @@ struct TransactionDetailView: View {
             .tint(.primary)
             .fieldError(saves.errors[.location])
 
+            if transaction.type == "expense" {
+                ReimbursedRow(transaction: transaction)
+            }
             if transaction.type == "expense" && transaction.reimbursedTotalCents > 0 {
-                LabeledContent("Reimbursed") {
-                    AmountText(transaction.reimbursedTotalCents, signed: true)
-                        .foregroundStyle(ExpensesTheme.income(for: scheme))
-                }
                 LabeledContent {
                     AmountText(transaction.netAmountCents)
                         .fontWeight(.semibold)
@@ -335,23 +339,20 @@ struct TransactionDetailView: View {
                 }
             }
 
-            if shown.type == .expense {
+            // Tracking starts from ⋯, so the row shows only once tracked.
+            if shown.type == .expense, let durable = transaction.durablePurchase {
                 Button {
                     sheet = .durable
                 } label: {
                     LabeledContent("Durable") {
-                        if let durable = transaction.durablePurchase {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    AmountText(DurableSheet.perDay(transaction.amountCents, days: durable.expectedLifespanDays))
-                                    Text("per day")
-                                }
-                                .foregroundStyle(.primary)
-                                Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(AppFormatters.localDay(durable.acquiredOn)))")
-                                    .font(.footnote)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 4) {
+                                AmountText(DurableSheet.perDay(transaction.amountCents, days: durable.expectedLifespanDays))
+                                Text("per day")
                             }
-                        } else {
-                            Text("Not tracked")
+                            .foregroundStyle(.primary)
+                            Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(AppFormatters.localDay(durable.acquiredOn)))")
+                                .font(.footnote)
                         }
                     }
                 }
@@ -555,13 +556,8 @@ struct TransactionDetailView: View {
     }
 
     private func removeAllocation(_ allocationID: Int) async {
-        guard await model.deleteReimbursementAllocation(allocationID, transactionID: transactionID) else {
+        if !(await model.deleteReimbursementAllocation(allocationID, transactionID: transactionID)) {
             actionError = model.lastError?.message ?? "Unable to remove the allocation."
-            return
-        }
-        // An expense's reimbursed total and net come with the transaction.
-        if transaction?.type == "expense" {
-            await model.loadTransactionDetail(id: transactionID)
         }
     }
 
@@ -1036,12 +1032,13 @@ private struct AllocationSearchSection: View {
                         }
                     } trailing: {
                         Menu("Allocate") {
-                            allocateButton("Remaining", cents: result.allocatedToThisCents + result.suggestedAmountCents, to: result)
-                            allocateButton("Half", cents: Int((Double(result.expense.amountCents) / 2).rounded()), to: result)
-                            allocateButton("Third", cents: Int((Double(result.expense.amountCents) / 3).rounded()), to: result)
-                            Divider()
-                            Button("Other Amount…") {
-                                amount = AppFormatters.amountInput(result.suggestedAmountCents)
+                            AllocationAmountItems(
+                                expenseCents: result.expense.amountCents,
+                                maxCents: result.allocatedToThisCents + result.suggestedAmountCents
+                            ) { cents in
+                                Task { await allocate(result, cents: cents) }
+                            } other: {
+                                amount = AppFormatters.amountInput(result.allocatedToThisCents + result.suggestedAmountCents)
                                 allocating = result
                             }
                         }
@@ -1064,22 +1061,114 @@ private struct AllocationSearchSection: View {
         )
     }
 
-    /// Saving replaces this expense's allocation, so the most it can hold is what it has plus what is left.
-    private func allocateButton(_ title: String, cents: Int, to result: ReimbursementExpenseSearchItem) -> some View {
-        Button {
-            Task { await allocate(result, cents: cents) }
-        } label: {
-            Text(title)
-            Text(model.amountString(cents))
-        }
-        .disabled(cents > result.allocatedToThisCents + result.suggestedAmountCents)
-    }
-
     private func allocate(_ result: ReimbursementExpenseSearchItem, cents: Int) async {
         error = nil
         if await model.saveReimbursementAllocation(reimbursementID: transactionID, expenseID: result.expense.id, amountCents: cents) {
             await search()
         } else {
+            error = model.lastError?.message ?? "Unable to save allocation."
+        }
+    }
+}
+
+/// Remaining, Half and Third of the expense, then Other Amount…. Saving replaces the pair's
+/// allocation, so the most it can hold is what it has plus what is left.
+private struct AllocationAmountItems: View {
+    @Environment(AppModel.self) private var model
+
+    let expenseCents: Int
+    let maxCents: Int
+    let allocate: (Int) -> Void
+    let other: () -> Void
+
+    var body: some View {
+        item("Remaining", cents: maxCents)
+        item("Half", cents: Int((Double(expenseCents) / 2).rounded()))
+        item("Third", cents: Int((Double(expenseCents) / 3).rounded()))
+        Divider()
+        Button("Other Amount…", action: other)
+    }
+
+    private func item(_ title: String, cents: Int) -> some View {
+        Button {
+            allocate(cents)
+        } label: {
+            Text(title)
+            Text(model.amountString(cents))
+        }
+        .disabled(cents > maxCents)
+    }
+}
+
+/// The expense's reimbursed total. Its menu allocates from a reimbursement with money left.
+private struct ReimbursedRow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    let transaction: TransactionDetail
+
+    @State private var allocating: OpenReimbursement?
+    @State private var amount = ""
+    @State private var error: String?
+
+    var body: some View {
+        Menu {
+            let open = model.openReimbursements?.results ?? []
+            if open.isEmpty {
+                Text("No reimbursements left to allocate")
+            }
+            ForEach(open) { entry in
+                Menu {
+                    AllocationAmountItems(
+                        expenseCents: transaction.amountCents,
+                        maxCents: entry.allocatedToThisCents + entry.suggestedAmountCents
+                    ) { cents in
+                        Task { await allocate(entry, cents: cents) }
+                    } other: {
+                        amount = AppFormatters.amountInput(entry.allocatedToThisCents + entry.suggestedAmountCents)
+                        allocating = entry
+                    }
+                } label: {
+                    Text(entry.reimbursement.title ?? "Reimbursement")
+                    Text("\(AppFormatters.shortDay(AppFormatters.localDay(entry.reimbursement.date))) · \(model.amountString(entry.remainingToAllocateCents)) left")
+                }
+                .disabled(entry.suggestedAmountCents <= 0)
+            }
+        } label: {
+            LabeledContent("Reimbursed") {
+                if transaction.reimbursedTotalCents > 0 {
+                    AmountText(transaction.reimbursedTotalCents, signed: true)
+                        .foregroundStyle(ExpensesTheme.income(for: scheme))
+                } else {
+                    Text("None")
+                }
+            }
+        }
+        .tint(.primary)
+        .fieldError(error)
+        .alert(
+            "Allocate from \(allocating?.reimbursement.title ?? "reimbursement")",
+            isPresented: Binding(get: { allocating != nil }, set: { if !$0 { allocating = nil } }),
+            presenting: allocating
+        ) { entry in
+            TextField("Amount", text: $amount)
+                .keyboardType(.decimalPad)
+            Button("Cancel", role: .cancel) {}
+            Button("Allocate") {
+                if let cents = AppFormatters.parseAmountCents(amount), cents > 0 {
+                    Task { await allocate(entry, cents: cents) }
+                } else {
+                    error = "Enter a valid amount."
+                }
+            }
+        } message: { entry in
+            Text("\(model.amountString(entry.remainingToAllocateCents)) left")
+        }
+    }
+
+    private func allocate(_ entry: OpenReimbursement, cents: Int) async {
+        error = nil
+        if !(await model.saveReimbursementAllocation(reimbursementID: entry.reimbursement.id, expenseID: transaction.id, amountCents: cents)) {
             error = model.lastError?.message ?? "Unable to save allocation."
         }
     }

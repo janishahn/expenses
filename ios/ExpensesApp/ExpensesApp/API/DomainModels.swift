@@ -1492,6 +1492,32 @@ struct ReimbursementExpenseSearchResponse: Codable, Equatable {
     let results: [ReimbursementExpenseSearchItem]
 }
 
+/// A reimbursement with money left that the expense can draw from.
+struct OpenReimbursement: Codable, Equatable, Identifiable {
+    var id: Int { reimbursement.id }
+    let reimbursement: ReimbursementExpenseSummary
+    let remainingToAllocateCents: Int
+    let allocatedToThisCents: Int
+    let suggestedAmountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case reimbursement
+        case remainingToAllocateCents = "remaining_to_allocate_cents"
+        case allocatedToThisCents = "allocated_to_this_cents"
+        case suggestedAmountCents = "suggested_amount_cents"
+    }
+}
+
+struct OpenReimbursementsResponse: Codable, Equatable {
+    let remainingUnreimbursedCents: Int
+    let results: [OpenReimbursement]
+
+    enum CodingKeys: String, CodingKey {
+        case remainingUnreimbursedCents = "remaining_unreimbursed_cents"
+        case results
+    }
+}
+
 struct ReimbursementAllocationRequest: Codable, Equatable {
     let expenseTransactionID: Int
     let amountCents: Int

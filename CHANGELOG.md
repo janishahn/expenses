@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Print the web Transactions ledger from ⋯ › Print… or with Cmd+P (Ctrl+P on Windows and Linux). The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
 - On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
 - On iOS, a reimbursement's Allocate button opens a menu with the remaining amount, half, and a third of the expense, like the web's ½ and ⅓ buttons. Pick one to allocate it without typing; Other Amount… opens the amount field as before.
+- Allocate a reimbursement from the expense it pays back. On the web, the expense's Reimbursed property has a + that picks a reimbursement with money left and an amount, with ½ and ⅓. On iOS, tap Reimbursed to pick a reimbursement, then Remaining, Half, Third, or Other Amount…. Reimbursements with money left are listed newest first, up to 10, by the new `GET /api/transactions/{id}/open-reimbursements`.
 
 ### Changed
 - Redesigned the iOS app to match the web redesign in light and dark. Dashboard, Transactions, Budgets, and Insights are tabs; More lists Forecast, Uncategorized, the Manage screens, the Tools, Settings, and Admin. Every screen takes the web page's content: transaction and Manage details save each field as you edit it, Uncategorized accepts or rejects suggested categories, Trash restores or deletes in bulk, Budgets steps through months with pace, Insights shades overspent months and shows the month grids, daily calendar, and budget history, Reconcile reviews statement rows in suggested, several-match, and no-match groups with ignore reasons, Ignore Remaining Rows, and a Resolved view, Settings and Admin have the web's sections, and the Assistant lists each tool step with its result. Without a stored session the app opens on one sign-in screen.
@@ -21,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hide amounts on iOS covers every amount in the app, including Assistant answers, and blurs amounts instead of drawing gray boxes.
 - iOS CSV export moves from Reports to Settings > Import and Export, next to the portable archive. Reports builds the web's report, including category and tag scope, and opens the PDF in Quick Look.
 - The redesigned iOS app needs a 0.7.1 or later server.
+- An expense's Durable property shows only while it is tracked. Start tracking from ⋯ › Track as durable… on the web, or ⋯ › Track as Durable… on iOS.
+- The amount a reimbursement suggests for an expense it already pays back now includes what is allocated there, because saving replaces that allocation.
 
 ### Removed
 - The iOS AI triage queue for uncategorized transactions, and the iOS Insights flow, rings, durables, and movement views.

@@ -247,6 +247,10 @@ struct ExpensesAPIClient {
         try await request(path: "/api/transactions/\(id)/reimbursements", bearerToken: token)
     }
 
+    func openReimbursements(expenseID: Int, token: String) async throws -> OpenReimbursementsResponse {
+        try await request(path: "/api/transactions/\(expenseID)/open-reimbursements", bearerToken: token)
+    }
+
     func searchReimbursementExpenses(
         reimbursementID: Int,
         query: String,
