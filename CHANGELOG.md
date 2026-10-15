@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry.
-- Print the web Transactions ledger from ⋯ › Print… or with Cmd+P. The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
+- When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry, and so does a proxy's 502 or 504 for one request while the server itself still answers.
+- Print the web Transactions ledger from ⋯ › Print… or with Cmd+P (Ctrl+P on Windows and Linux). The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
 - On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
 
 ### Changed
@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
 - Canceling Face ID on the iOS lock screen no longer starts Face ID again right away.
+- The web Budgets Annual band no longer counts spending and limits twice when an overall annual budget sits next to category budgets. With an overall annual budget, the band shows its figures.
+- iOS searches and account labels that contain + no longer reach the server with a space in its place.
+- The iOS app no longer keeps server responses, such as receipt images, in its disk cache.
 - Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry.
 
 ## [0.7.1] - 2026-10-14

@@ -59,5 +59,8 @@ export function isActive(to: string, pathname: string): boolean {
 // The navigation label of the page at a path, for a page that failed before it could show its title.
 export function navLabel(pathname: string): string | undefined {
   if (pathname.startsWith(UNCATEGORIZED)) return "Uncategorized"
+  if (pathname.startsWith("/transactions/deleted")) return "Trash"
+  if (pathname.startsWith("/settings")) return "Settings"
+  if (pathname.startsWith("/admin")) return "Admin"
   return [...PRIMARY, ...GROUPS.flatMap((group) => group.items)].find((item) => isActive(item.to, pathname))?.label
 }

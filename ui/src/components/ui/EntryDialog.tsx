@@ -49,7 +49,6 @@ export function EntryDialog({
       header={direction}
       footer={
         <>
-          <span className={s.sp} />
           <Button variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

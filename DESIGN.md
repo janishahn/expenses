@@ -486,7 +486,8 @@ changes and drop movement.
 `CategoryGlyph`, `SuggestionBox`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
-`Dialog` variant; loading and failed pages are `Panel` variants. A visual difference is a variant on the
+`Dialog` variant; loading and failed pages are `Panel` variants, and a failed page
+shows `ServerReceipt` while the server does not answer. A visual difference is a variant on the
 primitive, never a page-local class. A new primitive requires a
 change to this document.
 

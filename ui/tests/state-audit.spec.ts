@@ -147,6 +147,25 @@ test.describe("State audit", () => {
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
 
+  test("a gateway error shows the receipt only while the server does not answer", async ({
+    page,
+  }) => {
+    await useAuditTheme(page, "light")
+    // A proxy timing out one request while the server answers everything else.
+    await page.route("**/api/rules", (route) => route.fulfill({ status: 504 }))
+    await page.goto("/rules")
+    await expect(page.getByRole("alert")).toHaveText("Unable to load rules.")
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+
+    // A proxy reporting the whole app as down.
+    await page.route("**/api/**", (route) => route.fulfill({ status: 502 }))
+    await page
+      .getByRole("complementary", { name: "Application navigation" })
+      .getByRole("link", { name: "Recurring", exact: true })
+      .click()
+    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
+  })
+
   test("a page whose code cannot load while the server is down reloads by itself", async ({
     page,
   }) => {

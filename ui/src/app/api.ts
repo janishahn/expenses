@@ -19,10 +19,12 @@ export class ApiError extends Error {
   }
 }
 
-// Whether the last API request got no answer: a network failure, or a proxy such as
-// Tailscale Serve reporting the app as down (the app itself sends 503, never 502 or 504).
+// Whether the server is down: the last API request got no answer, or a proxy such as
+// Tailscale Serve answered 502 or 504 and the server does not answer a probe either. A proxy
+// also answers 504 when one slow request times out, and the app sends 502s of its own.
 // Any other response, errors included, means the server answered.
 const PROXY_DOWN_STATUSES = new Set([502, 504])
+const PROBE_PATH = "/api/auth/bootstrap-status"
 let serverUnreachable = false
 const reachabilityListeners = new Set<() => void>()
 
@@ -39,6 +41,12 @@ export function isServerUnreachable(): boolean {
 export function subscribeServerReachability(listener: () => void): () => void {
   reachabilityListeners.add(listener)
   return () => reachabilityListeners.delete(listener)
+}
+
+// Asks the server whether it is up. Only whether it answered matters, not what it answered.
+export async function serverAnswers(): Promise<boolean> {
+  await apiFetch(PROBE_PATH).catch(() => null)
+  return !serverUnreachable
 }
 
 export function isApiErrorStatus(error: unknown, status: number): boolean {
@@ -161,7 +169,9 @@ async function apiRequest<T>(
       if (error instanceof TypeError) setServerUnreachable(true)
       throw error
     }
-    setServerUnreachable(PROXY_DOWN_STATUSES.has(response.status))
+    if (!PROXY_DOWN_STATUSES.has(response.status)) setServerUnreachable(false)
+    else if (path === PROBE_PATH) setServerUnreachable(true)
+    else await serverAnswers()
     if (response.ok) {
       return parse(response)
     }

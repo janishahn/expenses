@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import clsx from "clsx"
-import { apiFetch, isServerUnreachable } from "../../app/api"
+import { serverAnswers } from "../../app/api"
+import { currentLocalDateTime, occurredLabel } from "../../app/transactions"
 import { Button } from "./Button"
 import s from "./kit.module.css"
 
-const PRINTED_AT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
-const ANSWERED_AT = new Intl.DateTimeFormat(undefined, { timeStyle: "short" })
 const FIRST_RETRY_MS = 2_000
 const MAX_RETRY_MS = 30_000
 const MAX_DOTS = 12
@@ -33,9 +32,10 @@ function feedFrames(from: number, to: number, steps: number, end = 1): Keyframe[
 // restarts after an update. A receipt prints a dot for each retry (2 s, 4 s, 8 s, up to 30 s).
 // When the server answers, it prints BACK ONLINE and tears off, then `onAnswered` reloads the page's data.
 export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
-  const [printedAt] = useState(() => new Date())
+  const [printedAt] = useState(() => occurredLabel(currentLocalDateTime()))
   const [attempts, setAttempts] = useState(0)
-  const [answeredAt, setAnsweredAt] = useState<Date | null>(null)
+  // "14:20", once the server answers.
+  const [answeredAt, setAnsweredAt] = useState<string | null>(null)
   const [torn, setTorn] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const paperRef = useRef<HTMLDivElement>(null)
@@ -44,13 +44,10 @@ export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
   const waitOffset = useRef(0)
 
   const retry = useCallback(() => {
-    void apiFetch("/api/auth/bootstrap-status")
-      // Only whether the server answered matters here, not what it answered.
-      .catch(() => null)
-      .then(() => {
-        if (isServerUnreachable()) setAttempts((count) => count + 1)
-        else setAnsweredAt(new Date())
-      })
+    void serverAnswers().then((answers) => {
+      if (answers) setAnsweredAt(currentLocalDateTime().slice(11, 16))
+      else setAttempts((count) => count + 1)
+    })
   }, [])
 
   useLayoutEffect(() => {
@@ -102,7 +99,7 @@ export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
         <div className={s.receiptShadow}>
           <div ref={paperRef} className={s.receiptPaper}>
             <p className={s.receiptHead}>EXPENSES</p>
-            <p className={s.receiptSub}>{PRINTED_AT.format(printedAt)}</p>
+            <p className={s.receiptSub}>{printedAt}</p>
             <div className={s.receiptRule} />
             <p className={s.receiptLine}>NO ANSWER</p>
             <p className={s.receiptSub}>Trying again</p>
@@ -114,7 +111,7 @@ export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
             <div ref={backRef}>
               <div className={s.receiptRule} />
               <p className={s.receiptLine}>BACK ONLINE</p>
-              <p className={s.receiptSub}>{answeredAt ? ANSWERED_AT.format(answeredAt) : "\u00a0"}</p>
+              <p className={s.receiptSub}>{answeredAt ?? "\u00a0"}</p>
             </div>
           </div>
         </div>

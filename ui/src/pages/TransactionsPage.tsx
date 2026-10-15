@@ -20,9 +20,9 @@ import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useLocation, useOutletContext, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import type { TagsResponse, TransactionListItem, TransactionsResponse, TransactionsSummary } from "../app/api-types"
+import type { TagsResponse, TransactionsResponse, TransactionsSummary } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
-import { dayLabel, dayNet, invalidateTransactionData } from "../app/transactions"
+import { dayLabel, dayNet, groupByDay, invalidateTransactionData, rowTitle } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -88,15 +88,12 @@ const ORIGINS = {
   digest: { label: "Digest", to: "/digest" },
 }
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
+const MAC = navigator.userAgent.includes("Mac")
 
 const TAG_PATCH_COPY: Record<TagPatchMode, { title: string; verb: string }> = {
   add: { title: "Add tags", verb: "Add tags to" },
   remove: { title: "Remove tags", verb: "Remove tags from" },
   replace: { title: "Replace tags", verb: "Replace tags on" },
-}
-
-function rowTitle(row: TransactionListItem): string {
-  return row.title || row.category?.name || "Untitled"
 }
 
 function countLabel(count: number): string {
@@ -197,16 +194,20 @@ function TransactionsPage() {
       showToast({ message: getApiErrorMessage(failure, "Unable to prepare the printout.") })
     }
   }, [listParams])
-  // Cmd+P prints the whole ledger rather than the screen.
+  // Cmd+P (Ctrl+P off the Mac, where Ctrl+P moves the text cursor) prints the whole ledger
+  // rather than the screen, once there is a ledger to print.
+  const printable = !error && (data?.total ?? 0) > 0
   useEffect(() => {
+    if (!printable) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "p" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      const command = MAC ? event.metaKey : event.ctrlKey
+      if (event.key.toLowerCase() !== "p" || !command || event.altKey || event.shiftKey) return
       event.preventDefault()
       if (printout === null) void startPrint()
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [printout, startPrint])
+  }, [printable, printout, startPrint])
 
   if (isLoading) {
     return <PanelLoading title="Transactions" label="Loading transactions…" />
@@ -379,12 +380,7 @@ function TransactionsPage() {
 
   // Rows by day. A band at a page edge may continue on the next or previous page, so it
   // shows no net rather than a partial one.
-  const groups: Array<{ date: string; rows: TransactionListItem[] }> = []
-  for (const row of items) {
-    const last = groups[groups.length - 1]
-    if (last && last.date === row.date) last.rows.push(row)
-    else groups.push({ date: row.date, rows: [row] })
-  }
+  const groups = groupByDay(items)
   const bandNet = (index: number): ReactNode => {
     if ((index === 0 && page > 1) || (index === groups.length - 1 && has_more)) return null
     return <Amount cents={dayNet(groups[index].rows)} kind="signed" />

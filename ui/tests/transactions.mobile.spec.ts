@@ -105,6 +105,38 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(menu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
   })
 
+  test("prints the filtered ledger from More actions", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const marker = `Mobile print ${Date.now()}`
+    await seed(request, token, `${marker} one`)
+    await seed(request, token, `${marker} two`)
+    await page.addInitScript(() => {
+      window.print = () => {
+        document.body.dataset.printed = String(Number(document.body.dataset.printed ?? 0) + 1)
+      }
+    })
+    const print = async () => {
+      await page.getByRole("button", { name: "More actions" }).tap()
+      await page.getByRole("dialog", { name: "More actions" }).getByRole("menuitem", { name: "Print…" }).tap()
+    }
+
+    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
+    await print()
+    await expect(page.locator("body")).toHaveAttribute("data-printed", "1")
+
+    await page.emulateMedia({ media: "print" })
+    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden()
+    const ledger = page.getByRole("table")
+    for (const name of ["one", "two"]) await expect(ledger).toContainText(`${marker} ${name}`)
+    await expect(page.getByRole("term").filter({ hasText: "Spent" }).locator("..")).toContainText("24,68 €")
+
+    await page.evaluate(() => window.dispatchEvent(new Event("afterprint")))
+    await expect(ledger).toHaveCount(0)
+    await page.emulateMedia({ media: "screen" })
+    await print()
+    await expect(page.locator("body")).toHaveAttribute("data-printed", "2")
+  })
+
   test("sets type, category and tags in the Filter sheet and removes them again", async ({
     page,
     request,

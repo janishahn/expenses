@@ -148,6 +148,21 @@ export function currentLocalDateTime(): string {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 
+export function rowTitle(row: TransactionListItem): string {
+  return row.title || row.category?.name || "Untitled"
+}
+
+// Runs of consecutive rows that share a date, in list order.
+export function groupByDay(rows: TransactionListItem[]): Array<{ date: string; rows: TransactionListItem[] }> {
+  const days: Array<{ date: string; rows: TransactionListItem[] }> = []
+  for (const row of rows) {
+    const last = days[days.length - 1]
+    if (last && last.date === row.date) last.rows.push(row)
+    else days.push({ date: row.date, rows: [row] })
+  }
+  return days
+}
+
 // A day's net with the summary's rules: income that is not a reimbursement, minus expenses
 // after their reimbursements.
 export function dayNet(rows: TransactionListItem[]): number {

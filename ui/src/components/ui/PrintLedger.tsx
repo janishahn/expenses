@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import type { TransactionListItem, TransactionsResponse, TransactionsSummary } from "../../app/api-types"
+import type { TransactionsResponse, TransactionsSummary } from "../../app/api-types"
 import { formatAmountPrivate, formatDateRange } from "../../app/format"
-import { dayLabel, dayNet } from "../../app/transactions"
+import { currentLocalDateTime, dayLabel, dayNet, groupByDay, occurredLabel, rowTitle } from "../../app/transactions"
 import { categoryColor } from "./tokens"
 import s from "./kit.module.css"
-
-const PRINTED_AT = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" })
 
 // The Transactions ledger on paper: every row of `list`, then the server's totals for the
 // same period and filters. It shows only in print, opens the print dialog when it mounts,
@@ -20,7 +18,7 @@ export function PrintLedger({
   summary: TransactionsSummary
   onDone: () => void
 }) {
-  const [printedAt] = useState(() => PRINTED_AT.format(new Date()))
+  const [printedAt] = useState(() => occurredLabel(currentLocalDateTime()))
   const period = list.period.slug === "all" ? "All time" : formatDateRange(list.period.start, list.period.end)
 
   useEffect(() => {
@@ -49,13 +47,6 @@ export function PrintLedger({
     .filter(Boolean)
     .join(" · ")
 
-  const days: Array<{ date: string; rows: TransactionListItem[] }> = []
-  for (const row of list.items) {
-    const last = days[days.length - 1]
-    if (last && last.date === row.date) last.rows.push(row)
-    else days.push({ date: row.date, rows: [row] })
-  }
-
   return createPortal(
     <div className={s.print}>
       <div className={s.printMast}>
@@ -73,8 +64,8 @@ export function PrintLedger({
             <th>Amount</th>
           </tr>
         </thead>
-        {days.map((day) => (
-          <tbody key={day.date}>
+        {groupByDay(list.items).map((day, index) => (
+          <tbody key={`${day.date}-${index}`}>
             <tr className={s.printDay}>
               <td colSpan={2}>{dayLabel(day.date)}</td>
               <td>{day.rows.length > 1 ? formatAmountPrivate(dayNet(day.rows), "signed") : null}</td>
@@ -82,7 +73,7 @@ export function PrintLedger({
             {day.rows.map((row) => (
               <tr key={row.id}>
                 <td>
-                  {row.title || row.category?.name || "Untitled"}
+                  {rowTitle(row)}
                   {row.tags.length ? (
                     <span className={s.printTags}>{row.tags.map((tag) => `#${tag.name}`).join(" ")}</span>
                   ) : null}

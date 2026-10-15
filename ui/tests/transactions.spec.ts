@@ -131,10 +131,13 @@ test.describe("Transactions Page", () => {
     })
 
     await page.goto(`/transactions?q=${marker}`)
+    const screenTitle = await page.title()
     await page.getByRole("button", { name: "More actions" }).click()
     await page.getByRole("menuitem", { name: "Print…" }).click()
     await expect(page.locator("body")).toHaveAttribute("data-printed", "1")
     expect(printPages).toBe(2)
+    await expect(page).toHaveTitle("Transactions · All time")
+    await expect(page.getByRole("table", { includeHidden: true })).toBeHidden()
 
     await page.emulateMedia({ media: "print" })
     await expect(page.getByTestId("app-shell-root")).toBeHidden()
@@ -152,6 +155,7 @@ test.describe("Transactions Page", () => {
 
     await page.evaluate(() => window.dispatchEvent(new Event("afterprint")))
     await expect(ledger).toHaveCount(0)
+    await expect(page).toHaveTitle(screenTitle)
     await page.emulateMedia({ media: "screen" })
     await page.keyboard.press("ControlOrMeta+p")
     await expect(page.locator("body")).toHaveAttribute("data-printed", "2")

@@ -1062,7 +1062,8 @@
 }
 
 /* Printing Transactions. The ledger shows only in print, and while it is mounted printing
-   shows nothing else. Paper is always light, so the colors are fixed. */
+   shows nothing else. Paper is always light, so text and rules use fixed colors; the
+   category dots keep the current theme's palette. */
 .print { display: none; }
 @media print {
   body:has(> .print) > :not(.print) { display: none; }

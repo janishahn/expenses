@@ -5,7 +5,7 @@ import { AppFrame } from "../components/ui/AppFrame"
 import { navLabel } from "../components/ui/nav"
 import { ErrorBody, Panel, PanelLoading } from "../components/ui/Panel"
 import { ServerReceipt } from "../components/ui/ServerReceipt"
-import { apiFetch, isServerUnreachable } from "./api"
+import { apiFetch, serverAnswers } from "./api"
 import { useAuth } from "./auth"
 
 const AddTransactionDialog = lazy(() => import("./AddTransactionDialog"))
@@ -36,10 +36,7 @@ class PageBoundary extends Component<{ pathname: string; children: ReactNode }, 
 function PageFailed({ pathname }: { pathname: string }) {
   const [server, setServer] = useState<"checking" | "unreachable" | "answered">("checking")
   useEffect(() => {
-    void apiFetch("/api/auth/bootstrap-status")
-      // Only whether the server answered matters here, not what it answered.
-      .catch(() => null)
-      .then(() => setServer(isServerUnreachable() ? "unreachable" : "answered"))
+    void serverAnswers().then((answers) => setServer(answers ? "answered" : "unreachable"))
   }, [])
 
   const title = navLabel(pathname) ?? "Expenses"
