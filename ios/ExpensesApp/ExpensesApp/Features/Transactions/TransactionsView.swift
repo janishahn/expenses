@@ -21,6 +21,7 @@ struct TransactionsView: View {
     @State private var appliedBulk = 0
     @State private var export: CSVFile?
     @State private var failure: String?
+    @State private var searchStartsHidden = true
 
     var body: some View {
         @Bindable var model = model
@@ -53,7 +54,7 @@ struct TransactionsView: View {
             .navigationTitle(selecting ? "\(selectionCount) Selected" : "Transactions")
             .navigationSubtitle(selecting ? "" : subtitle)
             .expensesScreenStyle()
-            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic))
             .toolbar {
                 if selecting {
                     selectionToolbar
@@ -250,6 +251,11 @@ struct TransactionsView: View {
             } header: {
                 AdaptiveRow {
                     Text(AppFormatters.bookingDay(day.date))
+                        .background {
+                            if searchStartsHidden && day.id == days.first?.id {
+                                HiddenSearchStart { searchStartsHidden = false }
+                            }
+                        }
                 } trailing: {
                     // The last day may continue on the next page, so it shows no partial net.
                     if !(transactions.hasMore && day.id == days.last?.id) {
@@ -590,5 +596,46 @@ private struct TransactionFilterSheet: View {
             .sensoryFeedback(.selection, trigger: query)
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// Collapses the search field under the title once, so the ledger opens with it hidden;
+/// SwiftUI opens it partly shown below a subtitle. Pull down at the top to show it.
+private struct HiddenSearchStart: UIViewRepresentable {
+    var onCollapse: () -> Void
+
+    func makeUIView(context: Context) -> Anchor {
+        let anchor = Anchor()
+        anchor.onCollapse = onCollapse
+        return anchor
+    }
+
+    func updateUIView(_ anchor: Anchor, context: Context) {}
+
+    final class Anchor: UIView {
+        var onCollapse: () -> Void = {}
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            // The navigation bar settles its layout after the first rows appear.
+            DispatchQueue.main.async { [weak self] in self?.collapse() }
+        }
+
+        private func collapse() {
+            onCollapse()
+            guard
+                let scrollView = sequence(first: self as UIView, next: \.superview).first(where: { $0 is UIScrollView }) as? UIScrollView,
+                let controller = sequence(first: scrollView as UIResponder, next: \.next).first(where: { $0 is UIViewController }) as? UIViewController,
+                let searchController = controller.navigationItem.searchController,
+                !searchController.isActive
+            else { return }
+            let searchBar = searchController.searchBar
+            // Scrolling by the field's height collapses it, but UIKit then keeps the rows
+            // in place by scrolling further, so settle on the top of the shortened list.
+            scrollView.contentOffset.y += searchBar.frame.height
+            controller.navigationController?.view.layoutIfNeeded()
+            scrollView.contentOffset.y = -scrollView.adjustedContentInset.top
+        }
     }
 }
