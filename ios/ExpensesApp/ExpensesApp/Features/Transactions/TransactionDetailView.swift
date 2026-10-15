@@ -1036,7 +1036,7 @@ private struct AllocationSearchSection: View {
                         }
                     } trailing: {
                         Menu("Allocate") {
-                            allocateButton("Remaining", cents: result.suggestedAmountCents, to: result)
+                            allocateButton("Remaining", cents: result.allocatedToThisCents + result.suggestedAmountCents, to: result)
                             allocateButton("Half", cents: Int((Double(result.expense.amountCents) / 2).rounded()), to: result)
                             allocateButton("Third", cents: Int((Double(result.expense.amountCents) / 3).rounded()), to: result)
                             Divider()
@@ -1064,6 +1064,7 @@ private struct AllocationSearchSection: View {
         )
     }
 
+    /// Saving replaces this expense's allocation, so the most it can hold is what it has plus what is left.
     private func allocateButton(_ title: String, cents: Int, to result: ReimbursementExpenseSearchItem) -> some View {
         Button {
             Task { await allocate(result, cents: cents) }
@@ -1071,6 +1072,7 @@ private struct AllocationSearchSection: View {
             Text(title)
             Text(model.amountString(cents))
         }
+        .disabled(cents > result.allocatedToThisCents + result.suggestedAmountCents)
     }
 
     private func allocate(_ result: ReimbursementExpenseSearchItem, cents: Int) async {
