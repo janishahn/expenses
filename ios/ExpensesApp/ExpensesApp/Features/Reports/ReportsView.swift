@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 
 /// A PDF report for a date range, with the sections, scope and notes it includes.
@@ -83,7 +84,7 @@ struct ReportsView: View {
     @State private var problem: Problem?
     @State private var error: String?
     @State private var file: GeneratedFile?
-    @State private var previewDocument: PreviewDocument?
+    @State private var previewURL: URL?
 
     var body: some View {
         List {
@@ -91,7 +92,7 @@ struct ReportsView: View {
                 Section {
                     HStack {
                         Button {
-                            previewDocument = PreviewDocument(url: file.url)
+                            previewURL = file.url
                         } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -185,9 +186,7 @@ struct ReportsView: View {
         .onChange(of: categoryScope) { clear(.categories) }
         .onChange(of: tagIDs) { clear(.tags) }
         .onChange(of: tagScope) { clear(.tags) }
-        .sheet(item: $previewDocument) { document in
-            DocumentPreviewView(url: document.url)
-        }
+        .quickLookPreview($previewURL)
         .failureAlert("Couldn't generate the report", message: $error)
     }
 
@@ -321,7 +320,7 @@ struct ReportsView: View {
         do {
             let url = try writeTemporaryFile(download)
             file = GeneratedFile(url: url, name: url.lastPathComponent, at: .now)
-            previewDocument = PreviewDocument(url: url)
+            previewURL = url
         } catch {
             self.error = error.localizedDescription
         }
@@ -354,7 +353,7 @@ private struct ChoiceList: View {
             ForEach(groups, id: \.0) { title, choices in
                 Section {
                     ForEach(choices) { choice in
-                        Button {
+                        SelectableRow(isSelected: selection.contains(choice.id)) {
                             selection.formSymmetricDifference([choice.id])
                         } label: {
                             HStack {
@@ -364,16 +363,8 @@ private struct ChoiceList: View {
                                     Text(detail)
                                         .foregroundStyle(.secondary)
                                 }
-                                if selection.contains(choice.id) {
-                                    Image(systemName: "checkmark")
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.tint)
-                                }
                             }
-                            .contentShape(Rectangle())
                         }
-                        .tint(.primary)
-                        .accessibilityAddTraits(selection.contains(choice.id) ? .isSelected : [])
                     }
                 } header: {
                     if let title {

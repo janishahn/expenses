@@ -39,7 +39,9 @@ struct AISettingsView: View {
                 }
                 notesSection(settings)
             } else if let loadError {
-                UnavailableStateSection(title: "Couldn't load AI settings", systemImage: "exclamationmark.triangle", message: loadError)
+                UnavailableStateSection(title: "Couldn't load AI settings", systemImage: "exclamationmark.triangle", message: loadError) {
+                    await load()
+                }
             } else {
                 LoadingStateSection(title: "Loading AI settings")
             }

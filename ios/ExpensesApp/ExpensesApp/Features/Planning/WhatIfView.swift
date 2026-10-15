@@ -97,7 +97,9 @@ struct WhatIfView: View {
             case nil:
                 LoadingStateSection(title: "Loading forecast")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await loadBaseline()
+                }
             case .success(let data):
                 let result = adjustments.isEmpty ? nil : scenario
                 let base = result?.response.baseline
@@ -115,6 +117,11 @@ struct WhatIfView: View {
                 WhatIfBalanceSection(months: months, baseline: baselineValues, scenario: scenarioValues)
                 adjustmentsSection(result)
             }
+        }
+        .refreshable {
+            async let base: Void = loadBaseline()
+            async let result: Void = calculate()
+            _ = await (base, result)
         }
         .headerProminence(.increased)
         .navigationTitle("What If")
@@ -158,11 +165,6 @@ struct WhatIfView: View {
         .task(id: ScenarioRequest(options: options, adjustments: adjustments)) {
             await calculate()
         }
-        .refreshable {
-            async let base: Void = loadBaseline()
-            async let result: Void = calculate()
-            _ = await (base, result)
-        }
     }
 
     private func adjustmentsSection(_ result: (adjustments: [ForecastScenarioModificationRequest], response: ForecastScenarioResponse)?) -> some View {
@@ -190,21 +192,27 @@ struct WhatIfView: View {
             }
             if let result, result.adjustments.count > 1 {
                 let total = result.response.impact.finalDeltaCents
+                // Lines up with the adjustments' titles and amounts.
                 HStack(spacing: 12) {
-                    Text("Total")
-                        .padding(.leading, 38)
-                    Spacer(minLength: 8)
-                    AmountText(total, decimals: false, signed: true)
-                        .foregroundStyle(total > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+                    TrailingRow {
+                        Image(systemName: "plus")
+                            .glyphColumn()
+                            .hidden()
+                    } content: {
+                        Text("Total")
+                    } trailing: {
+                        AmountText(total, decimals: false, signed: true)
+                            .foregroundStyle(total > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+                    }
                     Image(systemName: "xmark.circle.fill")
                         .hidden()
                 }
                 .fontWeight(.semibold)
             }
         } header: {
-            HStack(alignment: .firstTextBaseline) {
+            AdaptiveRow(alignment: .firstTextBaseline) {
                 Text("Adjustments")
-                Spacer()
+            } trailing: {
                 if result != nil {
                     Text("Over \(options.horizon) months")
                         .font(.subheadline)
@@ -261,7 +269,7 @@ private struct WhatIfMetricsSection: View {
 
     var body: some View {
         Section {
-            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
                     Metric("Difference") {
                         if let differenceCents {
@@ -311,7 +319,7 @@ private struct WhatIfBalanceSection: View {
         Section("Balance") {
             VStack(alignment: .leading, spacing: 10) {
                 chart
-                HStack(spacing: 14) {
+                ChartLegend {
                     if scenario != nil {
                         ChartLegendItem(title: "Scenario", color: .primary, mark: .line)
                         ChartLegendItem(title: "Baseline", color: .secondary, mark: .dash)
@@ -405,26 +413,35 @@ private struct AdjustmentRow: View {
     var body: some View {
         let kind = AdjustmentKind(rawValue: adjustment.type)!
         HStack(spacing: 12) {
-            Image(systemName: kind.systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 26)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title(kind))
-                    .lineLimit(2)
-                HStack(spacing: 4) {
-                    detail(kind)
+            TrailingRow {
+                Image(systemName: kind.systemImage)
+                    .foregroundStyle(.secondary)
+                    .glyphColumn()
+                    .accessibilityHidden(true)
+            } content: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title(kind))
+                        .lineLimit(2)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) {
+                            detail(kind, separator: " ·")
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            detail(kind, separator: "")
+                        }
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            if let impact {
-                AmountText(impact, decimals: false, signed: true)
-                    .foregroundStyle(impact > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+            } trailing: {
+                if let impact {
+                    AmountText(impact, decimals: false, signed: true)
+                        .foregroundStyle(impact > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+                }
             }
             Button(action: remove) {
                 Image(systemName: "xmark.circle.fill")
+                    .expandedTouchArea()
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tertiary)
@@ -449,20 +466,22 @@ private struct AdjustmentRow: View {
         }
     }
 
+    /// `separator` ends the text before an amount on the same line.
     @ViewBuilder
-    private func detail(_ kind: AdjustmentKind) -> some View {
+    private func detail(_ kind: AdjustmentKind, separator: String) -> some View {
         let income = adjustment.txType == "income"
         switch kind {
         case .removeRule:
             Text("Recurring rule")
         case .addRule:
-            Text("\(Repeat(rawValue: adjustment.interval ?? "")?.title ?? "") ·")
+            Text("\(Repeat(rawValue: adjustment.interval ?? "")?.title ?? "")\(separator)")
             AmountText(adjustment.amountCents ?? 0, decimals: false, signed: income)
         case .modifyRule:
-            Text("From \(CalendarMonth(adjustment.effectiveMonth ?? "").abbreviatedTitle) ·")
-            AmountText(adjustment.newAmountCents ?? 0, decimals: false)
+            Text("From \(CalendarMonth(adjustment.effectiveMonth ?? "").abbreviatedTitle)\(separator)")
+            // A rule's new amount is in the rule's currency.
+            AmountText(adjustment.newAmountCents ?? 0, currencyCode: rules.first { $0.id == adjustment.ruleID }?.currencyCode ?? "EUR")
         case .oneTime:
-            Text("\(CalendarMonth(adjustment.month ?? "").abbreviatedTitle) ·")
+            Text("\(CalendarMonth(adjustment.month ?? "").abbreviatedTitle)\(separator)")
             AmountText(adjustment.amountCents ?? 0, decimals: false, signed: income)
         case .adjustCategory:
             AmountText(adjustment.newMonthlyCents ?? 0, decimals: false)
@@ -506,7 +525,7 @@ private struct AdjustmentSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if kind != .removeRule {
-                        EntryAmountField(text: $amount, income: named && income)
+                        EntryAmountField(text: $amount, income: named && income, prompt: AppFormatters.amount(0, currencyCode: currencyCode))
                             .focused($amountFocused)
                             .fieldError(amountError)
                     }
@@ -559,9 +578,7 @@ private struct AdjustmentSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 if named {
                     ToolbarItem(placement: .principal) {
@@ -578,9 +595,19 @@ private struct AdjustmentSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(hasInput)
         .task {
             amountFocused = kind != .removeRule
         }
+    }
+
+    private var hasInput: Bool {
+        !amount.isEmpty || !name.isEmpty || ruleID != nil || categoryID != nil
+    }
+
+    // A new amount for a rule is in the rule's currency; other amounts are in euros.
+    private var currencyCode: String {
+        kind == .modifyRule ? rules.first { $0.id == ruleID }?.currencyCode ?? "EUR" : "EUR"
     }
 
     private var ruleChip: some View {
@@ -588,7 +615,7 @@ private struct AdjustmentSheet: View {
         return Menu {
             Picker("Rule", selection: $ruleID) {
                 ForEach(rules) { rule in
-                    Text("\(rule.name ?? "Recurring rule") · \(model.amountString(rule.amountCents))")
+                    Text("\(rule.name ?? "Recurring rule") · \(model.amountsHidden ? "Hidden amount" : AppFormatters.amount(rule.amountCents, currencyCode: rule.currencyCode))")
                         .tag(Optional(rule.id))
                 }
             }
@@ -596,12 +623,14 @@ private struct AdjustmentSheet: View {
             if let rule {
                 EntryChip(rule.name ?? "Recurring rule", isSet: true) {
                     CategoryGlyph(categoryID: rule.categoryID, iconKey: rule.category?.icon, name: rule.category?.name)
-                        .frame(width: 18)
+                        .glyphColumn(18)
                 }
             } else {
                 EntryChip("Rule", systemImage: "repeat", isSet: false)
             }
         }
+        .accessibilityLabel("Rule")
+        .accessibilityValue(rule?.name ?? "")
     }
 
     private var categoryChip: some View {
@@ -617,12 +646,14 @@ private struct AdjustmentSheet: View {
             if let category {
                 EntryChip(category.name, isSet: true) {
                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                        .frame(width: 18)
+                        .glyphColumn(18)
                 }
             } else {
-                EntryChip("Category", systemImage: "square.grid.2x2", isSet: false)
+                EntryChip("Category", systemImage: "square.on.circle", isSet: false)
             }
         }
+        .accessibilityLabel("Category")
+        .accessibilityValue(category?.name ?? "")
     }
 
     private func submit() {

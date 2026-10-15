@@ -2,56 +2,21 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
 
     @State private var selectedPrimaryDestination: AppDestination = .dashboard
     @State private var morePath: [AppDestination] = []
     @State private var dashboardPath: [Int] = []
     @State private var transactionsPath: [TransactionsRoute] = []
     @State private var transactionsSelecting = false
-    @State private var quickAddSheet: QuickAddSheet?
-    @State private var quickAddTapTick = 0
-
-    private var selectedDestination: AppDestination {
-        selectedPrimaryDestination
-    }
-
-    // The Quick Add FAB shows only at the root of the Dashboard and Transactions
-    // tabs — it hides once a detail is pushed onto either tab's navigation stack.
-    private var showsFloatingQuickAdd: Bool {
-        switch selectedDestination {
-        case .dashboard:
-            dashboardPath.isEmpty
-        case .transactions:
-            transactionsPath.isEmpty && !transactionsSelecting
-        default:
-            false
-        }
-    }
 
     var body: some View {
         Group {
             if model.hasSession {
-                ZStack {
-                    primaryTabs
-
-                    quickAddButton
-                        .opacity(showsFloatingQuickAdd ? 1 : 0)
-                        .allowsHitTesting(showsFloatingQuickAdd)
-                        .animation(.snappy(duration: 0.18), value: showsFloatingQuickAdd)
-                }
-                .sheet(item: $quickAddSheet) { sheet in
-                    switch sheet {
-                    case .transaction:
-                        AddTransactionSheet()
-                    }
-                }
+                primaryTabs
             } else {
                 SignInView()
             }
         }
-        // The asset's light and dark ink; UIKit controls re-resolve it when the appearance changes.
-        .tint(Color("AccentColor"))
         .preferredColorScheme(colorScheme(for: model.appearancePreference))
         .onChange(of: model.hasSession) { _, hasSession in
             // The next session starts on the Dashboard, not where the last one ended.
@@ -71,37 +36,27 @@ struct RootView: View {
 
     private var primaryTabs: some View {
         TabView(selection: $selectedPrimaryDestination) {
-            destinationView(.dashboard)
-                .tabItem {
-                    Label("Dashboard", systemImage: "square.grid.2x2")
-                }
-                .tag(AppDestination.dashboard)
-
-            destinationView(.transactions)
-                .tabItem {
-                    Label("Transactions", systemImage: "list.bullet")
-                }
-                .tag(AppDestination.transactions)
-
-            NavigationStack {
-                destinationView(.budgets)
+            Tab("Dashboard", systemImage: "square.grid.2x2", value: .dashboard) {
+                destinationView(.dashboard)
             }
-            .tabItem {
-                Label("Budgets", systemImage: "target")
+
+            Tab("Transactions", systemImage: "list.bullet", value: .transactions) {
+                destinationView(.transactions)
             }
-            .tag(AppDestination.budgets)
 
-            destinationView(.insights)
-                .tabItem {
-                    Label("Insights", systemImage: "chart.xyaxis.line")
+            Tab("Budgets", systemImage: "target", value: .budgets) {
+                NavigationStack {
+                    destinationView(.budgets)
                 }
-                .tag(AppDestination.insights)
+            }
 
-            moreTab
-                .tabItem {
-                    Label("More", systemImage: "line.3.horizontal")
-                }
-                .tag(AppDestination.more)
+            Tab("Insights", systemImage: "chart.xyaxis.line", value: .insights) {
+                destinationView(.insights)
+            }
+
+            Tab("More", systemImage: "line.3.horizontal", value: .more) {
+                moreTab
+            }
         }
     }
 
@@ -202,36 +157,6 @@ struct RootView: View {
         .expensesRowBackground()
     }
 
-    private var quickAddButton: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button {
-                    performQuickAdd()
-                } label: {
-                    // The ink tint is light in dark mode, so the glyph takes the page color.
-                    Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(ExpensesTheme.background(for: scheme))
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Quick Add")
-                .sensoryFeedback(.impact(weight: .light), trigger: quickAddTapTick)
-                .padding(.trailing, 18)
-                .padding(.bottom, 66)
-            }
-        }
-        .ignoresSafeArea(.keyboard)
-    }
-
-    private func performQuickAdd() {
-        quickAddTapTick += 1
-        quickAddSheet = .transaction
-    }
-
     private func colorScheme(for preference: String) -> ColorScheme? {
         switch preference {
         case "light":
@@ -240,17 +165,6 @@ struct RootView: View {
             .dark
         default:
             nil
-        }
-    }
-}
-
-private enum QuickAddSheet: Identifiable {
-    case transaction
-
-    var id: String {
-        switch self {
-        case .transaction:
-            "transaction"
         }
     }
 }

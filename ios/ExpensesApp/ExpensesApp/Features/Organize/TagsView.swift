@@ -90,10 +90,15 @@ struct TagsView: View {
                     band("Archived", sorted(tags.filter { $0.archivedAt != nil }, by: ListSort(key: .name, ascending: true)))
                 }
             } else if loadFailed {
-                UnavailableStateSection(title: "Couldn't load tags", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                UnavailableStateSection(title: "Couldn't load tags", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                    loadFailed = !(await model.loadTags())
+                }
             } else {
                 LoadingStateSection(title: "Loading tags")
             }
+        }
+        .refreshable {
+            loadFailed = !(await model.loadTags())
         }
         .navigationTitle("Tags")
         .navigationSubtitle(model.tagsPeriod.title)
@@ -111,9 +116,6 @@ struct TagsView: View {
             AddTagSheet()
         }
         .task(id: model.tagsPeriod) {
-            loadFailed = !(await model.loadTags())
-        }
-        .refreshable {
             loadFailed = !(await model.loadTags())
         }
     }
@@ -175,7 +177,7 @@ private struct TagListRow: View {
             Image(systemName: "tag")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(width: 26)
+                .glyphColumn()
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -333,9 +335,7 @@ private struct AddTagSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", role: .confirm) {
@@ -345,9 +345,14 @@ private struct AddTagSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             nameFocused = true
         }
+    }
+
+    private var hasInput: Bool {
+        !name.isEmpty || excluded || hiddenFromFilters || autoAdd != nil
     }
 
     private func submit() async {

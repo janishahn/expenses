@@ -29,7 +29,9 @@ struct AccountSettingsView: View {
                 tokenSection(settings.ingestToken)
                 sessionsSection
             } else if let loadError {
-                UnavailableStateSection(title: "Couldn't load your account", systemImage: "exclamationmark.triangle", message: loadError)
+                UnavailableStateSection(title: "Couldn't load your account", systemImage: "exclamationmark.triangle", message: loadError) {
+                    await load()
+                }
             } else {
                 LoadingStateSection(title: "Loading account")
             }

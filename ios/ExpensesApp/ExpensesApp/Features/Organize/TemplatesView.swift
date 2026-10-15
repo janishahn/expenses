@@ -64,10 +64,15 @@ struct TemplatesView: View {
                     .expensesRowBackground()
                 }
             } else if loadFailed {
-                UnavailableStateSection(title: "Couldn't load templates", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                UnavailableStateSection(title: "Couldn't load templates", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                    loadFailed = !(await model.loadTemplates())
+                }
             } else {
                 LoadingStateSection(title: "Loading templates")
             }
+        }
+        .refreshable {
+            loadFailed = !(await model.loadTemplates())
         }
         .navigationTitle("Templates")
         .expensesScreenStyle()
@@ -88,9 +93,6 @@ struct TemplatesView: View {
         .task {
             loadFailed = !(await model.loadTemplates())
         }
-        .refreshable {
-            loadFailed = !(await model.loadTemplates())
-        }
     }
 }
 
@@ -105,19 +107,18 @@ private struct TemplateListRow: View {
             .compactMap { $0 }
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
-        HStack(spacing: 12) {
+        TrailingRow {
             CategoryGlyph(categoryID: template.category?.id, iconKey: template.category?.icon, name: template.category?.name)
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(template.name)
-                    .lineLimit(1)
                 if !detail.isEmpty {
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
+        } trailing: {
             if let cents = template.defaultAmountCents {
                 AmountText(cents, signed: template.type == .income)
                     .foregroundStyle(template.type == .income ? ExpensesTheme.income(for: scheme) : .primary)
@@ -172,6 +173,8 @@ private struct AddTemplateSheet: View {
                         } label: {
                             EntryChip(tags.isEmpty ? "Tags" : tags.joined(separator: ", "), systemImage: "tag", isSet: !tags.isEmpty)
                         }
+                        .accessibilityLabel("Tags")
+                        .accessibilityValue(tags.joined(separator: ", "))
                     }
                     .buttonStyle(.plain)
 
@@ -186,9 +189,7 @@ private struct AddTemplateSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Type", selection: typeSelection) {
@@ -209,12 +210,18 @@ private struct AddTemplateSheet: View {
                 TagPickerSheet(title: "Tags", options: model.activeTags.map(\.name), selected: tags) { tags = $0 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             nameFocused = true
             if categoryID == nil {
                 categoryID = typed.first?.id
             }
         }
+    }
+
+    // The type and its first category are defaults, so they alone are no input to lose.
+    private var hasInput: Bool {
+        !amount.isEmpty || !name.isEmpty || !title.isEmpty || !tags.isEmpty
     }
 
     // A new type starts on that type's first category.
@@ -245,12 +252,14 @@ private struct AddTemplateSheet: View {
             if let category {
                 EntryChip(category.name, isSet: true) {
                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                        .frame(width: 18)
+                        .glyphColumn(18)
                 }
             } else {
                 EntryChip("Category", systemImage: "square.on.circle", isSet: false)
             }
         }
+        .accessibilityLabel("Category")
+        .accessibilityValue(category?.name ?? "")
     }
 
     private func submit() async {

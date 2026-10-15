@@ -228,7 +228,7 @@ private struct LocalUnlockView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "lock.fill")
-                .font(.system(size: 34, weight: .medium))
+                .font(.largeTitle.weight(.medium))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 

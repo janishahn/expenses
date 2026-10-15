@@ -87,7 +87,7 @@ struct LegacyImportView: View {
     private func previewSections(_ preview: LegacySQLitePreviewResponse) -> some View {
         let data = preview.preview
         Section {
-            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
                     Metric("Transactions") {
                         Text(data.transactionsCount.formatted())

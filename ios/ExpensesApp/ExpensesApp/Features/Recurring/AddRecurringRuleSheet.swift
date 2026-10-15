@@ -38,7 +38,7 @@ struct AddRecurringRuleSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    EntryAmountField(text: $amount, income: type == .income)
+                    EntryAmountField(text: $amount, income: type == .income, prompt: AppFormatters.amount(0, currencyCode: currencyCode))
                         .focused($amountFocused)
                         .fieldError(amountError)
 
@@ -56,6 +56,8 @@ struct AddRecurringRuleSheet: View {
                         .popover(isPresented: $choosingRepeats) {
                             RepeatsPopover(schedule: schedule, anchor: ruleDay(AppFormatters.isoDay(start)), confirm: "Done") { schedule = $0 }
                         }
+                        .accessibilityLabel("Repeats")
+                        .accessibilityValue(schedule.unit.repeats(schedule.count))
 
                         Button {
                             choosingStart = true
@@ -65,6 +67,8 @@ struct AddRecurringRuleSheet: View {
                         .popover(isPresented: $choosingStart) {
                             DayPopover(day: start, confirm: "Done") { start = $0 }
                         }
+                        .accessibilityLabel("Start")
+                        .accessibilityValue(AppFormatters.shortDay(start))
 
                         Button {
                             choosingEnd = true
@@ -74,6 +78,8 @@ struct AddRecurringRuleSheet: View {
                         .popover(isPresented: $choosingEnd) {
                             DayPopover(day: end ?? start, confirm: "Done", onClear: end == nil ? nil : { end = nil }) { end = $0 }
                         }
+                        .accessibilityLabel("End")
+                        .accessibilityValue(end.map(AppFormatters.shortDay) ?? "No end")
 
                         Button {
                             autoPost.toggle()
@@ -97,6 +103,8 @@ struct AddRecurringRuleSheet: View {
                         } label: {
                             EntryChip(currencyCode, systemImage: currencyCode == "USD" ? "dollarsign" : "eurosign", isSet: currencyCode == "USD")
                         }
+                        .accessibilityLabel("Currency")
+                        .accessibilityValue(currencyCode)
                     }
                     .buttonStyle(.plain)
 
@@ -117,9 +125,7 @@ struct AddRecurringRuleSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Type", selection: typeSelection) {
@@ -137,6 +143,7 @@ struct AddRecurringRuleSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             amountFocused = true
         }
@@ -147,6 +154,11 @@ struct AddRecurringRuleSheet: View {
                 upcoming = result
             }
         }
+    }
+
+    // The schedule and its options are defaults, so they alone are no input to lose.
+    private var hasInput: Bool {
+        !amount.isEmpty || !name.isEmpty || end != nil
     }
 
     // A new type starts on that type's first category.
@@ -177,12 +189,14 @@ struct AddRecurringRuleSheet: View {
             if let category {
                 EntryChip(category.name, isSet: true) {
                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                        .frame(width: 18)
+                        .glyphColumn(18)
                 }
             } else {
-                EntryChip("Category", systemImage: "square.grid.2x2", isSet: false)
+                EntryChip("Category", systemImage: "square.on.circle", isSet: false)
             }
         }
+        .accessibilityLabel("Category")
+        .accessibilityValue(category?.name ?? "")
     }
 
     private var preview: RecurringPreviewRequest {

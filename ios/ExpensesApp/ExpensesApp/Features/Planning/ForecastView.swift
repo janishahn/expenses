@@ -73,7 +73,9 @@ struct ForecastView: View {
             case nil:
                 LoadingStateSection(title: "Loading forecast")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load the forecast", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let data):
                 let loaded = forecast!.options
                 ForecastMetricsSection(data: data, options: loaded)
@@ -137,44 +139,65 @@ private struct ForecastMetricsSection: View {
     let options: ForecastOptions
 
     var body: some View {
-        let summary = data.summary
-        let net = summary.averageMonthlyNetCents
         Section {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
-                    Metric(data.months.last.map { "Balance in \(CalendarMonth($0.month).abbreviatedTitle)" } ?? "Balance") {
-                        AmountText(summary.projectedBalanceCents)
-                    } detail: {
-                        if let low = summary.projectedBalanceP10Cents, let high = summary.projectedBalanceP90Cents {
-                            HStack(spacing: 4) {
-                                Text(rangeTitle)
-                                AmountText(low, decimals: false)
-                                Text("–")
-                                AmountText(high, decimals: false)
-                            }
-                        } else {
-                            Text("after \(options.horizon) months")
-                        }
-                    }
-                    .gridCellColumns(2)
+                    balance
+                        .gridCellColumns(2)
                 }
                 GridRow {
-                    Metric("Average monthly net") {
-                        AmountText(net, signed: true)
-                            .foregroundStyle(net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
-                    } detail: {
-                        Text(netDetail)
-                    }
-                    Metric("Below zero") {
-                        Text(belowZero.value)
-                    } detail: {
-                        Text(belowZero.detail)
-                    }
+                    averageNet
+                    belowZeroMetric
                 }
             }
             .padding(.vertical, 6)
         }
         .expensesRowBackground()
+    }
+
+    private var balance: some View {
+        let summary = data.summary
+        return Metric(data.months.last.map { "Balance in \(CalendarMonth($0.month).abbreviatedTitle)" } ?? "Balance") {
+            AmountText(summary.projectedBalanceCents)
+        } detail: {
+            if let low = summary.projectedBalanceP10Cents, let high = summary.projectedBalanceP90Cents {
+                let range = HStack(spacing: 4) {
+                    AmountText(low, decimals: false)
+                    Text("–")
+                    AmountText(high, decimals: false)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        Text(rangeTitle)
+                        range
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rangeTitle)
+                        range
+                    }
+                }
+            } else {
+                Text("after \(options.horizon) months")
+            }
+        }
+    }
+
+    private var averageNet: some View {
+        let net = data.summary.averageMonthlyNetCents
+        return Metric("Average monthly net") {
+            AmountText(net, signed: true)
+                .foregroundStyle(net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
+        } detail: {
+            Text(netDetail)
+        }
+    }
+
+    private var belowZeroMetric: some View {
+        Metric("Below zero") {
+            Text(belowZero.value)
+        } detail: {
+            Text(belowZero.detail)
+        }
     }
 
     private var netDetail: String {
@@ -217,7 +240,7 @@ private struct ForecastBalanceSection: View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 chart
-                HStack(spacing: 14) {
+                ChartLegend {
                     ChartLegendItem(title: mode == .full ? "Expected" : ForecastMode.recurring.title, color: .primary, mark: .line)
                     if reference != nil {
                         ChartLegendItem(title: ForecastMode.recurring.title, color: .secondary, mark: .dash)
@@ -238,6 +261,7 @@ private struct ForecastBalanceSection: View {
                     Image(systemName: "info.circle")
                         .font(.body)
                         .foregroundStyle(.secondary)
+                        .expandedTouchArea()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("About this forecast")
@@ -367,13 +391,28 @@ private struct ForecastBalanceSection: View {
 
 extension View {
     /// A balance chart's axes from now to the horizon: one point per month, labelled
-    /// every month up to six, then every other month.
+    /// every month up to six, then every other month. At accessibility text sizes only
+    /// the start, middle and end are labelled.
     func forecastAxes(labels: [String]) -> some View {
+        modifier(ForecastAxes(labels: labels))
+    }
+}
+
+private struct ForecastAxes: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    // Room for the first and last month's label at every text size.
+    @ScaledMetric(relativeTo: .caption2) private var edge = 14.0
+
+    let labels: [String]
+
+    func body(content: Content) -> some View {
         let last = labels.count - 1
-        return chartXScale(domain: 0...last, range: .plotDimension(padding: 14))
+        let step = typeSize.isAccessibilitySize ? max(1, (last + 1) / 2) : last <= 6 ? 1 : 2
+        content
+            .chartXScale(domain: 0...last, range: .plotDimension(padding: edge))
             .chartYScale(domain: .automatic(includesZero: false))
             .chartXAxis {
-                AxisMarks(values: Array(stride(from: 0, through: last, by: last <= 6 ? 1 : 2))) { value in
+                AxisMarks(values: Array(stride(from: 0, through: last, by: step))) { value in
                     AxisValueLabel(anchor: .top) {
                         if let index = value.as(Int.self) {
                             Text(labels[index])
@@ -381,11 +420,7 @@ extension View {
                     }
                 }
             }
-            .chartYAxis {
-                AxisMarks(values: .automatic(desiredCount: 3)) { _ in
-                    AxisGridLine()
-                }
-            }
+            .amountYAxis()
             .frame(height: 190)
     }
 }
@@ -526,10 +561,9 @@ private struct ForecastMonthView: View {
                 }
                 ForEach(breakdown.oneTimeEvents) { event in
                     let income = event.type == "income"
-                    HStack {
+                    TrailingRow {
                         Text(event.name)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
+                    } trailing: {
                         AmountText(event.amountCents, signed: income)
                             .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
                     }

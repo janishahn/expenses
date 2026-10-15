@@ -155,15 +155,14 @@ struct ImportStatementSheet: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(fresh.prefix(3)) { row in
-                HStack(alignment: .firstTextBaseline) {
+                TrailingRow {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title)
-                            .lineLimit(1)
                         Text(AppFormatters.shortDay(AppFormatters.localDay(row.bookingDate)))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 8)
+                } trailing: {
                     BankAmount(cents: row.amountCents, currency: row.currency)
                 }
             }
@@ -272,7 +271,7 @@ struct CreateFromBankRowSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     BankAmount(cents: row.amountCents, currency: row.currency)
-                        .font(.system(size: 34, weight: .semibold))
+                        .font(.largeTitle.weight(.semibold))
 
                     TextField("Title", text: $title)
                         .font(.title3)
@@ -292,6 +291,8 @@ struct CreateFromBankRowSheet: View {
                                 .frame(width: 340)
                                 .presentationCompactAdaptation(.popover)
                         }
+                        .accessibilityLabel("Date")
+                        .accessibilityValue(AppFormatters.shortDay(date))
 
                         Button {
                             picker = .category
@@ -299,18 +300,22 @@ struct CreateFromBankRowSheet: View {
                             if let category {
                                 EntryChip(category.name, isSet: true) {
                                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                                        .frame(width: 18)
+                                        .glyphColumn(18)
                                 }
                             } else {
-                                EntryChip("Category", systemImage: "square.grid.2x2", isSet: false)
+                                EntryChip("Category", systemImage: "square.on.circle", isSet: false)
                             }
                         }
+                        .accessibilityLabel("Category")
+                        .accessibilityValue(category?.name ?? "")
 
                         Button {
                             picker = .tags
                         } label: {
                             EntryChip(tags.isEmpty ? "Tags" : tags.joined(separator: ", "), systemImage: "tag", isSet: !tags.isEmpty)
                         }
+                        .accessibilityLabel("Tags")
+                        .accessibilityValue(tags.joined(separator: ", "))
 
                         Menu {
                             ReceiptSourceButtons { receiptSource = $0 }
@@ -322,6 +327,8 @@ struct CreateFromBankRowSheet: View {
                         } label: {
                             EntryChip(receipt?.name ?? "Receipt", systemImage: "paperclip", isSet: receipt != nil)
                         }
+                        .accessibilityLabel("Receipt")
+                        .accessibilityValue(receipt?.name ?? "")
                     }
                     .buttonStyle(.plain)
 
@@ -340,9 +347,7 @@ struct CreateFromBankRowSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create", role: .confirm) {
@@ -386,10 +391,16 @@ struct CreateFromBankRowSheet: View {
                 Text("The transaction was created. \(failed.message)")
             }
         }
-        .interactiveDismissDisabled(pending)
+        .interactiveDismissDisabled(hasInput || pending)
         .task {
             await model.loadOrganizeData()
         }
+    }
+
+    // The row fills the title, date and notes, so only a change to them is input to lose.
+    private var hasInput: Bool {
+        title != row.title || notes != (row.purpose ?? row.rawDescription) || date != AppFormatters.localDay(row.valueDate ?? row.bookingDate)
+            || categoryID != nil || !tags.isEmpty || receipt != nil
     }
 
     private var category: CategorySummary? {

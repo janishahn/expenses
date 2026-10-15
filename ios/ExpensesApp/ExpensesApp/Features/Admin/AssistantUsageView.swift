@@ -13,12 +13,14 @@ struct AssistantUsageView: View {
             case nil:
                 LoadingStateSection(title: "Loading usage")
             case .failure(let error):
-                UnavailableStateSection(title: "Usage is unavailable", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Usage is unavailable", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let usage) where usage.totalChats == 0:
                 UnavailableStateSection(title: "No assistant usage", systemImage: "chart.bar")
             case .success(let usage):
                 Section {
-                    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+                    MetricGrid {
                         GridRow {
                             Metric("Cost") {
                                 Text(usage.costedChats > 0 ? cost(usage.totalCostDecimal, unit: usage.costUnit) : "Not billed")

@@ -12,7 +12,9 @@ struct AdminSystemView: View {
             case nil:
                 LoadingStateSection(title: "Loading system information")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load system information", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load system information", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let info):
                 Section {
                     LabeledContent("Version", value: info.appVersion)

@@ -47,7 +47,7 @@ struct UncategorizedView: View {
                                         Task { await dismiss(row) }
                                     }
                                 }
-                                Button("Choose Category", systemImage: "square.grid.2x2") {
+                                Button("Choose Category", systemImage: "square.on.circle") {
                                     choosingFor = .row(row)
                                 }
                             }
@@ -65,7 +65,9 @@ struct UncategorizedView: View {
                     title: "Couldn't load uncategorized transactions",
                     systemImage: "exclamationmark.triangle",
                     message: model.lastError?.message
-                )
+                ) {
+                    loadFailed = await !model.loadUncategorizedTransactions()
+                }
             } else {
                 LoadingStateSection(title: "Loading uncategorized transactions")
             }
@@ -94,7 +96,7 @@ struct UncategorizedView: View {
                     }
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Category", systemImage: "square.grid.2x2") {
+                    Button("Category", systemImage: "square.on.circle") {
                         choosingFor = .selection
                     }
                     .disabled(selectionCount == 0)

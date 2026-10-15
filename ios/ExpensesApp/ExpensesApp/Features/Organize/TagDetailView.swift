@@ -10,9 +10,7 @@ struct TagDetailView: View {
     let tagID: Int
     let openTransactions: (TransactionQuery) -> Void
 
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, TagMutationRequest>()
     @State private var nameDraft = ""
     @FocusState private var nameFocused: Bool
     @State private var choosingAutoAdd = false
@@ -27,11 +25,6 @@ struct TagDetailView: View {
         case budgets
         case filters
         case auto
-    }
-
-    private struct Entered {
-        let id = UUID()
-        let change: (inout TagMutationRequest) -> Void
     }
 
     private var tag: TagRow? {
@@ -154,20 +147,12 @@ struct TagDetailView: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Name", text: $nameDraft, axis: .vertical)
-                    .font(.title2.weight(.semibold))
                     .focused($nameFocused)
-                    .submitLabel(.done)
-                    .onChange(of: nameDraft) { _, draft in
-                        // Return ends the edit instead of starting a new line.
-                        if draft.contains("\n") {
-                            nameDraft = draft.replacingOccurrences(of: "\n", with: "")
-                            nameFocused = false
-                        }
-                    }
-                    .fieldError(errors[.name])
+                    .detailNameField($nameDraft) { nameFocused = false }
+                    .fieldError(saves.errors[.name])
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     AmountText(tag.expenseCents)
-                        .font(.system(size: 34, weight: .semibold))
+                        .font(.largeTitle.weight(.semibold))
                     Text("spent")
                         .foregroundStyle(.secondary)
                 }
@@ -190,12 +175,12 @@ struct TagDetailView: View {
             Toggle("Count in budgets", isOn: Binding(get: { !shown.isHiddenFromBudget }, set: { counts in
                 save(.budgets) { $0.isHiddenFromBudget = !counts }
             }))
-            .fieldError(errors[.budgets])
+            .fieldError(saves.errors[.budgets])
 
             Toggle("Show in filter menus", isOn: Binding(get: { !shown.isHiddenFromFilters }, set: { shows in
                 save(.filters) { $0.isHiddenFromFilters = !shows }
             }))
-            .fieldError(errors[.filters])
+            .fieldError(saves.errors[.filters])
 
             Button {
                 choosingAutoAdd = true
@@ -212,12 +197,12 @@ struct TagDetailView: View {
                     confirm: "Save",
                     onTurnOff: shown.autoAttachPeriod == nil ? nil : { save(.auto) { $0.autoAttachPeriod = nil } }
                 ) { period in
-                    if period != tag.autoAttachPeriod || errors[.auto] != nil {
+                    if period != tag.autoAttachPeriod || saves.errors[.auto] != nil {
                         save(.auto) { $0.autoAttachPeriod = period }
                     }
                 }
             }
-            .fieldError(errors[.auto])
+            .fieldError(saves.errors[.auto])
 
             LabeledContent(model.tagsPeriod.title, value: usesText(tag.usageCount))
             LabeledContent("Created", value: AppFormatters.shortDay(tag.createdAt))
@@ -297,36 +282,13 @@ struct TagDetailView: View {
     // MARK: Saving
 
     private func shown(_ tag: TagRow) -> TagMutationRequest {
-        var body = TagMutationRequest(tag)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(TagMutationRequest(tag))
     }
 
     private func save(_ field: Field, _ change: @escaping (inout TagMutationRequest) -> Void) {
-        let entry = Entered(change: change)
-        if field != .name {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = tag else {
-                return
-            }
-            var body = TagMutationRequest(stored)
-            change(&body)
-            if await model.saveTag(id: tagID, body: body) {
-                errors[field] = nil
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { tag.map { TagMutationRequest($0) } }, commit: { body in
+            await model.saveTag(id: tagID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     private func commitName() {
@@ -335,11 +297,11 @@ struct TagDetailView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            errors[.name] = "Enter a tag name."
+            saves.errors[.name] = "Enter a tag name."
             return
         }
         nameDraft = name
-        if name != tag.name || errors[.name] != nil {
+        if name != tag.name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

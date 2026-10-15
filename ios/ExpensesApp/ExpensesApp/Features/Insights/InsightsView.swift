@@ -34,7 +34,9 @@ struct InsightsView: View {
                 case nil:
                     LoadingStateSection(title: "Loading insights")
                 case .failure(let error):
-                    UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: error.message)
+                    UnavailableStateSection(title: "Couldn't load insights", systemImage: "exclamationmark.triangle", message: error.message) {
+                        await loadInsights()
+                    }
                 case .success(let data):
                     MetricsSection(data: data)
                     IncomeExpensesSection(series: data.series)
@@ -43,6 +45,13 @@ struct InsightsView: View {
                     DailySpendingSection(calendar: calendar, openTransactions: openTransactions)
                     BudgetHistorySection(history: budgetHistory, openBudgets: openBudgets)
                 }
+            }
+            .refreshable {
+                grids = [:]
+                async let insights: Void = loadInsights()
+                async let grid: Void = loadGrid()
+                async let windows: Void = loadWindows()
+                _ = await (insights, grid, windows)
             }
             .headerProminence(.increased)
             .environment(\.defaultMinListRowHeight, 28)
@@ -79,13 +88,6 @@ struct InsightsView: View {
                 if split == nil {
                     await loadWindows()
                 }
-            }
-            .refreshable {
-                grids = [:]
-                async let insights: Void = loadInsights()
-                async let grid: Void = loadGrid()
-                async let windows: Void = loadWindows()
-                _ = await (insights, grid, windows)
             }
         }
     }
@@ -130,7 +132,7 @@ private struct InsightsFilterSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .expensesScreenStyle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Clear") {
                         query.tagIDs = []
                     }
@@ -154,51 +156,74 @@ private struct MetricsSection: View {
     let data: InsightsResponse
 
     var body: some View {
-        let spent = data.expenseCents
-        let saved = data.incomeCents - spent
-        let months = data.monthCount
         Section {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 16) {
-                GridRow {
-                    Metric("Income") {
-                        AmountText(data.incomeCents)
-                    } detail: {
-                        if months > 1 {
-                            Text("\(months) months")
-                        }
+            // At large text sizes the four figures stack.
+            ViewThatFits(in: .horizontal) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 16) {
+                    GridRow {
+                        income
+                        spent
                     }
-                    Metric("Spent") {
-                        AmountText(spent)
-                    } detail: {
-                        if months > 1 {
-                            HStack(spacing: 4) {
-                                AmountText(Int((Double(spent) / Double(months)).rounded()))
-                                Text("per month")
-                            }
-                        }
+                    GridRow {
+                        saved
+                        recurring
                     }
                 }
-                GridRow {
-                    Metric("Saved") {
-                        AmountText(saved, signed: saved < 0)
-                            .foregroundStyle(saved > 0 ? ExpensesTheme.income(for: scheme) : .primary)
-                    } detail: {
-                        if data.incomeCents > 0 {
-                            Text("\(percent(saved, of: data.incomeCents)) of income")
-                        }
-                    }
-                    Metric("Recurring") {
-                        Text(spent > 0 ? percent(data.recurringCents, of: spent) : "–")
-                    } detail: {
-                        if spent > 0 {
-                            Text("of spending")
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 16) {
+                    income
+                    spent
+                    saved
+                    recurring
                 }
             }
             .padding(.vertical, 6)
         }
         .expensesRowBackground()
+    }
+
+    private var income: some View {
+        Metric("Income") {
+            AmountText(data.incomeCents)
+        } detail: {
+            if data.monthCount > 1 {
+                Text("\(data.monthCount) months")
+            }
+        }
+    }
+
+    private var spent: some View {
+        Metric("Spent") {
+            AmountText(data.expenseCents)
+        } detail: {
+            if data.monthCount > 1 {
+                HStack(spacing: 4) {
+                    AmountText(Int((Double(data.expenseCents) / Double(data.monthCount)).rounded()))
+                    Text("per month")
+                }
+            }
+        }
+    }
+
+    private var saved: some View {
+        let saved = data.incomeCents - data.expenseCents
+        return Metric("Saved") {
+            AmountText(saved, signed: saved < 0)
+                .foregroundStyle(saved > 0 ? ExpensesTheme.income(for: scheme) : .primary)
+        } detail: {
+            if data.incomeCents > 0 {
+                Text("\(percent(saved, of: data.incomeCents)) of income")
+            }
+        }
+    }
+
+    private var recurring: some View {
+        Metric("Recurring") {
+            Text(data.expenseCents > 0 ? percent(data.recurringCents, of: data.expenseCents) : "–")
+        } detail: {
+            if data.expenseCents > 0 {
+                Text("of spending")
+            }
+        }
     }
 }
 
@@ -206,6 +231,8 @@ private struct IncomeExpensesSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @State private var selected: Int?
+    // Room for the first and last month's label at every text size.
+    @ScaledMetric(relativeTo: .caption2) private var edge = 14.0
 
     let series: [InsightsMonthlySeriesPoint]
 
@@ -216,7 +243,7 @@ private struct IncomeExpensesSection: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     chart
-                    HStack(spacing: 14) {
+                    ChartLegend {
                         ChartLegendItem(title: "Income", color: ExpensesTheme.income(for: scheme), mark: .line)
                         ChartLegendItem(title: "Expenses", color: .primary, mark: .line)
                         ChartLegendItem(title: "Saved", color: savedColor, mark: .area)
@@ -323,7 +350,7 @@ private struct IncomeExpensesSection: View {
             }
         }
         .chartXSelection(value: Binding(get: { selected }, set: { selected = $0.map { min(max($0, 0), last) } }))
-        .chartXScale(domain: series.count == 1 ? -1...1 : 0...last, range: .plotDimension(padding: 14))
+        .chartXScale(domain: series.count == 1 ? -1...1 : 0...last, range: .plotDimension(padding: edge))
         .chartXAxis {
             AxisMarks(values: labeled) { value in
                 AxisValueLabel(anchor: .top) {
@@ -333,11 +360,7 @@ private struct IncomeExpensesSection: View {
                 }
             }
         }
-        .chartYAxis {
-            AxisMarks(values: .automatic(desiredCount: 3)) { _ in
-                AxisGridLine()
-            }
-        }
+        .amountYAxis()
         .frame(height: 170)
     }
 
@@ -396,7 +419,7 @@ private struct RecurringSection: View {
             case .success(let data):
                 VStack(alignment: .leading, spacing: 10) {
                     chart(data.rows)
-                    HStack(spacing: 14) {
+                    ChartLegend {
                         ChartLegendItem(title: "Recurring", color: ExpensesTheme.recurring(for: scheme), mark: .area)
                         ChartLegendItem(title: "Other", color: otherColor, mark: .area)
                     }
@@ -470,11 +493,7 @@ private struct RecurringSection: View {
                 }
             }
         }
-        .chartYAxis {
-            AxisMarks(values: .automatic(desiredCount: 3)) { _ in
-                AxisGridLine()
-            }
-        }
+        .amountYAxis()
         .frame(height: 150)
     }
 }
@@ -565,7 +584,7 @@ private struct MonthGridSection: View {
                     Image(systemName: categorySymbolName(for: resolvedCategoryIconKey(row.icon, name: row.name)))
                         .font(.caption2)
                         .foregroundStyle(color)
-                        .frame(width: 14)
+                        .glyphColumn(14, relativeTo: .caption2)
                 }
                 Text(row.name)
                     .lineLimit(1)
@@ -942,7 +961,7 @@ private struct BudgetHistorySection: View {
                     Image(systemName: categorySymbolName(for: resolvedCategoryIconKey(row.icon, name: row.name)))
                         .font(.caption2)
                         .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
-                        .frame(width: 14)
+                        .glyphColumn(14, relativeTo: .caption2)
                 }
                 Text(row.name)
                     .lineLimit(1)
@@ -1000,23 +1019,43 @@ private let gridRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing:
 /// A grid line: a name, one cell per month, and a total, in fixed columns so that the
 /// lines of a grid align.
 private struct GridLine<Name: View, Cell: View, Total: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     let count: Int
     @ViewBuilder let name: Name
     @ViewBuilder let cell: (Int) -> Cell
     @ViewBuilder let total: Total
 
     var body: some View {
+        // At accessibility sizes the name and total take a line above the months.
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                AdaptiveRow {
+                    name
+                } trailing: {
+                    total
+                }
+                cells
+            }
+        } else {
+            HStack(spacing: 3) {
+                name
+                    .frame(width: 96, alignment: .leading)
+                cells
+                total
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 58, alignment: .trailing)
+            }
+        }
+    }
+
+    private var cells: some View {
         HStack(spacing: 3) {
-            name
-                .frame(width: 96, alignment: .leading)
             ForEach(0..<count, id: \.self) { index in
                 cell(index)
                     .frame(maxWidth: .infinity)
             }
-            total
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: 58, alignment: .trailing)
         }
     }
 }

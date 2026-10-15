@@ -17,10 +17,15 @@ struct RecurringView: View {
                     title: "Couldn't load recurring rules",
                     systemImage: "exclamationmark.triangle",
                     message: model.lastError?.message
-                )
+                ) {
+                    await model.loadRecurring()
+                }
             } else {
                 LoadingStateSection(title: "Loading recurring rules")
             }
+        }
+        .refreshable {
+            await model.loadRecurring()
         }
         .navigationTitle("Recurring")
         .expensesScreenStyle()
@@ -38,9 +43,6 @@ struct RecurringView: View {
             }
         }
         .task {
-            await model.loadRecurring()
-        }
-        .refreshable {
             await model.loadRecurring()
         }
     }
@@ -89,7 +91,7 @@ struct RecurringView: View {
         let stats = recurring.stats
         let net = stats.netMonthly
         Section {
-            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
                     Metric("Income per month") {
                         AmountText(stats.totalMonthlyIncome)
@@ -136,9 +138,9 @@ struct RecurringView: View {
                     .navigationLinkIndicatorVisibility(.hidden)
                 }
             } header: {
-                HStack {
+                AdaptiveRow {
                     Text(title)
-                    Spacer()
+                } trailing: {
                     HStack(spacing: 4) {
                         AmountText(perMonth)
                         Text("per month")
@@ -152,7 +154,7 @@ struct RecurringView: View {
     @ViewBuilder
     private func auditSections(_ stats: RecurringStats, expenses: [RecurringRule]) -> some View {
         Section {
-            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
                     Metric("Per month") {
                         AmountText(stats.totalMonthlyExpenses)
@@ -184,11 +186,11 @@ struct RecurringView: View {
                 NavigationLink {
                     RecurringRuleView(ruleID: rule.id)
                 } label: {
-                    HStack(spacing: 12) {
+                    TrailingRow {
                         CategoryGlyph(categoryID: rule.categoryID, iconKey: rule.category?.icon, name: rule.category?.name)
+                    } content: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(rule.label)
-                                .lineLimit(1)
                             HStack(spacing: 4) {
                                 AmountText(rule.monthlyEquivalentCents * 12, decimals: false)
                                 Text("per year")
@@ -196,7 +198,7 @@ struct RecurringView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
+                    } trailing: {
                         AmountText(rule.monthlyEquivalentCents)
                     }
                 }
@@ -224,17 +226,16 @@ private struct RecurringRuleRow: View {
     let rule: RecurringRule
 
     var body: some View {
-        HStack(spacing: 12) {
+        TrailingRow {
             CategoryGlyph(categoryID: rule.categoryID, iconKey: rule.category?.icon, name: rule.category?.name)
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(rule.label)
-                    .lineLimit(1)
                 Text("\(rule.intervalUnit.repeats(rule.intervalCount)) · Next \(AppFormatters.shortDay(AppFormatters.localDay(rule.nextOccurrence)))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-            Spacer(minLength: 8)
+        } trailing: {
             AmountText(rule.amountCents, currencyCode: rule.currencyCode, signed: rule.type == .income)
                 .foregroundStyle(rule.type == .income ? ExpensesTheme.income(for: scheme) : .primary)
         }

@@ -13,10 +13,12 @@ struct AdminHealthView: View {
             case nil:
                 LoadingStateSection(title: "Loading server health")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load server health", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load server health", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let health):
                 Section {
-                    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+                    MetricGrid {
                         GridRow {
                             Metric("CPU temperature") {
                                 Text(health.cpuTempCelsius.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) °C" } ?? "Not available")

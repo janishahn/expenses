@@ -10,9 +10,7 @@ struct CategoryDetailView: View {
     let categoryID: Int
     let openTransactions: (TransactionQuery) -> Void
 
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, CategoryUpdateRequest>()
     @State private var nameDraft = ""
     @FocusState private var nameFocused: Bool
     @State private var choosingIcon = false
@@ -25,11 +23,6 @@ struct CategoryDetailView: View {
         case name
         case icon
         case order
-    }
-
-    private struct Entered {
-        let id = UUID()
-        let change: (inout CategoryUpdateRequest) -> Void
     }
 
     private var category: CategoryListItem? {
@@ -84,7 +77,7 @@ struct CategoryDetailView: View {
         .sheet(isPresented: $choosingIcon) {
             if let category {
                 IconPickerSheet(selected: shown(category).icon) { icon in
-                    if icon != category.icon || errors[.icon] != nil {
+                    if icon != category.icon || saves.errors[.icon] != nil {
                         save(.icon) { $0.icon = icon }
                     }
                 }
@@ -146,17 +139,9 @@ struct CategoryDetailView: View {
     private func head(_ category: CategoryListItem) -> some View {
         Section {
             TextField("Name", text: $nameDraft, axis: .vertical)
-                .font(.title2.weight(.semibold))
                 .focused($nameFocused)
-                .submitLabel(.done)
-                .onChange(of: nameDraft) { _, draft in
-                    // Return ends the edit instead of starting a new line.
-                    if draft.contains("\n") {
-                        nameDraft = draft.replacingOccurrences(of: "\n", with: "")
-                        nameFocused = false
-                    }
-                }
-                .fieldError(errors[.name])
+                .detailNameField($nameDraft) { nameFocused = false }
+                .fieldError(saves.errors[.name])
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
@@ -179,7 +164,7 @@ struct CategoryDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.icon])
+            .fieldError(saves.errors[.icon])
 
             Button {
                 choosingOrder = true
@@ -196,13 +181,13 @@ struct CategoryDetailView: View {
                     guard let order = Int(raw.trimmingCharacters(in: .whitespaces)) else {
                         return "Enter a whole number."
                     }
-                    if order != category.order || errors[.order] != nil {
+                    if order != category.order || saves.errors[.order] != nil {
                         save(.order) { $0.order = order }
                     }
                     return nil
                 }
             }
-            .fieldError(errors[.order])
+            .fieldError(saves.errors[.order])
 
             LabeledContent(model.categoriesPeriod.title) {
                 HStack(spacing: 4) {
@@ -268,36 +253,13 @@ struct CategoryDetailView: View {
     // MARK: Saving
 
     private func shown(_ category: CategoryListItem) -> CategoryUpdateRequest {
-        var body = CategoryUpdateRequest(category)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(CategoryUpdateRequest(category))
     }
 
     private func save(_ field: Field, _ change: @escaping (inout CategoryUpdateRequest) -> Void) {
-        let entry = Entered(change: change)
-        if field != .name {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = category else {
-                return
-            }
-            var body = CategoryUpdateRequest(stored)
-            change(&body)
-            if await model.updateCategory(id: categoryID, body: body) {
-                errors[field] = nil
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { category.map { CategoryUpdateRequest($0) } }, commit: { body in
+            await model.updateCategory(id: categoryID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     private func commitName() {
@@ -306,11 +268,11 @@ struct CategoryDetailView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            errors[.name] = "Enter a category name."
+            saves.errors[.name] = "Enter a category name."
             return
         }
         nameDraft = name
-        if name != category.name || errors[.name] != nil {
+        if name != category.name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

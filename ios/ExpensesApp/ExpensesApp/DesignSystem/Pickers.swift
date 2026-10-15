@@ -1,5 +1,30 @@
 import SwiftUI
 
+/// A list row that picks or ticks a value, with a checkmark while it is selected. The
+/// checkmark keeps its space, so the label does not move when it changes.
+struct SelectableRow<Label: View>: View {
+    let isSelected: Bool
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                label
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "checkmark")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.tint)
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .tint(.primary)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 /// Categories grouped by type, with search. Choosing one dismisses the sheet.
 /// With `onSelectNone`, a first row stands for no category: Uncategorized, or
 /// `noneTitle` such as Keep category.
@@ -21,7 +46,7 @@ struct CategoryPickerSheet: View {
             List {
                 if let onSelectNone, search.isEmpty {
                     Section {
-                        Button {
+                        SelectableRow(isSelected: selectsNone) {
                             onSelectNone()
                             dismiss()
                         } label: {
@@ -29,44 +54,26 @@ struct CategoryPickerSheet: View {
                                 Image(systemName: noneSymbol)
                                     .font(.callout)
                                     .foregroundStyle(ExpensesTheme.category(nil, for: scheme))
-                                    .frame(width: 26)
+                                    .glyphColumn()
                                     .accessibilityHidden(true)
                                 Text(noneTitle)
-                                Spacer()
-                                if selectsNone {
-                                    Image(systemName: "checkmark")
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.tint)
-                                }
                             }
-                            .contentShape(Rectangle())
                         }
-                        .tint(.primary)
-                        .accessibilityAddTraits(selectsNone ? .isSelected : [])
                     }
                     .expensesRowBackground()
                 }
                 ForEach(groups, id: \.title) { group in
                     Section(group.title) {
                         ForEach(group.categories) { category in
-                            Button {
+                            SelectableRow(isSelected: category.id == selectedID) {
                                 onSelect(category)
                                 dismiss()
                             } label: {
                                 HStack(spacing: 12) {
                                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
                                     Text(category.name)
-                                    Spacer()
-                                    if category.id == selectedID {
-                                        Image(systemName: "checkmark")
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.tint)
-                                    }
                                 }
-                                .contentShape(Rectangle())
                             }
-                            .tint(.primary)
-                            .accessibilityAddTraits(category.id == selectedID ? .isSelected : [])
                         }
                     }
                     .expensesRowBackground()
@@ -134,26 +141,15 @@ struct TagPickerSheet: View {
             List {
                 Section {
                     ForEach(matches, id: \.self) { name in
-                        Button {
+                        SelectableRow(isSelected: selected.contains(name)) {
                             if let index = selected.firstIndex(of: name) {
                                 selected.remove(at: index)
                             } else {
                                 selected.append(name)
                             }
                         } label: {
-                            HStack {
-                                Text(name)
-                                Spacer()
-                                if selected.contains(name) {
-                                    Image(systemName: "checkmark")
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                            .contentShape(Rectangle())
+                            Text(name)
                         }
-                        .tint(.primary)
-                        .accessibilityAddTraits(selected.contains(name) ? .isSelected : [])
                     }
                 }
                 .expensesRowBackground()
@@ -210,26 +206,11 @@ struct TagFilterSection: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(tags) { tag in
-                Button {
-                    if ids.contains(tag.id) {
-                        ids.remove(tag.id)
-                    } else {
-                        ids.insert(tag.id)
-                    }
+                SelectableRow(isSelected: ids.contains(tag.id)) {
+                    ids.formSymmetricDifference([tag.id])
                 } label: {
-                    HStack {
-                        Text(tag.name)
-                        Spacer()
-                        if ids.contains(tag.id) {
-                            Image(systemName: "checkmark")
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.tint)
-                        }
-                    }
-                    .contentShape(Rectangle())
+                    Text(tag.name)
                 }
-                .tint(.primary)
-                .accessibilityAddTraits(ids.contains(tag.id) ? .isSelected : [])
             }
         }
         .expensesRowBackground()

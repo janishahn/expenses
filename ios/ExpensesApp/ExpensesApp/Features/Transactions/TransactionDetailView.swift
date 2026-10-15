@@ -1,4 +1,5 @@
 import MapKit
+import QuickLook
 import SwiftUI
 import UIKit
 
@@ -12,10 +13,7 @@ struct TransactionDetailView: View {
     let transactionID: Int
 
     @State private var loadFailed = false
-    // Picker values shown while they save, and kept with the error when the save fails.
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, TransactionMutationRequest>()
     @State private var dateSave: Task<Void, Never>?
     // Text fields keep their own drafts and save when they lose focus.
     @State private var titleDraft = ""
@@ -44,11 +42,6 @@ struct TransactionDetailView: View {
         case notes
     }
 
-    private struct Entered {
-        let id = UUID()
-        let change: (inout TransactionMutationRequest) -> Void
-    }
-
     private enum Sheet: Identifiable {
         case category
         case tags
@@ -71,7 +64,7 @@ struct TransactionDetailView: View {
                     TextField("Add notes", text: $notesDraft, axis: .vertical)
                         .lineLimit(3...)
                         .focused($focus, equals: .notes)
-                        .fieldError(errors[.notes])
+                        .fieldError(saves.errors[.notes])
                 }
                 .expensesRowBackground()
                 reimbursements(transaction)
@@ -87,10 +80,15 @@ struct TransactionDetailView: View {
                 }
                 ReceiptsSection(transaction: transaction)
             } else if loadFailed {
-                UnavailableStateSection(title: "Couldn't load transaction", systemImage: "exclamationmark.triangle")
+                UnavailableStateSection(title: "Couldn't load transaction", systemImage: "exclamationmark.triangle") {
+                    await reload()
+                }
             } else {
                 LoadingStateSection(title: "Loading transaction")
             }
+        }
+        .refreshable {
+            await reload()
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -135,7 +133,7 @@ struct TransactionDetailView: View {
                     }
                 case .tags:
                     TagPickerSheet(title: "Tags", options: model.activeTags.map(\.name), selected: shown.tags) { names in
-                        if names != shown.tags || errors[.tags] != nil {
+                        if names != shown.tags || saves.errors[.tags] != nil {
                             save(.tags) { $0.tags = names }
                         }
                     }
@@ -186,9 +184,6 @@ struct TransactionDetailView: View {
                 await model.loadOrganizeData()
             }
         }
-        .refreshable {
-            await reload()
-        }
     }
 
     // MARK: Sections
@@ -197,30 +192,22 @@ struct TransactionDetailView: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Title", text: $titleDraft, axis: .vertical)
-                    .font(.title2.weight(.semibold))
                     .focused($focus, equals: .title)
-                    .submitLabel(.done)
-                    .onChange(of: titleDraft) { _, draft in
-                        // Return ends the edit instead of starting a new line.
-                        if draft.contains("\n") {
-                            titleDraft = draft.replacingOccurrences(of: "\n", with: "")
-                            focus = nil
-                        }
-                    }
-                    .fieldError(errors[.title])
-                if editingAmount || errors[.amount] != nil {
+                    .detailNameField($titleDraft) { focus = nil }
+                    .fieldError(saves.errors[.title])
+                if editingAmount || saves.errors[.amount] != nil {
                     EntryAmountField(text: $amountDraft, income: shown.type == .income)
                         .focused($focus, equals: .amount)
                         .onAppear {
                             focus = .amount
                         }
-                        .fieldError(errors[.amount])
+                        .fieldError(saves.errors[.amount])
                 } else {
                     Button {
                         editingAmount = true
                     } label: {
                         AmountText(AppFormatters.parseAmountCents(amountDraft) ?? transaction.amountCents, signed: shown.type == .income)
-                            .font(.system(size: 34, weight: .semibold))
+                            .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(shown.type == .income ? ExpensesTheme.income(for: scheme) : .primary)
                     }
                     .buttonStyle(.plain)
@@ -247,10 +234,10 @@ struct TransactionDetailView: View {
                 Text("Income").tag(TransactionKind.income)
             }
             .pickerStyle(.menu)
-            .fieldError(errors[.type])
+            .fieldError(saves.errors[.type])
 
             DatePicker("Date", selection: dateSelection(shown))
-                .fieldError(errors[.date])
+                .fieldError(saves.errors[.date])
 
             Button {
                 sheet = .category
@@ -268,7 +255,7 @@ struct TransactionDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.category])
+            .fieldError(saves.errors[.category])
 
             Button {
                 sheet = .tags
@@ -280,13 +267,13 @@ struct TransactionDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.tags])
+            .fieldError(saves.errors[.tags])
 
             if shown.type == .income {
                 Toggle("Reimbursement", isOn: Binding(get: { shown.isReimbursement }, set: { value in
                     save(.reimbursement) { $0.isReimbursement = value }
                 }))
-                .fieldError(errors[.reimbursement])
+                .fieldError(saves.errors[.reimbursement])
             }
 
             Menu {
@@ -312,7 +299,7 @@ struct TransactionDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.location])
+            .fieldError(saves.errors[.location])
 
             if transaction.type == "expense" && transaction.reimbursedTotalCents > 0 {
                 LabeledContent("Reimbursed") {
@@ -396,12 +383,14 @@ struct TransactionDetailView: View {
                         allocationRow(allocation.allocationID, linked: allocation.expenseTransaction, amountCents: allocation.amountCents, income: false)
                     }
                 } header: {
-                    HStack(spacing: 4) {
+                    AdaptiveRow {
                         Text("Allocated to")
-                        Spacer()
-                        AmountText(reimbursements.allocatedTotalCents ?? 0)
-                        Text("of")
-                        AmountText(transaction.amountCents)
+                    } trailing: {
+                        HStack(spacing: 4) {
+                            AmountText(reimbursements.allocatedTotalCents ?? 0)
+                            Text("of")
+                            AmountText(transaction.amountCents)
+                        }
                     }
                 }
                 .expensesRowBackground()
@@ -419,13 +408,17 @@ struct TransactionDetailView: View {
                     Image(systemName: "arrow.uturn.backward")
                         .foregroundStyle(ExpensesTheme.income(for: scheme))
                 }
-                Text(linked.title ?? linked.category?.name ?? (income ? "Reimbursement" : "Expense"))
-                    .lineLimit(1)
-                Text(AppFormatters.shortDay(AppFormatters.localDay(linked.date)))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                AmountText(amountCents, signed: income)
-                    .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
+                TrailingRow {
+                    HStack(spacing: 8) {
+                        Text(linked.title ?? linked.category?.name ?? (income ? "Reimbursement" : "Expense"))
+                        Text(AppFormatters.shortDay(AppFormatters.localDay(linked.date)))
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
+                    }
+                } trailing: {
+                    AmountText(amountCents, signed: income)
+                        .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
+                }
             }
         }
         .navigationLinkIndicatorVisibility(.hidden)
@@ -445,11 +438,7 @@ struct TransactionDetailView: View {
     // MARK: Values
 
     private func shown(_ transaction: TransactionDetail) -> TransactionMutationRequest {
-        var body = TransactionMutationRequest(transaction)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(TransactionMutationRequest(transaction))
     }
 
     private func category(_ transaction: TransactionDetail, _ shown: TransactionMutationRequest) -> CategorySummary? {
@@ -476,30 +465,9 @@ struct TransactionDetailView: View {
     // MARK: Saving
 
     private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
-        let entry = Entered(change: change)
-        if ![.title, .amount, .notes].contains(field) {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = transaction else {
-                return
-            }
-            var body = TransactionMutationRequest(stored)
-            change(&body)
-            if await model.updateTransaction(id: transactionID, body: body) {
-                // Saves run in order, so this one supersedes an earlier failure of the field.
-                errors[field] = nil
-                // A newer value entered while this one saved stays shown.
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { transaction.map { TransactionMutationRequest($0) } }, commit: { body in
+            await model.updateTransaction(id: transactionID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     // The picker reports each step, so the date saves once it rests.
@@ -507,7 +475,7 @@ struct TransactionDetailView: View {
         Binding(
             get: { shown.occurredAt },
             set: { date in
-                entered[.date] = Entered { $0.occurredAt = date }
+                saves.enter(.date) { $0.occurredAt = date }
                 dateSave?.cancel()
                 dateSave = Task {
                     try? await Task.sleep(for: .milliseconds(800))
@@ -520,7 +488,7 @@ struct TransactionDetailView: View {
     }
 
     private func saveCategory(_ categoryID: Int?, shown: TransactionMutationRequest) {
-        if categoryID != shown.categoryID || errors[.category] != nil {
+        if categoryID != shown.categoryID || saves.errors[.category] != nil {
             save(.category) { $0.categoryID = categoryID }
         }
     }
@@ -531,11 +499,11 @@ struct TransactionDetailView: View {
         }
         let title = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else {
-            errors[.title] = "Enter a title."
+            saves.errors[.title] = "Enter a title."
             return
         }
         titleDraft = title
-        if title != transaction.title || errors[.title] != nil {
+        if title != transaction.title || saves.errors[.title] != nil {
             save(.title) { $0.title = title }
         }
     }
@@ -545,11 +513,11 @@ struct TransactionDetailView: View {
             return
         }
         guard let cents = AppFormatters.parseAmountCents(amountDraft) else {
-            errors[.amount] = "Enter a valid amount."
+            saves.errors[.amount] = "Enter a valid amount."
             return
         }
         editingAmount = false
-        if cents != transaction.amountCents || errors[.amount] != nil {
+        if cents != transaction.amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
     }
@@ -560,7 +528,7 @@ struct TransactionDetailView: View {
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = notes.isEmpty ? nil : notes
-        if description != transaction.description || errors[.notes] != nil {
+        if description != transaction.description || saves.errors[.notes] != nil {
             save(.notes) { $0.description = description }
         }
     }
@@ -572,7 +540,7 @@ struct TransactionDetailView: View {
             let coordinate = try await locationProvider.currentCoordinate()
             save(.location) { $0.location = .set(latitude: coordinate.latitude, longitude: coordinate.longitude) }
         } catch {
-            errors[.location] = error.localizedDescription
+            saves.errors[.location] = error.localizedDescription
         }
     }
 
@@ -589,14 +557,24 @@ struct TransactionDetailView: View {
 
     private func reload() async {
         loadFailed = false
+        // A transaction opened again shows its last copy while it loads.
+        if let transaction {
+            fillDrafts(transaction)
+        }
         await model.loadTransactionDetail(id: transactionID)
         guard let transaction else {
             loadFailed = true
             return
         }
-        titleDraft = transaction.title
-        amountDraft = AppFormatters.amountInput(transaction.amountCents)
-        notesDraft = transaction.description ?? ""
+        fillDrafts(transaction)
+    }
+
+    private func fillDrafts(_ transaction: TransactionDetail) {
+        // A value still to save stays in its field.
+        let shown = shown(transaction)
+        titleDraft = shown.title
+        amountDraft = AppFormatters.amountInput(shown.amountCents)
+        notesDraft = shown.description ?? ""
     }
 }
 
@@ -615,7 +593,7 @@ private struct ReceiptsSection: View {
     @State private var removing: ReceiptAttachment?
     @State private var uploading = false
     @State private var error: String?
-    @State private var previewDocument: PreviewDocument?
+    @State private var previewURL: URL?
 
     private enum Thumbnail {
         case image(UIImage)
@@ -669,7 +647,7 @@ private struct ReceiptsSection: View {
                         } label: {
                             Image(systemName: "ellipsis")
                                 .frame(width: 32, height: 32)
-                                .contentShape(.rect)
+                                .expandedTouchArea(6)
                         }
                         .tint(.primary)
                         .accessibilityLabel("Receipt actions")
@@ -713,9 +691,7 @@ private struct ReceiptsSection: View {
             } message: { file in
                 Text(file.originalFilename)
             }
-            .sheet(item: $previewDocument) { document in
-                DocumentPreviewView(url: document.url)
-            }
+            .quickLookPreview($previewURL)
             .task(id: files.map(\.id)) {
                 await loadThumbnails()
             }
@@ -754,7 +730,7 @@ private struct ReceiptsSection: View {
                     .frame(maxHeight: 240)
             case .unavailable?:
                 Image(systemName: "doc.richtext")
-                    .font(.system(size: 34))
+                    .font(.largeTitle)
                     .foregroundStyle(.secondary)
                     .frame(height: 120)
             case nil:
@@ -792,6 +768,7 @@ private struct ReceiptsSection: View {
                             RoundedRectangle(cornerRadius: 4)
                                 .strokeBorder(position == index ? Color.primary : .clear, lineWidth: 1.5)
                         }
+                        .expandedTouchArea(7)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(file.originalFilename)
@@ -835,7 +812,7 @@ private struct ReceiptsSection: View {
     private func open(_ file: ReceiptAttachment) async {
         error = nil
         if let url = await model.downloadAttachment(file) {
-            previewDocument = PreviewDocument(url: url)
+            previewURL = url
         } else {
             error = model.lastError?.message ?? "Unable to open the receipt."
         }
@@ -946,9 +923,7 @@ private struct DurableSheet: View {
             .expensesScreenStyle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasChanges)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(transaction.durablePurchase == nil ? "Track" : "Save", role: .confirm) {
@@ -965,6 +940,12 @@ private struct DurableSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(hasChanges || saving)
+    }
+
+    private var hasChanges: Bool {
+        days != (transaction.durablePurchase?.expectedLifespanDays ?? 365)
+            || acquiredOn != AppFormatters.localDay(transaction.durablePurchase?.acquiredOn ?? transaction.date)
     }
 
     private func finish(_ body: DurablePurchaseRequest?) async {
@@ -1028,10 +1009,9 @@ private struct AllocationSearchSection: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(results) { result in
-                    HStack(spacing: 8) {
+                    TrailingRow {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(result.expense.title ?? result.expense.category?.name ?? "Expense")
-                                .lineLimit(1)
                             HStack(spacing: 4) {
                                 Text("\(AppFormatters.shortDay(AppFormatters.localDay(result.expense.date))) ·")
                                 AmountText(result.remainingUnreimbursedCents)
@@ -1040,7 +1020,7 @@ private struct AllocationSearchSection: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
+                    } trailing: {
                         Button("Allocate") {
                             amount = AppFormatters.amountInput(result.suggestedAmountCents)
                             allocating = result

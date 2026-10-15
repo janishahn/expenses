@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var path: [Int]
     let openBudgets: () -> Void
     let openTransactions: () -> Void
@@ -39,6 +40,7 @@ struct DashboardView: View {
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.secondary)
+                                    .expandedTouchArea()
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Clear tag exclusions")
@@ -136,11 +138,19 @@ struct DashboardView: View {
                     }
                     .expensesRowBackground()
                 } else if model.showsDashboardLoadFailed {
-                    UnavailableStateSection(title: "Couldn't load the dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                    UnavailableStateSection(title: "Couldn't load the dashboard", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                        await loadPeriodData()
+                    }
                 } else {
                     LoadingStateSection(title: "Loading dashboard")
                 }
             }
+            .refreshable {
+                async let period: Void = loadPeriodData()
+                async let balance: Void = model.loadDashboardBalance()
+                _ = await (period, balance)
+            }
+            .quickAddButton()
             .headerProminence(.increased)
             .navigationTitle("Dashboard")
             .navigationSubtitle(periodSubtitle)
@@ -170,7 +180,7 @@ struct DashboardView: View {
                     }
 
                     Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                             model.amountsHidden.toggle()
                         }
                     } label: {
@@ -192,11 +202,6 @@ struct DashboardView: View {
                     }
                 )
                 .presentationDetents([.medium, .large])
-            }
-            .refreshable {
-                async let period: Void = loadPeriodData()
-                async let balance: Void = model.loadDashboardBalance()
-                _ = await (period, balance)
             }
             .task(id: model.ledgerRevision) {
                 await model.loadDashboardBalance()
@@ -350,20 +355,31 @@ private struct DashboardSummary: View {
             Divider()
                 .padding(.vertical, 12)
 
-            HStack(alignment: .top, spacing: 0) {
-                metric("Balance", AmountText(kpis.balance), .primary)
-                metric("Cash in", AmountText(kpis.income), .primary)
-                metric("Net", AmountText(net, signed: true), net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
+            // At large text sizes the three figures stack.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 0) {
+                    metrics(kpis.balance, kpis.income, net)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    metrics(kpis.balance, kpis.income, net)
+                }
             }
         }
         .padding(.vertical, 6)
     }
 
+    @ViewBuilder
+    private func metrics(_ balance: Int, _ income: Int, _ net: Int) -> some View {
+        metric("Balance", AmountText(balance), .primary)
+        metric("Cash in", AmountText(income), .primary)
+        metric("Net", AmountText(net, signed: true), net >= 0 ? ExpensesTheme.income(for: scheme) : .primary)
+    }
+
     private func overallBudget(_ budget: DashboardBudgetPace) -> some View {
         VStack(spacing: 0) {
-            HStack {
+            AdaptiveRow {
                 Text("Overall budget")
-                Spacer()
+            } trailing: {
                 SpentAgainst(spentCents: budget.spentCents, budgetCents: budget.budgetCents)
             }
             .font(.subheadline)
@@ -382,15 +398,16 @@ private struct DashboardSummary: View {
             value
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
 private struct BalanceSection: View {
     @Environment(AppModel.self) private var model
+    // Room for the first and last month's label at every text size.
+    @ScaledMetric(relativeTo: .caption2) private var edge = 12.0
 
     let history: Result<BalanceHistoryResponse, APIErrorInfo>?
     let forecast: Result<ForecastResponse, APIErrorInfo>?
@@ -429,8 +446,9 @@ private struct BalanceSection: View {
                 chart(actual: response.months)
             }
         } header: {
-            HStack(alignment: .firstTextBaseline) {
+            AdaptiveRow(alignment: .firstTextBaseline) {
                 Text("Balance")
+            } trailing: {
                 if case .success(let response) = history, !response.months.isEmpty, let final = projected.last {
                     HStack(spacing: 4) {
                         Text("likely")
@@ -495,7 +513,7 @@ private struct BalanceSection: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
             }
         }
-        .chartXScale(domain: 0...max(labels.count - 1, 1), range: .plotDimension(padding: 12))
+        .chartXScale(domain: 0...max(labels.count - 1, 1), range: .plotDimension(padding: edge))
         .chartYScale(domain: .automatic(includesZero: false))
         .chartXAxis {
             AxisMarks(values: Array(stride(from: todayIndex % 3, to: labels.count, by: 3))) { value in
@@ -519,6 +537,7 @@ private struct BalanceSection: View {
 private struct SpendingBandsSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .footnote) private var legendColumn = 104.0
 
     let bands: Result<CategoryBandsResponse, APIErrorInfo>?
 
@@ -590,7 +609,7 @@ private struct SpendingBandsSection: View {
             entries[segment.categoryID] = LegendEntry(categoryID: segment.categoryID, name: segment.name, totalCents: total)
         }
         let sorted = entries.values.sorted { $0.totalCents > $1.totalCents }
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), alignment: .leading)], alignment: .leading, spacing: 6) {
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: legendColumn), alignment: .leading)], alignment: .leading, spacing: 6) {
             ForEach(sorted) { entry in
                 HStack(spacing: 6) {
                     Circle()

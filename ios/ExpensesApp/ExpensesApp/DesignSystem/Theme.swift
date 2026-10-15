@@ -90,7 +90,6 @@ struct ExpensesScreenStyle: ViewModifier {
         content
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 8, for: .scrollContent)
-            .contentMargins(.bottom, 96, for: .scrollContent)
             .listSectionSpacing(16)
             .background(ExpensesBackground())
     }

@@ -10,7 +10,7 @@ struct PrivacyOverlayModifier: ViewModifier {
                     ZStack {
                         ExpensesBackground()
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 34, weight: .medium))
+                            .font(.largeTitle.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                 }

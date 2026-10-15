@@ -44,6 +44,7 @@ struct ChipFlow: Layout {
 /// one is outlined.
 struct EntryChip<Leading: View, Title: View>: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     let isSet: Bool
     let leading: Leading
@@ -73,9 +74,10 @@ struct EntryChip<Leading: View, Title: View>: View {
         )
         .overlay {
             Capsule()
-                .strokeBorder(Color.primary.opacity(isSet ? 0 : 0.14), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(isSet ? 0 : contrast == .increased ? 0.45 : 0.14), lineWidth: 1)
         }
-        .contentShape(.capsule)
+        // A 44-point touch target around the smaller capsule.
+        .contentShape(Rectangle().inset(by: -5))
     }
 }
 
@@ -107,7 +109,7 @@ struct EntryAmountField: View {
 
     var body: some View {
         TextField("Amount", text: $text, prompt: Text(prompt))
-            .font(.system(size: 34, weight: .semibold))
+            .font(.largeTitle.weight(.semibold))
             .monospacedDigit()
             .keyboardType(keyboard)
             .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
@@ -128,6 +130,10 @@ struct FieldError: View {
         Text(message)
             .font(.footnote)
             .foregroundStyle(ExpensesTheme.expense(for: scheme))
+            // VoiceOver says why a submit or save did not go through.
+            .task(id: message) {
+                AccessibilityNotification.Announcement(message).post()
+            }
     }
 }
 
@@ -139,6 +145,31 @@ extension View {
             if let message {
                 FieldError(message)
             }
+        }
+    }
+}
+
+/// Cancel for an entry sheet. With unsaved input it asks before discarding it; pair it
+/// with `interactiveDismissDisabled` so a swipe cannot discard the input either.
+struct DiscardButton: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirming = false
+
+    let hasChanges: Bool
+
+    var body: some View {
+        Button("Cancel", role: .cancel) {
+            if hasChanges {
+                confirming = true
+            } else {
+                dismiss()
+            }
+        }
+        .confirmationDialog("Discard Changes?", isPresented: $confirming) {
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+            Button("Keep Editing", role: .cancel) {}
         }
     }
 }

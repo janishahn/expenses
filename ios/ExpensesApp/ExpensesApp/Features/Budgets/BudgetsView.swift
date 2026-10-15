@@ -94,10 +94,15 @@ struct BudgetsView: View {
                     title: "Couldn't load budgets",
                     systemImage: "exclamationmark.triangle",
                     message: model.lastError?.message
-                )
+                ) {
+                    await model.loadBudgets(month: month.value)
+                }
             } else {
                 LoadingStateSection(title: "Loading budgets")
             }
+        }
+        .refreshable {
+            await model.loadBudgets(month: month.value)
         }
         .navigationTitle("Budgets")
         .navigationSubtitle(month.title)
@@ -176,9 +181,6 @@ struct BudgetsView: View {
                 overallPace = (paceRequest, result)
             }
         }
-        .refreshable {
-            await model.loadBudgets(month: month.value)
-        }
     }
 
     // Until the selected month loads, the budgets still hold the previous one.
@@ -250,15 +252,24 @@ struct BudgetsView: View {
             Text(overall == nil ? "Category budgets" : "Overall budget")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                AmountText(spent)
-                    .font(.title.weight(.semibold))
-                HStack(spacing: 4) {
-                    Text("of")
-                    AmountText(allocation)
+            let allocated = HStack(spacing: 4) {
+                Text("of")
+                AmountText(allocation)
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            // At large text sizes the budget moves under the spent amount.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    AmountText(spent)
+                        .font(.title.weight(.semibold))
+                    allocated
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    AmountText(spent)
+                        .font(.title.weight(.semibold))
+                    allocated
+                }
             }
             .padding(.vertical, 1)
             BudgetBar(spentCents: spent, budgetCents: allocation, pace: budgets.budgetMonth.pace)
@@ -292,10 +303,9 @@ struct BudgetsView: View {
                         HStack(spacing: 12) {
                             ScopeGlyph(categoryID: budget.scopeCategoryID, iconKey: category?.icon, name: budget.scopeLabel)
                             VStack(spacing: 8) {
-                                HStack(spacing: 8) {
+                                AdaptiveRow {
                                     Text(budget.scopeLabel)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 8)
+                                } trailing: {
                                     SpentAgainst(spentCents: budgets.spent(kind, budget), budgetCents: budget.amountCents)
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
@@ -313,9 +323,9 @@ struct BudgetsView: View {
                 }
             }
         } header: {
-            HStack {
+            AdaptiveRow {
                 Text(kind == .month ? "Monthly" : "Annual · \(period)")
-                Spacer()
+            } trailing: {
                 if !rows.isEmpty {
                     SpentAgainst(
                         spentCents: rows.reduce(0) { $0 + budgets.spent(kind, $1) },
@@ -352,6 +362,7 @@ struct BudgetsView: View {
             } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(.secondary)
+                    .expandedTouchArea()
             }
             .buttonStyle(.borderless)
             .accessibilityLabel("Remove the \(Self.label(template)) budget")
@@ -399,7 +410,7 @@ struct ScopeGlyph: View {
             Image(systemName: "square.grid.2x2")
                 .font(.callout)
                 .foregroundStyle(ExpensesTheme.category(nil, for: scheme))
-                .frame(width: 26)
+                .glyphColumn()
                 .accessibilityHidden(true)
         }
     }
@@ -409,6 +420,8 @@ struct ScopeGlyph: View {
 /// month when it was loaded for comparison.
 struct PaceChart: View {
     @Environment(AppModel.self) private var model
+    // Room for the first and last day's label at every text size.
+    @ScaledMetric(relativeTo: .caption2) private var edge = 8.0
 
     let data: BudgetBurndownResponse
     let month: CalendarMonth
@@ -453,10 +466,15 @@ struct PaceChart: View {
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
                 }
             }
-            .chartXScale(domain: 1...data.daysInMonth, range: .plotDimension(padding: 8))
+            .chartXScale(domain: 1...data.daysInMonth, range: .plotDimension(padding: edge))
             .chartXAxis {
-                AxisMarks(values: [1, 10, 20, 30].filter { $0 <= data.daysInMonth }) { _ in
-                    AxisValueLabel()
+                AxisMarks(values: [1, 10, 20, 30].filter { $0 <= data.daysInMonth }) { value in
+                    AxisValueLabel {
+                        if let day = value.as(Int.self) {
+                            Text("\(day)")
+                                .fixedSize()
+                        }
+                    }
                 }
             }
             .chartYAxis {
@@ -466,7 +484,7 @@ struct PaceChart: View {
             }
             .frame(height: height)
 
-            HStack(spacing: 14) {
+            ChartLegend {
                 ChartLegendItem(title: "Actual", color: .primary, mark: .line)
                 ChartLegendItem(title: "Even pace", color: .secondary, mark: .dash)
                 if !previous.isEmpty {

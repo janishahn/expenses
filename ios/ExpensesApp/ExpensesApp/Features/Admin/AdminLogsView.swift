@@ -22,7 +22,9 @@ struct AdminLogsView: View {
             case nil:
                 LoadingStateSection(title: "Loading logs")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load logs", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load logs", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let logs) where logs.entries.isEmpty:
                 UnavailableStateSection(title: "No matching log entries", systemImage: "doc.text.magnifyingglass")
             case .success(let logs):

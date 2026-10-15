@@ -4,6 +4,8 @@ import SwiftUI
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .subheadline) private var sendSize = 32.0
     @State private var input = ""
     @FocusState private var inputFocused: Bool
     @State private var sendTick = 0
@@ -110,8 +112,8 @@ struct AssistantView: View {
                 // new exchange, then scroll on the next layout pass so the question reaches the top.
                 latestUserHeight = 0
                 latestAnswerHeight = 0
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.25)) {
+                Task {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
                         proxy.scrollTo(newID, anchor: .top)
                     }
                 }
@@ -138,6 +140,7 @@ struct AssistantView: View {
                                 RoundedRectangle(cornerRadius: 17)
                                     .strokeBorder(Color.primary.opacity(0.14))
                             }
+                            .expandedTouchArea(4)
                     }
                     .buttonStyle(.plain)
                 }
@@ -165,10 +168,11 @@ struct AssistantView: View {
                 }
             } label: {
                 Image(systemName: model.isAssistantStreaming ? "stop.fill" : "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(ExpensesTheme.surface(for: scheme))
-                    .frame(width: 32, height: 32)
+                    .frame(width: sendSize, height: sendSize)
                     .background(ExpensesTheme.accent(for: scheme), in: .circle)
+                    .expandedTouchArea(6)
             }
             .buttonStyle(.plain)
             .opacity(model.isAssistantStreaming || canSend ? 1 : 0.45)
@@ -411,7 +415,7 @@ private struct AssistantActivityDisclosure: View {
                 .font(.subheadline)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(expanded ? "Collapse" : "Expand")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
 
             // Reveal the steps by growing a top-anchored clip window so the list
             // unrolls from under the header instead of sliding over it. The list is
@@ -436,13 +440,12 @@ private struct AssistantActivityDisclosure: View {
             ForEach(tools) { tool in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     statusIcon(for: tool.status)
-                        .frame(width: 14)
+                        .glyphColumn(14, relativeTo: .footnote)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(tool.label) \(Text(shown(tool.detail, amountsHidden: model.amountsHidden)).foregroundStyle(.tertiary))")
+                        Text("\(tool.label) \(shown(tool.detail, amountsHidden: model.amountsHidden))")
                         if let summary = tool.summary {
                             Text(shown(summary, amountsHidden: model.amountsHidden))
-                                .foregroundStyle(.tertiary)
                         }
                     }
                     .foregroundStyle(.secondary)

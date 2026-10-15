@@ -26,6 +26,11 @@ struct BudgetDetailView: View {
                 UnavailableStateSection(title: "This budget was removed", systemImage: "target")
             }
         }
+        .refreshable {
+            if let month = model.budgets?.monthValue {
+                await model.loadBudgets(month: month)
+            }
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .expensesScreenStyle()
@@ -68,11 +73,6 @@ struct BudgetDetailView: View {
                 burndown = result
             }
         }
-        .refreshable {
-            if let month = model.budgets?.monthValue {
-                await model.loadBudgets(month: month)
-            }
-        }
     }
 
     private struct BurndownRequest: Equatable {
@@ -106,15 +106,24 @@ struct BudgetDetailView: View {
                     Text(budget.scopeLabel)
                         .font(.title2.weight(.semibold))
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    AmountText(spent)
-                        .font(.system(size: 34, weight: .semibold))
-                    HStack(spacing: 4) {
-                        Text("of")
-                        AmountText(budget.amountCents)
+                let budgetAmount = HStack(spacing: 4) {
+                    Text("of")
+                    AmountText(budget.amountCents)
+                }
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        AmountText(spent)
+                            .font(.largeTitle.weight(.semibold))
+                        budgetAmount
                     }
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        AmountText(spent)
+                            .font(.largeTitle.weight(.semibold))
+                        budgetAmount
+                    }
                 }
             }
         }
@@ -200,15 +209,14 @@ struct BudgetDetailView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(data.topSpendingDays) { day in
-                            HStack(spacing: 12) {
+                            TrailingRow {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(day.transactions.map { $0.title.isEmpty ? "Untitled" : $0.title }.joined(separator: ", "))
-                                        .lineLimit(1)
                                     Text(AppFormatters.bookingDay(month.day(day.day)))
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
-                                Spacer(minLength: 8)
+                            } trailing: {
                                 AmountText(day.totalCents)
                             }
                         }
@@ -315,9 +323,7 @@ private struct BudgetAmountSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasChanges)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", role: .confirm) {
@@ -328,9 +334,14 @@ private struct BudgetAmountSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .interactiveDismissDisabled(hasChanges || saving)
         .onAppear {
             focused = true
         }
+    }
+
+    private var hasChanges: Bool {
+        amount != AppFormatters.amountInput(budget.amountCents)
     }
 
     private func save() async {

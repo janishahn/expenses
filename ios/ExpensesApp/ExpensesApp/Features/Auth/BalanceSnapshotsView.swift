@@ -40,17 +40,16 @@ struct BalanceSnapshotsView: View {
                             Button {
                                 editing = .anchor(anchor)
                             } label: {
-                                HStack {
+                                TrailingRow {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(AppFormatters.dateTime(anchor.asOfAt))
                                         if let note = anchor.note, !note.isEmpty {
                                             Text(note)
                                                 .font(.subheadline)
                                                 .foregroundStyle(.secondary)
-                                                .lineLimit(1)
                                         }
                                     }
-                                    Spacer(minLength: 8)
+                                } trailing: {
                                     AmountText(anchor.balanceCents)
                                 }
                                 .contentShape(Rectangle())
@@ -61,10 +60,15 @@ struct BalanceSnapshotsView: View {
                     .expensesRowBackground()
                 }
             } else if let loadError {
-                UnavailableStateSection(title: "Couldn't load balance snapshots", systemImage: "exclamationmark.triangle", message: loadError)
+                UnavailableStateSection(title: "Couldn't load balance snapshots", systemImage: "exclamationmark.triangle", message: loadError) {
+                    await load()
+                }
             } else {
                 LoadingStateSection(title: "Loading balance snapshots")
             }
+        }
+        .refreshable {
+            await load()
         }
         .navigationTitle("Balance Snapshots")
         .expensesScreenStyle()
@@ -84,9 +88,6 @@ struct BalanceSnapshotsView: View {
             }
         }
         .task {
-            await load()
-        }
-        .refreshable {
             await load()
         }
     }
@@ -144,6 +145,8 @@ private struct SnapshotSheet: View {
                                 .frame(width: 340)
                                 .presentationCompactAdaptation(.popover)
                         }
+                        .accessibilityLabel("As of")
+                        .accessibilityValue(AppFormatters.dateTime(asOf))
                     }
 
                     TextField("Note", text: $note, axis: .vertical)
@@ -167,9 +170,7 @@ private struct SnapshotSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasChanges)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(anchor == nil ? "Add" : "Save", role: .confirm) {
@@ -185,11 +186,18 @@ private struct SnapshotSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(hasChanges || saving)
         .task {
             if anchor == nil {
                 balanceFocused = true
             }
         }
+    }
+
+    // A new snapshot's date is a default, so it alone is no input to lose.
+    private var hasChanges: Bool {
+        balance != (anchor.map { Self.balanceInput($0.balanceCents) } ?? "") || note != (anchor?.note ?? "")
+            || anchor.map { asOf != $0.asOfAt } == true
     }
 
     /// "1234,56" or "-1234,56"; a balance can be overdrawn.

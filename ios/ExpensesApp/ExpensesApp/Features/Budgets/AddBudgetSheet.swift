@@ -46,9 +46,11 @@ struct AddBudgetSheet: View {
                         } label: {
                             EntryChip(category?.name ?? "All expense categories", isSet: category != nil) {
                                 ScopeGlyph(categoryID: category?.id, iconKey: category?.icon, name: category?.name ?? "All expense categories")
-                                    .frame(width: 18)
+                                    .glyphColumn(18)
                             }
                         }
+                        .accessibilityLabel("Category")
+                        .accessibilityValue(category?.name ?? "All expense categories")
 
                         Button {
                             choosingStart = true
@@ -58,6 +60,8 @@ struct AddBudgetSheet: View {
                         .popover(isPresented: $choosingStart) {
                             PeriodPopover(yearly: yearly, value: start) { start = $0 }
                         }
+                        .accessibilityLabel("Start")
+                        .accessibilityValue(label(start))
 
                         Button {
                             choosingEnd = true
@@ -67,6 +71,8 @@ struct AddBudgetSheet: View {
                         .popover(isPresented: $choosingEnd) {
                             PeriodPopover(yearly: yearly, value: end ?? start, onClear: end == nil ? nil : { end = nil }) { end = $0 }
                         }
+                        .accessibilityLabel("End")
+                        .accessibilityValue(end.map(label) ?? "No end")
                     }
                     .buttonStyle(.plain)
 
@@ -81,9 +87,7 @@ struct AddBudgetSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Budget period", selection: yearlySelection) {
@@ -101,9 +105,15 @@ struct AddBudgetSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             amountFocused = true
         }
+    }
+
+    // The period kind and start are defaults, so they alone are no input to lose.
+    private var hasInput: Bool {
+        !amount.isEmpty || categoryID != nil || end != nil
     }
 
     // A new period kind starts at the shown month or year, with no end.

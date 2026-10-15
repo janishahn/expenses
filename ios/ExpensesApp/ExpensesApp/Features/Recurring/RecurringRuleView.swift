@@ -154,10 +154,7 @@ struct RecurringRuleView: View {
 
     let ruleID: Int
 
-    // Picker values shown while they save, and kept with the error when the save fails.
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, RecurringRuleRequest>()
     // Text fields keep their own drafts and save when they lose focus.
     @State private var nameDraft = ""
     @State private var amountDraft = ""
@@ -187,11 +184,6 @@ struct RecurringRuleView: View {
         case weekends
     }
 
-    private struct Entered {
-        let id = UUID()
-        let change: (inout RecurringRuleRequest) -> Void
-    }
-
     private var rule: RecurringRule? {
         model.recurring?.rules.first { $0.id == ruleID }
     }
@@ -211,10 +203,16 @@ struct RecurringRuleView: View {
                 ContentUnavailableView("This rule no longer exists", systemImage: "repeat")
                     .listRowBackground(Color.clear)
             } else if model.showsRecurringLoadFailed {
-                UnavailableStateSection(title: "Couldn't load the rule", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                UnavailableStateSection(title: "Couldn't load the rule", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                    await model.loadRecurring()
+                }
             } else {
                 LoadingStateSection(title: "Loading rule")
             }
+        }
+        .refreshable {
+            await model.loadRecurring()
+            await loadPosted()
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -242,7 +240,7 @@ struct RecurringRuleView: View {
             if let rule {
                 let shown = shown(rule)
                 CategoryPickerSheet(title: "Category", categories: categories(shown.type), selectedID: shown.categoryID) { category in
-                    if category.id != shown.categoryID || errors[.category] != nil {
+                    if category.id != shown.categoryID || saves.errors[.category] != nil {
                         save(.category) { $0.categoryID = category.id }
                     }
                 }
@@ -287,10 +285,6 @@ struct RecurringRuleView: View {
         .task {
             await loadPosted()
         }
-        .refreshable {
-            await model.loadRecurring()
-            await loadPosted()
-        }
     }
 
     // MARK: Sections
@@ -299,24 +293,16 @@ struct RecurringRuleView: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 TextField(rule.category?.name ?? "Untitled", text: $nameDraft, axis: .vertical)
-                    .font(.title2.weight(.semibold))
                     .focused($focus, equals: .name)
-                    .submitLabel(.done)
-                    .onChange(of: nameDraft) { _, draft in
-                        // Return ends the edit instead of starting a new line.
-                        if draft.contains("\n") {
-                            nameDraft = draft.replacingOccurrences(of: "\n", with: "")
-                            focus = nil
-                        }
-                    }
-                    .fieldError(errors[.name])
-                if editingAmount || errors[.amount] != nil {
+                    .detailNameField($nameDraft) { focus = nil }
+                    .fieldError(saves.errors[.name])
+                if editingAmount || saves.errors[.amount] != nil {
                     EntryAmountField(text: $amountDraft, income: shown.type == .income)
                         .focused($focus, equals: .amount)
                         .onAppear {
                             focus = .amount
                         }
-                        .fieldError(errors[.amount])
+                        .fieldError(saves.errors[.amount])
                 } else {
                     Button {
                         editingAmount = true
@@ -327,7 +313,7 @@ struct RecurringRuleView: View {
                                 currencyCode: shown.currencyCode,
                                 signed: shown.type == .income
                             )
-                            .font(.system(size: 34, weight: .semibold))
+                            .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(shown.type == .income ? ExpensesTheme.income(for: scheme) : .primary)
                             Text(shown.intervalUnit.repeats(shown.intervalCount).lowercased())
                                 .foregroundStyle(.secondary)
@@ -351,7 +337,7 @@ struct RecurringRuleView: View {
                 Text("Income").tag(TransactionKind.income)
             }
             .pickerStyle(.menu)
-            .fieldError(errors[.type])
+            .fieldError(saves.errors[.type])
 
             Button {
                 choosingCategory = true
@@ -369,7 +355,7 @@ struct RecurringRuleView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.category])
+            .fieldError(saves.errors[.category])
 
             Button {
                 choosingRepeats = true
@@ -393,7 +379,7 @@ struct RecurringRuleView: View {
                     }
                 }
             }
-            .fieldError(errors[.repeats])
+            .fieldError(saves.errors[.repeats])
 
             Button {
                 choosingStart = true
@@ -409,7 +395,7 @@ struct RecurringRuleView: View {
                     save(.starts) { $0.anchorDate = AppFormatters.isoDay(day) }
                 }
             }
-            .fieldError(errors[.starts])
+            .fieldError(saves.errors[.starts])
 
             Button {
                 choosingEnd = true
@@ -429,7 +415,7 @@ struct RecurringRuleView: View {
                     save(.ends) { $0.endDate = AppFormatters.isoDay(day) }
                 }
             }
-            .fieldError(errors[.ends])
+            .fieldError(saves.errors[.ends])
 
             Picker("Currency", selection: Binding(get: { shown.currencyCode }, set: { next in
                 save(.currency) { $0.currencyCode = next }
@@ -438,17 +424,17 @@ struct RecurringRuleView: View {
                 Text("US dollar ($)").tag("USD")
             }
             .pickerStyle(.menu)
-            .fieldError(errors[.currency])
+            .fieldError(saves.errors[.currency])
 
             Toggle("Post automatically", isOn: Binding(get: { shown.autoPost }, set: { value in
                 save(.post) { $0.autoPost = value }
             }))
-            .fieldError(errors[.post])
+            .fieldError(saves.errors[.post])
 
             Toggle("Skip weekends", isOn: Binding(get: { shown.skipWeekends }, set: { value in
                 save(.weekends) { $0.skipWeekends = value }
             }))
-            .fieldError(errors[.weekends])
+            .fieldError(saves.errors[.weekends])
         }
         .expensesRowBackground()
     }
@@ -525,11 +511,7 @@ struct RecurringRuleView: View {
     // MARK: Values
 
     private func shown(_ rule: RecurringRule) -> RecurringRuleRequest {
-        var body = RecurringRuleRequest(rule)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(RecurringRuleRequest(rule))
     }
 
     private func categories(_ type: TransactionKind) -> [CategorySummary] {
@@ -551,30 +533,9 @@ struct RecurringRuleView: View {
     // MARK: Saving
 
     private func save(_ field: Field, _ change: @escaping (inout RecurringRuleRequest) -> Void) {
-        let entry = Entered(change: change)
-        if ![.name, .amount].contains(field) {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = rule else {
-                return
-            }
-            var body = RecurringRuleRequest(stored)
-            change(&body)
-            if await model.saveRecurringRule(id: ruleID, body: body) {
-                // Saves run in order, so this one supersedes an earlier failure of the field.
-                errors[field] = nil
-                // A newer value entered while this one saved stays shown.
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { rule.map { RecurringRuleRequest($0) } }, commit: { body in
+            await model.saveRecurringRule(id: ruleID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     // A rule's category must match its type, so a new type takes that type's first category.
@@ -583,7 +544,7 @@ struct RecurringRuleView: View {
             return
         }
         guard let fallback = categories(next).first else {
-            errors[.type] = "Add an \(next.rawValue) category first."
+            saves.errors[.type] = "Add an \(next.rawValue) category first."
             return
         }
         save(.type) {
@@ -599,7 +560,7 @@ struct RecurringRuleView: View {
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         nameDraft = name
         let value = name.isEmpty ? nil : name
-        if value != rule.name || errors[.name] != nil {
+        if value != rule.name || saves.errors[.name] != nil {
             save(.name) { $0.name = value }
         }
     }
@@ -609,11 +570,11 @@ struct RecurringRuleView: View {
             return
         }
         guard let cents = AppFormatters.parseAmountCents(amountDraft) else {
-            errors[.amount] = "Enter a valid amount."
+            saves.errors[.amount] = "Enter a valid amount."
             return
         }
         editingAmount = false
-        if cents != rule.amountCents || errors[.amount] != nil {
+        if cents != rule.amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
     }
@@ -654,9 +615,9 @@ private struct PostedRow: View {
         NavigationLink {
             TransactionDetailView(transactionID: occurrence.id)
         } label: {
-            HStack {
+            TrailingRow {
                 Text(occurrence.occurrenceDate.map(fullDay) ?? "–")
-                Spacer(minLength: 8)
+            } trailing: {
                 AmountText(occurrence.amountCents, signed: income)
                     .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
             }

@@ -18,7 +18,9 @@ struct DigestView: View {
             case nil:
                 LoadingStateSection(title: "Loading digest")
             case .failure(let error):
-                UnavailableStateSection(title: "Couldn't load the digest", systemImage: "exclamationmark.triangle", message: error.message)
+                UnavailableStateSection(title: "Couldn't load the digest", systemImage: "exclamationmark.triangle", message: error.message) {
+                    await load()
+                }
             case .success(let data):
                 metricsSection(data)
                 categoriesSection(data)
@@ -91,7 +93,7 @@ struct DigestView: View {
         let budgets = data.budgetPulse.count
         let overPace = data.budgetPulse.filter { $0.paceState == "over" }.count
         return Section {
-            Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16) {
+            MetricGrid {
                 GridRow {
                     Metric("Spent") {
                         AmountText(headline.totalSpentCents)
@@ -144,11 +146,11 @@ struct DigestView: View {
                         query.categoryID = category.categoryID
                         openTransactions(query)
                     } label: {
-                        HStack(spacing: 12) {
+                        TrailingRow {
                             CategoryGlyph(categoryID: category.categoryID, iconKey: category.icon, name: category.name)
+                        } content: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(category.name)
-                                    .lineLimit(1)
                                 HStack(spacing: 4) {
                                     if category.isAboveTrailing50 {
                                         Image(systemName: "arrow.up.right")
@@ -160,7 +162,7 @@ struct DigestView: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 8)
+                        } trailing: {
                             AmountText(category.amountCents, decimals: false)
                         }
                         .contentShape(Rectangle())
@@ -210,11 +212,11 @@ struct DigestView: View {
                 NavigationLink {
                     TransactionDetailView(transactionID: item.id)
                 } label: {
-                    HStack(spacing: 12) {
+                    TrailingRow {
                         CategoryGlyph(categoryID: item.category?.id, iconKey: item.category?.icon, name: item.category?.name)
+                    } content: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title.isEmpty ? item.category?.name ?? "Untitled" : item.title)
-                                .lineLimit(1)
                             HStack(spacing: 4) {
                                 Text("avg")
                                 AmountText(item.trailingAvgCents, decimals: false)
@@ -222,7 +224,7 @@ struct DigestView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
+                    } trailing: {
                         AmountText(item.amountCents)
                     }
                 }

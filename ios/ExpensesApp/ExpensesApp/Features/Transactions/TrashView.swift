@@ -52,7 +52,9 @@ struct TrashView: View {
                     title: "Couldn't load Trash",
                     systemImage: "exclamationmark.triangle",
                     message: model.lastError?.message
-                )
+                ) {
+                    loadFailed = await !model.loadDeletedTransactions()
+                }
             } else {
                 LoadingStateSection(title: "Loading Trash")
             }

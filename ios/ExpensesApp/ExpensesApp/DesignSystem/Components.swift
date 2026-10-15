@@ -14,12 +14,19 @@ struct CategoryShare: Identifiable {
 struct CategoryShareDonut<Center: View>: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    // The total in the middle grows with the text, so the ring does too.
+    @ScaledMetric(relativeTo: .footnote) private var diameter = 112.0
 
     let slices: [CategoryShare]
     @ViewBuilder let center: Center
 
     var body: some View {
-        HStack(spacing: 18) {
+        // At accessibility sizes the names go under the ring.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
+            : AnyLayout(HStackLayout(spacing: 18))
+        layout {
             Chart(slices) { slice in
                 SectorMark(angle: .value("Amount", slice.cents), innerRadius: .ratio(0.64), angularInset: 1)
                     .foregroundStyle(ExpensesTheme.category(slice.categoryID, for: scheme))
@@ -27,7 +34,7 @@ struct CategoryShareDonut<Center: View>: View {
                     .accessibilityValue(model.amountString(slice.cents))
             }
             .chartLegend(.hidden)
-            .frame(width: 112, height: 112)
+            .frame(width: diameter, height: diameter)
             .overlay {
                 center
             }
@@ -60,29 +67,33 @@ struct CategoryShareDonut<Center: View>: View {
 
 /// A euro amount that follows privacy mode. While amounts are hidden it shows a blurred
 /// fixed placeholder, so neither the digits nor the length of the real amount show.
+/// An amount never wraps, truncates or shrinks; a row that cannot fit it stacks instead.
 struct AmountText: View {
     @Environment(AppModel.self) private var model
 
     private let text: String
-    private let placeholder: String
+    private let decimals: Bool
+    private let currencyCode: String?
 
     /// `signed` puts + or − in front, as for changes and nets.
     init(_ cents: Int, decimals: Bool = true, signed: Bool = false) {
         text = signed ? AppFormatters.signedEuros(cents, decimals: decimals) : AppFormatters.euros(cents, decimals: decimals)
-        placeholder = AppFormatters.euros(888_888, decimals: decimals)
+        self.decimals = decimals
+        currencyCode = nil
     }
 
     init(_ cents: Int, currencyCode: String, signed: Bool = false) {
         text = signed
             ? AppFormatters.sign(cents) + AppFormatters.amount(abs(cents), currencyCode: currencyCode)
             : AppFormatters.amount(cents, currencyCode: currencyCode)
-        placeholder = AppFormatters.amount(888_888, currencyCode: currencyCode)
+        decimals = true
+        self.currencyCode = currencyCode
     }
 
     var body: some View {
         Group {
             if model.amountsHidden {
-                Text(placeholder)
+                Text(currencyCode.map { AppFormatters.amount(888_888, currencyCode: $0) } ?? AppFormatters.euros(888_888, decimals: decimals))
                     .textRenderer(BlurredText())
                     .accessibilityLabel("Hidden amount")
             } else {
@@ -90,6 +101,7 @@ struct AmountText: View {
             }
         }
         .monospacedDigit()
+        .fixedSize()
         .transition(.blurReplace)
     }
 }
@@ -113,6 +125,102 @@ private struct BlurredText: TextRenderer {
             lineContext.addFilter(.blur(radius: line.typographicBounds.rect.height * 0.26))
             lineContext.draw(line)
         }
+    }
+}
+
+/// A label with its figures on one line, or stacked when the line doesn't fit, as at
+/// large text sizes.
+struct AdaptiveRow<Leading: View, Trailing: View>: View {
+    var alignment = VerticalAlignment.center
+    @ViewBuilder let leading: Leading
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: alignment, spacing: 8) {
+                leading
+                Spacer(minLength: 0)
+                // This line is only used when the figures fit whole, so a word between
+                // them, as in "72 € of 800 €", must not give way to the label.
+                trailing
+                    .fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                leading
+                trailing
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// A list row: an optional glyph, text, and an amount or control at the trailing edge.
+/// At accessibility sizes the trailing part moves under the text, the text wraps instead
+/// of truncating, and the glyph stays beside the first line, as in `LedgerRow`.
+struct TrailingRow<Glyph: View, Content: View, Trailing: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private let glyph: Glyph
+    private let content: Content
+    private let trailing: Trailing
+
+    init(@ViewBuilder glyph: () -> Glyph, @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing) {
+        self.glyph = glyph()
+        self.content = content()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        let stacked = typeSize.isAccessibilitySize
+        HStack(alignment: stacked ? .firstTextBaseline : .center, spacing: 12) {
+            glyph
+            if stacked {
+                VStack(alignment: .leading, spacing: 2) {
+                    content
+                        .lineLimit(3)
+                    trailing
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                content
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                trailing
+            }
+        }
+    }
+}
+
+extension TrailingRow where Glyph == EmptyView {
+    init(@ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing) {
+        self.init(glyph: { EmptyView() }, content: content, trailing: trailing)
+    }
+}
+
+/// Holds a row's leading symbol in a column that grows with the text size, so titles
+/// line up and a large symbol does not run into its title.
+private struct GlyphColumn: ViewModifier {
+    @ScaledMetric private var width: CGFloat
+
+    init(width: CGFloat, relativeTo style: Font.TextStyle) {
+        _width = ScaledMetric(wrappedValue: width, relativeTo: style)
+    }
+
+    func body(content: Content) -> some View {
+        content.frame(width: width)
+    }
+}
+
+extension View {
+    func glyphColumn(_ width: CGFloat = 26, relativeTo style: Font.TextStyle = .callout) -> some View {
+        modifier(GlyphColumn(width: width, relativeTo: style))
+    }
+
+    /// Widens a small control's touch area by `amount` on each side without moving it,
+    /// toward the 44-point minimum. Apply it to a button's label.
+    func expandedTouchArea(_ amount: CGFloat = 12) -> some View {
+        padding(amount)
+            .contentShape(.rect)
+            .padding(-amount)
     }
 }
 
@@ -190,10 +298,9 @@ struct BudgetPulseRow: View {
         HStack(spacing: 12) {
             ScopeGlyph(categoryID: categoryID, iconKey: iconKey, name: label)
             VStack(spacing: 8) {
-                HStack {
+                AdaptiveRow {
                     Text(label)
-                        .lineLimit(1)
-                    Spacer()
+                } trailing: {
                     HStack(spacing: 4) {
                         AmountText(abs(remaining), decimals: false)
                             .foregroundStyle(remaining < 0 ? ExpensesTheme.expense(for: scheme) : .secondary)
@@ -214,6 +321,7 @@ struct BudgetPulseRow: View {
 /// green with a plus; an expense is ink with no sign.
 struct LedgerRow: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     let title: String
     let detail: String?
@@ -254,23 +362,39 @@ struct LedgerRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        // At accessibility sizes the title wraps and the amount moves under it.
+        let stacked = typeSize.isAccessibilitySize
+        HStack(alignment: stacked ? .firstTextBaseline : .center, spacing: 12) {
             CategoryGlyph(categoryID: categoryID, iconKey: iconKey, name: categoryName)
+                // The glyph is the row's only sign of its category.
+                .accessibilityRepresentation {
+                    Text(categoryName ?? "Uncategorized")
+                }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .lineLimit(1)
+                    .lineLimit(stacked ? 3 : 1)
                 if let detail {
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(stacked ? 3 : 1)
+                }
+                if stacked {
+                    amount
                 }
             }
-            Spacer(minLength: 8)
-            AmountText(amountCents, signed: income)
-                .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
+            if !stacked {
+                Spacer(minLength: 8)
+                amount
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private var amount: some View {
+        AmountText(amountCents, signed: income)
+            .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
     }
 }
 
@@ -326,11 +450,12 @@ struct LoadingStateSection: View {
     }
 }
 
-/// A screen that could not load, or has nothing to show.
+/// A screen that could not load, or has nothing to show. A failed load passes `retry`.
 struct UnavailableStateSection: View {
     let title: String
     let systemImage: String
     var message: String?
+    var retry: (() async -> Void)?
 
     var body: some View {
         Section {
@@ -339,6 +464,12 @@ struct UnavailableStateSection: View {
             } description: {
                 if let message {
                     Text(message)
+                }
+            } actions: {
+                if let retry {
+                    Button("Try Again") {
+                        Task { await retry() }
+                    }
                 }
             }
         }
@@ -358,31 +489,20 @@ struct TagExclusionSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(tags) { tag in
-                    Button {
-                        if selectedIDs.contains(tag.id) {
-                            selectedIDs.remove(tag.id)
-                        } else {
-                            selectedIDs.insert(tag.id)
-                        }
+                    SelectableRow(isSelected: tag.id != includedTagID && selectedIDs.contains(tag.id)) {
+                        selectedIDs.formSymmetricDifference([tag.id])
                     } label: {
                         HStack {
                             Text(tag.name)
-                                .foregroundStyle(tag.id == includedTagID ? .secondary : .primary)
                             Spacer()
                             if tag.id == includedTagID {
                                 Text("Included")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            } else if selectedIDs.contains(tag.id) {
-                                Image(systemName: "checkmark")
-                                    .fontWeight(.semibold)
                             }
                         }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                     .disabled(tag.id == includedTagID)
-                    .accessibilityValue(selectedIDs.contains(tag.id) ? "Excluded" : "Included")
                 }
             }
         }
@@ -409,8 +529,6 @@ struct Metric<Value: View, Detail: View>: View {
                 .foregroundStyle(.secondary)
             value
                 .font(.title3.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
             detail
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -420,6 +538,21 @@ struct Metric<Value: View, Detail: View>: View {
         // and the value shrinks.
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Metrics in grid rows, or one under another at accessibility text sizes.
+struct MetricGrid<Rows: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+            : AnyLayout(GridLayout(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 16))
+        layout {
+            rows
+        }
     }
 }
 
@@ -469,6 +602,31 @@ struct TooltipRow<Value: View>: View {
     }
 }
 
+/// Whole-euro labels on three grid lines, for full-page analysis charts. While amounts
+/// are hidden only the grid lines show.
+private struct AmountYAxis: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content.chartYAxis {
+            AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine()
+                if !model.amountsHidden, let cents = value.as(Int.self) {
+                    AxisValueLabel {
+                        Text(AppFormatters.euros(cents, decimals: false))
+                    }
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    func amountYAxis() -> some View {
+        modifier(AmountYAxis())
+    }
+}
+
 struct ChartLegendItem: View {
     enum Mark {
         case line
@@ -504,6 +662,22 @@ struct ChartLegendItem: View {
         .font(.footnote)
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)
+    }
+}
+
+/// A chart's legend items in one row, or one per line when the row doesn't fit.
+struct ChartLegend<Items: View>: View {
+    @ViewBuilder let items: Items
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14) {
+                items
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                items
+            }
+        }
     }
 }
 

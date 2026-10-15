@@ -49,7 +49,9 @@ struct ReconciliationView: View {
                     title: "Couldn't load bank rows",
                     systemImage: "exclamationmark.triangle",
                     message: error.message
-                )
+                ) {
+                    await reload()
+                }
             case let .success(loaded):
                 if loaded.items.isEmpty {
                     emptyState
@@ -223,12 +225,14 @@ struct ReconciliationView: View {
                 }
             }
         } header: {
-            HStack(spacing: 6) {
-                Text(band.title)
-                Text("\(rows.count)")
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-                Spacer()
+            AdaptiveRow(alignment: .firstTextBaseline) {
+                HStack(spacing: 6) {
+                    Text(band.title)
+                    Text("\(rows.count)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            } trailing: {
                 if band == .suggested {
                     Button("Match all") {
                         matchingAll = rows
@@ -516,21 +520,20 @@ private struct BankRowLabel: View {
     let detail: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        TrailingRow {
             Image(systemName: symbol)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(width: 26)
+                .glyphColumn()
                 .accessibilityHidden(true)
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
-                    .lineLimit(1)
                 Text(detail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-            Spacer(minLength: 8)
+        } trailing: {
             BankAmount(cents: row.amountCents, currency: row.currency)
         }
         .contentShape(Rectangle())

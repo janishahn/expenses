@@ -12,7 +12,7 @@ struct CategoryGlyph: View {
         Image(systemName: categoryID == nil ? "questionmark" : categorySymbolName(for: resolvedCategoryIconKey(iconKey, name: name)))
             .font(.callout)
             .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
-            .frame(width: 26)
+            .glyphColumn()
             .accessibilityHidden(true)
     }
 }

@@ -64,7 +64,7 @@ struct AddTransactionSheet: View {
                                                 iconKey: template.category?.icon,
                                                 name: template.category?.name ?? template.name
                                             )
-                                            .frame(width: 18)
+                                            .glyphColumn(18)
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -94,6 +94,8 @@ struct AddTransactionSheet: View {
                         } label: {
                             EntryChip(AppFormatters.occurred(occurredAt), systemImage: "calendar", isSet: true)
                         }
+                        .accessibilityLabel("Date")
+                        .accessibilityValue(AppFormatters.occurred(occurredAt))
                         .popover(isPresented: $choosingDate) {
                             DatePicker("Date", selection: $occurredAt)
                                 .datePickerStyle(.graphical)
@@ -109,18 +111,22 @@ struct AddTransactionSheet: View {
                             if let category {
                                 EntryChip(category.name, isSet: true) {
                                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                                        .frame(width: 18)
+                                        .glyphColumn(18)
                                 }
                             } else {
-                                EntryChip("Category", systemImage: "square.grid.2x2", isSet: false)
+                                EntryChip("Category", systemImage: "square.on.circle", isSet: false)
                             }
                         }
+                        .accessibilityLabel("Category")
+                        .accessibilityValue(category?.name ?? "")
 
                         Button {
                             picker = .tags
                         } label: {
                             EntryChip(tags.isEmpty ? "Tags" : tags.joined(separator: ", "), systemImage: "tag", isSet: !tags.isEmpty)
                         }
+                        .accessibilityLabel("Tags")
+                        .accessibilityValue(tags.joined(separator: ", "))
 
                         if type == .income {
                             Button {
@@ -141,6 +147,8 @@ struct AddTransactionSheet: View {
                         } label: {
                             EntryChip(receipt?.name ?? "Receipt", systemImage: "paperclip", isSet: receipt != nil)
                         }
+                        .accessibilityLabel("Receipt")
+                        .accessibilityValue(receipt?.name ?? "")
 
                         Button {
                             if coordinate == nil {
@@ -177,9 +185,7 @@ struct AddTransactionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Type", selection: typeSelection) {
@@ -232,6 +238,7 @@ struct AddTransactionSheet: View {
             }
             .sensoryFeedback(.success, trigger: added)
         }
+        .interactiveDismissDisabled(hasInput || pending)
         .task {
             focus = .amount
             tagsLoaded = await model.loadOrganizeData()
@@ -250,6 +257,12 @@ struct AddTransactionSheet: View {
                 }
             }
         )
+    }
+
+    // The date and direction are defaults, so they alone are no input to lose.
+    private var hasInput: Bool {
+        !amount.isEmpty || !title.isEmpty || !notes.isEmpty || categoryID != nil || !explicitTags.isEmpty
+            || isReimbursement || receipt != nil || coordinate != nil
     }
 
     private var category: CategorySummary? {
@@ -390,5 +403,48 @@ struct AddTransactionSheet: View {
         amountError = nil
         titleError = nil
         formError = nil
+    }
+}
+
+extension View {
+    /// The floating add button at the bottom trailing edge of a tab's root list. It
+    /// sits in the safe area, above the tab bar, and leaves with the root on a push.
+    func quickAddButton(shown: Bool = true) -> some View {
+        safeAreaInset(edge: .bottom, alignment: .trailing) {
+            if shown {
+                QuickAddButton()
+            }
+        }
+    }
+}
+
+private struct QuickAddButton: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.isSearching) private var isSearching
+    @State private var adding = false
+
+    var body: some View {
+        // Hidden while searching, so it doesn't ride above the keyboard.
+        if !isSearching {
+            Button {
+                adding = true
+            } label: {
+                // The ink tint is light in dark mode, so the glyph takes the page color.
+                Image(systemName: "plus")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(ExpensesTheme.background(for: scheme))
+                    .frame(minWidth: 40, minHeight: 40)
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            .accessibilityLabel("Quick Add")
+            .sensoryFeedback(.impact(weight: .light), trigger: adding) { _, opened in opened }
+            .padding(.trailing, 18)
+            .padding(.bottom, 8)
+            .sheet(isPresented: $adding) {
+                AddTransactionSheet()
+            }
+        }
     }
 }

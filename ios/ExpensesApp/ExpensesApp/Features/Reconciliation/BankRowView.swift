@@ -34,7 +34,7 @@ struct BankRowView: View {
                     Text(row.title)
                         .font(.title2.weight(.semibold))
                     BankAmount(cents: row.amountCents, currency: row.currency)
-                        .font(.system(size: 34, weight: .semibold))
+                        .font(.largeTitle.weight(.semibold))
                 }
             }
             .listRowBackground(Color.clear)
@@ -145,18 +145,11 @@ struct BankRowView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(listed) { candidate in
-                Button {
+                SelectableRow(isSelected: selected?.id == candidate.id) {
                     selected = candidate
                 } label: {
-                    HStack(spacing: 12) {
-                        candidateLabel(candidate)
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.semibold))
-                            .opacity(selected?.id == candidate.id ? 1 : 0)
-                    }
+                    candidateLabel(candidate)
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected?.id == candidate.id ? .isSelected : [])
             }
             if found?.isEmpty == true {
                 Text("No matching transactions")

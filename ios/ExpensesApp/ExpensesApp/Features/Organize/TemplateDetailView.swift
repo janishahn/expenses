@@ -9,9 +9,7 @@ struct TemplateDetailView: View {
 
     let templateID: Int
 
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, TemplateMutationRequest>()
     @State private var nameDraft = ""
     @FocusState private var nameFocused: Bool
     @State private var choosingCategory = false
@@ -29,11 +27,6 @@ struct TemplateDetailView: View {
         case amount
         case title
         case tags
-    }
-
-    private struct Entered {
-        let id = UUID()
-        let change: (inout TemplateMutationRequest) -> Void
     }
 
     private var template: TemplateRow? {
@@ -73,7 +66,7 @@ struct TemplateDetailView: View {
             if let template {
                 let shown = shown(template)
                 CategoryPickerSheet(title: "Category", categories: categories(shown.type), selectedID: shown.categoryID) { category in
-                    if category.id != shown.categoryID || errors[.category] != nil {
+                    if category.id != shown.categoryID || saves.errors[.category] != nil {
                         save(.category) { $0.categoryID = category.id }
                     }
                 }
@@ -83,7 +76,7 @@ struct TemplateDetailView: View {
             if let template {
                 let shown = shown(template)
                 TagPickerSheet(title: "Tags", options: model.activeTags.map(\.name), selected: shown.tags) { names in
-                    if names != shown.tags || errors[.tags] != nil {
+                    if names != shown.tags || saves.errors[.tags] != nil {
                         save(.tags) { $0.tags = names }
                     }
                 }
@@ -116,17 +109,9 @@ struct TemplateDetailView: View {
     private var head: some View {
         Section {
             TextField("Name", text: $nameDraft, axis: .vertical)
-                .font(.title2.weight(.semibold))
                 .focused($nameFocused)
-                .submitLabel(.done)
-                .onChange(of: nameDraft) { _, draft in
-                    // Return ends the edit instead of starting a new line.
-                    if draft.contains("\n") {
-                        nameDraft = draft.replacingOccurrences(of: "\n", with: "")
-                        nameFocused = false
-                    }
-                }
-                .fieldError(errors[.name])
+                .detailNameField($nameDraft) { nameFocused = false }
+                .fieldError(saves.errors[.name])
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
@@ -139,7 +124,7 @@ struct TemplateDetailView: View {
                 Text("Income").tag(TransactionKind.income)
             }
             .pickerStyle(.menu)
-            .fieldError(errors[.type])
+            .fieldError(saves.errors[.type])
 
             Button {
                 choosingCategory = true
@@ -157,7 +142,7 @@ struct TemplateDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.category])
+            .fieldError(saves.errors[.category])
 
             Button {
                 choosingAmount = true
@@ -183,13 +168,13 @@ struct TemplateDetailView: View {
                     if amount == .invalid {
                         return "Default amount must be a valid number."
                     }
-                    if amount.cents != template.defaultAmountCents || errors[.amount] != nil {
+                    if amount.cents != template.defaultAmountCents || saves.errors[.amount] != nil {
                         save(.amount) { $0.defaultAmountCents = amount.cents }
                     }
                     return nil
                 }
             }
-            .fieldError(errors[.amount])
+            .fieldError(saves.errors[.amount])
 
             Button {
                 choosingTitle = true
@@ -205,13 +190,13 @@ struct TemplateDetailView: View {
                 ValuePopover(title: "Transaction title", text: shown.title ?? "", confirm: "Save") { raw in
                     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                     let title = trimmed.isEmpty ? nil : trimmed
-                    if title != template.title || errors[.title] != nil {
+                    if title != template.title || saves.errors[.title] != nil {
                         save(.title) { $0.title = title }
                     }
                     return nil
                 }
             }
-            .fieldError(errors[.title])
+            .fieldError(saves.errors[.title])
 
             Button {
                 choosingTags = true
@@ -223,7 +208,7 @@ struct TemplateDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.tags])
+            .fieldError(saves.errors[.tags])
         }
         .expensesRowBackground()
     }
@@ -231,11 +216,7 @@ struct TemplateDetailView: View {
     // MARK: Saving
 
     private func shown(_ template: TemplateRow) -> TemplateMutationRequest {
-        var body = TemplateMutationRequest(template)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(TemplateMutationRequest(template))
     }
 
     private func categories(_ type: TransactionKind) -> [CategorySummary] {
@@ -243,28 +224,9 @@ struct TemplateDetailView: View {
     }
 
     private func save(_ field: Field, _ change: @escaping (inout TemplateMutationRequest) -> Void) {
-        let entry = Entered(change: change)
-        if field != .name {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = template else {
-                return
-            }
-            var body = TemplateMutationRequest(stored)
-            change(&body)
-            if await model.saveTemplate(id: templateID, body: body) {
-                errors[field] = nil
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { template.map { TemplateMutationRequest($0) } }, commit: { body in
+            await model.saveTemplate(id: templateID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     // A template's category must match its type, so a new type takes that type's first
@@ -274,7 +236,7 @@ struct TemplateDetailView: View {
             return
         }
         guard let fallback = categories(next).first else {
-            errors[.type] = "Add an \(next.rawValue) category first."
+            saves.errors[.type] = "Add an \(next.rawValue) category first."
             return
         }
         save(.type) {
@@ -289,11 +251,11 @@ struct TemplateDetailView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            errors[.name] = "Name is required."
+            saves.errors[.name] = "Name is required."
             return
         }
         nameDraft = name
-        if name != template.name || errors[.name] != nil {
+        if name != template.name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }

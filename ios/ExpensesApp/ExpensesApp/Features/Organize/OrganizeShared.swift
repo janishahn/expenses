@@ -92,6 +92,7 @@ struct IconPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var search = ""
+    @ScaledMetric(relativeTo: .caption2) private var cell = 72.0
 
     let selected: String?
     let onPick: (String) -> Void
@@ -99,7 +100,7 @@ struct IconPickerSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: cell), spacing: 8)], spacing: 8) {
                     ForEach(matches) { option in
                         Button {
                             onPick(option.key)
@@ -114,7 +115,7 @@ struct IconPickerSheet: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 72)
+                            .frame(maxWidth: .infinity, minHeight: cell)
                             .background(option.key == selected ? Color.primary.opacity(0.08) : .clear, in: .rect(cornerRadius: 12))
                             .contentShape(.rect(cornerRadius: 12))
                         }

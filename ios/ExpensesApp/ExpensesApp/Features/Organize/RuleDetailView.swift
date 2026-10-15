@@ -9,9 +9,7 @@ struct RuleDetailView: View {
 
     let ruleID: Int
 
-    @State private var entered: [Field: Entered] = [:]
-    @State private var errors: [Field: String] = [:]
-    @State private var saveQueue: Task<Void, Never>?
+    @State private var saves = FieldSaves<Field, RuleMutationRequest>()
     @State private var nameDraft = ""
     @FocusState private var nameFocused: Bool
     @State private var choosingPriority = false
@@ -34,11 +32,6 @@ struct RuleDetailView: View {
         case category
         case tags
         case budgets
-    }
-
-    private struct Entered {
-        let id = UUID()
-        let change: (inout RuleMutationRequest) -> Void
     }
 
     private var rule: RuleRow? {
@@ -96,7 +89,7 @@ struct RuleDetailView: View {
             if let rule, let rules = model.rules {
                 let shown = shown(rule)
                 TagPickerSheet(title: "Add Tags", options: rules.tags.filter { !$0.isHiddenFromBudget }.map(\.name), selected: shown.addTags) { names in
-                    if names != shown.addTags || errors[.tags] != nil {
+                    if names != shown.addTags || saves.errors[.tags] != nil {
                         save(.tags) { $0.addTags = names }
                     }
                 }
@@ -139,17 +132,9 @@ struct RuleDetailView: View {
     private var head: some View {
         Section {
             TextField("Name", text: $nameDraft, axis: .vertical)
-                .font(.title2.weight(.semibold))
                 .focused($nameFocused)
-                .submitLabel(.done)
-                .onChange(of: nameDraft) { _, draft in
-                    // Return ends the edit instead of starting a new line.
-                    if draft.contains("\n") {
-                        nameDraft = draft.replacingOccurrences(of: "\n", with: "")
-                        nameFocused = false
-                    }
-                }
-                .fieldError(errors[.name])
+                .detailNameField($nameDraft) { nameFocused = false }
+                .fieldError(saves.errors[.name])
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
@@ -160,7 +145,7 @@ struct RuleDetailView: View {
             Toggle("Enabled", isOn: Binding(get: { shown.enabled }, set: { enabled in
                 save(.enabled) { $0.enabled = enabled }
             }))
-            .fieldError(errors[.enabled])
+            .fieldError(saves.errors[.enabled])
 
             Button {
                 choosingPriority = true
@@ -176,7 +161,7 @@ struct RuleDetailView: View {
                 ValuePopover(title: "Priority", text: String(shown.priority), keyboard: .numberPad, confirm: "Save") { raw in
                     switch parsePriority(raw) {
                     case .success(let priority):
-                        if priority != rule.priority || errors[.priority] != nil {
+                        if priority != rule.priority || saves.errors[.priority] != nil {
                             save(.priority) { $0.priority = priority }
                         }
                         return nil
@@ -185,7 +170,7 @@ struct RuleDetailView: View {
                     }
                 }
             }
-            .fieldError(errors[.priority])
+            .fieldError(saves.errors[.priority])
         }
         .expensesRowBackground()
     }
@@ -198,7 +183,7 @@ struct RuleDetailView: View {
                 Text("Income").tag(Optional(TransactionKind.income))
             }
             .pickerStyle(.menu)
-            .fieldError(errors[.type])
+            .fieldError(saves.errors[.type])
 
             Button {
                 choosingTitle = true
@@ -212,7 +197,7 @@ struct RuleDetailView: View {
             .tint(.primary)
             .popover(isPresented: $choosingTitle) {
                 TitlePopover(matchType: shown.matchType, value: shown.matchValue, confirm: "Save") { matchType, value in
-                    if matchType != rule.matchType || value != rule.matchValue || errors[.title] != nil {
+                    if matchType != rule.matchType || value != rule.matchValue || saves.errors[.title] != nil {
                         save(.title) {
                             $0.matchType = matchType
                             $0.matchValue = value
@@ -220,7 +205,7 @@ struct RuleDetailView: View {
                     }
                 }
             }
-            .fieldError(errors[.title])
+            .fieldError(saves.errors[.title])
 
             Button {
                 choosingAmount = true
@@ -233,7 +218,7 @@ struct RuleDetailView: View {
             .tint(.primary)
             .popover(isPresented: $choosingAmount) {
                 AmountRangePopover(min: shown.minAmountCents, max: shown.maxAmountCents, confirm: "Save") { min, max in
-                    if min != rule.minAmountCents || max != rule.maxAmountCents || errors[.amount] != nil {
+                    if min != rule.minAmountCents || max != rule.maxAmountCents || saves.errors[.amount] != nil {
                         save(.amount) {
                             $0.minAmountCents = min
                             $0.maxAmountCents = max
@@ -241,7 +226,7 @@ struct RuleDetailView: View {
                     }
                 }
             }
-            .fieldError(errors[.amount])
+            .fieldError(saves.errors[.amount])
         }
         .expensesRowBackground()
     }
@@ -266,7 +251,7 @@ struct RuleDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.category])
+            .fieldError(saves.errors[.category])
 
             Button {
                 choosingTags = true
@@ -278,7 +263,7 @@ struct RuleDetailView: View {
                 }
             }
             .tint(.primary)
-            .fieldError(errors[.tags])
+            .fieldError(saves.errors[.tags])
 
             if hiddenTags.isEmpty && shown.budgetExcludeTagID == nil {
                 LabeledContent("Budgets", value: "Included")
@@ -296,7 +281,7 @@ struct RuleDetailView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .fieldError(errors[.budgets])
+                .fieldError(saves.errors[.budgets])
             }
         }
         .expensesRowBackground()
@@ -338,36 +323,13 @@ struct RuleDetailView: View {
     // MARK: Saving
 
     private func shown(_ rule: RuleRow) -> RuleMutationRequest {
-        var body = RuleMutationRequest(rule)
-        for field in Field.allCases {
-            entered[field]?.change(&body)
-        }
-        return body
+        saves.shown(RuleMutationRequest(rule))
     }
 
     private func save(_ field: Field, _ change: @escaping (inout RuleMutationRequest) -> Void) {
-        let entry = Entered(change: change)
-        if field != .name {
-            entered[field] = entry
-        }
-        errors[field] = nil
-        let previous = saveQueue
-        saveQueue = Task {
-            await previous?.value
-            guard let stored = rule else {
-                return
-            }
-            var body = RuleMutationRequest(stored)
-            change(&body)
-            if await model.saveRule(id: ruleID, body: body) {
-                errors[field] = nil
-                if entered[field]?.id == entry.id {
-                    entered[field] = nil
-                }
-            } else {
-                errors[field] = model.lastError?.message ?? "Unable to save the change."
-            }
-        }
+        saves.save(field, stored: { rule.map { RuleMutationRequest($0) } }, commit: { body in
+            await model.saveRule(id: ruleID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+        }, change)
     }
 
     // A category of the other type could never apply, so a new type clears it.
@@ -386,7 +348,7 @@ struct RuleDetailView: View {
     }
 
     private func changeCategory(_ categoryID: Int?, _ shown: RuleMutationRequest) {
-        if categoryID != shown.setCategoryID || errors[.category] != nil {
+        if categoryID != shown.setCategoryID || saves.errors[.category] != nil {
             save(.category) { $0.setCategoryID = categoryID }
         }
     }
@@ -397,11 +359,11 @@ struct RuleDetailView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            errors[.name] = "Enter a rule name."
+            saves.errors[.name] = "Enter a rule name."
             return
         }
         nameDraft = name
-        if name != rule.name || errors[.name] != nil {
+        if name != rule.name || saves.errors[.name] != nil {
             save(.name) { $0.name = name }
         }
     }
@@ -422,10 +384,9 @@ private struct MatchRow: View {
     let match: RulePreviewSample
 
     var body: some View {
-        HStack(spacing: 12) {
+        TrailingRow {
             VStack(alignment: .leading, spacing: 2) {
                 Text(match.title ?? "Untitled")
-                    .lineLimit(1)
                 if match.beforeCategory != match.afterCategory {
                     HStack(spacing: 4) {
                         Text(match.beforeCategory)
@@ -435,10 +396,9 @@ private struct MatchRow: View {
                     }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
+        } trailing: {
             AmountText(match.amountCents, signed: match.type == "income")
                 .foregroundStyle(match.type == "income" ? ExpensesTheme.income(for: scheme) : .primary)
         }

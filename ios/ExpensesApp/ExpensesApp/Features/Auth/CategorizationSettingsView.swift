@@ -65,7 +65,9 @@ struct CategorizationSettingsView: View {
                 .disabled(saving)
                 .expensesRowBackground()
             } else if let loadError {
-                UnavailableStateSection(title: "Couldn't load categorization", systemImage: "exclamationmark.triangle", message: loadError)
+                UnavailableStateSection(title: "Couldn't load categorization", systemImage: "exclamationmark.triangle", message: loadError) {
+                    await load()
+                }
             } else {
                 LoadingStateSection(title: "Loading categorization")
             }

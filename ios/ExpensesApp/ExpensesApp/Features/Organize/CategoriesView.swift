@@ -52,10 +52,15 @@ struct CategoriesView: View {
                     band("Archived", sorted(categories.filter { $0.archivedAt != nil }, by: ListSort(key: .name, ascending: true)))
                 }
             } else if loadFailed {
-                UnavailableStateSection(title: "Couldn't load categories", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                UnavailableStateSection(title: "Couldn't load categories", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                    loadFailed = !(await model.loadCategories())
+                }
             } else {
                 LoadingStateSection(title: "Loading categories")
             }
+        }
+        .refreshable {
+            loadFailed = !(await model.loadCategories())
         }
         .navigationTitle("Categories")
         .navigationSubtitle(model.categoriesPeriod.title)
@@ -73,9 +78,6 @@ struct CategoriesView: View {
             AddCategorySheet()
         }
         .task(id: model.categoriesPeriod) {
-            loadFailed = !(await model.loadCategories())
-        }
-        .refreshable {
             loadFailed = !(await model.loadCategories())
         }
     }
@@ -159,6 +161,8 @@ private struct AddCategorySheet: View {
                                 Image(systemName: categorySymbolName(for: icon))
                             }
                         }
+                        .accessibilityLabel("Icon")
+                        .accessibilityValue(icon == defaultCategoryIconKey ? "" : categoryIconLabel(icon))
 
                         Button {
                             choosingOrder = true
@@ -188,9 +192,7 @@ private struct AddCategorySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Type", selection: $type) {
@@ -211,9 +213,14 @@ private struct AddCategorySheet: View {
                 IconPickerSheet(selected: icon) { icon = $0 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             nameFocused = true
         }
+    }
+
+    private var hasInput: Bool {
+        !name.isEmpty || icon != defaultCategoryIconKey || order != 0
     }
 
     private func submit() async {

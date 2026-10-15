@@ -37,12 +37,18 @@ struct TransactionsView: View {
                         title: "Couldn't load transactions",
                         systemImage: "exclamationmark.triangle",
                         message: model.lastError?.message
-                    )
+                    ) {
+                        await model.loadTransactions()
+                    }
                 } else {
                     LoadingStateSection(title: "Loading transactions")
                 }
             }
+            .refreshable {
+                await model.loadTransactions()
+            }
             .checkedTint()
+            .quickAddButton(shown: !selecting)
             .environment(\.editMode, .constant(selecting ? .active : .inactive))
             .navigationTitle(selecting ? "\(selectionCount) Selected" : "Transactions")
             .navigationSubtitle(selecting ? "" : subtitle)
@@ -92,9 +98,6 @@ struct TransactionsView: View {
                 if !Task.isCancelled && search != model.transactionQuery.search {
                     model.transactionQuery.search = search
                 }
-            }
-            .refreshable {
-                await model.loadTransactions()
             }
             .onChange(of: model.transactionQuery) {
                 clearSelection()
@@ -193,7 +196,7 @@ struct TransactionsView: View {
         }
         ToolbarItemGroup(placement: .bottomBar) {
             // Bulk edits move rows to a category; they cannot clear one.
-            Button("Category", systemImage: "square.grid.2x2") {
+            Button("Category", systemImage: "square.on.circle") {
                 bulkSheet = .category
             }
             .disabled(selectionCount == 0)
@@ -245,9 +248,9 @@ struct TransactionsView: View {
                     .navigationLinkIndicatorVisibility(.hidden)
                 }
             } header: {
-                HStack {
+                AdaptiveRow {
                     Text(AppFormatters.bookingDay(day.date))
-                    Spacer()
+                } trailing: {
                     // The last day may continue on the next page, so it shows no partial net.
                     if !(transactions.hasMore && day.id == days.last?.id) {
                         AmountText(day.net, signed: true)
@@ -572,7 +575,7 @@ private struct TransactionFilterSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .expensesScreenStyle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Clear") {
                         query = TransactionQuery(period: query.period, search: query.search)
                     }

@@ -212,10 +212,15 @@ struct RulesView: View {
                     }
                 }
             } else if loadFailed {
-                UnavailableStateSection(title: "Couldn't load rules", systemImage: "exclamationmark.triangle", message: model.lastError?.message)
+                UnavailableStateSection(title: "Couldn't load rules", systemImage: "exclamationmark.triangle", message: model.lastError?.message) {
+                    loadFailed = !(await model.loadRules())
+                }
             } else {
                 LoadingStateSection(title: "Loading rules")
             }
+        }
+        .refreshable {
+            loadFailed = !(await model.loadRules())
         }
         .navigationTitle("Rules")
         .expensesScreenStyle()
@@ -249,9 +254,6 @@ struct RulesView: View {
         .task {
             loadFailed = !(await model.loadRules())
         }
-        .refreshable {
-            loadFailed = !(await model.loadRules())
-        }
     }
 
     private func suggestionsSection(_ suggestions: [RuleSuggestion], categories: [CategorySummary]) -> some View {
@@ -264,7 +266,7 @@ struct RulesView: View {
                     Image(systemName: "sparkles")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .frame(width: 26)
+                        .glyphColumn()
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Title \(titleCondition(suggestion.matchType, suggestion.matchValue))")
@@ -289,6 +291,7 @@ struct RulesView: View {
                     } label: {
                         Image(systemName: "checkmark")
                             .frame(width: 32, height: 32)
+                            .expandedTouchArea(6)
                     }
                     .accessibilityLabel("Accept \(suggestion.name)")
                     Button {
@@ -296,6 +299,7 @@ struct RulesView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .frame(width: 32, height: 32)
+                            .expandedTouchArea(6)
                     }
                     .accessibilityLabel("Reject \(suggestion.name)")
                 }
@@ -438,6 +442,8 @@ private struct AddRuleSheet: View {
                         } label: {
                             EntryChip(draft.matchType.title, systemImage: "textformat", isSet: true)
                         }
+                        .accessibilityLabel("Match")
+                        .accessibilityValue(draft.matchType.title)
 
                         Button {
                             choosingAmount = true
@@ -465,18 +471,22 @@ private struct AddRuleSheet: View {
                             if let category {
                                 EntryChip(category.name, isSet: true) {
                                     CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                                        .frame(width: 18)
+                                        .glyphColumn(18)
                                 }
                             } else {
                                 EntryChip("Keep category", systemImage: "square.on.circle", isSet: false)
                             }
                         }
+                        .accessibilityLabel("Category")
+                        .accessibilityValue(category?.name ?? "Keep category")
 
                         Button {
                             choosingTags = true
                         } label: {
                             EntryChip(draft.addTags.isEmpty ? "Tags" : draft.addTags.joined(separator: ", "), systemImage: "tag", isSet: !draft.addTags.isEmpty)
                         }
+                        .accessibilityLabel("Tags")
+                        .accessibilityValue(draft.addTags.joined(separator: ", "))
 
                         if !hiddenTags.isEmpty {
                             Menu {
@@ -534,9 +544,7 @@ private struct AddRuleSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("Applies to", selection: appliesTo) {
@@ -570,6 +578,7 @@ private struct AddRuleSheet: View {
                 TagPickerSheet(title: "Add Tags", options: tagOptions, selected: draft.addTags) { draft.addTags = $0 }
             }
         }
+        .interactiveDismissDisabled(hasInput || saving)
         .task {
             nameFocused = true
         }
@@ -588,6 +597,12 @@ private struct AddRuleSheet: View {
                 preview = result
             }
         }
+    }
+
+    // The match type, priority and other settings are defaults, so they alone are no input to lose.
+    private var hasInput: Bool {
+        !draft.name.isEmpty || !draft.matchValue.isEmpty || draft.minAmountCents != nil || draft.maxAmountCents != nil
+            || draft.setCategoryID != nil || !draft.addTags.isEmpty
     }
 
     // A category of the other type could never apply, so a new type clears it.
