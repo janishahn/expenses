@@ -1,9 +1,12 @@
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
-from expenses.core.periods import add_months, month_start
+from expenses.core.config import get_settings
+from expenses.core.periods import add_months, month_end, month_start
 from expenses.db.models import Transaction
 from expenses.recurrence.engine import local_today
 from expenses.services import auto_categorization
@@ -393,6 +396,29 @@ def test_dashboard_category_share_lists_every_category(
     assert len(donut) == 10
     assert sum(item["amount_cents"] for item in donut) == 55_000
     assert round(sum(item["percent"] for item in donut)) == 100
+
+
+def test_default_periods_end_on_the_app_timezone_today(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # These zones are 25 hours apart, so one is always on another date than the host.
+    zone = next(
+        name
+        for name in ("Pacific/Kiritimati", "Pacific/Pago_Pago")
+        if datetime.now(ZoneInfo(name)).date() != date.today()
+    )
+    monkeypatch.setattr(get_settings(), "timezone", zone)
+    today = local_today()
+
+    assert api_client.get("/api/transactions").json()["period"]["end"] == (
+        today.isoformat()
+    )
+    this_month = api_client.get("/api/transactions?period=this_month").json()
+    assert (
+        this_month["period"]["start"]
+        == month_start(today.year, today.month).isoformat()
+    )
+    assert this_month["period"]["end"] == month_end(today.year, today.month).isoformat()
 
 
 def test_month_grid_returns_thirteen_months_per_category_income_and_tag(

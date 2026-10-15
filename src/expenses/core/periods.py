@@ -31,9 +31,8 @@ def resolve_period(
     start: Optional[str],
     end: Optional[str],
     *,
-    today: Optional[date] = None,
+    today: date,
 ) -> Period:
-    today = today or date.today()
     if not period or period == "all":
         return Period("all", date(1970, 1, 1), today)
     if period == "last_month":
