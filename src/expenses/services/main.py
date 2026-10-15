@@ -1344,7 +1344,7 @@ class DurablePurchaseService:
         )
 
     def list_computed(self, *, today: date | None = None) -> list[dict[str, object]]:
-        current_day = today or date.today()
+        current_day = today or local_today()
         rows = self.session.scalars(
             select(DurablePurchase)
             .options(
@@ -7645,7 +7645,7 @@ class BudgetService:
         *,
         as_of: Optional[date] = None,
     ) -> dict[Optional[int], dict[str, int]]:
-        as_of_date = as_of or date.today()
+        as_of_date = as_of or local_today()
         days_in_month = monthrange(year, month)[1]
         month_start_date = month_start(year, month)
         month_end_date = month_end(year, month)
@@ -7823,7 +7823,7 @@ class BudgetService:
     def dashboard_budget_pace(
         self, *, today: Optional[date] = None
     ) -> dict[str, object]:
-        current = today or date.today()
+        current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
         overall = next(
             (row for row in effective if row.scope_category_id is None), None
@@ -7867,7 +7867,7 @@ class BudgetService:
     def dashboard_category_budget_overview(
         self, *, today: Optional[date] = None
     ) -> dict[str, object]:
-        current = today or date.today()
+        current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
         spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
         progress = self._derive_progress(
@@ -8080,7 +8080,7 @@ class DigestService:
         self.user_id = user_id or get_current_user_id()
 
     def weekly_digest(self, *, week_of: Optional[date] = None) -> dict[str, object]:
-        reference = week_of or date.today()
+        reference = week_of or local_today()
         week_start = reference - timedelta(days=reference.weekday())
         week_end = week_start + timedelta(days=6)
         previous_week_start = week_start - timedelta(days=7)
