@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
+
 ## [0.7.1] - 2026-10-14
 
 ### Added
