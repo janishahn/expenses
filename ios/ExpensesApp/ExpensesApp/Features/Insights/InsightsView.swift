@@ -1,5 +1,6 @@
 import Charts
 import SwiftUI
+import UIKit
 
 /// The period's totals and its income and expenses by month, then the last 12 full
 /// months and the current one: recurring spending, amounts by month, daily spending,
@@ -674,6 +675,8 @@ private struct DailySpendingSection: View {
     private static let cell: CGFloat = 12
     private static let gap: CGFloat = 3
     private static let levels = [0.11, 0.24, 0.46, 0.82]
+    // Heavier days tick harder while scrubbing, so a busy week feels bumpier.
+    private static let tickIntensities = [0.3, 0.45, 0.6, 0.8, 1.0]
 
     var body: some View {
         Section {
@@ -703,14 +706,27 @@ private struct DailySpendingSection: View {
         .expensesRowBackground()
     }
 
+    private static func level(_ cents: Int) -> Int {
+        cents <= 0 ? 0 : cents < 2500 ? 1 : cents < 6000 ? 2 : cents < 12000 ? 3 : 4
+    }
+
     private func color(_ cents: Int) -> Color {
-        let level = cents <= 0 ? 0 : cents < 2500 ? 1 : cents < 6000 ? 2 : cents < 12000 ? 3 : 4
+        let level = Self.level(cents)
         return Color.primary.opacity(level == 0 ? 0.08 : Self.levels[level - 1])
     }
 
-    private func grid(_ days: DayGrid, selected: Int) -> some View {
+    // The day under a point in the grid, clamped to the grid; future days keep the selection.
+    private func select(_ days: DayGrid, at point: CGPoint) {
         let step = Self.cell + Self.gap
-        return HStack(alignment: .top, spacing: 6) {
+        let week = min(max(Int(point.x / step), 0), days.weeks - 1)
+        let index = week * 7 + min(max(Int(point.y / step), 0), 6)
+        if days.amounts[index] != nil {
+            selected = index
+        }
+    }
+
+    private func grid(_ days: DayGrid, selected: Int) -> some View {
+        HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: Self.gap) {
                 Color.clear
                     .frame(height: 14)
@@ -755,11 +771,9 @@ private struct DailySpendingSection: View {
                     }
                     .contentShape(Rectangle())
                     .gesture(SpatialTapGesture().onEnded { tap in
-                        let index = Int(tap.location.x / step) * 7 + min(Int(tap.location.y / step), 6)
-                        if days.amounts.indices.contains(index), days.amounts[index] != nil {
-                            self.selected = index
-                        }
+                        select(days, at: tap.location)
                     })
+                    .gesture(DayScrub { select(days, at: $0) })
                 }
                 .padding(2)
             }
@@ -768,7 +782,9 @@ private struct DailySpendingSection: View {
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
-        .sensoryFeedback(.selection, trigger: selected)
+        .sensoryFeedback(trigger: selected) { _, index in
+            .impact(weight: .medium, intensity: Self.tickIntensities[Self.level(days.amounts[index] ?? 0)])
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Daily spending")
         .accessibilityValue(dayDescription(days, index: selected))
@@ -865,6 +881,24 @@ private struct DailySpendingSection: View {
             .frame(height: 80)
         }
         .padding(.vertical, 6)
+    }
+}
+
+/// Touch and hold, then drag to scrub through the days. UIKit's long press fails as soon
+/// as the finger moves before the hold ends, so a quick drag still scrolls the weeks.
+private struct DayScrub: UIGestureRecognizerRepresentable {
+    let onChange: (CGPoint) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = 0.25
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        if recognizer.state == .began || recognizer.state == .changed {
+            onChange(context.converter.localLocation)
+        }
     }
 }
 
