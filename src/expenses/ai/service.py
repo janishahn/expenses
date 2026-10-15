@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -447,6 +448,22 @@ class LLMAssistantService:
         except LLMDisabledError:
             self.session.delete(job)
             self.session.commit()
+            raise
+        except asyncio.CancelledError:
+            job.status = "failed"
+            job.error = "cancelled"
+            job.finished_at = datetime.utcnow()
+            job.duration_ms = int((perf_counter() - start) * 1000)
+            self.session.commit()
+            log_event(
+                logger,
+                logging.WARNING,
+                "llm_job_cancelled",
+                job_id=job.id,
+                feature=feature,
+                model=job.model,
+                duration_ms=job.duration_ms,
+            )
             raise
         except Exception as exc:
             job.status = "failed"

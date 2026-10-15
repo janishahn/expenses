@@ -107,12 +107,14 @@ function UncategorizedInboxPage() {
   }, [searchParams, settledSearch])
 
   // A selection belongs to the search and page it was made on; a change starts a new one.
+  // The typed search counts at once, before the debounced query catches up.
+  const selectionKey = `${queryString}\n${searchQuery}`
   const [selectionState, setSelectionState] = useState<{ query: string; selection: Selection }>({
-    query: queryString,
+    query: selectionKey,
     selection: { mode: "ids", ids: [] },
   })
-  const selection: Selection = selectionState.query === queryString ? selectionState.selection : { mode: "ids", ids: [] }
-  const setSelection = (next: Selection) => setSelectionState({ query: queryString, selection: next })
+  const selection: Selection = selectionState.query === selectionKey ? selectionState.selection : { mode: "ids", ids: [] }
+  const setSelection = (next: Selection) => setSelectionState({ query: selectionKey, selection: next })
   // Mobile rows have no hover checkbox; Select in the ⋯ menu turns row taps into toggles.
   const [selectMode, setSelectMode] = useState(false)
   const selecting = selectMode && !isDesktop

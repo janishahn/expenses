@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -398,6 +399,33 @@ async def test_uncategorized_triage_output_failure_returns_none() -> None:
         assert job is not None
         assert job.status == "failed"
         assert job.error == "Exceeded maximum output retries (2)"
+
+
+@pytest.mark.anyio
+async def test_cancelled_model_call_marks_job_failed() -> None:
+    with make_session() as session:
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2026, 5, 1),
+                occurred_at=datetime(2026, 5, 1, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=1299,
+                category_id=None,
+                title="Unclear PayPal",
+                tags=[],
+            )
+        )
+
+        runner = FailingLLMRunner(asyncio.CancelledError())
+        with pytest.raises(asyncio.CancelledError):
+            await LLMAssistantService(
+                session, user_id=1, runner=runner
+            ).suggest_uncategorized_transaction(txn.id)
+
+        session.rollback()
+        job = session.scalar(select(LLMJob))
+        assert job.status == "failed"
+        assert job.error == "cancelled"
 
 
 @pytest.mark.anyio
