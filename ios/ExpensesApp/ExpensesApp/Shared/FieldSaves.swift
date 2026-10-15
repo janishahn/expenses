@@ -4,9 +4,6 @@ import SwiftUI
 /// the screen shows it: the stored record with every entered value applied, in field order.
 /// An entered value stays shown, and goes with later saves, until a save that carried it
 /// succeeds. So a save that failed, or whose refresh failed, is never undone by the next one.
-/// A value the server rejects would fail those saves too, so a save that fails while it
-/// carries other fields' failed values tries once more without them. They stay shown with
-/// their errors.
 @MainActor @Observable
 final class FieldSaves<Field: CaseIterable & Hashable, Body> {
     var errors: [Field: String] = [:]
@@ -47,16 +44,9 @@ final class FieldSaves<Field: CaseIterable & Hashable, Body> {
             guard let record = stored() ?? base else {
                 return
             }
-            var sent = entered
-            let failed = sent.keys.filter { $0 != field && errors[$0] != nil }
-            var body = apply(sent, to: record)
-            var failure = await commit(body)
-            if failure != nil && !failed.isEmpty {
-                sent = sent.filter { !failed.contains($0.key) }
-                body = apply(sent, to: stored() ?? record)
-                failure = await commit(body)
-            }
-            if let failure {
+            let sent = entered
+            let body = apply(sent, to: record)
+            if let failure = await commit(body) {
                 errors[field] = failure
                 return
             }

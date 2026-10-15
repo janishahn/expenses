@@ -371,9 +371,11 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(peek.getByRole("button", { name: "Edit Title" })).toHaveText(`${title} renamed`)
 
     await peek.getByRole("button", { name: "Edit Amount" }).tap()
-    await peek.getByRole("textbox", { name: "Amount" }).fill("abc")
-    await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
-    await expect(peek.getByText("Enter a valid amount.")).toBeVisible()
+    for (const invalid of ["abc", "", "12,345"]) {
+      await peek.getByRole("textbox", { name: "Amount" }).fill(invalid)
+      await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
+      await expect(peek.getByText("Enter a valid amount.")).toBeVisible()
+    }
     await peek.getByRole("textbox", { name: "Amount" }).fill("45,60")
     await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
     await expect(peek.getByRole("button", { name: "Edit Amount" })).toContainText("45,60")
