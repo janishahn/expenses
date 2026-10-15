@@ -470,7 +470,9 @@ class LLMAssistantService:
         job.output_json = output.model_dump_json()
         job.finished_at = datetime.utcnow()
         job.duration_ms = int((perf_counter() - start) * 1000)
-        self.session.flush()
+        # The running row is already committed, so a caller that stores nothing
+        # must not roll this back to running.
+        self.session.commit()
         log_event(
             logger,
             logging.INFO,

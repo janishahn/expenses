@@ -215,6 +215,8 @@ async def test_llm_job_leaves_database_writable_during_model_call(tmp_path) -> N
             session, user_id=1, runner=runner
         ).suggest_uncategorized_transaction(txn.id)
 
+        # A no-op suggestion commits nothing else; request teardown rolls back.
+        session.rollback()
         assert session.scalar(select(LLMJob)).status == "completed"
 
 
