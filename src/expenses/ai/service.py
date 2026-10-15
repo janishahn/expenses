@@ -33,7 +33,6 @@ from expenses.ai.usage import apply_usage_metadata
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
-from expenses.recurrence.engine import local_today
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -185,7 +184,7 @@ class LLMAssistantService:
     ) -> list[RuleSuggestionResult]:
         correction_clusters = self._correction_clusters(since=since)
         payload = {
-            "since": (since or (local_today() - timedelta(days=90))).isoformat(),
+            "since": (since or (date.today() - timedelta(days=90))).isoformat(),
             "categories": self._category_payload(),
             "tags": self._tag_payload(),
             "existing_rules": self._existing_rule_payload(),
@@ -654,7 +653,7 @@ class LLMAssistantService:
 
     def _correction_clusters(self, *, since: date | None) -> list[dict[str, Any]]:
         since_dt = datetime.combine(
-            since or (local_today() - timedelta(days=90)), datetime.min.time()
+            since or (date.today() - timedelta(days=90)), datetime.min.time()
         )
         events = self.session.scalars(
             select(TransactionClassificationEvent)
