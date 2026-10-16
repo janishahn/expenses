@@ -107,7 +107,9 @@ test.describe("Transactions Page (mobile)", () => {
 
   test("prints the filtered ledger from More actions", async ({ page, request }) => {
     const token = await getCsrfToken(request)
-    const marker = `Mobile print ${Date.now()}`
+    // Search is fuzzy, so a timestamp marker also matches rows that earlier tests on this
+    // worker titled with a nearby timestamp, and their amounts would join the printed totals.
+    const marker = `Mobile print ${crypto.randomUUID()}`
     await seed(request, token, `${marker} one`)
     await seed(request, token, `${marker} two`)
     await page.addInitScript(() => {
