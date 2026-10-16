@@ -118,6 +118,7 @@ function settle(items: AssistantItem[], status: AssistantTurnStatus): AssistantI
     if (item.kind === "tool" && item.state === "running") return { ...item, state: status === "stopped" ? "stopped" : "failed" }
     if ((item.kind === "thinking" || item.kind === "note") && item.state === "active") return { ...item, state: "done" }
     if (item.kind === "text" && item.state === "streaming") return { ...item, state: "done" }
+    if (item.kind === "approval" && item.state === "pending") return { ...item, state: "dismissed" }
     return item
   })
 }

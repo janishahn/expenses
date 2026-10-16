@@ -960,6 +960,12 @@ final class AppModel {
             let item = assistantTurns[index].items[itemIndex]
             assistantTurns[index].items[itemIndex].state = item.kind == .tool ? (status == .stopped ? .stopped : .failed) : .done
         }
+        // The server saves the cards a stopped or failed turn left open as dismissed.
+        if status != .completed {
+            for itemIndex in assistantTurns[index].items.indices where assistantTurns[index].items[itemIndex].state == .pending {
+                assistantTurns[index].items[itemIndex].state = .dismissed
+            }
+        }
     }
 
     /// Loads the first page of Trash, or with `nextPage` the page after the loaded ones.
