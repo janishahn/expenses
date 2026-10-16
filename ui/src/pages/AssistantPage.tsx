@@ -140,7 +140,7 @@ function maskItem(item: AssistantItem): AssistantItem {
         ...item.card,
         title: maskTextAmounts(item.card.title),
         meta: mask(item.card.meta),
-        rows: item.card.rows.map((row) => ({ ...row, detail: mask(row.detail) })),
+        rows: item.card.rows.map((row) => ({ ...row, title: maskTextAmounts(row.title), detail: mask(row.detail) })),
       },
     }
   }

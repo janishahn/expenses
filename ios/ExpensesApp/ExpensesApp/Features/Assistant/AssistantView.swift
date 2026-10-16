@@ -555,7 +555,7 @@ private struct AssistantApprovalCardView: View {
                 Color.clear.glyphColumn()
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.title)
+                Text(shown(row.title, amountsHidden: model.amountsHidden))
                     .lineLimit(1)
                 if !sub.isEmpty {
                     Text(sub)
