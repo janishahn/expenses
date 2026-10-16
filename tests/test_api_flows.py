@@ -166,6 +166,72 @@ def test_transactions_reimbursements_and_deleted_lifecycle(
     assert all(item["id"] != expense_txn_id for item in response.json()["transactions"])
 
 
+def test_open_reimbursements_for_expense(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    expense_category_id = _create_category(api_client, csrf_headers, "Trip", "expense")
+    income_category_id = _create_category(api_client, csrf_headers, "Back", "income")
+
+    def create(txn_type: str, amount_cents: int, title: str, **kwargs: bool) -> int:
+        return _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=date.today(),
+            txn_type=txn_type,
+            amount_cents=amount_cents,
+            category_id=expense_category_id
+            if txn_type == "expense"
+            else income_category_id,
+            title=title,
+            tags=[],
+            **kwargs,
+        )
+
+    hotel_id = create("expense", 10_000, "Hotel")
+    dinner_id = create("expense", 3_000, "Dinner")
+    lump_sum_id = create("income", 6_000, "Trip share", is_reimbursement=True)
+    settled_id = create("income", 3_000, "Dinner share", is_reimbursement=True)
+    create("income", 9_000, "Salary")
+
+    for reimbursement_id, expense_id, amount_cents in [
+        (lump_sum_id, hotel_id, 2_000),
+        (settled_id, dinner_id, 3_000),
+    ]:
+        response = api_client.post(
+            f"/api/reimbursements/{reimbursement_id}/allocations",
+            headers=csrf_headers,
+            json={"expense_transaction_id": expense_id, "amount_cents": amount_cents},
+        )
+        assert response.status_code == 200
+
+    response = api_client.get(f"/api/transactions/{hotel_id}/open-reimbursements")
+    assert response.status_code == 200
+    assert response.json() == {
+        "remaining_unreimbursed_cents": 8_000,
+        "results": [
+            {
+                "reimbursement": {
+                    "id": lump_sum_id,
+                    "date": date.today().isoformat(),
+                    "amount_cents": 6_000,
+                    "title": "Trip share",
+                    "category": {
+                        "id": income_category_id,
+                        "name": "Back",
+                        "type": "income",
+                    },
+                },
+                "remaining_to_allocate_cents": 4_000,
+                "allocated_to_this_cents": 2_000,
+                "suggested_amount_cents": 4_000,
+            }
+        ],
+    }
+
+    response = api_client.get(f"/api/transactions/{lump_sum_id}/open-reimbursements")
+    assert response.status_code == 400
+
+
 def test_tags_rules_and_recurring_api_flows(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

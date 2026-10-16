@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
 import clsx from "clsx"
 import { pointerAt, type PointerAt } from "./chart-pointer"
 import { PointerTip } from "./Charts"
@@ -10,12 +10,17 @@ import s from "./kit.module.css"
 
 type Hover<T> = { item: T; at: PointerAt } | null
 
+// `track` stays the same function, so a grid can keep its cells while only the
+// tooltip follows the pointer.
 function useHover<T>() {
   const root = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<Hover<T>>(null)
-  const track = (item: T) => (event: PointerEvent<HTMLElement>) => {
-    if (root.current) setHover({ item, at: pointerAt(event, root.current) })
-  }
+  const track = useCallback(
+    (item: T) => (event: PointerEvent<HTMLElement>) => {
+      if (root.current) setHover({ item, at: pointerAt(event, root.current) })
+    },
+    []
+  )
   return { root, hover, track, clear: () => setHover(null) }
 }
 
@@ -61,9 +66,9 @@ export function MonthGrid({
   onSelect?: (row: MonthGridRow, index: number) => void
 }) {
   const { root, hover, track, clear } = useHover<{ row: MonthGridRow; index: number }>()
-  const last = months.length - 1
-  return (
-    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+  const cells = useMemo(() => {
+    const last = months.length - 1
+    return (
       <div
         className={clsx(s.hm, changeLabel && s.hmChanges)}
         style={{ "--n": months.length } as CSSProperties}
@@ -98,6 +103,11 @@ export function MonthGrid({
           )
         })}
       </div>
+    )
+  }, [months, shortMonths, rows, totalLabel, changeLabel, onSelect, track])
+  return (
+    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+      {cells}
       <div className={s.scale} aria-hidden="true">
         <span>Lowest</span>
         {[10, 26, 42, 58, 75].map((share) => (
@@ -132,8 +142,8 @@ export function BudgetGrid({
   onSelect?: (row: BudgetGridRow, index: number) => void
 }) {
   const { root, hover, track, clear } = useHover<{ row: BudgetGridRow; index: number }>()
-  return (
-    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+  const cells = useMemo(
+    () => (
       <div className={clsx(s.hm, s.hmBudget)} style={{ "--n": months.length } as CSSProperties} aria-hidden="true">
         <span />
         <MonthHeads months={months} shortMonths={shortMonths} />
@@ -154,6 +164,12 @@ export function BudgetGrid({
           </div>
         ))}
       </div>
+    ),
+    [months, shortMonths, rows, totalLabel, onSelect, track]
+  )
+  return (
+    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+      {cells}
       <div className={s.scale} aria-hidden="true">
         <i className={s.bc} />
         <span>Within</span>
@@ -211,9 +227,10 @@ export function DayCalendar({
   onSelect?: (index: number) => void
 }) {
   const { root, hover, track, clear } = useHover<number>()
-  const weeks = { "--weeks": Math.ceil(days.length / 7) } as CSSProperties
-  return (
-    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+  const hasTooltip = Boolean(tooltip)
+  const cells = useMemo(() => {
+    const weeks = { "--weeks": Math.ceil(days.length / 7) } as CSSProperties
+    return (
       <div className={s.calWrap} aria-hidden="true">
         <div className={s.calDays}>
           <span />
@@ -246,7 +263,7 @@ export function DayCalendar({
                     )}
                     style={entrance && level > 0 ? entranceDelay(index) : undefined}
                     data-clickable={onSelect ? "" : undefined}
-                    onPointerMove={tooltip ? track(index) : undefined}
+                    onPointerMove={hasTooltip ? track(index) : undefined}
                     onClick={onSelect ? () => onSelect(index) : undefined}
                   />
                 )
@@ -255,6 +272,11 @@ export function DayCalendar({
           </div>
         </div>
       </div>
+    )
+  }, [days, months, today, entrance, twinkle, hasTooltip, onSelect, track])
+  return (
+    <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
+      {cells}
       {legend ? (
         <div className={s.calLegend} aria-hidden="true">
           {legend[0]}

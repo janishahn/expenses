@@ -76,6 +76,8 @@ final class AppModel {
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
+    // For an open expense: the reimbursements it can draw from. Nil when the server can't list them.
+    var openReimbursements: OpenReimbursementsResponse?
     var reimbursementExpenseSearch: ReimbursementExpenseSearchResponse?
     var lastError: APIErrorInfo?
     var isLoading = false
@@ -834,11 +836,31 @@ final class AppModel {
         assistantStreamTask = Task {
             var ended: AssistantTurn.Status?
             var failure: String?
+            // Text reaches the transcript at most every 50 ms instead of once per token.
+            var pending: (id: String, text: String)?
+            var lastFlush = ContinuousClock.now
+            @MainActor func flushText() {
+                guard let held = pending else { return }
+                applyAssistantEvent(.delta(id: held.id, text: held.text), turnID: turnID)
+                pending = nil
+                lastFlush = .now
+            }
             do {
                 for try await event in open(client) {
                     guard streamID == assistantStreamSeq else {
                         return
                     }
+                    if case let .delta(id, text) = event {
+                        if let held = pending, held.id != id {
+                            flushText()
+                        }
+                        pending = (id, (pending?.text ?? "") + text)
+                        if ContinuousClock.now - lastFlush >= .milliseconds(50) {
+                            flushText()
+                        }
+                        continue
+                    }
+                    flushText()
                     if case let .end(status, message) = event {
                         ended = Self.assistantStatus(status, message: message)
                     }
@@ -857,6 +879,7 @@ final class AppModel {
             guard streamID == assistantStreamSeq else {
                 return
             }
+            flushText()
             let status: AssistantTurn.Status = if let ended {
                 ended
             } else if let failure {
@@ -957,10 +980,33 @@ final class AppModel {
             return
         }
         await runRequest {
-            selectedTransaction = try await apiClient.transactionDetail(id: id, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
+            try await refreshTransactionDetail(id: id, token: token, replacingShown: true)
             reimbursementExpenseSearch = nil
         }
+    }
+
+    /// Fetches the transaction's detail, its reimbursement links and, for an expense, the
+    /// reimbursements it can draw from. Unless `replacingShown`, a refresh that finishes
+    /// after another transaction opened leaves that one shown.
+    private func refreshTransactionDetail(id: Int, token: String, replacingShown: Bool = false) async throws {
+        let client = apiClient
+        async let reimbursementsRequest = client.transactionReimbursements(id: id, token: token)
+        let detail = try await client.transactionDetail(id: id, token: token)
+        var open: OpenReimbursementsResponse?
+        if detail.type == "expense" {
+            do {
+                open = try await client.openReimbursements(expenseID: id, token: token)
+            } catch let error as APIErrorInfo where error.statusCode == 404 {
+                // A server from before this list answers 404; the expense still opens.
+            }
+        }
+        let reimbursements = try await reimbursementsRequest
+        guard replacingShown || selectedTransaction?.id == id else {
+            return
+        }
+        selectedTransaction = detail
+        transactionReimbursements = reimbursements
+        openReimbursements = open
     }
 
     func searchReimbursementExpenses(reimbursementID: Int, query: String) async {
@@ -1532,9 +1578,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.updateCategory(id: id, body: body, token: token)
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1561,9 +1605,7 @@ final class AppModel {
                 CategoryMergeRequest(sourceCategoryID: sourceID, targetCategoryID: targetID),
                 token: token
             )
-            try await reloadOrganizeData(token: token)
-            dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
             if let month = budgets?.monthValue {
                 budgets = try await apiClient.budgets(month: month, token: token)
             }
@@ -1580,8 +1622,7 @@ final class AppModel {
             } else {
                 try await apiClient.createTag(body, token: token)
             }
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1608,8 +1649,7 @@ final class AppModel {
                 TagMergeRequest(sourceTagID: sourceID, targetTagID: targetID),
                 token: token
             )
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1619,8 +1659,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteTag(id: id, token: token)
-            try await reloadOrganizeData(token: token)
-            try await reloadTransactions(token: token)
+            try await reloadPrimaryData()
         }
     }
 
@@ -1687,14 +1726,9 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
-            let detail = try await apiClient.transactionDetail(id: id, token: token)
-            let reimbursements = try await apiClient.transactionReimbursements(id: id, token: token)
-            // A save can finish after another transaction opened; that one keeps its detail.
-            if selectedTransaction?.id == id {
-                selectedTransaction = detail
-                transactionReimbursements = reimbursements
-            }
-            try await reloadLedger(token: token)
+            async let ledger: Void = reloadLedger(token: token)
+            try await refreshTransactionDetail(id: id, token: token)
+            try await ledger
         }
     }
 
@@ -1741,10 +1775,10 @@ final class AppModel {
                 ),
                 token: token
             )
-            transactionReimbursements = try await apiClient.transactionReimbursements(
-                id: reimbursementID,
-                token: token
-            )
+            // Either side of the allocation can be the open transaction.
+            if let shownID = selectedTransaction?.id {
+                try await refreshTransactionDetail(id: shownID, token: token)
+            }
             reimbursementExpenseSearch = nil
             try await reloadPrimaryData()
         }
@@ -1756,10 +1790,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             try await apiClient.deleteReimbursementAllocation(id: allocationID, token: token)
-            transactionReimbursements = try await apiClient.transactionReimbursements(
-                id: transactionID,
-                token: token
-            )
+            try await refreshTransactionDetail(id: transactionID, token: token)
             try await reloadPrimaryData()
         }
     }
@@ -2019,17 +2050,18 @@ final class AppModel {
         guard let token else {
             return
         }
-        try await reloadLedger(token: token)
-        try await reloadOrganizeData(token: token)
+        async let ledger: Void = reloadLedger(token: token)
+        async let organize: Void = reloadOrganizeData(token: token)
+        _ = try await (ledger, organize)
     }
 
-    // The views an edit to one transaction changes.
+    // The views an edit to one transaction changes. The Dashboard reloads itself for the new revision.
     private func reloadLedger(token: String) async throws {
         ledgerRevision += 1
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
-        dashboardLoadState = .loaded
+        let client = apiClient
+        async let uncategorized = client.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token)
         try await reloadTransactions(token: token)
-        uncategorizedCount = try await apiClient.uncategorizedTransactions(TransactionQuery(), page: 1, limit: 1, token: token).total
+        uncategorizedCount = try await uncategorized.total
     }
 
     // The pages loaded for the current query, after a change made elsewhere, so the
@@ -2039,15 +2071,35 @@ final class AppModel {
         transactionsLoadID += 1
         let loadID = transactionsLoadID
         let pages = loadedTransactionQuery == query ? transactions?.page ?? 1 : 1
-        var response = try await apiClient.transactions(query, page: 1, token: token)
-        while loadID == transactionsLoadID && response.page < pages && response.hasMore {
-            var next = try await apiClient.transactions(query, page: response.page + 1, token: token)
-            next.items = response.items + next.items
-            response = next
+        // Four pages at a time, so a long scroll reloads quickly without flooding a small server.
+        let client = apiClient
+        let responses: [TransactionsResponse] = try await withThrowingTaskGroup(of: TransactionsResponse.self) { group in
+            var responses: [TransactionsResponse] = []
+            for page in 1...pages {
+                if page > 4, let response = try await group.next() {
+                    responses.append(response)
+                }
+                // A newer load, such as for another period, replaces this one.
+                guard loadID == transactionsLoadID else {
+                    group.cancelAll()
+                    return []
+                }
+                group.addTask { try await client.transactions(query, page: page, token: token) }
+            }
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses.sorted { $0.page < $1.page }
         }
-        // A newer load, such as for another period, replaces this one.
         guard loadID == transactionsLoadID else {
             return
+        }
+        // The list may have shrunk, so it ends at the first page with nothing after it.
+        var response = responses[0]
+        for page in responses.dropFirst() where response.hasMore {
+            var next = page
+            next.items = response.items + next.items
+            response = next
         }
         transactions = response
         loadedTransactionQuery = query
@@ -2055,22 +2107,30 @@ final class AppModel {
     }
 
     private func reloadOrganizeData(token: String) async throws {
-        categories = try await apiClient.categories(period: categoriesPeriod, token: token)
-        tags = try await apiClient.tags(period: tagsPeriod, token: token)
-        templates = try await apiClient.templates(token: token)
-        rules = try await apiClient.rules(token: token)
-        if aiFeatures.contains("rule_mining") {
-            ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
+        let client = apiClient
+        let categoriesPeriod = categoriesPeriod
+        let tagsPeriod = tagsPeriod
+        let ruleMining = aiFeatures.contains("rule_mining")
+        async let loadedCategories = client.categories(period: categoriesPeriod, token: token)
+        async let loadedTags = client.tags(period: tagsPeriod, token: token)
+        async let loadedTemplates = client.templates(token: token)
+        async let loadedRules = client.rules(token: token)
+        async let loadedSuggestions = ruleMining ? client.ruleSuggestions(token: token) : []
+        categories = try await loadedCategories
+        tags = try await loadedTags
+        templates = try await loadedTemplates
+        rules = try await loadedRules
+        if ruleMining {
+            ruleSuggestions = try await loadedSuggestions
         }
     }
 
-    // Budgets also show on the Dashboard and in the Insights budget history.
+    // Budgets also show on the Dashboard and in the Insights budget history, which reload for the new revision.
     private func reloadBudgetViews(token: String) async throws {
         ledgerRevision += 1
         if let month = budgets?.monthValue {
             budgets = try await apiClient.budgets(month: month, token: token)
         }
-        dashboard = try await apiClient.dashboard(period: dashboardPeriod, excludedTagIDs: dashboardExcludedTagIDs, token: token)
     }
 
     private func readSecurityScopedData(from fileURL: URL) throws -> Data {
@@ -2097,6 +2157,8 @@ final class AppModel {
     private func clearUserScopedState() {
         dashboardLoadID += 1
         transactionsLoadID += 1
+        // The superseded loads skip their own reset, which would keep Sign in disabled.
+        isLoading = false
         dashboard = nil
         dashboardExcludedTagIDs = []
         dashboardBalanceHistory = nil
@@ -2133,6 +2195,7 @@ final class AppModel {
         recurringLoadState = .idle
         selectedTransaction = nil
         transactionReimbursements = nil
+        openReimbursements = nil
         reimbursementExpenseSearch = nil
     }
 

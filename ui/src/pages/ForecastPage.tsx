@@ -115,8 +115,8 @@ function ForecastPage() {
     enabled: mode === "full",
   })
   const categories = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
 
   if (forecast.isLoading) return <PanelLoading title="Forecast" label="Loading forecast…" />

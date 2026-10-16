@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test"
 
+// The test backends count days in the default EXPENSES_TIMEZONE. The runner and browsers
+// share that zone, so "today" is the same date for all of them on any host.
+process.env.TZ = "Europe/Berlin"
+
 const desktopViewport = { width: 1280, height: 800 }
 const criticalDesktopMatch = /.*\.critical\.spec\.ts/
 const criticalMobileMatch = /.*\.critical\.mobile\.spec\.ts/
@@ -23,6 +27,7 @@ export default defineConfig({
     trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
     screenshot: "only-on-failure",
     headless: true,
+    timezoneId: "Europe/Berlin",
   },
   projects: [
     {

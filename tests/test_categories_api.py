@@ -164,3 +164,23 @@ def test_create_category_trimmed_duplicate_fails_with_400(
     )
     assert duplicate_response.status_code == 400
     assert "already exists" in duplicate_response.text
+
+
+def test_category_options_list_names_without_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Groceries", "expense")
+
+    categories = api_client.get("/api/categories/options").json()["categories"]
+
+    groceries = next(
+        category for category in categories if category["id"] == category_id
+    )
+    assert groceries == {
+        "id": category_id,
+        "name": "Groceries",
+        "type": "expense",
+        "icon": "currency-circle-dollar",
+        "order": 0,
+        "archived_at": None,
+    }

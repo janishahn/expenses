@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Assistant keeps your chats on the web and iOS: the header opens Recent chats and starts a New chat, a new chat lists recent ones instead of suggested questions, and on the web the URL names the open chat. While it works, one line names the current step (thinking, a note, or a ledger read); when the answer starts it folds into a summary that opens to list each step and the reasoning summary. Answers write amounts the way the app does (1 234,56 €).
 - Ask the Assistant to add transactions, change the category, tags, or title of transactions, allocate a reimbursement to expenses (for example half of each), or set budgets. It shows the exact change on a card, and nothing changes until you tap the card's button; Dismiss, or a new message, leaves your data as it was. Ask it to undo a change it made, and it shows that on a card too. `POST /api/assistant/chats/{chat_id}/approvals/stream` approves or dismisses a card and streams the rest of the answer.
 - Settings › Assistant on the web and iOS sets how long the server keeps your Assistant chats: 7, 14, 30, or 90 days after the last message, 14 by default. Older chats, and the record of changes made in them, are deleted each night. `GET` and `PUT /api/assistant/settings` read and change it.
+- On iOS, a reimbursement's Allocate button opens a menu with the remaining amount, half, and a third of the expense, like the web's ½ and ⅓ buttons. Pick one to allocate it without typing; Other Amount… opens the amount field as before.
+- Allocate a reimbursement from the expense it pays back. On the web, the expense's Reimbursed property has a + that picks a reimbursement with money left and an amount, with ½ and ⅓. On iOS, tap Reimbursed to pick a reimbursement, then Remaining, Half, Third, or Other Amount…. Reimbursements with money left are listed newest first, up to 10, by the new `GET /api/transactions/{id}/open-reimbursements`. With an older server, the iOS row shows only the total.
 
 ### Changed
 - **Breaking:** AI configuration moves from `EXPENSES_LLM_*` to named backends in `EXPENSES_AI_BACKENDS`, with `EXPENSES_AI_<NAME>_KIND`, `_BASE_URL`, and `_API_KEY` for each. Kinds are `anthropic`, `openai`, `openrouter`, and `openai-compatible`, so the Anthropic API now works directly. The server refuses to start while any `EXPENSES_LLM_*` variable is set; see the AI section of the README.
@@ -28,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hide amounts on iOS covers every amount in the app, including Assistant answers, and blurs amounts instead of drawing gray boxes.
 - iOS CSV export moves from Reports to Settings > Import and Export, next to the portable archive. Reports builds the web's report, including category and tag scope, and opens the PDF in Quick Look.
 - The redesigned iOS app needs a 0.7.1 or later server.
+- An expense's Durable property shows only while it is tracked. Start tracking from ⋯ › Track as durable… on the web, or ⋯ › Track as Durable… on iOS.
+- The amount a reimbursement suggests for an expense it already pays back now includes what is allocated there, because saving replaces that allocation.
+- The server records a device's last use at most every five minutes instead of on every iOS request, so the iOS device list can show a last use up to five minutes old.
+- The web Transactions, Uncategorized, and Reconcile match searches ask the server once typing pauses instead of on every key. Printing the Transactions ledger loads 1,000 rows per request instead of 100, and Undo after Match All or Ignore Remaining Rows in Reconcile takes one request per 500 rows; rows that changed since stay as they are.
+- Saving a transaction on the web no longer reloads every category's and tag's all-time totals for the pickers, and the Insights month grids and daily calendar no longer redraw every cell while the pointer moves.
+- After a save, iOS reloads the Transactions pages already loaded four at a time instead of one after another. The Dashboard reloads after a change, or when you return to it a minute or more after its last load, instead of each time it appears. Assistant answers redraw less while they stream, and receipt photos are prepared off the main thread.
 
 ### Removed
 - Sign in with ChatGPT, the `connect-chatgpt` command, and `EXPENSES_AI_CREDENTIAL_KEY_FILE`. Existing installs can delete `EXPENSES_DATA_DIR/secrets/chatgpt/` and revoke the Expenses connection in ChatGPT's settings.
@@ -43,8 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The iOS app no longer keeps server responses, such as receipt images, in its disk cache.
 - Editing a transaction on iOS while the phone is in another time zone than the server no longer moves its time or booking date: iOS shows and saves stored times in the server's time zone. Balance snapshot times no longer shift by the UTC offset on iOS, because `GET /api/settings` now returns each snapshot's `as_of_at` with the server zone's offset, as `occurred_at` already does.
 - Amounts with a third decimal, such as 12,345, are rejected on the web and iOS instead of being rounded to cents.
+- Periods, budgets, the weekly digest, and durable purchase ages now count days in `EXPENSES_TIMEZONE`, not the host's system clock. On a host that runs in UTC, today's transactions no longer drop out of the dashboard, transactions, and insights in the hours before UTC midnight, and This month no longer points at the previous month on the first day of a month.
 - Opening a web page whose code can't load no longer leaves a blank window. While the server is down, the page shows the can't-reach-the-server receipt and reloads by itself once the server answers; otherwise, for example after an update renamed the page's files, it keeps the page title and offers Retry. When the add-transaction form's code can't load, a message offers Reload and the page stays.
 - Moving a recurring rule's start later kept its earlier next occurrence, so the rule could post before its start. Saving a rule whose start is after its next occurrence now moves the next occurrence to the start.
+- Saves made while an AI feature waited for its model, such as an Assistant answer, could stall for five seconds and fail with "database is locked". The AI job no longer holds the database's write lock during the model call.
+- CSV and statement imports, archive imports, receipt uploads, and email ingest no longer pause every other request while the server processes them.
+- When the iOS app's session expired or was revoked while the Dashboard or Transactions loaded, Sign in stayed disabled until the app restarted. Sign in now works right away.
 
 ## [0.7.1] - 2026-10-14
 

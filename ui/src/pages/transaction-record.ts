@@ -39,12 +39,12 @@ export function useTransactionRecord(id: number) {
     placeholderData: undefined,
   })
   const categoriesQuery = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
   const tagsQuery = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
   })
   const stored = detailQuery.data?.id === id ? detailQuery.data : undefined
   const reimbursementsQuery = useQuery({
@@ -60,6 +60,8 @@ export function useTransactionRecord(id: number) {
   const [receiptError, setReceiptError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  // The ⋯ menu opens the durable editor, which lives in the properties.
+  const [durableOpen, setDurableOpen] = useState(false)
   const queue = useRef<Promise<unknown>>(Promise.resolve())
 
   const setError = (field: RecordField, message: string | null) =>
@@ -225,6 +227,8 @@ export function useTransactionRecord(id: number) {
     setError,
     save,
     saveDurable,
+    durableOpen,
+    setDurableOpen,
     receipts: { uploading, error: receiptError, upload: uploadReceipt, replace: replaceReceipt, remove: removeReceipt },
     removeAllocation,
     actionError,

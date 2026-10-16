@@ -29,6 +29,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
@@ -127,6 +128,7 @@ from expenses.schemas import (
     BankRowIgnoreIn,
     BankRowMatchIn,
     BankRowReopenIn,
+    BankRowsReopenIn,
     BankRowsPageOut,
     BankStatementImportResponseOut,
     BankStatementPreviewResponseOut,
@@ -185,6 +187,7 @@ from expenses.schemas import (
     ReceiptAttachmentsResponseOut,
     ReimbursementAllocationIn,
     ReimbursementExpenseSearchResponseOut,
+    OpenReimbursementsResponseOut,
     TransactionReimbursementsResponseOut,
     ReportOptions,
     RuleIn,
@@ -526,13 +529,11 @@ def _require_creation_password_strength(password: str) -> None:
         )
 
 
-async def _read_upload_limited(
-    file: UploadFile, *, max_bytes: int, detail: str
-) -> bytes:
+def _read_upload_limited(file: UploadFile, *, max_bytes: int, detail: str) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:
-        chunk = await file.read(1024 * 1024)
+        chunk = file.file.read(1024 * 1024)
         if not chunk:
             break
         total += len(chunk)
@@ -1053,7 +1054,7 @@ def period_from_request(request: Request) -> Period:
     start = request.query_params.get("start")
     end = request.query_params.get("end")
     try:
-        return resolve_period(period_slug, start, end)
+        return resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1295,7 +1296,7 @@ def _filters_from_bulk_query(
     query: str | None,
 ) -> tuple[Period, TransactionFilters]:
     try:
-        period = resolve_period(period_slug, start, end)
+        period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return period, TransactionFilters(
@@ -1413,7 +1414,9 @@ async def api_ingest(
     payload_fields = await read_captured_request_body(request, get_settings())
     try:
         touch_user_ingest_token(ingest_token)
-        result = IngestService(db, user_id=user_id).ingest_expense(data)
+        result = await run_in_threadpool(
+            IngestService(db, user_id=user_id).ingest_expense, data
+        )
     except IngestCategoryNotFound as exc:
         log_event(
             logger,
@@ -1575,6 +1578,27 @@ def api_categories(request: Request, db: Session = Depends(get_db)):
             }
             for category in categories
         ],
+    }
+
+
+@router.get("/api/categories/options", include_in_schema=False)
+def api_category_options(request: Request, db: Session = Depends(get_db)):
+    user_id = _require_current_user_id(request, db)
+    categories = CategoryService(db, user_id=user_id).list_all(include_archived=True)
+    return {
+        "categories": [
+            {
+                "id": category.id,
+                "name": category.name,
+                "type": category.type.value,
+                "icon": category.icon,
+                "order": category.order,
+                "archived_at": (
+                    category.archived_at.isoformat() if category.archived_at else None
+                ),
+            }
+            for category in categories
+        ]
     }
 
 
@@ -1755,6 +1779,38 @@ def api_tags(
             }
             for tag in tags
         ],
+    }
+
+
+@router.get("/api/tags/options", include_in_schema=False)
+def api_tag_options(
+    request: Request,
+    include_archived: bool = False,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    tags = TagService(db, user_id=user_id).list_all(include_archived=include_archived)
+    return {
+        "tags": [
+            {
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color,
+                "is_hidden_from_budget": tag.is_hidden_from_budget,
+                "is_hidden_from_filters": tag.is_hidden_from_filters,
+                "auto_attach_period": (
+                    {
+                        "start": tag.auto_attach_start_date,
+                        "end": tag.auto_attach_end_date,
+                    }
+                    if tag.auto_attach_start_date is not None
+                    else None
+                ),
+                "archived_at": tag.archived_at,
+                "created_at": tag.created_at,
+            }
+            for tag in tags
+        ]
     }
 
 
@@ -2045,7 +2101,7 @@ def api_reorder_templates(
 @router.get("/api/budgets", response_model=BudgetsResponseOut)
 def api_budgets(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    today = date.today()
+    today = local_today()
     view = (request.query_params.get("view") or "month").strip().lower()
     if view not in {"month", "templates", "year", "workspace"}:
         view = "month"
@@ -2168,7 +2224,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
 @router.get("/api/budgets/burndown", response_model=BudgetBurndownResponseOut)
 def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    today = date.today()
+    today = local_today()
     month_param = (request.query_params.get("month") or "").strip()
     if month_param:
         try:
@@ -3307,7 +3363,7 @@ def api_admin_recurring_catch_up(request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/api/import/csv/preview", response_model=CSVPreviewResponseOut)
-async def api_import_csv_preview(
+def api_import_csv_preview(
     request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)
 ):
     user_id = _require_current_user_id(request, db)
@@ -3315,7 +3371,7 @@ async def api_import_csv_preview(
 
     settings = get_settings()
     try:
-        content_bytes = await _read_upload_limited(
+        content_bytes = _read_upload_limited(
             file,
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
@@ -3363,7 +3419,7 @@ async def api_import_csv_preview(
 
 
 @router.post("/api/import/csv/commit", response_model=CSVCommitResponseOut)
-async def api_import_csv_commit(
+def api_import_csv_commit(
     request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)
 ):
     user_id = _require_current_user_id(request, db)
@@ -3371,7 +3427,7 @@ async def api_import_csv_commit(
 
     settings = get_settings()
     try:
-        content_bytes = await _read_upload_limited(
+        content_bytes = _read_upload_limited(
             file,
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
@@ -3499,7 +3555,7 @@ def api_ignore_open_bank_rows(
     "/api/reconciliation/commerzbank-csv/preview",
     response_model=BankStatementPreviewResponseOut,
 )
-async def api_preview_commerzbank_csv_reconciliation(
+def api_preview_commerzbank_csv_reconciliation(
     request: Request,
     account_label: str = Form("Commerzbank"),
     file: UploadFile = File(...),
@@ -3508,7 +3564,7 @@ async def api_preview_commerzbank_csv_reconciliation(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     settings = get_settings()
-    content = await _read_upload_limited(
+    content = _read_upload_limited(
         file,
         max_bytes=settings.bank_csv_import_max_bytes,
         detail=f"CSV file too large (max {settings.bank_csv_import_max_bytes} bytes)",
@@ -3534,7 +3590,7 @@ async def api_preview_commerzbank_csv_reconciliation(
     "/api/reconciliation/commerzbank-csv/commit",
     response_model=BankStatementImportResponseOut,
 )
-async def api_commit_commerzbank_csv_reconciliation(
+def api_commit_commerzbank_csv_reconciliation(
     request: Request,
     account_label: str = Form("Commerzbank"),
     file: UploadFile = File(...),
@@ -3543,7 +3599,7 @@ async def api_commit_commerzbank_csv_reconciliation(
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     settings = get_settings()
-    content = await _read_upload_limited(
+    content = _read_upload_limited(
         file,
         max_bytes=settings.bank_csv_import_max_bytes,
         detail=f"CSV file too large (max {settings.bank_csv_import_max_bytes} bytes)",
@@ -3633,6 +3689,20 @@ def api_ignore_bank_row(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BankRowAlreadyResolvedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.post(
+    "/api/reconciliation/bank-rows/reopen",
+    response_model=BankRowActionResponseOut,
+    include_in_schema=False,
+)
+def api_reopen_bank_rows(
+    data: BankRowsReopenIn, request: Request, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    BankReconciliationService(db, user_id=user_id).reopen_many(data.rows)
     return {"status": "ok"}
 
 
@@ -3729,7 +3799,7 @@ def api_create_transaction_from_bank_row(
     "/api/import/sqlite/preview",
     response_model=LegacySqlitePreviewResponseOut,
 )
-async def api_import_sqlite_preview(
+def api_import_sqlite_preview(
     request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)
 ):
     admin_context = _require_elevated_admin_context(request, db)
@@ -3741,7 +3811,7 @@ async def api_import_sqlite_preview(
         raise HTTPException(status_code=400, detail="Please upload a .db file")
 
     settings = get_settings()
-    content = await _read_upload_limited(
+    content = _read_upload_limited(
         file,
         max_bytes=settings.sqlite_import_max_bytes,
         detail=f"DB file too large (max {settings.sqlite_import_max_bytes} bytes)",
@@ -3836,7 +3906,7 @@ async def api_import_sqlite_preview(
 
 
 @router.post("/api/import/sqlite/commit", response_model=LegacySqliteCommitOut)
-async def api_import_sqlite_commit(
+def api_import_sqlite_commit(
     data: LegacySqliteCommitIn, request: Request, db: Session = Depends(get_db)
 ):
     admin_context = _require_elevated_admin_context(request, db)
@@ -4125,7 +4195,7 @@ def api_list_transaction_attachments(
     "/api/transactions/{transaction_id:int}/attachments",
     response_model=ReceiptAttachmentOut,
 )
-async def api_upload_transaction_attachment(
+def api_upload_transaction_attachment(
     transaction_id: int,
     request: Request,
     file: UploadFile = File(...),
@@ -4180,7 +4250,7 @@ async def api_upload_transaction_attachment(
     try:
         with open(full_path, "wb") as out:
             while True:
-                chunk = await file.read(1024 * 1024)
+                chunk = file.file.read(1024 * 1024)
                 if not chunk:
                     break
                 size_bytes += len(chunk)
@@ -4193,7 +4263,7 @@ async def api_upload_transaction_attachment(
                 digest.update(chunk)
                 out.write(chunk)
     finally:
-        await file.close()
+        file.file.close()
 
     if size_bytes == 0:
         full_path.unlink(missing_ok=True)
@@ -4391,6 +4461,48 @@ def api_transaction_reimbursements(
                 },
             }
             for alloc in allocations_in
+        ],
+    }
+
+
+@router.get(
+    "/api/transactions/{transaction_id:int}/open-reimbursements",
+    response_model=OpenReimbursementsResponseOut,
+)
+def api_transaction_open_reimbursements(
+    request: Request, transaction_id: int, db: Session = Depends(get_db)
+):
+    user_id = _require_current_user_id(request, db)
+    try:
+        data = ReimbursementService(
+            db, user_id=user_id
+        ).open_reimbursements_for_expense(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "remaining_unreimbursed_cents": data["remaining_unreimbursed_cents"],
+        "results": [
+            {
+                "reimbursement": {
+                    "id": row["reimbursement"].id,
+                    "date": row["reimbursement"].date.isoformat(),
+                    "amount_cents": row["reimbursement"].amount_cents,
+                    "title": row["reimbursement"].title,
+                    "category": (
+                        {
+                            "id": row["reimbursement"].category.id,
+                            "name": row["reimbursement"].category.name,
+                            "type": row["reimbursement"].category.type.value,
+                        }
+                        if row["reimbursement"].category
+                        else None
+                    ),
+                },
+                "remaining_to_allocate_cents": row["remaining_to_allocate_cents"],
+                "allocated_to_this_cents": row["allocated_to_this_cents"],
+                "suggested_amount_cents": row["suggested_amount_cents"],
+            }
+            for row in data["results"]
         ],
     }
 
@@ -5002,7 +5114,8 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
     page = int(request.query_params.get("page", "1"))
     page = max(page, 1)
     limit = int(request.query_params.get("limit", "50"))
-    limit = min(max(limit, 1), 100)
+    # A printout gathers every row 1000 at a time; each page stays a few MB.
+    limit = min(max(limit, 1), 1000)
     offset = (page - 1) * limit
     txn_service = TransactionService(db, user_id=user_id)
     items = txn_service.list_for_period(period, filters, limit=limit + 1, offset=offset)
@@ -5532,7 +5645,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         item for item in durable_items if not bool(item["fully_amortized"])
     ][:10]
     budget_service = BudgetService(db, user_id=user_id)
-    today = date.today()
+    today = local_today()
     # Monthly budgets track the selected period's month: a completed last month
     # is evaluated as of its final day (so pace reflects actual spend, not a
     # partway projection), while this_month/all/custom stay on the current month.

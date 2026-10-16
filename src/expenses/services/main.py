@@ -1344,7 +1344,7 @@ class DurablePurchaseService:
         )
 
     def list_computed(self, *, today: date | None = None) -> list[dict[str, object]]:
-        current_day = today or date.today()
+        current_day = today or local_today()
         rows = self.session.scalars(
             select(DurablePurchase)
             .options(
@@ -2633,6 +2633,90 @@ class ReimbursementService:
                 }
             )
         return results
+
+    def open_reimbursements_for_expense(
+        self, expense_transaction_id: int, *, limit: int = 10
+    ) -> dict[str, object]:
+        """Reimbursements with money left to allocate, newest first, for one expense."""
+        expense = self.session.get(Transaction, expense_transaction_id)
+        if not expense or expense.user_id != self.user_id:
+            raise ValueError("Expense transaction not found")
+        if expense.deleted_at is not None:
+            raise ValueError("Expense transaction is deleted")
+        if expense.type != TransactionType.expense:
+            raise ValueError("Allocations can only target expense transactions")
+
+        active_expense = aliased(Transaction)
+        allocated = (
+            select(
+                ReimbursementAllocation.reimbursement_transaction_id,
+                func.sum(ReimbursementAllocation.amount_cents).label("total"),
+            )
+            .join(
+                active_expense,
+                ReimbursementAllocation.expense_transaction_id == active_expense.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                active_expense.user_id == self.user_id,
+                active_expense.deleted_at.is_(None),
+                active_expense.type == TransactionType.expense,
+            )
+            .group_by(ReimbursementAllocation.reimbursement_transaction_id)
+            .subquery()
+        )
+        remaining = Transaction.amount_cents - func.coalesce(allocated.c.total, 0)
+        rows = self.session.execute(
+            select(Transaction, remaining)
+            .options(joinedload(Transaction.category))
+            .outerjoin(
+                allocated, allocated.c.reimbursement_transaction_id == Transaction.id
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.income,
+                Transaction.is_reimbursement.is_(True),
+                remaining > 0,
+            )
+            .order_by(Transaction.date.desc(), Transaction.id.desc())
+            .limit(limit)
+        ).all()
+
+        allocated_to_this = {
+            int(r.reimbursement_transaction_id): int(r.amount_cents)
+            for r in self.session.execute(
+                select(
+                    ReimbursementAllocation.reimbursement_transaction_id,
+                    ReimbursementAllocation.amount_cents,
+                ).where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.expense_transaction_id == expense.id,
+                    ReimbursementAllocation.reimbursement_transaction_id.in_(
+                        [reimbursement.id for reimbursement, _ in rows]
+                    ),
+                )
+            )
+        }
+        remaining_unreimbursed = max(
+            0, expense.amount_cents - self.reimbursed_total_for_expense(expense.id)
+        )
+        return {
+            "remaining_unreimbursed_cents": remaining_unreimbursed,
+            "results": [
+                {
+                    "reimbursement": reimbursement,
+                    "remaining_to_allocate_cents": int(remaining_to_allocate),
+                    "allocated_to_this_cents": allocated_to_this.get(
+                        reimbursement.id, 0
+                    ),
+                    "suggested_amount_cents": min(
+                        int(remaining_to_allocate), remaining_unreimbursed
+                    ),
+                }
+                for reimbursement, remaining_to_allocate in rows
+            ],
+        }
 
 
 class ReceiptAttachmentService:
@@ -7662,7 +7746,7 @@ class BudgetService:
         *,
         as_of: Optional[date] = None,
     ) -> dict[Optional[int], dict[str, int]]:
-        as_of_date = as_of or date.today()
+        as_of_date = as_of or local_today()
         days_in_month = monthrange(year, month)[1]
         month_start_date = month_start(year, month)
         month_end_date = month_end(year, month)
@@ -7840,7 +7924,7 @@ class BudgetService:
     def dashboard_budget_pace(
         self, *, today: Optional[date] = None
     ) -> dict[str, object]:
-        current = today or date.today()
+        current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
         overall = next(
             (row for row in effective if row.scope_category_id is None), None
@@ -7884,7 +7968,7 @@ class BudgetService:
     def dashboard_category_budget_overview(
         self, *, today: Optional[date] = None
     ) -> dict[str, object]:
-        current = today or date.today()
+        current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
         spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
         progress = self._derive_progress(
@@ -8097,7 +8181,7 @@ class DigestService:
         self.user_id = user_id or get_current_user_id()
 
     def weekly_digest(self, *, week_of: Optional[date] = None) -> dict[str, object]:
-        reference = week_of or date.today()
+        reference = week_of or local_today()
         week_start = reference - timedelta(days=reference.weekday())
         week_end = week_start + timedelta(days=6)
         previous_week_start = week_start - timedelta(days=7)

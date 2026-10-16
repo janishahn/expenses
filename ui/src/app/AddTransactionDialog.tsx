@@ -93,8 +93,8 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [pending, setPending] = useState(false)
 
   const { data: categoriesData } = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
     enabled: open,
   })
   const { data: templatesData } = useQuery({
@@ -103,8 +103,8 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
     enabled: open,
   })
   const { data: tagsData, isError: tagsFailed, isFetching: tagsLoading } = useQuery({
-    queryKey: ["tags", "all"],
-    queryFn: () => apiFetch<TagsResponse>("/api/tags?period=all"),
+    queryKey: ["tags", "options"],
+    queryFn: () => apiFetch<TagsResponse>("/api/tags/options"),
     enabled: open,
   })
 

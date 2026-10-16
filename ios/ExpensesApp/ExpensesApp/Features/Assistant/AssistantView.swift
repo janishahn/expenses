@@ -5,11 +5,8 @@ struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var sendSize = 34.0
     @State private var input = ""
-    @FocusState private var inputFocused: Bool
     @State private var sendTick = 0
-    @State private var stopTick = 0
     // Bumped to bring the newest question to the top of the screen.
     @State private var scrollRequest = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
@@ -73,7 +70,8 @@ struct AssistantView: View {
     private var conversation: some View {
         transcript
             .safeAreaBar(edge: .bottom) {
-                composer
+                AssistantComposer(input: $input, send: send)
+                    .sensoryFeedback(.impact(flexibility: .soft), trigger: sendTick)
             }
             .background(ExpensesBackground())
     }
@@ -196,7 +194,44 @@ struct AssistantView: View {
         .containerRelativeFrame(.vertical)
     }
 
-    private var composer: some View {
+    // The newest answer that failed while the screen was open.
+    private var liveFailureID: String? {
+        guard let last = model.assistantTurns.last, last.live, case .failed = last.status else { return nil }
+        return last.id
+    }
+
+    // Only an answer streamed on this screen needs room; an opened chat ends at its last answer.
+    private var bottomReserve: CGFloat {
+        guard viewportHeight > 0, model.assistantTurns.last?.live == true else { return 0 }
+        return max(0, viewportHeight - latestQuestionHeight - latestAnswerHeight - 40)
+    }
+
+    private func send() {
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !model.isAssistantStreaming else { return }
+        sendTick += 1
+        withAnimation(.easeOut(duration: 0.2)) {
+            model.sendAssistantMessage(input)
+        }
+        input = ""
+        scrollRequest += 1
+    }
+
+    private func open(_ id: String) {
+        Task { await model.openAssistantChat(id) }
+    }
+}
+
+/// The message field, in its own view so typing does not re-render the transcript.
+private struct AssistantComposer: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .body) private var sendSize = 34.0
+    @Binding var input: String
+    let send: () -> Void
+    @FocusState private var inputFocused: Bool
+    @State private var stopTick = 0
+
+    var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Ask anything", text: $input, axis: .vertical)
                 .lineLimit(1...6)
@@ -227,7 +262,6 @@ struct AssistantView: View {
             .accessibilityLabel(model.isAssistantStreaming ? "Stop" : "Send")
             .accessibilityIdentifier(model.isAssistantStreaming ? "assistant.stop" : "assistant.send")
         }
-        .sensoryFeedback(.impact(flexibility: .soft), trigger: sendTick)
         .sensoryFeedback(.impact(weight: .light), trigger: stopTick)
         .padding(.leading, 18)
         .padding(.trailing, 6)
@@ -239,32 +273,6 @@ struct AssistantView: View {
 
     private var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isAssistantStreaming
-    }
-
-    // The newest answer that failed while the screen was open.
-    private var liveFailureID: String? {
-        guard let last = model.assistantTurns.last, last.live, case .failed = last.status else { return nil }
-        return last.id
-    }
-
-    // Only an answer streamed on this screen needs room; an opened chat ends at its last answer.
-    private var bottomReserve: CGFloat {
-        guard viewportHeight > 0, model.assistantTurns.last?.live == true else { return 0 }
-        return max(0, viewportHeight - latestQuestionHeight - latestAnswerHeight - 40)
-    }
-
-    private func send() {
-        guard canSend else { return }
-        sendTick += 1
-        withAnimation(.easeOut(duration: 0.2)) {
-            model.sendAssistantMessage(input)
-        }
-        input = ""
-        scrollRequest += 1
-    }
-
-    private func open(_ id: String) {
-        Task { await model.openAssistantChat(id) }
     }
 }
 
@@ -366,6 +374,7 @@ private struct AssistantAnswer: View {
                         partial: item.state == .streaming,
                         fadesIn: turn.live
                     )
+                    .equatable()
                 case let .approval(item):
                     if let card = item.card {
                         AssistantApprovalCardView(item: item, card: card, enters: turn.live) { approve in
@@ -785,6 +794,7 @@ private struct AssistantStep: View {
                 }
                 if summaryShown {
                     AssistantMarkdownText(content: shown(item.text, amountsHidden: model.amountsHidden), partial: false, fadesIn: false)
+                        .equatable()
                         .font(.footnote)
                         .foregroundStyle(.tertiary)
                         .transition(.opacity)
@@ -837,7 +847,8 @@ private struct AssistantStep: View {
 /// turn into line breaks, which flattens multi-paragraph answers into one run and jams
 /// sentences together. Splitting into blocks first and parsing only inline syntax per
 /// block restores paragraph/list spacing while keeping bold, emphasis, code, and links.
-private struct AssistantMarkdownText: View {
+/// Equatable, so a turn whose text has not changed is not parsed again.
+private struct AssistantMarkdownText: View, Equatable {
     let content: String
     /// Still streaming: markup opened but not yet closed is closed for display.
     let partial: Bool

@@ -202,3 +202,20 @@ def test_tag_archive_restore_and_filter_visibility_are_independent(
         api_client.post("/api/tags/999999/restore", headers=csrf_headers).status_code
         == 404
     )
+
+
+def test_tag_options_list_names_without_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    kept = api_client.post("/api/tags", headers=csrf_headers, json={"name": "Trip"})
+    archived = api_client.post("/api/tags", headers=csrf_headers, json={"name": "Old"})
+    api_client.post(f"/api/tags/{archived.json()['id']}/archive", headers=csrf_headers)
+
+    active = api_client.get("/api/tags/options").json()["tags"]
+    everything = api_client.get("/api/tags/options?include_archived=true").json()[
+        "tags"
+    ]
+
+    assert [(tag["id"], tag["name"]) for tag in active] == [(kept.json()["id"], "Trip")]
+    assert "usage_count" not in active[0]
+    assert {tag["name"] for tag in everything} == {"Trip", "Old"}

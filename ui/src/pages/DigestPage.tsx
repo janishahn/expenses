@@ -110,8 +110,8 @@ function DigestPage() {
   })
   // Budget rows carry no icon, so their glyphs come from the category list.
   const categories = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: () => apiFetch<CategoriesResponse>("/api/categories?period=all"),
+    queryKey: ["categories", "options"],
+    queryFn: () => apiFetch<CategoriesResponse>("/api/categories/options"),
   })
 
   if (isLoading) return <PanelLoading title="Digest" label="Loading digest…" />

@@ -31,7 +31,7 @@ import type {
   BankStatementRow,
 } from "../app/api-types"
 import { formatShortDate } from "../app/format"
-import { invalidateTransactionData, shortDateLabel } from "../app/transactions"
+import { invalidateTransactionData, shortDateLabel, useSettledSearch } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
 import { Button, IconButton } from "../components/ui/Button"
@@ -156,7 +156,7 @@ function OpenRowPeek({
   )
   const [query, setQuery] = useState("")
   const [setAmount, setSetAmount] = useState(true)
-  const search = query.trim()
+  const search = useSettledSearch(query.trim())
   const results = useQuery({
     queryKey: ["reconciliation", "candidates", row.id, search],
     queryFn: () =>
@@ -411,6 +411,14 @@ function ReconciliationPage() {
       expected_transaction_id: reversing?.transactionId,
       restore_amount_cents: reversing?.restoreAmountCents,
     })
+  // Undoes a bulk action in one request per 500 rows; rows changed since are left as they are.
+  const reopenMany = async (
+    rows: Array<{ row_id: number; expected_resolution: "matched" | "ignored"; expected_transaction_id?: number }>
+  ) => {
+    for (let start = 0; start < rows.length; start += 500) {
+      await post("reopen", { rows: rows.slice(start, start + 500) })
+    }
+  }
 
   // Runs one row action, then confirms it in a toast whose Undo runs `undo`.
   // Returns the error message when the action fails.
@@ -490,8 +498,12 @@ function ReconciliationPage() {
         },
         message: "Matched",
         undo: () =>
-          Promise.all(
-            matches.map((match) => reopen(match.row_id, { resolution: "matched", transactionId: match.transaction_id }))
+          reopenMany(
+            matches.map((match) => ({
+              row_id: match.row_id,
+              expected_resolution: "matched" as const,
+              expected_transaction_id: match.transaction_id,
+            }))
           ),
       })
     )
@@ -518,7 +530,7 @@ function ReconciliationPage() {
           return `Ignored ${plural(rowIds.length, "row")}`
         },
         message: "Ignored",
-        undo: () => Promise.all(rowIds.map((id) => reopen(id, { resolution: "ignored" }))),
+        undo: () => reopenMany(rowIds.map((id) => ({ row_id: id, expected_resolution: "ignored" as const }))),
       })
     )
   }

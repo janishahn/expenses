@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from expenses.core.periods import Period
 from expenses.db.models import BankStatementRow, Tag, Transaction, TransactionType
-from expenses.schemas import BankTransactionCreateIn, TransactionIn
+from expenses.schemas import (
+    BankRowsReopenItemIn,
+    BankTransactionCreateIn,
+    TransactionIn,
+)
 from expenses.services.main import (
     MetricsService,
     ReimbursementService,
@@ -626,7 +630,48 @@ class BankReconciliationService:
         expected_transaction_id: int | None = None,
         restore_amount_cents: int | None = None,
     ) -> None:
-        row = self._get_row(row_id)
+        self._reopen_row(
+            self._get_row(row_id),
+            trash_created_transaction=trash_created_transaction,
+            expected_resolution=expected_resolution,
+            expected_transaction_id=expected_transaction_id,
+            restore_amount_cents=restore_amount_cents,
+        )
+        self.session.commit()
+
+    def reopen_many(self, rows: list[BankRowsReopenItemIn]) -> None:
+        by_id = {
+            row.id: row
+            for row in self.session.scalars(
+                select(BankStatementRow).where(
+                    BankStatementRow.user_id == self.user_id,
+                    BankStatementRow.id.in_([item.row_id for item in rows]),
+                )
+            )
+        }
+        for item in rows:
+            row = by_id.get(item.row_id)
+            if row is None:
+                continue
+            try:
+                self._reopen_row(
+                    row,
+                    expected_resolution=item.expected_resolution,
+                    expected_transaction_id=item.expected_transaction_id,
+                )
+            except BankRowChangedError:
+                continue
+        self.session.commit()
+
+    def _reopen_row(
+        self,
+        row: BankStatementRow,
+        *,
+        trash_created_transaction: bool = False,
+        expected_resolution: str | None = None,
+        expected_transaction_id: int | None = None,
+        restore_amount_cents: int | None = None,
+    ) -> None:
         if (
             expected_resolution is not None and row.resolution != expected_resolution
         ) or (
@@ -655,7 +700,6 @@ class BankReconciliationService:
         row.resolution = None
         row.resolved_at = None
         row.ignore_reason = None
-        self.session.commit()
 
     def create_transaction(
         self, row_id: int, data: BankTransactionCreateIn | None = None
