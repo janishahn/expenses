@@ -154,20 +154,6 @@ class AllocatePlan(BaseModel):
     allocations: list[AllocationRow]
 
 
-class BudgetChange(BaseModel):
-    category_id: int | None
-    year: int
-    month: int
-    amount_cents: int
-    # From this month on, or this month only.
-    onward: bool
-
-
-class BudgetsPlan(BaseModel):
-    kind: Literal["set_budgets"] = "set_budgets"
-    changes: list[BudgetChange]
-
-
 class TemplateRow(BaseModel):
     id: int
     amount_cents: int
@@ -187,6 +173,22 @@ class BudgetScopeState(BaseModel):
 
     templates: list[TemplateRow]
     overrides: list[OverrideRow]
+
+
+class BudgetChange(BaseModel):
+    category_id: int | None
+    year: int
+    month: int
+    amount_cents: int
+    # From this month on, or this month only.
+    onward: bool
+    # The budget as the card showed it; approval refuses one that changed since.
+    before: BudgetScopeState
+
+
+class BudgetsPlan(BaseModel):
+    kind: Literal["set_budgets"] = "set_budgets"
+    changes: list[BudgetChange]
 
 
 class BudgetRestore(BaseModel):
@@ -714,6 +716,9 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
                 month=month,
                 amount_cents=budget.amount_cents,
                 onward=budget.applies == "onward",
+                before=_budget_state(
+                    reader.session, reader.user_id, budget.category_id
+                ),
             )
         )
         rows.append(
@@ -1250,6 +1255,8 @@ def _apply_budgets(
     scopes: list[BudgetRestore] = []
     for change in plan.changes:
         before = _budget_state(session, user_id, change.category_id)
+        if before != change.before:
+            raise ActionConflict("That budget changed since this was proposed.")
         try:
             if change.onward:
                 service.apply_template_from(

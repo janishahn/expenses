@@ -130,7 +130,8 @@ class AssistantAction(Base):
     __tablename__ = "assistant_actions"
     __table_args__ = (
         Index("ix_assistant_actions_user_created", "user_id", "created_at"),
-        UniqueConstraint("chat_id", "tool_call_id"),
+        # Some backends reuse tool call ids across turns, so they are not unique.
+        Index("ix_assistant_actions_chat_call", "chat_id", "tool_call_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

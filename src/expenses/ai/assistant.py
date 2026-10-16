@@ -660,11 +660,15 @@ class AssistantService:
             ),
             None,
         )
+        # A reused tool call id belongs to the latest action, the one this turn proposed.
         action = self.session.scalar(
-            select(AssistantAction).where(
+            select(AssistantAction)
+            .where(
                 AssistantAction.chat_id == chat.id,
                 AssistantAction.tool_call_id == item_id.removeprefix("approval-"),
             )
+            .order_by(AssistantAction.id.desc())
+            .limit(1)
         )
         if turn is None or item is None or action is None:
             raise AssistantNotFoundError("This change is no longer waiting for you")

@@ -22,6 +22,7 @@ from expenses.ai.assistant import (
     stream_turn,
 )
 from expenses.ai.assistant_actions import (
+    ActionConflict,
     BudgetRequest,
     InvalidProposal,
     NewTransaction,
@@ -1172,10 +1173,8 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
     with factory() as session:
         ids = _seed_trip(session)
     heard: list[dict] = []
-    calls = 0
 
     async def stream(messages, info):
-        nonlocal calls
         returns = _tool_returns(messages)
         prompts = [
             part.content
@@ -1187,7 +1186,7 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
         if returns or prompts == ["Never mind"]:
             yield "Okay."
             return
-        calls += 1
+        # Every turn reuses one tool call id, as some local backends do.
         yield _call(
             "create_transactions",
             {
@@ -1202,7 +1201,7 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
                     }
                 ]
             },
-            f"call-{calls}",
+            "call-1",
         )
 
     events = await _collect(factory, stream, "Add lunch for 12,50")
@@ -1469,6 +1468,32 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         assert {created.status, edited.status, set_budgets.status} == {"undone"}
         with pytest.raises(InvalidProposal):
             propose_undo(reader, created.id)
+
+
+def test_assistant_budget_approval_refuses_a_budget_changed_since() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_spending_fixture(session)
+        proposal = propose_budgets(
+            _reader(session),
+            [
+                BudgetRequest(
+                    category_id=ids["groceries_id"],
+                    month="2026-07",
+                    amount_cents=40_000,
+                    applies="month",
+                )
+            ],
+        )
+        # Edited elsewhere after the card showed the budget it replaces.
+        BudgetService(session, user_id=1).upsert_override(
+            BudgetOverrideIn(
+                year=2026, month=7, category_id=ids["groceries_id"], amount_cents=38_000
+            )
+        )
+
+        with pytest.raises(ActionConflict):
+            _apply_proposal(session, proposal)
 
 
 def test_ai_usage_summary_average_cost_keeps_division_precision(

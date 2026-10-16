@@ -703,10 +703,14 @@ class AssistantReader:
         return result
 
     def list_durable_purchases(self) -> dict[str, Any]:
-        purchases = DurablePurchaseService(self.session, self.user_id).list_computed(
-            today=self.today
+        purchases = sorted(
+            DurablePurchaseService(self.session, self.user_id).list_computed(
+                today=self.today
+            ),
+            key=lambda item: str(item["acquired_on"]),
+            reverse=True,
         )
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "purchases": [
                 {
@@ -719,9 +723,12 @@ class AssistantReader:
                     "remaining_value_cents": item["remaining_cents"],
                     "percent_used": round(float(item["percent_amortized"]), 1),
                 }
-                for item in purchases
+                for item in purchases[:100]
             ],
         }
+        if len(purchases) > 100:
+            result["more"] = True
+        return result
 
 
 def query_transactions(
@@ -844,7 +851,10 @@ def list_reimbursements(
 
 
 def list_durable_purchases(ctx: RunContext[AssistantReader]) -> dict[str, Any]:
-    """Purchases spread over their expected lifespan, with cost per day."""
+    """Purchases spread over their expected lifespan, with cost per day.
+
+    Lists the newest 100. `more` means there are older ones.
+    """
     return ctx.deps.list_durable_purchases()
 
 
@@ -990,6 +1000,8 @@ def tool_detail(tool_name: str, content: dict[str, Any]) -> str | None:
             return f"{count} · {_eur(open_cents)} open" if open_cents else count
         case "list_durable_purchases":
             count = len(content["purchases"])
+            if content.get("more"):
+                return f"{count}+ purchases"
             return f"{count} purchase{'' if count == 1 else 's'}"
         case _:
             return None

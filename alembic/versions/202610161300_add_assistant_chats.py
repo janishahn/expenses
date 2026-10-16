@@ -69,16 +69,21 @@ def upgrade() -> None:
         sa.Column("status", sa.String(20), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("decided_at", sa.DateTime(), nullable=True),
-        sa.UniqueConstraint("chat_id", "tool_call_id"),
     )
     op.create_index(
         "ix_assistant_actions_user_created",
         "assistant_actions",
         ["user_id", "created_at"],
     )
+    op.create_index(
+        "ix_assistant_actions_chat_call",
+        "assistant_actions",
+        ["chat_id", "tool_call_id"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_assistant_actions_chat_call", table_name="assistant_actions")
     op.drop_index("ix_assistant_actions_user_created", table_name="assistant_actions")
     op.drop_table("assistant_actions")
     op.drop_table("assistant_turns")
