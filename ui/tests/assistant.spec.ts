@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures"
+import { expect, test, type Page } from "./fixtures"
 import {
   allocateJourney,
   assistantTurns,
@@ -22,6 +22,15 @@ import {
 // "fail once", "add lunch", the write scenarios, or the default turn with reasoning, a
 // note, one ledger read, and this answer.
 const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April."
+
+const ledgerFooter = (page: Page) => page.getByText(/^\d+–\d+ of \d+$/)
+
+// Loads Transactions, so its cached list has to refresh after a change, and returns its total.
+async function ledgerTotal(page: Page): Promise<number> {
+  await page.goto("/transactions")
+  await expect(ledgerFooter(page).or(page.getByText("No transactions yet"))).toBeVisible()
+  return (await ledgerFooter(page).count()) ? Number(/of (\d+)$/.exec(await ledgerFooter(page).innerText())![1]) : 0
+}
 
 test.describe("Assistant", () => {
   test("streams a turn with its activity, keeps the chat, and reopens it", async ({ page }) => {
@@ -84,11 +93,7 @@ test.describe("Assistant", () => {
   })
 
   test("applies an approved change, refreshes the ledger, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
-    // The ledger is already loaded, so the applied change has to refresh it.
-    await page.goto("/transactions")
-    const ledgerFooter = page.getByText(/^\d+–\d+ of \d+$/)
-    await expect(ledgerFooter.or(page.getByText("No transactions yet"))).toBeVisible()
-    const totalBefore = (await ledgerFooter.count()) ? Number(/of (\d+)$/.exec(await ledgerFooter.innerText())![1]) : 0
+    const totalBefore = await ledgerTotal(page)
     await page.getByRole("link", { name: "Assistant", exact: true }).click()
     await sendQuestion(page, unique("Add lunch for 12,50"))
 
@@ -108,7 +113,7 @@ test.describe("Assistant", () => {
     await expect(assistant.getByRole("button", { name: "Retry" })).toHaveCount(0)
 
     await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
     await page.goBack()
     await expect(assistant).toContainText("Added Lunch.")
 
@@ -135,7 +140,28 @@ test.describe("Assistant", () => {
     await expect(second).toContainText("Dismissed")
     await expect(assistantTurns(page).last()).toContainText("Okay, nothing changed.")
     await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+  })
+
+  test("shows a change the server applied when the approval's stream was cut off", async ({ page }) => {
+    const totalBefore = await ledgerTotal(page)
+    await page.getByRole("link", { name: "Assistant", exact: true }).click()
+    await sendQuestion(page, unique("Add lunch for 12,50"))
+    const card = assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })
+    await expect(card).toContainText("Lunch")
+
+    // The server applies the change, but the connection drops before any of its stream arrives.
+    await page.route("**/approvals/stream", async (route) => {
+      await route.fetch()
+      await route.abort("connectionreset")
+    })
+    await card.getByRole("button", { name: "Add" }).click()
+    await expect(card).toContainText("Added")
+    await expect(card.getByRole("button")).toHaveCount(0)
+    await page.unroute("**/approvals/stream")
+
+    await page.getByRole("link", { name: "Transactions", exact: true }).click()
+    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
   })
 
   test("tags transactions from a card and undoes it", async ({ page }) => {

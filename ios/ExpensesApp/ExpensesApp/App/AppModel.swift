@@ -726,16 +726,7 @@ final class AppModel {
             guard assistantChatID == id else {
                 return
             }
-            assistantTurns = chat.turns.map { turn in
-                AssistantTurn(
-                    id: "turn-\(turn.id)",
-                    userText: turn.userText,
-                    items: turn.items,
-                    status: Self.assistantStatus(turn.status, message: nil),
-                    live: false,
-                    received: true
-                )
-            }
+            assistantTurns = Self.savedAssistantTurns(chat)
             assistantChatState = .ready
         } catch let error as APIErrorInfo {
             if error.statusCode == 401 {
@@ -798,7 +789,7 @@ final class AppModel {
         assistantTurns[assistantTurns.count - 1].status = .streaming
         assistantTurns[assistantTurns.count - 1].live = true
         let body = AssistantDecisionRequest(itemID: itemID, approve: approve)
-        streamAssistantTurn(last.id) { $0.assistantDecisionStream(chatID: chatID, body, token: token) }
+        streamAssistantTurn(last.id, decision: body) { $0.assistantDecisionStream(chatID: chatID, body, token: token) }
     }
 
     /// Stops the answer. The server keeps what it wrote so far.
@@ -815,6 +806,19 @@ final class AppModel {
 
     private static let assistantSavedFailure = "This answer didn't finish."
 
+    private static func savedAssistantTurns(_ chat: AssistantChat) -> [AssistantTurn] {
+        chat.turns.map { turn in
+            AssistantTurn(
+                id: "turn-\(turn.id)",
+                userText: turn.userText,
+                items: turn.items,
+                status: assistantStatus(turn.status, message: nil),
+                live: false,
+                received: true
+            )
+        }
+    }
+
     private static func assistantStatus(_ status: AssistantTurnStatus, message: String?) -> AssistantTurn.Status {
         switch status {
         case .completed:
@@ -828,6 +832,7 @@ final class AppModel {
 
     private func streamAssistantTurn(
         _ turnID: String,
+        decision: AssistantDecisionRequest? = nil,
         open: @escaping (ExpensesAPIClient) -> AsyncThrowingStream<AssistantStreamEvent, Error>
     ) {
         isAssistantStreaming = true
@@ -837,6 +842,7 @@ final class AppModel {
         assistantStreamTask = Task {
             var ended: AssistantTurn.Status?
             var failure: String?
+            var decidedCardArrived = false
             // Text reaches the transcript at most every 50 ms instead of once per token.
             var pending: (id: String, text: String)?
             var lastFlush = ContinuousClock.now
@@ -864,6 +870,9 @@ final class AppModel {
                     flushText()
                     if case let .end(status, message) = event {
                         ended = Self.assistantStatus(status, message: message)
+                    }
+                    if case let .item(item) = event, item.id == decision?.itemID {
+                        decidedCardArrived = true
                     }
                     applyAssistantEvent(event, turnID: turnID)
                 }
@@ -893,11 +902,21 @@ final class AppModel {
             finishAssistantTurn(turnID, status: status)
             isAssistantStreaming = false
             assistantStreamTask = nil
+            // The stream ended before the card's new state arrived, but the server may have
+            // applied it already, so the saved chat replaces the transcript.
+            let reloadChat = decision != nil && !decidedCardArrived
             // An approved change touched the ledger, so the views showing it reload.
             let applied = assistantTurns.first { $0.id == turnID }?.items.contains { $0.state == .applied } == true
+                || (reloadChat && decision?.approve == true)
+            let chatID = assistantChatID
             // A stopped stream's task is cancelled, so the reloads run in their own task.
             Task {
                 await loadAssistantChats()
+                if reloadChat, let chatID, let token,
+                   let chat = try? await apiClient.assistantChat(id: chatID, token: token),
+                   assistantChatID == chatID, !isAssistantStreaming {
+                    assistantTurns = Self.savedAssistantTurns(chat)
+                }
                 if applied, let token {
                     await runRequest {
                         try await reloadPrimaryData()

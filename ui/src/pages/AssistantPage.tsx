@@ -358,6 +358,7 @@ function Conversation({
       if (status === "completed") setAnnouncement(answerText(local.items))
       else if (status === "stopped") setAnnouncement("Response stopped")
       else setAnnouncement(error)
+      return local
     },
     [flush, onChatStarted, queryClient]
   )
@@ -403,9 +404,20 @@ function Conversation({
       const id = chatIdRef.current
       if (!id || abortRef.current) return
       setTurns((prev) => prev.map((turn, index) => (index === prev.length - 1 ? { ...turn, status: "streaming", error: null, live: true } : turn)))
-      void runStream((signal) => streamAssistantDecision(id, itemId, approve, signal))
+      void runStream((signal) => streamAssistantDecision(id, itemId, approve, signal)).then((received) => {
+        if (received.items.some((item) => item.id === itemId)) return
+        // The stream ended before the card's new state arrived, but the server may have
+        // applied it already, so show the saved chat. If that fails too, the card stays.
+        if (approve) invalidateTransactionData(queryClient)
+        void fetchAssistantChat(id).then(
+          (chat) => {
+            if (chatIdRef.current === id && !abortRef.current) setTurns(savedTurns(chat))
+          },
+          () => undefined
+        )
+      })
     },
-    [runStream]
+    [queryClient, runStream]
   )
 
   const handleCopy = useCallback((key: string, content: string) => {
