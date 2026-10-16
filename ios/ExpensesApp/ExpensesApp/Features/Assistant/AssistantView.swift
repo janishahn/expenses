@@ -13,6 +13,8 @@ struct AssistantView: View {
     @State private var viewportHeight: CGFloat = 0
     @State private var latestQuestionHeight: CGFloat = 0
     @State private var latestAnswerHeight: CGFloat = 0
+    // A transaction the answer linked as [title](transaction:<id>).
+    @State private var linkedTransactionID: Int?
 
     var body: some View {
         Group {
@@ -74,6 +76,16 @@ struct AssistantView: View {
                     .sensoryFeedback(.impact(flexibility: .soft), trigger: sendTick)
             }
             .background(ExpensesBackground())
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == "transaction",
+                      let id = Int(url.absoluteString.dropFirst("transaction:".count))
+                else { return .systemAction }
+                linkedTransactionID = id
+                return .handled
+            })
+            .navigationDestination(item: $linkedTransactionID) { id in
+                TransactionDetailView(transactionID: id)
+            }
     }
 
     private var transcript: some View {
@@ -1010,7 +1022,12 @@ private enum MarkdownBlock {
             interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        var attributed = (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        // Links take the app's tint, which matches the text, so they carry an underline as on the web.
+        for range in attributed.runs.filter({ $0.link != nil }).map(\.range) {
+            attributed[range].underlineStyle = Text.LineStyle(pattern: .solid, color: Color(uiColor: .tertiaryLabel))
+        }
+        return attributed
     }
 }
 

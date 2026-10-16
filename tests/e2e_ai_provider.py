@@ -8,7 +8,7 @@ The last user message picks the script:
 - "slow": a long answer streamed slowly, for stopping mid-answer.
 - "long": eighty short paragraphs, for scrolling.
 - "fail once": an authentication error the first time, then the default script.
-- "add lunch": proposes a new transaction, then confirms or accepts the dismissal.
+- "add lunch": proposes a new transaction, then links it or accepts the dismissal.
 - anything else: reasoning, a note, a ledger read, then a short answer.
 """
 
@@ -72,8 +72,11 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
         ], 0.05
     if "add lunch" in question.lower():
         if last["role"] == "tool":
-            applied = '"applied"' in str(last["content"])
-            return _text("Added it." if applied else "Okay, nothing changed."), 0.01
+            result = json.loads(last["content"])
+            if result["status"] != "applied":
+                return _text("Okay, nothing changed."), 0.01
+            created = result["created"][0]["id"]
+            return _text(f"Added [Lunch](transaction:{created})."), 0.01
         return [
             _chunk(
                 {

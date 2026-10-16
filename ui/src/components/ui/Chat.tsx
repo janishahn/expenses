@@ -13,7 +13,8 @@ import {
   type UIEvent,
 } from "react"
 import type { Element, ElementContent, Root, RootContent } from "hast"
-import Markdown, { type Components } from "react-markdown"
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown"
+import { Link, useSearchParams } from "react-router-dom"
 import remarkGfm from "remark-gfm"
 import remarkSmartypants from "remark-smartypants"
 import { ArrowDownIcon } from "@phosphor-icons/react/ArrowDown"
@@ -110,12 +111,30 @@ function healPartial(text: string): string {
   return healed
 }
 
+// The Assistant links a transaction a tool returned as [title](transaction:<id>).
+const TRANSACTION_HREF = /^transaction:(\d+)$/
+
+// Opens the transaction in the page's peek, which the URL names as on the ledger.
+function TransactionLink({ id, children }: { id: string; children: ReactNode }) {
+  const [searchParams] = useSearchParams()
+  const next = new URLSearchParams(searchParams)
+  next.set("peek", id)
+  return (
+    <Link to={{ search: next.toString() }} replace={searchParams.has("peek")}>
+      {children}
+    </Link>
+  )
+}
+
+const urlTransform = (url: string) => (TRANSACTION_HREF.test(url) ? url : defaultUrlTransform(url))
 const REMARK_PLUGINS = [remarkGfm, remarkSmartypants]
 const WORD_PLUGINS = [rehypeWords]
 const MARKDOWN_COMPONENTS: Components = {
-  a: ({ node, ...props }) => {
+  a: ({ node, href, ...props }) => {
     void node
-    return <a {...props} target="_blank" rel="noreferrer" />
+    const transaction = href?.match(TRANSACTION_HREF)
+    if (transaction) return <TransactionLink id={transaction[1]}>{props.children}</TransactionLink>
+    return <a href={href} {...props} target="_blank" rel="noreferrer" />
   },
 }
 
@@ -132,7 +151,12 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }) {
   return (
     <div className={clsx(s.md, s.chatMd)}>
-      <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={animate ? WORD_PLUGINS : undefined} components={MARKDOWN_COMPONENTS}>
+      <Markdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={animate ? WORD_PLUGINS : undefined}
+        components={MARKDOWN_COMPONENTS}
+        urlTransform={urlTransform}
+      >
         {partial ? healPartial(content) : content}
       </Markdown>
     </div>

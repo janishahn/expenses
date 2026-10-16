@@ -494,6 +494,8 @@
 .split { flex: 1; min-height: 0; display: flex; gap: 8px; margin: 0 8px 8px; }
 .splitMain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .splitScroll { overflow: auto; }
+.splitFlush, .splitFlush > .splitMain { margin: 0; gap: 0; }
+.splitFlush > .peek { margin: 0 8px 8px 0; }
 .splitAside { overflow: auto; align-items: flex-start; }
 .aside { width: 340px; flex: none; }
 .peek {
@@ -1053,7 +1055,7 @@ button.actHead { cursor: pointer; }
   .split { position: relative; margin-bottom: 0; }
   /* The peek covers the list, which stays laid out so Back returns to the same scroll position. */
   .peekOpen .splitMain { visibility: hidden; }
-  .peekOpen .peek { position: absolute; inset: 0; }
+  .peekOpen .peek { position: absolute; inset: 0; margin: 0; }
   .peekOpen .split { margin-top: 8px; }
   .peekOpen > .bar, .peekOpen > .viewrow { display: none; }
   .peek { width: 100%; }

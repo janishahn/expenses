@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/ArrowClockwise"
@@ -34,6 +34,7 @@ import {
 } from "../components/ui/Chat"
 import { Status } from "../components/ui/EmptyState"
 import { LoadingBody, Panel } from "../components/ui/Panel"
+import { PeekLayout } from "../components/ui/Peek"
 
 type Turn = {
   key: string
@@ -497,10 +498,14 @@ function Conversation({
   )
 }
 
-// The URL names the open chat, so a reload returns to it.
+// Loaded on first use: the transaction record brings the map library.
+const TransactionPeek = lazy(() => import("./TransactionRecord").then((module) => ({ default: module.TransactionPeek })))
+
+// The URL names the open chat and the transaction open beside it, so a reload returns to both.
 function AssistantPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedChat = searchParams.get("chat")
+  const peekId = Number(searchParams.get("peek")) || null
   const chatsQuery = useQuery({ queryKey: CHATS_KEY, queryFn: fetchAssistantChats })
   const recent = recentEntries(chatsQuery.data)
   const [view, setView] = useState({ key: 0, chat: requestedChat })
@@ -522,6 +527,18 @@ function AssistantPage() {
     setSearchParams(id ? { chat: id } : {})
   }
 
+  const closePeek = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete("peek")
+    setSearchParams(next, { replace: true })
+  }
+  const peekLink = (id: number) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("peek", String(id))
+    return `/assistant?${next.toString()}`
+  }
+  const chatHref = requestedChat ? `/assistant?chat=${requestedChat}` : "/assistant"
+
   // The id is recorded before the URL changes, so the URL change is not taken for a new chat.
   const onChatStarted = useCallback(
     (id: string) => {
@@ -535,6 +552,7 @@ function AssistantPage() {
     <Panel
       title="Assistant"
       layout="fill"
+      peekOpen={peekId !== null}
       actions={
         <>
           <ChatRecentMenu chats={recent} onOpen={open} trigger={<IconButton icon={ClockCounterClockwiseIcon} label="Recent chats" />} />
@@ -542,7 +560,25 @@ function AssistantPage() {
         </>
       }
     >
-      <Conversation key={view.key} initialChat={view.chat} recent={recent} onOpen={open} onChatStarted={onChatStarted} />
+      <PeekLayout
+        flush
+        main={<Conversation key={view.key} initialChat={view.chat} recent={recent} onOpen={open} onChatStarted={onChatStarted} />}
+        peek={
+          peekId ? (
+            <Suspense fallback={null}>
+              <TransactionPeek
+                key={peekId}
+                id={peekId}
+                onClose={closePeek}
+                linkTo={peekLink}
+                fullViewTo={`/transactions/${peekId}`}
+                fullViewState={{ returnTo: chatHref, returnLabel: "Assistant" }}
+                parent="Assistant"
+              />
+            </Suspense>
+          ) : null
+        }
+      />
     </Panel>
   )
 }

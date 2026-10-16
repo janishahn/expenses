@@ -12,9 +12,20 @@ import s from "./kit.module.css"
 
 // The list and its docked peek, side by side. On mobile the peek replaces the list.
 // `scroll` mains hold cards (a strip, a chart, a list) and scroll as one column.
-export function PeekLayout({ main, peek, scroll = false }: { main: ReactNode; peek: ReactNode; scroll?: boolean }) {
+// `flush` mains run to the panel's edges, as the Assistant's conversation does.
+export function PeekLayout({
+  main,
+  peek,
+  scroll = false,
+  flush = false,
+}: {
+  main: ReactNode
+  peek: ReactNode
+  scroll?: boolean
+  flush?: boolean
+}) {
   return (
-    <div className={s.split}>
+    <div className={clsx(s.split, flush && s.splitFlush)}>
       <div className={clsx(s.splitMain, scroll && s.splitScroll)}>{main}</div>
       {peek}
     </div>

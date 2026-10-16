@@ -97,7 +97,7 @@ test.describe("Assistant", () => {
     await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
   })
 
-  test("applies an approved change, continues the answer, and keeps a dismissal", async ({ page }) => {
+  test("applies an approved change, links the new transaction, and keeps a dismissal", async ({ page }) => {
     await page.goto("/assistant")
     await sendQuestion(page, unique("Add lunch for 12,50"))
 
@@ -112,9 +112,20 @@ test.describe("Assistant", () => {
     await card.getByRole("button", { name: "Add" }).click()
     await expect(card).toContainText("Added")
     await expect(card.getByRole("button")).toHaveCount(0)
-    await expect(assistant).toContainText("Added it.")
+    await expect(assistant).toContainText("Added Lunch.")
     // An answer that changed data can't run again.
     await expect(assistant.getByRole("button", { name: "Retry" })).toHaveCount(0)
+
+    // The linked transaction opens in a peek beside the chat, and its full view returns to the chat.
+    await assistant.getByRole("link", { name: "Lunch" }).click()
+    const peek = page.getByRole("complementary", { name: "Lunch" })
+    await expect(peek).toContainText("12,50")
+    await expect(composer(page)).toBeVisible()
+    await peek.getByRole("button", { name: "Open full view" }).click()
+    await expect(page.locator("main h1")).toHaveText("Lunch")
+    await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Assistant" }).click()
+    await expect(assistantTurns(page).last()).toContainText("Added Lunch.")
+    await expect(page.getByRole("complementary", { name: "Lunch" })).toHaveCount(0)
 
     await page.reload()
     await expect(assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })).toContainText("Added")

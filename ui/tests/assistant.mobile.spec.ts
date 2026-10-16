@@ -72,7 +72,7 @@ test.describe("Assistant (mobile)", () => {
     await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
   })
 
-  test("fits a change card to the phone width and applies it", async ({ page }) => {
+  test("fits a change card to the phone width, applies it, and opens the linked transaction", async ({ page }) => {
     await page.goto("/assistant")
     await sendQuestion(page, unique("Add lunch for 12,50"))
 
@@ -83,7 +83,16 @@ test.describe("Assistant (mobile)", () => {
 
     await card.getByRole("button", { name: "Add" }).click()
     await expect(card).toContainText("Added")
-    await expect(assistantTurns(page).last()).toContainText("Added it.")
+    await expect(assistantTurns(page).last()).toContainText("Added Lunch.")
+
+    // The peek replaces the conversation, and its back button returns to it.
+    await assistantTurns(page).last().getByRole("link", { name: "Lunch" }).click()
+    const peek = page.getByRole("complementary", { name: "Lunch" })
+    await expect(peek).toContainText("12,50")
+    await expect(composer(page)).toBeHidden()
+    await peek.getByRole("button", { name: "Assistant" }).click()
+    await expect(peek).toHaveCount(0)
+    await expect(composer(page)).toBeVisible()
   })
 
   test("pins the sent question to the top and offers a return to the newest content", async ({ page }) => {

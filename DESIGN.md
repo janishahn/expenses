@@ -401,7 +401,8 @@ pages below fix the structure; the current pages show the content.
   A proposed change is a card in the answer: a bold title, the affected rows
   with glyph, date, and amount, then Dismiss and one ink verb (Add, Apply,
   Allocate). Once decided, the buttons give way to the outcome and the answer
-  continues below the card.
+  continues below the card. A transaction the answer names is an underlined
+  link that opens it in a peek beside the conversation; the URL names it.
 - **Sign in, setup, 404.** Bare pages: a centered sheet with the app name, the
   fields, and one ink button. No marketing copy.
 - **404.** The app name, then a monochrome spending calendar in the Insights
