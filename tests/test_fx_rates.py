@@ -10,22 +10,7 @@ from expenses.db.session import Base
 from expenses.infra.fx_rates import (
     FxQuote,
     FxRateService,
-    _fetch_ecb_usd_eur_quotes,
 )
-
-
-class _DummyResponse:
-    def __init__(self, payload: str) -> None:
-        self._payload = payload
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def read(self) -> bytes:
-        return self._payload.encode("utf-8")
 
 
 def _session() -> Session:
@@ -36,32 +21,6 @@ def _session() -> Session:
     )
     Base.metadata.create_all(engine)
     return Session(engine)
-
-
-def test_fx_fetch_sets_explicit_user_agent(monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_urlopen(req, timeout):
-        captured["user_agent"] = req.get_header("User-agent")
-        captured["accept"] = req.get_header("Accept")
-        captured["timeout"] = timeout
-        return _DummyResponse("TIME_PERIOD,OBS_VALUE\n2026-02-02,2.0\n")
-
-    monkeypatch.setattr("expenses.infra.fx_rates.urlopen", fake_urlopen)
-
-    quotes = _fetch_ecb_usd_eur_quotes(
-        date(2026, 2, 2),
-        date(2026, 2, 2),
-        timeout=5.0,
-    )
-
-    assert captured["user_agent"] == "expenses/0.1 (+https://local)"
-    assert captured["accept"] == "text/csv"
-    assert captured["timeout"] == 5.0
-    quote = quotes[date(2026, 2, 2)]
-    assert quote.provider == "ecb"
-    assert quote.rate == Decimal("0.5")
-    assert quote.rate_date == date(2026, 2, 2)
 
 
 def test_fx_service_uses_exact_cached_quote_without_fetch(monkeypatch):

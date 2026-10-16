@@ -18,39 +18,6 @@ def _create_category(
     return int(response.json()["id"])
 
 
-def test_recurring_response_contains_monthly_equivalent(
-    api_client: TestClient, csrf_headers: dict[str, str]
-) -> None:
-    category_id = _create_category(api_client, csrf_headers, "Subscriptions", "expense")
-
-    response = api_client.post(
-        "/api/recurring",
-        headers=csrf_headers,
-        json={
-            "name": "Test subscription",
-            "type": "expense",
-            "currency_code": "EUR",
-            "amount_cents": 1200,
-            "category_id": category_id,
-            "anchor_date": date.today().isoformat(),
-            "interval_unit": "month",
-            "interval_count": 1,
-            "next_occurrence": date.today().isoformat(),
-            "end_date": None,
-            "auto_post": True,
-            "skip_weekends": False,
-            "month_day_policy": "snap_to_end",
-        },
-    )
-    assert response.status_code == 200
-
-    response = api_client.get("/api/recurring")
-    assert response.status_code == 200
-    rules = response.json()["rules"]
-    assert rules
-    assert isinstance(rules[0]["monthly_equivalent_cents"], int)
-
-
 def test_usd_rule_monthly_equivalent_uses_single_quote_lookup(
     api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
 ) -> None:

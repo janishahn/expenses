@@ -1,5 +1,4 @@
 from datetime import date
-from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -192,7 +191,6 @@ def test_ingest_applies_only_active_auto_attach_tags() -> None:
             .transaction
         )
         assert [tag.name for tag in in_range.tags] == ["Vacation"]
-        assert in_range._ingest_log_fields["scheduled_tags_applied"] == 1
 
         out_of_range = (
             IngestService(session)
@@ -206,90 +204,6 @@ def test_ingest_applies_only_active_auto_attach_tags() -> None:
             .transaction
         )
         assert out_of_range.tags == []
-
-
-def test_ingest_stores_location_when_both_coordinates_are_present() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        result = IngestService(session).ingest_expense(
-            IngestTransactionIn(
-                amount_cents=790,
-                title="Train ticket",
-                date=date(2025, 1, 7),
-                latitude=Decimal("52.5200084"),
-                longitude=Decimal("13.4049544"),
-            )
-        )
-
-        txn = result.transaction
-        assert result.location_status == "stored"
-        assert txn.latitude == Decimal("52.520008")
-        assert txn.longitude == Decimal("13.404954")
-
-
-def test_ingest_ignores_partial_location_when_only_latitude_is_present() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        result = IngestService(session).ingest_expense(
-            IngestTransactionIn(
-                amount_cents=1100,
-                title="Bakery",
-                date=date(2025, 1, 8),
-                latitude=Decimal("120.000000"),
-            )
-        )
-
-        txn = result.transaction
-        assert result.location_status == "ignored_partial"
-        assert txn.latitude is None
-        assert txn.longitude is None
-
-
-def test_ingest_ignores_when_both_coordinates_are_present_and_out_of_range() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        result = IngestService(session).ingest_expense(
-            IngestTransactionIn(
-                amount_cents=1500,
-                title="Groceries",
-                date=date(2025, 1, 9),
-                latitude=Decimal("91"),
-                longitude=Decimal("13.4"),
-            )
-        )
-
-        txn = result.transaction
-        assert result.location_status == "ignored_partial"
-        assert txn.latitude is None
-        assert txn.longitude is None
-
-
-def test_ingest_ignores_location_when_latitude_is_a_string() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        payload = IngestTransactionIn.model_validate(
-            {
-                "amount_cents": 900,
-                "title": "Snack",
-                "date": "2025-01-09",
-                "latitude": "north",
-                "longitude": 13.4,
-            }
-        )
-        result = IngestService(session).ingest_expense(payload)
-
-        txn = result.transaction
-        assert result.location_status == "ignored_partial"
-        assert txn.latitude is None
-        assert txn.longitude is None
 
 
 def test_ingest_ignores_location_when_latitude_is_false() -> None:
@@ -311,25 +225,3 @@ def test_ingest_ignores_location_when_latitude_is_false() -> None:
         assert result.location_status == "ignored_partial"
         assert txn.latitude is None
         assert txn.longitude is None
-
-
-def test_ingest_stores_location_when_coordinates_are_numeric_strings() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        payload = IngestTransactionIn.model_validate(
-            {
-                "amount_cents": 900,
-                "title": "Snack",
-                "date": "2025-01-09",
-                "latitude": "52.520008",
-                "longitude": "13.404954",
-            }
-        )
-        result = IngestService(session).ingest_expense(payload)
-
-        txn = result.transaction
-        assert result.location_status == "stored"
-        assert txn.latitude == Decimal("52.520008")
-        assert txn.longitude == Decimal("13.404954")

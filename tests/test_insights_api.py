@@ -1,6 +1,11 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy import update
+
+from expenses.core.periods import add_months, month_start
+from expenses.db.models import Transaction
+from expenses.recurrence.engine import local_today
 
 
 def _create_category(
@@ -41,6 +46,41 @@ def _create_transaction(
         },
     )
     assert response.status_code == 200
+
+
+def _transaction(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    amount_cents: int,
+    title: str,
+    on: date | None = None,
+    category_id: int | None = None,
+    txn_type: str = "expense",
+    tags: list[str] | None = None,
+    is_reimbursement: bool = False,
+) -> int:
+    on = on or local_today()
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": datetime.combine(on, datetime.min.time()).isoformat(),
+            "type": txn_type,
+            "amount_cents": amount_cents,
+            "category_id": category_id,
+            "title": title,
+            "tags": tags or [],
+            "is_reimbursement": is_reimbursement,
+        },
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
+def _month_label(value: date) -> str:
+    return f"{value.year:04d}-{value.month:02d}"
 
 
 def test_insights_tag_exclusions_apply_to_analysis_values(
@@ -239,3 +279,253 @@ def test_insights_totals_cover_the_exact_period(
     today = date.today()
     assert all_time["expense_cents"] == 107_000
     assert all_time["month_count"] == (today.year - 2024) * 12 + today.month
+
+
+def test_month_grid_returns_thirteen_months_per_category_income_and_tag(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = local_today()
+    current = month_start(today.year, today.month)
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    _create_category(api_client, csrf_headers, "Idle", "expense")
+    salary = _create_category(api_client, csrf_headers, "Salary", "income")
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=3_000,
+        title="Old shop",
+        on=add_months(current, -12),
+        category_id=food,
+        tags=["Trip"],
+    )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=2_000,
+        title="Shop",
+        category_id=food,
+        tags=["Trip"],
+    )
+    _transaction(
+        api_client, csrf_headers, amount_cents=2_000, title="Hidden", tags=["Secret"]
+    )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=90_000,
+        title="Pay",
+        category_id=salary,
+        txn_type="income",
+    )
+    # Older than twelve full months: outside the grid.
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=7_000,
+        title="Ancient",
+        on=add_months(current, -13),
+        category_id=food,
+    )
+    secret = next(
+        tag["id"]
+        for tag in api_client.get("/api/tags").json()["tags"]
+        if tag["name"] == "Secret"
+    )
+    api_client.put(
+        f"/api/tags/{secret}",
+        headers=csrf_headers,
+        json={"name": "Secret", "is_hidden_from_filters": True},
+    )
+
+    expense = api_client.get("/api/insights/month-grid?kind=expense").json()
+    assert len(expense["months"]) == 13
+    assert expense["months"][0] == _month_label(add_months(current, -12))
+    assert expense["current_month"] == expense["months"][-1] == _month_label(current)
+    rows = {row["name"]: row for row in expense["rows"]}
+    assert rows["Food"]["values_cents"] == [3_000] + [0] * 11 + [2_000]
+    assert rows["Food"]["id"] == food
+    assert rows["Idle"]["values_cents"] == [0] * 13
+    assert "Salary" not in rows
+    assert [row["name"] for row in expense["rows"]][0] == "Food"
+
+    income = api_client.get("/api/insights/month-grid?kind=income").json()
+    assert {row["name"]: row["values_cents"][-1] for row in income["rows"]} == {
+        "Salary": 90_000
+    }
+    tags = api_client.get("/api/insights/month-grid?kind=tag").json()
+    assert {row["name"]: row["values_cents"] for row in tags["rows"]} == {
+        "Trip": [3_000] + [0] * 11 + [2_000]
+    }
+    assert api_client.get("/api/insights/month-grid?kind=nope").status_code == 422
+
+
+def test_recurring_split_separates_rule_postings(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Subscriptions", "expense")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Streaming",
+            "type": "expense",
+            "amount_cents": 1_200,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    posted = _transaction(
+        api_client, csrf_headers, amount_cents=1_200, title="Streaming"
+    )
+    _transaction(api_client, csrf_headers, amount_cents=800, title="Snack")
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == posted)
+        .values(origin_rule_id=rule["id"])
+    )
+    db_session.commit()
+
+    split = api_client.get("/api/insights/recurring-split").json()
+    assert len(split["months"]) == 13
+    assert split["rows"][-1] == {
+        "month": split["current_month"],
+        "recurring_cents": 1_200,
+        "other_cents": 800,
+    }
+    assert split["rows"][0]["recurring_cents"] == split["rows"][0]["other_cents"] == 0
+    assert api_client.get("/api/insights").json()["recurring_cents"] == 1_200
+
+
+def test_day_calendar_excludes_recurring_and_reports_weekday_stats(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    today = local_today()
+    saturday = max(
+        today - timedelta(days=offset)
+        for offset in range(21)
+        if (today - timedelta(days=offset)).weekday() == 5
+    )
+    wednesday = max(
+        today - timedelta(days=offset)
+        for offset in range(21)
+        if (today - timedelta(days=offset)).weekday() == 2
+    )
+    category_id = _create_category(api_client, csrf_headers, "Subscriptions", "expense")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Rule",
+            "type": "expense",
+            "amount_cents": 9_999,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    _transaction(api_client, csrf_headers, amount_cents=5_300, title="Sat", on=saturday)
+    _transaction(
+        api_client, csrf_headers, amount_cents=10_600, title="Wed", on=wednesday
+    )
+    recurring = _transaction(
+        api_client, csrf_headers, amount_cents=9_999, title="Auto", on=wednesday
+    )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=4_000,
+        title="Too old",
+        on=today - timedelta(days=400),
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == recurring)
+        .values(origin_rule_id=rule["id"])
+    )
+    db_session.commit()
+
+    calendar = api_client.get("/api/insights/day-calendar").json()
+    assert calendar["end"] == today.isoformat()
+    assert (
+        date.fromisoformat(calendar["end"]) - date.fromisoformat(calendar["start"])
+    ).days == 53 * 7 - 1
+    assert sorted((day["date"], day["amount_cents"]) for day in calendar["days"]) == (
+        sorted(
+            [(saturday.isoformat(), 5_300), (wednesday.isoformat(), 10_600)],
+        )
+    )
+    averages = [0] * 7
+    averages[5], averages[2] = 100, 200
+    assert calendar["weekday_avg_cents"] == averages
+    assert calendar["weekend_share"] == 5_300 / 15_900
+
+
+def test_day_calendar_without_spending_has_zero_weekend_share(
+    api_client: TestClient,
+) -> None:
+    calendar = api_client.get("/api/insights/day-calendar").json()
+    assert calendar["days"] == []
+    assert calendar["weekday_avg_cents"] == [0] * 7
+    assert calendar["weekend_share"] == 0
+
+
+def test_budget_history_reports_budget_and_spend_per_month(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = local_today()
+    current = month_start(today.year, today.month)
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    started = add_months(current, -3)
+    for category_id, amount in ((food, 30_000), (None, 100_000)):
+        response = api_client.post(
+            "/api/budgets/templates",
+            headers=csrf_headers,
+            json={
+                "frequency": "monthly",
+                "category_id": category_id,
+                "amount_cents": amount,
+                "starts_on": started.isoformat(),
+            },
+        )
+        assert response.status_code == 200
+    response = api_client.post(
+        "/api/budgets/overrides",
+        headers=csrf_headers,
+        json={
+            "year": current.year,
+            "month": current.month,
+            "category_id": food,
+            "amount_cents": 45_000,
+        },
+    )
+    assert response.status_code == 200
+    _transaction(
+        api_client, csrf_headers, amount_cents=12_000, title="Food", category_id=food
+    )
+
+    history = api_client.get("/api/insights/budget-history").json()
+    assert len(history["months"]) == 13
+    overall, food_row = history["rows"]
+    assert (overall["category_id"], overall["name"]) == (None, "Overall")
+    assert (food_row["category_id"], food_row["name"]) == (food, "Food")
+    assert food_row["first_month"] == _month_label(started)
+    cells = {cell["month"]: cell for cell in food_row["cells"]}
+    assert cells[_month_label(add_months(current, -4))] == {
+        "month": _month_label(add_months(current, -4)),
+        "budget_cents": None,
+        "spent_cents": 0,
+    }
+    assert cells[_month_label(started)]["budget_cents"] == 30_000
+    assert cells[_month_label(current)] == {
+        "month": _month_label(current),
+        "budget_cents": 45_000,
+        "spent_cents": 12_000,
+    }
+    assert overall["cells"][-1]["spent_cents"] == 12_000

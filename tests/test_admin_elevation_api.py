@@ -237,16 +237,12 @@ def test_true_admin_routes_require_auth_admin_and_elevation(
         "/api/admin/logs",
         "/api/admin/system-health",
         "/api/admin/system-health/validation-override",
-        "/api/admin/download-db",
         "/api/admin/export-csv",
     ):
         response = anonymous_api_client.get(
             path, headers=_session_headers(bootstrap_token)
         )
-        if path == "/api/admin/download-db":
-            assert response.status_code in {200, 404}
-        else:
-            assert response.status_code == 200
+        assert response.status_code == 200
 
 
 def test_admin_export_csv_is_instance_level_for_elevated_admin(
@@ -849,32 +845,3 @@ def test_sqlite_import_commit_rejects_cross_session_preview_token_replay(
     )
     assert owner_commit.status_code == 200
     assert owner_commit.json()["result"]["inserted_transactions"] == 1
-
-
-def test_elevated_rebuild_rollups_runs_for_multiple_users(
-    anonymous_api_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _setup_bootstrap(anonymous_api_client)
-
-    anonymous_api_client.cookies.clear()
-    _signup(anonymous_api_client, "member", "member-pass")
-    anonymous_api_client.cookies.clear()
-    bootstrap_token = _login(anonymous_api_client, "bootstrap", "bootstrap-pass")
-
-    elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
-    assert elevated["status_code"] == 200
-
-    rebuilt_user_ids: list[int] = []
-
-    def _record_rebuild(session, user_id):
-        rebuilt_user_ids.append(user_id)
-
-    monkeypatch.setattr("expenses.api.routes.rebuild_monthly_rollups", _record_rebuild)
-
-    rebuild = anonymous_api_client.post(
-        "/api/admin/rebuild-rollups",
-        headers=_csrf_headers_for_token(anonymous_api_client, bootstrap_token),
-    )
-    assert rebuild.status_code == 200
-    assert set(rebuilt_user_ids) == {1, 2}

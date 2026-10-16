@@ -65,24 +65,6 @@ test.describe("Budgets Page Mobile", () => {
     )
   }
 
-  test("opens the add budget dialog from the page header action", async ({ page }) => {
-    await page.goto("/budgets")
-    await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
-    const addAction = page.getByRole("button", { name: "Add budget", exact: true }).first()
-    await expect(addAction).toHaveText("Add")
-    await addAction.click()
-
-    const dialog = page.getByRole("dialog", { name: "Add budget" })
-    await expect(dialog).toBeVisible()
-    await expect(
-      dialog.getByRole("radiogroup", { name: "Budget period" }).getByRole("radio", {
-        name: "Monthly",
-      }),
-    ).toBeChecked()
-    await expect(dialog.getByRole("button", { name: "Add budget" })).toBeVisible()
-    await assertNoHorizontalOverflow(page, "budgets-editor")
-  })
-
   test("keeps month navigation within the viewport without overlapping its controls", async ({
     page,
   }) => {

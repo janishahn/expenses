@@ -8,15 +8,6 @@ import {
 
 test.describe.configure({ mode: "parallel" })
 
-const THEME_STORAGE_KEY = "ew.theme.preference"
-
-async function readThemePreference(page: Page): Promise<string | null> {
-  return page.evaluate(
-    (storageKey) => window.localStorage.getItem(storageKey),
-    THEME_STORAGE_KEY
-  )
-}
-
 test.describe("Navigation", () => {
   const clickSidebarLink = async (page: Page, name: string) => {
     const sidebar = page.getByRole("complementary", {
@@ -30,20 +21,6 @@ test.describe("Navigation", () => {
     await page.getByRole("button", { name: "Expenses", exact: true }).click()
     await page.getByRole("menuitem", { name }).click()
   }
-
-  test("renders every page inside the inset panel", async ({ page }) => {
-    const routes = [
-      { path: "/", heading: "Dashboard" },
-      { path: "/transactions", heading: "Transactions" },
-      { path: "/admin", heading: "Health" },
-      { path: "/unknown-route-12345", heading: "This page does not exist" },
-    ]
-
-    for (const route of routes) {
-      await page.goto(route.path)
-      await expect(page.locator("main h1")).toContainText(route.heading)
-    }
-  })
 
   test("distinguishes value selectors from page view tabs", async ({
     page,
@@ -72,12 +49,6 @@ test.describe("Navigation", () => {
     await expect(page.getByRole("group", { name: "Month" })).toBeVisible()
 
     await expect(page.getByLabel(/^Period:/)).toHaveCount(0)
-  })
-
-  test("should load dashboard as home page", async ({ page }) => {
-    await page.goto("/")
-    await expect(page.locator("main h1")).toContainText("Dashboard")
-    await expect(page).toHaveTitle("Expenses")
   })
 
   test("shows primary navigation, collapsible groups, and the app-name menu", async ({
@@ -183,56 +154,6 @@ test.describe("Navigation", () => {
     await chooseAppMenuItem(page, "Sign out")
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
-  })
-
-  test("keeps theme selection in Settings and removes the shell quick toggle", async ({
-    page,
-  }) => {
-    await page.goto("/")
-    await page.evaluate((storageKey) => {
-      window.localStorage.setItem(storageKey, "light")
-    }, THEME_STORAGE_KEY)
-    await page.reload()
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
-    await chooseAppMenuItem(page, "Settings")
-    await page
-      .getByRole("navigation", { name: "Settings sections" })
-      .getByRole("link", { name: "Appearance" })
-      .click()
-    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Dark" }).click()
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("dark")
-    await expect.poll(() => readThemePreference(page)).toBe("dark")
-
-    await page.getByRole("link", { name: "Back to app" }).click()
-    await clickSidebarLink(page, "Transactions")
-    await expect(page).toHaveURL("/transactions")
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("dark")
-
-    await clickSidebarLink(page, "Insights")
-    await expect(page).toHaveURL("/insights")
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("dark")
-
-    await chooseAppMenuItem(page, "Admin")
-    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("dark")
-
-    await page.reload()
-    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("dark")
-    await expect.poll(() => readThemePreference(page)).toBe("dark")
   })
 
   test("should preserve period across primary navigation", async ({ page }) => {

@@ -8,7 +8,7 @@ test.describe("Desktop route theme audit", () => {
       request,
     }) => {
       test.setTimeout(180_000)
-      await runRouteThemeAudit(page, request, "desktop-chromium", theme)
+      await runRouteThemeAudit(page, request, theme)
     })
   }
 })

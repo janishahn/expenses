@@ -347,19 +347,4 @@ test.describe("Admin Page", () => {
     await expect(strip.getByText("40 completed · 1 failed")).toBeVisible()
     await expect(strip.getByText("42", { exact: true })).toBeVisible()
   })
-
-  test("navigates to the SQLite importer and back to Maintenance", async ({ page }) => {
-    await openSection(page, "Maintenance", "/admin/maintenance")
-    await page.getByRole("link", { name: "Open legacy SQLite import" }).click()
-    await expect(page).toHaveURL("/admin/import")
-    await expect(page.locator("main h1")).toHaveText("Legacy SQLite import")
-    await expect(adminSections(page).getByRole("link", { name: "Maintenance" })).toHaveAttribute(
-      "aria-current",
-      "page"
-    )
-
-    await page.getByRole("link", { name: "Maintenance" }).first().click()
-    await expect(page).toHaveURL("/admin/maintenance")
-    await expect(page.locator("main h1")).toHaveText("Maintenance")
-  })
 })

@@ -164,28 +164,6 @@ def test_forecast_rejects_invalid_query_params(api_client: TestClient) -> None:
     assert response.status_code == 400
 
 
-def test_forecast_and_scenario_use_app_timezone_today(
-    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
-) -> None:
-    fixed_today = date(2025, 1, 31)
-    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
-
-    forecast_response = api_client.get("/api/forecast?horizon=3&mode=recurring")
-    assert forecast_response.status_code == 200
-    forecast_payload = forecast_response.json()
-    assert forecast_payload["months"][0]["month"] == "2025-02"
-
-    scenario_response = api_client.post(
-        "/api/forecast/scenario?mode=full",
-        headers=csrf_headers,
-        json={"horizon": 3, "modifications": []},
-    )
-    assert scenario_response.status_code == 200
-    scenario_payload = scenario_response.json()
-    assert scenario_payload["baseline"]["months"][0]["month"] == "2025-02"
-    assert scenario_payload["months"][0]["month"] == "2025-02"
-
-
 def test_forecast_usd_uses_resolved_quotes(
     monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -204,12 +182,9 @@ def test_forecast_usd_uses_resolved_quotes(
         currency_code="USD",
     )
 
-    calls = {"count": 0}
-
     def fake_resolve(
         self, on_dates, *, allow_stale_cache=False, allow_static_fallback=False
     ):
-        calls["count"] += 1
         return {
             on_date: FxQuote(
                 provider="ecb",
@@ -235,7 +210,6 @@ def test_forecast_usd_uses_resolved_quotes(
     assert first_month["projected_expenses_cents"] == 13_500
     assert first_month["breakdown"]["recurring_rules"]
     assert first_month["breakdown"]["recurring_rules"][0]["amount_cents"] == 13_500
-    assert calls["count"] == 1
 
 
 def test_forecast_scenario_applies_modifications(

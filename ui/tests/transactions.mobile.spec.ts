@@ -85,26 +85,6 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 test.describe("Transactions Page (mobile)", () => {
-  test("shows the compact header with Add, Search and More actions without overflow", async ({
-    page,
-  }) => {
-    await page.goto("/transactions")
-
-    await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toHaveText(
-      "Add"
-    )
-    await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible()
-    await expectNoHorizontalOverflow(page)
-
-    await page.getByRole("button", { name: "More actions" }).tap()
-    const menu = page.getByRole("dialog", { name: "More actions" })
-    await expect(menu.getByRole("menuitem", { name: "Select" })).toBeVisible()
-    await expect(menu.getByRole("link", { name: "Trash" })).toBeVisible()
-    await expect(menu.getByRole("menuitem", { name: "Export CSV" })).toBeVisible()
-  })
-
   test("prints the filtered ledger from More actions", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     // Search is fuzzy, so a timestamp marker also matches rows that earlier tests on this

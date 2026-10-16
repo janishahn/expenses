@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { expect, freshInstanceTest as test, type Page } from "./fixtures"
 
 const bootstrapUser = {
@@ -21,12 +22,43 @@ async function submitAuthForm(
   await page.getByRole("button", { name: heading === "Sign in" ? "Sign in" : "Create account" }).click()
 }
 
+async function checkInBothThemes(page: Page, state: string) {
+  for (const theme of ["light", "dark"] as const) {
+    await page.evaluate((selectedTheme) => {
+      const key = "ew.theme.preference"
+      const oldValue = window.localStorage.getItem(key)
+      window.localStorage.setItem(key, selectedTheme)
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key,
+          oldValue,
+          newValue: selectedTheme,
+          storageArea: window.localStorage,
+        }),
+      )
+    }, theme)
+    await expect.poll(() => page.locator("html").getAttribute("data-theme")).toBe(theme)
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )
+    expect(overflow, `${state} overflow in ${theme}`).toBeLessThanOrEqual(1)
+
+    const accessibility = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .disableRules(["color-contrast"])
+      .analyze()
+    expect(accessibility.violations, `${state} accessibility in ${theme}`).toEqual([])
+  }
+}
+
 test.describe.serial("Auth bootstrap and route guards", () => {
   test("fresh instance resolves to setup and guards deep links", async ({ page }) => {
     await page.goto("/")
     await expect(page).toHaveURL(/\/setup(?:\?|$)/)
     await expect(page.getByRole("heading", { name: "Create the admin account" })).toBeVisible()
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
+    await checkInBothThemes(page, "setup")
 
     await page.goto("/transactions")
     await expect(page).toHaveURL(/\/setup(?:\?|$)/)
@@ -68,6 +100,7 @@ test.describe.serial("Auth bootstrap and route guards", () => {
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
     await expect(page.getByText("Expenses", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
+    await checkInBothThemes(page, "login")
 
     await submitAuthForm(page, "Sign in", bootstrapUser)
     await expect(page).toHaveURL(/\/(?:\?|$)/)
@@ -90,6 +123,7 @@ test.describe.serial("Auth bootstrap and route guards", () => {
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
     await expect(page.getByRole("alert")).toHaveText("Invalid username or password")
     await expect(page.getByTestId("app-shell-root")).toHaveCount(0)
+    await checkInBothThemes(page, "login error")
 
     await page.goto("/budgets")
     await expect(page).toHaveURL(/\/login\?redirect=/)
@@ -106,11 +140,14 @@ test.describe.serial("Auth bootstrap and route guards", () => {
     const username = `${secondUser.username}-${Date.now()}`
     await page.getByRole("link", { name: "Create account" }).click()
     await expect(page).toHaveURL(/\/signup(?:\?|$)/)
+    await expect(page.getByRole("heading", { name: "Create account" })).toBeVisible()
+    await checkInBothThemes(page, "signup")
 
     await submitAuthForm(page, "Create account", { username, password: secondUser.password })
     await expect(page).toHaveURL(/\/login(?:\?|$)/)
     await expect(page.getByRole("status")).toHaveText("Account created. Sign in to continue.")
     await expect(page.getByLabel("Username")).toHaveValue(username)
+    await checkInBothThemes(page, "login after signup")
 
     await page.getByLabel("Password").fill(secondUser.password)
     await page.getByRole("button", { name: "Sign in" }).click()

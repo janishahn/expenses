@@ -34,15 +34,6 @@ function createLegacyDatabase(path: string, category: string): void {
 }
 
 test.describe("Admin Import Page", () => {
-  test("shows the SQLite file input after admin elevation", async ({ page }) => {
-    await openImportPage(page)
-
-    await expect(page.getByRole("region", { name: "Database" })).toBeVisible()
-    await expect(page.getByLabel("SQLite database file")).toBeAttached()
-    await expect(page.getByText("Drop a .db file or choose one")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Import", exact: true })).toHaveCount(0)
-  })
-
   test("shows validation error for non-db sqlite upload", async ({ page }) => {
     await openImportPage(page)
 

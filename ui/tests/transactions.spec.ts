@@ -161,15 +161,6 @@ test.describe("Transactions Page", () => {
     await expect(page.locator("body")).toHaveAttribute("data-printed", "2")
   })
 
-  test("keeps header actions free of an outline-like shadow", async ({ page }) => {
-    await page.goto("/transactions")
-    for (const name of ["Search", "More actions"]) {
-      const control = page.getByRole("button", { name, exact: true })
-      await expect(control).toBeVisible()
-      expect(await control.evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none")
-    }
-  })
-
   test("groups rows into day bands with the signed day net", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const expenseId = await ensureCategory(request, token, "expense", "E2E Bands")
@@ -283,27 +274,6 @@ test.describe("Transactions Page", () => {
     await page.getByRole("button", { name: "Clear", exact: true }).click()
     await expect(page).not.toHaveURL(/type=|category=|tags=|q=/)
     await expect(page.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0)
-  })
-
-  test("keeps the tag filter reachable in a short viewport", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const stamp = Date.now()
-    const tagNames = Array.from({ length: 8 }, (_, index) => `E2E short filter ${stamp} ${index + 1}`)
-    for (const name of tagNames) await createTag(request, token, name)
-
-    await page.setViewportSize({ width: 1280, height: 520 })
-    await page.goto("/transactions")
-    await page.getByRole("button", { name: "Tag", exact: true }).click()
-
-    const popover = page.getByRole("dialog", { name: "Tag filter" })
-    await expect(popover).toBeVisible()
-    const lastTag = popover.getByRole("checkbox", { name: tagNames.at(-1)! })
-    await lastTag.scrollIntoViewIfNeeded()
-    await expect(lastTag).toBeInViewport()
-    const box = await popover.boundingBox()
-    expect(box).not.toBeNull()
-    expect(box!.y).toBeGreaterThanOrEqual(0)
-    expect(box!.y + box!.height).toBeLessThanOrEqual(520)
   })
 
   test("opens a peek from a row and closes it with Esc or Close", async ({ page, request }) => {

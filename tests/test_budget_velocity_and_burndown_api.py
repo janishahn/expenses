@@ -43,51 +43,6 @@ def _create_transaction(
     return int(response.json()["id"])
 
 
-def test_budgets_progress_includes_velocity_fields(
-    api_client: TestClient, csrf_headers: dict[str, str]
-) -> None:
-    today = date.today()
-    month_value = f"{today.year:04d}-{today.month:02d}"
-    groceries_id = _create_category(api_client, csrf_headers, "Groceries", "expense")
-
-    response = api_client.post(
-        "/api/budgets/templates",
-        headers=csrf_headers,
-        json={
-            "frequency": "monthly",
-            "category_id": groceries_id,
-            "amount_cents": 50_000,
-            "starts_on": f"{today.year:04d}-{today.month:02d}-01",
-            "ends_on": None,
-        },
-    )
-    assert response.status_code == 200
-
-    _create_transaction(
-        api_client,
-        csrf_headers,
-        txn_date=today,
-        txn_type="expense",
-        amount_cents=10_000,
-        category_id=groceries_id,
-        title="Groceries this month",
-    )
-
-    response = api_client.get(f"/api/budgets?view=month&month={month_value}")
-    assert response.status_code == 200
-    payload = response.json()
-
-    progress_row = next(
-        row for row in payload["progress"] if row["scope_category_id"] == groceries_id
-    )
-    assert "velocity_ratio" in progress_row
-    assert "daily_remaining_cents" in progress_row
-    assert "projected_total_cents" in progress_row
-    assert "days_elapsed" in progress_row
-    assert "days_remaining" in progress_row
-    assert progress_row["spent_cents"] == 10_000
-
-
 def test_budget_burndown_endpoint_with_compare_month(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

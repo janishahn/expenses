@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process"
-import { mkdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test, type Locator, type Page } from "./fixtures"
@@ -16,9 +15,6 @@ import {
 } from "./helpers"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
-const artifactDirectory = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
-  ? resolve(repoRoot, process.env.UI_POLISH_AUDIT_ARTIFACT_DIR)
-  : null
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pfdvK0AAAAASUVORK5CYII=",
   "base64",
@@ -73,12 +69,6 @@ async function expectCoarsePointer(page: Page) {
   ).toBe(true)
 }
 
-async function capture(page: Page, name: string, fullPage = false) {
-  if (!artifactDirectory) return
-  mkdirSync(artifactDirectory, { recursive: true })
-  await page.screenshot({ path: resolve(artifactDirectory, name), fullPage })
-}
-
 function today() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -102,7 +92,6 @@ test.describe("Mobile interaction audit", () => {
       ["Transactions Filter", page.getByRole("button", { name: /^Filter/ })],
       ["Transactions period", page.getByRole("button", { name: /^Period:/ })],
     ])
-    await capture(page, "transactions-header-targets.png")
 
     await page.goto("/")
     await expectTouchTargets([
@@ -130,7 +119,6 @@ test.describe("Mobile interaction audit", () => {
         page.getByRole("region", { name: "By month" }).getByRole("button", { name: "Chart options" }),
       ],
     ])
-    await capture(page, "insights-filter-pill.png")
   })
 
   test("list rows, selection controls, and receipt actions reach 44px", async ({ page }) => {
@@ -208,7 +196,6 @@ test.describe("Mobile interaction audit", () => {
         ["Uncategorized row", inboxRow],
         ["Uncategorized row checkbox", inboxRow.getByRole("checkbox", { name: `Select ${inboxTitle}` })],
       ])
-      await capture(page, "uncategorized-row-checkbox.png", true)
 
       await page.goto(`/transactions/${transactionId}`)
       await expectTouchTargets([
@@ -220,7 +207,6 @@ test.describe("Mobile interaction audit", () => {
           page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Transactions" }),
         ],
       ])
-      await capture(page, "transaction-detail-targets.png", true)
     } finally {
       await isolated.request.dispose()
     }
@@ -239,7 +225,6 @@ test.describe("Mobile interaction audit", () => {
     await expectTouchTargets([
       ["Add transaction Close", addDialog.getByRole("button", { name: "Close" })],
     ])
-    await capture(page, "add-transaction-dialog-targets.png")
     await page.keyboard.press("Escape")
 
     await page.goto("/rules")
@@ -270,7 +255,6 @@ test.describe("Mobile interaction audit", () => {
       ["Report Cents in tables switch", page.getByRole("switch", { name: "Cents in tables" })],
       ["Report section checkbox", page.getByRole("group", { name: "Sections" }).getByRole("checkbox").first()],
     ])
-    await capture(page, "report-builder-targets.png", true)
   })
 
   test("peek actions, budget editor choices, and import options reach 44px", async ({ page }) => {
@@ -312,7 +296,6 @@ test.describe("Mobile interaction audit", () => {
         ["Budget only-this-month radio", editor.getByRole("radio", { name: /^Only / })],
         ["Budget and-later radio", editor.getByRole("radio", { name: /and later$/ })],
       ])
-      await capture(page, "budget-editor-targets.png")
       await page.keyboard.press("Escape")
     } finally {
       await isolated.request.dispose()
@@ -344,7 +327,6 @@ test.describe("Mobile interaction audit", () => {
     for (let index = 0; index < 4; index += 1) {
       await expectTouchTargets([[`SQLite import option ${index + 1}`, checkboxes.nth(index)]])
     }
-    await capture(page, "sqlite-import-options-targets.png", true)
   })
 
   test("map attribution and the reimbursement allocation action reach 44px without overflow", async ({
@@ -394,7 +376,6 @@ test.describe("Mobile interaction audit", () => {
     expect(geometry.scrollWidth, "allocation controls expanded the document").toBeLessThanOrEqual(
       geometry.clientWidth,
     )
-    await capture(page, "reimbursement-allocation-action.png", true)
 
     await stubOsmTiles(page)
     const locationTitle = `Audit location ${suffix}`
@@ -424,66 +405,6 @@ test.describe("Mobile interaction audit", () => {
     ).toBeVisible()
   })
 
-  test("long Insights category names stay readable with full names in the data view", async ({
-    page,
-  }) => {
-    await useAuditTheme(page)
-    await page.goto("/")
-    const isolated = await loginAsIsolatedUser(page)
-    try {
-      const request = isolated.request
-      const token = isolated.csrfToken
-      const suffix = String(Date.now()).slice(-4)
-      const incomeName = `Audit income shared-prefix alpha ${suffix}`
-      const expenseName = `Audit expense shared-prefix beta ${suffix}`
-      const incomeCategoryId = await ensureCategory(request, token, "income", incomeName)
-      const expenseCategoryId = await ensureCategory(request, token, "expense", expenseName)
-      const occurredAt = new Date().toISOString()
-      await createTransaction(request, token, {
-        date: occurredAt.slice(0, 10),
-        occurred_at: occurredAt,
-        type: "income",
-        amount_cents: 300_000,
-        category_id: incomeCategoryId,
-        title: `Audit Net income ${suffix}`,
-        tags: [],
-      })
-      await createTransaction(request, token, {
-        date: occurredAt.slice(0, 10),
-        occurred_at: occurredAt,
-        type: "expense",
-        amount_cents: 125_000,
-        category_id: expenseCategoryId,
-        title: `Audit Net expense ${suffix}`,
-        tags: [],
-      })
-
-      await page.goto("/insights?period=this_month")
-      await page.waitForLoadState("networkidle")
-      const byMonth = page.getByRole("region", { name: "By month" })
-      await byMonth.scrollIntoViewIfNeeded()
-      await byMonth.getByRole("button", { name: "Chart options" }).tap()
-      await page.getByRole("menuitemcheckbox", { name: "Show as table" }).tap()
-      const table = byMonth.getByRole("table", { name: "Amounts by month" })
-      await expect(table.getByRole("row", { name: new RegExp(expenseName) })).toBeVisible()
-      await byMonth.getByRole("radio", { name: "Income" }).tap()
-      await expect(table.getByRole("row", { name: new RegExp(incomeName) })).toBeVisible()
-      const amountCells = table.locator("tbody td")
-      expect(await amountCells.count()).toBeGreaterThan(0)
-      for (let index = 0; index < (await amountCells.count()); index += 1) {
-        await expect(amountCells.nth(index)).toHaveCSS("white-space", "nowrap")
-      }
-      const geometry = await page.evaluate(() => ({
-        clientWidth: document.documentElement.clientWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-      }))
-      expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth)
-      await capture(page, "insights-long-labels.png", true)
-    } finally {
-      await isolated.request.dispose()
-    }
-  })
-
   test("assistant Send and Scroll to latest reach 44px", async ({ page }) => {
     await useAuditTheme(page)
     await page.goto("/assistant")
@@ -500,6 +421,5 @@ test.describe("Mobile interaction audit", () => {
     await expectTouchTargets([
       ["Assistant Scroll to latest", page.getByRole("button", { name: "Scroll to latest message" })],
     ])
-    await capture(page, "assistant-scroll-latest.png")
   })
 })

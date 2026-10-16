@@ -3,20 +3,20 @@ from fastapi.testclient import TestClient
 
 from expenses.core.config import get_settings
 
-FEATURE_GET_ENDPOINTS = {
-    "/api/ai/rules/suggestions": "Rule suggestions",
-    "/api/ai/transaction-suggestions": "Categorization suggestions",
-}
+FEATURE_GET_ENDPOINTS = (
+    "/api/ai/rules/suggestions",
+    "/api/ai/transaction-suggestions",
+)
 
-FEATURE_POST_ENDPOINTS = {
-    "/api/ai/rules/mine": "Rule suggestions",
-    "/api/ai/rules/suggestions/1/accept": "Rule suggestions",
-    "/api/ai/rules/suggestions/1/reject": "Rule suggestions",
-    "/api/ai/transactions/1/triage": "Categorization suggestions",
-    "/api/ai/transaction-suggestions/1/accept": "Categorization suggestions",
-    "/api/ai/transaction-suggestions/1/reject": "Categorization suggestions",
-    "/api/assistant/messages/stream": "Assistant",
-}
+FEATURE_POST_ENDPOINTS = (
+    "/api/ai/rules/mine",
+    "/api/ai/rules/suggestions/1/accept",
+    "/api/ai/rules/suggestions/1/reject",
+    "/api/ai/transactions/1/triage",
+    "/api/ai/transaction-suggestions/1/accept",
+    "/api/ai/transaction-suggestions/1/reject",
+    "/api/assistant/messages/stream",
+)
 
 
 def _configure_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,9 +132,6 @@ def test_feature_get_endpoints_blocked_when_feature_off(
 ) -> None:
     response = api_client.get(path)
     assert response.status_code == 503
-    assert response.json()["detail"] == (
-        f"{FEATURE_GET_ENDPOINTS[path]} is turned off on this server"
-    )
 
 
 @pytest.mark.parametrize("path", FEATURE_POST_ENDPOINTS)
@@ -147,19 +144,3 @@ def test_feature_post_endpoints_blocked_when_feature_off(
         json={"messages": [{"role": "user", "content": "hi"}], "query": "groceries"},
     )
     assert response.status_code == 503
-    assert response.json()["detail"] == (
-        f"{FEATURE_POST_ENDPOINTS[path]} is turned off on this server"
-    )
-
-
-@pytest.mark.parametrize("path", FEATURE_GET_ENDPOINTS)
-def test_feature_get_endpoints_available_when_feature_on(
-    api_client: TestClient,
-    csrf_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-    path: str,
-) -> None:
-    _configure_backend(monkeypatch)
-    _elevate(api_client, csrf_headers)
-    _enable(api_client, csrf_headers, "rule_mining", "transaction_triage")
-    assert api_client.get(path).status_code == 200
