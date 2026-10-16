@@ -837,6 +837,12 @@ async def test_assistant_stop_saves_the_partial_turn() -> None:
         )
     lines = stream_turn(turn, model=_test_model(stream), session_factory=factory)
     assert json.loads(await anext(lines))["type"] == "start"
+
+    async def buffer_filled() -> None:
+        while produced < assistant.STREAM_BUFFER_LINES // 2:
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(buffer_filled(), timeout=5)
     await asyncio.sleep(0.2)
     # The client reads nothing more, so the run waits once the buffer is full.
     assert produced < chunks
