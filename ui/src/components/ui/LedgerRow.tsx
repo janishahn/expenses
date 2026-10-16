@@ -3,6 +3,9 @@ import { ArrowsLeftRightIcon } from "@phosphor-icons/react/ArrowsLeftRight"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
 import clsx from "clsx"
+import type { TransactionListItem } from "../../app/api-types"
+import { reimbursementOf, type Reimbursement } from "../../app/transactions"
+import { Amount } from "./Amount"
 import { Checkbox } from "./Checkbox"
 import { TagChips } from "./TagChip"
 import { columnAttrs, columnStyle, rowProps, type Columns, type RowProps } from "./row-layout"
@@ -170,6 +173,8 @@ const LEDGER_COLUMNS: Columns = {
   mobileColumns: "18px minmax(0, 1fr) auto",
 }
 
+const REIMBURSEMENT_LABEL: Record<Reimbursement, string> = { reimbursed: "Reimbursed", reimbursement: "Reimbursement" }
+
 // One transaction: checkbox (on hover), category glyph, title, category, tags, markers, amount.
 export function LedgerRow({
   glyph,
@@ -178,7 +183,7 @@ export function LedgerRow({
   tags,
   receipt = false,
   location = false,
-  reimbursed = false,
+  reimbursement = null,
   amount,
   selected = false,
   checked = false,
@@ -192,8 +197,7 @@ export function LedgerRow({
   tags: string[]
   receipt?: boolean
   location?: boolean
-  reimbursed?: boolean
-  // The formatted amount; a reimbursed expense passes its muted net before the gross amount.
+  reimbursement?: Reimbursement | null
   amount: ReactNode
   selected?: boolean
   checked?: boolean
@@ -215,7 +219,7 @@ export function LedgerRow({
       <span className={clsx(s.flags, s.hideNarrow, s.hideMobile)}>
         {receipt ? <PaperclipIcon aria-label="Receipt" role="img" /> : null}
         {location ? <MapPinIcon aria-label="Location" role="img" /> : null}
-        {reimbursed ? <ArrowsLeftRightIcon aria-label="Reimbursed" role="img" /> : null}
+        {reimbursement ? <ArrowsLeftRightIcon aria-label={REIMBURSEMENT_LABEL[reimbursement]} role="img" /> : null}
       </span>
       <AmountCell>{amount}</AmountCell>
     </Row>
@@ -229,10 +233,40 @@ export function RowFlags({ children }: { children: ReactNode }) {
 
 // A smaller figure before the main amount, such as a tag's income before its spending; hidden on mobile.
 export function AmountPrefix({ children }: { children: ReactNode }) {
-  return <span className={clsx(s.net, s.hideMobile)}>{children}</span>
+  return <span className={clsx(s.amtPrefix, s.hideMobile)}>{children}</span>
 }
 
-// The muted net before a reimbursed expense's gross amount; hidden on mobile.
-export function NetPrefix({ children }: { children: ReactNode }) {
-  return <span className={clsx(s.net, s.hideMobile)}>net {children}</span>
+// A transaction's amount in a list. An expense shows what it cost after reimbursements, with its
+// struck charge before it except on mobile. Reimbursement income is faint, since its expense already
+// counts it. Lists with a markers column show the reimbursement mark here only on mobile, where
+// that column is hidden.
+export function TransactionAmount({ row, markerColumn = false }: { row: TransactionListItem; markerColumn?: boolean }) {
+  const reimbursement = reimbursementOf(row)
+  const mark = reimbursement ? (
+    <ArrowsLeftRightIcon
+      className={clsx(s.amtMark, markerColumn && s.amtMarkMobile)}
+      aria-label={REIMBURSEMENT_LABEL[reimbursement]}
+      role="img"
+    />
+  ) : null
+  if (row.type !== "expense") {
+    return (
+      <>
+        {mark}
+        <Amount cents={row.amount_cents} kind="income" tone={reimbursement ? "faint" : undefined} />
+      </>
+    )
+  }
+  return (
+    <>
+      {mark}
+      {reimbursement ? (
+        <s className={clsx(s.amtPrefix, s.hideMobile)}>
+          <Amount cents={row.amount_cents} kind="expense" />
+          <span className="sr-only"> charged</span>
+        </s>
+      ) : null}
+      <Amount cents={row.net_amount_cents} kind="expense" />
+    </>
+  )
 }

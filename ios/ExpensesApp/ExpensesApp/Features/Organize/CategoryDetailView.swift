@@ -235,8 +235,9 @@ struct CategoryDetailView: View {
                             categoryID: categoryID,
                             iconKey: shown.icon,
                             categoryName: shown.name,
-                            amountCents: item.amountCents,
-                            income: item.type == "income"
+                            amountCents: item.netAmountCents,
+                            income: item.type == "income",
+                            reimbursement: LedgerRow.Reimbursement(item)
                         )
                     }
                     .navigationLinkIndicatorVisibility(.hidden)

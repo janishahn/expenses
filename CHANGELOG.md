@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Transaction lists show what a reimbursed expense cost you after reimbursements, matching the day totals. On the web desktop layout the charged amount sits struck through before it, and the printed ledger does the same. On mobile web and iOS the row shows the net with the reimbursement mark, so iOS rows now show reimbursements at all. Reimbursement income is muted and carries the same mark, since its expense already counts it. This applies to Transactions, tag pages, and the dashboard's Recent list, and on iOS also to category pages.
+
 ## [0.8.2] - 2026-10-16
 
 ### Fixed
