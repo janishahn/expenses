@@ -17,6 +17,8 @@ from expenses.ai.assistant import (
     AssistantModel,
     AssistantNotFoundError,
     AssistantService,
+    AssistantSettingsIn,
+    AssistantSettingsOut,
     stream_turn,
 )
 from expenses.ai.backends import build_model
@@ -65,6 +67,20 @@ def _stream(lines: AsyncIterator[str]) -> StreamingResponse:
         # response closes. Marking the body as already encoded streams each line.
         headers={"Cache-Control": "no-cache", "Content-Encoding": "identity"},
     )
+
+
+@router.get("/settings", response_model=AssistantSettingsOut)
+def settings(request: Request, db: Session = Depends(get_db)):
+    return _service(request, db).settings()
+
+
+@router.put("/settings", response_model=AssistantSettingsOut)
+def update_settings(
+    data: AssistantSettingsIn, request: Request, db: Session = Depends(get_db)
+):
+    service = _service(request, db)
+    _require_csrf(request, db)
+    return service.update_settings(data)
 
 
 @router.get("/chats", response_model=list[AssistantChatSummaryOut])

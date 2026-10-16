@@ -301,6 +301,14 @@ struct ExpensesAPIClient {
         )
     }
 
+    func assistantSettings(token: String) async throws -> AssistantSettings {
+        try await request(path: "/api/assistant/settings", bearerToken: token)
+    }
+
+    func saveAssistantSettings(_ body: AssistantSettings, token: String) async throws -> AssistantSettings {
+        try await request(path: "/api/assistant/settings", method: "PUT", bearerToken: token, body: body)
+    }
+
     func assistantChats(token: String) async throws -> [AssistantChatSummary] {
         try await request(path: "/api/assistant/chats", bearerToken: token)
     }

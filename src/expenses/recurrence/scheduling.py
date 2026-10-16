@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from expenses.ai.assistant import prune_chats
 from expenses.ai.service import LLMAssistantService
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
@@ -51,6 +52,17 @@ class SchedulerManager:
                     deleted_rows=deleted,
                 )
 
+    def _run_assistant_chat_prune(self) -> None:
+        with session_scope() as session:
+            deleted = prune_chats(session, datetime.utcnow())
+            if deleted:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "assistant_chat_prune_completed",
+                    deleted_chats=deleted,
+                )
+
     def start(self) -> None:
         self._run_job("startup")
         self.scheduler.add_job(
@@ -82,6 +94,15 @@ class SchedulerManager:
             misfire_grace_time=3600,
         )
 
+        trigger = CronTrigger(hour=4, minute=20)
+        self.scheduler.add_job(
+            self._run_assistant_chat_prune,
+            trigger,
+            id="assistant_chat_prune_daily",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+
         trigger = IntervalTrigger(hours=1)
         self.scheduler.add_job(
             self._run_job,
@@ -99,6 +120,7 @@ class SchedulerManager:
             "scheduler_started",
             daily_trigger="03:15",
             llm_trace_prune_trigger="04:10",
+            assistant_chat_prune_trigger="04:20",
             safety_net_hours=1,
         )
 

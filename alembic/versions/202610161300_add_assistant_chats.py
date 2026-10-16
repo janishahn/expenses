@@ -10,6 +10,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "users",
+        sa.Column(
+            "assistant_chat_days", sa.Integer(), nullable=False, server_default="14"
+        ),
+    )
     op.create_table(
         "assistant_chats",
         sa.Column("id", sa.String(32), primary_key=True),
@@ -78,3 +84,4 @@ def downgrade() -> None:
     op.drop_table("assistant_turns")
     op.drop_index("ix_assistant_chats_user_updated", table_name="assistant_chats")
     op.drop_table("assistant_chats")
+    op.drop_column("users", "assistant_chat_days")

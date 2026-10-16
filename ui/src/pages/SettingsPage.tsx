@@ -63,6 +63,13 @@ type CsvPreviewRow = {
 
 type CsvPreviewResponse = { rows: CsvPreviewRow[]; errors: string[] }
 
+type ChatDays = "7" | "14" | "30" | "90"
+const CHAT_DAYS_OPTIONS: Array<{ value: ChatDays; label: string }> = [
+  { value: "7", label: "7 days" },
+  { value: "14", label: "14 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+]
 const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -198,6 +205,33 @@ function AppearanceCard() {
       <SettingRow label="Theme">
         <SegmentedControl label="Theme" value={preference} options={THEME_OPTIONS} onChange={setPreference} />
       </SettingRow>
+    </Sheet>
+  )
+}
+
+type AssistantSettings = { chat_days: number }
+
+// The server deletes chats this long after their last message.
+function AssistantCard() {
+  const queryClient = useQueryClient()
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["assistant-settings"],
+    queryFn: () => apiFetch<AssistantSettings>("/api/assistant/settings"),
+  })
+  const save = useMutation({
+    mutationFn: (chatDays: number) =>
+      apiFetch<AssistantSettings>("/api/assistant/settings", { method: "PUT", body: JSON.stringify({ chat_days: chatDays }) }),
+    onSuccess: (result) => queryClient.setQueryData(["assistant-settings"], result),
+  })
+  if (isLoading) return <LoadingBody label="Loading Assistant settings…" />
+  if (error || !data) return <ErrorBody message="Unable to load Assistant settings." />
+  const days = save.isPending ? save.variables : data.chat_days
+  return (
+    <Sheet title="Assistant" body="flush">
+      <SettingRow label="Keep chats">
+        <SegmentedControl label="Keep chats" value={String(days) as ChatDays} options={CHAT_DAYS_OPTIONS} onChange={(value) => save.mutate(Number(value))} />
+      </SettingRow>
+      {save.error ? <SettingRow label={<FieldError>{getApiErrorMessage(save.error, "Unable to save how long chats are kept.")}</FieldError>} /> : null}
     </Sheet>
   )
 }
@@ -474,6 +508,7 @@ function CsvImportCard() {
 function SettingsPage() {
   const { section = "account" } = useParams()
   const groups = useSettingsGroups()
+  const { aiFeatures } = useAuth()
   const queryClient = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ["settings"],
@@ -484,6 +519,7 @@ function SettingsPage() {
         : false,
   })
   if (!SETTINGS_SECTIONS.includes(section as SettingsSectionKey)) return <Navigate to="/settings" replace />
+  if (section === "assistant" && !aiFeatures.includes("spending_chat")) return <Navigate to="/settings" replace />
   const key = section as SettingsSectionKey
   const needsData = key === "account" || key === "categorization" || key === "snapshots"
 
@@ -508,6 +544,7 @@ function SettingsPage() {
           }}
         />
       ) : null}
+      {key === "assistant" ? <AssistantCard /> : null}
       {key === "snapshots" && data ? <SnapshotsCard data={data} /> : null}
       {key === "data" ? (
         <>

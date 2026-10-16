@@ -7,7 +7,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { ListNumbersIcon } from "@phosphor-icons/react/ListNumbers"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
-import { SparkleIcon } from "@phosphor-icons/react/Sparkle"
+import { LightbulbIcon } from "@phosphor-icons/react/Lightbulb"
 import { TagIcon } from "@phosphor-icons/react/Tag"
 import { TextAaIcon } from "@phosphor-icons/react/TextAa"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
@@ -834,7 +834,7 @@ function SuggestionRows({ suggestions, categories }: { suggestions: RuleSuggesti
         )
         return (
           <Row key={suggestion.id} {...SUGGESTION_COLUMNS} label={suggestion.name}>
-            <IconGlyph icon={SparkleIcon} />
+            <IconGlyph icon={LightbulbIcon} />
             <Cell>Title {titleCondition(suggestion.match_type, suggestion.match_value)}</Cell>
             <Cell>
               {category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} inline /> : null}
@@ -979,7 +979,7 @@ function RulesPage() {
           </Button>
           {ruleSuggestionsOn ? (
             <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
-              <MenuItem icon={SparkleIcon} disabled={mine.isPending} onSelect={() => mine.mutate()}>
+              <MenuItem icon={LightbulbIcon} disabled={mine.isPending} onSelect={() => mine.mutate()}>
                 {mine.isPending ? "Finding rule suggestions…" : "Find rule suggestions"}
               </MenuItem>
             </Menu>

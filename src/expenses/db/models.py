@@ -122,8 +122,8 @@ class AssistantTurn(Base):
 class AssistantAction(Base):
     """A change the Assistant proposed, and what undoes it once applied.
 
-    plan_json is exactly what the approval card shows. The row outlives its chat so
-    the Assistant can still undo the change later.
+    plan_json is exactly what the approval card shows. The row outlives its chat,
+    for as long as the user keeps chats, so the Assistant can still undo the change.
     """
 
     __tablename__ = "assistant_actions"
@@ -172,6 +172,9 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(80), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assistant_chat_days: Mapped[int] = mapped_column(
+        Integer, default=14, server_default="14", nullable=False
+    )
 
     auth_sessions: Mapped[list["AuthSession"]] = relationship(
         "AuthSession",

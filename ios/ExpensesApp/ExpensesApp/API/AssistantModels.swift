@@ -10,6 +10,15 @@ struct AssistantMessageRequest: Encodable {
     }
 }
 
+/// How long the server keeps chats after their last message.
+struct AssistantSettings: Codable, Equatable {
+    var chatDays: Int
+
+    enum CodingKeys: String, CodingKey {
+        case chatDays = "chat_days"
+    }
+}
+
 struct AssistantDecisionRequest: Encodable {
     let itemID: String
     let approve: Bool

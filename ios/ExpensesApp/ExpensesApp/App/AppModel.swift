@@ -85,6 +85,7 @@ final class AppModel {
     var assistantTurns: [AssistantTurn] = []
     var assistantChatState: AssistantChatState = .ready
     var assistantChats: [AssistantChatSummary] = []
+    var assistantSettings: AssistantSettings?
     var isAssistantStreaming = false
     private var assistantStreamTask: Task<Void, Never>?
     // Each stream's number; a stream that is no longer the latest leaves the screen alone.
@@ -679,6 +680,35 @@ final class AppModel {
         } catch {
             lastError = APIErrorInfo(message: error.localizedDescription)
         }
+    }
+
+    func loadAssistantSettings() async {
+        guard let token else {
+            return
+        }
+        do {
+            assistantSettings = try await apiClient.assistantSettings(token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+    }
+
+    func saveAssistantChatDays(_ days: Int) async -> Bool {
+        guard let token else {
+            return false
+        }
+        lastError = nil
+        do {
+            assistantSettings = try await apiClient.saveAssistantSettings(AssistantSettings(chatDays: days), token: token)
+            return true
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+        return false
     }
 
     func openAssistantChat(_ id: String) async {
@@ -2094,6 +2124,7 @@ final class AppModel {
         assistantTurns = []
         assistantChatState = .ready
         assistantChats = []
+        assistantSettings = nil
         budgets = nil
         budgetsLoadState = .idle
         mobileSessions = nil

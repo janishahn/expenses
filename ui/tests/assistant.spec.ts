@@ -246,4 +246,20 @@ test.describe("Assistant", () => {
     })
     await expect(userTurns(page).first()).toBeInViewport()
   })
+
+  test("keeps chats for the days chosen in Settings", async ({ page }) => {
+    await page.goto("/settings")
+    await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Assistant", exact: true }).click()
+    await expect(page).toHaveURL("/settings/assistant")
+
+    const keep = page.getByRole("radiogroup", { name: "Keep chats" })
+    await expect(keep.getByRole("radio", { name: "14 days" })).toBeChecked()
+    const saved = page.waitForResponse((response) => response.url().endsWith("/api/assistant/settings") && response.request().method() === "PUT")
+    await keep.getByRole("radio", { name: "30 days" }).click()
+    await saved
+    await page.reload()
+    await expect(keep.getByRole("radio", { name: "30 days" })).toBeChecked()
+    await keep.getByRole("radio", { name: "14 days" }).click()
+    await expect(keep.getByRole("radio", { name: "14 days" })).toBeChecked()
+  })
 })

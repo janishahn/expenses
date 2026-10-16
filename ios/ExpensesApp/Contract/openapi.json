@@ -924,6 +924,39 @@
         "title": "AssistantMessageIn",
         "type": "object"
       },
+      "AssistantSettingsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_days": {
+            "enum": [
+              7,
+              14,
+              30,
+              90
+            ],
+            "title": "Chat Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_days"
+        ],
+        "title": "AssistantSettingsIn",
+        "type": "object"
+      },
+      "AssistantSettingsOut": {
+        "properties": {
+          "chat_days": {
+            "title": "Chat Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_days"
+        ],
+        "title": "AssistantSettingsOut",
+        "type": "object"
+      },
       "AssistantTurnOut": {
         "properties": {
           "created_at": {
@@ -11328,6 +11361,60 @@
           }
         },
         "summary": "Send Message"
+      }
+    },
+    "/api/assistant/settings": {
+      "get": {
+        "operationId": "settings_api_assistant_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "put": {
+        "operationId": "update_settings_api_assistant_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings"
       }
     },
     "/api/attachments/{attachment_id}": {

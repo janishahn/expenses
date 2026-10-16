@@ -232,7 +232,7 @@ struct RulesView: View {
                 .disabled(model.rules == nil)
                 if model.aiFeatures.contains("rule_mining") {
                     Menu {
-                        Button(model.isMiningRuleSuggestions ? "Finding Rule Suggestions…" : "Find Rule Suggestions", systemImage: "sparkles") {
+                        Button(model.isMiningRuleSuggestions ? "Finding Rule Suggestions…" : "Find Rule Suggestions", systemImage: "lightbulb") {
                             Task { await mine() }
                         }
                         .disabled(model.isMiningRuleSuggestions)
@@ -263,7 +263,7 @@ struct RulesView: View {
                     $0.name == suggestion.setCategoryName && (suggestion.transactionType == nil || $0.type == suggestion.transactionType?.rawValue)
                 }
                 HStack(spacing: 12) {
-                    Image(systemName: "sparkles")
+                    Image(systemName: "lightbulb")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .glyphColumn()

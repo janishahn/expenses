@@ -16,7 +16,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -70,7 +70,13 @@ from expenses.ai.usage import (
 )
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
-from expenses.db.models import AssistantAction, AssistantChat, AssistantTurn, LLMJob
+from expenses.db.models import (
+    AssistantAction,
+    AssistantChat,
+    AssistantTurn,
+    LLMJob,
+    User,
+)
 
 logger = get_logger("expenses.ai.assistant")
 
@@ -171,6 +177,19 @@ class AssistantDecisionIn(BaseModel):
 
     item_id: str = Field(pattern=r"^approval-", max_length=120)
     approve: bool
+
+
+ChatDays = Literal[7, 14, 30, 90]
+
+
+class AssistantSettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chat_days: ChatDays
+
+
+class AssistantSettingsOut(BaseModel):
+    chat_days: int
 
 
 @dataclass(frozen=True)
@@ -451,6 +470,16 @@ class AssistantService:
         self.session = session
         self.user_id = user_id
 
+    def settings(self) -> AssistantSettingsOut:
+        user = self.session.get_one(User, self.user_id)
+        return AssistantSettingsOut(chat_days=user.assistant_chat_days)
+
+    def update_settings(self, data: AssistantSettingsIn) -> AssistantSettingsOut:
+        user = self.session.get_one(User, self.user_id)
+        user.assistant_chat_days = data.chat_days
+        self.session.commit()
+        return AssistantSettingsOut(chat_days=user.assistant_chat_days)
+
     def chats(self, limit: int = 50) -> list[AssistantChat]:
         return list(
             self.session.scalars(
@@ -681,6 +710,29 @@ class AssistantService:
             user_text=turn.user_text,
             continue_seq=turn.seq,
         )
+
+
+def prune_chats(session: Session, now: datetime) -> int:
+    """Deletes each user's chats and change records older than they keep chats."""
+    deleted = 0
+    for user_id, days in session.execute(select(User.id, User.assistant_chat_days)):
+        cutoff = now - timedelta(days=days)
+        stale = select(AssistantChat.id).where(
+            AssistantChat.user_id == user_id, AssistantChat.updated_at < cutoff
+        )
+        session.execute(delete(AssistantTurn).where(AssistantTurn.chat_id.in_(stale)))
+        deleted += session.execute(
+            delete(AssistantChat).where(
+                AssistantChat.user_id == user_id, AssistantChat.updated_at < cutoff
+            )
+        ).rowcount
+        session.execute(
+            delete(AssistantAction).where(
+                AssistantAction.user_id == user_id, AssistantAction.created_at < cutoff
+            )
+        )
+    session.commit()
+    return deleted
 
 
 def _with_tool_return(messages_json: str, part: ToolReturnPart) -> str:

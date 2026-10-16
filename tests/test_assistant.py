@@ -738,6 +738,68 @@ def test_assistant_chats_belong_to_their_user(
     assert api_client.get("/api/assistant/chats").json() == []
 
 
+def test_assistant_keeps_chats_for_the_chosen_days(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_chat(monkeypatch)
+    assert api_client.get("/api/assistant/settings").json() == {"chat_days": 14}
+    odd = api_client.put(
+        "/api/assistant/settings", headers=csrf_headers, json={"chat_days": 10}
+    )
+    assert odd.status_code == 422
+    saved = api_client.put(
+        "/api/assistant/settings", headers=csrf_headers, json={"chat_days": 7}
+    )
+    assert saved.json() == {"chat_days": 7}
+
+    # The other user keeps the default 14 days.
+    now = datetime(2026, 6, 30, 4, 20)
+    db_session.add(User(id=2, username="other", password_hash="unused"))
+    db_session.flush()
+    for name, user_id, age in [("a", 1, 3), ("b", 1, 8), ("c", 2, 8)]:
+        at = now - timedelta(days=age)
+        chat_id = name * 32
+        db_session.add(
+            AssistantChat(
+                id=chat_id, user_id=user_id, title=name, created_at=at, updated_at=at
+            )
+        )
+        db_session.flush()
+        db_session.add_all(
+            [
+                AssistantTurn(
+                    chat_id=chat_id,
+                    seq=1,
+                    user_text="Hi",
+                    items_json="[]",
+                    messages_json="[]",
+                    status="completed",
+                    created_at=at,
+                ),
+                AssistantAction(
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    tool_call_id="call",
+                    kind="create_transactions",
+                    summary="Added Lunch",
+                    plan_json="{}",
+                    status="applied",
+                    created_at=at,
+                ),
+            ]
+        )
+    db_session.commit()
+
+    assert assistant.prune_chats(db_session, now) == 1
+    kept = {"a" * 32, "c" * 32}
+    assert set(db_session.scalars(select(AssistantChat.id))) == kept
+    assert set(db_session.scalars(select(AssistantTurn.chat_id))) == kept
+    assert set(db_session.scalars(select(AssistantAction.chat_id))) == kept
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("chunks", "calls_tool", "kind"),

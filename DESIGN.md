@@ -379,8 +379,8 @@ pages below fix the structure; the current pages show the content.
   imported. On mobile, row actions live in the peek; Match all stays in the
   band.
 - **Settings and Admin** share one shell: a section list (Account, Appearance;
-  Data: Categorization, AI, Balance snapshots, Import and export; Server:
-  Health, Maintenance, Assistant usage, Logs, System) and one section at a
+  Data: Categorization, Assistant, Balance snapshots, Import and export;
+  Server: Health, Maintenance, AI, Assistant usage, Logs, System) and one section at a
   time. On desktop the section list replaces the sidebar, headed by "Back to
   app"; on mobile it is a horizontal chip row. Settings save on change; there
   is no Save button. Server sections need the admin password, shown as a

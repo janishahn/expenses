@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Assistant reads recurring payments, the forecast, balance history, reimbursements, and durable purchases. It can filter transactions by several categories and tags, amount, and text, and group them by category, tag, merchant, month, week, or weekday, with a comparison period.
 - The Assistant keeps your chats on the web and iOS: the header opens Recent chats and starts a New chat, a new chat lists recent ones instead of suggested questions, and on the web the URL names the open chat. While it works, one line names the current step (thinking, a note, or a ledger read); when the answer starts it folds into a summary that opens to list each step and the reasoning summary. Answers write amounts the way the app does (1 234,56 €).
 - Ask the Assistant to add transactions, change the category, tags, or title of transactions, allocate a reimbursement to expenses (for example half of each), or set budgets. It shows the exact change on a card, and nothing changes until you tap the card's button; Dismiss, or a new message, leaves your data as it was. Ask it to undo a change it made, and it shows that on a card too. `POST /api/assistant/chats/{chat_id}/approvals/stream` approves or dismisses a card and streams the rest of the answer.
+- Settings › Assistant on the web and iOS sets how long the server keeps your Assistant chats: 7, 14, 30, or 90 days after the last message, 14 by default. Older chats, and the record of changes made in them, are deleted each night. `GET` and `PUT /api/assistant/settings` read and change it.
 
 ### Changed
 - **Breaking:** AI configuration moves from `EXPENSES_LLM_*` to named backends in `EXPENSES_AI_BACKENDS`, with `EXPENSES_AI_<NAME>_KIND`, `_BASE_URL`, and `_API_KEY` for each. Kinds are `anthropic`, `openai`, `openrouter`, and `openai-compatible`, so the Anthropic API now works directly. The server refuses to start while any `EXPENSES_LLM_*` variable is set; see the AI section of the README.
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Add another switch in the web and iOS add-transaction forms. The form now closes after each add.
 
 ### Fixed
+- Admin › Assistant usage on the web and iOS rounds costs under 1 to three significant digits, so a cost such as $0.0000213 per chat no longer overflows its card.
 - iOS camera receipts are saved at one pixel per point, so their thumbnails stay under the server's pixel limit.
 - Canceling Face ID on the iOS lock screen no longer starts Face ID again right away.
 - The web Budgets Annual band no longer counts spending and limits twice when an overall annual budget sits next to category budgets. With an overall annual budget, the band shows its figures.

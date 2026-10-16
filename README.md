@@ -85,7 +85,9 @@ stops predictions and scheduled training without changing existing transactions.
 - **Forecast and What If** project cash flow and let you test a change before it becomes real.
 - **Digest and Reports** turn recent activity into a short review or an exportable PDF.
 - **Reconcile** compares a Commerzbank transaction CSV with your ledger and guides you through unresolved rows.
-- **Assistant** answers read-only questions about your spending when an admin turns it on.
+- **Assistant** answers questions about your spending when an admin turns it on. It can also propose new
+  transactions, edits, reimbursement allocations, and budgets, which change nothing until you approve them.
+  The server keeps chats for 14 days after the last message; change this in **Settings → Assistant**.
 - **Templates, categories, and tags** make frequent entries quick to create and old entries easier to find. Tags can be archived without losing historical assignments and hidden from filter menus independently.
 
 ## Run with Docker

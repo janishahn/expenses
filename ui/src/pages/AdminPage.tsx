@@ -104,13 +104,10 @@ const HEALTH_STATUS = {
   critical: { label: "Critical", tone: "bad", icon: WarningIcon },
 } as const
 
-function trimDecimal(value: string): string {
-  if (!value.includes(".")) return value
-  return value.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "")
-}
-
+// Costs under 1 keep three significant digits, so a fraction of a cent stays short.
 function formatCostAmount(decimal: string, unit: string | null): string {
-  const value = trimDecimal(decimal)
+  const amount = Number(decimal)
+  const value = amount.toLocaleString("en-US", Math.abs(amount) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 })
   if (unit === "openrouter_credits") return `${value} credits`
   if (unit === "usd") return `$${value}`
   if (unit === "mixed") return `${value} (mixed)`

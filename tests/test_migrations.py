@@ -363,6 +363,7 @@ def test_auth_tables_migration_adds_users_and_auth_sessions(
         "is_admin",
         "created_at",
         "updated_at",
+        "assistant_chat_days",
     ]
     assert [row[1] for row in session_columns] == [
         "id",
