@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 from pydantic_ai import RunContext
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from expenses.core.periods import Period, month_end
@@ -284,8 +284,17 @@ class AssistantReader:
         }
 
     def _groups(
-        self, scope: TransactionScope, start: date, end: date, group_by: GroupBy
-    ) -> dict[str | None, dict[str, Any]]:
+        self,
+        scope: TransactionScope,
+        start: date,
+        end: date,
+        group_by: GroupBy,
+        *,
+        compare: tuple[date, date] | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """One page of groups, ordered and cut in SQL, and how many groups there are."""
         reimbursed = self._reimbursed()
         net = Transaction.amount_cents - func.coalesce(reimbursed.c.cents, 0)
         match group_by:
@@ -310,13 +319,23 @@ class AssistantReader:
                 label = func.max(Transaction.title)
             case "none":
                 raise ValueError("group_by none has no groups")
+        current = Transaction.date.between(start, end)
+        net_cents = func.sum(case((current, net), else_=0))
+        columns = [
+            key.label("key"),
+            label.label("label"),
+            func.sum(case((current, 1), else_=0)),
+            net_cents,
+        ]
+        first, last = start, end
+        if compare is not None:
+            # One pass sums both periods, so groups only in the baseline are listed too.
+            baseline = Transaction.date.between(*compare)
+            baseline_cents = func.sum(case((baseline, net), else_=0))
+            columns.append(baseline_cents)
+            first, last = min(start, compare[0]), max(end, compare[1])
         stmt = (
-            select(
-                key.label("key"),
-                label.label("label"),
-                func.count(Transaction.id),
-                func.sum(net),
-            )
+            select(*columns)
             .select_from(Transaction)
             .outerjoin(reimbursed, reimbursed.c.expense_id == Transaction.id)
         )
@@ -326,22 +345,45 @@ class AssistantReader:
             stmt = stmt.outerjoin(
                 transaction_tags, transaction_tags.c.transaction_id == Transaction.id
             ).outerjoin(Tag, Tag.id == transaction_tags.c.tag_id)
-        stmt = self._scoped(stmt, scope, start, end).group_by(key)
-        groups: dict[str | None, dict[str, Any]] = {}
-        for group_key, group_label, count, net_cents in self.session.execute(stmt):
+        stmt = self._scoped(stmt, scope, first, last)
+        if compare is not None:
+            stmt = stmt.where(or_(current, baseline))
+        stmt = stmt.group_by(key)
+        group_count = self.session.scalar(
+            select(func.count()).select_from(stmt.subquery())
+        )
+        chronological = group_by in ("month", "week", "weekday")
+        if chronological:
+            # Pages run back from the newest period. Weeks start on Monday.
+            order = case((key == "0", "7"), else_=key) if group_by == "weekday" else key
+            stmt = stmt.order_by(order.desc())
+        elif compare is not None:
+            stmt = stmt.order_by(func.abs(net_cents - baseline_cents).desc(), key)
+        else:
+            stmt = stmt.order_by(net_cents.desc(), key)
+        rows: list[dict[str, Any]] = []
+        for group_key, group_label, count, cents, *rest in self.session.execute(
+            stmt.limit(limit).offset(offset)
+        ):
             if group_by == "weekday":
                 group_label = WEEKDAYS[int(group_key)]
             elif group_by == "tag" and group_key is None:
                 group_label = "No tag"
             elif group_by == "title" and not group_label:
                 group_label = "Untitled"
-            groups[None if group_key is None else str(group_key)] = {
+            row = {
                 "key": None if group_key is None else str(group_key),
                 "label": group_label,
                 "count": int(count),
-                "net_cents": int(net_cents or 0),
+                "net_cents": int(cents or 0),
             }
-        return groups
+            if rest:
+                row["baseline_net_cents"] = int(rest[0] or 0)
+                row["delta_cents"] = row["net_cents"] - row["baseline_net_cents"]
+            rows.append(row)
+        if chronological:
+            rows.reverse()
+        return rows, int(group_count)
 
     def query_transactions(
         self,
@@ -442,43 +484,25 @@ class AssistantReader:
                 result["next_offset"] = offset + limit
             return result
 
-        groups = self._groups(scope, start, end, group_by)
-        rows = list(groups.values())
-        chronological = group_by in ("month", "week", "weekday")
-        if chronological:
-            # Weeks start on Monday.
-            rows.sort(
-                key=lambda row: (row["key"] == "0", row["key"])
-                if group_by == "weekday"
-                else row["key"]
-            )
-        elif baseline_totals is not None and compare_start and compare_end:
-            baseline_groups = self._groups(scope, compare_start, compare_end, group_by)
-            for key, baseline in baseline_groups.items():
-                if key not in groups:
-                    rows.append({**baseline, "count": 0, "net_cents": 0})
-            for row in rows:
-                baseline_net = baseline_groups.get(row["key"], {}).get("net_cents", 0)
-                row["baseline_net_cents"] = baseline_net
-                row["delta_cents"] = row["net_cents"] - baseline_net
-            rows.sort(key=lambda row: abs(row["delta_cents"]), reverse=True)
-        else:
-            rows.sort(key=lambda row: row["net_cents"], reverse=True)
+        compare = (
+            (compare_start, compare_end)
+            if compare_start is not None
+            and compare_end is not None
+            and group_by in ("category", "tag", "title")
+            else None
+        )
+        rows, group_count = self._groups(
+            scope, start, end, group_by, compare=compare, limit=limit, offset=offset
+        )
         if totals["net_cents"] > 0:
             for row in rows:
                 row["share_percent"] = round(
                     row["net_cents"] / totals["net_cents"] * 100, 1
                 )
-        if chronological:
-            # Pages run back from the newest period.
-            stop = max(0, len(rows) - offset)
-            shown = rows[max(0, stop - limit) : stop]
-        else:
-            shown = rows[offset : offset + limit]
         result["group_by"] = group_by
-        result["groups"] = shown
-        result["group_count"] = len(rows)
-        if len(rows) > offset + limit:
+        result["groups"] = rows
+        result["group_count"] = group_count
+        if group_count > offset + limit:
             result["next_offset"] = offset + limit
         return result
 
@@ -557,6 +581,7 @@ class AssistantReader:
             }
         reimbursements = ReimbursementService(self.session, self.user_id)
         if txn.type == TransactionType.expense:
+            allocations = reimbursements.allocations_for_expense(txn.id, limit=101)
             row["reimbursed_by"] = [
                 {
                     "transaction_id": allocation.reimbursement_transaction_id,
@@ -564,9 +589,14 @@ class AssistantReader:
                     "date": allocation.reimbursement_transaction.date.isoformat(),
                     "amount_cents": allocation.amount_cents,
                 }
-                for allocation in reimbursements.allocations_for_expense(txn.id)
+                for allocation in allocations[:100]
             ]
+            if len(allocations) > 100:
+                row["more_reimbursed_by"] = True
         elif txn.is_reimbursement:
+            allocations = reimbursements.allocations_for_reimbursement(
+                txn.id, limit=101
+            )
             row["allocated_to"] = [
                 {
                     "transaction_id": allocation.expense_transaction_id,
@@ -574,8 +604,10 @@ class AssistantReader:
                     "date": allocation.expense_transaction.date.isoformat(),
                     "amount_cents": allocation.amount_cents,
                 }
-                for allocation in reimbursements.allocations_for_reimbursement(txn.id)
+                for allocation in allocations[:100]
             ]
+            if len(allocations) > 100:
+                row["more_allocated_to"] = True
         return {"ok": True, "transaction": row}
 
     def list_recurring(self) -> dict[str, Any]:
@@ -821,7 +853,11 @@ def get_budgets(
 def get_transaction(
     ctx: RunContext[AssistantReader], transaction_id: int
 ) -> dict[str, Any]:
-    """One transaction with its reimbursements, recurring rule, and original currency."""
+    """One transaction with its reimbursements, recurring rule, and original currency.
+
+    Lists the newest 100 allocations; more_reimbursed_by or more_allocated_to means
+    there are others. An expense's reimbursed_cents covers all of them.
+    """
     return ctx.deps.get_transaction(transaction_id=transaction_id)
 
 

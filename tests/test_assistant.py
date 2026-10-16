@@ -364,6 +364,7 @@ def test_query_transactions_groups_by_tag_title_and_time() -> None:
             ["2026-06-01"],
         ]
         assert [page.get("next_offset") for page in pages] == [2, 4, None]
+        assert pages[0]["group_count"] == 5
         second_title = reader.query_transactions(
             **june, group_by="title", limit=1, offset=1
         )
@@ -469,6 +470,23 @@ def test_reader_reports_budgets_links_and_reimbursements() -> None:
         assert "Today is Saturday, 2026-06-27." in reference
         assert f"- {ids['groceries_id']}: Groceries, expense" in reference
         assert ": Food" in reference
+
+        # A transaction lists its newest 100 allocations and says there are more.
+        deposit_id = open_only["reimbursements"][0]["id"]
+        for index in range(101):
+            expense = _create_txn(
+                TransactionService(session, user_id=1),
+                title=f"Shared {index}",
+                amount_cents=10,
+                txn_date=date(2026, 6, 21),
+                category_id=ids["groceries_id"],
+            )
+            ReimbursementService(session, user_id=1).upsert_allocation(
+                deposit_id, expense.id, 10
+            )
+        deposit = reader.get_transaction(transaction_id=deposit_id)["transaction"]
+        assert len(deposit["allocated_to"]) == 100
+        assert deposit["more_allocated_to"] is True
 
 
 def _session_factory():

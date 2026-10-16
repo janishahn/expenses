@@ -2380,7 +2380,7 @@ class ReimbursementService:
         return {int(r.expense_id): int(r.total or 0) for r in rows}
 
     def allocations_for_reimbursement(
-        self, reimbursement_transaction_id: int
+        self, reimbursement_transaction_id: int, *, limit: int | None = None
     ) -> list[ReimbursementAllocation]:
         expense = aliased(Transaction)
         stmt = (
@@ -2397,11 +2397,12 @@ class ReimbursementService:
                 == reimbursement_transaction_id,
             )
             .order_by(expense.date.desc(), expense.id.desc())
+            .limit(limit)
         )
         return self.session.scalars(stmt).all()
 
     def allocations_for_expense(
-        self, expense_transaction_id: int
+        self, expense_transaction_id: int, *, limit: int | None = None
     ) -> list[ReimbursementAllocation]:
         reimb = aliased(Transaction)
         stmt = (
@@ -2420,6 +2421,7 @@ class ReimbursementService:
                 == expense_transaction_id,
             )
             .order_by(reimb.date.desc(), reimb.id.desc())
+            .limit(limit)
         )
         return self.session.scalars(stmt).all()
 
