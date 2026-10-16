@@ -464,7 +464,9 @@
 .flags { display: flex; justify-content: flex-end; gap: 6px; color: var(--ink-3); }
 .flags svg { width: 14px; height: 14px; }
 .amt { text-align: right; justify-self: end; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
-.net { margin-right: 6px; color: var(--ink-3); font-weight: 400; font-size: 12px; }
+.amtPrefix { margin-right: 6px; color: var(--ink-3); font-weight: 400; font-size: 12px; }
+.amtMark { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; color: var(--ink-3); }
+.amtMarkMobile { display: none; }
 .lfoot {
   display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 40px; padding: 0 8px 0 16px;
   color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums;
@@ -1048,6 +1050,7 @@ button.actHead { cursor: pointer; }
   .rowControls + .rowControls { box-shadow: 0 -1px 0 var(--line-soft); }
   .row[data-cols-mobile], .lhead[data-cols-mobile] { grid-template-columns: var(--cols-mobile); }
   .hideMobile { display: none !important; }
+  .amtMarkMobile { display: inline-block; }
   .ledgerRow { height: 44px; }
   .day { padding: 0 16px; }
   .dayLedger { padding-left: 46px; }
@@ -1159,8 +1162,9 @@ button.actHead { cursor: pointer; }
   .printTable td:last-child { padding-right: 0; }
   .printTable .printDay td { padding-top: 9pt; border-bottom: 0; font-weight: 600; }
   .printTable .printDay td:last-child { color: #55554f; font-weight: 500; }
-  .printTags, .printNet { margin-left: 5pt; color: #6b6b65; font-size: 8.5pt; }
-  .printNet { margin: 0 5pt 0 0; }
+  .printTags, .printCharged { margin-left: 5pt; color: #6b6b65; font-size: 8.5pt; }
+  .printCharged { margin: 0 5pt 0 0; }
+  .printMuted { color: #6b6b65; }
   .printDot { display: inline-block; width: 6pt; height: 6pt; margin-right: 5pt; border: 0.5pt solid #111; border-radius: 1.5pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .printTotals { width: 220pt; margin: 18pt 0 0 auto; break-inside: avoid; }
   .printTotals div { display: flex; justify-content: space-between; padding: 2pt 0; }

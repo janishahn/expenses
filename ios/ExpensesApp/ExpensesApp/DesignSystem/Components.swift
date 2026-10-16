@@ -318,10 +318,30 @@ struct BudgetPulseRow: View {
 }
 
 /// A transaction as one ledger line: category glyph, title, and amount. Income is
-/// green with a plus; an expense is ink with no sign.
+/// green with a plus; an expense is ink with no sign. A reimbursed expense shows what it
+/// cost after reimbursements. Reimbursement income is muted, since its expense already
+/// counts it. Both carry the reimbursement mark.
 struct LedgerRow: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    enum Reimbursement {
+        /// An expense paid back in part or full, with what was charged.
+        case reimbursed(chargedCents: Int)
+        /// Income that paid back an expense.
+        case reimbursement
+
+        init?(_ transaction: TransactionListItem) {
+            if transaction.type == "expense" {
+                guard transaction.reimbursedTotalCents > 0 else { return nil }
+                self = .reimbursed(chargedCents: transaction.amountCents)
+            } else {
+                guard transaction.isReimbursement else { return nil }
+                self = .reimbursement
+            }
+        }
+    }
 
     let title: String
     let detail: String?
@@ -330,15 +350,19 @@ struct LedgerRow: View {
     let categoryName: String?
     let amountCents: Int
     let income: Bool
+    let reimbursement: Reimbursement?
 
-    init(transaction: TransactionListItem, category: CategorySummary?) {
+    init(transaction: TransactionListItem, category: CategorySummary?, detail: String? = nil) {
         self.init(
             title: transaction.title ?? category?.name ?? "Untitled",
+            detail: detail,
             categoryID: category?.id,
             iconKey: category?.icon,
             categoryName: category?.name,
-            amountCents: transaction.amountCents,
-            income: transaction.type == "income"
+            // Income's net is its amount.
+            amountCents: transaction.netAmountCents,
+            income: transaction.type == "income",
+            reimbursement: Reimbursement(transaction)
         )
     }
 
@@ -350,7 +374,8 @@ struct LedgerRow: View {
         iconKey: String?,
         categoryName: String?,
         amountCents: Int,
-        income: Bool
+        income: Bool,
+        reimbursement: Reimbursement? = nil
     ) {
         self.title = title
         self.detail = detail
@@ -359,6 +384,7 @@ struct LedgerRow: View {
         self.categoryName = categoryName
         self.amountCents = amountCents
         self.income = income
+        self.reimbursement = reimbursement
     }
 
     var body: some View {
@@ -393,8 +419,33 @@ struct LedgerRow: View {
     }
 
     private var amount: some View {
-        AmountText(amountCents, signed: income)
-            .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
+        HStack(spacing: 6) {
+            if let reimbursement {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(markLabel(reimbursement))
+            }
+            AmountText(amountCents, signed: income)
+                .foregroundStyle(amountStyle)
+        }
+    }
+
+    private var amountStyle: AnyShapeStyle {
+        if !income {
+            AnyShapeStyle(.primary)
+        } else if reimbursement != nil {
+            AnyShapeStyle(.secondary)
+        } else {
+            AnyShapeStyle(ExpensesTheme.income(for: scheme))
+        }
+    }
+
+    private func markLabel(_ reimbursement: Reimbursement) -> String {
+        switch reimbursement {
+        case .reimbursed(let chargedCents): "Reimbursed, \(model.amountString(chargedCents)) charged"
+        case .reimbursement: "Reimbursement"
+        }
     }
 }
 

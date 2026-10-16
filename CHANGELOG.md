@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin → Assistant usage is now Admin → AI usage.
 - The server keeps every AI run's usage. It still clears the stored prompts and outputs of runs older than 30 days, or beyond each user's latest 1,000, but keeps their time, feature, backend, model, tokens, and cost. Before, it deleted those runs, so All time covered only the last 30 days.
 - Runs from before this version show their backend's kind, such as `openrouter`, instead of its name. Assistant turns from before this version count in the totals but are not listed under a chat.
+- Transaction lists show what a reimbursed expense cost you after reimbursements, matching the day totals. On the web desktop layout the charged amount sits struck through before it, and the printed ledger does the same. On mobile web and iOS the row shows the net with the reimbursement mark, so iOS rows now show reimbursements at all. Reimbursement income is muted and carries the same mark, since its expense already counts it. This applies to Transactions, tags, categories, and the dashboard's Recent list.
 
 ### Removed
 - `GET /api/ai/usage/summary`. Use `GET /api/admin/ai/usage`.

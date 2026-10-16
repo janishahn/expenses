@@ -17,7 +17,7 @@ import { DayBand } from "../components/ui/DayBand"
 import { EmptyState } from "../components/ui/EmptyState"
 import { EntryChips, EntryDialog, EntryName } from "../components/ui/EntryDialog"
 import { useIsDesktop } from "../components/ui/layout-state"
-import { AmountCell, AmountPrefix, Cell, List, Row, RowFlags, type Columns } from "../components/ui/LedgerRow"
+import { AmountCell, AmountPrefix, Cell, List, Row, RowFlags, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { Peek, PeekHeadline, PeekLayout, PeekSection, PeekSubline } from "../components/ui/Peek"
 import { PeriodControl } from "../components/ui/PeriodControl"
@@ -243,7 +243,7 @@ function TagPeek({
                 <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
                 <Cell>{item.title ?? "Untitled"}</Cell>
                 <AmountCell>
-                  <Amount cents={item.amount_cents} kind={item.type === "income" ? "income" : "expense"} />
+                  <TransactionAmount row={item} />
                 </AmountCell>
               </Row>
             ))}

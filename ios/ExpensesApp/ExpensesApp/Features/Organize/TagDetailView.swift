@@ -234,15 +234,7 @@ struct TagDetailView: View {
                     NavigationLink {
                         TransactionDetailView(transactionID: item.id)
                     } label: {
-                        LedgerRow(
-                            title: item.title ?? item.category?.name ?? "Untitled",
-                            detail: AppFormatters.bookingDay(item.date),
-                            categoryID: item.category?.id,
-                            iconKey: item.category?.icon,
-                            categoryName: item.category?.name,
-                            amountCents: item.amountCents,
-                            income: item.type == "income"
-                        )
+                        LedgerRow(transaction: item, category: item.category, detail: AppFormatters.bookingDay(item.date))
                     }
                     .navigationLinkIndicatorVisibility(.hidden)
                 }
