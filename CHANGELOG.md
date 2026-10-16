@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Admin → AI usage, on the web and iOS, shows every AI feature's usage: the Assistant, categorization suggestions, and rule suggestions. A chart shows cost or tokens by day, week, or month for each feature's model and backend. Open a model to see its usage alone, and open an Assistant chat to see the tokens and cost of each turn. Other users' chats show as "Chat by" their username, without their titles. Models without a published price, such as a self-hosted model, show tokens only.
+- `GET /api/admin/ai/usage` and `GET /api/admin/ai/usage/chats/{chat_id}` return this usage. They need admin access.
+
+### Changed
+- Admin → Assistant usage is now Admin → AI usage.
+- The server keeps every AI run's usage. It still clears the stored prompts and outputs of runs older than 30 days, or beyond each user's latest 1,000, but keeps their time, feature, backend, model, tokens, and cost. Before, it deleted those runs, so All time covered only the last 30 days.
+- Runs from before this version show their backend's kind, such as `openrouter`, instead of its name. Assistant turns from before this version count in the totals but are not listed under a chat.
+
+### Removed
+- `GET /api/ai/usage/summary`. Use `GET /api/admin/ai/usage`.
+
 ## [0.8.2] - 2026-10-16
 
 ### Fixed

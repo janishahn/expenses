@@ -49,7 +49,7 @@ export function useSettingsGroups(): SettingsGroup[] {
         { key: "health", label: "Health", icon: PulseIcon, to: "/admin" },
         { key: "maintenance", label: "Maintenance", icon: WrenchIcon, to: "/admin/maintenance" },
         { key: "ai", label: "AI", icon: CpuIcon, to: "/admin/ai" },
-        { key: "usage", label: "Assistant usage", icon: ChartBarIcon, to: "/admin/usage" },
+        { key: "usage", label: "AI usage", icon: ChartBarIcon, to: "/admin/usage" },
         { key: "logs", label: "Logs", icon: FileMagnifyingGlassIcon, to: "/admin/logs" },
         { key: "system", label: "System", icon: InfoIcon, to: "/admin/system" },
       ],

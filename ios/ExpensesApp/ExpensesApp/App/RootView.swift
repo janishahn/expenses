@@ -122,6 +122,7 @@ struct RootView: View {
             SettingsView()
         case .assistant:
             AssistantView()
+                .toolbar(.hidden, for: .tabBar)
         case .more:
             EmptyView()
         }
@@ -144,7 +145,6 @@ struct RootView: View {
                 destinationView(destination)
             }
         }
-        .toolbar(morePath.last?.hidesTabBar == true ? .hidden : .visible, for: .tabBar)
     }
 
     private var toolsDestinations: [AppDestination] {
@@ -287,10 +287,6 @@ private enum AppDestination: String, CaseIterable, Identifiable {
         case .assistant:
             "bubble.left.and.bubble.right"
         }
-    }
-
-    var hidesTabBar: Bool {
-        self == .assistant
     }
 }
 

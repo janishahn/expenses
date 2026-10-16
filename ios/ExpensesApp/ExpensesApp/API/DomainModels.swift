@@ -2689,8 +2689,9 @@ struct AdminRecurringCatchUpResponse: Codable, Equatable {
     }
 }
 
-/// The assistant's chats, tokens, and cost in a period.
-struct AssistantUsage: Decodable, Equatable {
+/// The server's AI usage in a period, split by feature and model, with Assistant chats.
+/// Costs are US dollars as decimal strings, summed over the runs a backend priced.
+struct AIUsage: Decodable, Equatable {
     enum Period: String, CaseIterable, Identifiable {
         case week, month, all
 
@@ -2708,32 +2709,185 @@ struct AssistantUsage: Decodable, Equatable {
         }
     }
 
-    let totalChats: Int
-    let completedChats: Int
-    let failedChats: Int
-    let costedChats: Int
-    let totalTokens: Int
-    let cachedInputTokens: Int
-    let reasoningTokens: Int
-    let totalCostDecimal: String
-    let averageCostDecimal: String
-    let costUnit: String?
-    let averageTotalTokens: Int
-    let p95DurationMS: Int?
+    enum Bucket: String, Decodable {
+        case day, week, month
+    }
+
+    struct Totals: Decodable, Equatable {
+        let runs: Int
+        let failedRuns: Int
+        let pricedRuns: Int
+        let cachedInputTokens: Int
+        let totalTokens: Int
+        let costUSD: String
+        let chats: Int
+        let turns: Int
+        let p95DurationMS: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case runs
+            case failedRuns = "failed_runs"
+            case pricedRuns = "priced_runs"
+            case cachedInputTokens = "cached_input_tokens"
+            case totalTokens = "total_tokens"
+            case costUSD = "cost_usd"
+            case chats
+            case turns
+            case p95DurationMS = "p95_duration_ms"
+        }
+    }
+
+    /// One model serving one feature.
+    struct Slice: Decodable, Equatable, Hashable {
+        let feature: String
+        let backend: String?
+        let model: String
+        let runs: Int
+        let pricedRuns: Int
+        let totalTokens: Int
+        let costUSD: String
+        // One value per bucket, in the order of `buckets`.
+        let bucketTokens: [Int]
+        let bucketCostUSD: [String]
+
+        enum CodingKeys: String, CodingKey {
+            case feature
+            case backend
+            case model
+            case runs
+            case pricedRuns = "priced_runs"
+            case totalTokens = "total_tokens"
+            case costUSD = "cost_usd"
+            case bucketTokens = "bucket_tokens"
+            case bucketCostUSD = "bucket_cost_usd"
+        }
+
+        var scope: AIUsageScope {
+            AIUsageScope(feature: feature, backend: backend, model: model)
+        }
+    }
+
+    let bucket: Bucket
+    // The first day of each bucket, decoded as UTC midnight.
+    let buckets: [Date]
+    let totals: Totals
+    // Costliest first.
+    let slices: [Slice]
+    let chatCount: Int
+    // Costliest first, then most tokens.
+    let chats: [AIUsageChat]
 
     enum CodingKeys: String, CodingKey {
-        case totalChats = "total_chats"
-        case completedChats = "completed_chats"
-        case failedChats = "failed_chats"
-        case costedChats = "costed_chats"
+        case bucket
+        case buckets
+        case totals
+        case slices
+        case chatCount = "chat_count"
+        case chats
+    }
+
+    static func featureName(_ feature: String) -> String {
+        switch feature {
+        case "spending_chat":
+            "Assistant"
+        case "transaction_triage":
+            "Categorization suggestions"
+        case "rule_mining":
+            "Rule suggestions"
+        default:
+            feature
+        }
+    }
+}
+
+/// One model serving one feature, as the usage screen narrows to it.
+struct AIUsageScope: Hashable {
+    let feature: String
+    let backend: String?
+    let model: String
+}
+
+/// An Assistant chat's usage. Other users' chats show no title, and a deleted chat's
+/// usage stays.
+struct AIUsageChat: Decodable, Equatable, Identifiable {
+    enum Access: String, Decodable {
+        case own
+        case `private`
+        case deleted
+    }
+
+    let id: String
+    let access: Access
+    let title: String?
+    let username: String?
+    let startedAt: Date
+    let lastRunAt: Date
+    let turns: Int
+    let pricedRuns: Int
+    let totalTokens: Int
+    let costUSD: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case access
+        case title
+        case username
+        case startedAt = "started_at"
+        case lastRunAt = "last_run_at"
+        case turns
+        case pricedRuns = "priced_runs"
         case totalTokens = "total_tokens"
-        case cachedInputTokens = "cached_input_tokens"
-        case reasoningTokens = "reasoning_tokens"
-        case totalCostDecimal = "total_cost_decimal"
-        case averageCostDecimal = "average_cost_decimal"
-        case costUnit = "cost_unit"
-        case averageTotalTokens = "average_total_tokens"
-        case p95DurationMS = "p95_duration_ms"
+        case costUSD = "cost_usd"
+    }
+
+    var name: String {
+        switch access {
+        case .own:
+            title ?? "Deleted chat"
+        case .private:
+            "Chat by \(username ?? "a removed user")"
+        case .deleted:
+            "Deleted chat"
+        }
+    }
+}
+
+/// An Assistant chat's usage, turn by turn.
+struct AIUsageChatDetail: Decodable, Equatable {
+    struct Run: Decodable, Equatable {
+        enum Status: String, Decodable {
+            case running, completed, failed, stopped
+        }
+
+        let createdAt: Date
+        let status: Status
+        let backend: String?
+        let model: String
+        let totalTokens: Int
+        let toolCalls: Int
+        let costUSD: String?
+
+        enum CodingKeys: String, CodingKey {
+            case createdAt = "created_at"
+            case status
+            case backend
+            case model
+            case totalTokens = "total_tokens"
+            case toolCalls = "tool_calls"
+            case costUSD = "cost_usd"
+        }
+    }
+
+    let chat: AIUsageChat
+    let runs: [Run]
+
+    enum CodingKeys: String, CodingKey {
+        case runs
+    }
+
+    init(from decoder: Decoder) throws {
+        chat = try AIUsageChat(from: decoder)
+        runs = try decoder.container(keyedBy: CodingKeys.self).decode([Run].self, forKey: .runs)
     }
 }
 

@@ -781,8 +781,23 @@ struct ExpensesAPIClient {
         try await request(path: "/api/admin/purge-deleted/preview?days=\(days)", bearerToken: token)
     }
 
-    func assistantUsage(period: AssistantUsage.Period, token: String) async throws -> AssistantUsage {
-        try await request(path: "/api/ai/usage/summary?feature=spending_chat&period=\(period.rawValue)", bearerToken: token)
+    func aiUsage(period: AIUsage.Period, scope: AIUsageScope?, chats: Int, token: String) async throws -> AIUsage {
+        var components = URLComponents()
+        components.path = "/api/admin/ai/usage"
+        var items = [URLQueryItem(name: "period", value: period.rawValue), URLQueryItem(name: "chats", value: String(chats))]
+        if let scope {
+            items.append(URLQueryItem(name: "feature", value: scope.feature))
+            items.append(URLQueryItem(name: "model", value: scope.model))
+            if let backend = scope.backend {
+                items.append(URLQueryItem(name: "backend", value: backend))
+            }
+        }
+        components.queryItems = items
+        return try await request(path: components.string ?? "/api/admin/ai/usage", bearerToken: token)
+    }
+
+    func aiUsageChat(id: String, token: String) async throws -> AIUsageChatDetail {
+        try await request(path: "/api/admin/ai/usage/chats/\(id)", bearerToken: token)
     }
 
     func rebuildRollups(token: String) async throws -> AdminRebuildRollupsResponse {

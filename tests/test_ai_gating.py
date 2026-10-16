@@ -123,7 +123,8 @@ def test_admin_settings_require_a_backend_and_model_to_enable(
 
 def test_admin_ai_settings_require_elevation(api_client: TestClient) -> None:
     assert api_client.get("/api/admin/ai/settings").status_code == 403
-    assert api_client.get("/api/ai/usage/summary").status_code == 403
+    assert api_client.get("/api/admin/ai/usage").status_code == 403
+    assert api_client.get("/api/admin/ai/usage/chats/abc").status_code == 403
 
 
 @pytest.mark.parametrize("path", FEATURE_GET_ENDPOINTS)

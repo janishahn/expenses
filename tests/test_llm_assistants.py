@@ -647,10 +647,10 @@ async def test_rule_mining_refreshes_duplicate_pending_suggestion() -> None:
         assert len(service.pending_rule_suggestions()) == 1
 
 
-def test_llm_job_rotation_keeps_recent_trace_rows() -> None:
+def test_trace_clearing_keeps_recent_payloads_and_every_runs_usage() -> None:
     with make_session() as session:
         now = datetime(2026, 5, 25, 12, 0)
-        for index in range(12):
+        for index in range(6):
             session.add(
                 LLMJob(
                     user_id=1,
@@ -659,56 +659,31 @@ def test_llm_job_rotation_keeps_recent_trace_rows() -> None:
                     prompt_version="test",
                     model="qwen",
                     input_hash=f"hash-{index}",
-                    created_at=now - timedelta(days=index),
-                    finished_at=now - timedelta(days=index),
+                    input_json='{"title": "Corner bakery"}',
+                    output_json='{"category_id": 1}',
+                    usage_total_tokens=100,
+                    # One run past the age limit, two beyond the newest three.
+                    created_at=now - timedelta(days=45 if index == 5 else index),
                 )
             )
         session.commit()
 
-        deleted = LLMAssistantService(session, user_id=1).prune_trace_rows(
-            now=now, keep_recent=5, max_age_days=365
-        )
+        service = LLMAssistantService(session, user_id=1)
+        cleared = service.clear_old_traces(now=now, keep_recent=3, max_age_days=30)
+        again = service.clear_old_traces(now=now, keep_recent=3, max_age_days=30)
 
-        remaining = session.scalars(
-            select(LLMJob).order_by(LLMJob.created_at.desc())
+        rows = session.execute(
+            select(
+                LLMJob.input_hash, LLMJob.input_json, LLMJob.usage_total_tokens
+            ).order_by(LLMJob.created_at.desc())
         ).all()
-        assert deleted == 7
-        assert len(remaining) == 5
-        assert remaining[0].input_hash == "hash-0"
-
-
-def test_llm_job_rotation_removes_rows_past_max_age() -> None:
-    with make_session() as session:
-        now = datetime(2026, 5, 25, 12, 0)
-        for index in range(3):
-            session.add(
-                LLMJob(
-                    user_id=1,
-                    feature="transaction_triage",
-                    status="completed",
-                    prompt_version="test",
-                    model="qwen",
-                    input_hash=f"recent-{index}",
-                    created_at=now - timedelta(days=index),
-                )
-            )
-        session.add(
-            LLMJob(
-                user_id=1,
-                feature="transaction_triage",
-                status="completed",
-                prompt_version="test",
-                model="qwen",
-                input_hash="old",
-                created_at=now - timedelta(days=45),
-            )
-        )
-        session.commit()
-
-        deleted = LLMAssistantService(session, user_id=1).prune_trace_rows(
-            now=now, keep_recent=10, max_age_days=30
-        )
-
-        remaining_hashes = set(session.scalars(select(LLMJob.input_hash)).all())
-        assert deleted == 1
-        assert remaining_hashes == {"recent-0", "recent-1", "recent-2"}
+        assert (cleared, again) == (3, 0)
+        assert [row.input_json is not None for row in rows] == [
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+        ]
+        assert [row.usage_total_tokens for row in rows] == [100] * 6

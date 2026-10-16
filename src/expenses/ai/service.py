@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from time import perf_counter
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from expenses.ai.client import (
@@ -338,15 +338,16 @@ class LLMAssistantService:
         self.session.commit()
         return suggestion.id
 
-    def prune_trace_rows(
+    def clear_old_traces(
         self,
         *,
         now: datetime | None = None,
         keep_recent: int = DEFAULT_TRACE_KEEP_RECENT,
         max_age_days: int = DEFAULT_TRACE_MAX_AGE_DAYS,
     ) -> int:
+        """Clears the stored prompts and outputs of older runs; their usage stays."""
         reference = now or datetime.utcnow()
-        cutoff = reference - timedelta(days=max_age_days)
+        old = LLMJob.created_at < reference - timedelta(days=max_age_days)
         if keep_recent > 0:
             recent_ids = self.session.scalars(
                 select(LLMJob.id)
@@ -354,19 +355,20 @@ class LLMAssistantService:
                 .order_by(LLMJob.created_at.desc(), LLMJob.id.desc())
                 .limit(keep_recent)
             ).all()
-            stmt = delete(LLMJob).where(
+            old = or_(old, LLMJob.id.not_in(recent_ids))
+        result = self.session.execute(
+            update(LLMJob)
+            .where(
                 LLMJob.user_id == self.user_id,
+                old,
                 or_(
-                    LLMJob.created_at < cutoff,
-                    LLMJob.id.not_in(recent_ids),
+                    LLMJob.input_json.is_not(None),
+                    LLMJob.output_json.is_not(None),
+                    LLMJob.provider_usage_json.is_not(None),
                 ),
             )
-        else:
-            stmt = delete(LLMJob).where(
-                LLMJob.user_id == self.user_id,
-                LLMJob.created_at < cutoff,
-            )
-        result = self.session.execute(stmt)
+            .values(input_json=None, output_json=None, provider_usage_json=None)
+        )
         self.session.commit()
         return int(result.rowcount or 0)
 

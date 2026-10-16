@@ -24,6 +24,7 @@ class LLMUsageMetadata:
     tool_call_count: int | None = None
     cost_decimal: str | None = None
     cost_unit: str | None = None
+    backend: str | None = None
     llm_provider: str | None = None
     provider_name: str | None = None
     provider_model: str | None = None
@@ -34,6 +35,7 @@ def usage_metadata(
     *,
     usage: RunUsage,
     messages: list[ModelMessage],
+    backend: str,
     llm_provider: str,
     model: str,
 ) -> LLMUsageMetadata:
@@ -60,6 +62,7 @@ def usage_metadata(
         tool_call_count=usage.tool_calls or None,
         cost_decimal=format(usage.cost, "f") if usage.cost is not None else None,
         cost_unit="usd" if usage.cost is not None else None,
+        backend=backend,
         llm_provider=llm_provider,
         provider_name=response.provider_name if response else None,
         provider_model=(response.model_name if response else None) or model,
@@ -78,6 +81,7 @@ def apply_usage_metadata(job: LLMJob, metadata: LLMUsageMetadata) -> None:
     job.usage_tool_call_count = metadata.tool_call_count
     job.usage_cost_decimal = metadata.cost_decimal
     job.usage_cost_unit = metadata.cost_unit
+    job.backend = metadata.backend
     job.llm_provider = metadata.llm_provider
     job.provider_name = metadata.provider_name
     job.provider_model = metadata.provider_model

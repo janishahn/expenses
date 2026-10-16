@@ -97,7 +97,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | PDF report options, include/exclude tag scope, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Admin AI settings: per-feature switch, backend, model and thinking level, typed model IDs, persistence, and the Assistant leaving the navigation when off | `ai-settings.spec.ts` | `ai-settings.mobile.spec.ts` | Real backend; a stub OpenAI-compatible server lists models |
 | Settings sections with URLs: profile and sign out, ingest token, appearance, balance snapshots, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
-| Admin role/elevation, health, backup, logs, maintenance, and Assistant usage | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route |
+| Admin role/elevation, health, backup, logs, maintenance, and AI usage from a model to an Assistant chat's turns | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route; usage comes from a real Assistant turn on the stub backend |
 | Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |
 
 Backend tests remain authoritative for lower-level calculation, isolation, migration, import, export, reconciliation-matching, recurrence, LLM-provider, and security edge cases. Browser coverage proves that the supported user journey remains coherent through the rendered application.

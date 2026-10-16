@@ -103,16 +103,6 @@ def _enable_chat(monkeypatch: pytest.MonkeyPatch) -> None:
     sessions.close()
 
 
-def _elevate_admin(client: TestClient) -> None:
-    token = client.get("/api/csrf").json()["token"]
-    response = client.post(
-        "/api/auth/admin-elevation",
-        headers={"X-CSRF-Token": token},
-        json={"password": "pw-12345"},
-    )
-    assert response.status_code == 200
-
-
 def make_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     event.listen(engine, "connect", _enable_sqlite_pragmas)
@@ -516,6 +506,7 @@ def _test_model(stream_function) -> AssistantModel:
     return AssistantModel(
         model=FunctionModel(stream_function=stream_function, model_name="test-model"),
         settings={},
+        backend="test",
         llm_provider="test",
     )
 
@@ -613,11 +604,13 @@ def test_assistant_route_streams_and_saves_a_turn(
 
     with factory() as session:
         job = session.scalars(select(LLMJob)).one()
-    assert (job.feature, job.status, job.usage_tool_call_count) == (
-        "spending_chat",
-        "completed",
-        1,
-    )
+    assert (
+        job.feature,
+        job.status,
+        job.usage_tool_call_count,
+        job.backend,
+        job.chat_id,
+    ) == ("spending_chat", "completed", 1, "test", events[0]["chat_id"])
     assert "What did I spend most on?" not in (job.input_json or "")
 
 
@@ -1826,147 +1819,3 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
         )
         with pytest.raises(ActionConflict):
             apply_action(session, created)
-
-
-def _chat_job(**fields) -> LLMJob:
-    return LLMJob(
-        **{
-            "user_id": 1,
-            "feature": "spending_chat",
-            "status": "completed",
-            "prompt_version": "assistant",
-            "model": "openai/gpt-test",
-            "input_hash": "unused",
-            **fields,
-        }
-    )
-
-
-def test_ai_usage_summary_average_cost_keeps_division_precision(
-    api_client: TestClient, db_session: Session
-) -> None:
-    _elevate_admin(api_client)
-    db_session.add_all(
-        [
-            _chat_job(usage_cost_decimal="0.01", usage_cost_unit="openrouter_credits"),
-            _chat_job(usage_cost_decimal="0.02", usage_cost_unit="openrouter_credits"),
-        ]
-    )
-    db_session.commit()
-
-    payload = api_client.get(
-        "/api/ai/usage/summary", params={"feature": "spending_chat", "period": "all"}
-    ).json()
-    assert payload["total_cost_decimal"] == "0.03"
-    assert payload["average_cost_decimal"] == "0.015"
-
-
-def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
-    api_client: TestClient, db_session: Session
-) -> None:
-    _elevate_admin(api_client)
-    # The unitless costed job is inserted first, so an unordered scan sees it
-    # before the job that carries a real unit.
-    db_session.add_all(
-        [
-            _chat_job(usage_cost_decimal="0.5", usage_cost_unit=None),
-            _chat_job(usage_cost_decimal="0.3", usage_cost_unit="openrouter_credits"),
-        ]
-    )
-    db_session.commit()
-
-    payload = api_client.get(
-        "/api/ai/usage/summary", params={"feature": "spending_chat", "period": "all"}
-    ).json()
-    assert payload["costed_chats"] == 2
-    assert payload["cost_unit"] == "mixed"
-
-
-def test_ai_usage_summary_returns_precise_spending_chat_accounting(
-    api_client: TestClient, db_session: Session
-) -> None:
-    _elevate_admin(api_client)
-    now = datetime.utcnow()
-    db_session.add_all(
-        [
-            _chat_job(
-                usage_input_tokens=100,
-                usage_output_tokens=40,
-                usage_total_tokens=140,
-                usage_cached_input_tokens=10,
-                usage_cache_write_tokens=5,
-                usage_reasoning_tokens=8,
-                usage_request_count=2,
-                usage_tool_call_count=3,
-                usage_cost_decimal="0.000000125",
-                usage_cost_unit="openrouter_credits",
-                input_json="x" * 10_000,
-                output_json="y" * 10_000,
-                provider_usage_json="z" * 10_000,
-                duration_ms=1200,
-                created_at=now - timedelta(days=2),
-            ),
-            _chat_job(
-                usage_input_tokens=50,
-                usage_output_tokens=20,
-                usage_total_tokens=70,
-                usage_cached_input_tokens=4,
-                usage_cache_write_tokens=0,
-                usage_reasoning_tokens=2,
-                usage_request_count=1,
-                usage_tool_call_count=1,
-                usage_cost_decimal="0.000000075",
-                usage_cost_unit="openrouter_credits",
-                duration_ms=900,
-                created_at=now - timedelta(days=1),
-            ),
-            _chat_job(
-                status="failed",
-                error="provider timeout",
-                duration_ms=500,
-                created_at=now - timedelta(hours=1),
-            ),
-            _chat_job(
-                status="stopped",
-                duration_ms=600,
-                created_at=now - timedelta(minutes=30),
-            ),
-        ]
-    )
-    db_session.commit()
-    select_statements: list[str] = []
-
-    def capture_select(conn, cursor, statement, *args) -> None:
-        if statement.lstrip().lower().startswith("select"):
-            select_statements.append(statement)
-
-    engine = db_session.get_bind()
-    event.listen(engine, "before_cursor_execute", capture_select)
-    try:
-        response = api_client.get(
-            "/api/ai/usage/summary",
-            params={"feature": "spending_chat", "period": "week"},
-        )
-    finally:
-        event.remove(engine, "before_cursor_execute", capture_select)
-
-    payload = response.json()
-    assert payload["total_chats"] == 4
-    assert payload["completed_chats"] == 2
-    assert payload["failed_chats"] == 1
-    assert payload["cancelled_chats"] == 1
-    assert payload["input_tokens"] == 150
-    assert payload["output_tokens"] == 60
-    assert payload["total_tokens"] == 210
-    assert payload["cached_input_tokens"] == 14
-    assert payload["cache_write_tokens"] == 5
-    assert payload["reasoning_tokens"] == 10
-    assert payload["total_cost_decimal"] == "0.000000200"
-    assert payload["average_cost_decimal"] == "0.000000100"
-    assert payload["cost_unit"] == "openrouter_credits"
-    assert payload["average_total_tokens"] == 105
-    assert payload["p95_duration_ms"] == 1200
-    selected_sql = "\n".join(select_statements).lower()
-    assert "input_json" not in selected_sql
-    assert "output_json" not in selected_sql
-    assert "provider_usage_json" not in selected_sql

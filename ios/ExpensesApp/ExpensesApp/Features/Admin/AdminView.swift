@@ -13,7 +13,7 @@ struct AdminView: View {
                     link("Health", systemImage: "waveform.path.ecg") { AdminHealthView() }
                     link("Maintenance", systemImage: "wrench.and.screwdriver") { AdminMaintenanceView() }
                     link("AI", systemImage: "cpu") { AdminAIView() }
-                    link("Assistant Usage", systemImage: "chart.bar") { AssistantUsageView() }
+                    link("AI Usage", systemImage: "chart.bar") { AIUsageView() }
                     link("Logs", systemImage: "doc.text.magnifyingglass") { AdminLogsView() }
                     link("System", systemImage: "info.circle") { AdminSystemView() }
                 }
