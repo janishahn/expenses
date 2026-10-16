@@ -17,6 +17,7 @@ import {
 } from "../app/api"
 import type { AssistantChat, AssistantChatSummary, AssistantItem, AssistantStreamEvent, AssistantTurnStatus } from "../app/api-types"
 import { copyText } from "../app/clipboard"
+import { invalidateTransactionData } from "../app/transactions"
 import { maskTextAmounts, usePrivacy } from "../app/privacy"
 import { Button, IconButton } from "../components/ui/Button"
 import {
@@ -337,6 +338,8 @@ function Conversation({
       abortRef.current = null
       setBusy(false)
       void queryClient.invalidateQueries({ queryKey: CHATS_KEY })
+      // An approved change touched the ledger, so the views showing it refetch.
+      if (local.items.some((item) => item.kind === "approval" && item.state === "applied")) invalidateTransactionData(queryClient)
       let status: AssistantTurnStatus = "failed"
       let error = failure ?? LOST_CONNECTION
       if (local.status !== "streaming") {

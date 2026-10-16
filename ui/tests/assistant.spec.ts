@@ -97,8 +97,13 @@ test.describe("Assistant", () => {
     await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
   })
 
-  test("applies an approved change, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
-    await page.goto("/assistant")
+  test("applies an approved change, refreshes the ledger, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
+    // The ledger is already loaded, so the applied change has to refresh it.
+    await page.goto("/transactions")
+    const ledgerFooter = page.getByText(/^\d+–\d+ of \d+$/)
+    await expect(ledgerFooter.or(page.getByText("No transactions yet"))).toBeVisible()
+    const totalBefore = (await ledgerFooter.count()) ? Number(/of (\d+)$/.exec(await ledgerFooter.innerText())![1]) : 0
+    await page.getByRole("link", { name: "Assistant", exact: true }).click()
     await sendQuestion(page, unique("Add lunch for 12,50"))
 
     // The proposal ends the turn with a card; nothing is saved yet.
@@ -115,6 +120,11 @@ test.describe("Assistant", () => {
     await expect(assistant).toContainText("Added Lunch.")
     // An answer that changed data can't run again.
     await expect(assistant.getByRole("button", { name: "Retry" })).toHaveCount(0)
+
+    await page.getByRole("link", { name: "Transactions", exact: true }).click()
+    await expect(ledgerFooter).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await page.goBack()
+    await expect(assistant).toContainText("Added Lunch.")
 
     // The linked transaction opens in a peek beside the chat, and its full view returns to the chat.
     await assistant.getByRole("link", { name: "Lunch" }).click()

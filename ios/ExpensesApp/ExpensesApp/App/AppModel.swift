@@ -893,8 +893,18 @@ final class AppModel {
             finishAssistantTurn(turnID, status: status)
             isAssistantStreaming = false
             assistantStreamTask = nil
-            // A stopped stream's task is cancelled, so the list reloads in its own task.
-            Task { await loadAssistantChats() }
+            // An approved change touched the ledger, so the views showing it reload.
+            let applied = assistantTurns.first { $0.id == turnID }?.items.contains { $0.state == .applied } == true
+            // A stopped stream's task is cancelled, so the reloads run in their own task.
+            Task {
+                await loadAssistantChats()
+                if applied, let token {
+                    await runRequest {
+                        try await reloadPrimaryData()
+                        try await reloadBudgetViews(token: token)
+                    }
+                }
+            }
         }
     }
 
