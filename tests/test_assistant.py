@@ -43,6 +43,7 @@ from expenses.db.models import (
     AssistantTurn,
     BudgetFrequency,
     LLMJob,
+    ReimbursementAllocation,
     Transaction,
     TransactionType,
     User,
@@ -1468,6 +1469,37 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         assert {created.status, edited.status, set_budgets.status} == {"undone"}
         with pytest.raises(InvalidProposal):
             propose_undo(reader, created.id)
+
+
+def test_assistant_undo_leaves_expenses_in_trash_as_they_are() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        reader = _reader(session)
+        allocated = _apply_proposal(
+            session,
+            propose_allocate(
+                reader,
+                reimbursement_id=ids["refund_id"],
+                expense_ids=[ids["hotel_id"], ids["train_id"]],
+                split="share",
+                share_percent=50,
+                amounts_cents=None,
+            ),
+        )
+        TransactionService(session, user_id=1).soft_delete(ids["train_id"])
+
+        undo = propose_undo(reader, allocated.id)
+        assert [row.title for row in undo.card.rows] == ["Hotel"]
+        assert undo.card.meta == "Skips 1 expense in Trash"
+        _apply_proposal(session, undo)
+
+        # The expense in Trash keeps its allocation.
+        assert session.scalars(
+            select(ReimbursementAllocation.expense_transaction_id).where(
+                ReimbursementAllocation.reimbursement_transaction_id == ids["refund_id"]
+            )
+        ).all() == [ids["train_id"]]
 
 
 def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:

@@ -894,7 +894,12 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             expenses = _transactions(
                 session, user_id, [row.expense_id for row in inverse.allocations]
             )
-            plan = inverse
+            shown = [row for row in inverse.allocations if row.expense_id in expenses]
+            if not shown:
+                raise InvalidProposal("nothing_to_undo", "Those expenses are in Trash.")
+            if skipped := len(inverse.allocations) - len(shown):
+                meta = f"Skips {_plural(skipped, 'expense')} in Trash"
+            plan = inverse.model_copy(update={"allocations": shown})
             rows = [
                 ApprovalRow(
                     title=expenses[row.expense_id].title,
@@ -906,8 +911,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
                     amount_cents=row.previous_cents,
                     of_cents=expenses[row.expense_id].amount_cents,
                 )
-                for row in inverse.allocations
-                if row.expense_id in expenses
+                for row in shown
             ]
         case RestoreBudgetsPlan():
             if any(
