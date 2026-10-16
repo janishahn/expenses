@@ -39,17 +39,17 @@ class SchedulerManager:
     def _run_llm_trace_prune(self) -> None:
         with session_scope() as session:
             user_ids = session.scalars(select(LLMJob.user_id).distinct()).all()
-            deleted = 0
+            cleared = 0
             for user_id in user_ids:
-                deleted += LLMAssistantService(
+                cleared += LLMAssistantService(
                     session, user_id=user_id
-                ).prune_trace_rows()
-            if deleted:
+                ).clear_old_traces()
+            if cleared:
                 log_event(
                     logger,
                     logging.INFO,
-                    "llm_trace_prune_completed",
-                    deleted_rows=deleted,
+                    "llm_trace_clear_completed",
+                    cleared_rows=cleared,
                 )
 
     def _run_assistant_chat_prune(self) -> None:

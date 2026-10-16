@@ -384,7 +384,7 @@ pages below fix the structure; the current pages show the content.
   band.
 - **Settings and Admin** share one shell: a section list (Account, Appearance;
   Data: Categorization, Assistant, Balance snapshots, Import and export;
-  Server: Health, Maintenance, AI, Assistant usage, Logs, System) and one section at a
+  Server: Health, Maintenance, AI, AI usage, Logs, System) and one section at a
   time. On desktop the section list replaces the sidebar, headed by "Back to
   app"; on mobile it is a horizontal chip row. Settings save on change; there
   is no Save button. Server sections need the admin password, shown as a

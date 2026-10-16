@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from decimal import Decimal
 from typing import Iterator
 
 from sqlalchemy import create_engine, event
@@ -28,6 +29,7 @@ def _enable_sqlite_pragmas(dbapi_conn, _record):
         _fuzzy_text_match,
         deterministic=True,
     )
+    dbapi_conn.create_aggregate("expenses_decimal_sum", 1, _DecimalSum)
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL;")
     cursor.execute("PRAGMA foreign_keys=ON;")
@@ -37,6 +39,20 @@ def _enable_sqlite_pragmas(dbapi_conn, _record):
     cursor.execute("PRAGMA mmap_size=268435456;")
     cursor.execute("PRAGMA temp_store=MEMORY;")
     cursor.close()
+
+
+class _DecimalSum:
+    """Adds decimal text, such as AI costs, exactly where SQLite's sum would round."""
+
+    def __init__(self) -> None:
+        self.total = Decimal(0)
+
+    def step(self, value: str | None) -> None:
+        if value is not None:
+            self.total += Decimal(value)
+
+    def finalize(self) -> str:
+        return format(self.total, "f")
 
 
 def _fuzzy_text_match(query: str, title: str | None, description: str | None) -> int:

@@ -47,6 +47,7 @@ def get_assistant_model(db: Session = Depends(get_db)) -> AssistantModel:
     return AssistantModel(
         model=build_model(resolved.backend, resolved.model),
         settings=model_settings(resolved, cache=True),
+        backend=resolved.backend.name,
         llm_provider=resolved.backend.kind,
     )
 

@@ -203,6 +203,8 @@ class AssistantSettingsOut(BaseModel):
 class AssistantModel:
     model: Model
     settings: ModelSettings
+    # The configured backend's name and kind.
+    backend: str
     llm_provider: str
 
 
@@ -1065,6 +1067,7 @@ def _save_turn(
         status=status,
         prompt_version="assistant",
         model=model_name[:80],
+        chat_id=request.chat_id,
         input_hash=hashlib.sha256(request.user_text.encode("utf-8")).hexdigest(),
         input_json=chat_input_trace(request.user_text, history_size),
         output_json=chat_output_trace(answer, len(messages)),
@@ -1079,6 +1082,7 @@ def _save_turn(
         usage_metadata(
             usage=usage,
             messages=messages,
+            backend=model.backend,
             llm_provider=model.llm_provider,
             model=model_name,
         ),
