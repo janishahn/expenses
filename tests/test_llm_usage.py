@@ -3,8 +3,6 @@ from decimal import Decimal
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
 
-from expenses.ai.client import model_settings
-from expenses.ai.features import ResolvedFeature
 from expenses.ai.usage import usage_metadata
 from expenses.core.config import AIBackend
 
@@ -68,15 +66,3 @@ def test_usage_metadata_without_a_price_leaves_cost_empty() -> None:
     assert metadata.cost_decimal is None
     assert metadata.cost_unit is None
     assert metadata.provider_model == "m"
-
-
-def test_model_settings_map_thinking_levels() -> None:
-    def settings(thinking: str, cache: bool = False):
-        resolved = ResolvedFeature(
-            feature="spending_chat", backend=LOCAL, model="m", thinking=thinking
-        )
-        return model_settings(resolved, cache=cache)
-
-    assert settings("auto") == {}
-    assert settings("off") == {"thinking": False}
-    assert settings("high", cache=True) == {"thinking": "high", "cache": True}

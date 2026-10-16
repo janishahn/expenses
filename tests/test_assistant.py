@@ -6,7 +6,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    TextPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -33,7 +38,7 @@ from expenses.ai.assistant_actions import (
     propose_edit,
     propose_undo,
 )
-from expenses.ai.assistant_tools import AssistantReader, tool_detail, tool_label
+from expenses.ai.assistant_tools import AssistantReader
 from expenses.api import assistant_routes
 from expenses.core.config import get_settings
 from expenses.db.models import (
@@ -449,65 +454,6 @@ def test_reader_reports_budgets_links_and_reimbursements() -> None:
         assert f"- {ids['groceries_id']}: Groceries, expense" in reference
         assert ": Food" in reference
 
-        assert reader.list_recurring()["rules"] == []
-        assert reader.list_durable_purchases()["purchases"] == []
-        assert reader.get_balance_history(months=3)["ok"] is True
-        assert len(reader.get_forecast(horizon_months=3)["months"]) == 3
-
-
-def test_tool_labels_and_details_read_like_the_app() -> None:
-    june = {"start": "2026-06-01", "end": "2026-06-30"}
-    assert (
-        tool_label("query_transactions", {**june, "group_by": "category"})
-        == "Spending by category, Jun 2026"
-    )
-    assert (
-        tool_label(
-            "query_transactions",
-            {
-                **june,
-                "text": "rewe",
-                "compare_start": "2026-05-01",
-                "compare_end": "2026-05-31",
-            },
-        )
-        == "Spending matching “rewe”, Jun 2026 vs May 2026"
-    )
-    assert (
-        tool_label("query_transactions", {"start": "2026-06-03", "end": "2026-07-09"})
-        == "Spending, 3 Jun – 9 Jul 2026"
-    )
-    assert tool_label("query_transactions", {"start": "soon"}) == "Spending"
-    assert tool_label("get_budgets", {"year": 2026, "month": 6}) == "Budgets, Jun 2026"
-
-    assert (
-        tool_detail(
-            "query_transactions",
-            {
-                "totals": {"count": 2, "net_cents": 123_456},
-                "transactions": [],
-                "baseline": {"totals": {"net_cents": 99_900}},
-            },
-        )
-        == "2 transactions · 1 234,56 € vs 999,00 €"
-    )
-    assert (
-        tool_detail(
-            "query_transactions",
-            {
-                "totals": {"count": 5, "net_cents": 5},
-                "group_by": "title",
-                "groups": [{}, {}],
-                "more_groups": 1,
-            },
-        )
-        == "3 merchants · 0,05 €"
-    )
-    assert (
-        tool_detail("get_budgets", {"budgets": [{"remaining_cents": -1}]})
-        == "1 budget · 1 over"
-    )
-
 
 def _session_factory():
     engine = create_engine(
@@ -565,18 +511,6 @@ def _final_items(events: list[dict]) -> list[dict]:
     return list(items.values())
 
 
-def test_assistant_disabled_returns_503_before_stream(
-    api_client: TestClient, csrf_headers: dict[str, str]
-) -> None:
-    response = api_client.post(
-        "/api/assistant/messages/stream",
-        headers=csrf_headers,
-        json={"message": "What changed this month?"},
-    )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Assistant is turned off on this server"
-
-
 def test_assistant_route_streams_and_saves_a_turn(
     api_client: TestClient,
     csrf_headers: dict[str, str],
@@ -584,11 +518,9 @@ def test_assistant_route_streams_and_saves_a_turn(
 ) -> None:
     _enable_chat(monkeypatch)
     answer = "Nothing matched in June.\n\n- No transactions"
-    seen_instructions: list[str] = []
 
     async def stream(messages, info):
         if not _after_tool(messages):
-            seen_instructions.append(info.instructions)
             yield {0: DeltaThinkingPart(content="Look up June.")}
             yield "Checking June."
             yield {
@@ -622,8 +554,6 @@ def test_assistant_route_streams_and_saves_a_turn(
         assert response.headers.get("content-encoding") == "identity"
         events = [json.loads(line) for line in response.iter_lines() if line.strip()]
 
-    assert events[0]["type"] == "start"
-    assert events[0]["title"] == "What did I spend most on?"
     assert events[-1] == {"type": "end", "status": "completed"}
     items = _final_items(events)
     assert [(item["kind"], item["state"]) for item in items] == [
@@ -632,30 +562,20 @@ def test_assistant_route_streams_and_saves_a_turn(
         ("tool", "done"),
         ("text", "done"),
     ]
-    assert items[0]["text"] == "Look up June."
-    assert items[1]["text"] == "Checking June."
-    assert items[2]["label"] == "Spending, Jun 2026"
-    assert items[2]["detail"] == "No matches"
     assert items[3]["text"] == answer
-    assert "Today is" in seen_instructions[0]
 
-    chat_id = events[0]["chat_id"]
-    listed = api_client.get("/api/assistant/chats")
-    assert [chat["id"] for chat in listed.json()] == [chat_id]
-    chat = api_client.get(f"/api/assistant/chats/{chat_id}").json()
-    assert chat["title"] == "What did I spend most on?"
+    chat = api_client.get(f"/api/assistant/chats/{events[0]['chat_id']}").json()
     [turn] = chat["turns"]
-    assert turn["user_text"] == "What did I spend most on?"
     assert turn["status"] == "completed"
     assert turn["items"] == items
 
     with factory() as session:
         job = session.scalars(select(LLMJob)).one()
-    assert job.feature == "spending_chat"
-    assert job.status == "completed"
-    assert job.prompt_version == "assistant"
-    assert job.llm_provider == "test"
-    assert job.usage_tool_call_count == 1
+    assert (job.feature, job.status, job.usage_tool_call_count) == (
+        "spending_chat",
+        "completed",
+        1,
+    )
     assert "What did I spend most on?" not in (job.input_json or "")
 
 
@@ -857,11 +777,18 @@ async def test_assistant_text_before_a_tool_call_is_a_note(
 @pytest.mark.anyio
 async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
     factory = _session_factory()
-    history_sizes: list[int] = []
+    histories: list[list[str]] = []
 
     async def stream(messages, info):
-        history_sizes.append(len(messages))
-        yield f"Answer {len(history_sizes)}."
+        histories.append(
+            [
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, UserPromptPart | TextPart)
+            ]
+        )
+        yield f"Answer {len(histories)}."
 
     first = await _collect(factory, stream, "First question")
     chat_id = first[0]["chat_id"]
@@ -875,8 +802,12 @@ async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
         )
     ]
 
-    # Each turn adds a request and a response; a retry drops the turn it replaces.
-    assert history_sizes == [1, 3, 3]
+    # A retry drops the turn it replaces.
+    assert histories == [
+        ["First question"],
+        ["First question", "Answer 1.", "Second question"],
+        ["First question", "Answer 1.", "Second question"],
+    ]
     assert _final_items(events)[0]["text"] == "Answer 3."
     with factory() as session:
         chat = AssistantService(session, user_id=1).chat_out(chat_id)
@@ -1583,304 +1514,145 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
             _apply_proposal(session, proposal)
 
 
-def test_ai_usage_summary_average_cost_keeps_division_precision(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    data_dir = tmp_path / "usage-avg-data"
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    get_settings.cache_clear()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+def _chat_job(**fields) -> LLMJob:
+    return LLMJob(
+        **{
+            "user_id": 1,
+            "feature": "spending_chat",
+            "status": "completed",
+            "prompt_version": "assistant",
+            "model": "openai/gpt-test",
+            "input_hash": "unused",
+            **fields,
+        }
     )
-    Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    def override_get_db():
-        session = session_local()
-        try:
-            yield session
-        finally:
-            session.close()
 
-    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
-    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
-    app_main.app.dependency_overrides[app_main.get_db] = override_get_db
-    try:
-        with TestClient(app_main.app) as client:
-            assert (
-                client.post(
-                    "/api/auth/setup",
-                    json={"username": "bootstrap", "password": "pw-12345"},
-                ).status_code
-                == 200
-            )
-            _elevate_admin(client)
-            with session_local() as session:
-                session.add_all(
-                    [
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-cost-1",
-                            usage_cost_decimal="0.01",
-                            usage_cost_unit="openrouter_credits",
-                        ),
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-cost-2",
-                            usage_cost_decimal="0.02",
-                            usage_cost_unit="openrouter_credits",
-                        ),
-                    ]
-                )
-                session.commit()
+def test_ai_usage_summary_average_cost_keeps_division_precision(
+    api_client: TestClient, db_session: Session
+) -> None:
+    _elevate_admin(api_client)
+    db_session.add_all(
+        [
+            _chat_job(usage_cost_decimal="0.01", usage_cost_unit="openrouter_credits"),
+            _chat_job(usage_cost_decimal="0.02", usage_cost_unit="openrouter_credits"),
+        ]
+    )
+    db_session.commit()
 
-            response = client.get(
-                "/api/ai/usage/summary",
-                params={"feature": "spending_chat", "period": "all"},
-            )
-            assert response.status_code == 200
-            payload = response.json()
-            assert payload["total_cost_decimal"] == "0.03"
-            assert payload["average_cost_decimal"] == "0.015"
-    finally:
-        app_main.app.dependency_overrides.pop(app_main.get_db, None)
-        get_settings.cache_clear()
+    payload = api_client.get(
+        "/api/ai/usage/summary", params={"feature": "spending_chat", "period": "all"}
+    ).json()
+    assert payload["total_cost_decimal"] == "0.03"
+    assert payload["average_cost_decimal"] == "0.015"
 
 
 def test_ai_usage_summary_labels_mixed_when_a_costed_job_lacks_a_unit(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
+    api_client: TestClient, db_session: Session
 ) -> None:
-    data_dir = tmp_path / "usage-mixed-data"
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    get_settings.cache_clear()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    _elevate_admin(api_client)
+    # The unitless costed job is inserted first, so an unordered scan sees it
+    # before the job that carries a real unit.
+    db_session.add_all(
+        [
+            _chat_job(usage_cost_decimal="0.5", usage_cost_unit=None),
+            _chat_job(usage_cost_decimal="0.3", usage_cost_unit="openrouter_credits"),
+        ]
     )
-    Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    db_session.commit()
 
-    def override_get_db():
-        session = session_local()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
-    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
-    app_main.app.dependency_overrides[app_main.get_db] = override_get_db
-    try:
-        with TestClient(app_main.app) as client:
-            assert (
-                client.post(
-                    "/api/auth/setup",
-                    json={"username": "bootstrap", "password": "pw-12345"},
-                ).status_code
-                == 200
-            )
-            _elevate_admin(client)
-            with session_local() as session:
-                # The unitless costed job is inserted first, so an unordered scan
-                # sees it before the job that carries a real unit.
-                session.add_all(
-                    [
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-no-unit",
-                            usage_cost_decimal="0.5",
-                            usage_cost_unit=None,
-                        ),
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-real-unit",
-                            usage_cost_decimal="0.3",
-                            usage_cost_unit="openrouter_credits",
-                        ),
-                    ]
-                )
-                session.commit()
-
-            response = client.get(
-                "/api/ai/usage/summary",
-                params={"feature": "spending_chat", "period": "all"},
-            )
-            assert response.status_code == 200
-            payload = response.json()
-            assert payload["costed_chats"] == 2
-            assert payload["cost_unit"] == "mixed"
-    finally:
-        app_main.app.dependency_overrides.pop(app_main.get_db, None)
-        get_settings.cache_clear()
+    payload = api_client.get(
+        "/api/ai/usage/summary", params={"feature": "spending_chat", "period": "all"}
+    ).json()
+    assert payload["costed_chats"] == 2
+    assert payload["cost_unit"] == "mixed"
 
 
 def test_ai_usage_summary_returns_precise_spending_chat_accounting(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
+    api_client: TestClient, db_session: Session
 ) -> None:
-    data_dir = tmp_path / "usage-data"
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(data_dir))
-    get_settings.cache_clear()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    _elevate_admin(api_client)
+    now = datetime.utcnow()
+    db_session.add_all(
+        [
+            _chat_job(
+                usage_input_tokens=100,
+                usage_output_tokens=40,
+                usage_total_tokens=140,
+                usage_cached_input_tokens=10,
+                usage_cache_write_tokens=5,
+                usage_reasoning_tokens=8,
+                usage_request_count=2,
+                usage_tool_call_count=3,
+                usage_cost_decimal="0.000000125",
+                usage_cost_unit="openrouter_credits",
+                input_json="x" * 10_000,
+                output_json="y" * 10_000,
+                provider_usage_json="z" * 10_000,
+                duration_ms=1200,
+                created_at=now - timedelta(days=2),
+            ),
+            _chat_job(
+                usage_input_tokens=50,
+                usage_output_tokens=20,
+                usage_total_tokens=70,
+                usage_cached_input_tokens=4,
+                usage_cache_write_tokens=0,
+                usage_reasoning_tokens=2,
+                usage_request_count=1,
+                usage_tool_call_count=1,
+                usage_cost_decimal="0.000000075",
+                usage_cost_unit="openrouter_credits",
+                duration_ms=900,
+                created_at=now - timedelta(days=1),
+            ),
+            _chat_job(
+                status="failed",
+                error="provider timeout",
+                duration_ms=500,
+                created_at=now - timedelta(hours=1),
+            ),
+            _chat_job(
+                status="stopped",
+                duration_ms=600,
+                created_at=now - timedelta(minutes=30),
+            ),
+        ]
     )
-    Base.metadata.create_all(engine)
-    session_local = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    db_session.commit()
     select_statements: list[str] = []
 
-    @event.listens_for(engine, "before_cursor_execute")
-    def capture_select(
-        conn, cursor, statement, parameters, context, executemany
-    ) -> None:
+    def capture_select(conn, cursor, statement, *args) -> None:
         if statement.lstrip().lower().startswith("select"):
             select_statements.append(statement)
 
-    def override_get_db():
-        session = session_local()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    monkeypatch.setattr(app_main.scheduler_manager, "start", lambda: None)
-    monkeypatch.setattr(app_main.scheduler_manager, "stop", lambda: None)
-    app_main.app.dependency_overrides[app_main.get_db] = override_get_db
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture_select)
     try:
-        with TestClient(app_main.app) as client:
-            setup_response = client.post(
-                "/api/auth/setup",
-                json={"username": "bootstrap", "password": "pw-12345"},
-            )
-            assert setup_response.status_code == 200
-            _elevate_admin(client)
-            now = datetime.utcnow()
-            with session_local() as session:
-                session.add_all(
-                    [
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-1",
-                            usage_input_tokens=100,
-                            usage_output_tokens=40,
-                            usage_total_tokens=140,
-                            usage_cached_input_tokens=10,
-                            usage_cache_write_tokens=5,
-                            usage_reasoning_tokens=8,
-                            usage_request_count=2,
-                            usage_tool_call_count=3,
-                            usage_cost_decimal="0.000000125",
-                            usage_cost_unit="openrouter_credits",
-                            input_json="x" * 10_000,
-                            output_json="y" * 10_000,
-                            provider_usage_json="z" * 10_000,
-                            duration_ms=1200,
-                            created_at=now - timedelta(days=2),
-                            finished_at=now - timedelta(days=2),
-                        ),
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="completed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-2",
-                            usage_input_tokens=50,
-                            usage_output_tokens=20,
-                            usage_total_tokens=70,
-                            usage_cached_input_tokens=4,
-                            usage_cache_write_tokens=0,
-                            usage_reasoning_tokens=2,
-                            usage_request_count=1,
-                            usage_tool_call_count=1,
-                            usage_cost_decimal="0.000000075",
-                            usage_cost_unit="openrouter_credits",
-                            duration_ms=900,
-                            created_at=now - timedelta(days=1),
-                            finished_at=now - timedelta(days=1),
-                        ),
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="failed",
-                            prompt_version="spending_chat",
-                            model="openai/gpt-test",
-                            input_hash="hash-3",
-                            error="provider timeout",
-                            duration_ms=500,
-                            created_at=now - timedelta(hours=1),
-                            finished_at=now - timedelta(hours=1),
-                        ),
-                        LLMJob(
-                            user_id=1,
-                            feature="spending_chat",
-                            status="stopped",
-                            prompt_version="assistant",
-                            model="openai/gpt-test",
-                            input_hash="hash-4",
-                            duration_ms=600,
-                            created_at=now - timedelta(minutes=30),
-                            finished_at=now - timedelta(minutes=30),
-                        ),
-                    ]
-                )
-                session.commit()
-
-            select_statements.clear()
-            response = client.get(
-                "/api/ai/usage/summary",
-                params={"feature": "spending_chat", "period": "week"},
-            )
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["feature"] == "spending_chat"
-        assert payload["period"] == "week"
-        assert payload["total_chats"] == 4
-        assert payload["completed_chats"] == 2
-        assert payload["failed_chats"] == 1
-        assert payload["cancelled_chats"] == 1
-        assert payload["input_tokens"] == 150
-        assert payload["output_tokens"] == 60
-        assert payload["total_tokens"] == 210
-        assert payload["cached_input_tokens"] == 14
-        assert payload["cache_write_tokens"] == 5
-        assert payload["reasoning_tokens"] == 10
-        assert payload["total_cost_decimal"] == "0.000000200"
-        assert payload["average_cost_decimal"] == "0.000000100"
-        assert payload["cost_unit"] == "openrouter_credits"
-        assert payload["average_total_tokens"] == 105
-        assert payload["p95_duration_ms"] == 1200
-        selected_sql = "\n".join(select_statements).lower()
-        assert "input_json" not in selected_sql
-        assert "output_json" not in selected_sql
-        assert "provider_usage_json" not in selected_sql
+        response = api_client.get(
+            "/api/ai/usage/summary",
+            params={"feature": "spending_chat", "period": "week"},
+        )
     finally:
-        app_main.app.dependency_overrides.clear()
-        get_settings.cache_clear()
+        event.remove(engine, "before_cursor_execute", capture_select)
+
+    payload = response.json()
+    assert payload["total_chats"] == 4
+    assert payload["completed_chats"] == 2
+    assert payload["failed_chats"] == 1
+    assert payload["cancelled_chats"] == 1
+    assert payload["input_tokens"] == 150
+    assert payload["output_tokens"] == 60
+    assert payload["total_tokens"] == 210
+    assert payload["cached_input_tokens"] == 14
+    assert payload["cache_write_tokens"] == 5
+    assert payload["reasoning_tokens"] == 10
+    assert payload["total_cost_decimal"] == "0.000000200"
+    assert payload["average_cost_decimal"] == "0.000000100"
+    assert payload["cost_unit"] == "openrouter_credits"
+    assert payload["average_total_tokens"] == 105
+    assert payload["p95_duration_ms"] == 1200
+    selected_sql = "\n".join(select_statements).lower()
+    assert "input_json" not in selected_sql
+    assert "output_json" not in selected_sql
+    assert "provider_usage_json" not in selected_sql

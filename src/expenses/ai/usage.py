@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from expenses.db.models import LLMJob
 
@@ -28,8 +28,6 @@ class LLMUsageMetadata:
     provider_name: str | None = None
     provider_model: str | None = None
     provider_response_id: str | None = None
-    provider_request_id: str | None = None
-    provider_usage_json: dict[str, Any] | None = None
 
 
 def usage_metadata(
@@ -84,14 +82,6 @@ def apply_usage_metadata(job: LLMJob, metadata: LLMUsageMetadata) -> None:
     job.provider_name = metadata.provider_name
     job.provider_model = metadata.provider_model
     job.provider_response_id = metadata.provider_response_id
-    job.provider_request_id = metadata.provider_request_id
-    if metadata.provider_usage_json is not None:
-        job.provider_usage_json = json.dumps(
-            metadata.provider_usage_json,
-            ensure_ascii=True,
-            sort_keys=True,
-            default=str,
-        )
 
 
 def chat_input_trace(current_message: str, history_messages: int) -> str:
