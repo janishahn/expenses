@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
@@ -85,8 +86,12 @@ class PydanticAILLMRunner(LLMRunner):
 
         from expenses.ai.backends import build_model
 
+        # The first build imports the backend's SDK, which takes seconds on a Pi.
+        model = await asyncio.to_thread(
+            build_model, self.resolved.backend, self.resolved.model
+        )
         agent = Agent(
-            build_model(self.resolved.backend, self.resolved.model),
+            model,
             deps_type=dict[str, Any],
             output_type=PromptedOutput(output_type),
             instructions=_instructions_for_feature(feature),
