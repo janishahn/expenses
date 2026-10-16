@@ -10,11 +10,21 @@ The last user message picks the script:
 - "fail once": an authentication error the first time, then the default script.
 - "add lunch" or "add ten lunches": proposes new transactions, then links the first
   or accepts the dismissal.
+- "tag ...": finds the transactions matching the question's last word and proposes
+  tagging them "work".
+- "pay ...": finds the reimbursement and the expenses matching the last
+  word and proposes allocating half of each expense.
+- "budget ...": proposes a 300,00 € budget from this month for the category whose
+  name ends with the last word.
+- "undo ...": proposes undoing the latest change applied in the chat.
 - anything else: reasoning, a note, a ledger read, then a short answer.
+
+Write scenarios read ids only from tool results and the instructions, as a model would.
 """
 
 import json
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -59,6 +69,98 @@ def _text(text: str) -> list[dict]:
     return [*(_chunk({"content": word}) for word in _words(text)), _chunk({}, "stop")]
 
 
+def _call(messages: list[dict], name: str, arguments: dict) -> list[dict]:
+    tool_call = {
+        "index": 0,
+        "id": f"call_{len(messages)}",
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(arguments)},
+    }
+    return [
+        _chunk({"role": "assistant", "tool_calls": [tool_call]}),
+        _chunk({}, "tool_calls"),
+    ]
+
+
+def _matching(messages: list[dict], token: str, kind: str) -> list[dict]:
+    return _call(
+        messages,
+        "query_transactions",
+        {"start": "2000-01-01", "end": "2099-12-31", "kind": kind, "text": token},
+    )
+
+
+def _write_script(messages: list[dict], question: str) -> list[dict] | None:
+    """A write scenario's next step, or None when the question names none."""
+    words = question.lower().split()
+    # Tool results needed before the proposal.
+    steps = {"tag": 1, "pay": 2, "budget": 0, "undo": 0}.get(words[0] if words else "")
+    if steps is None:
+        return None
+    token = question.split()[-1]
+    since = max(i for i, m in enumerate(messages) if m["role"] == "user")
+    results = [
+        json.loads(m["content"]) for m in messages[since + 1 :] if m["role"] == "tool"
+    ]
+    if len(results) > steps:
+        if results[-1]["status"] != "applied":
+            return _text("Okay, nothing changed.")
+        return _text(f"Done: {results[-1]['summary']}.")
+    if words[0] == "tag":
+        if not results:
+            return _matching(messages, token, "expense")
+        ids = [row["id"] for row in results[0]["transactions"]]
+        return _call(
+            messages,
+            "edit_transactions",
+            {"transaction_ids": ids, "add_tags": ["work"]},
+        )
+    if words[0] == "pay":
+        if not results:
+            return _matching(messages, token, "reimbursement")
+        if len(results) == 1:
+            return _matching(messages, token, "expense")
+        return _call(
+            messages,
+            "allocate_reimbursement",
+            {
+                "reimbursement_id": results[0]["transactions"][0]["id"],
+                "expense_ids": [row["id"] for row in results[1]["transactions"]],
+                "split": "share",
+                "share_percent": 50,
+            },
+        )
+    instructions = "\n".join(
+        m["content"] for m in messages if m["role"] in ("system", "developer")
+    )
+    if words[0] == "budget":
+        category_id = re.search(
+            rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
+        )[1]
+        today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
+        return _call(
+            messages,
+            "set_budgets",
+            {
+                "budgets": [
+                    {
+                        "category_id": int(category_id),
+                        "month": today,
+                        "amount_cents": 30_000,
+                        "applies": "onward",
+                    }
+                ]
+            },
+        )
+    applied = [
+        result
+        for m in messages
+        if m["role"] == "tool"
+        and (result := json.loads(m["content"])).get("status") == "applied"
+    ]
+    return _call(messages, "undo_action", {"action_id": applied[-1]["action_id"]})
+
+
 def _script(messages: list[dict]) -> tuple[list[dict], float]:
     """The chunks to stream and the pause between them."""
     last = messages[-1]
@@ -78,37 +180,18 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
                 return _text("Okay, nothing changed."), 0.01
             created = result["created"][0]["id"]
             return _text(f"Added [Lunch](transaction:{created})."), 0.01
-        return [
-            _chunk(
-                {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "index": 0,
-                            "id": f"call_{len(messages)}",
-                            "type": "function",
-                            "function": {
-                                "name": "create_transactions",
-                                "arguments": json.dumps(
-                                    {
-                                        "transactions": [
-                                            {
-                                                "date": "2020-02-20",
-                                                "kind": "expense",
-                                                "amount_cents": 1250,
-                                                "title": "Lunch",
-                                            }
-                                        ]
-                                        * (10 if "ten" in question.lower() else 1)
-                                    }
-                                ),
-                            },
-                        }
-                    ],
-                }
-            ),
-            _chunk({}, "tool_calls"),
-        ], 0.01
+        lunch = {
+            "date": "2020-02-20",
+            "kind": "expense",
+            "amount_cents": 1250,
+            "title": "Lunch",
+        }
+        count = 10 if "ten" in question.lower() else 1
+        return _call(
+            messages, "create_transactions", {"transactions": [lunch] * count}
+        ), 0.01
+    if (chunks := _write_script(messages, question)) is not None:
+        return chunks, 0.01
     if last["role"] == "tool":
         return _text(ANSWER), 0.01
     return [

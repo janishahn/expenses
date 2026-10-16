@@ -1,30 +1,27 @@
-import { expect, test, type Locator, type Page } from "./fixtures"
+import { expect, test } from "./fixtures"
+import {
+  allocateJourney,
+  assistantTurns,
+  budgetAndUndoJourney,
+  chatIdFrom,
+  chatRetentionJourney,
+  composer,
+  editAndUndoJourney,
+  failureJourney,
+  followUpJourney,
+  offsetInThread,
+  privacyJourney,
+  sendQuestion,
+  stopJourney,
+  thread,
+  unique,
+  userTurns,
+} from "./assistant-journeys"
 
 // tests/e2e_ai_provider.py scripts the AI backend from the question: "slow", "long",
-// "fail once", "add lunch", or the default turn with reasoning, a note, one ledger read,
-// and this answer.
+// "fail once", "add lunch", the write scenarios, or the default turn with reasoning, a
+// note, one ledger read, and this answer.
 const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April."
-
-const thread = (page: Page) => page.getByRole("log", { name: "Conversation" })
-const assistantTurns = (page: Page) => page.getByRole("article", { name: "Assistant" })
-const userTurns = (page: Page) => page.getByRole("article", { name: "You" })
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message the Assistant" })
-
-// Chats from earlier tests in the worker stay listed, so each question is unique.
-const unique = (text: string) => `${text} ${Math.random().toString(36).slice(2, 8)}`
-
-async function sendQuestion(page: Page, text: string) {
-  const input = composer(page)
-  await input.click()
-  await input.fill(text)
-  await page.getByRole("button", { name: "Send" }).click()
-}
-
-// Distance from the top of the conversation log to the top of an article.
-const offsetInThread = (turn: Locator) =>
-  turn.evaluate((element) => element.getBoundingClientRect().top - element.closest('[role="log"]')!.getBoundingClientRect().top)
-
-const chatIdFrom = (page: Page) => new URL(page.url()).searchParams.get("chat")
 
 test.describe("Assistant", () => {
   test("streams a turn with its activity, keeps the chat, and reopens it", async ({ page }) => {
@@ -83,18 +80,7 @@ test.describe("Assistant", () => {
   })
 
   test("asks a follow-up in the same chat", async ({ page }) => {
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("How much did I spend in May?"))
-    await expect(assistantTurns(page).last()).toContainText("less than in April")
-    const chatId = chatIdFrom(page)
-    await sendQuestion(page, "And in April?")
-    await expect(assistantTurns(page)).toHaveCount(2)
-    await expect(assistantTurns(page).last()).toContainText("less than in April")
-    expect(chatIdFrom(page)).toBe(chatId)
-
-    // Only the last answer can be answered again.
-    await expect(assistantTurns(page).first().getByRole("button", { name: "Retry" })).toHaveCount(0)
-    await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
+    await followUpJourney(page)
   })
 
   test("applies an approved change, refreshes the ledger, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
@@ -148,57 +134,32 @@ test.describe("Assistant", () => {
     await second.getByRole("button", { name: "Dismiss" }).click()
     await expect(second).toContainText("Dismissed")
     await expect(assistantTurns(page).last()).toContainText("Okay, nothing changed.")
+    await page.getByRole("link", { name: "Transactions", exact: true }).click()
+    await expect(ledgerFooter).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+  })
+
+  test("tags transactions from a card and undoes it", async ({ page }) => {
+    await editAndUndoJourney(page)
+  })
+
+  test("allocates a reimbursement from a card after a dismissed card left it unchanged", async ({ page }) => {
+    await allocateJourney(page)
+  })
+
+  test("sets a budget from a card and undoes it", async ({ page }) => {
+    await budgetAndUndoJourney(page)
   })
 
   test("masks amounts in the conversation in privacy mode", async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.setItem("ew.privacy", "on"))
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("Did I spend more than 1 000 € in May?"))
-
-    await expect(assistantTurns(page).last()).toContainText("You spent •••• in May.")
-    await expect(userTurns(page).last()).toContainText("Did I spend more than •••• in May?")
-    await expect(thread(page)).not.toContainText("1 234")
+    await privacyJourney(page)
   })
 
   test("stops an answer mid-stream and keeps what was written", async ({ page }) => {
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("Give me a slow answer"))
-
-    // Words render as they stream, before the answer ends.
-    const assistant = assistantTurns(page).last()
-    await expect(assistant.locator("p")).toContainText("Word30")
-    await expect(assistant).not.toContainText("Word399")
-    await page.getByRole("button", { name: "Stop" }).click()
-
-    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
-    await expect(assistant).toContainText("Stopped")
-    await expect(assistant.getByRole("button", { name: "Retry" })).toBeVisible()
-
-    // The server saves the stopped turn once its run has wound down.
-    const chatId = chatIdFrom(page)
-    await expect
-      .poll(async () => {
-        const response = await page.request.get(`/api/assistant/chats/${chatId}`)
-        return response.ok() ? ((await response.json()) as { turns: { status: string }[] }).turns[0]?.status : null
-      })
-      .toBe("stopped")
-    await page.reload()
-    await expect(assistantTurns(page).last()).toContainText("Word30")
-    await expect(assistantTurns(page).last()).toContainText("Stopped")
+    await stopJourney(page)
   })
 
   test("shows a backend failure and answers again with Retry", async ({ page }) => {
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("Fail once, then tell me about May"))
-
-    const assistant = assistantTurns(page).last()
-    await expect(assistant).toContainText("The AI backend rejected the server's credentials.")
-    await expect(composer(page)).toBeEnabled()
-
-    await assistant.getByRole("button", { name: "Retry" }).click()
-    await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
-    await expect(page.getByText("The AI backend rejected the server's credentials.")).toHaveCount(0)
-    await expect(userTurns(page)).toHaveCount(1)
+    await failureJourney(page)
   })
 
   test("sends a follow-up again with Retry when the server never received it", async ({ page }) => {
@@ -294,19 +255,7 @@ test.describe("Assistant", () => {
     await expect(userTurns(page).first()).toBeInViewport()
   })
 
-  test("keeps chats for the days chosen in Settings", async ({ page }) => {
-    await page.goto("/settings")
-    await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Assistant", exact: true }).click()
-    await expect(page).toHaveURL("/settings/assistant")
-
-    const keep = page.getByRole("radiogroup", { name: "Keep chats" })
-    await expect(keep.getByRole("radio", { name: "14 days" })).toBeChecked()
-    const saved = page.waitForResponse((response) => response.url().endsWith("/api/assistant/settings") && response.request().method() === "PUT")
-    await keep.getByRole("radio", { name: "30 days" }).click()
-    await saved
-    await page.reload()
-    await expect(keep.getByRole("radio", { name: "30 days" })).toBeChecked()
-    await keep.getByRole("radio", { name: "14 days" }).click()
-    await expect(keep.getByRole("radio", { name: "14 days" })).toBeChecked()
+  test("saves how many days to keep chats in Settings", async ({ page }) => {
+    await chatRetentionJourney(page)
   })
 })

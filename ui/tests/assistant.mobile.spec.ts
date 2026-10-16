@@ -1,21 +1,21 @@
-import { expect, test, type Locator, type Page } from "./fixtures"
-
-// tests/e2e_ai_provider.py scripts the AI backend; see assistant.spec.ts.
-const thread = (page: Page) => page.getByRole("log", { name: "Conversation" })
-const assistantTurns = (page: Page) => page.getByRole("article", { name: "Assistant" })
-const userTurns = (page: Page) => page.getByRole("article", { name: "You" })
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message the Assistant" })
-const unique = (text: string) => `${text} ${Math.random().toString(36).slice(2, 8)}`
-
-async function sendQuestion(page: Page, text: string) {
-  const input = composer(page)
-  await input.click()
-  await input.fill(text)
-  await page.getByRole("button", { name: "Send" }).click()
-}
-
-const offsetInThread = (turn: Locator) =>
-  turn.evaluate((element) => element.getBoundingClientRect().top - element.closest('[role="log"]')!.getBoundingClientRect().top)
+import { expect, test } from "./fixtures"
+import {
+  allocateJourney,
+  assistantTurns,
+  budgetAndUndoJourney,
+  chatRetentionJourney,
+  composer,
+  editAndUndoJourney,
+  failureJourney,
+  followUpJourney,
+  offsetInThread,
+  privacyJourney,
+  sendQuestion,
+  stopJourney,
+  thread,
+  unique,
+  userTurns,
+} from "./assistant-journeys"
 
 test.describe("Assistant (mobile)", () => {
   test("docks the composer above the tab bar and hides the tab bar while typing", async ({ page }) => {
@@ -95,6 +95,38 @@ test.describe("Assistant (mobile)", () => {
     await peek.getByRole("button", { name: "Assistant" }).click()
     await expect(peek).toHaveCount(0)
     await expect(composer(page)).toBeVisible()
+  })
+
+  test("asks a follow-up in the same chat", async ({ page }) => {
+    await followUpJourney(page)
+  })
+
+  test("tags transactions from a card and undoes it", async ({ page }) => {
+    await editAndUndoJourney(page)
+  })
+
+  test("allocates a reimbursement from a card after a dismissed card left it unchanged", async ({ page }) => {
+    await allocateJourney(page)
+  })
+
+  test("sets a budget from a card and undoes it", async ({ page }) => {
+    await budgetAndUndoJourney(page)
+  })
+
+  test("masks amounts in the conversation in privacy mode", async ({ page }) => {
+    await privacyJourney(page)
+  })
+
+  test("stops an answer mid-stream and keeps what was written", async ({ page }) => {
+    await stopJourney(page)
+  })
+
+  test("shows a backend failure and answers again with Retry", async ({ page }) => {
+    await failureJourney(page)
+  })
+
+  test("saves how many days to keep chats in Settings", async ({ page }) => {
+    await chatRetentionJourney(page)
   })
 
   test("pins the sent question to the top and offers a return to the newest content", async ({ page }) => {
