@@ -468,6 +468,8 @@ class TurnRequest:
     replace_seq: int | None = None
     # Continues this turn after the user decided its approval cards.
     continue_seq: int | None = None
+    # Starts the chat. Any other turn whose chat is gone was deleted while it ran.
+    new_chat: bool = False
 
 
 class AssistantService:
@@ -612,6 +614,7 @@ class AssistantService:
                 chat_id=uuid4().hex,
                 title=_title(text),
                 user_text=text,
+                new_chat=True,
             )
         chat = self.chat(chat_id)
         self._dismiss_pending(chat.id)
@@ -952,7 +955,7 @@ def _save_turn(
     """Saves the turn, its chat, its proposed changes, and its usage in one commit."""
     now = datetime.utcnow()
     chat = session.get(AssistantChat, request.chat_id)
-    if chat is None:
+    if chat is None and request.new_chat:
         chat = AssistantChat(
             id=request.chat_id,
             user_id=request.user_id,
@@ -961,69 +964,71 @@ def _save_turn(
             updated_at=now,
         )
         session.add(chat)
-    chat.updated_at = now
-    if request.continue_seq is not None:
-        turn = _turn(session, chat.id, request.continue_seq)
-        turn.items_json = ITEMS.dump_json(items).decode()
-        turn.messages_json = ModelMessagesTypeAdapter.dump_json(
-            [*ModelMessagesTypeAdapter.validate_json(turn.messages_json), *messages]
-        ).decode()
-        turn.status = status
-    else:
-        if request.replace_seq is not None:
-            session.execute(
-                delete(AssistantTurn).where(
-                    AssistantTurn.chat_id == chat.id,
-                    AssistantTurn.seq >= request.replace_seq,
-                )
-            )
-            session.execute(
-                update(AssistantAction)
-                .where(
-                    AssistantAction.chat_id == chat.id,
-                    AssistantAction.status == "proposed",
-                )
-                .values(status="dismissed", decided_at=now)
-            )
-            seq = request.replace_seq
+    # A chat deleted while the turn ran stays deleted; only the usage is kept.
+    if chat is not None:
+        chat.updated_at = now
+        if request.continue_seq is not None:
+            turn = _turn(session, chat.id, request.continue_seq)
+            turn.items_json = ITEMS.dump_json(items).decode()
+            turn.messages_json = ModelMessagesTypeAdapter.dump_json(
+                [*ModelMessagesTypeAdapter.validate_json(turn.messages_json), *messages]
+            ).decode()
+            turn.status = status
         else:
-            last_seq = session.scalar(
-                select(func.max(AssistantTurn.seq)).where(
-                    AssistantTurn.chat_id == chat.id
+            if request.replace_seq is not None:
+                session.execute(
+                    delete(AssistantTurn).where(
+                        AssistantTurn.chat_id == chat.id,
+                        AssistantTurn.seq >= request.replace_seq,
+                    )
+                )
+                session.execute(
+                    update(AssistantAction)
+                    .where(
+                        AssistantAction.chat_id == chat.id,
+                        AssistantAction.status == "proposed",
+                    )
+                    .values(status="dismissed", decided_at=now)
+                )
+                seq = request.replace_seq
+            else:
+                last_seq = session.scalar(
+                    select(func.max(AssistantTurn.seq)).where(
+                        AssistantTurn.chat_id == chat.id
+                    )
+                )
+                seq = (last_seq or 0) + 1
+            session.add(
+                AssistantTurn(
+                    chat_id=chat.id,
+                    seq=seq,
+                    user_text=request.user_text,
+                    items_json=ITEMS.dump_json(items).decode(),
+                    messages_json=ModelMessagesTypeAdapter.dump_json(messages).decode(),
+                    status=status,
+                    created_at=now,
                 )
             )
-            seq = (last_seq or 0) + 1
-        session.add(
-            AssistantTurn(
-                chat_id=chat.id,
-                seq=seq,
-                user_text=request.user_text,
-                items_json=ITEMS.dump_json(items).decode(),
-                messages_json=ModelMessagesTypeAdapter.dump_json(messages).decode(),
-                status=status,
-                created_at=now,
+        pending = {
+            item.id
+            for item in items
+            if isinstance(item, ApprovalItem) and item.state == "pending"
+        }
+        for tool_call_id, (tool_name, proposal) in proposals.items():
+            if _approval_id(tool_call_id) not in pending:
+                continue
+            session.add(
+                AssistantAction(
+                    user_id=request.user_id,
+                    chat_id=chat.id,
+                    tool_call_id=tool_call_id,
+                    kind=tool_name,
+                    summary=proposal.summary[:200],
+                    plan_json=proposal.plan.model_dump_json(),
+                    status="proposed",
+                    created_at=now,
+                )
             )
-        )
-    pending = {
-        item.id
-        for item in items
-        if isinstance(item, ApprovalItem) and item.state == "pending"
-    }
-    for tool_call_id, (tool_name, proposal) in proposals.items():
-        if _approval_id(tool_call_id) not in pending:
-            continue
-        session.add(
-            AssistantAction(
-                user_id=request.user_id,
-                chat_id=chat.id,
-                tool_call_id=tool_call_id,
-                kind=tool_name,
-                summary=proposal.summary[:200],
-                plan_json=proposal.plan.model_dump_json(),
-                status="proposed",
-                created_at=now,
-            )
-        )
     model_name = model.model.model_name
     job = LLMJob(
         user_id=request.user_id,
@@ -1055,7 +1060,7 @@ def _save_turn(
         logger,
         logging.INFO if status != "failed" else logging.ERROR,
         "assistant_turn_finished",
-        chat_id=chat.id,
+        chat_id=request.chat_id,
         status=status,
         model=model_name,
         duration_ms=duration_ms,

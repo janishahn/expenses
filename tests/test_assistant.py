@@ -920,6 +920,41 @@ async def test_assistant_stop_saves_the_partial_turn() -> None:
 
 
 @pytest.mark.anyio
+async def test_assistant_keeps_a_chat_deleted_during_a_turn_deleted() -> None:
+    factory = _session_factory()
+    streaming = asyncio.Event()
+    release = asyncio.Event()
+
+    async def stream(messages, info):
+        # The follow-up waits so the chat can be deleted while it runs.
+        if len(messages) > 1:
+            streaming.set()
+            await release.wait()
+        yield "Answer."
+
+    first = await _collect(factory, stream, "First question")
+    chat_id = first[0]["chat_id"]
+    with factory() as session:
+        follow_up = AssistantService(session, user_id=1).new_turn(
+            chat_id=chat_id, text="And now?"
+        )
+    lines = stream_turn(follow_up, model=_test_model(stream), session_factory=factory)
+    assert json.loads(await anext(lines))["type"] == "start"
+    await streaming.wait()
+    with factory() as session:
+        AssistantService(session, user_id=1).delete_chat(chat_id)
+    release.set()
+    rest = [json.loads(line) async for line in lines]
+
+    assert rest[-1] == {"type": "end", "status": "completed"}
+    with factory() as session:
+        assert session.scalars(select(AssistantChat)).all() == []
+        assert session.scalars(select(AssistantTurn)).all() == []
+        # Usage still counts both answers.
+        assert len(session.scalars(select(LLMJob)).all()) == 2
+
+
+@pytest.mark.anyio
 async def test_assistant_failure_ends_with_a_message() -> None:
     factory = _session_factory()
 
