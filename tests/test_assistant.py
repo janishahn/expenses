@@ -1412,7 +1412,17 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
             for row in budgets.effective_budgets_for_month(2026, 6)
         }[ids["groceries_id"]] == 35_000
 
-        for action in (set_budgets, edited, created):
+        undo_budgets = propose_undo(reader, set_budgets.id)
+        assert [
+            (row.title, row.detail, row.amount_cents) for row in undo_budgets.card.rows
+        ] == [
+            ("Groceries", "From Jan 2026 · was Jan 2026 – Jun 2026", 35_000),
+            ("Groceries", "From Jul 2026 · removed", 40_000),
+            ("Groceries", "Jul 2026 only · restored", 38_000),
+            ("Overall budget", "Jul 2026 only · removed", 100_000),
+        ]
+        _apply_proposal(session, undo_budgets)
+        for action in (edited, created):
             _apply_proposal(session, propose_undo(reader, action.id))
 
         assert july_budgets() == before_budgets

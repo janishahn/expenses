@@ -742,6 +742,69 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
     )
 
 
+def _span(row: TemplateRow) -> str:
+    if row.ends_on is None:
+        return f"From {row.starts_on:%b %Y}"
+    return f"{row.starts_on:%b %Y} – {row.ends_on:%b %Y}"
+
+
+def _restore_rows(
+    categories: dict[int, Category], scope: BudgetRestore
+) -> list[ApprovalRow]:
+    """Each budget amount undoing puts back or removes, so the card shows them all."""
+    category = (
+        categories.get(scope.category_id) if scope.category_id is not None else None
+    )
+
+    def row(detail: str, amount_cents: int) -> ApprovalRow:
+        return ApprovalRow(
+            title=category.name if category else "Overall budget",
+            detail=detail,
+            category=_category_card(category),
+            amount_cents=amount_cents,
+        )
+
+    rows: list[ApprovalRow] = []
+    # A budget change never deletes a template, so each earlier one is still there.
+    current = {template.id: template for template in scope.current.templates}
+    for target in scope.target.templates:
+        was: list[str] = []
+        if current[target.id].ends_on != target.ends_on:
+            was.append(_span(current[target.id]))
+        if current[target.id].amount_cents != target.amount_cents:
+            was.append(_eur(current[target.id].amount_cents))
+        if was:
+            rows.append(
+                row(f"{_span(target)} · was {', '.join(was)}", target.amount_cents)
+            )
+    kept = {template.id for template in scope.target.templates}
+    rows += [
+        row(f"{_span(template)} · removed", template.amount_cents)
+        for template in scope.current.templates
+        if template.id not in kept
+    ]
+    # An undone override may come back under a new id, so months identify them.
+    now = {(o.year, o.month): o for o in scope.current.overrides}
+    before = {(o.year, o.month): o for o in scope.target.overrides}
+    for (year, month), target in before.items():
+        when = f"{date(year, month, 1):%b %Y} only"
+        if (year, month) not in now:
+            rows.append(row(f"{when} · restored", target.amount_cents))
+        elif now[year, month].amount_cents != target.amount_cents:
+            rows.append(
+                row(
+                    f"{when} · was {_eur(now[year, month].amount_cents)}",
+                    target.amount_cents,
+                )
+            )
+    rows += [
+        row(f"{date(year, month, 1):%b %Y} only · removed", override.amount_cents)
+        for (year, month), override in now.items()
+        if (year, month) not in before
+    ]
+    return rows
+
+
 def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
     session, user_id = reader.session, reader.user_id
     action = session.get(AssistantAction, action_id)
@@ -836,18 +899,9 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
                 )
             plan = inverse
             rows = [
-                ApprovalRow(
-                    title=categories[scope.category_id].name
-                    if scope.category_id is not None
-                    else "Overall budget",
-                    detail="Back to the earlier budget",
-                    category=_category_card(
-                        categories.get(scope.category_id)
-                        if scope.category_id is not None
-                        else None
-                    ),
-                )
+                row
                 for scope in inverse.scopes
+                for row in _restore_rows(categories, scope)
             ]
     return Proposal(
         summary=f"Undid: {action.summary}"[:200],

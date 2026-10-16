@@ -675,14 +675,14 @@ class AssistantReader:
                 Transaction.date.between(start, end),
             )
             .order_by(Transaction.date.desc(), Transaction.id.desc())
-            .limit(100)
+            .limit(101)
         )
         if only_open:
             stmt = stmt.where(
                 Transaction.amount_cents > func.coalesce(allocated.c.cents, 0)
             )
         rows = self.session.execute(stmt).all()
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "period": {"start": start.isoformat(), "end": end.isoformat()},
             "reimbursements": [
@@ -695,9 +695,12 @@ class AssistantReader:
                     "unallocated_cents": txn.amount_cents - int(allocated_cents),
                     "expense_count": int(count),
                 }
-                for txn, allocated_cents, count in rows
+                for txn, allocated_cents, count in rows[:100]
             ],
         }
+        if len(rows) > 100:
+            result["more"] = True
+        return result
 
     def list_durable_purchases(self) -> dict[str, Any]:
         purchases = DurablePurchaseService(self.session, self.user_id).list_computed(
@@ -829,6 +832,8 @@ def list_reimbursements(
     ctx: RunContext[AssistantReader], start: date, end: date, only_open: bool = False
 ) -> dict[str, Any]:
     """Reimbursements received in a period and how much of each is allocated.
+
+    Lists the newest 100. `more` means the period has others; narrow it to see them.
 
     Args:
         start: First day of the period.
@@ -978,6 +983,8 @@ def tool_detail(tool_name: str, content: dict[str, Any]) -> str | None:
             return f"Now {_eur(months[-1]['end_balance_cents'])}"
         case "list_reimbursements":
             rows = content["reimbursements"]
+            if content.get("more"):
+                return f"{len(rows)}+ reimbursements"
             open_cents = sum(row["unallocated_cents"] for row in rows)
             count = f"{len(rows)} reimbursement{'' if len(rows) == 1 else 's'}"
             return f"{count} · {_eur(open_cents)} open" if open_cents else count
