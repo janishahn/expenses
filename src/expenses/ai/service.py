@@ -390,6 +390,12 @@ class LLMAssistantService:
             status="running",
             prompt_version=prompt_version,
             model=getattr(runner, "model_name", "unknown"),
+            # Set before the call so a failed run keeps its backend.
+            backend=(
+                runner.resolved.backend.name
+                if isinstance(runner, PydanticAILLMRunner)
+                else None
+            ),
             input_hash=hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
             entity_type=entity_type,
             entity_id=entity_id,
