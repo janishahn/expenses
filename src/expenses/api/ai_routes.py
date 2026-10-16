@@ -54,7 +54,7 @@ def save_settings(data: features.AISettingsUpdate, db: Session = Depends(get_db)
     response_model=features.AIModelCatalogOut,
     dependencies=[Depends(elevated_admin)],
 )
-async def models(backend: str):
+def models(backend: str):
     import anthropic
     import openai
 
@@ -62,7 +62,7 @@ async def models(backend: str):
     if configured is None:
         raise HTTPException(404, detail="This backend is not configured.")
     try:
-        return {"models": await backends.list_models(configured)}
+        return {"models": backends.list_models(configured)}
     except (anthropic.APIError, openai.APIError) as exc:
         raise HTTPException(
             502, detail=f"The {backend} backend did not list its models."

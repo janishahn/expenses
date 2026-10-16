@@ -51,29 +51,29 @@ def build_model(backend: AIBackend, model_name: str) -> Model:
             )
 
 
-async def list_models(backend: AIBackend) -> list[dict[str, str]]:
+def list_models(backend: AIBackend) -> list[dict[str, str]]:
     if backend.kind == "anthropic":
-        from anthropic import AsyncAnthropic
+        from anthropic import Anthropic
 
-        async with AsyncAnthropic(
+        with Anthropic(
             api_key=backend.api_key, base_url=backend.base_url, timeout=20
         ) as client:
             return [
                 {"id": model.id, "name": model.display_name or model.id}
-                async for model in client.models.list(limit=100)
+                for model in client.models.list(limit=100)
             ]
 
-    from openai import AsyncOpenAI
+    from openai import OpenAI
 
     base_url = (
         "https://openrouter.ai/api/v1"
         if backend.kind == "openrouter"
         else backend.base_url
     )
-    async with AsyncOpenAI(
+    with OpenAI(
         base_url=base_url, api_key=backend.api_key or "api-key-not-set", timeout=20
     ) as client:
-        models = [model async for model in client.models.list()]
+        models = list(client.models.list())
     return sorted(
         ({"id": model.id, "name": model.id} for model in models),
         key=lambda model: model["id"],
