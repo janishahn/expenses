@@ -114,10 +114,12 @@ class CreatePlan(BaseModel):
 
 class TrashRow(BaseModel):
     transaction_id: int
-    # As the card showed it; approval refuses once any of these changed.
+    # As the card showed it; approval refuses once any of these changed. The
+    # category's type also fixes whether the card showed it as income.
     title: str
     date: date
     amount_cents: int
+    category_id: int
 
 
 class TrashPlan(BaseModel):
@@ -347,6 +349,7 @@ def _trash_row(txn: Transaction) -> TrashRow:
         title=txn.title,
         date=txn.date,
         amount_cents=txn.amount_cents,
+        category_id=txn.category_id,
     )
 
 
