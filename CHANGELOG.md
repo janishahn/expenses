@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-16
+
 ### Added
 - When a web page can't reach the server, for example while it restarts after an update, the page shows a receipt that keeps trying again and loads the page by itself once the server answers. Retry now tries at once. Errors the server returns still show the reason and Retry, and so does a proxy's 502 or 504 for one request while the server itself still answers.
 - Print the web Transactions ledger from ⋯ › Print… or with Cmd+P (Ctrl+P on Windows and Linux). The printout lists every transaction for the current period and filters, grouped by day, and closes with the period's Spent, Cash in, and Net. Hidden amounts stay hidden.
@@ -489,7 +491,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/janishahn/expenses/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/janishahn/expenses/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/janishahn/expenses/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/janishahn/expenses/compare/v0.6.0...v0.6.1
