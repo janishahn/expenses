@@ -353,6 +353,22 @@ def test_query_transactions_groups_by_tag_title_and_time() -> None:
             "2026-06-29",
         ]
         assert by_week["groups"][0]["net_cents"] == 950
+        # Time-ordered pages start from the newest week.
+        pages = [
+            reader.query_transactions(**june, group_by="week", limit=2, offset=offset)
+            for offset in (0, 2, 4)
+        ]
+        assert [[row["key"] for row in page["groups"]] for page in pages] == [
+            ["2026-06-22", "2026-06-29"],
+            ["2026-06-08", "2026-06-15"],
+            ["2026-06-01"],
+        ]
+        assert [page.get("next_offset") for page in pages] == [2, 4, None]
+        second_title = reader.query_transactions(
+            **june, group_by="title", limit=1, offset=1
+        )
+        assert [row["net_cents"] for row in second_title["groups"]] == [250]
+        assert "next_offset" not in second_title
 
         by_weekday = reader.query_transactions(**june, group_by="weekday")
         assert [row["label"] for row in by_weekday["groups"]][:2] == [

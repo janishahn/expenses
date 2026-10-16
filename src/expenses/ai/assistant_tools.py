@@ -469,11 +469,17 @@ class AssistantReader:
                 row["share_percent"] = round(
                     row["net_cents"] / totals["net_cents"] * 100, 1
                 )
-        shown = rows[-limit:] if chronological else rows[:limit]
+        if chronological:
+            # Pages run back from the newest period.
+            stop = max(0, len(rows) - offset)
+            shown = rows[max(0, stop - limit) : stop]
+        else:
+            shown = rows[offset : offset + limit]
         result["group_by"] = group_by
         result["groups"] = shown
-        if len(rows) > len(shown):
-            result["more_groups"] = len(rows) - len(shown)
+        result["group_count"] = len(rows)
+        if len(rows) > offset + limit:
+            result["next_offset"] = offset + limit
         return result
 
     def get_period_summary(self, *, start: date, end: date) -> dict[str, Any]:
@@ -770,7 +776,7 @@ def query_transactions(
         sort: Order of listed transactions. Grouped rows come largest first, or in
             time order for month, week, and weekday.
         limit: Transactions or groups to return, up to 100.
-        offset: Transactions to skip, for the next page.
+        offset: Transactions or groups to skip, from next_offset for the next page.
         compare_start: First day of a period to compare with.
         compare_end: Last day of the period to compare with. Category, tag, and
             title groups then include each group's amount in that period.
@@ -958,7 +964,7 @@ def tool_detail(tool_name: str, content: dict[str, Any]) -> str | None:
                 detail = "No matches"
             elif "groups" in content:
                 singular, plural = GROUP_NOUNS[content["group_by"]]
-                count = len(content["groups"]) + content.get("more_groups", 0)
+                count = content["group_count"]
                 detail = f"{count} {singular if count == 1 else plural} · {_eur(totals['net_cents'])}"
             else:
                 count = totals["count"]
