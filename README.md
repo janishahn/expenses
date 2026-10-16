@@ -176,7 +176,7 @@ Backend names use lowercase letters, digits, and underscores. Restart the server
 
 Then an admin turns on each feature in **Admin → AI** on the web or iOS: the Assistant, categorization suggestions, and rule suggestions. Each feature has its own backend, model, and thinking level. Model menus list the backend's models; choose **Enter model ID…** for a model that is not listed. **Model default** leaves the thinking level to the model. A feature whose backend is removed from the environment turns off until an admin chooses another backend.
 
-**Admin → AI usage** shows token use and estimated cost for all users, by feature, backend, and model, on the web and iOS. Open a model to see its usage alone, or an Assistant chat to see each turn. Other users' chats show without their titles. Costs are estimates in US dollars from published model prices; models without a published price, such as a self-hosted model, show tokens only. The server keeps each run's usage, and clears its stored prompts and outputs after 30 days or beyond each user's latest 1,000 runs.
+**Admin → AI usage** shows token use and estimated cost for all users, by feature, backend, and model, on the web and iOS. Open a model to see its usage alone, or an Assistant chat to see its latest 100 turns. Other users' chats show without their titles. Costs are estimates in US dollars from published model prices; models without a published price, such as a self-hosted model, show tokens only. The server keeps each run's usage, and clears its stored prompts and outputs after 30 days or beyond each user's latest 1,000 runs.
 
 ## Serving & Access
 

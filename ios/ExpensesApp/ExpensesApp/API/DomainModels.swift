@@ -2878,16 +2878,30 @@ struct AIUsageChatDetail: Decodable, Equatable {
         }
     }
 
+    struct UsedModel: Decodable, Equatable {
+        let backend: String?
+        let model: String
+    }
+
     let chat: AIUsageChat
+    let toolCalls: Int
+    /// In the order the chat first used them.
+    let models: [UsedModel]
+    /// The latest 100 turns, oldest first; `chat.turns` counts them all.
     let runs: [Run]
 
     enum CodingKeys: String, CodingKey {
+        case toolCalls = "tool_calls"
+        case models
         case runs
     }
 
     init(from decoder: Decoder) throws {
         chat = try AIUsageChat(from: decoder)
-        runs = try decoder.container(keyedBy: CodingKeys.self).decode([Run].self, forKey: .runs)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        toolCalls = try container.decode(Int.self, forKey: .toolCalls)
+        models = try container.decode([UsedModel].self, forKey: .models)
+        runs = try container.decode([Run].self, forKey: .runs)
     }
 }
 

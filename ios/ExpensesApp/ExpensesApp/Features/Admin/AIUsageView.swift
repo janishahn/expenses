@@ -14,6 +14,8 @@ struct AIUsageView: View {
     @State private var loadedPeriod: AIUsage.Period?
 
     private static let chatPage = 50
+    // The most chats the server lists at once.
+    private static let chatLimitMax = 500
 
     init(scope: AIUsageScope? = nil, period: AIUsage.Period = .week) {
         self.scope = scope
@@ -182,7 +184,7 @@ struct AIUsageView: View {
                     }
                 }
             }
-            if usage.chats.count < usage.chatCount {
+            if usage.chats.count < min(usage.chatCount, Self.chatLimitMax) {
                 Button("Show More") {
                     chatLimit += Self.chatPage
                     Task { await load() }
@@ -300,7 +302,8 @@ private struct AIUsageChartSection: View {
                                 ExpensesTheme.category(sliceIndex, for: scheme).opacity(selected == nil || selected == keys[index] ? 1 : 0.4)
                             )
                             .accessibilityLabel("\(title(index)), \(name(slice))")
-                            .accessibilityValue(figure(slice, index, measure))
+                            // VoiceOver reads each cost exact, where the chart and its tooltip round it.
+                            .accessibilityValue(measure == .cost ? "$\(slice.bucketCostUSD[index])" : figure(slice, index, measure))
                     }
                 }
             }
@@ -413,7 +416,8 @@ struct AIUsageChatView: View {
                 }
             case .success(let detail):
                 summary(detail)
-                Section("Turns") {
+                // A long chat lists its latest turns, as the Assistant does.
+                Section(detail.runs.count < detail.chat.turns ? "Latest \(detail.runs.count) Turns" : "Turns") {
                     ForEach(Array(detail.runs.enumerated()), id: \.offset) { _, run in
                         TrailingRow {
                             if run.status == .completed {
@@ -460,12 +464,7 @@ struct AIUsageChatView: View {
 
     private func summary(_ detail: AIUsageChatDetail) -> some View {
         let chat = detail.chat
-        let models = detail.runs.reduce(into: [String]()) { models, run in
-            let name = run.backend.map { "\(run.model) on \($0)" } ?? run.model
-            if !models.contains(name) {
-                models.append(name)
-            }
-        }
+        let models = detail.models.map { used in used.backend.map { "\(used.model) on \($0)" } ?? used.model }
         return Section {
             VStack(alignment: .leading, spacing: 2) {
                 Text(chat.pricedRuns > 0 ? usd(Double(chat.costUSD) ?? 0) : "\(chat.totalTokens.formatted()) tokens")
@@ -481,7 +480,7 @@ struct AIUsageChatView: View {
             LabeledContent("Started", value: AppFormatters.occurred(chat.startedAt))
             LabeledContent("Turns", value: chat.turns.formatted())
             LabeledContent("Model", value: models.joined(separator: ", "))
-            LabeledContent("Tool calls", value: detail.runs.reduce(0) { $0 + $1.toolCalls }.formatted())
+            LabeledContent("Tool calls", value: detail.toolCalls.formatted())
         }
         .expensesRowBackground()
     }

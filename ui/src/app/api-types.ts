@@ -423,4 +423,10 @@ export type AIUsageRun = {
   cost_usd: string | null
 }
 
-export type AIUsageChatDetail = AIUsageChat & { runs: AIUsageRun[] }
+export type AIUsageChatDetail = AIUsageChat & {
+  tool_calls: number
+  // In the order the chat first used them.
+  models: { backend: string | null; model: string }[]
+  // The latest 100 turns, oldest first; turns counts them all.
+  runs: AIUsageRun[]
+}

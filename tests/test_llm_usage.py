@@ -2,12 +2,14 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from expenses.ai import usage_report
 from expenses.ai.usage import usage_metadata
 from expenses.core.config import AIBackend, get_settings
 from expenses.db.models import AssistantChat, LLMJob, User
@@ -268,7 +270,7 @@ def test_ai_usage_splits_features_models_days_and_chats(
 
 
 def test_ai_usage_chat_detail_lists_each_turn(
-    api_client: TestClient, db_session: Session
+    api_client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _elevate_admin(api_client)
     now = datetime.utcnow()
@@ -312,4 +314,48 @@ def test_ai_usage_chat_detail_lists_each_turn(
         )
         for run in detail["runs"]
     ] == [("completed", "claude", 110, 3, "0.002"), ("failed", "qwen", 0, 0, None)]
+    assert detail["tool_calls"] == 3
+    assert detail["models"] == [
+        {"backend": "anthropic", "model": "claude"},
+        {"backend": "local", "model": "qwen"},
+    ]
     assert api_client.get(f"/api/admin/ai/usage/chats/{'e' * 32}").status_code == 404
+
+    monkeypatch.setattr(usage_report, "CHAT_RUNS", 1)
+    latest = api_client.get(f"/api/admin/ai/usage/chats/{'d' * 32}").json()
+    assert (latest["turns"], latest["tool_calls"]) == (2, 3)
+    assert [run["model"] for run in latest["runs"]] == ["qwen"]
+
+
+def test_ai_usage_model_without_a_backend_leaves_out_other_backends(
+    api_client: TestClient, db_session: Session
+) -> None:
+    _elevate_admin(api_client)
+    now = datetime.utcnow()
+    db_session.add_all(
+        [
+            _run(
+                feature="transaction_triage",
+                backend=None,
+                status="failed",
+                model="gpt",
+                created_at=now,
+            ),
+            _run(
+                feature="transaction_triage",
+                backend="openrouter",
+                model="gpt",
+                usage_input_tokens=400,
+                created_at=now,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    scoped = api_client.get(
+        "/api/admin/ai/usage",
+        params={"period": "week", "feature": "transaction_triage", "model": "gpt"},
+    ).json()
+
+    assert [(s["backend"], s["runs"]) for s in scoped["slices"]] == [(None, 1)]
+    assert scoped["totals"]["failed_runs"] == 1

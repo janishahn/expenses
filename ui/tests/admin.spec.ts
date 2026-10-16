@@ -324,6 +324,7 @@ test.describe("Admin Page", () => {
       .click()
     const peek = page.getByRole("complementary", { name: question })
     await expect(peek.getByRole("listitem", { name: /^Completed turn at .+, not priced$/ })).toHaveCount(1)
+    await expect(peek).toContainText("e2e-large on local")
     await expect(peek.getByRole("link", { name: "Open chat" })).toHaveAttribute("href", `/assistant?chat=${chatId}`)
   })
 

@@ -25,6 +25,8 @@ const RUN_STATUS: Record<AIUsageRun["status"], string> = {
   stopped: "Stopped",
 }
 const CHAT_PAGE = 50
+// The most chats the server lists at once.
+const CHAT_LIMIT = 500
 // Sized for the settings column, which stays under the 780px narrow width.
 const SLICE_COLUMNS: Columns = {
   columns: "10px minmax(0, 1fr) minmax(0, 112px) 48px 96px 80px",
@@ -148,6 +150,9 @@ function UsageChart({ data }: { data: AIUsage }) {
     measure === "cost" ? Number(slice.bucket_cost_usd[index]) : slice.bucket_tokens[index]
   const shown = (slice: AIUsageSlice, index: number) =>
     measure === "cost" ? usd(slice.bucket_cost_usd[index]) : formatCount(slice.bucket_tokens[index])
+  // The table keeps each cost exact, where the chart and its tooltip round it.
+  const exact = (slice: AIUsageSlice, index: number) =>
+    measure === "cost" ? `$${slice.bucket_cost_usd[index]}` : formatCount(slice.bucket_tokens[index])
   const labels = data.buckets.map((iso) => bucketLabel(data.bucket, iso))
   const last = data.buckets.length - 1
   const title = (index: number) => `${bucketTitle(data.bucket, data.buckets[index])}${index === last ? " so far" : ""}`
@@ -173,7 +178,7 @@ function UsageChart({ data }: { data: AIUsage }) {
           columns={["Date", ...data.slices.map((slice) => sliceName(slice, data.slices))]}
           rows={data.buckets.map((iso, index) => ({
             key: iso,
-            cells: [title(index), ...data.slices.map((slice) => shown(slice, index))],
+            cells: [title(index), ...data.slices.map((slice) => exact(slice, index))],
           }))}
         />
       }
@@ -285,7 +290,7 @@ function ChatList({
         flat
         label="Assistant chats"
         footer={
-          data.chats.length < data.chat_count ? (
+          data.chats.length < Math.min(data.chat_count, CHAT_LIMIT) ? (
             <ListFooter>
               <Button variant="ghost" onClick={onMore}>
                 Show more
@@ -414,7 +419,9 @@ export function UsageChatPeek({ id, onClose }: { id: string; onClose: () => void
     staleTime: 60_000,
   })
   const title = chat.data ? chatName(chat.data) : "Chat"
-  const models = chat.data ? [...new Set(chat.data.runs.map((run) => (run.backend ? `${run.model} on ${run.backend}` : run.model)))] : []
+  const models = chat.data ? chat.data.models.map((used) => (used.backend ? `${used.model} on ${used.backend}` : used.model)) : []
+  // A long chat lists its latest turns, as the Assistant does.
+  const turnsTitle = chat.data && chat.data.runs.length < chat.data.turns ? `Latest ${formatCount(chat.data.runs.length)} turns` : "Turns"
   return (
     <Peek
       parent="AI usage"
@@ -444,10 +451,10 @@ export function UsageChatPeek({ id, onClose }: { id: string; onClose: () => void
             <Property label="Started">{localTime(chat.data.started_at)}</Property>
             <Property label="Turns">{formatCount(chat.data.turns)}</Property>
             <Property label="Model">{models.join(", ")}</Property>
-            <Property label="Tool calls">{formatCount(chat.data.runs.reduce((sum, run) => sum + run.tool_calls, 0))}</Property>
+            <Property label="Tool calls">{formatCount(chat.data.tool_calls)}</Property>
           </PropertyList>
-          <PeekSection title="Turns">
-            <List flat label="Turns">
+          <PeekSection title={turnsTitle}>
+            <List flat label={turnsTitle}>
               {chat.data.runs.map((run, index) => (
                 <RunRow key={index} run={run} />
               ))}

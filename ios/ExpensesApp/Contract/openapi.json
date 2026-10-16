@@ -261,6 +261,13 @@
             "title": "Last Run At",
             "type": "string"
           },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AIUsageModel"
+            },
+            "title": "Models",
+            "type": "array"
+          },
           "priced_runs": {
             "title": "Priced Runs",
             "type": "integer"
@@ -287,6 +294,10 @@
               }
             ],
             "title": "Title"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
           },
           "total_tokens": {
             "title": "Total Tokens",
@@ -319,9 +330,36 @@
           "priced_runs",
           "total_tokens",
           "cost_usd",
+          "tool_calls",
+          "models",
           "runs"
         ],
         "title": "AIUsageChatDetailOut",
+        "type": "object"
+      },
+      "AIUsageModel": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "model"
+        ],
+        "title": "AIUsageModel",
         "type": "object"
       },
       "AIUsageOut": {
