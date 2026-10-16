@@ -29,6 +29,12 @@ class LLMOutputError(RuntimeError):
     pass
 
 
+# Caps a suggestion run's output, reasoning and retries included. It sits above
+# Anthropic's largest thinking budget (32,768 tokens), so one attempt fits at any
+# thinking level, and is checked here rather than sent to the backend.
+OUTPUT_TOKENS_LIMIT = 40_000
+
+
 @dataclass(frozen=True)
 class LLMRunResult(Generic[OutputT]):
     output: OutputT
@@ -74,7 +80,8 @@ class PydanticAILLMRunner(LLMRunner):
         output_type: type[OutputT],
     ) -> LLMRunResult[OutputT]:
         from pydantic_ai import Agent, ModelRetry, PromptedOutput, RunContext
-        from pydantic_ai.exceptions import UnexpectedModelBehavior
+        from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+        from pydantic_ai.usage import UsageLimits
 
         from expenses.ai.backends import build_model
 
@@ -163,8 +170,9 @@ class PydanticAILLMRunner(LLMRunner):
                     sort_keys=True,
                 ),
                 deps=payload,
+                usage_limits=UsageLimits(output_tokens_limit=OUTPUT_TOKENS_LIMIT),
             )
-        except UnexpectedModelBehavior as exc:
+        except (UnexpectedModelBehavior, UsageLimitExceeded) as exc:
             raise LLMOutputError(str(exc)) from exc
         metadata = usage_metadata(
             usage=result.usage,
