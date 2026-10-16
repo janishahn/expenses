@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ApprovalRequired
 from sqlalchemy import delete, func, select
@@ -866,7 +866,13 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
         raise InvalidProposal("already_undone", "That change was already undone.")
     if action.undo_json is None:
         raise InvalidProposal("not_undoable", "That change can't be undone.")
-    inverse = INVERSE_PLAN.validate_json(action.undo_json)
+    try:
+        inverse = INVERSE_PLAN.validate_json(action.undo_json)
+    except ValidationError:
+        raise InvalidProposal(
+            "outdated",
+            "That change was made by an older version, so it can't be undone here.",
+        )
     categories = _categories(session, user_id)
     meta: str | None = None
     match inverse:
@@ -1439,7 +1445,10 @@ def apply_action(session: Session, action: AssistantAction) -> dict[str, Any]:
     Returns what the model hears. Raises ActionConflict when the data changed so the
     plan no longer applies as the card showed it; the caller rolls back.
     """
-    plan = PLAN.validate_json(action.plan_json)
+    try:
+        plan = PLAN.validate_json(action.plan_json)
+    except ValidationError:
+        raise ActionConflict("This card is from an older version. Ask again.")
     inverse: InversePlan | None = None
     match plan:
         case CreatePlan():

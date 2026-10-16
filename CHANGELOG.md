@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- An Assistant card from 0.8.0 that edits transactions, or that undoes added or edited transactions, says to ask again if it is still waiting after the update. The Assistant can't undo transactions it added or edited under 0.8.0.
+
+### Fixed
+- Approving an Assistant card that edits transactions, or that undoes transactions it added, applied it even when a date, amount, title, or category on the card had changed since, or when the category it moves them to had been archived since. The card now says so and changes nothing.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added
@@ -15,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On iOS Insights, touch and hold the daily spending calendar, then drag to scrub through the days. Each day ticks as you pass it, harder on days you spent more.
 - The Assistant reads recurring payments, the forecast, balance history, reimbursements, and durable purchases. It can filter transactions by several categories and tags, amount, and text, and group them by category, tag, merchant, month, week, or weekday, with a comparison period.
 - The Assistant keeps your chats on the web and iOS: the header opens Recent chats and starts a New chat, a new chat lists recent ones instead of suggested questions, and on the web the URL names the open chat. While it works, one line names the current step (thinking, a note, or a ledger read); when the answer starts it folds into a summary that opens to list each step and the reasoning summary. Answers write amounts the way the app does (1 234,56 €).
-- Ask the Assistant to add transactions, change the category, tags, or title of transactions, allocate a reimbursement to expenses (for example half of each), or set budgets. It shows the exact change on a card, and nothing changes until you tap the card's button; Dismiss, or a new message, leaves your data as it was. Transactions it adds keep the card's category and tags; rules and suggested categories don't change them. Ask it to undo a change it made, and it shows that on a card too. If anything a card shows changes before you tap its button, the card says so and changes nothing. `POST /api/assistant/chats/{chat_id}/approvals/stream` approves or dismisses a card and streams the rest of the answer.
+- Ask the Assistant to add transactions, change the category, tags, or title of transactions, allocate a reimbursement to expenses (for example half of each), or set budgets. It shows the exact change on a card, and nothing changes until you tap the card's button; Dismiss, or a new message, leaves your data as it was. Transactions it adds keep the card's category and tags; rules and suggested categories don't change them. Ask it to undo a change it made, and it shows that on a card too. `POST /api/assistant/chats/{chat_id}/approvals/stream` approves or dismisses a card and streams the rest of the answer.
 - Assistant answers link the transactions they name. On the web a link opens the transaction in a peek beside the chat; on iOS it opens the transaction's page.
 - Settings › Assistant on the web and iOS sets how long the server keeps your Assistant chats: 7, 14, 30, or 90 days after the last message, 14 by default. Older chats, and the record of changes made in them, are deleted each night. `GET` and `PUT /api/assistant/settings` read and change it.
 - On iOS, a reimbursement's Allocate button opens a menu with the remaining amount, half, and a third of the expense, like the web's ½ and ⅓ buttons. Pick one to allocate it without typing; Other Amount… opens the amount field as before.

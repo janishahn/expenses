@@ -1621,6 +1621,48 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
         with pytest.raises(ActionConflict):
             _apply_proposal(session, proposal)
 
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        reader = _reader(session)
+        created = _apply_proposal(
+            session,
+            propose_create(
+                reader,
+                [
+                    NewTransaction(
+                        date=date(2026, 6, 21),
+                        kind="expense",
+                        amount_cents=1_250,
+                        title="Lunch",
+                    )
+                ],
+            ),
+        )
+        # 0.8.0 stored plans without what the card showed.
+        created.undo_json = json.dumps(
+            {"kind": "trash_transactions", "transaction_ids": [ids["hotel_id"]]}
+        )
+        with pytest.raises(InvalidProposal) as caught:
+            propose_undo(reader, created.id)
+        assert caught.value.status == "outdated"
+
+        classification = {"category_id": ids["travel_id"], "tags": [], "title": "Hotel"}
+        created.plan_json = json.dumps(
+            {
+                "kind": "edit_transactions",
+                "rows": [
+                    {
+                        "transaction_id": ids["hotel_id"],
+                        "before": classification,
+                        "after": {**classification, "title": "Hostel"},
+                    }
+                ],
+            }
+        )
+        with pytest.raises(ActionConflict):
+            apply_action(session, created)
+
 
 def _chat_job(**fields) -> LLMJob:
     return LLMJob(
