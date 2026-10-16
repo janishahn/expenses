@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-16
+
 ### Changed
 - An Assistant card from 0.8.0 that edits transactions, or that undoes added or edited transactions, says to ask again if it is still waiting after the update. The Assistant can't undo transactions it added or edited under 0.8.0.
 
@@ -499,7 +501,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/janishahn/expenses/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/janishahn/expenses/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/janishahn/expenses/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/janishahn/expenses/compare/v0.6.1...v0.7.0
