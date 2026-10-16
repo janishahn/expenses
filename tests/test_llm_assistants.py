@@ -687,3 +687,31 @@ def test_trace_clearing_keeps_recent_payloads_and_every_runs_usage() -> None:
             False,
         ]
         assert [row.usage_total_tokens for row in rows] == [100] * 6
+
+
+def test_trace_clearing_fails_runs_cut_off_mid_call() -> None:
+    with make_session() as session:
+        now = datetime(2026, 5, 25, 12, 0)
+        session.add_all(
+            LLMJob(
+                user_id=1,
+                feature="transaction_triage",
+                status="running",
+                prompt_version="test",
+                model="qwen",
+                input_hash=f"hash-{age}",
+                created_at=now - age,
+            )
+            for age in [timedelta(minutes=5), timedelta(days=2)]
+        )
+        session.commit()
+
+        LLMAssistantService(session, user_id=1).clear_old_traces(now=now)
+
+        rows = session.execute(
+            select(LLMJob.status, LLMJob.error).order_by(LLMJob.created_at.desc())
+        ).all()
+        assert [tuple(row) for row in rows] == [
+            ("running", None),
+            ("failed", "interrupted"),
+        ]

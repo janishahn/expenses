@@ -57,6 +57,9 @@ RULE_MINING_PROMPT = "rule_mining_v2"
 
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
+# No model call runs this long, so a run still running by then was cut off,
+# for example by a restart.
+ABANDONED_RUN_AGE = timedelta(days=1)
 
 
 class LLMAssistantService:
@@ -345,8 +348,20 @@ class LLMAssistantService:
         keep_recent: int = DEFAULT_TRACE_KEEP_RECENT,
         max_age_days: int = DEFAULT_TRACE_MAX_AGE_DAYS,
     ) -> int:
-        """Clears the stored prompts and outputs of older runs; their usage stays."""
+        """Fails runs cut off mid-call and clears older runs' prompts and outputs.
+
+        Every run's usage stays.
+        """
         reference = now or datetime.utcnow()
+        self.session.execute(
+            update(LLMJob)
+            .where(
+                LLMJob.user_id == self.user_id,
+                LLMJob.status == "running",
+                LLMJob.created_at < reference - ABANDONED_RUN_AGE,
+            )
+            .values(status="failed", error="interrupted")
+        )
         old = LLMJob.created_at < reference - timedelta(days=max_age_days)
         if keep_recent > 0:
             recent_ids = self.session.scalars(
