@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- With an Assistant chat open in two windows, retrying an answer in one while approving its card in the other could leave the change applied with its card gone. The chat now keeps the approved answer and its card, and the retried answer isn't saved.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added

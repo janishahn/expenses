@@ -971,9 +971,26 @@ def _save_turn(
             updated_at=now,
         )
         session.add(chat)
-    # A chat deleted while the turn ran stays deleted; only the usage is kept.
     if chat is not None:
         chat.updated_at = now
+        # Writing the chat first takes the write lock, so the reads below stay
+        # current until this commits, even when another turn on it finishes now.
+        session.flush()
+        # A change approved while a retry ran keeps the turn that shows it.
+        if request.replace_seq is not None and any(
+            isinstance(item, ApprovalItem) and item.state == "applied"
+            for items_json in session.scalars(
+                select(AssistantTurn.items_json).where(
+                    AssistantTurn.chat_id == chat.id,
+                    AssistantTurn.seq >= request.replace_seq,
+                )
+            ).all()
+            for item in ITEMS.validate_json(items_json)
+        ):
+            chat = None
+    # A chat deleted while the turn ran stays deleted, and a retry that lost to an
+    # approval replaces nothing; only the usage is kept.
+    if chat is not None:
         if request.continue_seq is not None:
             turn = _turn(session, chat.id, request.continue_seq)
             turn.items_json = ITEMS.dump_json(items).decode()

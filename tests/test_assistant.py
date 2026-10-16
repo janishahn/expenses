@@ -1,6 +1,8 @@
 import asyncio
 import json
+import threading
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -489,11 +491,16 @@ def test_reader_reports_budgets_links_and_reimbursements() -> None:
         assert deposit["more_allocated_to"] is True
 
 
-def _session_factory():
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+def _session_factory(path: Path | None = None):
+    # In memory, every session shares one connection; a file gives each its own.
+    engine = (
+        create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+        if path
+        else create_engine(
+            "sqlite+pysqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     )
     event.listen(engine, "connect", _enable_sqlite_pragmas)
     Base.metadata.create_all(engine)
@@ -931,6 +938,55 @@ async def test_assistant_keeps_a_chat_deleted_during_a_turn_deleted() -> None:
 
 
 @pytest.mark.anyio
+async def test_assistant_numbers_turns_that_finish_together(tmp_path: Path) -> None:
+    factory = _session_factory(tmp_path / "expenses.db")
+
+    async def stream(messages, info):
+        yield "Answer."
+
+    first = await _collect(factory, stream, "First question")
+    chat_id = first[0]["chat_id"]
+    other: list[list[dict]] = []
+    other_turn = threading.Thread(
+        target=lambda: other.append(
+            asyncio.run(_collect(factory, stream, "Other question", chat_id=chat_id))
+        )
+    )
+    other_saving = threading.Event()
+
+    def numbering(conn, cursor, statement, *args) -> None:
+        # A turn in another worker finishes while this one numbers itself.
+        if "max(assistant_turns.seq)" in statement and other_turn.ident is None:
+            other_turn.start()
+            other_saving.wait(timeout=5)
+
+    def saving(conn, cursor, statement, *args) -> None:
+        if threading.current_thread() is other_turn and statement.startswith(
+            "UPDATE assistant_chats"
+        ):
+            other_saving.set()
+
+    engine = factory.kw["bind"]
+    event.listen(engine, "after_cursor_execute", numbering)
+    event.listen(engine, "before_cursor_execute", saving)
+    events = await _collect(factory, stream, "Second question", chat_id=chat_id)
+    other_turn.join()
+
+    assert events[-1] == {"type": "end", "status": "completed"}
+    assert other[0][-1] == {"type": "end", "status": "completed"}
+    with factory() as session:
+        assert session.execute(
+            select(AssistantTurn.seq, AssistantTurn.user_text).order_by(
+                AssistantTurn.seq
+            )
+        ).all() == [
+            (1, "First question"),
+            (2, "Second question"),
+            (3, "Other question"),
+        ]
+
+
+@pytest.mark.anyio
 async def test_assistant_failure_ends_with_a_message() -> None:
     factory = _session_factory()
 
@@ -1211,6 +1267,72 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
         assert not session.scalars(
             select(Transaction).where(Transaction.title == "Lunch")
         ).all()
+
+
+@pytest.mark.anyio
+async def test_assistant_retry_keeps_a_change_approved_while_it_ran() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_trip(session)
+    asked = 0
+    retrying = asyncio.Event()
+    release = asyncio.Event()
+
+    async def stream(messages, info):
+        nonlocal asked
+        if _tool_returns(messages):
+            yield "Added."
+            return
+        asked += 1
+        if asked == 2:
+            # The retry waits so another window can approve the card meanwhile.
+            retrying.set()
+            await release.wait()
+            yield "Answer again."
+            return
+        yield _call(
+            "create_transactions",
+            {
+                "transactions": [
+                    {
+                        "date": "2026-06-21",
+                        "kind": "expense",
+                        "amount_cents": 1_250,
+                        "title": "Lunch",
+                        "category_id": ids["travel_id"],
+                        "tags": [],
+                    }
+                ]
+            },
+            "call-1",
+        )
+
+    events = await _collect(factory, stream, "Add lunch for 12,50")
+    chat_id = events[0]["chat_id"]
+    [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    with factory() as session:
+        retry = AssistantService(session, user_id=1).retry_turn(chat_id)
+    lines = stream_turn(retry, model=_test_model(stream), session_factory=factory)
+    assert json.loads(await anext(lines))["type"] == "start"
+    await retrying.wait()
+    await _decide(factory, stream, chat_id, approval["id"], approve=True)
+    release.set()
+    async for _ in lines:
+        pass
+
+    with factory() as session:
+        [turn] = AssistantService(session, user_id=1).chat_out(chat_id).turns
+        assert [(item.kind, item.state) for item in turn.items] == [
+            ("tool", "done"),
+            ("approval", "applied"),
+            ("text", "done"),
+        ]
+        assert session.scalars(select(AssistantAction)).one().status == "applied"
+        assert session.scalars(
+            select(Transaction).where(Transaction.title == "Lunch")
+        ).one()
+        # Usage still counts the retry.
+        assert len(session.scalars(select(LLMJob)).all()) == 3
 
 
 @pytest.mark.anyio
