@@ -22,7 +22,7 @@ import { DayBand } from "../components/ui/DayBand"
 import { EmptyState } from "../components/ui/EmptyState"
 import { EntryChips, EntryDialog, EntryName } from "../components/ui/EntryDialog"
 import { useIsDesktop } from "../components/ui/layout-state"
-import { AmountCell, Cell, List, Row, type Columns } from "../components/ui/LedgerRow"
+import { AmountCell, Cell, List, Row, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { MenuItem } from "../components/ui/Menu"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { Peek, PeekLayout, PeekSection } from "../components/ui/Peek"
@@ -329,7 +329,7 @@ function CategoryPeek({
               >
                 <Cell>{item.title ?? "Untitled"}</Cell>
                 <AmountCell>
-                  <Amount cents={item.amount_cents} kind={item.type === "income" ? "income" : "expense"} />
+                  <TransactionAmount row={item} />
                 </AmountCell>
               </Row>
             ))}
