@@ -1427,6 +1427,9 @@ class TransactionService:
         *,
         source: str = "user",
         commit: bool = True,
+        # Rules and the category model may set the category and tags; False keeps
+        # them exactly as given.
+        auto_classify: bool = True,
     ) -> Transaction:
         if data.is_reimbursement and data.type != TransactionType.income:
             raise ValueError("Reimbursements must be income transactions")
@@ -1480,10 +1483,16 @@ class TransactionService:
         self.session.add(txn)
         self.session.flush()
         self.session.refresh(txn, ["category", "tags"])
-        rule_result = RuleService(self.session, self.user_id).apply_rules(txn)
+        rule_result = (
+            RuleService(self.session, self.user_id).apply_rules(txn)
+            if auto_classify
+            else {"matched": 0, "applied": 0, "category_set": False}
+        )
         self.session.flush()
-        auto_categorized = not rule_result["category_set"] and apply_prediction(
-            self.session, txn
+        auto_categorized = (
+            auto_classify
+            and not rule_result["category_set"]
+            and apply_prediction(self.session, txn)
         )
         self.session.flush()
         self._record_classification_event(

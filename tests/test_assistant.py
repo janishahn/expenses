@@ -44,6 +44,7 @@ from expenses.db.models import (
     BudgetFrequency,
     LLMJob,
     ReimbursementAllocation,
+    RuleMatchType,
     Transaction,
     TransactionType,
     User,
@@ -53,12 +54,14 @@ from expenses.schemas import (
     BudgetOverrideIn,
     BudgetTemplateIn,
     CategoryIn,
+    RuleIn,
     TransactionIn,
 )
 from expenses.services import (
     BudgetService,
     CategoryService,
     ReimbursementService,
+    RuleService,
     TransactionService,
 )
 
@@ -1469,6 +1472,40 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         assert {created.status, edited.status, set_budgets.status} == {"undone"}
         with pytest.raises(InvalidProposal):
             propose_undo(reader, created.id)
+
+
+def test_assistant_adds_transactions_exactly_as_the_card_shows() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        RuleService(session, 1).create(
+            RuleIn(
+                name="Lunch is travel",
+                match_type=RuleMatchType.contains,
+                match_value="lunch",
+                set_category_id=ids["travel_id"],
+            )
+        )
+        proposal = propose_create(
+            _reader(session),
+            [
+                NewTransaction(
+                    date=date(2026, 6, 21),
+                    kind="expense",
+                    amount_cents=1_250,
+                    title="Lunch",
+                )
+            ],
+        )
+        assert proposal.card.rows[0].detail == "Uncategorized"
+
+        _apply_proposal(session, proposal)
+
+        # The rule would have chosen Travel, but the card said Uncategorized.
+        lunch = session.scalars(
+            select(Transaction).where(Transaction.title == "Lunch")
+        ).one()
+        assert lunch.category.name == "Uncategorized"
 
 
 def test_assistant_undo_leaves_expenses_in_trash_as_they_are() -> None:

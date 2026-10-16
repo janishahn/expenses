@@ -1129,6 +1129,7 @@ def _apply_create(
                     ),
                     source="assistant",
                     commit=False,
+                    auto_classify=False,
                 )
             )
         except ValueError as exc:
@@ -1141,7 +1142,6 @@ def _apply_create(
                     "date": txn.date.isoformat(),
                     "title": txn.title,
                     "amount_cents": txn.amount_cents,
-                    # Rules may have picked the category, so read it back.
                     "category": session.get(Category, txn.category_id).name,
                 }
                 for txn in created
