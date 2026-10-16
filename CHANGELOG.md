@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- An Assistant card from 0.8.0 that edits transactions, or that undoes added or edited transactions, says to ask again if it is still waiting after the update. The Assistant can't undo transactions it added or edited under 0.8.0.
+
 ### Fixed
 - With an Assistant chat open in two windows, retrying an answer in one while approving its card in the other could leave the change applied with its card gone. The chat now keeps the approved answer and its card, and the retried answer isn't saved.
+- Approving an Assistant card that edits transactions, or that undoes transactions it added, applied it even when a date, amount, title, or category on the card had changed since, or when the category it moves them to had been archived since. The card now says so and changes nothing.
 
 ## [0.8.0] - 2026-10-16
 
