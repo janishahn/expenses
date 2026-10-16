@@ -10,7 +10,6 @@ import tempfile
 import time
 import tomllib
 import urllib.parse
-from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -60,6 +59,7 @@ from expenses.auth import (
     verify_password,
 )
 from expenses.ai.client import LLMDisabledError
+from expenses.ai.features import FEATURE_NAMES, Feature, enabled_features
 from expenses.services.auto_categorization import (
     settings_for,
     suggestions_for,
@@ -70,12 +70,6 @@ from expenses.ai.schemas import (
     TransactionSuggestionOut,
 )
 from expenses.ai.service import LLMAssistantService
-from expenses.ai.spending_chat import (
-    SpendingChatError,
-    SpendingChatRequest,
-    SpendingChatService,
-    validate_spending_chat_message_history,
-)
 from expenses.core.app_logging import (
     build_log_query,
     environment_label,
@@ -257,14 +251,6 @@ from expenses.reports.pdf_renderer import render_report_html
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 logger = get_logger("expenses.api")
-
-
-def get_spending_chat_session_factory() -> Callable[[], Session]:
-    return SessionLocal
-
-
-def get_spending_chat_service_class() -> type[SpendingChatService]:
-    return SpendingChatService
 
 
 def _load_app_version() -> str:
@@ -683,9 +669,15 @@ def get_db():
         db.close()
 
 
-def require_llm_enabled() -> None:
-    if not get_settings().llm_enabled:
-        raise HTTPException(status_code=503, detail="LLM features are disabled")
+def require_ai_feature(feature: Feature):
+    def dependency(db: Session = Depends(get_db)) -> None:
+        if feature not in enabled_features(db):
+            raise HTTPException(
+                status_code=503,
+                detail=f"{FEATURE_NAMES[feature]} is turned off on this server",
+            )
+
+    return dependency
 
 
 @router.get("/api/auth/bootstrap-status")
@@ -701,7 +693,7 @@ def api_auth_bootstrap_status(
         "setup_token_required": setup_required
         and settings.auth_setup_token is not None,
         "signup_allowed": not setup_required and settings.auth_signup_enabled,
-        "llm_enabled": settings.llm_enabled,
+        "ai_features": enabled_features(db),
         **_serialize_auth_identity(request, db),
     }
 
@@ -865,7 +857,7 @@ def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
         signup_allowed=not setup_required and settings.auth_signup_enabled,
         timezone=settings.timezone,
         receipt_max_bytes=settings.receipt_max_bytes,
-        llm_enabled=settings.llm_enabled,
+        ai_features=enabled_features(db),
     )
 
 
@@ -2756,7 +2748,7 @@ def api_preview_rule(data: RuleIn, request: Request, db: Session = Depends(get_d
 @router.get(
     "/api/ai/rules/suggestions",
     response_model=list[RuleSuggestionOut],
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("rule_mining"))],
 )
 def api_ai_rule_suggestions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -2766,7 +2758,7 @@ def api_ai_rule_suggestions(request: Request, db: Session = Depends(get_db)):
 @router.post(
     "/api/ai/rules/mine",
     response_model=list[RuleSuggestionOut],
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("rule_mining"))],
 )
 async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -2790,7 +2782,7 @@ async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
 @router.post(
     "/api/ai/rules/suggestions/{suggestion_id}/accept",
     response_model=IdOut,
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("rule_mining"))],
 )
 def api_ai_accept_rule_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -2809,7 +2801,7 @@ def api_ai_accept_rule_suggestion(
 @router.post(
     "/api/ai/rules/suggestions/{suggestion_id}/reject",
     response_model=IdOut,
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("rule_mining"))],
 )
 def api_ai_reject_rule_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -4662,7 +4654,6 @@ def _format_decimal(value: Decimal, scale: int) -> str:
 @router.get(
     "/api/ai/usage/summary",
     response_model=AIUsageSummaryOut,
-    dependencies=[Depends(require_llm_enabled)],
 )
 def api_ai_usage_summary(
     request: Request,
@@ -4670,9 +4661,9 @@ def api_ai_usage_summary(
     feature: str = "spending_chat",
     period: Literal["week", "month", "all"] = "week",
 ):
-    user_id = _require_current_user_id(request, db)
+    _require_elevated_admin_context(request, db)
     started_at = _ai_usage_period_start(period)
-    conditions = [LLMJob.user_id == user_id, LLMJob.feature == feature]
+    conditions = [LLMJob.feature == feature]
     if started_at is not None:
         conditions.append(LLMJob.created_at >= started_at)
 
@@ -4704,7 +4695,17 @@ def api_ai_usage_summary(
                 0,
             ).label("failed_chats"),
             func.coalesce(
-                func.sum(case((LLMJob.error == "stream_cancelled", 1), else_=0)), 0
+                func.sum(
+                    case(
+                        (
+                            (LLMJob.status == "stopped")
+                            | (LLMJob.error == "stream_cancelled"),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
             ).label("cancelled_chats"),
             func.coalesce(func.sum(LLMJob.usage_input_tokens), 0).label("input_tokens"),
             func.coalesce(func.sum(LLMJob.usage_output_tokens), 0).label(
@@ -4815,63 +4816,10 @@ def api_ai_usage_summary(
     }
 
 
-def _spending_chat_event_line(event: dict[str, object]) -> str:
-    return json.dumps(event, ensure_ascii=False, default=str) + "\n"
-
-
-@router.post(
-    "/api/ai/spending-chat/stream",
-    response_class=StreamingResponse,
-    dependencies=[Depends(require_llm_enabled)],
-)
-async def api_ai_spending_chat_stream(
-    data: SpendingChatRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    session_factory: Callable[[], Session] = Depends(get_spending_chat_session_factory),
-    service_class: type[SpendingChatService] = Depends(get_spending_chat_service_class),
-):
-    user_id = _require_current_user_id(request, db)
-    _require_csrf(request, db)
-    try:
-        validate_spending_chat_message_history(data.message_history)
-    except LLMDisabledError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    async def event_stream():
-        stream_db = session_factory()
-        try:
-            try:
-                service = service_class(stream_db, user_id=user_id)
-                async for event in service.stream_turn(request=data):
-                    yield _spending_chat_event_line(event)
-                yield _spending_chat_event_line({"type": "done"})
-            except SpendingChatError as exc:
-                yield _spending_chat_event_line({"type": "error", "message": str(exc)})
-                yield _spending_chat_event_line({"type": "done"})
-            except LLMDisabledError as exc:
-                yield _spending_chat_event_line({"type": "error", "message": str(exc)})
-                yield _spending_chat_event_line({"type": "done"})
-        finally:
-            stream_db.close()
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="application/x-ndjson",
-        # GZipMiddleware's deflate buffer withholds every NDJSON line until the
-        # response closes, which makes the turn arrive all at once. Marking the
-        # body as already-encoded routes it through the pass-through branch so
-        # tool and text events reach the client as they are produced.
-        headers={"Cache-Control": "no-cache", "Content-Encoding": "identity"},
-    )
-
-
 @router.get(
     "/api/ai/transaction-suggestions",
     response_model=list[TransactionSuggestionOut],
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("transaction_triage"))],
 )
 def api_ai_transaction_suggestions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -4888,7 +4836,7 @@ def api_ai_transaction_suggestions(request: Request, db: Session = Depends(get_d
 @router.post(
     "/api/ai/transactions/{transaction_id:int}/triage",
     response_model=TransactionSuggestionOut | None,
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("transaction_triage"))],
 )
 async def api_ai_triage_transaction(
     transaction_id: int, request: Request, db: Session = Depends(get_db)
@@ -4908,7 +4856,7 @@ async def api_ai_triage_transaction(
 @router.post(
     "/api/ai/transaction-suggestions/{suggestion_id}/accept",
     response_model=IdOut,
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("transaction_triage"))],
 )
 def api_ai_accept_transaction_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)
@@ -4927,7 +4875,7 @@ def api_ai_accept_transaction_suggestion(
 @router.post(
     "/api/ai/transaction-suggestions/{suggestion_id}/reject",
     response_model=IdOut,
-    dependencies=[Depends(require_llm_enabled)],
+    dependencies=[Depends(require_ai_feature("transaction_triage"))],
 )
 def api_ai_reject_transaction_suggestion(
     suggestion_id: int, request: Request, db: Session = Depends(get_db)

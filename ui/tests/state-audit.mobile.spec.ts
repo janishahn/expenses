@@ -132,7 +132,7 @@ test.describe("Mobile state audit", () => {
     await page.route("**/api/auth/bootstrap-status", async (route) => {
       const response = await route.fetch()
       const payload = (await response.json()) as Record<string, unknown>
-      await route.fulfill({ json: { ...payload, llm_enabled: false } })
+      await route.fulfill({ json: { ...payload, ai_features: [] } })
     })
     await page.goto("/rules")
     await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()

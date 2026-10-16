@@ -1,11 +1,25 @@
 import os
+import re
 import secrets
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, get_args
 
 from dotenv import load_dotenv
 
 load_dotenv(override=False)
+
+AIBackendKind = Literal["anthropic", "openai", "openrouter", "openai-compatible"]
+AI_BACKEND_KINDS: tuple[AIBackendKind, ...] = get_args(AIBackendKind)
+
+
+@dataclass(frozen=True)
+class AIBackend:
+    name: str
+    kind: AIBackendKind
+    base_url: str | None
+    api_key: str
 
 
 class Settings:
@@ -51,12 +65,7 @@ class Settings:
         rule_regex_max_length: int,
         report_max_days: int,
         report_max_transactions: int,
-        llm_enabled: bool,
-        llm_base_url: str | None,
-        llm_model: str,
-        llm_api_key: str,
-        llm_temperature: float | None,
-        llm_max_output_tokens: int | None,
+        ai_backends: dict[str, AIBackend],
     ) -> None:
         self.database_url = database_url
         self.environment = environment
@@ -98,12 +107,7 @@ class Settings:
         self.rule_regex_max_length = rule_regex_max_length
         self.report_max_days = report_max_days
         self.report_max_transactions = report_max_transactions
-        self.llm_enabled = llm_enabled
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
-        self.llm_api_key = llm_api_key
-        self.llm_temperature = llm_temperature
-        self.llm_max_output_tokens = llm_max_output_tokens
+        self.ai_backends = ai_backends
 
 
 def _ensure_data_dir() -> Path:
@@ -130,6 +134,38 @@ def _configured_value(name: str) -> str | None:
 def _env_list(name: str) -> set[str]:
     value = os.getenv(name, "")
     return {part.strip() for part in value.split(",") if part.strip()}
+
+
+def _ai_backends() -> dict[str, AIBackend]:
+    replaced = sorted(name for name in os.environ if name.startswith("EXPENSES_LLM_"))
+    if replaced:
+        raise ValueError(
+            f"{', '.join(replaced)} replaced by EXPENSES_AI_BACKENDS; "
+            "see the AI section of the README"
+        )
+    backends: dict[str, AIBackend] = {}
+    for name in sorted(_env_list("EXPENSES_AI_BACKENDS")):
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", name):
+            raise ValueError(
+                f"EXPENSES_AI_BACKENDS name '{name}' must be lowercase letters, "
+                "digits, or underscores"
+            )
+        prefix = f"EXPENSES_AI_{name.upper()}_"
+        kind = _configured_value(prefix + "KIND")
+        if kind not in AI_BACKEND_KINDS:
+            raise ValueError(
+                f"{prefix}KIND must be one of {', '.join(AI_BACKEND_KINDS)}"
+            )
+        base_url = _configured_value(prefix + "BASE_URL")
+        api_key = os.getenv(prefix + "API_KEY", "").strip()
+        if kind == "openai-compatible" and base_url is None:
+            raise ValueError(f"{prefix}BASE_URL is required for openai-compatible")
+        if kind != "openai-compatible" and not api_key:
+            raise ValueError(f"{prefix}API_KEY is required for {kind}")
+        backends[name] = AIBackend(
+            name=name, kind=kind, base_url=base_url, api_key=api_key
+        )
+    return backends
 
 
 def _read_or_create_secret_file(path: Path) -> str:
@@ -254,25 +290,6 @@ def get_settings() -> Settings:
     rule_regex_max_length = int(os.getenv("EXPENSES_RULE_REGEX_MAX_LENGTH", "200"))
     report_max_days = int(os.getenv("EXPENSES_REPORT_MAX_DAYS", "366"))
     report_max_transactions = int(os.getenv("EXPENSES_REPORT_MAX_TRANSACTIONS", "5000"))
-    llm_enabled = _env_flag("EXPENSES_LLM_ENABLED", False)
-    llm_base_url = _configured_value("EXPENSES_LLM_BASE_URL")
-    llm_model = os.getenv("EXPENSES_LLM_MODEL", "qwen").strip() or "qwen"
-    llm_api_key = os.getenv("EXPENSES_LLM_API_KEY", "").strip()
-    llm_temperature_raw = _configured_value("EXPENSES_LLM_TEMPERATURE")
-    llm_temperature = (
-        float(llm_temperature_raw) if llm_temperature_raw is not None else None
-    )
-    if llm_temperature is not None and not 0 <= llm_temperature <= 2:
-        raise ValueError("EXPENSES_LLM_TEMPERATURE must be between 0 and 2")
-    llm_max_output_tokens_raw = _configured_value("EXPENSES_LLM_MAX_OUTPUT_TOKENS")
-    llm_max_output_tokens = (
-        int(llm_max_output_tokens_raw)
-        if llm_max_output_tokens_raw is not None
-        else None
-    )
-    if llm_max_output_tokens is not None and llm_max_output_tokens <= 0:
-        raise ValueError("EXPENSES_LLM_MAX_OUTPUT_TOKENS must be greater than 0")
-
     return Settings(
         database_url=database_url,
         environment=environment,
@@ -314,10 +331,5 @@ def get_settings() -> Settings:
         rule_regex_max_length=rule_regex_max_length,
         report_max_days=report_max_days,
         report_max_transactions=report_max_transactions,
-        llm_enabled=llm_enabled,
-        llm_base_url=llm_base_url,
-        llm_model=llm_model,
-        llm_api_key=llm_api_key,
-        llm_temperature=llm_temperature,
-        llm_max_output_tokens=llm_max_output_tokens,
+        ai_backends=_ai_backends(),
     )

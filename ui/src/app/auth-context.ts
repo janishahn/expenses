@@ -6,6 +6,8 @@ export type AuthUser = {
   is_admin: boolean
 }
 
+export type AIFeature = "spending_chat" | "transaction_triage" | "rule_mining"
+
 export type AdminElevationState = "unknown" | "required" | "elevated"
 
 export type AuthState = {
@@ -13,7 +15,7 @@ export type AuthState = {
   setupRequired: boolean
   setupTokenRequired: boolean
   signupAllowed: boolean
-  llmEnabled: boolean
+  aiFeatures: AIFeature[]
   authenticated: boolean
   user: AuthUser | null
   adminElevation: AdminElevationState

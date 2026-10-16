@@ -2,7 +2,7 @@ import stat
 
 import pytest
 
-from expenses.core.config import get_settings
+from expenses.core.config import AIBackend, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -86,30 +86,51 @@ def test_test_environment_allows_low_password_hash_iterations(
     assert settings.auth_password_hash_iterations == 1000
 
 
-def test_llm_config_uses_single_openai_compatible_endpoint(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
+def test_ai_backends_are_named_and_typed(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_AI_BACKENDS", "local, claude")
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_KIND", "openai-compatible")
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_BASE_URL", "http://ollama:11434/v1")
+    monkeypatch.setenv("EXPENSES_AI_CLAUDE_KIND", "anthropic")
+    monkeypatch.setenv("EXPENSES_AI_CLAUDE_API_KEY", "sk-ant-test")
+
+    settings = get_settings()
+
+    assert settings.ai_backends == {
+        "claude": AIBackend(
+            name="claude", kind="anthropic", base_url=None, api_key="sk-ant-test"
+        ),
+        "local": AIBackend(
+            name="local",
+            kind="openai-compatible",
+            base_url="http://ollama:11434/v1",
+            api_key="",
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({"EXPENSES_LLM_BASE_URL": "http://llm"}, "EXPENSES_LLM_BASE_URL replaced"),
+        ({"EXPENSES_AI_BACKENDS": "Local"}, "must be lowercase"),
+        ({"EXPENSES_AI_BACKENDS": "x"}, "EXPENSES_AI_X_KIND must be one of"),
+        (
+            {"EXPENSES_AI_BACKENDS": "x", "EXPENSES_AI_X_KIND": "openai-compatible"},
+            "EXPENSES_AI_X_BASE_URL is required",
+        ),
+        (
+            {"EXPENSES_AI_BACKENDS": "x", "EXPENSES_AI_X_KIND": "anthropic"},
+            "EXPENSES_AI_X_API_KEY is required",
+        ),
+    ],
+)
+def test_ai_backend_config_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, env: dict[str, str], message: str
 ):
     monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("EXPENSES_LLM_ENABLED", "true")
-    monkeypatch.setenv("EXPENSES_LLM_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("EXPENSES_LLM_MODEL", "deepseek/deepseek-v4-flash")
-    monkeypatch.setenv("EXPENSES_LLM_API_KEY", "")
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
 
-    settings = get_settings()
-
-    assert settings.llm_base_url == "https://openrouter.ai/api/v1"
-    assert settings.llm_model == "deepseek/deepseek-v4-flash"
-    assert settings.llm_api_key == ""
-    assert settings.llm_temperature is None
-    assert settings.llm_max_output_tokens is None
-
-
-def test_llm_optional_generation_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("EXPENSES_LLM_TEMPERATURE", "0.65")
-    monkeypatch.setenv("EXPENSES_LLM_MAX_OUTPUT_TOKENS", "4096")
-
-    settings = get_settings()
-
-    assert settings.llm_temperature == 0.65
-    assert settings.llm_max_output_tokens == 4_096
+    with pytest.raises(ValueError, match=message):
+        get_settings()

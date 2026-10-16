@@ -12,6 +12,7 @@ import clsx from "clsx"
 import { ConfirmDialogHost } from "./Dialog"
 import { FrameSidebarContext } from "./frame-context"
 import { useBottomLayerActive } from "./layout-state"
+import type { AIFeature } from "../../app/auth-context"
 import { GROUPS, PRIMARY, TABS, UNCATEGORIZED, isActive, type NavItem } from "./nav"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "./Menu"
 import { ToastHost } from "./Toast"
@@ -29,13 +30,13 @@ function isTextEntry(target: EventTarget | null): boolean {
 // The window: sidebar and inset page panel on desktop; panel and tab bar on mobile.
 export function AppFrame({
   isAdmin,
-  llmEnabled,
+  aiFeatures,
   uncategorizedCount,
   onSignOut,
   children,
 }: {
   isAdmin: boolean
-  llmEnabled: boolean
+  aiFeatures: AIFeature[]
   uncategorizedCount: number
   onSignOut: () => void
   children: ReactNode
@@ -93,7 +94,7 @@ export function AppFrame({
 
   const groups = GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.llm || llmEnabled),
+    items: group.items.filter((item) => !item.feature || aiFeatures.includes(item.feature)),
   }))
   const toggleGroup = (label: string) =>
     setCollapsed((current) => {

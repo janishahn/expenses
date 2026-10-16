@@ -72,27 +72,82 @@ class TimestampMixin:
     )
 
 
-class AIFeaturePreference(Base):
-    __tablename__ = "ai_feature_preferences"
+class AIFeatureSetting(Base):
+    __tablename__ = "ai_feature_settings"
 
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
     feature: Mapped[str] = mapped_column(String(40), primary_key=True)
-    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
-    reasoning_effort: Mapped[str] = mapped_column(String(20), nullable=False)
+    thinking: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
-class ChatGPTPairing(Base):
-    __tablename__ = "chatgpt_pairings"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+class AssistantChat(Base):
+    __tablename__ = "assistant_chats"
+    __table_args__ = (
+        Index("ix_assistant_chats_user_updated", "user_id", "updated_at"),
     )
-    secret_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    encrypted_flow: Mapped[Optional[str]] = mapped_column(Text)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AssistantTurn(Base):
+    """One question and the assistant's work on it.
+
+    items_json is what the chat shows; messages_json holds the model messages the
+    turn added to the conversation, which later turns send as history.
+    """
+
+    __tablename__ = "assistant_turns"
+    __table_args__ = (UniqueConstraint("chat_id", "seq"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[str] = mapped_column(
+        ForeignKey("assistant_chats.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_text: Mapped[str] = mapped_column(Text, nullable=False)
+    items_json: Mapped[str] = mapped_column(Text, nullable=False)
+    messages_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AssistantAction(Base):
+    """A change the Assistant proposed, and what undoes it once applied.
+
+    plan_json is exactly what the approval card shows. The row stays while its chat
+    does, and after that until it is older than the user keeps chats, so the
+    Assistant can still undo the change.
+    """
+
+    __tablename__ = "assistant_actions"
+    __table_args__ = (
+        Index("ix_assistant_actions_user_created", "user_id", "created_at"),
+        # Some backends reuse tool call ids across turns, so they are not unique.
+        Index("ix_assistant_actions_chat_call", "chat_id", "tool_call_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    tool_call_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str] = mapped_column(String(200), nullable=False)
+    plan_json: Mapped[str] = mapped_column(Text, nullable=False)
+    undo_json: Mapped[Optional[str]] = mapped_column(Text)
+    # proposed, applied, dismissed, failed, or undone
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class AutoCategorizationPreference(Base):
@@ -119,6 +174,9 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(80), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assistant_chat_days: Mapped[int] = mapped_column(
+        Integer, default=14, server_default="14", nullable=False
+    )
 
     auth_sessions: Mapped[list["AuthSession"]] = relationship(
         "AuthSession",

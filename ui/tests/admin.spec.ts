@@ -31,6 +31,7 @@ test.describe("Admin Page", () => {
     await expect(server.getByRole("link")).toHaveText([
       "Health",
       "Maintenance",
+      "AI",
       "Assistant usage",
       "Logs",
       "System",
@@ -318,7 +319,7 @@ test.describe("Admin Page", () => {
           cache_write_tokens: 0,
           reasoning_tokens: 50,
           total_cost_decimal: "0.0123",
-          average_cost_decimal: "0.0025",
+          average_cost_decimal: "0.0000213333333333",
           cost_unit: "usd",
           average_total_tokens: 214,
           p95_duration_ms: 4200,
@@ -333,7 +334,7 @@ test.describe("Admin Page", () => {
 
     const strip = page.locator("section").filter({ hasText: "Per chat" }).first()
     await expect(strip.getByText("$0.0123")).toBeVisible()
-    await expect(strip.getByText("$0.0025 per chat")).toBeVisible()
+    await expect(strip.getByText("$0.0000213 per chat")).toBeVisible()
     await expect(strip.getByText("6 completed · 1 failed")).toBeVisible()
     await expect(strip.getByText("1 500")).toBeVisible()
     await expect.poll(() => requestedPeriods.includes("week")).toBeTruthy()

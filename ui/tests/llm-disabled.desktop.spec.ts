@@ -4,7 +4,7 @@ async function disableLlmCapability(page: Page) {
   await page.route("**/api/auth/bootstrap-status", async (route) => {
     const response = await route.fetch()
     const payload = await response.json()
-    await route.fulfill({ json: { ...payload, llm_enabled: false } })
+    await route.fulfill({ json: { ...payload, ai_features: [] } })
   })
 }
 

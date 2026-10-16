@@ -5,7 +5,6 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from time import perf_counter
 from typing import Any
@@ -19,8 +18,8 @@ from expenses.ai.client import (
     LLMRunner,
     LLMRunResult,
     PydanticAILLMRunner,
-    ReasoningEffort,
 )
+from expenses.ai.features import Feature, resolve
 from expenses.ai.schemas import (
     RuleMiningOutput,
     RuleProposalOut,
@@ -32,7 +31,6 @@ from expenses.ai.schemas import (
 from expenses.ai.usage import apply_usage_metadata
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
-from expenses.core.config import get_settings
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -59,32 +57,6 @@ RULE_MINING_PROMPT = "rule_mining_v2"
 
 DEFAULT_TRACE_KEEP_RECENT = 1_000
 DEFAULT_TRACE_MAX_AGE_DAYS = 30
-
-
-@dataclass(frozen=True)
-class LLMFeatureSettings:
-    temperature: float | None
-    max_tokens: int
-    reasoning_effort: ReasoningEffort
-
-
-LLM_DEFAULT_FEATURE_SETTINGS = LLMFeatureSettings(
-    temperature=0.7,
-    max_tokens=1_024,
-    reasoning_effort="low",
-)
-LLM_FEATURE_SETTINGS = {
-    "transaction_triage": LLMFeatureSettings(
-        temperature=0.7,
-        max_tokens=2_048,
-        reasoning_effort="low",
-    ),
-    "rule_mining": LLMFeatureSettings(
-        temperature=0.7,
-        max_tokens=4_096,
-        reasoning_effort="medium",
-    ),
-}
 
 
 class LLMAssistantService:
@@ -401,14 +373,13 @@ class LLMAssistantService:
     async def _run_llm(
         self,
         *,
-        feature: str,
+        feature: Feature,
         prompt_version: str,
         payload: dict[str, Any],
         output_type: type,
         entity_type: str | None = None,
         entity_id: int | None = None,
     ) -> tuple[Any, int]:
-        settings = get_settings()
         runner = self._runner_for_feature(feature)
         payload_json = _json_dumps(payload)
         job = LLMJob(
@@ -416,7 +387,7 @@ class LLMAssistantService:
             feature=feature,
             status="running",
             prompt_version=prompt_version,
-            model=getattr(runner, "model_name", settings.llm_model),
+            model=getattr(runner, "model_name", "unknown"),
             input_hash=hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
             entity_type=entity_type,
             entity_id=entity_id,
@@ -479,7 +450,6 @@ class LLMAssistantService:
                 feature=feature,
                 model=job.model,
                 duration_ms=job.duration_ms,
-                api_key_configured=bool(settings.llm_api_key),
                 error=str(exc),
             )
             raise
@@ -503,26 +473,10 @@ class LLMAssistantService:
         )
         return output, job.id
 
-    def _runner_for_feature(self, feature: str) -> LLMRunner:
+    def _runner_for_feature(self, feature: Feature) -> LLMRunner:
         if self.runner is not None:
             return self.runner
-        settings = get_settings()
-        feature_settings = LLM_FEATURE_SETTINGS.get(
-            feature, LLM_DEFAULT_FEATURE_SETTINGS
-        )
-        from expenses.ai.preferences import resolve
-
-        configuration = resolve(self.session, self.user_id, feature)
-        return PydanticAILLMRunner(
-            configuration=configuration,
-            temperature=settings.llm_temperature
-            if settings.llm_temperature is not None
-            else feature_settings.temperature,
-            max_tokens=settings.llm_max_output_tokens
-            if settings.llm_max_output_tokens is not None
-            else feature_settings.max_tokens,
-            reasoning_effort=feature_settings.reasoning_effort,
-        )
+        return PydanticAILLMRunner(resolve(self.session, feature))
 
     def _transaction_for_triage(self, transaction_id: int) -> Transaction | None:
         # Reloads a row already in the session, so edits made during the model

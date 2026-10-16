@@ -1,7 +1,8 @@
 import type {
   AIUsageSummary,
-  SpendingChatStreamEvent,
-  SpendingChatStreamRequest,
+  AssistantChat,
+  AssistantChatSummary,
+  AssistantStreamEvent,
 } from "./api-types"
 
 let csrfToken: string | null = null
@@ -256,30 +257,31 @@ function streamErrorMessage(text: string, status: number): string {
   return `Request failed (${status})`
 }
 
-async function openSpendingChatStream(
-  request: SpendingChatStreamRequest,
-  signal: AbortSignal
-): Promise<Response> {
+export function fetchAssistantChats(): Promise<AssistantChatSummary[]> {
+  return apiFetch<AssistantChatSummary[]>("/api/assistant/chats")
+}
+
+export function fetchAssistantChat(chatId: string): Promise<AssistantChat> {
+  return apiFetch<AssistantChat>(`/api/assistant/chats/${chatId}`)
+}
+
+async function openAssistantStream(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch("/api/ai/spending-chat/stream", {
+    const response = await fetch(path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/x-ndjson",
         "X-CSRF-Token": await getCsrfToken(attempt === 1),
       },
-      body: JSON.stringify(request),
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     })
     if (response.ok) {
       return response
     }
     const text = await response.text().catch(() => "")
-    if (
-      attempt === 0 &&
-      response.status === 400 &&
-      text.includes("Invalid CSRF token")
-    ) {
+    if (attempt === 0 && response.status === 400 && text.includes("Invalid CSRF token")) {
       invalidateCsrfToken()
       continue
     }
@@ -288,13 +290,9 @@ async function openSpendingChatStream(
   throw new Error("Request failed due to CSRF token validation")
 }
 
-export async function* streamSpendingChat(
-  request: SpendingChatStreamRequest,
-  signal: AbortSignal
-): AsyncGenerator<SpendingChatStreamEvent> {
-  const response = await openSpendingChatStream(request, signal)
+async function* readAssistantStream(response: Response): AsyncGenerator<AssistantStreamEvent> {
   if (!response.body) {
-    throw new Error("Spending chat stream returned no body")
+    throw new Error("The Assistant stream returned no body")
   }
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -311,16 +309,43 @@ export async function* streamSpendingChat(
         const line = buffer.slice(0, newlineIndex).trim()
         buffer = buffer.slice(newlineIndex + 1)
         if (line) {
-          yield JSON.parse(line) as SpendingChatStreamEvent
+          yield JSON.parse(line) as AssistantStreamEvent
         }
         newlineIndex = buffer.indexOf("\n")
       }
     }
     const tail = buffer.trim()
     if (tail) {
-      yield JSON.parse(tail) as SpendingChatStreamEvent
+      yield JSON.parse(tail) as AssistantStreamEvent
     }
   } finally {
     void reader.cancel().catch(() => {})
   }
+}
+
+// Sends a message, starting a chat when chatId is null. Aborting the signal stops the answer.
+export async function* streamAssistantMessage(
+  chatId: string | null,
+  message: string,
+  signal: AbortSignal
+): AsyncGenerator<AssistantStreamEvent> {
+  const response = await openAssistantStream("/api/assistant/messages/stream", { chat_id: chatId, message }, signal)
+  yield* readAssistantStream(response)
+}
+
+// Answers the chat's last message again, replacing its last turn.
+export async function* streamAssistantRetry(chatId: string, signal: AbortSignal): AsyncGenerator<AssistantStreamEvent> {
+  const response = await openAssistantStream(`/api/assistant/chats/${chatId}/retry/stream`, undefined, signal)
+  yield* readAssistantStream(response)
+}
+
+// Approves or dismisses a proposed change; the turn then continues.
+export async function* streamAssistantDecision(
+  chatId: string,
+  itemId: string,
+  approve: boolean,
+  signal: AbortSignal
+): AsyncGenerator<AssistantStreamEvent> {
+  const response = await openAssistantStream(`/api/assistant/chats/${chatId}/approvals/stream`, { item_id: itemId, approve }, signal)
+  yield* readAssistantStream(response)
 }

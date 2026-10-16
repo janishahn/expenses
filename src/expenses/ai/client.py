@@ -2,29 +2,23 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from httpx import AsyncClient, HTTPStatusError, Response
 from pydantic import BaseModel
-from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from expenses.ai.schemas import (
     RuleMiningOutput,
     TransactionTriageOutput,
 )
-from expenses.ai.usage import (
-    LLMUsageMetadata,
-    OpenAICompatibleUsageCapture,
-    UsageCaptureTransport,
-    apply_captured_provider_usage,
-    enrich_openrouter_generation_usage,
-    usage_metadata_from_result,
-)
-from expenses.core.config import get_settings
+from expenses.ai.usage import LLMUsageMetadata, usage_metadata
+
+if TYPE_CHECKING:
+    from pydantic_ai import ModelSettings
+
+    from expenses.ai.features import ResolvedFeature
 
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
-ReasoningEffort = Literal["auto", "none", "minimal", "low", "medium", "high", "xhigh"]
 
 
 class LLMDisabledError(RuntimeError):
@@ -33,6 +27,12 @@ class LLMDisabledError(RuntimeError):
 
 class LLMOutputError(RuntimeError):
     pass
+
+
+# Caps a suggestion run's output, reasoning and retries included. It sits above
+# Anthropic's largest thinking budget (32,768 tokens), so one attempt fits at any
+# thinking level, and is checked here rather than sent to the backend.
+OUTPUT_TOKENS_LIMIT = 40_000
 
 
 @dataclass(frozen=True)
@@ -55,31 +55,21 @@ class LLMRunner:
         raise NotImplementedError
 
 
+def model_settings(resolved: ResolvedFeature, *, cache: bool = False) -> ModelSettings:
+    settings: ModelSettings = {}
+    if resolved.thinking == "off":
+        settings["thinking"] = False
+    elif resolved.thinking != "auto":
+        settings["thinking"] = resolved.thinking
+    if cache:
+        settings["cache"] = True
+    return settings
+
+
 class PydanticAILLMRunner(LLMRunner):
-    def __init__(
-        self,
-        *,
-        max_tokens: int,
-        temperature: float | None,
-        reasoning_effort: ReasoningEffort,
-        configuration: Any = None,
-    ) -> None:
-        settings = get_settings()
-        if not settings.llm_enabled:
-            raise LLMDisabledError("LLM usage is disabled")
-        if not settings.llm_base_url and not (
-            configuration and configuration.provider == "chatgpt"
-        ):
-            raise LLMDisabledError("EXPENSES_LLM_BASE_URL is not configured")
-        self.configuration = configuration
-        self.model_name = configuration.model if configuration else settings.llm_model
-        self.base_url = settings.llm_base_url
-        self.api_key = settings.llm_api_key
-        self.reasoning_effort = (
-            configuration.reasoning_effort if configuration else reasoning_effort
-        )
-        self.max_tokens = max_tokens
-        self.temperature = temperature
+    def __init__(self, resolved: ResolvedFeature) -> None:
+        self.resolved = resolved
+        self.model_name = resolved.model
 
     async def run(
         self,
@@ -89,63 +79,19 @@ class PydanticAILLMRunner(LLMRunner):
         payload: dict[str, Any],
         output_type: type[OutputT],
     ) -> LLMRunResult[OutputT]:
-        try:
-            from pydantic_ai import (
-                Agent,
-                ModelRetry,
-                ModelSettings,
-                PromptedOutput,
-                RunContext,
-            )
-            from pydantic_ai.exceptions import UnexpectedModelBehavior
-            from pydantic_ai.models.openai import OpenAIChatModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-            from pydantic_ai.retries import (
-                AsyncTenacityTransport,
-                RetryConfig,
-                wait_retry_after,
-            )
-            from openai import omit
-        except ImportError as exc:
-            raise LLMDisabledError("Install pydantic-ai to enable LLM usage") from exc
+        from pydantic_ai import Agent, ModelRetry, PromptedOutput, RunContext
+        from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+        from pydantic_ai.usage import UsageLimits
 
-        usage_capture = OpenAICompatibleUsageCapture()
-        if self.configuration and self.configuration.provider == "chatgpt":
-            from expenses.ai.chatgpt_model import build_model
+        from expenses.ai.backends import build_model
 
-            model, http_client, model_settings = await build_model(self.configuration)
-            self.base_url = "https://api.openai.com/v1"
-        else:
-            http_client = _retrying_http_client(
-                AsyncTenacityTransport=AsyncTenacityTransport,
-                RetryConfig=RetryConfig,
-                wait_retry_after=wait_retry_after,
-                usage_capture=usage_capture,
-            )
-            model = OpenAIChatModel(
-                self.model_name,
-                provider=OpenAIProvider(
-                    base_url=self.base_url,
-                    api_key=self.api_key or None,
-                    http_client=http_client,
-                ),
-            )
-            model_settings = ModelSettings(
-                **_request_model_settings(
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    api_key=self.api_key,
-                    reasoning_effort=self.reasoning_effort,
-                    omit_authorization=omit,
-                )
-            )
         agent = Agent(
-            model,
+            build_model(self.resolved.backend, self.resolved.model),
             deps_type=dict[str, Any],
             output_type=PromptedOutput(output_type),
             instructions=_instructions_for_feature(feature),
             retries=2,
-            model_settings=model_settings,
+            model_settings=model_settings(self.resolved),
         )
 
         @agent.output_validator
@@ -224,88 +170,22 @@ class PydanticAILLMRunner(LLMRunner):
                     sort_keys=True,
                 ),
                 deps=payload,
+                usage_limits=UsageLimits(output_tokens_limit=OUTPUT_TOKENS_LIMIT),
             )
-            usage_metadata = usage_metadata_from_result(
-                usage=result.usage,
-                messages=result.all_messages(),
-                base_url=self.base_url,
-                configured_model=self.model_name,
-            )
-            if self.configuration and self.configuration.provider == "chatgpt":
-                from dataclasses import replace
-
-                usage_metadata = replace(
-                    usage_metadata,
-                    llm_provider="chatgpt",
-                    cost_decimal=None,
-                    cost_unit=None,
-                )
-            usage_metadata = apply_captured_provider_usage(
-                usage_metadata, usage_capture
-            )
-            usage_metadata = await enrich_openrouter_generation_usage(
-                usage_metadata,
-                http_client=http_client,
-                api_key=self.api_key,
-                base_url=self.base_url,
-            )
-        except UnexpectedModelBehavior as exc:
+        except (UnexpectedModelBehavior, UsageLimitExceeded) as exc:
             raise LLMOutputError(str(exc)) from exc
-        finally:
-            await http_client.aclose()
+        metadata = usage_metadata(
+            usage=result.usage,
+            messages=result.all_messages(),
+            llm_provider=self.resolved.backend.kind,
+            model=self.resolved.model,
+        )
         return LLMRunResult(
             output=result.output,
-            input_tokens=usage_metadata.input_tokens,
-            output_tokens=usage_metadata.output_tokens,
-            usage_metadata=usage_metadata,
+            input_tokens=metadata.input_tokens,
+            output_tokens=metadata.output_tokens,
+            usage_metadata=metadata,
         )
-
-
-def _request_model_settings(
-    *,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str,
-    reasoning_effort: ReasoningEffort,
-    omit_authorization: object,
-) -> dict[str, Any]:
-    settings: dict[str, Any] = {
-        "max_tokens": max_tokens,
-        "extra_body": {"reasoning": {"effort": reasoning_effort}},
-    }
-    if temperature is not None:
-        settings["temperature"] = temperature
-    if not api_key:
-        settings["extra_headers"] = {"Authorization": omit_authorization}
-    return settings
-
-
-def _retrying_http_client(
-    *,
-    AsyncTenacityTransport: type,
-    RetryConfig: type,
-    wait_retry_after: Any,
-    usage_capture: OpenAICompatibleUsageCapture | None = None,
-) -> AsyncClient:
-    def should_retry_status(response: Response) -> None:
-        if response.status_code in {429, 502, 503, 504}:
-            response.raise_for_status()
-
-    transport = AsyncTenacityTransport(
-        config=RetryConfig(
-            retry=retry_if_exception_type((HTTPStatusError, ConnectionError)),
-            wait=wait_retry_after(
-                fallback_strategy=wait_exponential(multiplier=0.5, max=4),
-                max_wait=8,
-            ),
-            stop=stop_after_attempt(3),
-            reraise=True,
-        ),
-        validate_response=should_retry_status,
-    )
-    if usage_capture is not None:
-        transport = UsageCaptureTransport(transport, usage_capture)
-    return AsyncClient(transport=transport)
 
 
 def _instructions_for_feature(feature: str) -> str:

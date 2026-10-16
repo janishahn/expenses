@@ -7,7 +7,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { ListNumbersIcon } from "@phosphor-icons/react/ListNumbers"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
-import { SparkleIcon } from "@phosphor-icons/react/Sparkle"
+import { LightbulbIcon } from "@phosphor-icons/react/Lightbulb"
 import { TagIcon } from "@phosphor-icons/react/Tag"
 import { TextAaIcon } from "@phosphor-icons/react/TextAa"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
@@ -834,7 +834,7 @@ function SuggestionRows({ suggestions, categories }: { suggestions: RuleSuggesti
         )
         return (
           <Row key={suggestion.id} {...SUGGESTION_COLUMNS} label={suggestion.name}>
-            <IconGlyph icon={SparkleIcon} />
+            <IconGlyph icon={LightbulbIcon} />
             <Cell>Title {titleCondition(suggestion.match_type, suggestion.match_value)}</Cell>
             <Cell>
               {category ? <CategoryGlyph categoryId={category.id} icon={category.icon} name={category.name} inline /> : null}
@@ -866,7 +866,7 @@ function SuggestionRows({ suggestions, categories }: { suggestions: RuleSuggesti
 
 // Rules set a category or tags on new and imported transactions, in priority order.
 function RulesPage() {
-  const { llmEnabled } = useAuth()
+  const ruleSuggestionsOn = useAuth().aiFeatures.includes("rule_mining")
   const isDesktop = useIsDesktop()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -880,7 +880,7 @@ function RulesPage() {
   const suggestionsQuery = useQuery({
     queryKey: ["ai", "rule-suggestions"],
     queryFn: () => apiFetch<RuleSuggestion[]>("/api/ai/rules/suggestions"),
-    enabled: llmEnabled,
+    enabled: ruleSuggestionsOn,
   })
   const mine = useMutation({
     mutationFn: () => apiFetch<RuleSuggestion[]>("/api/ai/rules/mine", { method: "POST" }),
@@ -894,7 +894,7 @@ function RulesPage() {
   if (isLoading) return <PanelLoading title="Rules" label="Loading rules…" />
   if (error || !data) return <PanelError title="Rules" message="Unable to load rules." />
 
-  const suggestions = llmEnabled ? (suggestionsQuery.data ?? []) : []
+  const suggestions = ruleSuggestionsOn ? (suggestionsQuery.data ?? []) : []
   const peekRule = data.rules.find((rule) => rule.id === peekId)
   const closePeek = () => setSearchParams(buildSearchParams(searchParams, { peek: null }), { replace: true })
   const peek = peekRule ? <RulePeek key={peekRule.id} rule={peekRule} data={data} onClose={closePeek} /> : null
@@ -977,9 +977,9 @@ function RulesPage() {
           <Button variant="primary" icon={PlusIcon} aria-label="Add rule" onClick={() => setAdding(true)}>
             {isDesktop ? "Add rule" : "Add"}
           </Button>
-          {llmEnabled ? (
+          {ruleSuggestionsOn ? (
             <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
-              <MenuItem icon={SparkleIcon} disabled={mine.isPending} onSelect={() => mine.mutate()}>
+              <MenuItem icon={LightbulbIcon} disabled={mine.isPending} onSelect={() => mine.mutate()}>
                 {mine.isPending ? "Finding rule suggestions…" : "Find rule suggestions"}
               </MenuItem>
             </Menu>

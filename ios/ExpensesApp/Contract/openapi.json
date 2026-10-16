@@ -1,44 +1,49 @@
 {
   "components": {
     "schemas": {
-      "AIConnectionStatus": {
+      "AIBackendOut": {
         "properties": {
-          "email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+          "kind": {
+            "enum": [
+              "anthropic",
+              "openai",
+              "openrouter",
+              "openai-compatible"
             ],
-            "title": "Email"
-          },
-          "plan_authorized": {
-            "title": "Plan Authorized",
-            "type": "boolean"
-          },
-          "status": {
-            "title": "Status",
+            "title": "Kind",
             "type": "string"
           },
-          "usage_url": {
-            "title": "Usage Url",
+          "name": {
+            "title": "Name",
             "type": "string"
           }
         },
         "required": [
-          "status",
-          "email",
-          "plan_authorized",
-          "usage_url"
+          "name",
+          "kind"
         ],
-        "title": "AIConnectionStatus",
+        "title": "AIBackendOut",
         "type": "object"
       },
-      "AIFeatureSettings": {
+      "AIFeatureOut": {
         "properties": {
+          "backend": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Backend",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "id": {
+            "enum": [
+              "spending_chat",
+              "transaction_triage",
+              "rule_mining"
+            ],
             "title": "Id",
             "type": "string"
           },
@@ -52,27 +57,16 @@
             "title": "Name",
             "type": "string"
           },
-          "provider": {
-            "default": "configured",
-            "enum": [
-              "configured",
-              "chatgpt"
-            ],
-            "title": "Provider",
-            "type": "string"
-          },
-          "reasoning_effort": {
+          "thinking": {
             "default": "auto",
             "enum": [
               "auto",
-              "none",
-              "minimal",
+              "off",
               "low",
               "medium",
-              "high",
-              "xhigh"
+              "high"
             ],
-            "title": "Reasoning Effort",
+            "title": "Thinking",
             "type": "string"
           }
         },
@@ -80,14 +74,14 @@
           "id",
           "name"
         ],
-        "title": "AIFeatureSettings",
+        "title": "AIFeatureOut",
         "type": "object"
       },
-      "AIModelCatalog": {
+      "AIModelCatalogOut": {
         "properties": {
           "models": {
             "items": {
-              "$ref": "#/components/schemas/AIModelOption"
+              "$ref": "#/components/schemas/AIModelOut"
             },
             "title": "Models",
             "type": "array"
@@ -96,10 +90,10 @@
         "required": [
           "models"
         ],
-        "title": "AIModelCatalog",
+        "title": "AIModelCatalogOut",
         "type": "object"
       },
-      "AIModelOption": {
+      "AIModelOut": {
         "properties": {
           "id": {
             "title": "Id",
@@ -108,69 +102,50 @@
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "reasoning_efforts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Reasoning Efforts",
-            "type": "array"
           }
         },
         "required": [
           "id",
-          "name",
-          "reasoning_efforts"
+          "name"
         ],
-        "title": "AIModelOption",
+        "title": "AIModelOut",
         "type": "object"
       },
-      "AISettingsResponse": {
+      "AISettingsOut": {
         "properties": {
-          "configured_available": {
-            "title": "Configured Available",
-            "type": "boolean"
-          },
-          "configured_model": {
-            "title": "Configured Model",
-            "type": "string"
-          },
-          "connection": {
-            "$ref": "#/components/schemas/AIConnectionStatus"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/AIBackendOut"
+            },
+            "title": "Backends",
+            "type": "array"
           },
           "features": {
             "items": {
-              "$ref": "#/components/schemas/AIFeatureSettings"
+              "$ref": "#/components/schemas/AIFeatureOut"
             },
             "title": "Features",
             "type": "array"
           }
         },
         "required": [
-          "enabled",
-          "configured_available",
-          "configured_model",
-          "connection",
+          "backends",
           "features"
         ],
-        "title": "AISettingsResponse",
+        "title": "AISettingsOut",
         "type": "object"
       },
       "AISettingsUpdate": {
         "properties": {
           "features": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/FeatureChoice"
+              "$ref": "#/components/schemas/FeatureSettings"
             },
             "propertyNames": {
               "enum": [
+                "spending_chat",
                 "transaction_triage",
-                "rule_mining",
-                "spending_chat"
+                "rule_mining"
               ]
             },
             "title": "Features",
@@ -624,6 +599,425 @@
           "allocation_id"
         ],
         "title": "AllocationIDOut",
+        "type": "object"
+      },
+      "ApprovalCard": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cents"
+          },
+          "total_of_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Of Cents"
+          },
+          "verb": {
+            "title": "Verb",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "verb",
+          "done",
+          "rows"
+        ],
+        "title": "ApprovalCard",
+        "type": "object"
+      },
+      "ApprovalCategory": {
+        "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "icon"
+        ],
+        "title": "ApprovalCategory",
+        "type": "object"
+      },
+      "ApprovalItem": {
+        "description": "A change the model proposed. Nothing changes until the user approves it.",
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/ApprovalCard"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "approval",
+            "default": "approval",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "applied",
+              "dismissed",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "card",
+          "state"
+        ],
+        "title": "ApprovalItem",
+        "type": "object"
+      },
+      "ApprovalRow": {
+        "properties": {
+          "amount_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cents"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "income": {
+            "default": false,
+            "title": "Income",
+            "type": "boolean"
+          },
+          "of_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Of Cents"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ApprovalRow",
+        "type": "object"
+      },
+      "AssistantChatOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantTurnOut"
+            },
+            "title": "Turns",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "updated_at",
+          "turns"
+        ],
+        "title": "AssistantChatOut",
+        "type": "object"
+      },
+      "AssistantChatSummaryOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "updated_at"
+        ],
+        "title": "AssistantChatSummaryOut",
+        "type": "object"
+      },
+      "AssistantDecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "item_id": {
+            "maxLength": 120,
+            "pattern": "^approval-",
+            "title": "Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "approve"
+        ],
+        "title": "AssistantDecisionIn",
+        "type": "object"
+      },
+      "AssistantMessageIn": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AssistantMessageIn",
+        "type": "object"
+      },
+      "AssistantSettingsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_days": {
+            "enum": [
+              7,
+              14,
+              30,
+              90
+            ],
+            "title": "Chat Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_days"
+        ],
+        "title": "AssistantSettingsIn",
+        "type": "object"
+      },
+      "AssistantSettingsOut": {
+        "properties": {
+          "chat_days": {
+            "title": "Chat Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_days"
+        ],
+        "title": "AssistantSettingsOut",
+        "type": "object"
+      },
+      "AssistantTurnOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "approval": "#/components/schemas/ApprovalItem",
+                  "note": "#/components/schemas/NoteItem",
+                  "text": "#/components/schemas/TextItem",
+                  "thinking": "#/components/schemas/ThinkingItem",
+                  "tool": "#/components/schemas/ToolItem"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ThinkingItem"
+                },
+                {
+                  "$ref": "#/components/schemas/NoteItem"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolItem"
+                },
+                {
+                  "$ref": "#/components/schemas/TextItem"
+                },
+                {
+                  "$ref": "#/components/schemas/ApprovalItem"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "stopped",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_text": {
+            "title": "User Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_text",
+          "items",
+          "status",
+          "created_at"
+        ],
+        "title": "AssistantTurnOut",
         "type": "object"
       },
       "AuthCredentialsIn": {
@@ -4167,39 +4561,39 @@
         "title": "DurablePurchasesResponseOut",
         "type": "object"
       },
-      "FeatureChoice": {
+      "FeatureSettings": {
         "properties": {
+          "backend": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Backend",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "model": {
             "default": "",
             "maxLength": 200,
             "title": "Model",
             "type": "string"
           },
-          "provider": {
-            "default": "configured",
-            "enum": [
-              "configured",
-              "chatgpt"
-            ],
-            "title": "Provider",
-            "type": "string"
-          },
-          "reasoning_effort": {
+          "thinking": {
             "default": "auto",
             "enum": [
               "auto",
-              "none",
-              "minimal",
+              "off",
               "low",
               "medium",
-              "high",
-              "xhigh"
+              "high"
             ],
-            "title": "Reasoning Effort",
+            "title": "Thinking",
             "type": "string"
           }
         },
-        "title": "FeatureChoice",
+        "title": "FeatureSettings",
         "type": "object"
       },
       "FilterTagOut": {
@@ -6426,13 +6820,16 @@
       },
       "MobileStatusOut": {
         "properties": {
+          "ai_features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Features",
+            "type": "array"
+          },
           "app": {
             "title": "App",
             "type": "string"
-          },
-          "llm_enabled": {
-            "title": "Llm Enabled",
-            "type": "boolean"
           },
           "receipt_max_bytes": {
             "title": "Receipt Max Bytes",
@@ -6467,7 +6864,7 @@
           "signup_allowed",
           "timezone",
           "receipt_max_bytes",
-          "llm_enabled"
+          "ai_features"
         ],
         "title": "MobileStatusOut",
         "type": "object"
@@ -6480,6 +6877,40 @@
         ],
         "title": "MonthDayPolicy",
         "type": "string"
+      },
+      "NoteItem": {
+        "description": "What the model says about its next step before it calls a tool.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "note",
+            "default": "note",
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "state"
+        ],
+        "title": "NoteItem",
+        "type": "object"
       },
       "OpenReimbursementItemOut": {
         "properties": {
@@ -6527,21 +6958,6 @@
           "results"
         ],
         "title": "OpenReimbursementsResponseOut",
-        "type": "object"
-      },
-      "PairingStart": {
-        "properties": {
-          "port": {
-            "maximum": 65535.0,
-            "minimum": 1024.0,
-            "title": "Port",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "port"
-        ],
-        "title": "PairingStart",
         "type": "object"
       },
       "PeriodOut": {
@@ -8225,59 +8641,6 @@
         "title": "SettingsResponseOut",
         "type": "object"
       },
-      "SpendingChatMessage": {
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Content",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "user",
-              "assistant"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role",
-          "content"
-        ],
-        "title": "SpendingChatMessage",
-        "type": "object"
-      },
-      "SpendingChatRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "message_history": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 200,
-            "title": "Message History",
-            "type": "array"
-          },
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/SpendingChatMessage"
-            },
-            "maxItems": 40,
-            "minItems": 1,
-            "title": "Messages",
-            "type": "array"
-          }
-        },
-        "required": [
-          "messages"
-        ],
-        "title": "SpendingChatRequest",
-        "type": "object"
-      },
       "StatusOut": {
         "properties": {
           "status": {
@@ -8596,53 +8959,132 @@
         "title": "TemplatesResponseOut",
         "type": "object"
       },
-      "TokenGrant": {
+      "TextItem": {
         "properties": {
-          "access_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Access Token",
+          "id": {
+            "title": "Id",
             "type": "string"
           },
-          "client_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Client Id",
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
             "type": "string"
           },
-          "expires_in": {
-            "exclusiveMinimum": 0.0,
-            "maximum": 86400.0,
-            "title": "Expires In",
-            "type": "integer"
-          },
-          "id_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Id Token",
+          "state": {
+            "enum": [
+              "streaming",
+              "done"
+            ],
+            "title": "State",
             "type": "string"
           },
-          "refresh_token": {
-            "maxLength": 32768,
-            "minLength": 1,
-            "title": "Refresh Token",
-            "type": "string"
-          },
-          "scope": {
-            "maxLength": 2000,
-            "title": "Scope",
+          "text": {
+            "title": "Text",
             "type": "string"
           }
         },
         "required": [
-          "client_id",
-          "access_token",
-          "refresh_token",
-          "id_token",
-          "scope",
-          "expires_in"
+          "id",
+          "text",
+          "state"
         ],
-        "title": "TokenGrant",
+        "title": "TextItem",
+        "type": "object"
+      },
+      "ThinkingItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "thinking",
+            "default": "thinking",
+            "title": "Kind",
+            "type": "string"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "done"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "state"
+        ],
+        "title": "ThinkingItem",
+        "type": "object"
+      },
+      "ToolItem": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "tool",
+            "default": "tool",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "stopped"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "state"
+        ],
+        "title": "ToolItem",
         "type": "object"
       },
       "TransactionBankRowOut": {
@@ -9797,6 +10239,99 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/ai/models": {
+      "get": {
+        "operationId": "models_api_admin_ai_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "backend",
+            "required": true,
+            "schema": {
+              "title": "Backend",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIModelCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Models"
+      }
+    },
+    "/api/admin/ai/settings": {
+      "get": {
+        "operationId": "settings_api_admin_ai_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "put": {
+        "operationId": "save_settings_api_admin_ai_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Settings"
+      }
+    },
     "/api/admin/balance-anchors": {
       "post": {
         "operationId": "api_admin_balance_anchors_removed_api_admin_balance_anchors_post",
@@ -10351,177 +10886,6 @@
         "summary": "Api Set Admin System Health Validation Override"
       }
     },
-    "/api/ai/chatgpt/connection": {
-      "delete": {
-        "operationId": "disconnect_api_ai_chatgpt_connection_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Disconnect"
-      }
-    },
-    "/api/ai/chatgpt/pairing": {
-      "post": {
-        "operationId": "create_pairing_api_ai_chatgpt_pairing_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Create Pairing"
-      }
-    },
-    "/api/ai/chatgpt/pairing/complete": {
-      "post": {
-        "operationId": "complete_pairing_api_ai_chatgpt_pairing_complete_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-chatgpt-pairing",
-            "required": true,
-            "schema": {
-              "maxLength": 200,
-              "title": "X-Chatgpt-Pairing",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TokenGrant"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Complete Pairing"
-      }
-    },
-    "/api/ai/chatgpt/pairing/start": {
-      "post": {
-        "operationId": "start_pairing_api_ai_chatgpt_pairing_start_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-chatgpt-pairing",
-            "required": true,
-            "schema": {
-              "maxLength": 200,
-              "title": "X-Chatgpt-Pairing",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PairingStart"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Start Pairing"
-      }
-    },
-    "/api/ai/models": {
-      "get": {
-        "operationId": "models_api_ai_models_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "provider",
-            "required": true,
-            "schema": {
-              "enum": [
-                "configured",
-                "chatgpt"
-              ],
-              "title": "Provider",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AIModelCatalog"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Models"
-      }
-    },
     "/api/ai/rules/mine": {
       "post": {
         "operationId": "api_ai_mine_rules_api_ai_rules_mine_post",
@@ -10642,91 +11006,6 @@
           }
         },
         "summary": "Api Ai Reject Rule Suggestion"
-      }
-    },
-    "/api/ai/settings": {
-      "get": {
-        "operationId": "settings_api_ai_settings_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AISettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Settings"
-      },
-      "put": {
-        "operationId": "save_settings_api_ai_settings_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AISettingsUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AISettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Save Settings"
-      }
-    },
-    "/api/ai/spending-chat/stream": {
-      "post": {
-        "operationId": "api_ai_spending_chat_stream_api_ai_spending_chat_stream_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SpendingChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Api Ai Spending Chat Stream"
       }
     },
     "/api/ai/transaction-suggestions": {
@@ -10929,6 +11208,256 @@
           }
         },
         "summary": "Api Ai Usage Summary"
+      }
+    },
+    "/api/assistant/chats": {
+      "get": {
+        "operationId": "chats_api_assistant_chats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantChatSummaryOut"
+                  },
+                  "title": "Response Chats Api Assistant Chats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chats"
+      }
+    },
+    "/api/assistant/chats/{chat_id}": {
+      "delete": {
+        "operationId": "delete_chat_api_assistant_chats__chat_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Chat"
+      },
+      "get": {
+        "operationId": "chat_api_assistant_chats__chat_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantChatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat"
+      }
+    },
+    "/api/assistant/chats/{chat_id}/approvals/stream": {
+      "post": {
+        "operationId": "decide_api_assistant_chats__chat_id__approvals_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide"
+      }
+    },
+    "/api/assistant/chats/{chat_id}/retry/stream": {
+      "post": {
+        "operationId": "retry_api_assistant_chats__chat_id__retry_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry"
+      }
+    },
+    "/api/assistant/messages/stream": {
+      "post": {
+        "operationId": "send_message_api_assistant_messages_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Message"
+      }
+    },
+    "/api/assistant/settings": {
+      "get": {
+        "operationId": "settings_api_assistant_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "put": {
+        "operationId": "update_settings_api_assistant_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings"
       }
     },
     "/api/attachments/{attachment_id}": {

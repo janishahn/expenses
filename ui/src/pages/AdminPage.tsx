@@ -9,8 +9,8 @@ import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { Navigate, useParams } from "react-router-dom"
 import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
 import type { AIUsageSummary } from "../app/api-types"
-import { useAuth } from "../app/auth"
 import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
+import AISettingsPanel from "../components/AISettingsPanel"
 import { confirmDialog } from "../components/confirm"
 import { Button, LinkButton } from "../components/ui/Button"
 import { EmptyState, Status } from "../components/ui/EmptyState"
@@ -104,13 +104,10 @@ const HEALTH_STATUS = {
   critical: { label: "Critical", tone: "bad", icon: WarningIcon },
 } as const
 
-function trimDecimal(value: string): string {
-  if (!value.includes(".")) return value
-  return value.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "")
-}
-
+// Costs under 1 keep three significant digits, so a fraction of a cent stays short.
 function formatCostAmount(decimal: string, unit: string | null): string {
-  const value = trimDecimal(decimal)
+  const amount = Number(decimal)
+  const value = amount.toLocaleString("en-US", Math.abs(amount) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 })
   if (unit === "openrouter_credits") return `${value} credits`
   if (unit === "usd") return `$${value}`
   if (unit === "mixed") return `${value} (mixed)`
@@ -496,11 +493,10 @@ function SystemSection() {
 
 function AdminPage() {
   const { section = "health" } = useParams()
-  const { llmEnabled } = useAuth()
   const groups = useSettingsGroups()
   const [usagePeriod, setUsagePeriod] = useState<AIUsageSummary["period"]>("week")
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
-  if (!ADMIN_SECTIONS.includes(section as AdminSectionKey) || (section === "usage" && !llmEnabled)) {
+  if (!ADMIN_SECTIONS.includes(section as AdminSectionKey)) {
     return <Navigate to="/admin" replace />
   }
   const key = section as AdminSectionKey
@@ -519,6 +515,7 @@ function AdminPage() {
     >
       {key === "health" ? <HealthSection /> : null}
       {key === "maintenance" ? <MaintenanceSection /> : null}
+      {key === "ai" ? <AISettingsPanel /> : null}
       {key === "usage" ? <UsageSection period={usagePeriod} /> : null}
       {key === "logs" ? <LogsSection selected={selectedLog} onSelect={setSelectedLog} /> : null}
       {key === "system" ? <SystemSection /> : null}

@@ -24,7 +24,7 @@ Recommended baseline:
 - Put the app behind HTTPS before exposing it outside localhost or a private network. The app speaks plain HTTP and expects TLS to be terminated by a trusted local reverse proxy or tunnel that forwards `X-Forwarded-Proto`; keep `--forwarded-allow-ips` scoped to that local proxy.
 - If you expose the web app on a public domain, remember that the same origin also exposes `/api/ingest` and `/api/mobile/*`. Consider putting an SSO/identity gate in front of the public door, or restricting the public reverse-proxy host to the web app and blocking the device/ingest endpoints there, while devices continue to reach them over the tailnet.
 - Treat the ingest token as a secret with write access to your ledger: mint it per user, prefer carrying it only over the tailnet, and rotate or revoke it from Settings if it may have leaked.
-- Keep `EXPENSES_LLM_ENABLED=false` unless you have intentionally configured a trusted OpenAI-compatible endpoint.
+- Leave `EXPENSES_AI_BACKENDS` unset unless you trust each configured AI provider with the financial data its features send.
 - Persist and back up the data directory, including `expenses.db`, `receipts/`, and `secrets/csrf_secret`.
 - Do not commit `.env`, `data/`, logs, database backups, receipt files, or generated secrets.
 - Keep host packages, Python dependencies, npm dependencies, and Docker base images updated.

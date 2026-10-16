@@ -112,7 +112,7 @@ class MobileStatusOut(BaseModel):
     signup_allowed: bool
     timezone: str
     receipt_max_bytes: int
-    llm_enabled: bool
+    ai_features: list[str]
 
 
 class RecurringPreviewIn(BaseModel):

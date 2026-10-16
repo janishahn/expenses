@@ -1427,6 +1427,9 @@ class TransactionService:
         *,
         source: str = "user",
         commit: bool = True,
+        # Rules and the category model may set the category and tags; False keeps
+        # them exactly as given.
+        auto_classify: bool = True,
     ) -> Transaction:
         if data.is_reimbursement and data.type != TransactionType.income:
             raise ValueError("Reimbursements must be income transactions")
@@ -1480,10 +1483,16 @@ class TransactionService:
         self.session.add(txn)
         self.session.flush()
         self.session.refresh(txn, ["category", "tags"])
-        rule_result = RuleService(self.session, self.user_id).apply_rules(txn)
+        rule_result = (
+            RuleService(self.session, self.user_id).apply_rules(txn)
+            if auto_classify
+            else {"matched": 0, "applied": 0, "category_set": False}
+        )
         self.session.flush()
-        auto_categorized = not rule_result["category_set"] and apply_prediction(
-            self.session, txn
+        auto_categorized = (
+            auto_classify
+            and not rule_result["category_set"]
+            and apply_prediction(self.session, txn)
         )
         self.session.flush()
         self._record_classification_event(
@@ -2241,7 +2250,9 @@ class ReimbursementService:
         self.session = session
         self.user_id = user_id or get_current_user_id()
 
-    def set_reimbursement(self, transaction_id: int, is_reimbursement: bool) -> None:
+    def set_reimbursement(
+        self, transaction_id: int, is_reimbursement: bool, *, commit: bool = True
+    ) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
@@ -2279,7 +2290,8 @@ class ReimbursementService:
         recompute_monthly_rollup_for_date(self.session, self.user_id, txn.date)
         for y, m in affected_expense_months:
             recompute_monthly_rollup(self.session, self.user_id, y, m)
-        self.session.commit()
+        if commit:
+            self.session.commit()
 
     def allocated_total_for_reimbursement(
         self, reimbursement_transaction_id: int
@@ -2368,7 +2380,7 @@ class ReimbursementService:
         return {int(r.expense_id): int(r.total or 0) for r in rows}
 
     def allocations_for_reimbursement(
-        self, reimbursement_transaction_id: int
+        self, reimbursement_transaction_id: int, *, limit: int | None = None
     ) -> list[ReimbursementAllocation]:
         expense = aliased(Transaction)
         stmt = (
@@ -2385,11 +2397,12 @@ class ReimbursementService:
                 == reimbursement_transaction_id,
             )
             .order_by(expense.date.desc(), expense.id.desc())
+            .limit(limit)
         )
         return self.session.scalars(stmt).all()
 
     def allocations_for_expense(
-        self, expense_transaction_id: int
+        self, expense_transaction_id: int, *, limit: int | None = None
     ) -> list[ReimbursementAllocation]:
         reimb = aliased(Transaction)
         stmt = (
@@ -2408,6 +2421,7 @@ class ReimbursementService:
                 == expense_transaction_id,
             )
             .order_by(reimb.date.desc(), reimb.id.desc())
+            .limit(limit)
         )
         return self.session.scalars(stmt).all()
 
@@ -2416,6 +2430,8 @@ class ReimbursementService:
         reimbursement_transaction_id: int,
         expense_transaction_id: int,
         amount_cents: int,
+        *,
+        commit: bool = True,
     ) -> ReimbursementAllocation:
         if amount_cents <= 0:
             raise ValueError("Allocation amount must be positive")
@@ -2502,8 +2518,9 @@ class ReimbursementService:
 
         self.session.flush()
         recompute_monthly_rollup_for_date(self.session, self.user_id, expense.date)
-        self.session.commit()
-        self.session.refresh(allocation)
+        if commit:
+            self.session.commit()
+            self.session.refresh(allocation)
         return allocation
 
     def delete_allocation(self, allocation_id: int) -> None:
@@ -7373,7 +7390,9 @@ class BudgetService:
         )
         return tmpl
 
-    def apply_template_from(self, data: BudgetTemplateApplyFromIn) -> BudgetTemplate:
+    def apply_template_from(
+        self, data: BudgetTemplateApplyFromIn, *, commit: bool = True
+    ) -> BudgetTemplate:
         if data.frequency == BudgetFrequency.monthly and data.starts_on.day != 1:
             raise ValueError("Monthly budgets must start on the first of a month")
         if data.frequency == BudgetFrequency.yearly and (
@@ -7462,8 +7481,11 @@ class BudgetService:
                 )
             )
 
-        self.session.commit()
-        self.session.refresh(template)
+        if commit:
+            self.session.commit()
+            self.session.refresh(template)
+        else:
+            self.session.flush()
         log_event(
             logger,
             logging.INFO,
@@ -7490,7 +7512,9 @@ class BudgetService:
             template_id=template_id,
         )
 
-    def upsert_override(self, data: BudgetOverrideIn) -> BudgetOverride:
+    def upsert_override(
+        self, data: BudgetOverrideIn, *, commit: bool = True
+    ) -> BudgetOverride:
         if data.category_id is not None:
             category = self.session.get(Category, data.category_id)
             if not category or category.user_id != self.user_id:
@@ -7509,8 +7533,9 @@ class BudgetService:
         existing = self.session.scalar(stmt)
         if existing:
             existing.amount_cents = data.amount_cents
-            self.session.commit()
-            self.session.refresh(existing)
+            if commit:
+                self.session.commit()
+                self.session.refresh(existing)
             log_event(
                 logger,
                 logging.INFO,
@@ -7532,8 +7557,11 @@ class BudgetService:
             amount_cents=data.amount_cents,
         )
         self.session.add(override)
-        self.session.commit()
-        self.session.refresh(override)
+        if commit:
+            self.session.commit()
+            self.session.refresh(override)
+        else:
+            self.session.flush()
         log_event(
             logger,
             logging.INFO,

@@ -36,7 +36,7 @@ final class AppModel {
         }
     }
     var status: MobileStatus?
-    var llmEnabled: Bool { status?.llmEnabled ?? false }
+    var aiFeatures: [String] { status?.aiFeatures ?? [] }
     // The server stores transaction and balance snapshot times as wall-clock times in its
     // zone, so a stored time shows and saves in it. The device's zone until it is known.
     var serverTimeZone: TimeZone { status.flatMap { TimeZone(identifier: $0.timezone) } ?? .current }
@@ -73,7 +73,6 @@ final class AppModel {
     var budgets: BudgetsResponse?
     var mobileSessions: MobileSessionsResponse?
     var settings: SettingsResponse?
-    var aiSettings: AISettingsResponse?
     var recurring: RecurringResponse?
     var selectedTransaction: TransactionDetail?
     var transactionReimbursements: TransactionReimbursementsResponse?
@@ -83,10 +82,16 @@ final class AppModel {
     var lastError: APIErrorInfo?
     var isLoading = false
     var isMiningRuleSuggestions = false
+    /// The open chat. A new chat gets its id with the first answer.
+    var assistantChatID: String?
     var assistantTurns: [AssistantTurn] = []
+    var assistantChatState: AssistantChatState = .ready
+    var assistantChats: [AssistantChatSummary] = []
+    var assistantSettings: AssistantSettings?
     var isAssistantStreaming = false
-    private var assistantMessageHistory: [JSONValue] = []
     private var assistantStreamTask: Task<Void, Never>?
+    // Each stream's number; a stream that is no longer the latest leaves the screen alone.
+    private var assistantStreamSeq = 0
     private var assistantTurnSeq = 0
     private var dashboardLoadState: PrimaryLoadState = .idle
     private var transactionsLoadState: PrimaryLoadState = .idle
@@ -254,40 +259,6 @@ final class AppModel {
             clearStoredSession()
             clearUserScopedState()
         }
-    }
-
-    func loadAISettings() async throws -> AISettingsResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.aiSettings(token: token)
-        guard self.token == token else { throw CancellationError() }
-        aiSettings = response
-        return response
-    }
-
-    func saveAISettings(_ features: [AIFeatureSettings]) async throws -> AISettingsResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.saveAISettings(features, token: token)
-        guard self.token == token else { throw CancellationError() }
-        aiSettings = response
-        return response
-    }
-
-    func aiModels(provider: String) async throws -> [AIModelOption] {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        return try await apiClient.aiModels(provider: provider, token: token).models
-    }
-
-    func createChatGPTPairing() async throws -> ChatGPTPairingResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        return try await apiClient.createChatGPTPairing(token: token)
-    }
-
-    func disconnectChatGPT() async throws -> ChatGPTDisconnectResponse {
-        guard let token else { throw APIErrorInfo(message: "Sign in to Expenses first.") }
-        let response = try await apiClient.disconnectChatGPT(token: token)
-        // The disconnect happened, so its result stands even when the settings don't reload.
-        _ = try? await loadAISettings()
-        return response
     }
 
     func loadAccountSettings() async {
@@ -700,170 +671,301 @@ final class AppModel {
         return nil
     }
 
+    func loadAssistantChats() async {
+        guard let token else {
+            return
+        }
+        do {
+            assistantChats = try await apiClient.assistantChats(token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+    }
+
+    func loadAssistantSettings() async {
+        guard let token else {
+            return
+        }
+        do {
+            assistantSettings = try await apiClient.assistantSettings(token: token)
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+    }
+
+    func saveAssistantChatDays(_ days: Int) async -> Bool {
+        guard let token else {
+            return false
+        }
+        lastError = nil
+        do {
+            assistantSettings = try await apiClient.saveAssistantSettings(AssistantSettings(chatDays: days), token: token)
+            return true
+        } catch let error as APIErrorInfo {
+            handleAPIError(error)
+        } catch {
+            lastError = APIErrorInfo(message: error.localizedDescription)
+        }
+        return false
+    }
+
+    func openAssistantChat(_ id: String) async {
+        guard let token else {
+            return
+        }
+        stopAssistantStream()
+        assistantChatID = id
+        assistantTurns = []
+        assistantChatState = .loading
+        do {
+            let chat = try await apiClient.assistantChat(id: id, token: token)
+            guard assistantChatID == id else {
+                return
+            }
+            assistantTurns = Self.savedAssistantTurns(chat)
+            assistantChatState = .ready
+        } catch let error as APIErrorInfo {
+            if error.statusCode == 401 {
+                handleAPIError(error)
+            }
+            assistantChatState = .failed(error.message)
+        } catch {
+            assistantChatState = .failed(error.localizedDescription)
+        }
+    }
+
+    func newAssistantChat() {
+        stopAssistantStream()
+        assistantChatID = nil
+        assistantTurns = []
+        assistantChatState = .ready
+    }
+
     func sendAssistantMessage(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isAssistantStreaming, let token else {
             return
         }
-
         assistantTurnSeq += 1
-        assistantTurns.append(
-            AssistantTurn(
-                id: assistantTurnSeq,
-                role: .user,
-                content: trimmed,
-                progressNarration: "",
-                tools: [],
-                isStreaming: false,
-                isStopped: false,
-                errorMessage: nil
-            )
-        )
-        assistantTurnSeq += 1
-        assistantTurns.append(
-            AssistantTurn(
-                id: assistantTurnSeq,
-                role: .assistant,
-                content: "",
-                progressNarration: "",
-                tools: [],
-                isStreaming: true,
-                isStopped: false,
-                errorMessage: nil
-            )
-        )
-        streamAssistantReply(to: trimmed, turnID: assistantTurnSeq, token: token)
+        let turnID = "live-\(assistantTurnSeq)"
+        // Sending leaves open cards undecided; the server dismisses them the same way.
+        for turnIndex in assistantTurns.indices {
+            for itemIndex in assistantTurns[turnIndex].items.indices
+            where assistantTurns[turnIndex].items[itemIndex].state == .pending {
+                assistantTurns[turnIndex].items[itemIndex].state = .dismissed
+            }
+        }
+        assistantTurns.append(AssistantTurn(id: turnID, userText: trimmed, items: [], status: .streaming, live: true, received: false))
+        let body = AssistantMessageRequest(chatID: assistantChatID, message: trimmed)
+        streamAssistantTurn(turnID) { $0.assistantMessageStream(body, token: token) }
     }
 
-    /// Asks the question before a stopped or failed answer again, in that answer's place.
-    func retryAssistantTurn(_ turnID: Int) {
-        guard !isAssistantStreaming, let token,
-              let index = assistantTurns.firstIndex(where: { $0.id == turnID }),
-              index > 0, assistantTurns[index - 1].role == .user
-        else {
+    /// Answers the last question again, in its answer's place.
+    func retryLastAssistantTurn() {
+        guard !isAssistantStreaming, let token, let last = assistantTurns.last else {
             return
         }
-        assistantTurns[index].content = ""
-        assistantTurns[index].progressNarration = ""
-        assistantTurns[index].tools = []
-        assistantTurns[index].isStreaming = true
-        assistantTurns[index].isStopped = false
-        assistantTurns[index].errorMessage = nil
-        streamAssistantReply(to: assistantTurns[index - 1].content, turnID: turnID, token: token)
+        // A message the server never received has no turn to retry, so it is sent again.
+        guard let chatID = assistantChatID, last.received else {
+            assistantTurns.removeLast()
+            sendAssistantMessage(last.userText)
+            return
+        }
+        assistantTurns[assistantTurns.count - 1].items = []
+        assistantTurns[assistantTurns.count - 1].status = .streaming
+        assistantTurns[assistantTurns.count - 1].live = true
+        streamAssistantTurn(last.id) { $0.assistantRetryStream(chatID: chatID, token: token) }
     }
 
-    private func streamAssistantReply(to question: String, turnID assistantTurnID: Int, token: String) {
+    /// Approving applies the change on the server before the same turn continues.
+    func decideAssistantApproval(itemID: String, approve: Bool) {
+        guard !isAssistantStreaming, let token, let chatID = assistantChatID, let last = assistantTurns.last else {
+            return
+        }
+        assistantTurns[assistantTurns.count - 1].status = .streaming
+        assistantTurns[assistantTurns.count - 1].live = true
+        let body = AssistantDecisionRequest(itemID: itemID, approve: approve)
+        streamAssistantTurn(last.id, decision: body) { $0.assistantDecisionStream(chatID: chatID, body, token: token) }
+    }
+
+    /// Stops the answer. The server keeps what it wrote so far.
+    func cancelAssistantMessage() {
+        assistantStreamTask?.cancel()
+    }
+
+    private func stopAssistantStream() {
+        assistantStreamTask?.cancel()
+        assistantStreamTask = nil
+        assistantStreamSeq += 1
+        isAssistantStreaming = false
+    }
+
+    private static let assistantSavedFailure = "This answer didn't finish."
+
+    private static func savedAssistantTurns(_ chat: AssistantChat) -> [AssistantTurn] {
+        chat.turns.map { turn in
+            AssistantTurn(
+                id: "turn-\(turn.id)",
+                userText: turn.userText,
+                items: turn.items,
+                status: assistantStatus(turn.status, message: nil),
+                live: false,
+                received: true
+            )
+        }
+    }
+
+    private static func assistantStatus(_ status: AssistantTurnStatus, message: String?) -> AssistantTurn.Status {
+        switch status {
+        case .completed:
+            .completed
+        case .stopped:
+            .stopped
+        case .failed:
+            .failed(message ?? assistantSavedFailure)
+        }
+    }
+
+    private func streamAssistantTurn(
+        _ turnID: String,
+        decision: AssistantDecisionRequest? = nil,
+        open: @escaping (ExpensesAPIClient) -> AsyncThrowingStream<AssistantStreamEvent, Error>
+    ) {
         isAssistantStreaming = true
-        let request = AssistantStreamRequest(
-            messages: [AssistantStreamMessage(role: "user", content: question)],
-            messageHistory: assistantMessageHistory
-        )
+        assistantStreamSeq += 1
+        let streamID = assistantStreamSeq
         let client = apiClient
         assistantStreamTask = Task {
+            var ended: AssistantTurn.Status?
+            var failure: String?
+            var decidedCardArrived = false
             // Text reaches the transcript at most every 50 ms instead of once per token.
-            var pendingText = ""
+            var pending: (id: String, text: String)?
             var lastFlush = ContinuousClock.now
             @MainActor func flushText() {
-                guard !pendingText.isEmpty else { return }
-                applyAssistantEvent(.textChunk(content: pendingText), turnID: assistantTurnID)
-                pendingText = ""
+                guard let held = pending else { return }
+                applyAssistantEvent(.delta(id: held.id, text: held.text), turnID: turnID)
+                pending = nil
                 lastFlush = .now
             }
             do {
-                for try await event in client.spendingChatStream(request, token: token) {
-                    if case let .textChunk(content) = event {
-                        pendingText += content
+                for try await event in open(client) {
+                    guard streamID == assistantStreamSeq else {
+                        return
+                    }
+                    if case let .delta(id, text) = event {
+                        if let held = pending, held.id != id {
+                            flushText()
+                        }
+                        pending = (id, (pending?.text ?? "") + text)
                         if ContinuousClock.now - lastFlush >= .milliseconds(50) {
                             flushText()
                         }
                         continue
                     }
                     flushText()
-                    applyAssistantEvent(event, turnID: assistantTurnID)
+                    if case let .end(status, message) = event {
+                        ended = Self.assistantStatus(status, message: message)
+                    }
+                    if case let .item(item) = event, item.id == decision?.itemID {
+                        decidedCardArrived = true
+                    }
+                    applyAssistantEvent(event, turnID: turnID)
                 }
-                flushText()
-                finishAssistantStream(turnID: assistantTurnID, stopped: Task.isCancelled)
             } catch let error as APIErrorInfo {
-                flushText()
                 if error.statusCode == 401 {
                     handleAPIError(error)
                 }
-                failAssistantStream(turnID: assistantTurnID, message: error.message)
+                failure = error.message
             } catch {
-                flushText()
-                if Task.isCancelled || (error as? URLError)?.code == .cancelled {
-                    finishAssistantStream(turnID: assistantTurnID, stopped: true)
-                } else {
-                    failAssistantStream(turnID: assistantTurnID, message: error.localizedDescription)
+                if !Task.isCancelled, (error as? URLError)?.code != .cancelled {
+                    failure = error.localizedDescription
+                }
+            }
+            guard streamID == assistantStreamSeq else {
+                return
+            }
+            flushText()
+            let status: AssistantTurn.Status = if let ended {
+                ended
+            } else if let failure {
+                .failed(failure)
+            } else if Task.isCancelled {
+                .stopped
+            } else {
+                .failed("The connection to the server was lost. Try again.")
+            }
+            finishAssistantTurn(turnID, status: status)
+            isAssistantStreaming = false
+            assistantStreamTask = nil
+            // The stream ended before the card's new state arrived, but the server may have
+            // applied it already, so the saved chat replaces the transcript.
+            let reloadChat = decision != nil && !decidedCardArrived
+            // An approved change touched the ledger, so the views showing it reload.
+            let applied = assistantTurns.first { $0.id == turnID }?.items.contains { $0.state == .applied } == true
+                || (reloadChat && decision?.approve == true)
+            let chatID = assistantChatID
+            // A stopped stream's task is cancelled, so the reloads run in their own task.
+            Task {
+                await loadAssistantChats()
+                if reloadChat, let chatID, let token,
+                   let chat = try? await apiClient.assistantChat(id: chatID, token: token),
+                   assistantChatID == chatID, !isAssistantStreaming {
+                    assistantTurns = Self.savedAssistantTurns(chat)
+                }
+                if applied, let token {
+                    await runRequest {
+                        try await reloadPrimaryData()
+                        try await reloadBudgetViews(token: token)
+                    }
                 }
             }
         }
     }
 
-    func cancelAssistantMessage() {
-        assistantStreamTask?.cancel()
-    }
-
-    func resetAssistantConversation() {
-        assistantStreamTask?.cancel()
-        assistantStreamTask = nil
-        assistantTurns = []
-        assistantMessageHistory = []
-        isAssistantStreaming = false
-    }
-
-    private func applyAssistantEvent(_ event: AssistantStreamEvent, turnID: Int) {
+    private func applyAssistantEvent(_ event: AssistantStreamEvent, turnID: String) {
         guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
             return
         }
         switch event {
-        case let .toolCallStart(toolCallID, toolName, arguments):
-            assistantTurns[index].tools.append(
-                AssistantToolActivity(id: toolCallID, toolName: toolName, arguments: arguments)
-            )
-        case let .toolCallEnd(toolCallID, success, summary):
-            if let toolIndex = assistantTurns[index].tools.firstIndex(where: { $0.id == toolCallID }) {
-                assistantTurns[index].tools[toolIndex].status = success ? .success : .failed
-                assistantTurns[index].tools[toolIndex].summary = summary
+        case let .start(chatID):
+            assistantChatID = chatID
+            assistantTurns[index].received = true
+        case let .item(item):
+            if let itemIndex = assistantTurns[index].items.firstIndex(where: { $0.id == item.id }) {
+                assistantTurns[index].items[itemIndex] = item
+            } else {
+                assistantTurns[index].items.append(item)
             }
-        case let .progressNarration(content):
-            assistantTurns[index].progressNarration = content
-        case let .textChunk(content):
-            assistantTurns[index].progressNarration = ""
-            assistantTurns[index].content += content
-        case let .result(assistantMessage, messageHistory):
-            assistantTurns[index].progressNarration = ""
-            assistantTurns[index].content = assistantMessage
-            assistantMessageHistory = messageHistory
-        case let .error(message):
-            assistantTurns[index].progressNarration = ""
-            assistantTurns[index].errorMessage = message
-            assistantTurns[index].isStreaming = false
-        case .turnStarted, .textCommit, .done, .unknown:
+        case let .delta(id, text):
+            if let itemIndex = assistantTurns[index].items.firstIndex(where: { $0.id == id }) {
+                assistantTurns[index].items[itemIndex].text += text
+            }
+        case .end, .unknown:
             break
         }
     }
 
-    private func finishAssistantStream(turnID: Int, stopped: Bool) {
+    /// Settles what a stopped or broken stream left open, the way the server saves it.
+    private func finishAssistantTurn(_ turnID: String, status: AssistantTurn.Status) {
         guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
             return
         }
-        assistantTurns[index].isStreaming = false
-        if stopped {
-            assistantTurns[index].isStopped = true
+        assistantTurns[index].status = status
+        for itemIndex in assistantTurns[index].items.indices where assistantTurns[index].items[itemIndex].isOpen {
+            let item = assistantTurns[index].items[itemIndex]
+            assistantTurns[index].items[itemIndex].state = item.kind == .tool ? (status == .stopped ? .stopped : .failed) : .done
         }
-        isAssistantStreaming = false
-        assistantStreamTask = nil
-    }
-
-    private func failAssistantStream(turnID: Int, message: String) {
-        guard let index = assistantTurns.firstIndex(where: { $0.id == turnID }) else {
-            return
+        // The server saves the cards a stopped or failed turn left open as dismissed.
+        if status != .completed {
+            for itemIndex in assistantTurns[index].items.indices where assistantTurns[index].items[itemIndex].state == .pending {
+                assistantTurns[index].items[itemIndex].state = .dismissed
+            }
         }
-        assistantTurns[index].errorMessage = message
-        assistantTurns[index].isStreaming = false
-        isAssistantStreaming = false
-        assistantStreamTask = nil
     }
 
     /// Loads the first page of Trash, or with `nextPage` the page after the loaded ones.
@@ -1006,7 +1108,7 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             rules = try await apiClient.rules(token: token)
-            if llmEnabled {
+            if aiFeatures.contains("rule_mining") {
                 ruleSuggestions = try await apiClient.ruleSuggestions(token: token)
             }
         }
@@ -2045,17 +2147,17 @@ final class AppModel {
         let client = apiClient
         let categoriesPeriod = categoriesPeriod
         let tagsPeriod = tagsPeriod
-        let llmEnabled = llmEnabled
+        let ruleMining = aiFeatures.contains("rule_mining")
         async let loadedCategories = client.categories(period: categoriesPeriod, token: token)
         async let loadedTags = client.tags(period: tagsPeriod, token: token)
         async let loadedTemplates = client.templates(token: token)
         async let loadedRules = client.rules(token: token)
-        async let loadedSuggestions = llmEnabled ? client.ruleSuggestions(token: token) : []
+        async let loadedSuggestions = ruleMining ? client.ruleSuggestions(token: token) : []
         categories = try await loadedCategories
         tags = try await loadedTags
         templates = try await loadedTemplates
         rules = try await loadedRules
-        if llmEnabled {
+        if ruleMining {
             ruleSuggestions = try await loadedSuggestions
         }
     }
@@ -2090,7 +2192,6 @@ final class AppModel {
     }
 
     private func clearUserScopedState() {
-        aiSettings = nil
         dashboardLoadID += 1
         transactionsLoadID += 1
         // The superseded loads skip their own reset, which would keep Sign in disabled.
@@ -2117,11 +2218,12 @@ final class AppModel {
         templates = nil
         rules = nil
         ruleSuggestions = []
-        assistantStreamTask?.cancel()
-        assistantStreamTask = nil
+        stopAssistantStream()
+        assistantChatID = nil
         assistantTurns = []
-        assistantMessageHistory = []
-        isAssistantStreaming = false
+        assistantChatState = .ready
+        assistantChats = []
+        assistantSettings = nil
         budgets = nil
         budgetsLoadState = .idle
         mobileSessions = nil

@@ -86,17 +86,15 @@ struct AssistantUsageView: View {
         }
     }
 
-    // "0.42" with "usd" reads "$0.42"; trailing zeros are dropped.
+    // "0.42" with "usd" reads "$0.42". Costs under 1 keep three significant digits,
+    // so a fraction of a cent stays short.
     private func cost(_ decimal: String, unit: String?) -> String {
-        var value = decimal
-        if value.contains(".") {
-            while value.hasSuffix("0") {
-                value.removeLast()
-            }
-            if value.hasSuffix(".") {
-                value.removeLast()
-            }
-        }
+        let locale = Locale(identifier: "en_US")
+        let value = Double(decimal).map { amount in
+            abs(amount) < 1
+                ? amount.formatted(.number.precision(.significantDigits(1...3)).locale(locale))
+                : amount.formatted(.number.precision(.fractionLength(0...2)).locale(locale))
+        } ?? decimal
         switch unit {
         case "openrouter_credits":
             return "\(value) credits"

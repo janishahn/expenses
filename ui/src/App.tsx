@@ -37,7 +37,7 @@ const ScenariosPage = lazy(() => import("./pages/ScenariosPage"))
 const SettingsPage = lazy(() => import("./pages/SettingsPage"))
 const SetupPage = lazy(() => import("./pages/SetupPage"))
 const SignupPage = lazy(() => import("./pages/SignupPage"))
-const SpendingAssistantPage = lazy(() => import("./pages/SpendingAssistantPage"))
+const AssistantPage = lazy(() => import("./pages/AssistantPage"))
 const TagDetailPage = lazy(() => import("./pages/TagDetailPage"))
 const TagsPage = lazy(() => import("./pages/TagsPage"))
 const TemplatesPage = lazy(() => import("./pages/TemplatesPage"))
@@ -202,7 +202,7 @@ function TransactionEditRedirect() {
 }
 
 function AppRoutes() {
-  const { llmEnabled } = useAuth()
+  const { aiFeatures } = useAuth()
   return (
     <Routes>
       <Route path="/setup" element={<SetupRoute />} />
@@ -230,7 +230,7 @@ function AppRoutes() {
           <Route path="/transactions/deleted" element={<DeletedTransactionsPage />} />
           <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
           <Route path="/transactions/:transactionId/edit" element={<TransactionEditRedirect />} />
-          <Route path="/assistant" element={llmEnabled ? <SpendingAssistantPage /> : <Navigate to="/" replace />} />
+          <Route path="/assistant" element={aiFeatures.includes("spending_chat") ? <AssistantPage /> : <Navigate to="/" replace />} />
           <Route path="/settings/:section?" element={<SettingsPage />} />
           <Route path="/admin/elevate" element={<AdminElevationPage />} />
           <Route element={<AdminRoute />}>

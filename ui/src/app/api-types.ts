@@ -288,21 +288,73 @@ export type BankStatementPreviewResponse = {
   duplicate_count: number
 }
 
-export type SpendingChatRole = "user" | "assistant"
+export type AssistantItem =
+  | { kind: "thinking"; id: string; text: string; seconds: number | null; state: "active" | "done" }
+  | { kind: "note"; id: string; text: string; state: "active" | "done" }
+  | {
+      kind: "tool"
+      id: string
+      name: string
+      label: string
+      detail: string | null
+      state: "running" | "done" | "failed" | "stopped"
+    }
+  | { kind: "text"; id: string; text: string; state: "streaming" | "done" }
+  | {
+      kind: "approval"
+      id: string
+      card: AssistantApprovalCard
+      state: "pending" | "applied" | "dismissed" | "failed"
+      // Why an approved change couldn't be applied.
+      message: string | null
+    }
 
-export type SpendingChatMessageInput = {
-  role: SpendingChatRole
-  content: string
+export type AssistantApprovalRow = {
+  title: string
+  detail: string | null
+  category: { id: number; name: string; icon: string | null } | null
+  date: string | null
+  amount_cents: number | null
+  // Shown as "amount of of_cents", such as an allocation of an expense.
+  of_cents: number | null
+  income: boolean
 }
 
-// Opaque Pydantic AI message dicts. Preserved across turns and sent back as
-// context, but never inspected or displayed in the UI.
-export type SpendingChatHistoryEntry = Record<string, unknown>
-
-export type SpendingChatStreamRequest = {
-  messages: SpendingChatMessageInput[]
-  message_history?: SpendingChatHistoryEntry[]
+export type AssistantApprovalCard = {
+  title: string
+  meta: string | null
+  // The approve button, such as Add, and the state after it, such as Added.
+  verb: string
+  done: string
+  // Every row the change affects.
+  rows: AssistantApprovalRow[]
+  total_cents: number | null
+  total_of_cents: number | null
 }
+
+export type AssistantTurnStatus = "completed" | "stopped" | "failed"
+
+export type AssistantStreamEvent =
+  | { type: "start"; chat_id: string; title: string }
+  | { type: "item"; item: AssistantItem }
+  | { type: "delta"; id: string; text: string }
+  | { type: "end"; status: AssistantTurnStatus; message?: string }
+
+export type AssistantChatSummary = {
+  id: string
+  title: string
+  updated_at: string
+}
+
+export type AssistantTurn = {
+  id: number
+  user_text: string
+  items: AssistantItem[]
+  status: AssistantTurnStatus
+  created_at: string
+}
+
+export type AssistantChat = AssistantChatSummary & { turns: AssistantTurn[] }
 
 export type AIUsageSummary = {
   feature: string
@@ -325,65 +377,3 @@ export type AIUsageSummary = {
   average_total_tokens: number
   p95_duration_ms: number | null
 }
-
-export type SpendingChatTurnStartedEvent = {
-  type: "turn_started"
-  turn_id: string
-}
-
-export type SpendingChatToolCallStartEvent = {
-  type: "tool_call_start"
-  tool_call_id: string
-  tool_name: string
-  arguments: Record<string, unknown>
-}
-
-export type SpendingChatToolCallEndEvent = {
-  type: "tool_call_end"
-  tool_call_id: string
-  tool_name: string
-  // Display-only preview, not source data; the UI uses `success` and `result_summary`.
-  result_preview: string
-  result_summary: string | null
-  success: boolean
-}
-
-export type SpendingChatTextChunkEvent = {
-  type: "text_chunk"
-  content: string
-}
-
-export type SpendingChatProgressNarrationEvent = {
-  type: "progress_narration"
-  content: string
-}
-
-export type SpendingChatTextCommitEvent = {
-  type: "text_commit"
-}
-
-export type SpendingChatResultEvent = {
-  type: "result"
-  assistant_message: string
-  message_history: SpendingChatHistoryEntry[]
-}
-
-export type SpendingChatDoneEvent = {
-  type: "done"
-}
-
-export type SpendingChatErrorEvent = {
-  type: "error"
-  message: string
-}
-
-export type SpendingChatStreamEvent =
-  | SpendingChatTurnStartedEvent
-  | SpendingChatToolCallStartEvent
-  | SpendingChatToolCallEndEvent
-  | SpendingChatProgressNarrationEvent
-  | SpendingChatTextChunkEvent
-  | SpendingChatTextCommitEvent
-  | SpendingChatResultEvent
-  | SpendingChatDoneEvent
-  | SpendingChatErrorEvent

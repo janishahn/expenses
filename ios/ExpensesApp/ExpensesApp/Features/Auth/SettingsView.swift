@@ -23,7 +23,9 @@ struct SettingsView: View {
 
             Section {
                 link("Categorization", systemImage: "square.on.circle") { CategorizationSettingsView() }
-                link("AI", systemImage: "sparkles") { AISettingsView() }
+                if model.aiFeatures.contains("spending_chat") {
+                    link("Assistant", systemImage: "bubble.left.and.bubble.right") { AssistantSettingsView() }
+                }
                 link("Balance Snapshots", systemImage: "scalemass") { BalanceSnapshotsView() }
                 link("Import and Export", systemImage: "arrow.up.arrow.down") { ImportExportView() }
             }

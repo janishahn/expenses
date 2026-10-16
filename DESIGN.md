@@ -379,8 +379,8 @@ pages below fix the structure; the current pages show the content.
   imported. On mobile, row actions live in the peek; Match all stays in the
   band.
 - **Settings and Admin** share one shell: a section list (Account, Appearance;
-  Data: Categorization, AI, Balance snapshots, Import and export; Server:
-  Health, Maintenance, Assistant usage, Logs, System) and one section at a
+  Data: Categorization, Assistant, Balance snapshots, Import and export;
+  Server: Health, Maintenance, AI, Assistant usage, Logs, System) and one section at a
   time. On desktop the section list replaces the sidebar, headed by "Back to
   app"; on mobile it is a horizontal chip row. Settings save on change; there
   is no Save button. Server sections need the admin password, shown as a
@@ -391,9 +391,18 @@ pages below fix the structure; the current pages show the content.
   own row (Active with the training time, Training, Not enough history with
   its requirement, or Training failed in `over` with the fallback model's
   date), then Minimum confidence as a percentage field.
-- **Assistant.** One conversation column. The composer is the only input in a
-  bottom-fixed position; on mobile the tab bar hides while it has focus. Tool
-  activity collapses to one line ("Reviewed 3 ledger views").
+- **Assistant.** One conversation column with 14px answers. The composer is the
+  only input in a bottom-fixed position; on mobile the tab bar hides while it
+  has focus. The header holds Recent chats and New chat, and the URL names the
+  open chat. Reasoning, progress notes, and ledger reads share one activity
+  line: while the Assistant works it names the current step, and once the answer
+  starts it folds into a summary ("Reviewed 3 ledger views") that opens to list
+  each step. A new chat lists recent chats instead of suggested questions.
+  A proposed change is a card in the answer: a bold title, the affected rows
+  with glyph, date, and amount, then Dismiss and one ink verb (Add, Apply,
+  Allocate). Once decided, the buttons give way to the outcome and the answer
+  continues below the card. A transaction the answer names is an underlined
+  link that opens it in a peek beside the conversation; the URL names it.
 - **Sign in, setup, 404.** Bare pages: a centered sheet with the app name, the
   fields, and one ink button. No marketing copy.
 - **404.** The app name, then a monochrome spending calendar in the Insights
@@ -442,9 +451,11 @@ decorative exceptions.
 | Press | `scale(0.98)` |
 | 404 calendar | Cells fill in week by week once (about 2s, opacity and scale from 0.3); a few light cells then fade in and out slowly |
 | Server receipt | Feeds up from the slot in line steps once (about 1.3s); each dot fades and scales in; on an answer, feeds out, tears off with a slight tilt, and fades |
+| Assistant | A sent question rises 6px into place (200ms); streamed answer words fade in (240ms); the activity label rises in (220ms) as the old one leaves upward (150ms); while the Assistant works, a highlight sweeps the label (1.8s, linear); steps that arrive while the list is open rise in; send and stop cross-fade (160ms); a change card rises 6px and settles from 98.5% scale (260ms), and its outcome fades in. Opened chats appear without motion |
 
-Animate only `transform` and `opacity`. Under reduced motion, keep opacity
-changes and drop movement.
+Animate only `transform` and `opacity`; the Assistant's working highlight moves
+its background instead. Under reduced motion, keep opacity changes and drop
+movement; the working highlight becomes a slow fade.
 
 ## Mobile
 
@@ -483,7 +494,9 @@ changes and drop movement.
 `BottomSheet`, `BulkBar`, `Peek` with its `PeekLayout` and `AsideLayout`,
 `PropertyList`, `SettingsShell`, `Notes`, `ReceiptSection`, `ReceiptViewer`,
 `LocationMap`, `PrintLedger`, `Amount`,
-`CategoryGlyph`, `SuggestionBox`, and the controls `Button`, `IconButton`, `SegmentedControl`,
+`CategoryGlyph`, `SuggestionBox`, the Assistant's `ChatThread`, `ChatTurn`,
+`ChatBubble`, `ChatMarkdown`, `ChatActivity`, `ChatActions`, `ChatRecent`,
+`ChatRecentMenu`, `ChatApproval`, and `ChatComposer`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
 `Dialog` variant; loading and failed pages are `Panel` variants, and a failed page
@@ -513,7 +526,8 @@ diff.
 
 - Shadows on in-flow surfaces; borders around groups; row dividers; nested cards.
 - Colored buttons, colored selection, and any hue in chrome outside `focus`.
-- Gradients, glow, glass, and decorative blur.
+- Gradients (except the Assistant's working highlight), glow, glass, and
+  decorative blur.
 - Monospace numbers, uppercase kickers, eyebrows, subtitles, helper text, and
   page intros.
 - Red expenses and minus signs on expenses.

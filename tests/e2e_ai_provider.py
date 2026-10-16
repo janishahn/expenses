@@ -1,181 +1,289 @@
-"""External identity/inference fixtures for opt-in browser tests only.
+"""Stub OpenAI-compatible AI backend for browser tests only.
 
-Loaded in the Playwright child process, never in production. Expenses settings,
-OAuth pairing state, encrypted persistence and API authorization remain real.
+Loaded in the Playwright child process, never in production. It serves the
+model list for the "local" backend and streams scripted chat completions, so
+Assistant turns run through the real agent, tools, and storage.
+
+The last user message picks the script:
+- "slow": a long answer streamed slowly, for stopping mid-answer.
+- "long": eighty short paragraphs, for scrolling.
+- "fail once": an authentication error the first time, then the default script.
+- "add lunch" or "add ten lunches": proposes new transactions, then links the first
+  or accepts the dismissal.
+- "tag ...": finds the transactions matching the question's last word and proposes
+  tagging them "work".
+- "pay ...": finds the reimbursement and the expenses matching the last
+  word and proposes allocating half of each expense.
+- "budget ...": proposes a 300,00 € budget from this month for the category whose
+  name ends with the last word.
+- "undo ...": proposes undoing the latest change applied in the chat.
+- anything else: reasoning, a note, a ledger read, then a short answer.
+
+Write scenarios read ids only from tool results and the instructions, as a model would.
 """
 
 import json
+import os
+import re
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import httpx
+MODELS = ["e2e-large", "e2e-small"]
+ANSWER = (
+    "You spent **1 234,56 €** in May.\n\n"
+    "- Groceries: 800,00 €\n"
+    "- Rent: 434,56 €\n\n"
+    "That is less than in April."
+)
+SLOW_ANSWER = " ".join(f"Word{index}" for index in range(400))
+LONG_ANSWER = [f"Spending detail {index}.\n\n" for index in range(1, 81)]
+_failed_once: set[str] = set()
+_lock = threading.Lock()
 
 
-def response_events(text="Hello", terminal="response.completed", tool=False):
-    response = {
-        "id": "resp_1",
-        "created_at": 1,
-        "object": "response",
-        "status": "completed",
-        "model": "gpt-6-luna",
-        "output": [],
-        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+def _chunk(delta: dict | None, finish: str | None = None) -> dict:
+    return {
+        "id": "chatcmpl-e2e",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "e2e-large",
+        "choices": []
+        if delta is None
+        else [{"index": 0, "delta": delta, "finish_reason": finish}],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20}
+        if delta is None
+        else None,
     }
-    events = [
-        {"type": "response.created", "response": {**response, "status": "in_progress"}}
+
+
+def _words(text: str) -> list[str]:
+    parts = text.split(" ")
+    return [
+        part + (" " if index < len(parts) - 1 else "")
+        for index, part in enumerate(parts)
     ]
-    if tool:
-        item = {
-            "type": "function_call",
-            "id": "fc_1",
-            "call_id": "call_1",
-            "name": "balance",
-            "namespace": "expenses",
-            "arguments": "",
-        }
-        events += [
-            {"type": "response.output_item.added", "output_index": 0, "item": item},
-            {
-                "type": "response.function_call_arguments.delta",
-                "item_id": "fc_1",
-                "output_index": 0,
-                "delta": "{}",
-            },
-        ]
-    else:
-        events += [
-            {
-                "type": "response.output_item.added",
-                "output_index": 0,
-                "item": {
-                    "type": "message",
-                    "id": "msg_1",
-                    "role": "assistant",
-                    "content": [],
-                    "status": "in_progress",
-                },
-            },
-            {
-                "type": "response.content_part.added",
-                "item_id": "msg_1",
-                "output_index": 0,
-                "content_index": 0,
-                "part": {"type": "output_text", "text": "", "annotations": []},
-            },
-            {
-                "type": "response.output_text.delta",
-                "item_id": "msg_1",
-                "output_index": 0,
-                "content_index": 0,
-                "delta": text,
-            },
-        ]
-    if terminal:
-        if terminal == "response.failed":
-            response["error"] = {
-                "code": "subscription_sharing_usage_limit_exceeded",
-                "message": "limit",
-            }
-            response["status"] = "failed"
-        events.append({"type": terminal, "response": response})
-    return "".join(
-        "data: " + json.dumps(event | {"sequence_number": i}) + "\n\n"
-        for i, event in enumerate(events)
+
+
+def _text(text: str) -> list[dict]:
+    return [*(_chunk({"content": word}) for word in _words(text)), _chunk({}, "stop")]
+
+
+def _call(messages: list[dict], name: str, arguments: dict) -> list[dict]:
+    tool_call = {
+        "index": 0,
+        "id": f"call_{len(messages)}",
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(arguments)},
+    }
+    return [
+        _chunk({"role": "assistant", "tool_calls": [tool_call]}),
+        _chunk({}, "tool_calls"),
+    ]
+
+
+def _matching(messages: list[dict], token: str, kind: str) -> list[dict]:
+    return _call(
+        messages,
+        "query_transactions",
+        {"start": "2000-01-01", "end": "2099-12-31", "kind": kind, "text": token},
     )
 
 
-def install(mock_openai=False):
-    from expenses.ai import chatgpt
-
-    real_client = httpx.AsyncClient
-    catalog = [
-        {
-            "slug": "gpt-6-luna",
-            "display_name": "GPT-6 Luna",
-            "visibility": "list",
-            "supported_reasoning_levels": [{"effort": "low"}, {"effort": "medium"}],
-        },
-        {
-            "slug": "gpt-6.1-sol",
-            "display_name": "GPT-6.1 Sol",
-            "visibility": "list",
-            "supported_reasoning_levels": [
-                {"effort": "low"},
-                {"effort": "medium"},
-                {"effort": "high"},
-            ],
-        },
+def _write_script(messages: list[dict], question: str) -> list[dict] | None:
+    """A write scenario's next step, or None when the question names none."""
+    words = question.lower().split()
+    # Tool results needed before the proposal.
+    steps = {"tag": 1, "pay": 2, "budget": 0, "undo": 0}.get(words[0] if words else "")
+    if steps is None:
+        return None
+    token = question.split()[-1]
+    since = max(i for i, m in enumerate(messages) if m["role"] == "user")
+    results = [
+        json.loads(m["content"]) for m in messages[since + 1 :] if m["role"] == "tool"
     ]
+    if len(results) > steps:
+        if results[-1]["status"] != "applied":
+            return _text("Okay, nothing changed.")
+        return _text(f"Done: {results[-1]['summary']}.")
+    if words[0] == "tag":
+        if not results:
+            return _matching(messages, token, "expense")
+        ids = [row["id"] for row in results[0]["transactions"]]
+        return _call(
+            messages,
+            "edit_transactions",
+            {"transaction_ids": ids, "add_tags": ["work"]},
+        )
+    if words[0] == "pay":
+        if not results:
+            return _matching(messages, token, "reimbursement")
+        if len(results) == 1:
+            return _matching(messages, token, "expense")
+        return _call(
+            messages,
+            "allocate_reimbursement",
+            {
+                "reimbursement_id": results[0]["transactions"][0]["id"],
+                "expense_ids": [row["id"] for row in results[1]["transactions"]],
+                "split": "share",
+                "share_percent": 50,
+            },
+        )
+    instructions = "\n".join(
+        m["content"] for m in messages if m["role"] in ("system", "developer")
+    )
+    if words[0] == "budget":
+        category_id = re.search(
+            rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
+        )[1]
+        today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
+        return _call(
+            messages,
+            "set_budgets",
+            {
+                "budgets": [
+                    {
+                        "category_id": int(category_id),
+                        "month": today,
+                        "amount_cents": 30_000,
+                        "applies": "onward",
+                    }
+                ]
+            },
+        )
+    applied = [
+        result
+        for m in messages
+        if m["role"] == "tool"
+        and (result := json.loads(m["content"])).get("status") == "applied"
+    ]
+    return _call(messages, "undo_action", {"action_id": applied[-1]["action_id"]})
 
-    def handle(request):
-        if request.url.path.endswith("openid-configuration"):
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": chatgpt.AUTH_ORIGIN,
-                    **{
-                        field: f"{chatgpt.AUTH_ORIGIN}/{field}"
-                        for field in (
-                            "authorization_endpoint",
-                            "token_endpoint",
-                            "revocation_endpoint",
-                            "jwks_uri",
-                        )
-                    },
-                },
-            )
-        if request.url.path.endswith("/models"):
-            return httpx.Response(
-                200,
-                json={
-                    "models": catalog,
-                    "data": [{"id": row["slug"]} for row in catalog],
-                },
-            )
-        if request.url.path.endswith("/responses"):
-            if json.loads(request.content)["model"] == "custom-model":
-                return httpx.Response(
-                    200,
-                    headers={"content-type": "text/event-stream"},
-                    text=response_events("OK"),
-                )
-            return httpx.Response(404, json={"error": {"code": "model_not_found"}})
-        if request.url.path.endswith("revocation_endpoint"):
-            return httpx.Response(200)
-        return httpx.Response(
-            503,
-            json={"error": "External inference is not part of this browser fixture."},
+
+def _script(messages: list[dict]) -> tuple[list[dict], float]:
+    """The chunks to stream and the pause between them."""
+    last = messages[-1]
+    user = next(m for m in reversed(messages) if m["role"] == "user")
+    question = user["content"] if isinstance(user["content"], str) else ""
+    if "slow" in question.lower():
+        return _text(SLOW_ANSWER), 0.08
+    if "long" in question.lower():
+        return [
+            *(_chunk({"content": part}) for part in LONG_ANSWER),
+            _chunk({}, "stop"),
+        ], 0.05
+    if question.lower().startswith("add") and "lunch" in question.lower():
+        if last["role"] == "tool":
+            result = json.loads(last["content"])
+            if result["status"] != "applied":
+                return _text("Okay, nothing changed."), 0.01
+            created = result["created"][0]["id"]
+            return _text(f"Added [Lunch](transaction:{created})."), 0.01
+        lunch = {
+            "date": "2020-02-20",
+            "kind": "expense",
+            "amount_cents": 1250,
+            "title": "Lunch",
+        }
+        count = 10 if "ten" in question.lower() else 1
+        return _call(
+            messages, "create_transactions", {"transactions": [lunch] * count}
+        ), 0.01
+    if (chunks := _write_script(messages, question)) is not None:
+        return chunks, 0.01
+    if last["role"] == "tool":
+        return _text(ANSWER), 0.01
+    return [
+        _chunk({"role": "assistant", "reasoning_content": "Checking May by category."}),
+        *(_chunk({"content": word}) for word in _words("I'll check May's spending.")),
+        _chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": f"call_{len(messages)}",
+                        "type": "function",
+                        "function": {
+                            "name": "query_transactions",
+                            "arguments": json.dumps(
+                                {
+                                    "start": "2026-05-01",
+                                    "end": "2026-05-31",
+                                    "group_by": "category",
+                                }
+                            ),
+                        },
+                    }
+                ]
+            }
+        ),
+        _chunk({}, "tool_calls"),
+    ], 0.01
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/v1/models":
+            self.send_error(404)
+            return
+        self._json(
+            200,
+            {"object": "list", "data": [{"id": m, "object": "model"} for m in MODELS]},
         )
 
-    async def identity(_client, token, client_id, nonce=None):
-        if token != "e2e-id-token" or client_id != "e2e-client":
-            raise chatgpt.ChatGPTError("Invalid test identity")
-        return {"sub": "e2e-account", "email": "test@example.com", "nonce": nonce}
+    def do_POST(self):
+        if self.path != "/v1/chat/completions":
+            self.send_error(404)
+            return
+        body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        messages = body["messages"]
+        question = next(m for m in reversed(messages) if m["role"] == "user")["content"]
+        if isinstance(question, str) and "fail once" in question.lower():
+            with _lock:
+                first = question not in _failed_once
+                _failed_once.add(question)
+            if first:
+                self._json(
+                    401,
+                    {
+                        "error": {
+                            "message": "Invalid API key",
+                            "type": "invalid_request_error",
+                        }
+                    },
+                )
+                return
+        chunks, pause = _script(messages)
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.end_headers()
+        try:
+            for chunk in [*chunks, _chunk(None)]:
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                self.wfile.flush()
+                time.sleep(pause)
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            # The Assistant stopped the run.
+            return
 
-    if mock_openai:
-        chatgpt.verify_identity = identity
+    def _json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-    class ExternalTransport(httpx.AsyncBaseTransport):
-        def __init__(self):
-            self.upstream = httpx.AsyncHTTPTransport()
+    def log_message(self, *args):
+        pass
 
-        async def handle_async_request(self, request):
-            if (
-                request.url.host == "127.0.0.1"
-                and request.url.port == 1
-                and request.url.path == "/v1/models"
-            ):
-                return handle(request)
-            if mock_openai and request.url.host in {
-                "api.openai.com",
-                "auth.openai.com",
-            }:
-                return handle(request)
-            return await self.upstream.handle_async_request(request)
 
-        async def aclose(self):
-            await self.upstream.aclose()
-
-    class ExternalClient(real_client):
-        def __init__(self, **kwargs):
-            super().__init__(**({"transport": ExternalTransport()} | kwargs))
-
-    httpx.AsyncClient = ExternalClient
+def install():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    os.environ["EXPENSES_AI_LOCAL_BASE_URL"] = (
+        f"http://127.0.0.1:{server.server_address[1]}/v1"
+    )
