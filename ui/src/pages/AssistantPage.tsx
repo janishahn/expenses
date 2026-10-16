@@ -176,9 +176,13 @@ function chatWhen(updatedAt: string, now: Date): string {
   return date.getFullYear() === now.getFullYear() ? dayMonth : `${dayMonth} ${date.getFullYear()}`
 }
 
-function recentEntries(chats: AssistantChatSummary[] | undefined): ChatRecentEntry[] {
+function recentEntries(chats: AssistantChatSummary[] | undefined, privacy: boolean): ChatRecentEntry[] {
   const now = new Date()
-  return (chats ?? []).map((chat) => ({ id: chat.id, title: chat.title, when: chatWhen(chat.updated_at, now) }))
+  return (chats ?? []).map((chat) => ({
+    id: chat.id,
+    title: privacy ? maskTextAmounts(chat.title) : chat.title,
+    when: chatWhen(chat.updated_at, now),
+  }))
 }
 
 function CopyButton({ copied, label, onCopy }: { copied: boolean; label: string; onCopy: () => void }) {
@@ -526,7 +530,8 @@ function AssistantPage() {
   const requestedChat = searchParams.get("chat")
   const peekId = Number(searchParams.get("peek")) || null
   const chatsQuery = useQuery({ queryKey: CHATS_KEY, queryFn: fetchAssistantChats })
-  const recent = recentEntries(chatsQuery.data)
+  const privacy = usePrivacy()
+  const recent = recentEntries(chatsQuery.data, privacy)
   const [view, setView] = useState({ key: 0, chat: requestedChat })
   // The chat the conversation shows. A chat it starts gets its id after the first message.
   const [openChatId, setOpenChatId] = useState(requestedChat)

@@ -59,7 +59,7 @@ struct AssistantView: View {
                 Button {
                     open(chat.id)
                 } label: {
-                    Text(chat.title)
+                    Text(shown(chat.title, amountsHidden: model.amountsHidden))
                     Text(chatWhen(chat.updatedAt))
                 }
             }
@@ -185,7 +185,7 @@ struct AssistantView: View {
                         open(chat.id)
                     } label: {
                         HStack(spacing: 12) {
-                            Text(chat.title)
+                            Text(shown(chat.title, amountsHidden: model.amountsHidden))
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text(chatWhen(chat.updatedAt))

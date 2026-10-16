@@ -54,6 +54,13 @@ export async function privacyJourney(page: Page) {
   await expect(assistantTurns(page).last()).toContainText("You spent •••• in May.")
   await expect(userTurns(page).last()).toContainText("Did I spend more than •••• in May?")
   await expect(thread(page)).not.toContainText("1 234")
+
+  // Recent chats are named by their first question, masked the same way.
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
+  await page.getByRole("button", { name: "New chat" }).click()
+  const recent = page.getByRole("region", { name: "Recent" })
+  await expect(recent).toContainText("Did I spend more than •••• in May?")
+  await expect(recent).not.toContainText("1 000")
 }
 
 export async function stopJourney(page: Page) {
