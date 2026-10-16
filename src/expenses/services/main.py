@@ -2241,7 +2241,9 @@ class ReimbursementService:
         self.session = session
         self.user_id = user_id or get_current_user_id()
 
-    def set_reimbursement(self, transaction_id: int, is_reimbursement: bool) -> None:
+    def set_reimbursement(
+        self, transaction_id: int, is_reimbursement: bool, *, commit: bool = True
+    ) -> None:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
@@ -2279,7 +2281,8 @@ class ReimbursementService:
         recompute_monthly_rollup_for_date(self.session, self.user_id, txn.date)
         for y, m in affected_expense_months:
             recompute_monthly_rollup(self.session, self.user_id, y, m)
-        self.session.commit()
+        if commit:
+            self.session.commit()
 
     def allocated_total_for_reimbursement(
         self, reimbursement_transaction_id: int
@@ -2416,6 +2419,8 @@ class ReimbursementService:
         reimbursement_transaction_id: int,
         expense_transaction_id: int,
         amount_cents: int,
+        *,
+        commit: bool = True,
     ) -> ReimbursementAllocation:
         if amount_cents <= 0:
             raise ValueError("Allocation amount must be positive")
@@ -2502,8 +2507,9 @@ class ReimbursementService:
 
         self.session.flush()
         recompute_monthly_rollup_for_date(self.session, self.user_id, expense.date)
-        self.session.commit()
-        self.session.refresh(allocation)
+        if commit:
+            self.session.commit()
+            self.session.refresh(allocation)
         return allocation
 
     def delete_allocation(self, allocation_id: int) -> None:
@@ -7289,7 +7295,9 @@ class BudgetService:
         )
         return tmpl
 
-    def apply_template_from(self, data: BudgetTemplateApplyFromIn) -> BudgetTemplate:
+    def apply_template_from(
+        self, data: BudgetTemplateApplyFromIn, *, commit: bool = True
+    ) -> BudgetTemplate:
         if data.frequency == BudgetFrequency.monthly and data.starts_on.day != 1:
             raise ValueError("Monthly budgets must start on the first of a month")
         if data.frequency == BudgetFrequency.yearly and (
@@ -7378,8 +7386,11 @@ class BudgetService:
                 )
             )
 
-        self.session.commit()
-        self.session.refresh(template)
+        if commit:
+            self.session.commit()
+            self.session.refresh(template)
+        else:
+            self.session.flush()
         log_event(
             logger,
             logging.INFO,
@@ -7406,7 +7417,9 @@ class BudgetService:
             template_id=template_id,
         )
 
-    def upsert_override(self, data: BudgetOverrideIn) -> BudgetOverride:
+    def upsert_override(
+        self, data: BudgetOverrideIn, *, commit: bool = True
+    ) -> BudgetOverride:
         if data.category_id is not None:
             category = self.session.get(Category, data.category_id)
             if not category or category.user_id != self.user_id:
@@ -7425,8 +7438,9 @@ class BudgetService:
         existing = self.session.scalar(stmt)
         if existing:
             existing.amount_cents = data.amount_cents
-            self.session.commit()
-            self.session.refresh(existing)
+            if commit:
+                self.session.commit()
+                self.session.refresh(existing)
             log_event(
                 logger,
                 logging.INFO,
@@ -7448,8 +7462,11 @@ class BudgetService:
             amount_cents=data.amount_cents,
         )
         self.session.add(override)
-        self.session.commit()
-        self.session.refresh(override)
+        if commit:
+            self.session.commit()
+            self.session.refresh(override)
+        else:
+            self.session.flush()
         log_event(
             logger,
             logging.INFO,

@@ -8,6 +8,7 @@ The last user message picks the script:
 - "slow": a long answer streamed slowly, for stopping mid-answer.
 - "long": eighty short paragraphs, for scrolling.
 - "fail once": an authentication error the first time, then the default script.
+- "add lunch": proposes a new transaction, then confirms or accepts the dismissal.
 - anything else: reasoning, a note, a ledger read, then a short answer.
 """
 
@@ -69,6 +70,40 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
             *(_chunk({"content": part}) for part in LONG_ANSWER),
             _chunk({}, "stop"),
         ], 0.05
+    if "add lunch" in question.lower():
+        if last["role"] == "tool":
+            applied = '"applied"' in str(last["content"])
+            return _text("Added it." if applied else "Okay, nothing changed."), 0.01
+        return [
+            _chunk(
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": f"call_{len(messages)}",
+                            "type": "function",
+                            "function": {
+                                "name": "create_transactions",
+                                "arguments": json.dumps(
+                                    {
+                                        "transactions": [
+                                            {
+                                                "date": "2020-02-20",
+                                                "kind": "expense",
+                                                "amount_cents": 1250,
+                                                "title": "Lunch",
+                                            }
+                                        ]
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                }
+            ),
+            _chunk({}, "tool_calls"),
+        ], 0.01
     if last["role"] == "tool":
         return _text(ANSWER), 0.01
     return [

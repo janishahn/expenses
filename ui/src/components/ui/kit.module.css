@@ -908,6 +908,34 @@ button.actHead { cursor: pointer; }
 @keyframes actOut { to { opacity: 0; transform: translateY(-5px); } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @keyframes pulse { 50% { opacity: 0.3; } }
+/* A proposed change: what it does, row by row, and the decision. */
+.approval { overflow: hidden; margin: 2px 0; background: var(--sheet); border-radius: var(--r-card); box-shadow: var(--edge); transform-origin: 50% 0; }
+.approvalEnter { animation: approvalIn 260ms var(--ease-out) both; }
+.approvalHead { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 4px; }
+.approvalHead b { font-weight: 600; }
+.approvalHead span { color: var(--ink-3); font-size: 12.5px; }
+.approvalRows { padding: 2px 0 4px; }
+.approval[data-state="dismissed"] .approvalRows { opacity: 0.55; transition: opacity 200ms var(--ease-out); }
+.approvalRow {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px;
+  min-height: 34px; padding: 0 14px;
+}
+.approvalText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approvalText b { font-weight: 500; }
+.approvalText > span { margin-left: 6px; color: var(--ink-3); }
+.approvalSubDate { display: none; }
+.approvalDate { color: var(--ink-2); white-space: nowrap; }
+.approvalAmount { min-width: 64px; text-align: right; font-weight: 500; white-space: nowrap; }
+.approvalAmount > span { color: var(--ink-3); font-weight: 400; }
+.approvalMore { padding: 4px 14px 2px 40px; color: var(--ink-3); }
+.approvalFoot { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 10px 10px 14px; }
+.approvalTotal { flex: 1; min-width: 0; color: var(--ink-2); }
+.approvalTotal b { color: var(--ink); font-weight: 500; }
+.approvalChoices { display: flex; gap: 4px; }
+.approvalStatus { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding-right: 4px; color: var(--ink-2); }
+.approvalStatus svg { width: 15px; height: 15px; flex: none; }
+.approvalStatusEnter { animation: fadeIn 200ms var(--ease-out) both; }
+@keyframes approvalIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } }
 .msgActions { display: flex; align-items: center; gap: 2px; margin: 0 -6px; }
 @media (hover: hover) {
   .turnUser .msgActions { opacity: 0; }
@@ -973,6 +1001,14 @@ button.actHead { cursor: pointer; }
 .mpGrid button:disabled { color: var(--ink-3); cursor: default; }
 
 @media (max-width: 860px) {
+  /* Narrow cards move each row's date under its title. */
+  .approvalHead { flex-direction: column; gap: 2px; }
+  .approvalRow { grid-template-columns: 16px minmax(0, 1fr) auto; min-height: 44px; padding-block: 5px; }
+  .approvalText { display: grid; white-space: normal; }
+  .approvalText b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .approvalText > span { margin-left: 0; font-size: 12.5px; }
+  .approvalSubDate { display: inline; }
+  .approvalDate { display: none; }
   .iconGrid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
   .iconChoice { height: 44px; }
   .stage { padding: 0; }
@@ -1091,7 +1127,7 @@ button.actHead { cursor: pointer; }
   .btn:active, .ib:active, .pill:active, .send:active { transform: none !important; }
   .calEnter::after, .calTwinkle::after { animation: fadeIn 480ms both; animation-delay: var(--d); }
   .receiptDots span { animation-name: fadeIn; }
-  .bubbleEnter, .stepEnter, .actIn { animation-name: fadeIn; }
+  .bubbleEnter, .stepEnter, .actIn, .approvalEnter { animation-name: fadeIn; }
   .actOut { animation-name: fadeOut; }
   .working, .actIn.working { background: none; color: var(--ink-2); animation: pulse 2s ease-in-out infinite; }
   .actCaret { transition: none; }

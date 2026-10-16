@@ -322,6 +322,15 @@ struct ExpensesAPIClient {
         assistantStream(path: "/api/assistant/chats/\(chatID)/retry/stream", body: nil, token: token)
     }
 
+    /// Approves or dismisses a proposed change; the turn then continues.
+    func assistantDecisionStream(
+        chatID: String,
+        _ body: AssistantDecisionRequest,
+        token: String
+    ) -> AsyncThrowingStream<AssistantStreamEvent, Error> {
+        assistantStream(path: "/api/assistant/chats/\(chatID)/approvals/stream", body: try? encoder.encode(body), token: token)
+    }
+
     private func assistantStream(
         path: String,
         body: Data?,

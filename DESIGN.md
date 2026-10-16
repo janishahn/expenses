@@ -398,6 +398,10 @@ pages below fix the structure; the current pages show the content.
   line: while the Assistant works it names the current step, and once the answer
   starts it folds into a summary ("Reviewed 3 ledger views") that opens to list
   each step. A new chat lists recent chats instead of suggested questions.
+  A proposed change is a card in the answer: a bold title, the affected rows
+  with glyph, date, and amount, then Dismiss and one ink verb (Add, Apply,
+  Allocate). Once decided, the buttons give way to the outcome and the answer
+  continues below the card.
 - **Sign in, setup, 404.** Bare pages: a centered sheet with the app name, the
   fields, and one ink button. No marketing copy.
 - **404.** The app name, then a monochrome spending calendar in the Insights
@@ -446,7 +450,7 @@ decorative exceptions.
 | Press | `scale(0.98)` |
 | 404 calendar | Cells fill in week by week once (about 2s, opacity and scale from 0.3); a few light cells then fade in and out slowly |
 | Server receipt | Feeds up from the slot in line steps once (about 1.3s); each dot fades and scales in; on an answer, feeds out, tears off with a slight tilt, and fades |
-| Assistant | A sent question rises 6px into place (200ms); streamed answer words fade in (240ms); the activity label rises in (220ms) as the old one leaves upward (150ms); while the Assistant works, a highlight sweeps the label (1.8s, linear); steps that arrive while the list is open rise in; send and stop cross-fade (160ms). Opened chats appear without motion |
+| Assistant | A sent question rises 6px into place (200ms); streamed answer words fade in (240ms); the activity label rises in (220ms) as the old one leaves upward (150ms); while the Assistant works, a highlight sweeps the label (1.8s, linear); steps that arrive while the list is open rise in; send and stop cross-fade (160ms); a change card rises 6px and settles from 98.5% scale (260ms), and its outcome fades in. Opened chats appear without motion |
 
 Animate only `transform` and `opacity`; the Assistant's working highlight moves
 its background instead. Under reduced motion, keep opacity changes and drop
@@ -491,7 +495,7 @@ movement; the working highlight becomes a slow fade.
 `LocationMap`, `PrintLedger`, `Amount`,
 `CategoryGlyph`, `SuggestionBox`, the Assistant's `ChatThread`, `ChatTurn`,
 `ChatBubble`, `ChatMarkdown`, `ChatActivity`, `ChatActions`, `ChatRecent`,
-`ChatRecentMenu`, and `ChatComposer`, and the controls `Button`, `IconButton`, `SegmentedControl`,
+`ChatRecentMenu`, `ChatApproval`, and `ChatComposer`, and the controls `Button`, `IconButton`, `SegmentedControl`,
 `Switch`, `Checkbox`, `Radio`, `Pill`, `TagChip`, `SortMenu`, `TextField`,
 `Field`, `Combobox`, `EmptyState`, `Status`, and `Toast`. Confirmations are a
 `Dialog` variant; loading and failed pages are `Panel` variants, and a failed page

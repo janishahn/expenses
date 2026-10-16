@@ -25,6 +25,9 @@ import { StopIcon } from "@phosphor-icons/react/Stop"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
 import clsx from "clsx"
 import type { AssistantItem } from "../../app/api-types"
+import { Amount } from "./Amount"
+import { Button } from "./Button"
+import { CategoryGlyph, UnknownGlyph } from "./CategoryGlyph"
 import { Menu, MenuItem } from "./Menu"
 import { Tooltip } from "./Tooltip"
 import s from "./kit.module.css"
@@ -141,7 +144,8 @@ export function ChatActions({ children }: { children: ReactNode }) {
   return <div className={s.msgActions}>{children}</div>
 }
 
-type ActivityItem = Exclude<AssistantItem, { kind: "text" }>
+type ActivityItem = Exclude<AssistantItem, { kind: "text" } | { kind: "approval" }>
+type ApprovalItem = Extract<AssistantItem, { kind: "approval" }>
 
 function liveLabel(item: ActivityItem): string {
   if (item.kind === "thinking") return "Thinking"
@@ -269,6 +273,126 @@ export function ChatActivity({ items, working }: { items: ActivityItem[]; workin
         </div>
       ) : null}
     </div>
+  )
+}
+
+// en-US, because en-GB writes September as "Sept".
+const CARD_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+
+// "15 Oct", or "15 Oct 2025" outside the current year.
+function cardDate(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  const dayMonth = `${date.getUTCDate()} ${CARD_MONTH.format(date)}`
+  return date.getUTCFullYear() === new Date().getFullYear() ? dayMonth : `${dayMonth} ${date.getUTCFullYear()}`
+}
+
+// A change the Assistant proposed. Nothing changes until the user approves it; the card
+// then keeps the outcome in place of its buttons.
+export function ChatApproval({
+  item,
+  enter,
+  disabled,
+  onDecide,
+}: {
+  item: ApprovalItem
+  // Cards streamed on this page rise in; loaded chats show them as they are.
+  enter: boolean
+  disabled: boolean
+  onDecide: (approve: boolean) => void
+}) {
+  const [entering] = useState(enter)
+  // The outcome fades in only when it changes while the card is on screen.
+  const [decidedHere] = useState(item.state === "pending")
+  const { card } = item
+  let outcome: ReactNode = null
+  if (item.state === "applied") {
+    outcome = (
+      <>
+        <CheckCircleIcon aria-hidden="true" className={s.in} />
+        {card.done}
+      </>
+    )
+  } else if (item.state === "dismissed") {
+    outcome = "Dismissed"
+  } else if (item.state === "failed") {
+    outcome = (
+      <>
+        <WarningCircleIcon aria-hidden="true" className={s.stepFailed} />
+        {item.message ?? "Not applied"}
+      </>
+    )
+  }
+  return (
+    <section aria-label={card.title} data-state={item.state} className={clsx(s.approval, entering && s.approvalEnter)}>
+      <div className={s.approvalHead}>
+        <b>{card.title}</b>
+        {card.meta ? <span>{card.meta}</span> : null}
+      </div>
+      <div className={s.approvalRows}>
+        {card.rows.map((row, index) => (
+          <div key={index} className={s.approvalRow}>
+            {row.category ? (
+              <CategoryGlyph categoryId={row.category.id} icon={row.category.icon} name={row.category.name} />
+            ) : row.date ? (
+              // A transaction without a category yet; rows such as the overall budget have no glyph.
+              <UnknownGlyph />
+            ) : (
+              <span />
+            )}
+            <span className={s.approvalText}>
+              <b>{row.title}</b>
+              {row.detail || row.date ? (
+                <span>
+                  {row.detail}
+                  {row.date ? (
+                    <span className={s.approvalSubDate}>
+                      {row.detail ? " · " : ""}
+                      {cardDate(row.date)}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </span>
+            <span className={s.approvalDate}>{row.date ? cardDate(row.date) : null}</span>
+            <span className={s.approvalAmount}>
+              {row.amount_cents !== null ? <Amount cents={row.amount_cents} kind={row.income ? "income" : "expense"} /> : null}
+              {row.of_cents !== null ? (
+                <span>
+                  {" of "}
+                  <Amount cents={row.of_cents} kind="expense" />
+                </span>
+              ) : null}
+            </span>
+          </div>
+        ))}
+        {card.more > 0 ? <div className={s.approvalMore}>{card.more} more</div> : null}
+      </div>
+      <div className={s.approvalFoot}>
+        <span className={s.approvalTotal}>
+          {card.total_cents !== null && card.total_of_cents !== null ? (
+            <>
+              <b>
+                <Amount cents={card.total_cents} kind="expense" />
+              </b>
+              {" of "}
+              <Amount cents={card.total_of_cents} kind="expense" />
+            </>
+          ) : null}
+        </span>
+        {item.state === "pending" ? (
+          <div className={s.approvalChoices}>
+            <Button variant="ghost" disabled={disabled} onClick={() => onDecide(false)}>
+              Dismiss
+            </Button>
+            <Button variant="primary" disabled={disabled} onClick={() => onDecide(true)}>
+              {card.verb}
+            </Button>
+          </div>
+        ) : (
+          <span className={clsx(s.approvalStatus, decidedHere && s.approvalStatusEnter)}>{outcome}</span>
+        )}
+      </div>
+    </section>
   )
 }
 

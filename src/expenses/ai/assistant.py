@@ -3,6 +3,9 @@
 A turn runs in a background task that feeds a queue. The HTTP response reads the
 queue, so a client that disconnects (Stop) only cancels the run through
 pydantic-ai, which keeps the partial messages, and the turn is still saved.
+
+A write tool ends the run with an approval card. Deciding it applies the stored plan
+and records the tool result in one commit, and only then does the same turn continue.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import hashlib
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from time import perf_counter
 from typing import Annotated, Any, Literal
@@ -23,24 +26,35 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_ai import Agent, AgentRunEvents, RunContext, Tool, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
+    DeferredToolRequestsEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessage,
     ModelMessagesTypeAdapter,
+    ModelRequest,
     PartEndEvent,
     RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolReturnPart,
 )
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.ui import UIEventStream
 from pydantic_ai.usage import RunUsage
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from expenses.ai.assistant_actions import (
+    WRITE_TOOLS,
+    ActionConflict,
+    ApprovalCard,
+    Proposal,
+    apply_action,
+)
 from expenses.ai.assistant_tools import (
     INSTRUCTIONS,
     TOOLS,
@@ -56,7 +70,7 @@ from expenses.ai.usage import (
 )
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
-from expenses.db.models import AssistantChat, AssistantTurn, LLMJob
+from expenses.db.models import AssistantAction, AssistantChat, AssistantTurn, LLMJob
 
 logger = get_logger("expenses.ai.assistant")
 
@@ -100,8 +114,21 @@ class TextItem(BaseModel):
     state: Literal["streaming", "done"]
 
 
+class ApprovalItem(BaseModel):
+    """A change the model proposed. Nothing changes until the user approves it."""
+
+    kind: Literal["approval"] = "approval"
+    # approval-<tool call id>
+    id: str
+    card: ApprovalCard
+    state: Literal["pending", "applied", "dismissed", "failed"]
+    # Why an approved change couldn't be applied.
+    message: str | None = None
+
+
 AssistantItem = Annotated[
-    ThinkingItem | NoteItem | ToolItem | TextItem, Field(discriminator="kind")
+    ThinkingItem | NoteItem | ToolItem | TextItem | ApprovalItem,
+    Field(discriminator="kind"),
 ]
 ITEMS = TypeAdapter(list[AssistantItem])
 
@@ -135,6 +162,17 @@ class AssistantNotFoundError(LookupError):
     pass
 
 
+class AssistantConflictError(Exception):
+    pass
+
+
+class AssistantDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str = Field(pattern=r"^approval-", max_length=120)
+    approve: bool
+
+
 @dataclass(frozen=True)
 class AssistantModel:
     model: Model
@@ -146,12 +184,20 @@ def _item_id() -> str:
     return uuid4().hex[:12]
 
 
+def _approval_id(tool_call_id: str) -> str:
+    return f"approval-{tool_call_id}"
+
+
 @dataclass
-class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, str]):
+class AssistantEventStream(
+    UIEventStream[None, dict[str, Any], AssistantReader, str | DeferredToolRequests]
+):
     """Turns pydantic-ai events into item upserts and text deltas."""
 
     items: list[AssistantItem] = field(default_factory=list)
     error: Exception | None = None
+    # Write tool calls waiting for the user, by tool call id, with the tool's name.
+    proposals: dict[str, tuple[str, Proposal]] = field(default_factory=dict)
     _text: NoteItem | TextItem | None = None
     _thinking: ThinkingItem | None = None
     _thinking_started: float = 0.0
@@ -171,7 +217,7 @@ class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, 
                 break
         else:
             self.items.append(item)
-        return {"type": "item", "item": item.model_dump()}
+        return {"type": "item", "item": item.model_dump(mode="json")}
 
     def _promote_if_ready(self) -> bool:
         text = self._text
@@ -305,6 +351,26 @@ class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, 
             item.state = "done" if part.outcome == "success" else "failed"
         yield self._upsert(item)
 
+    async def handle_deferred_tool_requests(
+        self, event: DeferredToolRequestsEvent
+    ) -> AsyncIterator[dict[str, Any]]:
+        for part in event.requests.approvals:
+            proposal = Proposal.model_validate(
+                event.requests.metadata[part.tool_call_id]
+            )
+            self.proposals[part.tool_call_id] = (part.tool_name, proposal)
+            tool = self._tools.pop(part.tool_call_id, None)
+            if tool is not None:
+                tool.state = "done"
+                yield self._upsert(tool)
+            yield self._upsert(
+                ApprovalItem(
+                    id=_approval_id(part.tool_call_id),
+                    card=proposal.card,
+                    state="pending",
+                )
+            )
+
     async def on_error(self, error: Exception) -> AsyncIterator[dict[str, Any]]:
         self.error = error
         return
@@ -321,9 +387,11 @@ class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, 
                     item.state = "done"
                 case ToolItem(state="running"):
                     item.state = "stopped" if status == "stopped" else "failed"
+                case ApprovalItem(state="pending") if status != "completed":
+                    item.state = "dismissed"
                 case _:
                     continue
-            events.append({"type": "item", "item": item.model_dump()})
+            events.append({"type": "item", "item": item.model_dump(mode="json")})
         return events
 
     @property
@@ -331,14 +399,15 @@ class AssistantEventStream(UIEventStream[None, dict[str, Any], AssistantReader, 
         return "\n\n".join(item.text for item in self.items if item.kind == "text")
 
 
-def _agent(model: AssistantModel) -> Agent[AssistantReader, str]:
+def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRequests]:
     agent = Agent(
         model.model,
         model_settings=model.settings,
         deps_type=AssistantReader,
-        output_type=str,
+        output_type=[str, DeferredToolRequests],
         tools=[
-            Tool(tool, takes_ctx=True, strict=True, sequential=True) for tool in TOOLS
+            Tool(tool, takes_ctx=True, strict=True, sequential=True)
+            for tool in [*TOOLS, *WRITE_TOOLS]
         ],
         instructions=INSTRUCTIONS,
     )
@@ -373,6 +442,8 @@ class TurnRequest:
     user_text: str
     # Retry replaces this turn and every later one.
     replace_seq: int | None = None
+    # Continues this turn after the user decided its approval cards.
+    continue_seq: int | None = None
 
 
 class AssistantService:
@@ -419,12 +490,85 @@ class AssistantService:
             ],
         )
 
+    def _last_turn(self, chat_id: str) -> AssistantTurn | None:
+        return self.session.scalars(
+            select(AssistantTurn)
+            .where(AssistantTurn.chat_id == chat_id)
+            .order_by(AssistantTurn.seq.desc())
+            .limit(1)
+        ).first()
+
     def delete_chat(self, chat_id: str) -> None:
         chat = self.chat(chat_id)
         self.session.execute(
             delete(AssistantTurn).where(AssistantTurn.chat_id == chat.id)
         )
+        self.session.execute(
+            update(AssistantAction)
+            .where(
+                AssistantAction.chat_id == chat.id,
+                AssistantAction.status == "proposed",
+            )
+            .values(status="dismissed", decided_at=datetime.utcnow())
+        )
         self.session.delete(chat)
+        self.session.commit()
+
+    def _claim(self, action: AssistantAction, status: str) -> bool:
+        """Moves a proposed action on; False when another request decided it first."""
+        result = self.session.execute(
+            update(AssistantAction)
+            .where(
+                AssistantAction.id == action.id,
+                AssistantAction.status == "proposed",
+            )
+            .values(status=status, decided_at=datetime.utcnow())
+        )
+        return result.rowcount == 1
+
+    def _dismiss_pending(self, chat_id: str) -> None:
+        """Closes cards the user left undecided, so the model hears nothing changed."""
+        turn = self._last_turn(chat_id)
+        if turn is None:
+            return
+        items = ITEMS.validate_json(turn.items_json)
+        pending = [
+            item
+            for item in items
+            if isinstance(item, ApprovalItem) and item.state == "pending"
+        ]
+        if not pending:
+            return
+        actions = self.session.scalars(
+            select(AssistantAction).where(
+                AssistantAction.chat_id == chat_id,
+                AssistantAction.tool_call_id.in_(
+                    [item.id.removeprefix("approval-") for item in pending]
+                ),
+            )
+        ).all()
+        messages_json = turn.messages_json
+        for action in actions:
+            if not self._claim(action, "dismissed"):
+                continue
+            for item in pending:
+                if item.id == _approval_id(action.tool_call_id):
+                    item.state = "dismissed"
+            messages_json = _with_tool_return(
+                messages_json,
+                ToolReturnPart(
+                    tool_name=action.kind,
+                    content={
+                        "ok": False,
+                        "status": "dismissed",
+                        "message": "The user moved on without approving this. "
+                        "Nothing changed.",
+                    },
+                    tool_call_id=action.tool_call_id,
+                ),
+            )
+        turn.items_json = ITEMS.dump_json(items).decode()
+        turn.messages_json = messages_json
         self.session.commit()
 
     def new_turn(self, *, chat_id: str | None, text: str) -> TurnRequest:
@@ -436,20 +580,24 @@ class AssistantService:
                 user_text=text,
             )
         chat = self.chat(chat_id)
+        self._dismiss_pending(chat.id)
         return TurnRequest(
             user_id=self.user_id, chat_id=chat.id, title=chat.title, user_text=text
         )
 
     def retry_turn(self, chat_id: str) -> TurnRequest:
         chat = self.chat(chat_id)
-        last = self.session.scalars(
-            select(AssistantTurn)
-            .where(AssistantTurn.chat_id == chat.id)
-            .order_by(AssistantTurn.seq.desc())
-            .limit(1)
-        ).first()
+        last = self._last_turn(chat.id)
         if last is None:
             raise AssistantNotFoundError("This chat has nothing to retry")
+        if any(
+            isinstance(item, ApprovalItem) and item.state == "applied"
+            for item in ITEMS.validate_json(last.items_json)
+        ):
+            raise AssistantConflictError(
+                "This answer changed your data, so it can't run again. "
+                "Ask the Assistant to undo the change instead."
+            )
         return TurnRequest(
             user_id=self.user_id,
             chat_id=chat.id,
@@ -457,6 +605,93 @@ class AssistantService:
             user_text=last.user_text,
             replace_seq=last.seq,
         )
+
+    def decide(self, chat_id: str, item_id: str, *, approve: bool) -> TurnRequest:
+        """Applies or dismisses a proposed change and records what the model hears.
+
+        The change, the card's state, and the tool result commit together, so the
+        turn can continue, or fail to, without the change applying twice.
+        """
+        chat = self.chat(chat_id)
+        turn = self._last_turn(chat.id)
+        items = ITEMS.validate_json(turn.items_json) if turn else []
+        item = next(
+            (
+                item
+                for item in items
+                if isinstance(item, ApprovalItem) and item.id == item_id
+            ),
+            None,
+        )
+        action = self.session.scalar(
+            select(AssistantAction).where(
+                AssistantAction.chat_id == chat.id,
+                AssistantAction.tool_call_id == item_id.removeprefix("approval-"),
+            )
+        )
+        if turn is None or item is None or action is None:
+            raise AssistantNotFoundError("This change is no longer waiting for you")
+        if item.state != "pending" or not self._claim(
+            action, "applied" if approve else "dismissed"
+        ):
+            self.session.rollback()
+            raise AssistantConflictError("This change was already decided")
+        content: dict[str, Any]
+        if approve:
+            try:
+                with self.session.begin_nested():
+                    content = apply_action(self.session, action)
+                item.state = "applied"
+            except ActionConflict as exc:
+                action.status = "failed"
+                item.state = "failed"
+                item.message = exc.message
+                content = {"ok": False, "status": "conflict", "message": exc.message}
+        else:
+            item.state = "dismissed"
+            content = {
+                "ok": False,
+                "status": "dismissed",
+                "message": "The user dismissed this. Nothing changed.",
+            }
+        turn.items_json = ITEMS.dump_json(items).decode()
+        turn.messages_json = _with_tool_return(
+            turn.messages_json,
+            ToolReturnPart(
+                tool_name=action.kind,
+                content=content,
+                tool_call_id=action.tool_call_id,
+            ),
+        )
+        chat.updated_at = datetime.utcnow()
+        self.session.commit()
+        log_event(
+            logger,
+            logging.INFO,
+            "assistant_action_decided",
+            chat_id=chat.id,
+            action_id=action.id,
+            kind=action.kind,
+            state=item.state,
+        )
+        return TurnRequest(
+            user_id=self.user_id,
+            chat_id=chat.id,
+            title=chat.title,
+            user_text=turn.user_text,
+            continue_seq=turn.seq,
+        )
+
+
+def _with_tool_return(messages_json: str, part: ToolReturnPart) -> str:
+    """Adds a tool result to the request that answers the model's tool calls."""
+    messages = ModelMessagesTypeAdapter.validate_json(messages_json)
+    last = messages[-1]
+    if isinstance(last, ModelRequest):
+        messages[-1] = replace(last, parts=[*last.parts, part])
+    else:
+        messages.append(ModelRequest(parts=[part]))
+    return ModelMessagesTypeAdapter.dump_json(messages).decode()
 
 
 def _history(
@@ -478,7 +713,7 @@ def _history(
 class _TurnHandle:
     """Lets the HTTP response stop the run it streams."""
 
-    events: AgentRunEvents[str] | None = None
+    events: AgentRunEvents[str | DeferredToolRequests] | None = None
     stop_requested: bool = False
 
     def stop(self) -> None:
@@ -524,14 +759,31 @@ async def _run_turn(
     session = session_factory()
     try:
         put({"type": "start", "chat_id": request.chat_id, "title": request.title})
-        history = _history(session, request.chat_id, request.replace_seq)
+        prompt: str | None = request.user_text
+        items: list[AssistantItem] = []
+        if request.continue_seq is None:
+            history = _history(session, request.chat_id, request.replace_seq)
+        else:
+            turn = _turn(session, request.chat_id, request.continue_seq)
+            items = ITEMS.validate_json(turn.items_json)
+            approvals = [item for item in items if isinstance(item, ApprovalItem)]
+            for item in approvals:
+                put({"type": "item", "item": item.model_dump(mode="json")})
+            if any(item.state == "pending" for item in approvals):
+                put({"type": "end", "status": "completed"})
+                return
+            prompt = None
+            history = [
+                *_history(session, request.chat_id, request.continue_seq),
+                *ModelMessagesTypeAdapter.validate_json(turn.messages_json),
+            ]
         now = datetime.now(ZoneInfo(get_settings().timezone))
         deps = AssistantReader(session, user_id=request.user_id, now=now)
-        stream = AssistantEventStream()
+        stream = AssistantEventStream(items=items)
         started_at = datetime.utcnow()
         started = perf_counter()
         async with _agent(model).run_stream_events(
-            request.user_text,
+            prompt,
             deps=deps,
             message_history=history,
             usage_limits=UsageLimits(request_limit=24, tool_calls_limit=24),
@@ -565,6 +817,7 @@ async def _run_turn(
             request,
             model=model,
             items=stream.items,
+            proposals=stream.proposals,
             messages=messages,
             status=status,
             usage=usage,
@@ -599,12 +852,21 @@ async def _run_turn(
         queue.put_nowait(None)
 
 
+def _turn(session: Session, chat_id: str, seq: int) -> AssistantTurn:
+    return session.scalars(
+        select(AssistantTurn).where(
+            AssistantTurn.chat_id == chat_id, AssistantTurn.seq == seq
+        )
+    ).one()
+
+
 def _save_turn(
     session: Session,
     request: TurnRequest,
     *,
     model: AssistantModel,
     items: list[AssistantItem],
+    proposals: dict[str, tuple[str, Proposal]],
     messages: list[ModelMessage],
     status: TurnStatus,
     usage: RunUsage,
@@ -614,7 +876,7 @@ def _save_turn(
     started_at: datetime,
     duration_ms: int,
 ) -> None:
-    """Saves the turn, its chat, and its usage in one commit."""
+    """Saves the turn, its chat, its proposed changes, and its usage in one commit."""
     now = datetime.utcnow()
     chat = session.get(AssistantChat, request.chat_id)
     if chat is None:
@@ -627,30 +889,68 @@ def _save_turn(
         )
         session.add(chat)
     chat.updated_at = now
-    if request.replace_seq is not None:
-        session.execute(
-            delete(AssistantTurn).where(
-                AssistantTurn.chat_id == chat.id,
-                AssistantTurn.seq >= request.replace_seq,
+    if request.continue_seq is not None:
+        turn = _turn(session, chat.id, request.continue_seq)
+        turn.items_json = ITEMS.dump_json(items).decode()
+        turn.messages_json = ModelMessagesTypeAdapter.dump_json(
+            [*ModelMessagesTypeAdapter.validate_json(turn.messages_json), *messages]
+        ).decode()
+        turn.status = status
+    else:
+        if request.replace_seq is not None:
+            session.execute(
+                delete(AssistantTurn).where(
+                    AssistantTurn.chat_id == chat.id,
+                    AssistantTurn.seq >= request.replace_seq,
+                )
+            )
+            session.execute(
+                update(AssistantAction)
+                .where(
+                    AssistantAction.chat_id == chat.id,
+                    AssistantAction.status == "proposed",
+                )
+                .values(status="dismissed", decided_at=now)
+            )
+            seq = request.replace_seq
+        else:
+            last_seq = session.scalar(
+                select(func.max(AssistantTurn.seq)).where(
+                    AssistantTurn.chat_id == chat.id
+                )
+            )
+            seq = (last_seq or 0) + 1
+        session.add(
+            AssistantTurn(
+                chat_id=chat.id,
+                seq=seq,
+                user_text=request.user_text,
+                items_json=ITEMS.dump_json(items).decode(),
+                messages_json=ModelMessagesTypeAdapter.dump_json(messages).decode(),
+                status=status,
+                created_at=now,
             )
         )
-        seq = request.replace_seq
-    else:
-        last_seq = session.scalar(
-            select(func.max(AssistantTurn.seq)).where(AssistantTurn.chat_id == chat.id)
+    pending = {
+        item.id
+        for item in items
+        if isinstance(item, ApprovalItem) and item.state == "pending"
+    }
+    for tool_call_id, (tool_name, proposal) in proposals.items():
+        if _approval_id(tool_call_id) not in pending:
+            continue
+        session.add(
+            AssistantAction(
+                user_id=request.user_id,
+                chat_id=chat.id,
+                tool_call_id=tool_call_id,
+                kind=tool_name,
+                summary=proposal.summary[:200],
+                plan_json=proposal.plan.model_dump_json(),
+                status="proposed",
+                created_at=now,
+            )
         )
-        seq = (last_seq or 0) + 1
-    session.add(
-        AssistantTurn(
-            chat_id=chat.id,
-            seq=seq,
-            user_text=request.user_text,
-            items_json=ITEMS.dump_json(items).decode(),
-            messages_json=ModelMessagesTypeAdapter.dump_json(messages).decode(),
-            status=status,
-            created_at=now,
-        )
-    )
     model_name = model.model.model_name
     job = LLMJob(
         user_id=request.user_id,

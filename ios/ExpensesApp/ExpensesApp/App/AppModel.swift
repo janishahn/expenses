@@ -728,6 +728,13 @@ final class AppModel {
         }
         assistantTurnSeq += 1
         let turnID = "live-\(assistantTurnSeq)"
+        // Sending leaves open cards undecided; the server dismisses them the same way.
+        for turnIndex in assistantTurns.indices {
+            for itemIndex in assistantTurns[turnIndex].items.indices
+            where assistantTurns[turnIndex].items[itemIndex].state == .pending {
+                assistantTurns[turnIndex].items[itemIndex].state = .dismissed
+            }
+        }
         assistantTurns.append(AssistantTurn(id: turnID, userText: trimmed, items: [], status: .streaming, live: true))
         let body = AssistantMessageRequest(chatID: assistantChatID, message: trimmed)
         streamAssistantTurn(turnID) { $0.assistantMessageStream(body, token: token) }
@@ -748,6 +755,17 @@ final class AppModel {
         assistantTurns[assistantTurns.count - 1].status = .streaming
         assistantTurns[assistantTurns.count - 1].live = true
         streamAssistantTurn(last.id) { $0.assistantRetryStream(chatID: chatID, token: token) }
+    }
+
+    /// Approving applies the change on the server before the same turn continues.
+    func decideAssistantApproval(itemID: String, approve: Bool) {
+        guard !isAssistantStreaming, let token, let chatID = assistantChatID, let last = assistantTurns.last else {
+            return
+        }
+        assistantTurns[assistantTurns.count - 1].status = .streaming
+        assistantTurns[assistantTurns.count - 1].live = true
+        let body = AssistantDecisionRequest(itemID: itemID, approve: approve)
+        streamAssistantTurn(last.id) { $0.assistantDecisionStream(chatID: chatID, body, token: token) }
     }
 
     /// Stops the answer. The server keeps what it wrote so far.

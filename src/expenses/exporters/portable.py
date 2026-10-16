@@ -46,6 +46,7 @@ EXCLUDED_INTERNAL_TABLES = [
     "llm_jobs",
     "assistant_chats",
     "assistant_turns",
+    "assistant_actions",
     "transaction_llm_suggestions",
     "rule_llm_suggestions",
 ]

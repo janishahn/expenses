@@ -6,9 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -16,19 +16,33 @@ import expenses.app as app_main
 from expenses.ai import assistant
 from expenses.ai.assistant import (
     ITEMS,
+    AssistantConflictError,
     AssistantModel,
     AssistantService,
     stream_turn,
+)
+from expenses.ai.assistant_actions import (
+    BudgetRequest,
+    InvalidProposal,
+    NewTransaction,
+    apply_action,
+    propose_allocate,
+    propose_budgets,
+    propose_create,
+    propose_edit,
+    propose_undo,
 )
 from expenses.ai.assistant_tools import AssistantReader, tool_detail, tool_label
 from expenses.api import assistant_routes
 from expenses.core.config import get_settings
 from expenses.db.models import (
     AIFeatureSetting,
+    AssistantAction,
     AssistantChat,
     AssistantTurn,
     BudgetFrequency,
     LLMJob,
+    Transaction,
     TransactionType,
     User,
 )
@@ -866,6 +880,461 @@ async def test_assistant_dates_use_the_configured_timezone(
 
     today = datetime.now(ZoneInfo("Etc/GMT-14")).date()
     assert f"{today.isoformat()}." in seen_instructions[0]
+
+
+NBSP = " "
+
+
+def _seed_trip(session: Session) -> dict[str, int]:
+    category_service = CategoryService(session, user_id=1)
+    travel = category_service.create(
+        CategoryIn(name="Travel", type=TransactionType.expense, order=0)
+    )
+    refunds = category_service.create(
+        CategoryIn(name="Refunds", type=TransactionType.income, order=0)
+    )
+    service = TransactionService(session, user_id=1)
+    hotel = _create_txn(
+        service,
+        title="Hotel",
+        amount_cents=11_680,
+        txn_date=date(2026, 6, 3),
+        category_id=travel.id,
+    )
+    train = _create_txn(
+        service,
+        title="Train",
+        amount_cents=5_841,
+        txn_date=date(2026, 6, 2),
+        category_id=travel.id,
+    )
+    refund = _create_txn(
+        service,
+        title="Trip refund",
+        amount_cents=8_761,
+        txn_date=date(2026, 6, 20),
+        category_id=refunds.id,
+        txn_type=TransactionType.income,
+    )
+    return {
+        "travel_id": travel.id,
+        "hotel_id": hotel.id,
+        "train_id": train.id,
+        "refund_id": refund.id,
+    }
+
+
+def _tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in messages[-1].parts if isinstance(part, ToolReturnPart)]
+
+
+def _call(name: str, args: dict, call_id: str) -> dict[int, DeltaToolCall]:
+    return {
+        1: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=call_id)
+    }
+
+
+async def _decide(
+    factory, stream_function, chat_id: str, item_id: str, *, approve: bool
+) -> list[dict]:
+    with factory() as session:
+        turn = AssistantService(session, user_id=1).decide(
+            chat_id, item_id, approve=approve
+        )
+    return [
+        json.loads(line)
+        async for line in stream_turn(
+            turn, model=_test_model(stream_function), session_factory=factory
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_assistant_applies_an_approved_allocation_and_undoes_it() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_trip(session)
+    heard: list[dict] = []
+    instructions: list[str] = []
+
+    async def stream(messages, info):
+        instructions.append(info.instructions)
+        if returns := _tool_returns(messages):
+            heard.append(returns[-1].content)
+            yield "Done."
+            return
+        if len(heard) == 0:
+            yield "Allocating half of each."
+            yield _call(
+                "allocate_reimbursement",
+                {
+                    "reimbursement_id": ids["refund_id"],
+                    "expense_ids": [ids["hotel_id"], ids["train_id"]],
+                    "split": "share",
+                    "share_percent": 50,
+                },
+                "call-1",
+            )
+            return
+        yield _call("undo_action", {"action_id": heard[0]["action_id"]}, "call-2")
+
+    events = await _collect(factory, stream, "The refund covers half of the trip")
+    chat_id = events[0]["chat_id"]
+    items = _final_items(events)
+    assert events[-1] == {"type": "end", "status": "completed"}
+    assert [(item["kind"], item["state"]) for item in items] == [
+        ("note", "done"),
+        ("tool", "done"),
+        ("approval", "pending"),
+    ]
+    card = items[2]["card"]
+    assert card["title"] == f"Allocate 87,61{NBSP}€ from Trip refund"
+    assert card["meta"] == "Marks it as a reimbursement"
+    # Half of 58,41 € rounds half up and the shares add up to the whole refund.
+    assert [
+        (row["title"], row["amount_cents"], row["of_cents"]) for row in card["rows"]
+    ] == [("Hotel", 5_840, 11_680), ("Train", 2_921, 5_841)]
+    assert (card["total_cents"], card["total_of_cents"]) == (8_761, 8_761)
+    assert (card["verb"], card["done"]) == ("Allocate", "Allocated")
+    with factory() as session:
+        reimbursements = ReimbursementService(session, user_id=1)
+        assert reimbursements.allocated_total_for_reimbursement(ids["refund_id"]) == 0
+        assert session.scalars(select(AssistantAction)).one().status == "proposed"
+
+    decided = await _decide(factory, stream, chat_id, items[2]["id"], approve=True)
+
+    assert decided[-1] == {"type": "end", "status": "completed"}
+    assert [(item["kind"], item["state"]) for item in _final_items(decided)] == [
+        ("approval", "applied"),
+        ("text", "done"),
+    ]
+    assert heard[0]["status"] == "applied"
+    assert heard[0]["allocated_cents"] == 8_761
+    with factory() as session:
+        reimbursements = ReimbursementService(session, user_id=1)
+        assert (
+            reimbursements.allocated_total_for_reimbursement(ids["refund_id"]) == 8_761
+        )
+        assert session.get(Transaction, ids["refund_id"]).is_reimbursement
+        service = AssistantService(session, user_id=1)
+        [turn] = service.chat_out(chat_id).turns
+        assert [(item.kind, item.state) for item in turn.items] == [
+            ("note", "done"),
+            ("tool", "done"),
+            ("approval", "applied"),
+            ("text", "done"),
+        ]
+        with pytest.raises(AssistantConflictError):
+            service.decide(chat_id, items[2]["id"], approve=True)
+        with pytest.raises(AssistantConflictError):
+            service.retry_turn(chat_id)
+
+    events = await _collect(factory, stream, "Undo that", chat_id=chat_id)
+    [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    assert f"- {heard[0]['action_id']}: Allocated 87,61{NBSP}€" in instructions[-1]
+    assert approval["card"]["title"] == f"Undo: Allocated 87,61{NBSP}€ from Trip refund"
+    await _decide(factory, stream, chat_id, approval["id"], approve=True)
+
+    assert heard[1]["status"] == "applied"
+    with factory() as session:
+        reimbursements = ReimbursementService(session, user_id=1)
+        assert reimbursements.allocated_total_for_reimbursement(ids["refund_id"]) == 0
+        assert not session.get(Transaction, ids["refund_id"]).is_reimbursement
+        assert [
+            action.status
+            for action in session.scalars(
+                select(AssistantAction).order_by(AssistantAction.id)
+            )
+        ] == ["undone", "applied"]
+
+
+@pytest.mark.anyio
+async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_trip(session)
+    heard: list[dict] = []
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        returns = _tool_returns(messages)
+        prompts = [
+            part.content
+            for part in messages[-1].parts
+            if isinstance(part, UserPromptPart)
+        ]
+        if returns:
+            heard.append(returns[-1].content)
+        if returns or prompts == ["Never mind"]:
+            yield "Okay."
+            return
+        calls += 1
+        yield _call(
+            "create_transactions",
+            {
+                "transactions": [
+                    {
+                        "date": "2026-06-21",
+                        "kind": "expense",
+                        "amount_cents": 1_250,
+                        "title": "Lunch",
+                        "category_id": ids["travel_id"],
+                        "tags": ["Work"],
+                    }
+                ]
+            },
+            f"call-{calls}",
+        )
+
+    events = await _collect(factory, stream, "Add lunch for 12,50")
+    chat_id = events[0]["chat_id"]
+    [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    assert approval["card"]["title"] == "1 new transaction"
+    assert approval["card"]["rows"][0]["detail"] == "Travel · Work"
+    decided = await _decide(factory, stream, chat_id, approval["id"], approve=False)
+    assert _final_items(decided)[0]["state"] == "dismissed"
+    assert heard[-1]["status"] == "dismissed"
+
+    events = await _collect(factory, stream, "Add it after all", chat_id=chat_id)
+    await _collect(factory, stream, "Never mind", chat_id=chat_id)
+
+    # Moving on closes the open card, and the model hears that with the new message.
+    assert heard[-1]["status"] == "dismissed"
+    assert "moved on" in heard[-1]["message"]
+    with factory() as session:
+        chat = AssistantService(session, user_id=1).chat_out(chat_id)
+        assert [
+            item.state
+            for turn in chat.turns
+            for item in turn.items
+            if item.kind == "approval"
+        ] == ["dismissed", "dismissed"]
+        assert [
+            action.status for action in session.scalars(select(AssistantAction))
+        ] == [
+            "dismissed",
+            "dismissed",
+        ]
+        assert not session.scalars(
+            select(Transaction).where(Transaction.title == "Lunch")
+        ).all()
+
+
+@pytest.mark.anyio
+async def test_assistant_does_not_apply_a_change_the_data_outgrew() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_spending_fixture(session)
+        supermarket = session.scalars(
+            select(Transaction).where(Transaction.title == "Weekly supermarket")
+        ).one()
+    heard: list[dict] = []
+
+    async def stream(messages, info):
+        if returns := _tool_returns(messages):
+            heard.append(returns[-1].content)
+            yield "It changed meanwhile."
+            return
+        yield _call(
+            "edit_transactions",
+            {"transaction_ids": [supermarket.id], "category_id": ids["leisure_id"]},
+            "call-1",
+        )
+
+    events = await _collect(factory, stream, "Move the supermarket run to free time")
+    chat_id = events[0]["chat_id"]
+    [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    assert approval["card"]["rows"][0]["detail"] == "Groceries → Free time"
+    with factory() as session:
+        session.get(Transaction, supermarket.id).title = "Supermarket"
+        session.commit()
+
+    decided = await _decide(factory, stream, chat_id, approval["id"], approve=True)
+
+    [card, _] = _final_items(decided)
+    assert card["state"] == "failed"
+    assert card["message"] == "Supermarket changed since this was proposed."
+    assert heard == [
+        {
+            "ok": False,
+            "status": "conflict",
+            "message": "Supermarket changed since this was proposed.",
+        }
+    ]
+    with factory() as session:
+        assert (
+            session.get(Transaction, supermarket.id).category_id == ids["groceries_id"]
+        )
+        assert session.scalars(select(AssistantAction)).one().status == "failed"
+
+
+def test_assistant_proposals_refuse_what_they_cannot_do_exactly() -> None:
+    with make_session() as session:
+        ids = _seed_spending_fixture(session)
+        reader = _reader(session)
+        supermarket = session.scalars(
+            select(Transaction).where(Transaction.title == "Weekly supermarket")
+        ).one()
+        salary = CategoryService(session, user_id=1).list_all()[2]
+
+        def refused(build) -> str:
+            with pytest.raises(InvalidProposal) as caught:
+                build()
+            return caught.value.status
+
+        # The friend's 120,00 € is already allocated in full to the concert.
+        assert (
+            refused(
+                lambda: propose_allocate(
+                    reader,
+                    reimbursement_id=ids["reimbursement_id"],
+                    expense_ids=[supermarket.id],
+                    split="share",
+                    share_percent=50,
+                    amounts_cents=None,
+                )
+            )
+            == "exceeds_reimbursement"
+        )
+        assert (
+            refused(
+                lambda: propose_edit(
+                    reader,
+                    transaction_ids=[supermarket.id],
+                    category_id=salary.id,
+                    add_tags=[],
+                    remove_tags=[],
+                    title=None,
+                )
+            )
+            == "category_type"
+        )
+        # Tags match without case, so this asks for nothing new.
+        assert (
+            refused(
+                lambda: propose_edit(
+                    reader,
+                    transaction_ids=[supermarket.id],
+                    category_id=None,
+                    add_tags=["food"],
+                    remove_tags=[],
+                    title=None,
+                )
+            )
+            == "no_change"
+        )
+
+
+def _apply_proposal(session: Session, proposal) -> AssistantAction:
+    now = datetime(2026, 6, 27, 12, 0)
+    action = AssistantAction(
+        user_id=1,
+        chat_id="c" * 32,
+        tool_call_id=f"call-{session.scalar(select(func.count(AssistantAction.id)))}",
+        kind=proposal.plan.kind,
+        summary=proposal.summary,
+        plan_json=proposal.plan.model_dump_json(),
+        status="applied",
+        created_at=now,
+        decided_at=now,
+    )
+    session.add(action)
+    session.flush()
+    apply_action(session, action)
+    session.commit()
+    return action
+
+
+def test_assistant_undo_restores_the_exact_earlier_state() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_spending_fixture(session)
+        reader = _reader(session)
+        budgets = BudgetService(session, user_id=1)
+
+        def classification(title: str) -> tuple[int, list[str]]:
+            txn = session.scalars(
+                select(Transaction).where(Transaction.title == title)
+            ).one()
+            return txn.category_id, sorted(tag.name for tag in txn.tags)
+
+        def july_budgets() -> dict[int | None, int]:
+            return {
+                row.scope_category_id: row.amount_cents
+                for row in budgets.effective_budgets_for_month(2026, 7)
+            }
+
+        created = _apply_proposal(
+            session,
+            propose_create(
+                reader,
+                [
+                    NewTransaction(
+                        date=date(2026, 6, 26),
+                        kind="expense",
+                        amount_cents=4_200,
+                        title="Taxi",
+                        tags=["Trip"],
+                    )
+                ],
+            ),
+        )
+        supermarket = session.scalars(
+            select(Transaction).where(Transaction.title == "Weekly supermarket")
+        ).one()
+        edited = _apply_proposal(
+            session,
+            propose_edit(
+                reader,
+                transaction_ids=[supermarket.id],
+                category_id=ids["leisure_id"],
+                add_tags=["trip"],
+                remove_tags=["Food"],
+                title=None,
+            ),
+        )
+        assert classification("Weekly supermarket") == (ids["leisure_id"], ["Trip"])
+        before_budgets = july_budgets()
+        set_budgets = _apply_proposal(
+            session,
+            propose_budgets(
+                reader,
+                [
+                    BudgetRequest(
+                        category_id=ids["groceries_id"],
+                        month="2026-07",
+                        amount_cents=40_000,
+                        applies="onward",
+                    ),
+                    BudgetRequest(
+                        month="2026-07", amount_cents=100_000, applies="month"
+                    ),
+                ],
+            ),
+        )
+        assert july_budgets() == {
+            None: 100_000,
+            **before_budgets,
+            ids["groceries_id"]: 40_000,
+        }
+        assert {
+            row.scope_category_id: row.amount_cents
+            for row in budgets.effective_budgets_for_month(2026, 6)
+        }[ids["groceries_id"]] == 35_000
+
+        for action in (set_budgets, edited, created):
+            _apply_proposal(session, propose_undo(reader, action.id))
+
+        assert july_budgets() == before_budgets
+        assert classification("Weekly supermarket") == (ids["groceries_id"], ["Food"])
+        taxi = session.scalars(
+            select(Transaction).where(Transaction.title == "Taxi")
+        ).one()
+        assert taxi.deleted_at is not None
+        assert {created.status, edited.status, set_budgets.status} == {"undone"}
+        with pytest.raises(InvalidProposal):
+            propose_undo(reader, created.id)
 
 
 def test_ai_usage_summary_average_cost_keeps_division_precision(

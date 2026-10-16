@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from expenses.ai.assistant import (
     AssistantChatOut,
     AssistantChatSummaryOut,
+    AssistantConflictError,
+    AssistantDecisionIn,
     AssistantMessageIn,
     AssistantModel,
     AssistantNotFoundError,
@@ -120,4 +122,26 @@ def retry(
         turn = service.retry_turn(chat_id)
     except AssistantNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AssistantConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _stream(stream_turn(turn, model=model, session_factory=session_factory))
+
+
+@router.post("/chats/{chat_id}/approvals/stream", response_class=StreamingResponse)
+def decide(
+    chat_id: str,
+    data: AssistantDecisionIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    model: AssistantModel = Depends(get_assistant_model),
+    session_factory: Callable[[], Session] = Depends(get_stream_session_factory),
+):
+    service = _service(request, db)
+    _require_csrf(request, db)
+    try:
+        turn = service.decide(chat_id, data.item_id, approve=data.approve)
+    except AssistantNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AssistantConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _stream(stream_turn(turn, model=model, session_factory=session_factory))

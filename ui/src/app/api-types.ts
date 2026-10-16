@@ -288,6 +288,37 @@ export type AssistantItem =
       state: "running" | "done" | "failed" | "stopped"
     }
   | { kind: "text"; id: string; text: string; state: "streaming" | "done" }
+  | {
+      kind: "approval"
+      id: string
+      card: AssistantApprovalCard
+      state: "pending" | "applied" | "dismissed" | "failed"
+      // Why an approved change couldn't be applied.
+      message: string | null
+    }
+
+export type AssistantApprovalRow = {
+  title: string
+  detail: string | null
+  category: { id: number; name: string; icon: string | null } | null
+  date: string | null
+  amount_cents: number | null
+  // Shown as "amount of of_cents", such as an allocation of an expense.
+  of_cents: number | null
+  income: boolean
+}
+
+export type AssistantApprovalCard = {
+  title: string
+  meta: string | null
+  // The approve button, such as Add, and the state after it, such as Added.
+  verb: string
+  done: string
+  rows: AssistantApprovalRow[]
+  more: number
+  total_cents: number | null
+  total_of_cents: number | null
+}
 
 export type AssistantTurnStatus = "completed" | "stopped" | "failed"
 

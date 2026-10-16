@@ -338,3 +338,14 @@ export async function* streamAssistantRetry(chatId: string, signal: AbortSignal)
   const response = await openAssistantStream(`/api/assistant/chats/${chatId}/retry/stream`, undefined, signal)
   yield* readAssistantStream(response)
 }
+
+// Approves or dismisses a proposed change; the turn then continues.
+export async function* streamAssistantDecision(
+  chatId: string,
+  itemId: string,
+  approve: boolean,
+  signal: AbortSignal
+): AsyncGenerator<AssistantStreamEvent> {
+  const response = await openAssistantStream(`/api/assistant/chats/${chatId}/approvals/stream`, { item_id: itemId, approve }, signal)
+  yield* readAssistantStream(response)
+}

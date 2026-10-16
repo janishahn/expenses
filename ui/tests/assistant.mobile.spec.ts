@@ -72,6 +72,20 @@ test.describe("Assistant (mobile)", () => {
     await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
   })
 
+  test("fits a change card to the phone width and applies it", async ({ page }) => {
+    await page.goto("/assistant")
+    await sendQuestion(page, unique("Add lunch for 12,50"))
+
+    const card = assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })
+    await expect(card).toContainText("12,50 €")
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+
+    await card.getByRole("button", { name: "Add" }).click()
+    await expect(card).toContainText("Added")
+    await expect(assistantTurns(page).last()).toContainText("Added it.")
+  })
+
   test("pins the sent question to the top and offers a return to the newest content", async ({ page }) => {
     await page.goto("/assistant")
     await sendQuestion(page, unique("Show me a long review"))

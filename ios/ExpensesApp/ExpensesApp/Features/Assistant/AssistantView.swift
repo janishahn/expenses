@@ -310,15 +310,17 @@ private struct AssistantQuestion: View {
     }
 }
 
-/// Reasoning, notes, and ledger reads between answer text fold into one activity line each.
+/// Reasoning, notes, and ledger reads between answer text and approval cards fold into one
+/// activity line each.
 private enum AnswerPart: Identifiable {
     case activity([AssistantItem])
     case text(AssistantItem)
+    case approval(AssistantItem)
 
     var id: String {
         switch self {
         case let .activity(items): items[0].id
-        case let .text(item): item.id
+        case let .text(item), let .approval(item): item.id
         }
     }
 
@@ -327,6 +329,8 @@ private enum AnswerPart: Identifiable {
         for item in items {
             if item.kind == .text {
                 parts.append(.text(item))
+            } else if item.kind == .approval {
+                parts.append(.approval(item))
             } else if case let .activity(steps) = parts.last {
                 parts[parts.count - 1] = .activity(steps + [item])
             } else {
@@ -362,6 +366,12 @@ private struct AssistantAnswer: View {
                         partial: item.state == .streaming,
                         fadesIn: turn.live
                     )
+                case let .approval(item):
+                    if let card = item.card {
+                        AssistantApprovalCardView(item: item, card: card, enters: turn.live) { approve in
+                            model.decideAssistantApproval(itemID: item.id, approve: approve)
+                        }
+                    }
                 }
             }
             switch turn.status {
@@ -376,11 +386,16 @@ private struct AssistantAnswer: View {
             case .streaming, .completed:
                 EmptyView()
             }
-            if !streaming && (!turn.answer.isEmpty || isLast) {
+            if !streaming && (!turn.answer.isEmpty || canRetry) {
                 actions
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // An answer that changed data can't run again; undoing goes through the Assistant.
+    private var canRetry: Bool {
+        isLast && !turn.changedData
     }
 
     private var actions: some View {
@@ -393,7 +408,7 @@ private struct AssistantAnswer: View {
                 .labelStyle(.iconOnly)
                 .frame(minWidth: 44, minHeight: 44)
             }
-            if isLast {
+            if canRetry {
                 if case .failed = turn.status {
                     Button("Retry", systemImage: "arrow.clockwise", action: retry)
                     .frame(minHeight: 44)
@@ -414,6 +429,188 @@ private struct AssistantAnswer: View {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(2))
             copied = false
+        }
+    }
+}
+
+/// A change the Assistant proposed. Nothing changes until the user approves it; the card then
+/// keeps the outcome in place of its buttons.
+private struct AssistantApprovalCardView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let item: AssistantItem
+    let card: AssistantApprovalCard
+    /// Cards streamed while the screen is open rise in; opened chats show them as they are.
+    let enters: Bool
+    let decide: (Bool) -> Void
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shown(card.title, amountsHidden: model.amountsHidden))
+                    .font(.body.weight(.semibold))
+                if let meta = card.meta {
+                    Text(shown(meta, amountsHidden: model.amountsHidden))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(card.rows.enumerated()), id: \.offset) { _, row in
+                    rowView(row)
+                }
+                if card.more > 0 {
+                    Text("\(card.more) more")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 52)
+                        .padding(.vertical, 4)
+                }
+            }
+            .opacity(item.state == .dismissed ? 0.55 : 1)
+
+            HStack(spacing: 8) {
+                if let total = card.totalCents, let totalOf = card.totalOfCents {
+                    HStack(spacing: 0) {
+                        AmountText(total)
+                            .fontWeight(.medium)
+                        Text(" of ")
+                            .foregroundStyle(.secondary)
+                        AmountText(totalOf)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if item.state == .pending {
+                    choices
+                        .transition(.opacity)
+                } else {
+                    outcome
+                        .transition(.opacity)
+                }
+            }
+            .font(.subheadline)
+            .padding(.leading, 16)
+            .padding(.trailing, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 20))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: item.state)
+        .sensoryFeedback(.success, trigger: item.state) { _, state in state == .applied }
+        .opacity(appeared || !enters ? 1 : 0)
+        .offset(y: appeared || !enters || reduceMotion ? 0 : 6)
+        .scaleEffect(appeared || !enters || reduceMotion ? 1 : 0.985, anchor: .top)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.26)) {
+                appeared = true
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(shown(card.title, amountsHidden: model.amountsHidden))
+    }
+
+    private func rowView(_ row: AssistantApprovalCard.Row) -> some View {
+        let sub = [row.detail.map { shown($0, amountsHidden: model.amountsHidden) }, row.date.map(AppFormatters.bookingDay)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        return HStack(spacing: 10) {
+            if row.category != nil || row.date != nil {
+                // A transaction without a category shows a question mark.
+                CategoryGlyph(categoryID: row.category?.id, iconKey: row.category?.icon, name: row.category?.name)
+            } else {
+                Color.clear.glyphColumn()
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title)
+                    .lineLimit(1)
+                if !sub.isEmpty {
+                    Text(sub)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            HStack(spacing: 0) {
+                if let amount = row.amountCents {
+                    AmountText(amount, signed: row.income)
+                        .fontWeight(.medium)
+                        .foregroundStyle(row.income ? ExpensesTheme.income(for: scheme) : .primary)
+                }
+                if let of = row.ofCents {
+                    Text(" of ")
+                        .foregroundStyle(.secondary)
+                    AmountText(of)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .frame(minHeight: 50)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var choices: some View {
+        HStack(spacing: 4) {
+            Button {
+                decide(false)
+            } label: {
+                Text("Dismiss")
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 38)
+                    .contentShape(.capsule)
+            }
+            .accessibilityIdentifier("assistant.dismiss")
+            Button {
+                decide(true)
+            } label: {
+                Text(card.verb)
+                    .foregroundStyle(ExpensesTheme.surface(for: scheme))
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 38)
+                    .background(ExpensesTheme.accent(for: scheme), in: .capsule)
+            }
+            .accessibilityIdentifier("assistant.approve")
+        }
+        .fontWeight(.medium)
+        .buttonStyle(.plain)
+        .expandedTouchArea(3)
+        .disabled(model.isAssistantStreaming)
+        .opacity(model.isAssistantStreaming ? 0.45 : 1)
+    }
+
+    @ViewBuilder
+    private var outcome: some View {
+        switch item.state {
+        case .applied:
+            Label {
+                Text(card.done)
+            } icon: {
+                Image(systemName: "checkmark.circle")
+                    .foregroundStyle(ExpensesTheme.income(for: scheme))
+            }
+            .foregroundStyle(.secondary)
+        case .failed:
+            Label {
+                Text(shown(item.message ?? "Not applied", amountsHidden: model.amountsHidden))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.circle")
+                    .foregroundStyle(ExpensesTheme.expense(for: scheme))
+            }
+            .foregroundStyle(.secondary)
+        default:
+            Text("Dismissed")
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -461,6 +658,7 @@ private struct AssistantActivity: View {
         case .thinking: "Thinking"
         case .note, .text: item.text
         case .tool: item.label
+        case .approval: item.card?.title ?? ""
         }
     }
 
@@ -609,6 +807,8 @@ private struct AssistantStep: View {
             return shown(item.text, amountsHidden: model.amountsHidden)
         case .tool:
             return shown(item.label, amountsHidden: model.amountsHidden)
+        case .approval:
+            return shown(item.card?.title ?? "", amountsHidden: model.amountsHidden)
         }
     }
 

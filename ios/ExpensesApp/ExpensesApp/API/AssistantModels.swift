@@ -10,6 +10,59 @@ struct AssistantMessageRequest: Encodable {
     }
 }
 
+struct AssistantDecisionRequest: Encodable {
+    let itemID: String
+    let approve: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case itemID = "item_id"
+        case approve
+    }
+}
+
+/// What a proposed change does, row by row, as its approval card shows it.
+struct AssistantApprovalCard: Decodable, Equatable {
+    struct Row: Decodable, Equatable {
+        struct Category: Decodable, Equatable {
+            let id: Int
+            let name: String
+            let icon: String?
+        }
+
+        let title: String
+        let detail: String?
+        let category: Category?
+        /// Transaction rows only.
+        let date: Date?
+        let amountCents: Int?
+        /// Shown as "amount of ofCents", such as an allocation of an expense.
+        let ofCents: Int?
+        let income: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case title, detail, category, date, income
+            case amountCents = "amount_cents"
+            case ofCents = "of_cents"
+        }
+    }
+
+    let title: String
+    let meta: String?
+    /// The approve button, such as Add, and the state after it, such as Added.
+    let verb: String
+    let done: String
+    let rows: [Row]
+    let more: Int
+    let totalCents: Int?
+    let totalOfCents: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case title, meta, verb, done, rows, more
+        case totalCents = "total_cents"
+        case totalOfCents = "total_of_cents"
+    }
+}
+
 /// One step or block of an answer, as the server stores and streams it.
 struct AssistantItem: Decodable, Identifiable, Equatable {
     enum Kind: String, Decodable {
@@ -21,12 +74,15 @@ struct AssistantItem: Decodable, Identifiable, Equatable {
         case tool
         /// Answer text.
         case text
+        /// A change the Assistant proposed. Nothing changes until the user approves it.
+        case approval
     }
 
     /// Every kind's states: thinking and note are active or done, a tool is running, done,
-    /// failed, or stopped, and text is streaming or done.
+    /// failed, or stopped, text is streaming or done, and an approval is pending, applied,
+    /// dismissed, or failed.
     enum State: String, Decodable {
-        case active, done, running, failed, stopped, streaming
+        case active, done, running, failed, stopped, streaming, pending, applied, dismissed
     }
 
     let kind: Kind
@@ -39,9 +95,13 @@ struct AssistantItem: Decodable, Identifiable, Equatable {
     let label: String
     /// Tool only, what the read found, such as "3 categories · 1 234,56 €".
     let detail: String?
+    /// Approval only.
+    let card: AssistantApprovalCard?
+    /// Approval only, why an approved change couldn't be applied.
+    let message: String?
 
     enum CodingKeys: String, CodingKey {
-        case kind, id, text, state, seconds, label, detail
+        case kind, id, text, state, seconds, label, detail, card, message
     }
 
     init(from decoder: Decoder) throws {
@@ -53,6 +113,8 @@ struct AssistantItem: Decodable, Identifiable, Equatable {
         seconds = try container.decodeIfPresent(Int.self, forKey: .seconds)
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        card = try container.decodeIfPresent(AssistantApprovalCard.self, forKey: .card)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
     }
 
     var isOpen: Bool {
@@ -149,6 +211,11 @@ struct AssistantTurn: Identifiable, Equatable {
 
     var answer: String {
         items.filter { $0.kind == .text }.map(\.text).joined(separator: "\n\n")
+    }
+
+    /// An answer that changed data can't run again; undoing goes through the Assistant.
+    var changedData: Bool {
+        items.contains { $0.kind == .approval && $0.state == .applied }
     }
 }
 

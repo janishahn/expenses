@@ -601,6 +601,224 @@
         "title": "AllocationIDOut",
         "type": "object"
       },
+      "ApprovalCard": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "more": {
+            "default": 0,
+            "title": "More",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cents"
+          },
+          "total_of_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Of Cents"
+          },
+          "verb": {
+            "title": "Verb",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "verb",
+          "done",
+          "rows"
+        ],
+        "title": "ApprovalCard",
+        "type": "object"
+      },
+      "ApprovalCategory": {
+        "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "icon"
+        ],
+        "title": "ApprovalCategory",
+        "type": "object"
+      },
+      "ApprovalItem": {
+        "description": "A change the model proposed. Nothing changes until the user approves it.",
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/ApprovalCard"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "approval",
+            "default": "approval",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "applied",
+              "dismissed",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "card",
+          "state"
+        ],
+        "title": "ApprovalItem",
+        "type": "object"
+      },
+      "ApprovalRow": {
+        "properties": {
+          "amount_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cents"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "income": {
+            "default": false,
+            "title": "Income",
+            "type": "boolean"
+          },
+          "of_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Of Cents"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ApprovalRow",
+        "type": "object"
+      },
       "AssistantChatOut": {
         "properties": {
           "id": {
@@ -657,6 +875,27 @@
         "title": "AssistantChatSummaryOut",
         "type": "object"
       },
+      "AssistantDecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "item_id": {
+            "maxLength": 120,
+            "pattern": "^approval-",
+            "title": "Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "approve"
+        ],
+        "title": "AssistantDecisionIn",
+        "type": "object"
+      },
       "AssistantMessageIn": {
         "additionalProperties": false,
         "properties": {
@@ -700,6 +939,7 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "approval": "#/components/schemas/ApprovalItem",
                   "note": "#/components/schemas/NoteItem",
                   "text": "#/components/schemas/TextItem",
                   "thinking": "#/components/schemas/ThinkingItem",
@@ -719,6 +959,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/TextItem"
+                },
+                {
+                  "$ref": "#/components/schemas/ApprovalItem"
                 }
               ]
             },
@@ -10980,6 +11223,48 @@
           }
         },
         "summary": "Chat"
+      }
+    },
+    "/api/assistant/chats/{chat_id}/approvals/stream": {
+      "post": {
+        "operationId": "decide_api_assistant_chats__chat_id__approvals_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide"
       }
     },
     "/api/assistant/chats/{chat_id}/retry/stream": {

@@ -1,7 +1,8 @@
 import { expect, test, type Locator, type Page } from "./fixtures"
 
 // tests/e2e_ai_provider.py scripts the AI backend from the question: "slow", "long",
-// "fail once", or the default turn with reasoning, a note, one ledger read, and this answer.
+// "fail once", "add lunch", or the default turn with reasoning, a note, one ledger read,
+// and this answer.
 const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April."
 
 const thread = (page: Page) => page.getByRole("log", { name: "Conversation" })
@@ -94,6 +95,35 @@ test.describe("Assistant", () => {
     // Only the last answer can be answered again.
     await expect(assistantTurns(page).first().getByRole("button", { name: "Retry" })).toHaveCount(0)
     await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
+  })
+
+  test("applies an approved change, continues the answer, and keeps a dismissal", async ({ page }) => {
+    await page.goto("/assistant")
+    await sendQuestion(page, unique("Add lunch for 12,50"))
+
+    // The proposal ends the turn with a card; nothing is saved yet.
+    const assistant = assistantTurns(page).last()
+    const card = assistant.getByRole("region", { name: "1 new transaction" })
+    await expect(card).toContainText("Lunch")
+    await expect(card).toContainText("Uncategorized")
+    await expect(card).toContainText("12,50 €")
+    await expect(composer(page)).toBeEnabled()
+
+    await card.getByRole("button", { name: "Add" }).click()
+    await expect(card).toContainText("Added")
+    await expect(card.getByRole("button")).toHaveCount(0)
+    await expect(assistant).toContainText("Added it.")
+    // An answer that changed data can't run again.
+    await expect(assistant.getByRole("button", { name: "Retry" })).toHaveCount(0)
+
+    await page.reload()
+    await expect(assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })).toContainText("Added")
+
+    await sendQuestion(page, "Add lunch again")
+    const second = assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })
+    await second.getByRole("button", { name: "Dismiss" }).click()
+    await expect(second).toContainText("Dismissed")
+    await expect(assistantTurns(page).last()).toContainText("Okay, nothing changed.")
   })
 
   test("masks amounts in the conversation in privacy mode", async ({ page }) => {

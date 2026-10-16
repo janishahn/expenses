@@ -7,7 +7,14 @@ import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/ClockCounterClo
 import { CopyIcon } from "@phosphor-icons/react/Copy"
 import { NotePencilIcon } from "@phosphor-icons/react/NotePencil"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
-import { fetchAssistantChat, fetchAssistantChats, getApiErrorMessage, streamAssistantMessage, streamAssistantRetry } from "../app/api"
+import {
+  fetchAssistantChat,
+  fetchAssistantChats,
+  getApiErrorMessage,
+  streamAssistantDecision,
+  streamAssistantMessage,
+  streamAssistantRetry,
+} from "../app/api"
 import type { AssistantChat, AssistantChatSummary, AssistantItem, AssistantStreamEvent, AssistantTurnStatus } from "../app/api-types"
 import { copyText } from "../app/clipboard"
 import { maskTextAmounts, usePrivacy } from "../app/privacy"
@@ -15,6 +22,7 @@ import { Button, IconButton } from "../components/ui/Button"
 import {
   ChatActions,
   ChatActivity,
+  ChatApproval,
   ChatBubble,
   ChatComposer,
   ChatMarkdown,
@@ -37,9 +45,13 @@ type Turn = {
   live: boolean
 }
 
-type ActivityItem = Exclude<AssistantItem, { kind: "text" }>
+type ActivityItem = Exclude<AssistantItem, { kind: "text" } | { kind: "approval" }>
 type TextItem = Extract<AssistantItem, { kind: "text" }>
-type Segment = { kind: "activity"; key: string; items: ActivityItem[] } | { kind: "text"; key: string; item: TextItem }
+type ApprovalItem = Extract<AssistantItem, { kind: "approval" }>
+type Segment =
+  | { kind: "activity"; key: string; items: ActivityItem[] }
+  | { kind: "text"; key: string; item: TextItem }
+  | { kind: "approval"; key: string; item: ApprovalItem }
 
 const CHATS_KEY = ["assistant", "chats"]
 const SAVED_FAILURE = "This answer didn't finish."
@@ -62,12 +74,12 @@ function savedTurns(chat: AssistantChat): Turn[] {
   }))
 }
 
-// Steps between answer text fold into one activity line each.
+// Steps between answer text and approval cards fold into one activity line each.
 function segments(items: AssistantItem[]): Segment[] {
   const result: Segment[] = []
   for (const item of items) {
-    if (item.kind === "text") {
-      result.push({ kind: "text", key: item.id, item })
+    if (item.kind === "text" || item.kind === "approval") {
+      result.push(item.kind === "text" ? { kind: "text", key: item.id, item } : { kind: "approval", key: item.id, item })
       continue
     }
     const last = result[result.length - 1]
@@ -84,7 +96,9 @@ function applyEvents(turn: Turn, events: AssistantStreamEvent[]): Turn {
       const found = items.some((item) => item.id === event.item.id)
       items = found ? items.map((item) => (item.id === event.item.id ? event.item : item)) : [...items, event.item]
     } else if (event.type === "delta") {
-      items = items.map((item) => (item.id === event.id && item.kind !== "tool" ? { ...item, text: item.text + event.text } : item))
+      items = items.map((item) =>
+        item.id === event.id && item.kind !== "tool" && item.kind !== "approval" ? { ...item, text: item.text + event.text } : item
+      )
     } else if (event.type === "end") {
       status = event.status
       error = event.status === "failed" ? (event.message ?? SAVED_FAILURE) : null
@@ -112,7 +126,30 @@ function answerText(items: AssistantItem[]): string {
 
 function maskItem(item: AssistantItem): AssistantItem {
   if (item.kind === "tool") return { ...item, label: maskTextAmounts(item.label), detail: item.detail === null ? null : maskTextAmounts(item.detail) }
+  if (item.kind === "approval") {
+    const mask = (text: string | null) => (text === null ? null : maskTextAmounts(text))
+    return {
+      ...item,
+      message: mask(item.message),
+      card: {
+        ...item.card,
+        title: maskTextAmounts(item.card.title),
+        meta: mask(item.card.meta),
+        rows: item.card.rows.map((row) => ({ ...row, detail: mask(row.detail) })),
+      },
+    }
+  }
   return { ...item, text: maskTextAmounts(item.text) }
+}
+
+// Sending a new message leaves open cards undecided; the server dismisses them the same way.
+function dismissPending(turn: Turn): Turn {
+  if (!turn.items.some((item) => item.kind === "approval" && item.state === "pending")) return turn
+  return { ...turn, items: turn.items.map((item) => (item.kind === "approval" && item.state === "pending" ? { ...item, state: "dismissed" } : item)) }
+}
+
+function changedData(items: AssistantItem[]): boolean {
+  return items.some((item) => item.kind === "approval" && item.state === "applied")
 }
 
 const WEEKDAY = new Intl.DateTimeFormat("en-US", { weekday: "short" })
@@ -323,7 +360,7 @@ function Conversation({
       if (!text || abortRef.current) return
       const key = nextTurnKey()
       pendingScrollRef.current = key
-      setTurns((prev) => [...prev, { key, userText: text, items: [], status: "streaming", error: null, live: true }])
+      setTurns((prev) => [...prev.map(dismissPending), { key, userText: text, items: [], status: "streaming", error: null, live: true }])
       setInput("")
       if (window.matchMedia("(min-width: 861px)").matches) {
         window.requestAnimationFrame(() => inputRef.current?.focus())
@@ -352,6 +389,17 @@ function Conversation({
     void runStream((signal) => streamAssistantRetry(id, signal))
   }, [runStream, sendMessage, turns])
 
+  // Approving applies the change on the server before the same turn continues.
+  const decide = useCallback(
+    (itemId: string, approve: boolean) => {
+      const id = chatIdRef.current
+      if (!id || abortRef.current) return
+      setTurns((prev) => prev.map((turn, index) => (index === prev.length - 1 ? { ...turn, status: "streaming", error: null, live: true } : turn)))
+      void runStream((signal) => streamAssistantDecision(id, itemId, approve, signal))
+    },
+    [runStream]
+  )
+
   const handleCopy = useCallback((key: string, content: string) => {
     copyText(content)
     setCopiedKey(key)
@@ -378,6 +426,8 @@ function Conversation({
       const parts = segments(privacy ? turn.items.map(maskItem) : turn.items)
       const answer = answerText(turn.items)
       const isLast = index === lastIndex
+      // An answer that changed data can't run again; undoing goes through the Assistant.
+      const canRetry = isLast && !changedData(turn.items)
       return [
         <ChatTurn key={`${turn.key}-q`} id={`${turn.key}-q`} from="user">
           <ChatBubble enter={turn.live}>{shown(turn.userText)}</ChatBubble>
@@ -390,6 +440,14 @@ function Conversation({
           {parts.map((part, partIndex) =>
             part.kind === "activity" ? (
               <ChatActivity key={part.key} items={part.items} working={streaming && partIndex === parts.length - 1} />
+            ) : part.kind === "approval" ? (
+              <ChatApproval
+                key={part.key}
+                item={part.item}
+                enter={turn.live}
+                disabled={busy}
+                onDecide={(approve) => decide(part.item.id, approve)}
+              />
             ) : (
               <ChatMarkdown key={part.key} content={part.item.text} animate={turn.live} partial={part.item.state === "streaming"} />
             )
@@ -400,16 +458,16 @@ function Conversation({
               {turn.error ?? SAVED_FAILURE}
             </Status>
           ) : null}
-          {!streaming && (answer || isLast) ? (
+          {!streaming && (answer || canRetry) ? (
             <ChatActions>
               {answer ? (
                 <CopyButton copied={copiedKey === turn.key} label="Copy response" onCopy={() => handleCopy(turn.key, answer)} />
               ) : null}
-              {isLast && turn.status === "failed" ? (
+              {canRetry && turn.status === "failed" ? (
                 <Button variant="ghost" size="small" icon={ArrowClockwiseIcon} disabled={busy} onClick={retryLast}>
                   Retry
                 </Button>
-              ) : isLast ? (
+              ) : canRetry ? (
                 <IconButton icon={ArrowClockwiseIcon} size="small" label="Retry" disabled={busy} onClick={retryLast} />
               ) : null}
             </ChatActions>

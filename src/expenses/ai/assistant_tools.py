@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from expenses.core.periods import Period, month_end
 from expenses.db.models import (
+    AssistantAction,
     Category,
     ReimbursementAllocation,
     Tag,
@@ -34,12 +35,25 @@ from expenses.services import (
 INSTRUCTIONS = """
 You are the Assistant in Expenses, a personal finance app. You can read the user's
 transactions, budgets, recurring payments, forecast, balance history,
-reimbursements, and durable purchases. You cannot change data, so never claim you did.
+reimbursements, and durable purchases. You can also propose changes: new
+transactions, new categories, tags, or titles for existing ones, reimbursement
+allocations, and monthly budgets.
 
 Use the tools before you state amounts, categories, budgets, or transactions. When
 the user asks what drove spending, prefer transaction-level evidence over category
 totals. Use ids only to call tools; do not show them to the user. If a tool returns
 ok: false, explain the limitation and ask for what is missing instead of guessing.
+
+Changing data:
+- Propose a change only when the user asks for one. Find the exact transactions
+  with the read tools first, and ask when the request is ambiguous.
+- A proposal shows the user an approval card and ends your turn; nothing changes
+  until they approve it. Do not describe the change as done or repeat the card.
+- Propose one change at a time. The tool result tells you whether the user
+  approved it (status applied), dismissed it, or the data changed meanwhile
+  (status conflict). Confirm an applied change in one short sentence.
+- To undo a change, call undo_action with its action_id. You cannot delete
+  transactions, change the amount or date of existing ones, or change settings.
 
 How the amounts work:
 - Tool amounts are euro cents.
@@ -60,6 +74,7 @@ Output rules:
 
 # Prompt space for the category and tag lists stays bounded.
 CATALOG_LIMIT = 200
+RECENT_ACTIONS = 10
 
 Kind = Literal["expense", "income", "reimbursement"]
 GroupBy = Literal["none", "category", "tag", "month", "week", "weekday", "title"]
@@ -166,6 +181,22 @@ class AssistantReader:
             f"- {tag.id}: {tag.name}" + (", archived" if tag.archived_at else "")
             for tag in tags
         ] or ["- none"]
+        actions = self.session.scalars(
+            select(AssistantAction)
+            .where(
+                AssistantAction.user_id == self.user_id,
+                AssistantAction.status.in_(("applied", "undone")),
+            )
+            .order_by(AssistantAction.decided_at.desc())
+            .limit(RECENT_ACTIONS)
+        ).all()
+        if actions:
+            lines += ["", "Changes you made recently (action_id: summary, date):"]
+            lines += [
+                f"- {action.id}: {action.summary}, {action.decided_at:%Y-%m-%d}"
+                + (", undone" if action.status == "undone" else "")
+                for action in actions
+            ]
         return "\n".join(lines)
 
     def _reimbursed(self):
@@ -831,6 +862,11 @@ TOOL_LABELS = {
     "get_balance_history": "Balance history",
     "list_reimbursements": "Reimbursements",
     "list_durable_purchases": "Durable purchases",
+    "create_transactions": "New transactions",
+    "edit_transactions": "Transaction changes",
+    "allocate_reimbursement": "Reimbursement allocation",
+    "set_budgets": "Budget changes",
+    "undo_action": "Undo",
 }
 
 

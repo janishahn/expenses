@@ -119,6 +119,35 @@ class AssistantTurn(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class AssistantAction(Base):
+    """A change the Assistant proposed, and what undoes it once applied.
+
+    plan_json is exactly what the approval card shows. The row outlives its chat so
+    the Assistant can still undo the change later.
+    """
+
+    __tablename__ = "assistant_actions"
+    __table_args__ = (
+        Index("ix_assistant_actions_user_created", "user_id", "created_at"),
+        UniqueConstraint("chat_id", "tool_call_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    tool_call_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str] = mapped_column(String(200), nullable=False)
+    plan_json: Mapped[str] = mapped_column(Text, nullable=False)
+    undo_json: Mapped[Optional[str]] = mapped_column(Text)
+    # proposed, applied, dismissed, failed, or undone
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
 class AutoCategorizationPreference(Base):
     __tablename__ = "auto_categorization_preferences"
     __table_args__ = (CheckConstraint("threshold >= 0 AND threshold <= 1"),)
