@@ -301,23 +301,47 @@ struct ExpensesAPIClient {
         )
     }
 
-    func spendingChatStream(
-        _ body: AssistantStreamRequest,
+    func assistantChats(token: String) async throws -> [AssistantChatSummary] {
+        try await request(path: "/api/assistant/chats", bearerToken: token)
+    }
+
+    func assistantChat(id: String, token: String) async throws -> AssistantChat {
+        try await request(path: "/api/assistant/chats/\(id)", bearerToken: token)
+    }
+
+    /// Sends a message, starting a chat when `chatID` is nil. Cancelling the stream stops the answer.
+    func assistantMessageStream(
+        _ body: AssistantMessageRequest,
+        token: String
+    ) -> AsyncThrowingStream<AssistantStreamEvent, Error> {
+        assistantStream(path: "/api/assistant/messages/stream", body: try? encoder.encode(body), token: token)
+    }
+
+    /// Answers the chat's last message again, replacing its last turn.
+    func assistantRetryStream(chatID: String, token: String) -> AsyncThrowingStream<AssistantStreamEvent, Error> {
+        assistantStream(path: "/api/assistant/chats/\(chatID)/retry/stream", body: nil, token: token)
+    }
+
+    private func assistantStream(
+        path: String,
+        body: Data?,
         token: String
     ) -> AsyncThrowingStream<AssistantStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let producer = Task {
                 do {
                     let baseURL = try validatedBaseURL()
-                    guard let url = URL(string: "/api/ai/spending-chat/stream", relativeTo: baseURL) else {
+                    guard let url = URL(string: path, relativeTo: baseURL) else {
                         throw APIErrorInfo(message: "Request URL is invalid.")
                     }
                     var request = URLRequest(url: url)
                     request.httpMethod = "POST"
                     request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
                     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.httpBody = try encoder.encode(body)
+                    if let body {
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        request.httpBody = body
+                    }
 
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else {
