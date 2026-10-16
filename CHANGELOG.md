@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-16
+
 ### Fixed
 - With an Anthropic backend, every Assistant message failed because Anthropic's API refused the Assistant's tool definitions as too complex. The Assistant now answers with Anthropic models.
 
@@ -504,7 +506,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/janishahn/expenses/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/janishahn/expenses/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/janishahn/expenses/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/janishahn/expenses/compare/v0.7.0...v0.7.1
