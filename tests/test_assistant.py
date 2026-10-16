@@ -1387,6 +1387,8 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
             ),
         )
         assert classification("Weekly supermarket") == (ids["leisure_id"], ["Trip"])
+        # An amount edited after the change doesn't block undoing it.
+        supermarket.amount_cents += 100
         # The onward budget below deletes this July budget; undo brings it back.
         budgets.upsert_override(
             BudgetOverrideIn(
@@ -1549,6 +1551,72 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
                 year=2026, month=7, category_id=ids["groceries_id"], amount_cents=38_000
             )
         )
+
+        with pytest.raises(ActionConflict):
+            _apply_proposal(session, proposal)
+
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        proposal = propose_edit(
+            _reader(session),
+            transaction_ids=[ids["hotel_id"]],
+            category_id=None,
+            add_tags=["Trip"],
+            remove_tags=[],
+            title=None,
+        )
+        # The card showed 116,80 €.
+        session.get(Transaction, ids["hotel_id"]).amount_cents = 12_000
+        session.commit()
+
+        with pytest.raises(ActionConflict):
+            _apply_proposal(session, proposal)
+
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        reader = _reader(session)
+        created = _apply_proposal(
+            session,
+            propose_create(
+                reader,
+                [
+                    NewTransaction(
+                        date=date(2026, 6, 21),
+                        kind="expense",
+                        amount_cents=1_250,
+                        title="Lunch",
+                    )
+                ],
+            ),
+        )
+        proposal = propose_undo(reader, created.id)
+        # The card showed Jun 21.
+        session.scalars(
+            select(Transaction).where(Transaction.title == "Lunch")
+        ).one().date = date(2026, 6, 22)
+        session.commit()
+
+        with pytest.raises(ActionConflict):
+            _apply_proposal(session, proposal)
+
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        categories = CategoryService(session, user_id=1)
+        lodging = categories.create(
+            CategoryIn(name="Lodging", type=TransactionType.expense, order=1)
+        )
+        proposal = propose_edit(
+            _reader(session),
+            transaction_ids=[ids["hotel_id"]],
+            category_id=lodging.id,
+            add_tags=[],
+            remove_tags=[],
+            title=None,
+        )
+        categories.archive(lodging.id)
 
         with pytest.raises(ActionConflict):
             _apply_proposal(session, proposal)

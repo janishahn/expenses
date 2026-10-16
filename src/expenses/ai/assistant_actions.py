@@ -112,11 +112,19 @@ class CreatePlan(BaseModel):
     transactions: list[NewTransactionPlan]
 
 
+class TrashRow(BaseModel):
+    transaction_id: int
+    # As the card showed it; approval refuses once any of these changed.
+    title: str
+    date: date
+    amount_cents: int
+
+
 class TrashPlan(BaseModel):
     """Moves transactions to Trash; undoes created transactions."""
 
     kind: Literal["trash_transactions"] = "trash_transactions"
-    transaction_ids: list[int]
+    rows: list[TrashRow]
 
 
 class Classification(BaseModel):
@@ -128,6 +136,9 @@ class Classification(BaseModel):
 
 class EditRow(BaseModel):
     transaction_id: int
+    # As the card showed them; approval refuses once either changed.
+    date: date
+    amount_cents: int
     before: Classification
     after: Classification
 
@@ -330,6 +341,15 @@ def _sorted_tags(names: list[str]) -> list[str]:
     return sorted(names, key=str.lower)
 
 
+def _trash_row(txn: Transaction) -> TrashRow:
+    return TrashRow(
+        transaction_id=txn.id,
+        title=txn.title,
+        date=txn.date,
+        amount_cents=txn.amount_cents,
+    )
+
+
 def _classification(txn: Transaction) -> Classification:
     return Classification(
         category_id=txn.category_id,
@@ -501,7 +521,15 @@ def propose_edit(
             title=new_title if new_title is not None else before.title,
         )
         if after != before:
-            rows.append(EditRow(transaction_id=txn.id, before=before, after=after))
+            rows.append(
+                EditRow(
+                    transaction_id=txn.id,
+                    date=txn.date,
+                    amount_cents=txn.amount_cents,
+                    before=before,
+                    after=after,
+                )
+            )
     if not rows:
         raise InvalidProposal("no_change", "These transactions already look like that.")
     changes: list[str] = []
@@ -840,13 +868,21 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
     meta: str | None = None
     match inverse:
         case TrashPlan():
-            alive = _transactions(session, user_id, inverse.transaction_ids)
-            ids = [txn_id for txn_id in inverse.transaction_ids if txn_id in alive]
+            alive = _transactions(
+                session, user_id, [row.transaction_id for row in inverse.rows]
+            )
+            ids = [
+                row.transaction_id
+                for row in inverse.rows
+                if row.transaction_id in alive
+            ]
             if not ids:
                 raise InvalidProposal(
                     "nothing_to_undo", "Those transactions are already in Trash."
                 )
-            plan: InversePlan = TrashPlan(transaction_ids=ids)
+            plan: InversePlan = TrashPlan(
+                rows=[_trash_row(alive[txn_id]) for txn_id in ids]
+            )
             rows = [
                 ApprovalRow(
                     title=alive[txn_id].title,
@@ -862,12 +898,16 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             transactions = _transactions(
                 session, user_id, [row.transaction_id for row in inverse.rows]
             )
-            safe = [
-                row
-                for row in inverse.rows
-                if row.transaction_id in transactions
-                and _classification(transactions[row.transaction_id]) == row.before
-            ]
+            safe: list[EditRow] = []
+            for row in inverse.rows:
+                txn = transactions.get(row.transaction_id)
+                if txn is not None and _classification(txn) == row.before:
+                    # The card shows the date and amount as they are now.
+                    safe.append(
+                        row.model_copy(
+                            update={"date": txn.date, "amount_cents": txn.amount_cents}
+                        )
+                    )
             if not safe:
                 raise InvalidProposal(
                     "changed",
@@ -1142,18 +1182,21 @@ def _apply_create(
                 for txn in created
             ]
         },
-        TrashPlan(transaction_ids=[txn.id for txn in created]),
+        TrashPlan(rows=[_trash_row(txn) for txn in created]),
     )
 
 
 def _apply_trash(session: Session, user_id: int, plan: TrashPlan) -> dict[str, Any]:
-    alive = _transactions(session, user_id, plan.transaction_ids)
-    if len(alive) != len(plan.transaction_ids):
+    alive = _transactions(session, user_id, [row.transaction_id for row in plan.rows])
+    if len(alive) != len(plan.rows):
         raise ActionConflict("A transaction this would remove is already in Trash.")
+    for row in plan.rows:
+        if _trash_row(alive[row.transaction_id]) != row:
+            raise ActionConflict(f"{row.title} changed since this was proposed.")
     service = TransactionService(session, user_id)
-    for txn_id in plan.transaction_ids:
-        service.soft_delete(txn_id, commit=False)
-    return {"moved_to_trash": len(plan.transaction_ids)}
+    for row in plan.rows:
+        service.soft_delete(row.transaction_id, commit=False)
+    return {"moved_to_trash": len(plan.rows)}
 
 
 def _apply_edit(
@@ -1168,11 +1211,19 @@ def _apply_edit(
         txn = transactions.get(row.transaction_id)
         if txn is None:
             raise ActionConflict("A transaction in this change is in Trash now.")
-        if _classification(txn) != row.before:
+        if (
+            _classification(txn) != row.before
+            or txn.date != row.date
+            or txn.amount_cents != row.amount_cents
+        ):
             raise ActionConflict(f"{txn.title} changed since this was proposed.")
         if row.after.category_id != txn.category_id:
             category = categories.get(row.after.category_id)
-            if category is None or category.type != txn.type:
+            if (
+                category is None
+                or category.archived_at is not None
+                or category.type != txn.type
+            ):
                 raise ActionConflict(
                     f"{txn.title} can't move to that category anymore."
                 )
@@ -1186,11 +1237,7 @@ def _apply_edit(
         {"edited": len(plan.rows)},
         EditPlan(
             rows=[
-                EditRow(
-                    transaction_id=row.transaction_id,
-                    before=row.after,
-                    after=row.before,
-                )
+                row.model_copy(update={"before": row.after, "after": row.before})
                 for row in plan.rows
             ]
         ),
