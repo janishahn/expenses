@@ -574,7 +574,7 @@ class AssistantReader:
 
     def list_recurring(self) -> dict[str, Any]:
         rules, totals = RecurringRuleService(self.session, self.user_id).overview()
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "monthly_income_cents": totals["total_monthly_income"],
             "monthly_expense_cents": totals["total_monthly_expenses"],
@@ -594,9 +594,12 @@ class AssistantReader:
                     "category": item.rule.category.name,
                     "posts_automatically": item.rule.auto_post,
                 }
-                for item in rules
+                for item in rules[:100]
             ],
         }
+        if len(rules) > 100:
+            result["more"] = True
+        return result
 
     def get_forecast(self, *, horizon_months: Literal[3, 6, 12]) -> dict[str, Any]:
         forecast = ForecastService(self.session, self.user_id).forecast(
@@ -817,7 +820,10 @@ def get_transaction(
 
 
 def list_recurring(ctx: RunContext[AssistantReader]) -> dict[str, Any]:
-    """Recurring payments and income: amount, interval, next date, monthly cost."""
+    """Recurring payments and income: amount, interval, next date, monthly cost.
+
+    Lists 100 rules; `more` means there are others. The monthly totals cover all.
+    """
     return ctx.deps.list_recurring()
 
 
@@ -978,7 +984,7 @@ def tool_detail(tool_name: str, content: dict[str, Any]) -> str | None:
         case "list_recurring":
             count = len(content["rules"])
             return (
-                f"{count} rule{'' if count == 1 else 's'} · "
+                f"{count}{'+' if content.get('more') else ''} rule{'' if count == 1 else 's'} · "
                 f"{_eur(content['monthly_expense_cents'])} a month"
             )
         case "get_forecast":

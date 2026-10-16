@@ -145,6 +145,15 @@ class AllocationRow(BaseModel):
     cents: int | None
 
 
+class AllocationShown(BaseModel):
+    """The amounts a proposal's card showed; approval refuses once any changed."""
+
+    reimbursement_cents: int
+    expense_cents: dict[int, int]
+    # Every allocation from the reimbursement, by expense.
+    allocated: dict[int, int]
+
+
 class AllocatePlan(BaseModel):
     kind: Literal["allocate_reimbursement"] = "allocate_reimbursement"
     reimbursement_id: int
@@ -152,6 +161,8 @@ class AllocatePlan(BaseModel):
     # is allocated from it, None leaves it.
     set_reimbursement: bool | None
     allocations: list[AllocationRow]
+    # None for an undo, which checks only the allocations it puts back.
+    shown: AllocationShown | None = None
 
 
 class TemplateRow(BaseModel):
@@ -668,6 +679,11 @@ def propose_allocate(
                 )
                 for txn, amount in zip(expenses, cents, strict=True)
             ],
+            shown=AllocationShown(
+                reimbursement_cents=reimbursement.amount_cents,
+                expense_cents={txn.id: txn.amount_cents for txn in expenses},
+                allocated=existing,
+            ),
         ),
     )
 
@@ -1198,6 +1214,18 @@ def _apply_allocate(
         current.get(row.expense_id) != row.previous_cents for row in plan.allocations
     ):
         raise ActionConflict("An allocation changed since this was proposed.")
+    if plan.shown is not None and (
+        reimbursement.amount_cents != plan.shown.reimbursement_cents
+        or current != plan.shown.allocated
+        or {
+            txn_id: txn.amount_cents
+            for txn_id, txn in _transactions(
+                session, user_id, list(plan.shown.expense_cents)
+            ).items()
+        }
+        != plan.shown.expense_cents
+    ):
+        raise ActionConflict("An amount changed since this was proposed.")
     # Shrinking first keeps every step within the reimbursement's amount.
     for row in sorted(
         plan.allocations, key=lambda row: (row.cents or 0) - (row.previous_cents or 0)

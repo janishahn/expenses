@@ -83,6 +83,8 @@ logger = get_logger("expenses.ai.assistant")
 # Text that grows past this or breaks a line is the answer, not a note about the next step.
 PROMOTE_AT = 160
 HISTORY_TURNS = 20
+# Turns an opened chat shows, newest last, so a long-running chat stays light.
+CHAT_TURNS = 100
 # Lines a turn holds for a slow client before the run waits for it to catch up.
 STREAM_BUFFER_LINES = 64
 # Caps a turn's model output, reasoning included. It is checked here rather than
@@ -508,8 +510,9 @@ class AssistantService:
         turns = self.session.scalars(
             select(AssistantTurn)
             .where(AssistantTurn.chat_id == chat.id)
-            .order_by(AssistantTurn.seq)
-        )
+            .order_by(AssistantTurn.seq.desc())
+            .limit(CHAT_TURNS)
+        ).all()
         return AssistantChatOut(
             id=chat.id,
             title=chat.title,
@@ -522,7 +525,7 @@ class AssistantService:
                     status=turn.status,
                     created_at=turn.created_at,
                 )
-                for turn in turns
+                for turn in reversed(turns)
             ],
         )
 

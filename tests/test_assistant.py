@@ -1470,7 +1470,25 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
             propose_undo(reader, created.id)
 
 
-def test_assistant_budget_approval_refuses_a_budget_changed_since() -> None:
+def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        proposal = propose_allocate(
+            _reader(session),
+            reimbursement_id=ids["refund_id"],
+            expense_ids=[ids["hotel_id"]],
+            split="share",
+            share_percent=50,
+            amounts_cents=None,
+        )
+        # The card showed 87,61 € to allocate from.
+        session.get(Transaction, ids["refund_id"]).amount_cents = 9_000
+        session.commit()
+
+        with pytest.raises(ActionConflict):
+            _apply_proposal(session, proposal)
+
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))
         ids = _seed_spending_fixture(session)
