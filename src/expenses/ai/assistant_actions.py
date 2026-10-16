@@ -105,7 +105,6 @@ class NewTransactionPlan(BaseModel):
     title: str
     category_id: int | None
     tags: list[str]
-    description: str | None
 
 
 class CreatePlan(BaseModel):
@@ -357,7 +356,6 @@ class NewTransaction(BaseModel):
     title: str
     category_id: int | None = None
     tags: list[str] = Field(default_factory=list)
-    description: str | None = None
 
 
 def propose_create(
@@ -387,7 +385,6 @@ def propose_create(
             else None
         )
         tags = _tag_names(reader.session, reader.user_id, new.tags)
-        description = (new.description or "").strip() or None
         plans.append(
             NewTransactionPlan(
                 date=new.date,
@@ -396,7 +393,6 @@ def propose_create(
                 title=title,
                 category_id=category.id if category else None,
                 tags=tags,
-                description=description,
             )
         )
         rows.append(
@@ -1124,7 +1120,6 @@ def _apply_create(
                         amount_cents=row.amount_cents,
                         category_id=row.category_id,
                         title=row.title,
-                        description=row.description,
                         tags=row.tags,
                     ),
                     source="assistant",
