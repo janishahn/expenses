@@ -884,13 +884,16 @@ async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
 @pytest.mark.anyio
 async def test_assistant_stop_saves_the_partial_turn() -> None:
     factory = _session_factory()
-    streaming = asyncio.Event()
+    chunks = 4 * assistant.STREAM_BUFFER_LINES
+    produced = 0
 
     async def stream(messages, info):
-        yield "Partial answer"
-        streaming.set()
+        nonlocal produced
+        for _ in range(chunks):
+            produced += 1
+            yield "word "
         await asyncio.sleep(30)
-        yield " never sent"
+        yield "never sent"
 
     with factory() as session:
         turn = AssistantService(session, user_id=1).new_turn(
@@ -898,17 +901,21 @@ async def test_assistant_stop_saves_the_partial_turn() -> None:
         )
     lines = stream_turn(turn, model=_test_model(stream), session_factory=factory)
     assert json.loads(await anext(lines))["type"] == "start"
-    await streaming.wait()
+    await asyncio.sleep(0.2)
+    # The client reads nothing more, so the run waits once the buffer is full.
+    assert produced < chunks
     # Closing the response stops the run, as a client disconnect does.
     await lines.aclose()
-    await asyncio.gather(*assistant._RUNNING)
+    await asyncio.wait_for(asyncio.gather(*assistant._RUNNING), timeout=5)
 
     with factory() as session:
         saved = session.scalars(select(AssistantTurn)).one()
         job = session.scalars(select(LLMJob)).one()
     assert saved.status == "stopped"
     [item] = ITEMS.validate_json(saved.items_json)
-    assert (item.kind, item.text, item.state) == ("text", "Partial answer", "done")
+    assert (item.kind, item.state) == ("text", "done")
+    assert item.text.startswith("word word")
+    assert "never sent" not in item.text
     assert job.status == "stopped"
 
 

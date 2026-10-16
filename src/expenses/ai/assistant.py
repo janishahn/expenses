@@ -83,6 +83,11 @@ logger = get_logger("expenses.ai.assistant")
 # Text that grows past this or breaks a line is the answer, not a note about the next step.
 PROMOTE_AT = 160
 HISTORY_TURNS = 20
+# Lines a turn holds for a slow client before the run waits for it to catch up.
+STREAM_BUFFER_LINES = 64
+# Caps a turn's model output, reasoning included. It is checked here rather than
+# sent to the backend, so models with a smaller output limit still accept requests.
+TURN_OUTPUT_TOKENS = 100_000
 TurnStatus = Literal["completed", "stopped", "failed"]
 
 
@@ -789,7 +794,7 @@ async def stream_turn(
     model: AssistantModel,
     session_factory: Callable[[], Session],
 ) -> AsyncIterator[str]:
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=STREAM_BUFFER_LINES)
     handle = _TurnHandle()
     task = asyncio.create_task(
         _run_turn(request, model, session_factory, queue, handle)
@@ -801,6 +806,9 @@ async def stream_turn(
             yield line
     finally:
         handle.stop()
+        # Nobody reads the queue now, so free a run waiting for room in it.
+        while not queue.empty():
+            queue.get_nowait()
 
 
 async def _run_turn(
@@ -810,12 +818,16 @@ async def _run_turn(
     queue: asyncio.Queue[str | None],
     handle: _TurnHandle,
 ) -> None:
-    def put(event: dict[str, Any]) -> None:
-        queue.put_nowait(json.dumps(event, ensure_ascii=False) + "\n")
+    async def put(event: dict[str, Any] | None) -> None:
+        # Once the response stops reading, the run finishes and saves without it.
+        if not handle.stop_requested:
+            await queue.put(
+                None if event is None else json.dumps(event, ensure_ascii=False) + "\n"
+            )
 
     session = session_factory()
     try:
-        put({"type": "start", "chat_id": request.chat_id, "title": request.title})
+        await put({"type": "start", "chat_id": request.chat_id, "title": request.title})
         prompt: str | None = request.user_text
         items: list[AssistantItem] = []
         if request.continue_seq is None:
@@ -825,9 +837,9 @@ async def _run_turn(
             items = ITEMS.validate_json(turn.items_json)
             approvals = [item for item in items if isinstance(item, ApprovalItem)]
             for item in approvals:
-                put({"type": "item", "item": item.model_dump(mode="json")})
+                await put({"type": "item", "item": item.model_dump(mode="json")})
             if any(item.state == "pending" for item in approvals):
-                put({"type": "end", "status": "completed"})
+                await put({"type": "end", "status": "completed"})
                 return
             prompt = None
             history = [
@@ -843,13 +855,17 @@ async def _run_turn(
             prompt,
             deps=deps,
             message_history=history,
-            usage_limits=UsageLimits(request_limit=24, tool_calls_limit=24),
+            usage_limits=UsageLimits(
+                request_limit=24,
+                tool_calls_limit=24,
+                output_tokens_limit=TURN_OUTPUT_TOKENS,
+            ),
         ) as events:
             handle.events = events
             if handle.stop_requested:
                 events.cancel()
             async for event in stream.transform_stream(events):
-                put(event)
+                await put(event)
             messages: list[ModelMessage]
             usage: RunUsage
             if stream.cancelled is not None:
@@ -868,7 +884,7 @@ async def _run_turn(
                 messages = result.new_messages()
                 usage = result.usage
         for event in stream.finish(status):
-            put(event)
+            await put(event)
         _save_turn(
             session,
             request,
@@ -887,7 +903,7 @@ async def _run_turn(
         end: dict[str, Any] = {"type": "end", "status": status}
         if stream.error is not None:
             end["message"] = _failure_message(stream.error)
-        put(end)
+        await put(end)
     except Exception as exc:
         session.rollback()
         log_event(
@@ -897,7 +913,7 @@ async def _run_turn(
             chat_id=request.chat_id,
             error=repr(exc),
         )
-        put(
+        await put(
             {
                 "type": "end",
                 "status": "failed",
@@ -906,7 +922,7 @@ async def _run_turn(
         )
     finally:
         session.close()
-        queue.put_nowait(None)
+        await put(None)
 
 
 def _turn(session: Session, chat_id: str, seq: int) -> AssistantTurn:
