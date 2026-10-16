@@ -47,7 +47,12 @@ from expenses.db.models import (
     User,
 )
 from expenses.db.session import Base, _enable_sqlite_pragmas
-from expenses.schemas import BudgetTemplateIn, CategoryIn, TransactionIn
+from expenses.schemas import (
+    BudgetOverrideIn,
+    BudgetTemplateIn,
+    CategoryIn,
+    TransactionIn,
+)
 from expenses.services import (
     BudgetService,
     CategoryService,
@@ -755,16 +760,25 @@ def test_assistant_keeps_chats_for_the_chosen_days(
     )
     assert saved.json() == {"chat_days": 7}
 
-    # The other user keeps the default 14 days.
+    # The other user keeps the default 14 days. Chat d is old but had a recent message.
     now = datetime(2026, 6, 30, 4, 20)
     db_session.add(User(id=2, username="other", password_hash="unused"))
     db_session.flush()
-    for name, user_id, age in [("a", 1, 3), ("b", 1, 8), ("c", 2, 8)]:
+    for name, user_id, age, last_message_age in [
+        ("a", 1, 3, 3),
+        ("b", 1, 8, 8),
+        ("c", 2, 8, 8),
+        ("d", 1, 20, 3),
+    ]:
         at = now - timedelta(days=age)
         chat_id = name * 32
         db_session.add(
             AssistantChat(
-                id=chat_id, user_id=user_id, title=name, created_at=at, updated_at=at
+                id=chat_id,
+                user_id=user_id,
+                title=name,
+                created_at=at,
+                updated_at=now - timedelta(days=last_message_age),
             )
         )
         db_session.flush()
@@ -794,7 +808,7 @@ def test_assistant_keeps_chats_for_the_chosen_days(
     db_session.commit()
 
     assert assistant.prune_chats(db_session, now) == 1
-    kept = {"a" * 32, "c" * 32}
+    kept = {"a" * 32, "c" * 32, "d" * 32}
     assert set(db_session.scalars(select(AssistantChat.id))) == kept
     assert set(db_session.scalars(select(AssistantTurn.chat_id))) == kept
     assert set(db_session.scalars(select(AssistantAction.chat_id))) == kept
@@ -1357,6 +1371,12 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
             ),
         )
         assert classification("Weekly supermarket") == (ids["leisure_id"], ["Trip"])
+        # The onward budget below deletes this July budget; undo brings it back.
+        budgets.upsert_override(
+            BudgetOverrideIn(
+                year=2026, month=7, category_id=ids["groceries_id"], amount_cents=38_000
+            )
+        )
         before_budgets = july_budgets()
         set_budgets = _apply_proposal(
             session,

@@ -929,7 +929,8 @@ button.actHead { cursor: pointer; }
 .approvalDate { color: var(--ink-2); white-space: nowrap; }
 .approvalAmount { min-width: 64px; text-align: right; font-weight: 500; white-space: nowrap; }
 .approvalAmount > span { color: var(--ink-3); font-weight: 400; }
-.approvalMore { padding: 4px 14px 2px 40px; color: var(--ink-3); }
+/* The button's own 8px inset lines its label up with the row titles. */
+.approvalMore { padding: 4px 14px 2px 32px; }
 .approvalFoot { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 10px 10px 14px; }
 .approvalTotal { flex: 1; min-width: 0; color: var(--ink-2); }
 .approvalTotal b { color: var(--ink); font-weight: 500; }

@@ -466,6 +466,7 @@ private struct AssistantApprovalCardView: View {
     let enters: Bool
     let decide: (Bool) -> Void
     @State private var appeared = false
+    @State private var showsAllRows = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -483,15 +484,19 @@ private struct AssistantApprovalCardView: View {
             .padding(.bottom, 4)
 
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(card.rows.enumerated()), id: \.offset) { _, row in
+                // Long cards list eight rows; the rest open on request, before approving.
+                let rows = showsAllRows ? card.rows : Array(card.rows.prefix(8))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     rowView(row)
                 }
-                if card.more > 0 {
-                    Text("\(card.more) more")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 52)
-                        .padding(.vertical, 4)
+                if rows.count < card.rows.count {
+                    Button("Show \(card.rows.count - rows.count) More") {
+                        showsAllRows = true
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 52)
+                    .padding(.vertical, 4)
                 }
             }
             .opacity(item.state == .dismissed ? 0.55 : 1)

@@ -15,11 +15,10 @@ services:
       EXPENSES_AUTH_SIGNUP_ENABLED: "${EXPENSES_AUTH_SIGNUP_ENABLED:-true}"
       EXPENSES_CSRF_SECRET: "${EXPENSES_CSRF_SECRET:-}"
       EXPENSES_CSRF_SECRET_FILE: "${EXPENSES_CSRF_SECRET_FILE:-}"
-      # One AI backend named "main"; add more EXPENSES_AI_<NAME>_* lines for others.
-      EXPENSES_AI_BACKENDS: "${EXPENSES_AI_BACKENDS:-}"
-      EXPENSES_AI_MAIN_KIND: "${EXPENSES_AI_MAIN_KIND:-}"
-      EXPENSES_AI_MAIN_BASE_URL: "${EXPENSES_AI_MAIN_BASE_URL:-}"
-      EXPENSES_AI_MAIN_API_KEY: "${EXPENSES_AI_MAIN_API_KEY:-}"
+    # Also passes the AI backend variables, whatever the backends are named.
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - expenses_data:/data
     restart: unless-stopped

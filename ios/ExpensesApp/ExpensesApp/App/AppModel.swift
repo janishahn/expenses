@@ -732,7 +732,8 @@ final class AppModel {
                     userText: turn.userText,
                     items: turn.items,
                     status: Self.assistantStatus(turn.status, message: nil),
-                    live: false
+                    live: false,
+                    received: true
                 )
             }
             assistantChatState = .ready
@@ -767,7 +768,7 @@ final class AppModel {
                 assistantTurns[turnIndex].items[itemIndex].state = .dismissed
             }
         }
-        assistantTurns.append(AssistantTurn(id: turnID, userText: trimmed, items: [], status: .streaming, live: true))
+        assistantTurns.append(AssistantTurn(id: turnID, userText: trimmed, items: [], status: .streaming, live: true, received: false))
         let body = AssistantMessageRequest(chatID: assistantChatID, message: trimmed)
         streamAssistantTurn(turnID) { $0.assistantMessageStream(body, token: token) }
     }
@@ -777,8 +778,8 @@ final class AppModel {
         guard !isAssistantStreaming, let token, let last = assistantTurns.last else {
             return
         }
-        // A first message the server never received has no chat to retry in, so it is sent again.
-        guard let chatID = assistantChatID else {
+        // A message the server never received has no turn to retry, so it is sent again.
+        guard let chatID = assistantChatID, last.received else {
             assistantTurns.removeLast()
             sendAssistantMessage(last.userText)
             return
@@ -904,6 +905,7 @@ final class AppModel {
         switch event {
         case let .start(chatID):
             assistantChatID = chatID
+            assistantTurns[index].received = true
         case let .item(item):
             if let itemIndex = assistantTurns[index].items.firstIndex(where: { $0.id == item.id }) {
                 assistantTurns[index].items[itemIndex] = item

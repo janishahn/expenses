@@ -326,8 +326,8 @@ export type AssistantApprovalCard = {
   // The approve button, such as Add, and the state after it, such as Added.
   verb: string
   done: string
+  // Every row the change affects.
   rows: AssistantApprovalRow[]
-  more: number
   total_cents: number | null
   total_of_cents: number | null
 }

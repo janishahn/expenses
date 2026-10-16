@@ -43,8 +43,6 @@ MAX_NEW = 20
 MAX_EDITED = 200
 MAX_ALLOCATED = 50
 MAX_BUDGETS = 20
-# Rows a card lists before it says how many more there are.
-CARD_ROWS = 8
 
 
 class InvalidProposal(Exception):
@@ -90,8 +88,8 @@ class ApprovalCard(BaseModel):
     # The approve button, such as Add, and the state after it, such as Added.
     verb: str
     done: str
+    # Every row the plan changes, so the user can check each one before approving.
     rows: list[ApprovalRow]
-    more: int = 0
     # Shown as "total_cents of total_of_cents" beside the buttons.
     total_cents: int | None = None
     total_of_cents: int | None = None
@@ -436,8 +434,8 @@ def _edit_rows(
     categories: dict[int, Category],
     transactions: dict[int, Transaction],
     rows: list[EditRow],
-) -> tuple[list[ApprovalRow], int]:
-    shown = [
+) -> list[ApprovalRow]:
+    return [
         ApprovalRow(
             title=transactions[row.transaction_id].title,
             detail=_edit_detail(categories, row.before, row.after),
@@ -446,9 +444,8 @@ def _edit_rows(
             amount_cents=transactions[row.transaction_id].amount_cents,
             income=transactions[row.transaction_id].type == TransactionType.income,
         )
-        for row in rows[:CARD_ROWS]
+        for row in rows
     ]
-    return shown, max(0, len(rows) - CARD_ROWS)
 
 
 def propose_edit(
@@ -505,7 +502,6 @@ def propose_edit(
     changes += [f"Remove {tag}" for tag in removing]
     if new_title is not None:
         changes.append(f"Title {new_title}")
-    shown, more = _edit_rows(categories, {txn.id: txn for txn in transactions}, rows)
     count = len(rows)
     return Proposal(
         summary=f"Edited {_plural(count, 'transaction')}",
@@ -514,8 +510,7 @@ def propose_edit(
             meta=" · ".join(changes),
             verb="Apply",
             done="Applied",
-            rows=shown,
-            more=more,
+            rows=_edit_rows(categories, {txn.id: txn for txn in transactions}, rows),
         ),
         plan=EditPlan(rows=rows),
     )
@@ -763,7 +758,6 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
     inverse = INVERSE_PLAN.validate_json(action.undo_json)
     categories = _categories(session, user_id)
     meta: str | None = None
-    more = 0
     match inverse:
         case TrashPlan():
             alive = _transactions(session, user_id, inverse.transaction_ids)
@@ -782,9 +776,8 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
                     amount_cents=alive[txn_id].amount_cents,
                     income=alive[txn_id].type == TransactionType.income,
                 )
-                for txn_id in ids[:CARD_ROWS]
+                for txn_id in ids
             ]
-            more = max(0, len(ids) - CARD_ROWS)
         case EditPlan():
             transactions = _transactions(
                 session, user_id, [row.transaction_id for row in inverse.rows]
@@ -803,7 +796,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             if skipped := len(inverse.rows) - len(safe):
                 meta = f"{_plural(skipped, 'transaction')} changed since and stay as they are"
             plan = EditPlan(rows=safe)
-            rows, more = _edit_rows(categories, transactions, safe)
+            rows = _edit_rows(categories, transactions, safe)
         case AllocatePlan():
             current = _allocation_rows(session, user_id, inverse.reimbursement_id)
             if any(
@@ -864,7 +857,6 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             verb="Undo",
             done="Undone",
             rows=rows,
-            more=more,
         ),
         plan=UndoPlan(action_id=action.id, plan=plan),
     )
@@ -1268,20 +1260,20 @@ def _apply_restore_budgets(
             )
         )
         session.flush()
+        # A budget change never deletes a template, and the check above found this
+        # budget unchanged since, so every earlier template is still the user's own.
         for row in scope.target.templates:
-            template = session.get(BudgetTemplate, row.id) or BudgetTemplate(
-                id=row.id,
-                user_id=user_id,
-                frequency=BudgetFrequency.monthly,
-                category_id=scope.category_id,
-            )
+            template = session.get_one(BudgetTemplate, row.id)
             template.amount_cents = row.amount_cents
             template.starts_on = row.starts_on
             template.ends_on = row.ends_on
-            session.add(template)
+        # An onward budget deletes that month's override; it comes back as a new row.
+        kept_overrides = {row.id for row in scope.current.overrides}
         for row in scope.target.overrides:
-            override = session.get(BudgetOverride, row.id) or BudgetOverride(
-                id=row.id, user_id=user_id, category_id=scope.category_id
+            override = (
+                session.get_one(BudgetOverride, row.id)
+                if row.id in kept_overrides
+                else BudgetOverride(user_id=user_id, category_id=scope.category_id)
             )
             override.year = row.year
             override.month = row.month

@@ -726,9 +726,14 @@ def prune_chats(session: Session, now: datetime) -> int:
                 AssistantChat.user_id == user_id, AssistantChat.updated_at < cutoff
             )
         ).rowcount
+        # A change stays undoable while its chat is kept.
         session.execute(
             delete(AssistantAction).where(
-                AssistantAction.user_id == user_id, AssistantAction.created_at < cutoff
+                AssistantAction.user_id == user_id,
+                AssistantAction.created_at < cutoff,
+                AssistantAction.chat_id.not_in(
+                    select(AssistantChat.id).where(AssistantChat.user_id == user_id)
+                ),
             )
         )
     session.commit()

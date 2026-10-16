@@ -122,8 +122,9 @@ class AssistantTurn(Base):
 class AssistantAction(Base):
     """A change the Assistant proposed, and what undoes it once applied.
 
-    plan_json is exactly what the approval card shows. The row outlives its chat,
-    for as long as the user keeps chats, so the Assistant can still undo the change.
+    plan_json is exactly what the approval card shows. The row stays while its chat
+    does, and after that until it is older than the user keeps chats, so the
+    Assistant can still undo the change.
     """
 
     __tablename__ = "assistant_actions"

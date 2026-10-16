@@ -44,6 +44,8 @@ type Turn = {
   error: string | null
   // Streamed on this page, so its question and words animate in.
   live: boolean
+  // The server has the question, so Retry answers it again there.
+  received: boolean
 }
 
 type ActivityItem = Exclude<AssistantItem, { kind: "text" } | { kind: "approval" }>
@@ -72,6 +74,7 @@ function savedTurns(chat: AssistantChat): Turn[] {
     status: turn.status,
     error: turn.status === "failed" ? SAVED_FAILURE : null,
     live: false,
+    received: true,
   }))
 }
 
@@ -313,13 +316,14 @@ function Conversation({
       setBusy(true)
       setAnnouncement("Assistant is working")
       // A copy of the turn's events, for the announcement once it ends.
-      let local: Turn = { key: "", userText: "", items: [], status: "streaming", error: null, live: true }
+      let local: Turn = { key: "", userText: "", items: [], status: "streaming", error: null, live: true, received: true }
       let failure: string | null = null
       try {
         for await (const event of stream(controller.signal)) {
           if (event.type === "start") {
             chatIdRef.current = event.chat_id
             onChatStarted(event.chat_id)
+            setTurns((prev) => prev.map((turn, index) => (index === prev.length - 1 ? { ...turn, received: true } : turn)))
             continue
           }
           local = applyEvents(local, [event])
@@ -361,7 +365,7 @@ function Conversation({
       if (!text || abortRef.current) return
       const key = nextTurnKey()
       pendingScrollRef.current = key
-      setTurns((prev) => [...prev.map(dismissPending), { key, userText: text, items: [], status: "streaming", error: null, live: true }])
+      setTurns((prev) => [...prev.map(dismissPending), { key, userText: text, items: [], status: "streaming", error: null, live: true, received: false }])
       setInput("")
       if (window.matchMedia("(min-width: 861px)").matches) {
         window.requestAnimationFrame(() => inputRef.current?.focus())
@@ -377,8 +381,8 @@ function Conversation({
     const id = chatIdRef.current
     const last = turns[turns.length - 1]
     if (!last || abortRef.current) return
-    // A first message the server never received has no chat to retry in, so it is sent again.
-    if (!id) {
+    // A message the server never received has no turn to retry, so it is sent again.
+    if (!id || !last.received) {
       setTurns((prev) => prev.slice(0, -1))
       sendMessage(last.userText)
       return

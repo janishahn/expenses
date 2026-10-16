@@ -60,13 +60,13 @@ struct AssistantApprovalCard: Decodable, Equatable {
     /// The approve button, such as Add, and the state after it, such as Added.
     let verb: String
     let done: String
+    /// Every row the change affects.
     let rows: [Row]
-    let more: Int
     let totalCents: Int?
     let totalOfCents: Int?
 
     enum CodingKeys: String, CodingKey {
-        case title, meta, verb, done, rows, more
+        case title, meta, verb, done, rows
         case totalCents = "total_cents"
         case totalOfCents = "total_of_cents"
     }
@@ -217,6 +217,8 @@ struct AssistantTurn: Identifiable, Equatable {
     var status: Status
     /// Streamed while the screen was open, so new answer text fades in.
     var live: Bool
+    /// The server has the question, so Retry answers it again there.
+    var received: Bool
 
     var answer: String {
         items.filter { $0.kind == .text }.map(\.text).joined(separator: "\n\n")

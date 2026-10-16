@@ -312,6 +312,9 @@ function cardDate(isoDate: string): string {
 
 // A change the Assistant proposed. Nothing changes until the user approves it; the card
 // then keeps the outcome in place of its buttons.
+// Rows a card lists before the rest open on request.
+const CARD_ROWS = 8
+
 export function ChatApproval({
   item,
   enter,
@@ -327,7 +330,9 @@ export function ChatApproval({
   const [entering] = useState(enter)
   // The outcome fades in only when it changes while the card is on screen.
   const [decidedHere] = useState(item.state === "pending")
+  const [allRows, setAllRows] = useState(false)
   const { card } = item
+  const rows = allRows ? card.rows : card.rows.slice(0, CARD_ROWS)
   let outcome: ReactNode = null
   if (item.state === "applied") {
     outcome = (
@@ -353,7 +358,7 @@ export function ChatApproval({
         {card.meta ? <span>{card.meta}</span> : null}
       </div>
       <div className={s.approvalRows}>
-        {card.rows.map((row, index) => (
+        {rows.map((row, index) => (
           <div key={index} className={s.approvalRow}>
             {row.category ? (
               <CategoryGlyph categoryId={row.category.id} icon={row.category.icon} name={row.category.name} />
@@ -389,7 +394,13 @@ export function ChatApproval({
             </span>
           </div>
         ))}
-        {card.more > 0 ? <div className={s.approvalMore}>{card.more} more</div> : null}
+        {rows.length < card.rows.length ? (
+          <div className={s.approvalMore}>
+            <Button variant="ghost" size="small" onClick={() => setAllRows(true)}>
+              Show {card.rows.length - rows.length} more
+            </Button>
+          </div>
+        ) : null}
       </div>
       <div className={s.approvalFoot}>
         <span className={s.approvalTotal}>

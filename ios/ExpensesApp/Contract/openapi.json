@@ -618,11 +618,6 @@
             ],
             "title": "Meta"
           },
-          "more": {
-            "default": 0,
-            "title": "More",
-            "type": "integer"
-          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/ApprovalRow"

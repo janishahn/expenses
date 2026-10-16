@@ -97,7 +97,7 @@ test.describe("Assistant", () => {
     await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
   })
 
-  test("applies an approved change, links the new transaction, and keeps a dismissal", async ({ page }) => {
+  test("applies an approved change, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
     await page.goto("/assistant")
     await sendQuestion(page, unique("Add lunch for 12,50"))
 
@@ -130,8 +130,11 @@ test.describe("Assistant", () => {
     await page.reload()
     await expect(assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })).toContainText("Added")
 
-    await sendQuestion(page, "Add lunch again")
-    const second = assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })
+    await sendQuestion(page, "Add ten lunches again")
+    const second = assistantTurns(page).last().getByRole("region", { name: "10 new transactions" })
+    await expect(second.getByText("Lunch", { exact: true })).toHaveCount(8)
+    await second.getByRole("button", { name: "Show 2 more" }).click()
+    await expect(second.getByText("Lunch", { exact: true })).toHaveCount(10)
     await second.getByRole("button", { name: "Dismiss" }).click()
     await expect(second).toContainText("Dismissed")
     await expect(assistantTurns(page).last()).toContainText("Okay, nothing changed.")
@@ -186,6 +189,29 @@ test.describe("Assistant", () => {
     await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
     await expect(page.getByText("The AI backend rejected the server's credentials.")).toHaveCount(0)
     await expect(userTurns(page)).toHaveCount(1)
+  })
+
+  test("sends a follow-up again with Retry when the server never received it", async ({ page }) => {
+    await page.goto("/assistant")
+    const question = unique("How much did I spend in May?")
+    await sendQuestion(page, question)
+    await expect(assistantTurns(page).last()).toContainText("less than in April")
+
+    await page.route("**/api/assistant/messages/stream", (route) =>
+      route.fulfill({ status: 503, json: { detail: "The Assistant is unavailable." } })
+    )
+    await sendQuestion(page, "And in April?")
+    await expect(assistantTurns(page).last()).toContainText("The Assistant is unavailable.")
+    await page.unroute("**/api/assistant/messages/stream")
+
+    await assistantTurns(page).last().getByRole("button", { name: "Retry" }).click()
+    await expect(assistantTurns(page)).toHaveCount(2)
+    await expect(assistantTurns(page).last()).toContainText("less than in April")
+
+    // The server kept the first answer and saved the follow-up after it.
+    await page.reload()
+    await expect(userTurns(page)).toHaveText([question, "And in April?"])
+    await expect(assistantTurns(page)).toHaveCount(2)
   })
 
   test("sends on Enter and inserts a newline on Shift+Enter", async ({ page }) => {
