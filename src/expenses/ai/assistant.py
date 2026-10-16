@@ -431,9 +431,14 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         model_settings=model.settings,
         deps_type=AssistantReader,
         output_type=[str, DeferredToolRequests],
+        # Anthropic rejects requests whose strict schemas together are too complex,
+        # so only the write tools, whose arguments become a card, are strict.
         tools=[
-            Tool(tool, takes_ctx=True, strict=True, sequential=True)
-            for tool in [*TOOLS, *WRITE_TOOLS]
+            *(Tool(tool, takes_ctx=True, sequential=True) for tool in TOOLS),
+            *(
+                Tool(tool, takes_ctx=True, strict=True, sequential=True)
+                for tool in WRITE_TOOLS
+            ),
         ],
         instructions=INSTRUCTIONS,
     )

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- With an Anthropic backend, every Assistant message failed because Anthropic's API refused the Assistant's tool definitions as too complex. The Assistant now answers with Anthropic models.
+
 ## [0.8.1] - 2026-10-16
 
 ### Changed
