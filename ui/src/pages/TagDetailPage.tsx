@@ -12,7 +12,7 @@ import { CategoryGlyph } from "../components/ui/CategoryGlyph"
 import { ChartCard, ChartTable, ChartTooltip } from "../components/ui/ChartCard"
 import { CardRow, CardStack, Donut } from "../components/ui/Charts"
 import { EmptyState } from "../components/ui/EmptyState"
-import { AmountCell, Cell, List, NetPrefix, Row, type Columns } from "../components/ui/LedgerRow"
+import { AmountCell, Cell, List, Row, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { Menu } from "../components/ui/Menu"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { PeriodControl } from "../components/ui/PeriodControl"
@@ -123,19 +123,13 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
           <List scroll={false} label="Transactions">
             {transactions.map((item) => {
               const title = item.title || item.category?.name || "Untitled"
-              const isExpense = item.type === "expense"
               return (
                 <Row key={item.id} {...TRANSACTION_COLUMNS} label={title} onOpen={() => navigate(`/transactions/${item.id}`)}>
                   <CategoryGlyph categoryId={item.category?.id ?? null} icon={item.category?.icon} name={item.category?.name ?? "Uncategorized"} />
                   <Cell strong>{title}</Cell>
                   <Cell tone="muted">{formatShortDate(item.date)}</Cell>
                   <AmountCell>
-                    {isExpense && item.reimbursed_total_cents > 0 ? (
-                      <NetPrefix>
-                        <Amount cents={item.net_amount_cents} kind="expense" />
-                      </NetPrefix>
-                    ) : null}
-                    <Amount cents={item.amount_cents} kind={isExpense ? "expense" : "income"} />
+                    <TransactionAmount row={item} />
                   </AmountCell>
                 </Row>
               )

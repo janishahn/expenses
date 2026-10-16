@@ -18,7 +18,7 @@ import { ChartCard, ChartTable, ChartTooltip, type LegendEntry } from "../compon
 import { BudgetBar, CardRow, Donut, LineChart, StackedBands, type StackedRow } from "../components/ui/Charts"
 import { EmptyState } from "../components/ui/EmptyState"
 import { useIsDesktop } from "../components/ui/layout-state"
-import { AmountCell, Cell, List, Row, type Columns } from "../components/ui/LedgerRow"
+import { AmountCell, Cell, List, Row, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { PeriodControl } from "../components/ui/PeriodControl"
@@ -489,7 +489,7 @@ function DashboardPage() {
               <CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />
               <Cell>{row.title || "Untitled"}</Cell>
               <AmountCell>
-                <Amount cents={row.amount_cents} kind={row.type === "income" ? "income" : "expense"} />
+                <TransactionAmount row={row} />
               </AmountCell>
             </Row>
           ))}

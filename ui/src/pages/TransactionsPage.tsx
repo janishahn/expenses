@@ -22,7 +22,7 @@ import { useLocation, useOutletContext, useSearchParams } from "react-router-dom
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { TagsResponse, TransactionsResponse, TransactionsSummary } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
-import { dayLabel, dayNet, groupByDay, invalidateTransactionData, rowTitle, useSettledSearch } from "../app/transactions"
+import { dayLabel, dayNet, groupByDay, invalidateTransactionData, reimbursementOf, rowTitle, useSettledSearch } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -36,7 +36,7 @@ import { Dialog } from "../components/ui/Dialog"
 import { EmptyState } from "../components/ui/EmptyState"
 import { EntryChips } from "../components/ui/EntryDialog"
 import { useIsDesktop } from "../components/ui/layout-state"
-import { LedgerRow, List, ListFooter, NetPrefix } from "../components/ui/LedgerRow"
+import { LedgerRow, List, ListFooter, TransactionAmount } from "../components/ui/LedgerRow"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { PeekLayout } from "../components/ui/Peek"
@@ -634,41 +634,24 @@ function TransactionsPage() {
             {groups.map((group, index) => (
               <Fragment key={`${group.date}-${index}`}>
                 <DayBand ledger label={dayLabel(group.date)} end={bandNet(index)} />
-                {group.rows.map((row) => {
-                  const isExpense = row.type === "expense"
-                  const reimbursed = isExpense && row.reimbursed_total_cents > 0
-                  return (
-                    <LedgerRow
-                      key={row.id}
-                      glyph={<CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />}
-                      title={rowTitle(row)}
-                      category={row.category?.name ?? "Uncategorized"}
-                      tags={row.tags.map((tag) => tag.name)}
-                      receipt={Boolean(row.has_attachments)}
-                      location={row.latitude != null && row.longitude != null}
-                      reimbursed={reimbursed}
-                      amount={
-                        isExpense ? (
-                          <>
-                            {reimbursed ? (
-                              <NetPrefix>
-                                <Amount cents={row.net_amount_cents} kind="expense" />
-                              </NetPrefix>
-                            ) : null}
-                            <Amount cents={row.amount_cents} kind="expense" />
-                          </>
-                        ) : (
-                          <Amount cents={row.amount_cents} kind="income" />
-                        )
-                      }
-                      selected={row.id === peekId}
-                      checked={isChecked(row.id)}
-                      selecting={selecting}
-                      onCheckedChange={(checked) => setChecked(row.id, checked)}
-                      onOpen={() => openPeek(row.id)}
-                    />
-                  )
-                })}
+                {group.rows.map((row) => (
+                  <LedgerRow
+                    key={row.id}
+                    glyph={<CategoryGlyph categoryId={row.category?.id} icon={row.category?.icon} name={row.category?.name} />}
+                    title={rowTitle(row)}
+                    category={row.category?.name ?? "Uncategorized"}
+                    tags={row.tags.map((tag) => tag.name)}
+                    receipt={Boolean(row.has_attachments)}
+                    location={row.latitude != null && row.longitude != null}
+                    reimbursement={reimbursementOf(row)}
+                    amount={<TransactionAmount row={row} markerColumn />}
+                    selected={row.id === peekId}
+                    checked={isChecked(row.id)}
+                    selecting={selecting}
+                    onCheckedChange={(checked) => setChecked(row.id, checked)}
+                    onOpen={() => openPeek(row.id)}
+                  />
+                ))}
               </Fragment>
             ))}
           </List>

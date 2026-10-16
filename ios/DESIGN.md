@@ -31,6 +31,10 @@ API contracts, and tests for those facts.
 - Use Swift Charts for native charts. Keep units, exact values, accessible labels,
   and a useful nonvisual reading of the data.
 - Use monospaced digits for amounts and other data that benefits from alignment.
+- Show an expense at its net after reimbursements, with the reimbursement mark
+  before the amount. Mute reimbursement income and give it the same mark, since
+  its expense already counts it. Keep the charged amount in the row's
+  accessible label and on the detail screen.
 - Use native camera, Photos, Files, Quick Look, and share-sheet flows. Keep
   generated reports, exports, and backups owned by the server.
 - Keep destructive actions explicit and confirm irreversible or broad changes.
