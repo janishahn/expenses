@@ -70,6 +70,7 @@ struct RootView: View {
         let destination: AppDestination
         switch name {
         case "dashboard":
+            dashboardPath = []
             selectedPrimaryDestination = .dashboard
             return true
         case "transactions":
