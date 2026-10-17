@@ -860,7 +860,7 @@ def test_attachment_thumbnail_pixel_limit_applies_to_decoded_size(
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A 2048 px square is over the limit, but a JPEG of it decodes at 1024 px.
+    # A 2048 px square is over the limit, but a baseline JPEG of it decodes at 1024 px.
     monkeypatch.setenv("EXPENSES_RECEIPT_THUMBNAIL_MAX_PIXELS", "2000000")
     get_settings.cache_clear()
     category_id = _category(api_client, csrf_headers, "Large receipts")
@@ -874,11 +874,9 @@ def test_attachment_thumbnail_pixel_limit_applies_to_decoded_size(
 
     from PIL import Image
 
-    def thumbnail_status(filename: str, image_format: str, mime_type: str) -> int:
+    def thumbnail_status(filename: str, mime_type: str, **save_options: object) -> int:
         image_bytes = BytesIO()
-        Image.new("RGB", (2048, 2048), color="white").save(
-            image_bytes, format=image_format
-        )
+        Image.new("RGB", (2048, 2048), color="white").save(image_bytes, **save_options)
         upload_response = api_client.post(
             f"/api/transactions/{transaction_id}/attachments",
             files={"file": (filename, image_bytes.getvalue(), mime_type)},
@@ -889,8 +887,14 @@ def test_attachment_thumbnail_pixel_limit_applies_to_decoded_size(
         thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
         return thumbnail.status_code
 
-    assert thumbnail_status("large.jpg", "JPEG", "image/jpeg") == 200
-    assert thumbnail_status("large.png", "PNG", "image/png") == 400
+    assert thumbnail_status("large.jpg", "image/jpeg", format="JPEG") == 200
+    assert (
+        thumbnail_status(
+            "progressive.jpg", "image/jpeg", format="JPEG", progressive=True
+        )
+        == 400
+    )
+    assert thumbnail_status("large.png", "image/png", format="PNG") == 400
 
 
 def test_transactions_list_total_counts_every_filtered_row(
