@@ -16,6 +16,12 @@ The last user message picks the script:
   word and proposes allocating half of each expense.
 - "budget ...": proposes a 300,00 € budget from this month for the category whose
   name ends with the last word.
+- "remove ...": proposes removing that category's budget from this month on.
+- "archive ...": proposes archiving that category.
+- "trash ...": finds the expenses matching the last word and proposes moving them
+  to Trash.
+- "end ...": finds the recurring payment matching the last word and proposes ending
+  it on 30 June 2021.
 - "undo ...": proposes undoing the latest change applied in the chat.
 - anything else: reasoning, a note, a ledger read, then a short answer.
 
@@ -104,7 +110,16 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
     """A write scenario's next step, or None when the question names none."""
     words = question.lower().split()
     # Tool results needed before the proposal.
-    steps = {"tag": 1, "pay": 2, "budget": 0, "undo": 0}.get(words[0] if words else "")
+    steps = {
+        "tag": 1,
+        "pay": 2,
+        "trash": 1,
+        "end": 1,
+        "budget": 0,
+        "remove": 0,
+        "archive": 0,
+        "undo": 0,
+    }.get(words[0] if words else "")
     if steps is None:
         return None
     token = question.split()[-1]
@@ -139,21 +154,63 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
                 "share_percent": 50,
             },
         )
+    if words[0] == "trash":
+        if not results:
+            return _matching(messages, token, "expense")
+        return _propose(
+            messages,
+            {
+                "kind": "trash_transactions",
+                "transaction_ids": [row[0] for row in results[0]["rows"]],
+            },
+        )
+    if words[0] == "end":
+        if not results:
+            query = token.replace("'", "''")
+            return _call(
+                messages,
+                "sql_query",
+                {
+                    "label": f"Recurring matching {token}",
+                    "sql": f"select id from recurring where fuzzy(name, '{query}')",
+                },
+            )
+        return _propose(
+            messages,
+            {
+                "kind": "end_recurring",
+                "recurring_ids": [row[0] for row in results[0]["rows"]],
+                "end_date": "2021-06-30",
+            },
+        )
     instructions = "\n".join(
         m["content"] for m in messages if m["role"] in ("system", "developer")
     )
+    today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
+    category = re.search(
+        rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
+    )
+    if words[0] == "remove":
+        return _propose(
+            messages,
+            {
+                "kind": "remove_budgets",
+                "budgets": [{"category_id": int(category[1]), "month": today}],
+            },
+        )
+    if words[0] == "archive":
+        return _propose(
+            messages,
+            {"kind": "archive", "category_ids": [int(category[1])], "tag_ids": []},
+        )
     if words[0] == "budget":
-        category_id = re.search(
-            rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
-        )[1]
-        today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
         return _propose(
             messages,
             {
                 "kind": "set_budgets",
                 "budgets": [
                     {
-                        "category_id": int(category_id),
+                        "category_id": int(category[1]),
                         "month": today,
                         "amount_cents": 30_000,
                         "applies": "onward",

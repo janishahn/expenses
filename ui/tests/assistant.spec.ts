@@ -1,19 +1,23 @@
 import { expect, test, type Page } from "./fixtures"
 import {
   allocateJourney,
+  archiveAndUndoJourney,
   assistantTurns,
   budgetAndUndoJourney,
   chatIdFrom,
   chatRetentionJourney,
   composer,
   editAndUndoJourney,
+  endRecurringAndUndoJourney,
   failureJourney,
   followUpJourney,
   offsetInThread,
   privacyJourney,
+  removeBudgetAndUndoJourney,
   sendQuestion,
   stopJourney,
   thread,
+  trashAndUndoJourney,
   unique,
   userTurns,
 } from "./assistant-journeys"
@@ -174,6 +178,22 @@ test.describe("Assistant", () => {
 
   test("sets a budget from a card and undoes it", async ({ page }) => {
     await budgetAndUndoJourney(page)
+  })
+
+  test("removes a budget from a card and undoes it", async ({ page }) => {
+    await removeBudgetAndUndoJourney(page)
+  })
+
+  test("moves transactions to Trash from a card and restores them with Undo", async ({ page }) => {
+    await trashAndUndoJourney(page)
+  })
+
+  test("archives a category from a card and undoes it", async ({ page }) => {
+    await archiveAndUndoJourney(page)
+  })
+
+  test("ends a recurring payment from a card and undoes it", async ({ page }) => {
+    await endRecurringAndUndoJourney(page)
   })
 
   test("masks amounts in the conversation in privacy mode", async ({ page }) => {
