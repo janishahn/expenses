@@ -99,6 +99,7 @@ struct ImportExportView: View {
         }
         .navigationTitle("Import and Export")
         .expensesScreenStyle()
+        .sensoryFeedback(.success, trigger: importedCount) { _, count in count != nil }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
             switch result {
             case let .success(url):

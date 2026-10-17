@@ -6,6 +6,7 @@ struct AccountSettingsView: View {
     @Environment(AppModel.self) private var model
 
     @State private var newToken: String?
+    @State private var copiedToken = 0
     @State private var tokenError: String?
     @State private var tokenBusy = false
     @State private var revokingToken = false
@@ -94,9 +95,11 @@ struct AccountSettingsView: View {
                     Spacer(minLength: 8)
                     Button("Copy token", systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = newToken
+                        copiedToken += 1
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
+                    .sensoryFeedback(.success, trigger: copiedToken)
                 }
             }
 
