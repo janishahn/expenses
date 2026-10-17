@@ -49,15 +49,16 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from expenses.ai.assistant_actions import (
-    WRITE_TOOLS,
     ActionConflict,
     ApprovalCard,
     Proposal,
     apply_action,
+    propose_change,
 )
 from expenses.ai.assistant_tools import (
     INSTRUCTIONS,
     TOOLS,
+    AssistantClient,
     AssistantReader,
     tool_detail,
     tool_label,
@@ -434,13 +435,10 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         deps_type=AssistantReader,
         output_type=[str, DeferredToolRequests],
         # Anthropic rejects requests whose strict schemas together are too complex,
-        # so only the write tools, whose arguments become a card, are strict.
+        # so only the write tool, whose arguments become a card, is strict.
         tools=[
             *(Tool(tool, takes_ctx=True, sequential=True) for tool in TOOLS),
-            *(
-                Tool(tool, takes_ctx=True, strict=True, sequential=True)
-                for tool in WRITE_TOOLS
-            ),
+            Tool(propose_change, takes_ctx=True, strict=True, sequential=True),
         ],
         instructions=INSTRUCTIONS,
     )
@@ -810,11 +808,12 @@ async def stream_turn(
     *,
     model: AssistantModel,
     session_factory: Callable[[], Session],
+    client: AssistantClient,
 ) -> AsyncIterator[str]:
     queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=STREAM_BUFFER_LINES)
     handle = _TurnHandle()
     task = asyncio.create_task(
-        _run_turn(request, model, session_factory, queue, handle)
+        _run_turn(request, model, session_factory, client, queue, handle)
     )
     _RUNNING.add(task)
     task.add_done_callback(_RUNNING.discard)
@@ -832,6 +831,7 @@ async def _run_turn(
     request: TurnRequest,
     model: AssistantModel,
     session_factory: Callable[[], Session],
+    client: AssistantClient,
     queue: asyncio.Queue[str | None],
     handle: _TurnHandle,
 ) -> None:
@@ -843,6 +843,7 @@ async def _run_turn(
             )
 
     session = session_factory()
+    deps: AssistantReader | None = None
     try:
         await put({"type": "start", "chat_id": request.chat_id, "title": request.title})
         prompt: str | None = request.user_text
@@ -864,7 +865,7 @@ async def _run_turn(
                 *ModelMessagesTypeAdapter.validate_json(turn.messages_json),
             ]
         now = datetime.now(ZoneInfo(get_settings().timezone))
-        deps = AssistantReader(session, user_id=request.user_id, now=now)
+        deps = AssistantReader(session, user_id=request.user_id, now=now, client=client)
         stream = AssistantEventStream(items=items)
         started_at = datetime.utcnow()
         started = perf_counter()
@@ -938,6 +939,8 @@ async def _run_turn(
             }
         )
     finally:
+        if deps is not None:
+            deps.close()
         session.close()
         await put(None)
 

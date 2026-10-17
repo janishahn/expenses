@@ -21,10 +21,12 @@ from expenses.ai.assistant import (
     AssistantSettingsOut,
     stream_turn,
 )
+from expenses.ai.assistant_tools import AssistantClient
 from expenses.ai.backends import build_model
 from expenses.ai.client import LLMDisabledError, model_settings
 from expenses.ai.features import resolve
 from expenses.api.ai_routes import no_store
+from expenses.auth.dependencies import _parse_bearer_token
 from expenses.api.routes import (
     _require_csrf,
     _require_current_user_id,
@@ -54,6 +56,11 @@ def get_assistant_model(db: Session = Depends(get_db)) -> AssistantModel:
 
 def get_stream_session_factory() -> Callable[[], Session]:
     return SessionLocal
+
+
+def _client(request: Request) -> AssistantClient:
+    # The iOS app signs in with a bearer token; the web app uses a session cookie.
+    return "ios" if _parse_bearer_token(request) else "web"
 
 
 def _service(request: Request, db: Session) -> AssistantService:
@@ -122,7 +129,14 @@ def send_message(
         turn = service.new_turn(chat_id=data.chat_id, text=data.message)
     except AssistantNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _stream(stream_turn(turn, model=model, session_factory=session_factory))
+    return _stream(
+        stream_turn(
+            turn,
+            model=model,
+            session_factory=session_factory,
+            client=_client(request),
+        )
+    )
 
 
 @router.post("/chats/{chat_id}/retry/stream", response_class=StreamingResponse)
@@ -141,7 +155,14 @@ def retry(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AssistantConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _stream(stream_turn(turn, model=model, session_factory=session_factory))
+    return _stream(
+        stream_turn(
+            turn,
+            model=model,
+            session_factory=session_factory,
+            client=_client(request),
+        )
+    )
 
 
 @router.post("/chats/{chat_id}/approvals/stream", response_class=StreamingResponse)
@@ -161,4 +182,11 @@ def decide(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AssistantConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _stream(stream_turn(turn, model=model, session_factory=session_factory))
+    return _stream(
+        stream_turn(
+            turn,
+            model=model,
+            session_factory=session_factory,
+            client=_client(request),
+        )
+    )

@@ -31,6 +31,14 @@ async function transaction(page: Page, id: number) {
   return (await (await page.request.get(`/api/transactions/${id}`)).json()) as { tags: string[]; reimbursed_total_cents: number }
 }
 
+// This month's budget for the category, or null without one.
+async function monthBudget(page: Page, categoryId: number) {
+  const { budgets } = (await (await page.request.get("/api/budgets")).json()) as {
+    budgets: { scope_category_id: number | null; amount_cents: number }[]
+  }
+  return budgets.find((row) => row.scope_category_id === categoryId)?.amount_cents ?? null
+}
+
 export async function followUpJourney(page: Page) {
   await page.goto("/assistant")
   await sendQuestion(page, unique("How much did I spend in May?"))
@@ -44,6 +52,11 @@ export async function followUpJourney(page: Page) {
   // Only the last answer can be answered again.
   await expect(assistantTurns(page).first().getByRole("button", { name: "Retry" })).toHaveCount(0)
   await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
+
+  // Answers never load images, and page links open the page in the app.
+  await expect(assistantTurns(page).last().locator("img")).toHaveCount(0)
+  await assistantTurns(page).last().getByRole("link", { name: "Budgets" }).click()
+  await expect(page).toHaveURL(/\/budgets$/)
 }
 
 export async function privacyJourney(page: Page) {
@@ -223,13 +236,7 @@ export async function budgetAndUndoJourney(page: Page) {
   const token = newToken()
   const csrfToken = await getCsrfToken(page.request)
   const categoryId = await createCategory(page.request, csrfToken, "expense", `Hobbies ${token}`)
-  // This month's budget for the category, or null without one.
-  const budget = async () => {
-    const { budgets } = (await (await page.request.get("/api/budgets")).json()) as {
-      budgets: { scope_category_id: number | null; amount_cents: number }[]
-    }
-    return budgets.find((row) => row.scope_category_id === categoryId)?.amount_cents ?? null
-  }
+  const budget = () => monthBudget(page, categoryId)
 
   await page.goto("/assistant")
   await sendQuestion(page, `Budget 300 € a month for hobbies ${token}`)
@@ -247,4 +254,143 @@ export async function budgetAndUndoJourney(page: Page) {
   await undo.getByRole("button", { name: "Undo" }).click()
   await expect(undo).toContainText("Undone")
   await expect.poll(budget).toBeNull()
+}
+
+export async function removeBudgetAndUndoJourney(page: Page) {
+  const token = newToken()
+  const csrfToken = await getCsrfToken(page.request)
+  const categoryId = await createCategory(page.request, csrfToken, "expense", `Games ${token}`)
+  const created = await page.request.post("/api/budgets/templates", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: { frequency: "monthly", category_id: categoryId, amount_cents: 20_000, starts_on: "2021-01-01", ends_on: null },
+  })
+  expect(created.ok()).toBeTruthy()
+  const budget = () => monthBudget(page, categoryId)
+
+  await page.goto("/assistant")
+  await sendQuestion(page, `Remove the budget for games ${token}`)
+  const card = assistantTurns(page).last().getByRole("region", { name: "Remove 1 budget" })
+  await expect(card).toContainText(`Games ${token}`)
+  await expect(card).toContainText(/From \w{3} \d{4} on/)
+  await expect(card).toContainText("200,00 €")
+  await card.getByRole("button", { name: "Remove" }).click()
+  await expect(card).toContainText("Removed")
+  await expect.poll(budget).toBeNull()
+
+  await sendQuestion(page, "Undo that")
+  const undo = assistantTurns(page).last().getByRole("region", { name: `Undo: Removed the Games ${token} budget` })
+  await undo.getByRole("button", { name: "Undo" }).click()
+  await expect(undo).toContainText("Undone")
+  await expect.poll(budget).toBe(20_000)
+}
+
+export async function trashAndUndoJourney(page: Page) {
+  const token = newToken()
+  const csrfToken = await getCsrfToken(page.request)
+  const categoryId = await ensureCategory(page.request, csrfToken, "expense", "Assistant")
+  const ids = await Promise.all(
+    ["2021-05-03", "2021-05-10"].map((date) =>
+      createTransaction(page.request, csrfToken, {
+        date,
+        occurred_at: `${date}T08:00:00`,
+        type: "expense",
+        amount_cents: 400,
+        category_id: categoryId,
+        title: `Parking ${token}`,
+        tags: [],
+      })
+    )
+  )
+  const inTrash = async () => {
+    const { transactions } = (await (await page.request.get("/api/transactions/deleted")).json()) as { transactions: { id: number }[] }
+    return ids.filter((id) => transactions.some((row) => row.id === id)).length
+  }
+
+  await page.goto("/assistant")
+  await sendQuestion(page, `Trash the parking fees ${token}`)
+  const card = assistantTurns(page).last().getByRole("region", { name: "Move 2 transactions to Trash" })
+  await expect(card.getByText(`Parking ${token}`, { exact: true })).toHaveCount(2)
+  await card.getByRole("button", { name: "Move to Trash" }).click()
+  await expect(card).toContainText("Moved to Trash")
+  await expect(assistantTurns(page).last()).toContainText("Done: Moved 2 transactions to Trash.")
+  await expect.poll(inTrash).toBe(2)
+
+  await sendQuestion(page, "Undo that")
+  const undo = assistantTurns(page).last().getByRole("region", { name: "Undo: Moved 2 transactions to Trash" })
+  await expect(undo.getByText("Restores from Trash")).toHaveCount(2)
+  await undo.getByRole("button", { name: "Undo" }).click()
+  await expect(undo).toContainText("Undone")
+  await expect.poll(inTrash).toBe(0)
+}
+
+export async function archiveAndUndoJourney(page: Page) {
+  const token = newToken()
+  const csrfToken = await getCsrfToken(page.request)
+  const categoryId = await createCategory(page.request, csrfToken, "expense", `Crafts ${token}`)
+  const archived = async () => {
+    const { categories } = (await (await page.request.get("/api/categories")).json()) as {
+      categories: { id: number; archived_at: string | null }[]
+    }
+    return categories.find((row) => row.id === categoryId)?.archived_at != null
+  }
+
+  await page.goto("/assistant")
+  await sendQuestion(page, `Archive the category crafts ${token}`)
+  const card = assistantTurns(page).last().getByRole("region", { name: `Archive Crafts ${token}` })
+  await expect(card).toContainText("Their transactions keep them")
+  await card.getByRole("button", { name: "Archive" }).click()
+  await expect(card).toContainText("Archived")
+  await expect.poll(archived).toBe(true)
+
+  await sendQuestion(page, "Undo that")
+  const undo = assistantTurns(page).last().getByRole("region", { name: `Undo: Archived Crafts ${token}` })
+  await expect(undo).toContainText("Restores the category")
+  await undo.getByRole("button", { name: "Undo" }).click()
+  await expect(undo).toContainText("Undone")
+  await expect.poll(archived).toBe(false)
+}
+
+export async function endRecurringAndUndoJourney(page: Page) {
+  const token = newToken()
+  const csrfToken = await getCsrfToken(page.request)
+  const categoryId = await ensureCategory(page.request, csrfToken, "expense", "Assistant")
+  const created = await page.request.post("/api/recurring", {
+    headers: { "X-CSRF-Token": csrfToken },
+    data: {
+      name: `Gym ${token}`,
+      type: "expense",
+      currency_code: "EUR",
+      amount_cents: 3_000,
+      category_id: categoryId,
+      anchor_date: "2021-01-05",
+      interval_unit: "month",
+      interval_count: 1,
+      next_occurrence: "2021-01-05",
+      end_date: null,
+      auto_post: false,
+      skip_weekends: false,
+      month_day_policy: "snap_to_end",
+    },
+  })
+  expect(created.ok()).toBeTruthy()
+  const ruleId = ((await created.json()) as { id: number }).id
+  const endDate = async () => {
+    const { rules } = (await (await page.request.get("/api/recurring")).json()) as { rules: { id: number; end_date: string | null }[] }
+    return rules.find((rule) => rule.id === ruleId)?.end_date ?? null
+  }
+
+  await page.goto("/assistant")
+  await sendQuestion(page, `End the gym membership after June 2021 ${token}`)
+  const card = assistantTurns(page).last().getByRole("region", { name: `End Gym ${token}` })
+  await expect(card).toContainText("Last on 30 Jun 2021")
+  await expect(card).toContainText("30,00 €")
+  await card.getByRole("button", { name: "End", exact: true }).click()
+  await expect(card).toContainText("Ended")
+  await expect.poll(endDate).toBe("2021-06-30")
+
+  await sendQuestion(page, "Undo that")
+  const undo = assistantTurns(page).last().getByRole("region", { name: `Undo: Ended Gym ${token}` })
+  await undo.getByRole("button", { name: "Undo" }).click()
+  await expect(undo).toContainText("Undone")
+  await expect.poll(endDate).toBeNull()
 }

@@ -62,6 +62,48 @@ struct RootView: View {
                 moreTab
             }
         }
+        .environment(\.openAppPage, OpenAppPage(open: openPage))
+    }
+
+    // Opens a page the Assistant links to. A page outside the tabs opens over the chat.
+    private func openPage(_ name: String) -> Bool {
+        let destination: AppDestination
+        switch name {
+        case "dashboard":
+            dashboardPath = []
+            selectedPrimaryDestination = .dashboard
+            return true
+        case "transactions":
+            openTransactions(TransactionQuery())
+            return true
+        case "trash":
+            transactionsPath = [.trash]
+            transactionsSelecting = false
+            selectedPrimaryDestination = .transactions
+            return true
+        case "budgets":
+            openBudgets(.current)
+            return true
+        case "insights":
+            selectedPrimaryDestination = .insights
+            return true
+        case "forecast": destination = .forecast
+        case "uncategorized": destination = .uncategorized
+        case "recurring": destination = .recurring
+        case "templates": destination = .templates
+        case "rules": destination = .rules
+        case "categories": destination = .categories
+        case "tags": destination = .tags
+        case "what-if": destination = .whatIf
+        case "reconcile": destination = .reconcile
+        case "reports": destination = .reports
+        case "digest": destination = .digest
+        case "settings": destination = .settings
+        default: return false
+        }
+        morePath.append(destination)
+        selectedPrimaryDestination = .more
+        return true
     }
 
     // Opens the Transactions tab at its root on this query.

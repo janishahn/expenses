@@ -1,8 +1,23 @@
 import SwiftUI
 
+/// Opens the app page an answer links as [Budgets](page:budgets), and says whether
+/// the name was one it knows.
+struct OpenAppPage {
+    let open: (String) -> Bool
+
+    func callAsFunction(_ name: String) -> Bool {
+        open(name)
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var openAppPage = OpenAppPage { _ in false }
+}
+
 /// The Assistant: one chat at a time, kept on the server, as on the web.
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openAppPage) private var openAppPage
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var input = ""
     @State private var sendTick = 0
@@ -75,6 +90,9 @@ struct AssistantView: View {
             }
             .background(ExpensesBackground())
             .environment(\.openURL, OpenURLAction { url in
+                if url.scheme == "page" {
+                    return openAppPage(String(url.absoluteString.dropFirst("page:".count))) ? .handled : .discarded
+                }
                 guard url.scheme == "transaction",
                       let id = Int(url.absoluteString.dropFirst("transaction:".count))
                 else { return .systemAction }
