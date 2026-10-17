@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- On iOS, a short success tap now confirms copying a new ingest token, merging a category or tag, finishing a receipt upload on a transaction, importing a CSV file, and accepting a rule suggestion. The Quick Add button no longer taps when it opens the sheet.
+
+### Fixed
+- On iOS, the period menu tapped when a drill-down or Show all time changed the period. It now taps only when you pick a period from the menu.
+- On iOS, Match all on the reconciliation screen tapped success when no row could be matched.
+
 ## [0.8.4] - 2026-10-17
 
 ### Changed

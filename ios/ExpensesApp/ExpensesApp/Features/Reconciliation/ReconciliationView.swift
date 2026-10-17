@@ -399,7 +399,7 @@ struct ReconciliationView: View {
                     message: "The others no longer have a single suggested match."
                 )
             }
-            return true
+            return matched > 0
         }
     }
 
@@ -420,7 +420,8 @@ struct ReconciliationView: View {
         defer { pending = false }
         if await action() {
             changed += 1
-        } else {
+        } else if failure == nil {
+            // An action may have set a more specific failure already.
             failure = BankRowFailure(title: failedTitle, message: model.lastError?.message ?? "The bank row could not be updated.")
         }
         await reload()

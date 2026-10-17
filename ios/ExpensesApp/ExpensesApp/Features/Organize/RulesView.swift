@@ -173,6 +173,7 @@ struct RulesView: View {
     @State private var adding = false
     @State private var loadFailed = false
     @State private var pendingSuggestion: Int?
+    @State private var acceptedSuggestion = 0
     @State private var noSuggestionsFound = false
     @State private var actionError: String?
 
@@ -251,6 +252,7 @@ struct RulesView: View {
             Button("OK", role: .cancel) {}
         }
         .failureAlert("Couldn't update the suggestions", message: $actionError)
+        .sensoryFeedback(.success, trigger: acceptedSuggestion)
         .task {
             loadFailed = !(await model.loadRules())
         }
@@ -324,6 +326,8 @@ struct RulesView: View {
         let done = accept ? await model.acceptRuleSuggestion(suggestion) : await model.rejectRuleSuggestion(suggestion)
         if !done {
             actionError = model.lastError?.message ?? "Unable to \(accept ? "accept" : "reject") the suggestion."
+        } else if accept {
+            acceptedSuggestion += 1
         }
     }
 }
