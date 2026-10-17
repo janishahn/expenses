@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- On iOS, an image receipt opens at once like a photo: it zooms out of its preview, sharpens when the original arrives, zooms with a pinch or a double tap, and closes with a swipe down. Opening it again needs no new download. PDFs still open in Quick Look.
+- On iOS, an image receipt opens at once like a photo: it zooms out of its preview, sharpens when the original arrives, zooms with a pinch or a double tap, and closes with a swipe down. Opening it again needs no new download until you sign out or the app restarts, when the downloaded copies are deleted. PDFs still open in Quick Look.
 - On iOS, while you edit a field on a detail screen, Done sits in the navigation bar in place of the actions menu instead of floating above the keyboard.
 - On iOS, photos taken or picked as receipts upload as standard-range JPEGs instead of HDR ones.
 
