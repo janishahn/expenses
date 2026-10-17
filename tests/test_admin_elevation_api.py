@@ -845,3 +845,62 @@ def test_sqlite_import_commit_rejects_cross_session_preview_token_replay(
     )
     assert owner_commit.status_code == 200
     assert owner_commit.json()["result"]["inserted_transactions"] == 1
+
+
+def test_elevated_rebuild_rollups_restores_every_users_totals(
+    anonymous_api_client: TestClient,
+) -> None:
+    bootstrap_token = _setup_bootstrap(anonymous_api_client)
+    bootstrap_headers = _csrf_headers_for_token(anonymous_api_client, bootstrap_token)
+    _create_transaction(
+        anonymous_api_client,
+        bootstrap_headers,
+        category_id=_create_category(
+            anonymous_api_client, bootstrap_headers, "Bootstrap rollup"
+        ),
+        title="bootstrap-rollup",
+        amount_cents=100,
+    )
+
+    anonymous_api_client.cookies.clear()
+    _signup(anonymous_api_client, "member", "member-pass")
+    _login(anonymous_api_client, "member", "member-pass")
+    member_headers = _csrf_headers(anonymous_api_client)
+    _create_transaction(
+        anonymous_api_client,
+        member_headers,
+        category_id=_create_category(
+            anonymous_api_client, member_headers, "Member rollup"
+        ),
+        title="member-rollup",
+        amount_cents=200,
+    )
+
+    anonymous_api_client.cookies.clear()
+    elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
+    assert elevated["status_code"] == 200
+
+    override = app_main.app.dependency_overrides[app_main.get_db]
+    db_iterator = override()
+    db = next(db_iterator)
+    try:
+        db.execute(text("DELETE FROM monthly_rollups"))
+        db.commit()
+    finally:
+        db_iterator.close()
+
+    rebuild = anonymous_api_client.post(
+        "/api/admin/rebuild-rollups",
+        headers=_csrf_headers_for_token(anonymous_api_client, bootstrap_token),
+    )
+    assert rebuild.status_code == 200
+
+    db_iterator = override()
+    db = next(db_iterator)
+    try:
+        rollups = db.execute(
+            text("SELECT user_id, expense_cents FROM monthly_rollups ORDER BY user_id")
+        ).all()
+    finally:
+        db_iterator.close()
+    assert [tuple(row) for row in rollups] == [(1, 100), (2, 200)]
