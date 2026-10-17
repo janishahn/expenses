@@ -4,6 +4,7 @@ import { CameraIcon } from "@phosphor-icons/react/Camera"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { FilePdfIcon } from "@phosphor-icons/react/FilePdf"
+import { ImageIcon } from "@phosphor-icons/react/Image"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import clsx from "clsx"
@@ -39,9 +40,10 @@ export function ReceiptSection({
   const [selected, setSelected] = useState(0)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
-  // Natural aspect ratios of loaded previews, and previews the server could not make.
+  // Natural aspect ratios of loaded previews, and previews that failed: without the server's
+  // thumbnail an image shows its original file, and an icon when that fails too.
   const [ratios, setRatios] = useState<Record<number, number>>({})
-  const [missing, setMissing] = useState<Record<number, true>>({})
+  const [failed, setFailed] = useState<Record<number, "thumbnail" | "original">>({})
 
   const index = Math.min(selected, Math.max(files.length - 1, 0))
   const file = files[index]
@@ -76,8 +78,17 @@ export function ReceiptSection({
       setRatios((current) => ({ ...current, [id]: image.naturalWidth / image.naturalHeight }))
     }
   }
-  const onPreviewError = (id: number) => () => setMissing((current) => ({ ...current, [id]: true }))
-  const showsImage = (target: ReceiptFile) => Boolean(target.previewUrl) && !missing[target.id]
+  const previewUrl = (target: ReceiptFile) => {
+    if (!target.previewUrl) return undefined
+    if (!failed[target.id]) return target.previewUrl
+    return failed[target.id] === "thumbnail" ? target.fileUrl : undefined
+  }
+  const onPreviewError = (id: number) => () => {
+    const source = failed[id] ? "original" : "thumbnail"
+    setFailed((current) => (current[id] === "original" ? current : { ...current, [id]: source }))
+  }
+  const fileIcon = (target: ReceiptFile) =>
+    target.pdf ? <FilePdfIcon aria-hidden="true" /> : <ImageIcon aria-hidden="true" />
 
   return (
     <div {...dropProps}>
@@ -117,16 +128,14 @@ export function ReceiptSection({
             <button
               type="button"
               className={clsx(s.rprev, dragging && s.dropActive)}
-              style={{ aspectRatio: showsImage(file) ? String(ratios[file.id] ?? 0.75) : "2 / 1" }}
+              style={{ aspectRatio: previewUrl(file) ? String(ratios[file.id] ?? 0.75) : "2 / 1" }}
               aria-label={`Open ${file.name}`}
               onClick={() => setViewerOpen(true)}
             >
-              {showsImage(file) && file.previewUrl ? (
-                <img src={file.previewUrl} alt="" onLoad={onPreviewLoad(file.id)} onError={onPreviewError(file.id)} />
+              {previewUrl(file) ? (
+                <img src={previewUrl(file)} alt="" onLoad={onPreviewLoad(file.id)} onError={onPreviewError(file.id)} />
               ) : (
-                <span className={s.rprevIcon}>
-                  <FilePdfIcon aria-hidden="true" />
-                </span>
+                <span className={s.rprevIcon}>{fileIcon(file)}</span>
               )}
             </button>
             <div className={s.rcap}>
@@ -156,10 +165,10 @@ export function ReceiptSection({
                     aria-current={position === index ? "true" : undefined}
                     onClick={() => setSelected(position)}
                   >
-                    {showsImage(entry) && entry.previewUrl ? (
-                      <img src={entry.previewUrl} alt="" onError={onPreviewError(entry.id)} />
+                    {previewUrl(entry) ? (
+                      <img src={previewUrl(entry)} alt="" onError={onPreviewError(entry.id)} />
                     ) : (
-                      <FilePdfIcon aria-hidden="true" />
+                      fileIcon(entry)
                     )}
                   </button>
                 ))}

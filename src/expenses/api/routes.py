@@ -4341,7 +4341,7 @@ def api_attachment_thumbnail(
     if thumb_path is None:
         raise HTTPException(status_code=404, detail="No thumbnail available")
 
-    etag = f'"{attachment.sha256_hex}-thumb"'
+    etag = f'"{attachment.sha256_hex}-thumbnail"'
     cache_control = "private, max-age=86400"
     if request.headers.get("if-none-match") == etag:
         return Response(

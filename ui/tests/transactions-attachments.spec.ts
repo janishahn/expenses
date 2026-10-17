@@ -151,6 +151,32 @@ test.describe("Transaction receipts and location", () => {
     await expect(main.getByRole("button", { name: `Open ${imageName}` })).toBeVisible()
   })
 
+  test("shows an image receipt's original when the server has no thumbnail", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Receipt")
+    const title = `E2E Receipt Fallback ${Date.now()}`
+    const id = await createTransaction(request, token, {
+      date: "2026-04-18",
+      occurred_at: "2026-04-18T08:25:00",
+      type: "expense",
+      amount_cents: 1250,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    const imageName = `receipt-${Date.now()}.png`
+    await uploadAttachment(request, token, id, {
+      name: imageName,
+      mimeType: "image/png",
+      buffer: onePixelPng,
+    })
+    await page.route("**/api/attachments/*/thumbnail", (route) => route.fulfill({ status: 400 }))
+
+    await page.goto(`/transactions/${id}`)
+    const preview = page.getByRole("main").getByRole("button", { name: `Open ${imageName}` })
+    await expect(preview.locator("img")).toHaveAttribute("src", /\/download$/)
+  })
+
   test("marks located rows in the list and shows the map in the peek", async ({
     page,
     request,

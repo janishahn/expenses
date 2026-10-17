@@ -821,6 +821,40 @@ def test_attachment_download_and_thumbnail_caching(
     assert thumb_not_modified.status_code == 304
 
 
+def test_attachment_thumbnail_follows_photo_orientation(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _category(api_client, csrf_headers, "Receipt photos")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=300,
+        title="Sideways receipt",
+        category_id=category_id,
+    )
+
+    from PIL import Image
+
+    # Stored landscape; orientation 6 tells viewers to turn it into a portrait.
+    photo = Image.new("RGB", (40, 20), color="white")
+    exif = photo.getexif()
+    exif[0x0112] = 6
+    photo_bytes = BytesIO()
+    photo.save(photo_bytes, format="JPEG", exif=exif)
+    upload_response = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("sideways.jpg", photo_bytes.getvalue(), "image/jpeg")},
+        headers=csrf_headers,
+    )
+    assert upload_response.status_code == 200
+    attachment_id = int(upload_response.json()["id"])
+
+    thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
+
+    assert thumbnail.status_code == 200
+    assert Image.open(BytesIO(thumbnail.content)).size == (20, 40)
+
+
 def test_attachment_thumbnail_rejects_images_over_pixel_limit(
     api_client: TestClient,
     csrf_headers: dict[str, str],

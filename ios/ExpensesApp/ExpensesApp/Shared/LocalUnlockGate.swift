@@ -8,6 +8,10 @@ struct LocalUnlockGate<Content: View>: View {
     @State private var lastProtectedAt: Date?
     @State private var coversProtectedContent = false
     @State private var coverWindow = PrivacyCoverWindow()
+    // Once shown, the content stays behind the lock, so unlocking returns to the last
+    // screen. A password sign-in starts a new session, so its content starts over.
+    @State private var keepsContent = false
+    @State private var contentSession = 0
 
     let model: AppModel
     @ViewBuilder var content: () -> Content
@@ -15,7 +19,17 @@ struct LocalUnlockGate<Content: View>: View {
     private let unlockGraceInterval: TimeInterval = 20
 
     var body: some View {
-        Group {
+        ZStack {
+            if keepsContent || !requiresLocalUnlock {
+                content()
+                    .id(contentSession)
+                    .opacity(requiresLocalUnlock ? 0 : 1)
+                    .allowsHitTesting(!requiresLocalUnlock)
+                    .accessibilityHidden(requiresLocalUnlock)
+                    .onAppear {
+                        keepsContent = true
+                    }
+            }
             if requiresLocalUnlock {
                 LockedSignInView(
                     model: model,
@@ -28,12 +42,11 @@ struct LocalUnlockGate<Content: View>: View {
                         Task { await unlock() }
                     },
                     signedIn: {
+                        contentSession += 1
                         unlockState = .unlocked
                         lastProtectedAt = nil
                     }
                 )
-            } else {
-                content()
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -141,6 +154,7 @@ struct LocalUnlockGate<Content: View>: View {
                 return
             }
             if Date().timeIntervalSince(lastProtectedAt) >= unlockGraceInterval {
+                concealPresentedContent()
                 unlockState = .locked
             } else if isUnlocked {
                 self.lastProtectedAt = nil
@@ -158,6 +172,19 @@ struct LocalUnlockGate<Content: View>: View {
             }
         @unknown default:
             break
+        }
+    }
+
+    /// Sheets and alerts would show above the lock screen, and a focused field would
+    /// keep its keyboard, so they close before the kept content locks.
+    private func concealPresentedContent() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        let root = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first?
+            .rootViewController
+        if root?.presentedViewController != nil {
+            root?.dismiss(animated: false)
         }
     }
 

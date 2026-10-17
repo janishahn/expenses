@@ -1901,18 +1901,26 @@ final class AppModel {
         }
     }
 
+    /// The receipt's file in the temporary folder. A file is kept by its content hash, so
+    /// opening the receipt again needs no new download.
     func downloadAttachment(_ attachment: ReceiptAttachment) async -> URL? {
         guard let token else {
             return nil
+        }
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("receipts/\(attachment.sha256Hex)", isDirectory: true)
+        let target = folder.appendingPathComponent(
+            attachment.originalFilename.replacingOccurrences(of: "/", with: "_")
+        )
+        if FileManager.default.fileExists(atPath: target.path) {
+            return target
         }
         isLoading = true
         lastError = nil
         defer { isLoading = false }
         do {
             let download = try await apiClient.downloadAttachment(attachment, token: token)
-            let safeName = download.filename.replacingOccurrences(of: "/", with: "_")
-            let target = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(attachment.id)-\(safeName)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try download.data.write(to: target, options: .atomic)
             return target
         } catch let error as APIErrorInfo {

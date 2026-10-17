@@ -218,7 +218,14 @@ struct RecurringRuleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .expensesScreenStyle()
         .toolbar {
-            if rule != nil {
+            // While a field is edited, Done takes the place of the actions.
+            if focus != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", role: .confirm) {
+                        focus = nil
+                    }
+                }
+            } else if rule != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("Delete Rule", systemImage: "trash", role: .destructive) {
@@ -227,12 +234,6 @@ struct RecurringRuleView: View {
                     } label: {
                         Label("More actions", systemImage: "ellipsis")
                     }
-                }
-            }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    focus = nil
                 }
             }
         }
@@ -329,8 +330,7 @@ struct RecurringRuleView: View {
                 }
             }
         }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+        .detailHeadSection()
     }
 
     private func properties(_ rule: RecurringRule, _ shown: RecurringRuleRequest) -> some View {

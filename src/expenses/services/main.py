@@ -2852,7 +2852,7 @@ class ReceiptAttachmentService:
         return attachment
 
     def thumbnail_path_for(self, attachment: ReceiptAttachment) -> Path:
-        return self._receipts_dir() / ".thumbs" / f"{attachment.id}.webp"
+        return self._receipts_dir() / ".thumbnails" / f"{attachment.id}.webp"
 
     def ensure_thumbnail(self, attachment: ReceiptAttachment) -> Optional[Path]:
         if attachment.mime_type not in self.THUMBNAILABLE_MIME_TYPES:
@@ -2864,23 +2864,29 @@ class ReceiptAttachmentService:
         if not source_path.exists():
             return None
 
-        from PIL import Image, UnidentifiedImageError
+        from PIL import Image, ImageOps, UnidentifiedImageError
 
         settings = get_settings()
         edge = self.THUMBNAIL_MAX_EDGE
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        # Written aside first, so a request during the encode never serves half a file.
+        partial_path = thumb_path.with_name(f"{thumb_path.name}.{uuid4().hex}.partial")
         try:
             with Image.open(source_path) as image:
                 if image.width * image.height > settings.receipt_thumbnail_max_pixels:
                     raise ValueError("Attachment image is too large")
                 image.draft("RGB", (edge, edge))
-                rgb = image.convert("RGB")
+                # Phone cameras store photos sideways with an EXIF turn.
+                rgb = ImageOps.exif_transpose(image).convert("RGB")
                 rgb.thumbnail((edge, edge))
-                rgb.save(thumb_path, format="WEBP", quality=80, method=4)
+                rgb.save(partial_path, format="WEBP", quality=80, method=4)
+            partial_path.replace(thumb_path)
         except Image.DecompressionBombError as exc:
             raise ValueError("Attachment image is too large") from exc
         except (UnidentifiedImageError, OSError) as exc:
             raise ValueError("Attachment image cannot be thumbnailed") from exc
+        finally:
+            partial_path.unlink(missing_ok=True)
         return thumb_path
 
     def delete(self, attachment_id: int) -> None:
