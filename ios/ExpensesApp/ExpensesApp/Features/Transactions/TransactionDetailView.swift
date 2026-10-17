@@ -1,3 +1,4 @@
+import ImageIO
 import MapKit
 import QuickLook
 import SwiftUI
@@ -809,7 +810,7 @@ private struct ReceiptsSection: View {
             if let data = await model.attachmentThumbnail(file), let image = UIImage(data: data) {
                 thumbnails[file.id] = .image(image)
             } else if let url = await model.downloadAttachment(file),
-                      let image = await UIImage(contentsOfFile: url.path)?.byPreparingForDisplay()
+                      let image = await downsampledImage(at: url, maxPixels: 1024)
             {
                 thumbnails[file.id] = .image(image)
             } else if !Task.isCancelled {
@@ -923,7 +924,8 @@ private struct ReceiptPhotoView: View {
         .preferredColorScheme(.dark)
         .task {
             if let url = await model.downloadAttachment(file),
-               let image = await UIImage(contentsOfFile: url.path)?.byPreparingForDisplay()
+               // Sharp enough to read when zoomed, at a fraction of a full decode.
+               let image = await downsampledImage(at: url, maxPixels: 4096)
             {
                 original = .loaded(url, image)
             } else if !Task.isCancelled {
@@ -931,6 +933,23 @@ private struct ReceiptPhotoView: View {
             }
         }
     }
+}
+
+/// The image at `url`, upright and at most `maxPixels` on its longer side. Decoding a large
+/// photo in full would take hundreds of megabytes.
+private func downsampledImage(at url: URL, maxPixels: Int) async -> UIImage? {
+    await Task.detached(priority: .userInitiated) {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map(UIImage.init(cgImage:))
+    }.value
 }
 
 /// An image fitted to the view that zooms with a pinch or a double tap.
