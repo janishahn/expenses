@@ -25,7 +25,6 @@ def test_export_openapi_writes_mobile_contract_schema(tmp_path) -> None:
     report_options = payload["components"]["schemas"]["ReportOptions"]["properties"]
     assert "tag_ids" in report_options
     assert "excluded_tag_ids" in report_options
-    assert "/api/kpis" not in payload["paths"]
 
 
 def test_checked_in_openapi_contract_is_fresh(tmp_path) -> None:

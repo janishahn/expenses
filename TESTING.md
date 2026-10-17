@@ -72,7 +72,7 @@ Playwright mobile projects emulate viewport, user agent, touch, and browser-engi
 | Product story or surface | Desktop | Mobile | Surface contract |
 |---|---|---|---|
 | First-run setup, login, logout, signup, protected deep links | `auth.spec.ts`, `settings.spec.ts` | `auth.mobile.spec.ts` | Real setup submission in both layouts |
-| Authenticated shell with the sidebar and app-name menu, the mobile tab bar and More sheet, focus trapping and focus return for dialogs, sheets, and menus, 44px mobile touch targets for navigation and header actions, Settings-only theme selection, period propagation, and unknown routes | `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `navigation.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
+| Authenticated shell with the sidebar and app-name menu, the mobile tab bar and More sheet, focus trapping and focus return for dialogs, sheets, and menus, 44px mobile touch targets for navigation and header actions, period propagation, and unknown routes | `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `navigation.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Panel header bar with page actions inside it at constrained desktop widths and on mobile, and the period control and Filter on one row beneath the title | `page-scope-header.spec.ts` | `page-scope-header.mobile.spec.ts` | Covered routes |
 | Dashboard metrics, quick periods, tag-only secondary-filter panel with archived/hidden visibility and scoped drill-downs, charts, privacy, category focus, quick add, scheduled-tag defaults and removal, and recent-transactions touch targets | `dashboard.spec.ts`, `tag-filters.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `summaries.mobile.spec.ts`, `visual.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
 | Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
@@ -110,5 +110,3 @@ Playwright writes the HTML report to `ui/playwright-report` and failures to `ui/
 cd ui
 npx playwright show-trace test-results/<test>/trace.zip
 ```
-
-The audit-oriented browser specs keep their behavioral assertions in normal test runs but do not write bulk screenshots or JSON manifests by default. Set `UI_POLISH_AUDIT_ARTIFACT_DIR` to an explicit repository-relative or absolute directory only when intentionally collecting a review evidence set. Local evidence under `artifacts/ui-polish-audit/` is ignored by Git.

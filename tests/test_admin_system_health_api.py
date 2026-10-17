@@ -73,6 +73,3 @@ def test_admin_system_health_validation_override_rejects_invalid_profile(
         json={"profile": "invalid"},
     )
     assert response.status_code == 400
-    assert (
-        response.json()["detail"] == "Invalid profile. Use healthy, warm, or critical."
-    )

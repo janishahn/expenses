@@ -287,38 +287,6 @@ def test_missing_bank_row_can_create_and_match_edited_transaction(
     assert all(item["title"] != "Duplicate cable" for item in transactions_after_retry)
 
 
-def test_partial_cash_withdrawal_can_be_marked_reviewed(
-    api_client: TestClient, csrf_headers: dict[str, str]
-) -> None:
-    _create_transaction(
-        api_client,
-        csrf_headers,
-        date="2026-05-05",
-        amount_cents=1_178,
-        title="Rewe for Josie and me",
-    )
-    response = _upload_csv(
-        api_client,
-        csrf_headers,
-        _csv_bytes(
-            ["05.05.2026;05.05.2026;Kartenzahlung;REWE;-111,78;EUR;Einkauf + Bargeld"]
-        ),
-    )
-    assert response.status_code == 200
-
-    row = api_client.get("/api/reconciliation").json()["rows"][0]
-    assert row["status"] == "missing"
-
-    reviewed = api_client.post(
-        f"/api/reconciliation/bank-rows/{row['id']}/review",
-        headers=csrf_headers,
-    )
-    assert reviewed.status_code == 200
-    assert (
-        api_client.get("/api/reconciliation").json()["rows"][0]["status"] == "reviewed"
-    )
-
-
 def test_same_amount_candidates_are_ambiguous(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

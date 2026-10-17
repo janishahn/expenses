@@ -1,4 +1,8 @@
+from datetime import date, datetime, timedelta
+
 from fastapi.testclient import TestClient
+
+from expenses.recurrence.engine import local_today
 
 
 def _create_category(
@@ -12,6 +16,37 @@ def _create_category(
         "/api/categories",
         headers=headers,
         json={"name": name, "type": txn_type, "icon": icon, "order": 0},
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
+def _transaction(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    amount_cents: int,
+    title: str,
+    on: date | None = None,
+    category_id: int | None = None,
+    txn_type: str = "expense",
+    tags: list[str] | None = None,
+    is_reimbursement: bool = False,
+) -> int:
+    on = on or local_today()
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": datetime.combine(on, datetime.min.time()).isoformat(),
+            "type": txn_type,
+            "amount_cents": amount_cents,
+            "category_id": category_id,
+            "title": title,
+            "tags": tags or [],
+            "is_reimbursement": is_reimbursement,
+        },
     )
     assert response.status_code == 200
     return int(response.json()["id"])
@@ -184,3 +219,72 @@ def test_category_options_list_names_without_totals(
         "order": 0,
         "archived_at": None,
     }
+
+
+def test_categories_and_tags_report_period_totals_and_created_at(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    salary = _create_category(api_client, csrf_headers, "Salary", "income")
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=2_000,
+        title="Shop",
+        category_id=food,
+        tags=["Trip"],
+    )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=9_000,
+        title="Pay",
+        category_id=salary,
+        txn_type="income",
+        tags=["Trip"],
+    )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=1_000,
+        title="Last year",
+        on=local_today() - timedelta(days=500),
+        category_id=food,
+    )
+
+    categories = {
+        item["name"]: item
+        for item in api_client.get("/api/categories?period=this_month").json()[
+            "categories"
+        ]
+    }
+    assert (
+        categories["Food"]["expense_cents"],
+        categories["Food"]["income_cents"],
+    ) == (
+        2_000,
+        0,
+    )
+    assert categories["Salary"]["income_cents"] == 9_000
+    all_time = {
+        item["name"]: item
+        for item in api_client.get("/api/categories?period=all").json()["categories"]
+    }
+    assert all_time["Food"]["expense_cents"] == 3_000
+
+    tags = api_client.get("/api/tags?period=this_month").json()["tags"]
+    assert [(t["name"], t["expense_cents"], t["income_cents"]) for t in tags] == [
+        ("Trip", 2_000, 9_000)
+    ]
+    assert datetime.fromisoformat(tags[0]["created_at"])
+
+    created = api_client.post("/api/tags", headers=csrf_headers, json={"name": "New"})
+    assert datetime.fromisoformat(created.json()["created_at"])
+    tag_id = tags[0]["id"]
+    updated = api_client.put(
+        f"/api/tags/{tag_id}", headers=csrf_headers, json={"name": "Trip"}
+    )
+    assert updated.json()["created_at"] == tags[0]["created_at"]
+    detail = api_client.get(f"/api/tags/{tag_id}").json()
+    assert detail["tag"]["created_at"] == tags[0]["created_at"]
+    assert {"kpis", "donut", "transactions"} <= detail.keys()

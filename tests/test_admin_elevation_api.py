@@ -237,16 +237,12 @@ def test_true_admin_routes_require_auth_admin_and_elevation(
         "/api/admin/logs",
         "/api/admin/system-health",
         "/api/admin/system-health/validation-override",
-        "/api/admin/download-db",
         "/api/admin/export-csv",
     ):
         response = anonymous_api_client.get(
             path, headers=_session_headers(bootstrap_token)
         )
-        if path == "/api/admin/download-db":
-            assert response.status_code in {200, 404}
-        else:
-            assert response.status_code == 200
+        assert response.status_code == 200
 
 
 def test_admin_export_csv_is_instance_level_for_elevated_admin(
@@ -851,30 +847,60 @@ def test_sqlite_import_commit_rejects_cross_session_preview_token_replay(
     assert owner_commit.json()["result"]["inserted_transactions"] == 1
 
 
-def test_elevated_rebuild_rollups_runs_for_multiple_users(
+def test_elevated_rebuild_rollups_restores_every_users_totals(
     anonymous_api_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _setup_bootstrap(anonymous_api_client)
+    bootstrap_token = _setup_bootstrap(anonymous_api_client)
+    bootstrap_headers = _csrf_headers_for_token(anonymous_api_client, bootstrap_token)
+    _create_transaction(
+        anonymous_api_client,
+        bootstrap_headers,
+        category_id=_create_category(
+            anonymous_api_client, bootstrap_headers, "Bootstrap rollup"
+        ),
+        title="bootstrap-rollup",
+        amount_cents=100,
+    )
 
     anonymous_api_client.cookies.clear()
     _signup(anonymous_api_client, "member", "member-pass")
-    anonymous_api_client.cookies.clear()
-    bootstrap_token = _login(anonymous_api_client, "bootstrap", "bootstrap-pass")
+    _login(anonymous_api_client, "member", "member-pass")
+    member_headers = _csrf_headers(anonymous_api_client)
+    _create_transaction(
+        anonymous_api_client,
+        member_headers,
+        category_id=_create_category(
+            anonymous_api_client, member_headers, "Member rollup"
+        ),
+        title="member-rollup",
+        amount_cents=200,
+    )
 
+    anonymous_api_client.cookies.clear()
     elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
     assert elevated["status_code"] == 200
 
-    rebuilt_user_ids: list[int] = []
-
-    def _record_rebuild(session, user_id):
-        rebuilt_user_ids.append(user_id)
-
-    monkeypatch.setattr("expenses.api.routes.rebuild_monthly_rollups", _record_rebuild)
+    override = app_main.app.dependency_overrides[app_main.get_db]
+    db_iterator = override()
+    db = next(db_iterator)
+    try:
+        db.execute(text("DELETE FROM monthly_rollups"))
+        db.commit()
+    finally:
+        db_iterator.close()
 
     rebuild = anonymous_api_client.post(
         "/api/admin/rebuild-rollups",
         headers=_csrf_headers_for_token(anonymous_api_client, bootstrap_token),
     )
     assert rebuild.status_code == 200
-    assert set(rebuilt_user_ids) == {1, 2}
+
+    db_iterator = override()
+    db = next(db_iterator)
+    try:
+        rollups = db.execute(
+            text("SELECT user_id, expense_cents FROM monthly_rollups ORDER BY user_id")
+        ).all()
+    finally:
+        db_iterator.close()
+    assert [tuple(row) for row in rollups] == [(1, 100), (2, 200)]

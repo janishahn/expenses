@@ -1,12 +1,7 @@
-import { mkdirSync } from "node:fs"
-import { resolve } from "node:path"
 import { expect, test } from "./fixtures"
 import { waitForEntrance } from "./helpers"
 
 test("mobile More sheet and controlled overlays preserve modal focus", async ({ page }) => {
-  const artifactDirectory = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
-    ? resolve("..", process.env.UI_POLISH_AUDIT_ARTIFACT_DIR, "repairs", "R-001", "mobile-webkit")
-    : null
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   await page.addInitScript(() => {
     window.localStorage.setItem("ew.theme.preference", "light")
@@ -73,13 +68,4 @@ test("mobile More sheet and controlled overlays preserve modal focus", async ({ 
   await page.keyboard.press("Escape")
   await expect(categoryDialog).toBeHidden()
   await expect(categoryTrigger).toBeFocused()
-
-  if (artifactDirectory) {
-    mkdirSync(artifactDirectory, { recursive: true })
-    await page.screenshot({
-      path: resolve(artifactDirectory, "mobile-focus-return.png"),
-      fullPage: true,
-      animations: "disabled",
-    })
-  }
 })

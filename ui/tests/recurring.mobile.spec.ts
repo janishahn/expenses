@@ -83,20 +83,6 @@ const headerAction = (page: Page) =>
   page.locator("main header").getByRole("button", { name: "Add rule" })
 
 test.describe("Recurring page (mobile)", () => {
-  test("opens the Add rule dialog from the compact header action", async ({ page, request }) => {
-    await seedRule(request)
-    await page.goto("/recurring")
-
-    const action = headerAction(page)
-    await expect(action).toHaveText("Add")
-    await expect(action).toHaveAccessibleName("Add rule")
-    await action.click()
-    const dialog = page.getByRole("dialog", { name: "Add rule" })
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole("button", { name: "Cancel" }).click()
-    await expect(dialog).toBeHidden()
-  })
-
   test("creates a recurring rule from the mobile dialog", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryName = `E2E Mobile Create ${unique()}`

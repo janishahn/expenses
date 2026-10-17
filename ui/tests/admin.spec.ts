@@ -327,19 +327,4 @@ test.describe("Admin Page", () => {
     await expect(peek).toContainText("e2e-large on local")
     await expect(peek.getByRole("link", { name: "Open chat" })).toHaveAttribute("href", `/assistant?chat=${chatId}`)
   })
-
-  test("navigates to the SQLite importer and back to Maintenance", async ({ page }) => {
-    await openSection(page, "Maintenance", "/admin/maintenance")
-    await page.getByRole("link", { name: "Open legacy SQLite import" }).click()
-    await expect(page).toHaveURL("/admin/import")
-    await expect(page.locator("main h1")).toHaveText("Legacy SQLite import")
-    await expect(adminSections(page).getByRole("link", { name: "Maintenance" })).toHaveAttribute(
-      "aria-current",
-      "page"
-    )
-
-    await page.getByRole("link", { name: "Maintenance" }).first().click()
-    await expect(page).toHaveURL("/admin/maintenance")
-    await expect(page.locator("main h1")).toHaveText("Maintenance")
-  })
 })

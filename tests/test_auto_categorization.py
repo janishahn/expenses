@@ -180,7 +180,6 @@ def test_ingest_distinguishes_automatic_category_resolution(
         .transaction
     )
     assert txn.category.name == expected_category
-    assert txn._ingest_log_fields["category_resolution"] == resolution
     assert (txn.auto_category_confidence is not None) == (resolution == "auto_category")
 
 

@@ -2,6 +2,9 @@ from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from expenses.core.periods import add_months, month_start
+from expenses.recurrence.engine import local_today
+
 
 def _create_category(
     client: TestClient, headers: dict[str, str], name: str, txn_type: str
@@ -41,6 +44,41 @@ def _create_transaction(
     )
     assert response.status_code == 200
     return int(response.json()["id"])
+
+
+def _transaction(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    amount_cents: int,
+    title: str,
+    on: date | None = None,
+    category_id: int | None = None,
+    txn_type: str = "expense",
+    tags: list[str] | None = None,
+    is_reimbursement: bool = False,
+) -> int:
+    on = on or local_today()
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": datetime.combine(on, datetime.min.time()).isoformat(),
+            "type": txn_type,
+            "amount_cents": amount_cents,
+            "category_id": category_id,
+            "title": title,
+            "tags": tags or [],
+            "is_reimbursement": is_reimbursement,
+        },
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
+def _month_label(value: date) -> str:
+    return f"{value.year:04d}-{value.month:02d}"
 
 
 def test_dashboard_tag_exclusions_filter_activity_but_keep_actual_balance(
@@ -242,3 +280,88 @@ def test_monthly_category_breakdown_omits_balances_before_first_snapshot(
     assert all(month["balance_cents"] is None for month in bands[:-2])
     assert bands[-2]["balance_cents"] == 50_000
     assert bands[-1]["balance_cents"] == 50_000
+
+
+def test_balance_history_returns_month_end_balances_and_validates_months(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = local_today()
+    income_category = _create_category(api_client, csrf_headers, "Pay", "income")
+    first_day = add_months(month_start(today.year, today.month), -2)
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=100_000,
+        title="Salary",
+        on=first_day,
+        txn_type="income",
+        category_id=income_category,
+    )
+    _transaction(api_client, csrf_headers, amount_cents=25_000, title="Rent")
+
+    history = api_client.get("/api/dashboard/balance-history?months=6").json()["months"]
+    assert [point["month"] for point in history] == [
+        _month_label(add_months(month_start(today.year, today.month), offset))
+        for offset in (-2, -1, 0)
+    ]
+    assert [point["balance_cents"] for point in history] == [100_000, 100_000, 75_000]
+    assert api_client.get("/api/dashboard/balance-history").status_code == 200
+    assert api_client.get("/api/dashboard/balance-history?months=5").status_code == 422
+
+
+def test_category_breakdown_months_param_and_category_ids(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Groceries", "expense")
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=4_000,
+        title="Food",
+        category_id=category_id,
+    )
+
+    assert (
+        len(api_client.get("/api/category-breakdown?view=monthly").json()["months"])
+        == 6
+    )
+    assert (
+        len(
+            api_client.get("/api/category-breakdown?view=monthly&months=12").json()[
+                "months"
+            ]
+        )
+        == 12
+    )
+    assert (
+        api_client.get("/api/category-breakdown?view=monthly&months=7").status_code
+        == 422
+    )
+    flat = api_client.get("/api/category-breakdown").json()
+    assert [(item["category_id"], item["id"]) for item in flat] == [
+        (category_id, category_id)
+    ]
+    donut = api_client.get("/api/dashboard").json()["donut"]["expense_breakdown"]
+    assert donut[0]["category_id"] == category_id
+    insights = api_client.get("/api/insights").json()
+    assert insights["expense_breakdown"][0]["category_id"] == category_id
+
+
+def test_dashboard_category_share_lists_every_category(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for index in range(10):
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=1_000 * (index + 1),
+            title=f"Purchase {index}",
+            category_id=_create_category(
+                api_client, csrf_headers, f"Category {index}", "expense"
+            ),
+        )
+
+    donut = api_client.get("/api/dashboard").json()["donut"]["expense_breakdown"]
+    assert len(donut) == 10
+    assert sum(item["amount_cents"] for item in donut) == 55_000
+    assert round(sum(item["percent"] for item in donut)) == 100

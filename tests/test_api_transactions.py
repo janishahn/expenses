@@ -1,23 +1,24 @@
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, update
 from sqlalchemy.orm import sessionmaker
-from starlette.requests import Request
 
-from expenses.api import routes
 from expenses.core.config import get_settings
-from expenses.core.periods import Period
-from expenses.db.models import Category, Transaction, TransactionType
+from expenses.core.periods import Period, month_end, month_start
+from expenses.db.models import Transaction, TransactionType
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
+from expenses.recurrence.engine import local_today
 from expenses.schemas import TransactionIn
 from expenses.services import (
     ReimbursementService,
     TransactionFilters,
     TransactionService,
+    auto_categorization,
 )
 
 
@@ -31,41 +32,47 @@ def make_session():
     return session_local()
 
 
-def test_api_delete_transaction_soft_deletes(monkeypatch) -> None:
-    session = make_session()
-    category = Category(name="Food", type=TransactionType.expense, order=0)
-    session.add(category)
-    session.commit()
-    session.refresh(category)
-
-    txn = TransactionService(session).create(
-        TransactionIn(
-            date=date(2025, 1, 10),
-            occurred_at=datetime(2025, 1, 10, 12, 0),
-            type=TransactionType.expense,
-            amount_cents=5_000,
-            category_id=category.id,
-            title="Lunch",
-        )
+def _category(
+    client: TestClient, headers: dict[str, str], name: str, txn_type: str = "expense"
+) -> int:
+    response = client.post(
+        "/api/categories",
+        headers=headers,
+        json={"name": name, "type": txn_type, "order": 0},
     )
+    assert response.status_code == 200
+    return int(response.json()["id"])
 
-    monkeypatch.setattr(routes, "validate_csrf_token", lambda _: True)
-    monkeypatch.setattr(routes, "_require_current_user_id", lambda _request, _db: 1)
-    request = Request(
-        {
-            "type": "http",
-            "method": "DELETE",
-            "path": f"/api/transactions/{txn.id}",
-            "headers": [(b"x-csrf-token", b"valid")],
-        }
+
+def _transaction(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    amount_cents: int,
+    title: str,
+    on: date | None = None,
+    category_id: int | None = None,
+    txn_type: str = "expense",
+    tags: list[str] | None = None,
+    is_reimbursement: bool = False,
+) -> int:
+    on = on or local_today()
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": datetime.combine(on, datetime.min.time()).isoformat(),
+            "type": txn_type,
+            "amount_cents": amount_cents,
+            "category_id": category_id,
+            "title": title,
+            "tags": tags or [],
+            "is_reimbursement": is_reimbursement,
+        },
     )
-
-    response = routes.api_delete_transaction(txn.id, request, session)
-
-    assert response == {"status": "ok"}
-    deleted = session.get(Transaction, txn.id)
-    assert deleted is not None
-    assert deleted.deleted_at is not None
+    assert response.status_code == 200
+    return int(response.json()["id"])
 
 
 def test_api_create_transaction_stores_location(
@@ -857,3 +864,367 @@ def test_attachment_thumbnail_rejects_images_over_pixel_limit(
     thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
 
     assert thumbnail.status_code == 400
+
+
+def test_transactions_list_total_counts_every_filtered_row(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for title in ("Coffee beans", "Coffee filter", "Monthly rent"):
+        _transaction(api_client, csrf_headers, amount_cents=1_000, title=title)
+
+    page = api_client.get("/api/transactions?limit=2").json()
+    assert (len(page["items"]), page["has_more"], page["total"]) == (2, True, 3)
+    assert api_client.get("/api/transactions?q=coffee").json()["total"] == 2
+    assert api_client.get("/api/transactions/uncategorized").json()["total"] == 3
+
+
+def test_transaction_detail_includes_net_amount_and_created_at(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    income_category = _category(api_client, csrf_headers, "Refunds", "income")
+    expense_id = _transaction(
+        api_client, csrf_headers, amount_cents=2_500, title="Lunch"
+    )
+    reimbursement_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=1_000,
+        title="Lunch refund",
+        txn_type="income",
+        category_id=income_category,
+        is_reimbursement=True,
+    )
+    response = api_client.post(
+        f"/api/reimbursements/{reimbursement_id}/allocations",
+        headers=csrf_headers,
+        json={"expense_transaction_id": expense_id, "amount_cents": 1_000},
+    )
+    assert response.status_code == 200
+
+    detail = api_client.get(f"/api/transactions/{expense_id}").json()
+    listed = next(
+        item
+        for item in api_client.get("/api/transactions").json()["items"]
+        if item["id"] == expense_id
+    )
+    assert detail["amount_cents"] == 2_500
+    assert detail["net_amount_cents"] == listed["net_amount_cents"] == 1_500
+    assert detail["reimbursed_total_cents"] == listed["reimbursed_total_cents"] == 1_000
+    assert datetime.fromisoformat(detail["created_at"])
+    assert detail["bank_row"] is None
+
+
+def test_default_periods_end_on_the_app_timezone_today(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # These zones are 25 hours apart, so one is always on another date than the host.
+    zone = next(
+        name
+        for name in ("Pacific/Kiritimati", "Pacific/Pago_Pago")
+        if datetime.now(ZoneInfo(name)).date() != date.today()
+    )
+    monkeypatch.setattr(get_settings(), "timezone", zone)
+    today = local_today()
+
+    assert api_client.get("/api/transactions").json()["period"]["end"] == (
+        today.isoformat()
+    )
+    this_month = api_client.get("/api/transactions?period=this_month").json()
+    assert (
+        this_month["period"]["start"]
+        == month_start(today.year, today.month).isoformat()
+    )
+    assert this_month["period"]["end"] == month_end(today.year, today.month).isoformat()
+
+
+def test_deleted_transactions_keep_default_page_and_support_paging_and_bulk_actions(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    ids = [
+        _transaction(api_client, csrf_headers, amount_cents=500, title=f"Trash {n}")
+        for n in range(3)
+    ]
+    keeper = _transaction(api_client, csrf_headers, amount_cents=500, title="Keeper")
+    for transaction_id in ids:
+        assert (
+            api_client.delete(
+                f"/api/transactions/{transaction_id}", headers=csrf_headers
+            ).status_code
+            == 200
+        )
+
+    default = api_client.get("/api/transactions/deleted").json()
+    assert default["total"] == 3
+    assert {item["id"] for item in default["transactions"]} == set(ids)
+    paged = api_client.get("/api/transactions/deleted?page=2&limit=2").json()
+    assert paged["total"] == 3
+    assert len(paged["transactions"]) == 1
+    assert api_client.get("/api/transactions/deleted?page=0").status_code == 422
+
+    restored = api_client.post(
+        "/api/transactions/deleted/restore",
+        headers=csrf_headers,
+        json={"ids": [ids[0], keeper, 999_999]},
+    )
+    assert restored.json() == {"restored": 1}
+    purged = api_client.post(
+        "/api/transactions/deleted/purge",
+        headers=csrf_headers,
+        json={"ids": [ids[1], keeper, 999_999]},
+    )
+    assert purged.json() == {"deleted": 1}
+    remaining = api_client.get("/api/transactions/deleted").json()
+    assert [item["id"] for item in remaining["transactions"]] == [ids[2]]
+    assert api_client.get(f"/api/transactions/{keeper}").status_code == 200
+    assert api_client.get(f"/api/transactions/{ids[0]}").status_code == 200
+
+
+def test_bulk_restore_brings_back_the_month_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    ids = [
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=cents,
+            title=f"March {cents}",
+            on=date(2026, 3, day),
+        )
+        for day, cents in ((10, 1_000), (20, 2_500))
+    ]
+    march = "/api/dashboard?period=custom&start=2026-03-01&end=2026-03-31"
+    for transaction_id in ids:
+        api_client.delete(f"/api/transactions/{transaction_id}", headers=csrf_headers)
+    assert api_client.get(march).json()["kpis"]["expenses"] == 0
+
+    restored = api_client.post(
+        "/api/transactions/deleted/restore", headers=csrf_headers, json={"ids": ids}
+    )
+
+    assert restored.json() == {"restored": 2}
+    assert api_client.get(march).json()["kpis"]["expenses"] == 3_500
+
+
+def test_bulk_apply_trash_and_restore_update_the_month_totals(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    ids = [
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=cents,
+            title=f"April {cents}",
+            on=date(2026, 4, day),
+        )
+        for day, cents in ((5, 1_000), (15, 2_500), (25, 400))
+    ]
+    april = "/api/dashboard?period=custom&start=2026-04-01&end=2026-04-30"
+
+    def apply(lifecycle: str) -> dict:
+        response = api_client.post(
+            "/api/transactions/bulk/apply",
+            headers=csrf_headers,
+            json={
+                "selection": {"mode": "ids", "transaction_ids": ids},
+                "operation": {"lifecycle": lifecycle},
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["changes"]
+
+    assert apply("soft_delete")["deleted"] == 3
+    assert api_client.get(april).json()["kpis"]["expenses"] == 0
+    assert apply("restore")["restored"] == 3
+    assert api_client.get(april).json()["kpis"]["expenses"] == 3_900
+
+
+def test_bulk_category_undo_skips_a_transaction_changed_since(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    filed = _category(api_client, csrf_headers, "Filed")
+    newer = _category(api_client, csrf_headers, "Newer")
+    original = _category(api_client, csrf_headers, "Original")
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=900, title="Lunch", category_id=newer
+    )
+
+    def undo() -> dict:
+        response = api_client.post(
+            "/api/transactions/bulk/apply",
+            headers=csrf_headers,
+            json={
+                "selection": {"mode": "ids", "transaction_ids": [transaction_id]},
+                "operation": {
+                    "set_category_id": original,
+                    "expected_category_id": filed,
+                },
+            },
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    skipped = undo()
+    assert skipped["skipped_count"] == 1
+    assert skipped["changes"]["category_changed"] == 0
+    detail = api_client.get(f"/api/transactions/{transaction_id}").json()
+    assert detail["category_id"] == newer
+
+    api_client.post(
+        "/api/transactions/bulk/apply",
+        headers=csrf_headers,
+        json={
+            "selection": {"mode": "ids", "transaction_ids": [transaction_id]},
+            "operation": {"set_category_id": filed},
+        },
+    )
+    reverted = undo()
+    assert reverted["skipped_count"] == 0
+    assert reverted["changes"]["category_changed"] == 1
+    detail = api_client.get(f"/api/transactions/{transaction_id}").json()
+    assert detail["category_id"] == original
+
+
+def test_bulk_trash_actions_ignore_other_users_transactions(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=500, title="Mine"
+    )
+    api_client.delete(f"/api/transactions/{transaction_id}", headers=csrf_headers)
+    api_client.post("/api/auth/logout", headers=csrf_headers)
+    credentials = {"username": "second", "password": "pw-12345"}
+    assert api_client.post("/api/auth/signup", json=credentials).status_code == 200
+    assert api_client.post("/api/auth/login", json=credentials).status_code == 200
+    second_headers = {"X-CSRF-Token": api_client.get("/api/csrf").json()["token"]}
+
+    for action, key in (("restore", "restored"), ("purge", "deleted")):
+        response = api_client.post(
+            f"/api/transactions/deleted/{action}",
+            headers=second_headers,
+            json={"ids": [transaction_id]},
+        )
+        assert response.json() == {key: 0}
+
+    api_client.post("/api/auth/logout", headers=second_headers)
+    assert (
+        api_client.post(
+            "/api/auth/login", json={"username": "bootstrap", "password": "pw-12345"}
+        ).status_code
+        == 200
+    )
+    assert len(api_client.get("/api/transactions/deleted").json()["transactions"]) == 1
+
+
+def test_admin_purge_preview_counts_without_deleting(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    assert (
+        api_client.post(
+            "/api/auth/admin-elevation",
+            headers=csrf_headers,
+            json={"password": "pw-12345"},
+        ).status_code
+        == 200
+    )
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=500, title="Old trash"
+    )
+    api_client.delete(f"/api/transactions/{transaction_id}", headers=csrf_headers)
+    assert api_client.get("/api/admin/purge-deleted/preview?days=1").json() == {
+        "count": 0
+    }
+    db_session.execute(
+        update(Transaction).values(deleted_at=datetime.utcnow() - timedelta(days=40))
+    )
+    db_session.commit()
+
+    assert api_client.get("/api/admin/purge-deleted/preview?days=30").json() == {
+        "count": 1
+    }
+    assert api_client.get("/api/admin/purge-deleted/preview?days=0").status_code == 422
+    assert len(api_client.get("/api/transactions/deleted").json()["transactions"]) == 1
+
+
+def test_uncategorized_suggestions_use_the_local_model_and_can_be_dismissed(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    auto_categorization._model_cache.clear()
+    bakery = _category(api_client, csrf_headers, "Bakery")
+    transit = _category(api_client, csrf_headers, "Transit")
+    for index in range(80):
+        bakery_purchase = index % 2 == 0
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=500 if bakery_purchase else 340,
+            title="Corner bakery" if bakery_purchase else "City metro",
+            on=local_today() - timedelta(days=index),
+            category_id=bakery if bakery_purchase else transit,
+        )
+    pending = _transaction(
+        api_client, csrf_headers, amount_cents=500, title="Corner bakery"
+    )
+
+    def suggestion():
+        items = api_client.get("/api/transactions/uncategorized").json()["items"]
+        return next(item for item in items if item["id"] == pending)["suggestion"]
+
+    assert suggestion() is None
+    response = api_client.put(
+        "/api/settings/auto-categorization",
+        headers=csrf_headers,
+        json={"enabled": True, "threshold": 0.8},
+    )
+    assert response.status_code == 200
+    current = suggestion()
+    assert current["category_id"] == bakery
+    assert 0 < current["confidence"] <= 1
+    assert len(auto_categorization._model_cache) == 1
+
+    wrong = api_client.post(
+        f"/api/transactions/{pending}/category-suggestion/dismiss",
+        headers=csrf_headers,
+        json={"category_id": 999_999},
+    )
+    assert wrong.status_code == 400
+    dismissed = api_client.post(
+        f"/api/transactions/{pending}/category-suggestion/dismiss",
+        headers=csrf_headers,
+        json={"category_id": bakery},
+    )
+    assert dismissed.json() == {"status": "ok"}
+    assert suggestion() is None
+    missing = api_client.post(
+        "/api/transactions/999999/category-suggestion/dismiss",
+        headers=csrf_headers,
+        json={"category_id": bakery},
+    )
+    assert missing.status_code == 404
+
+    # After a merge and retraining, the rejection still covers the merged category.
+    bread = _category(api_client, csrf_headers, "Bread")
+    merged = api_client.post(
+        "/api/categories/merge",
+        headers=csrf_headers,
+        json={"source_category_id": bakery, "target_category_id": bread},
+    )
+    assert merged.status_code == 200
+    for enabled in (False, True):
+        api_client.put(
+            "/api/settings/auto-categorization",
+            headers=csrf_headers,
+            json={"enabled": enabled, "threshold": 0.8},
+        )
+    assert suggestion() is None
+    # The retrained model now picks the merged category, so the rejection is what hides it.
+    other = _transaction(
+        api_client, csrf_headers, amount_cents=500, title="Corner bakery"
+    )
+    assert api_client.get(f"/api/transactions/{other}").json()["category_id"] == bread
+
+    api_client.put(
+        "/api/settings/auto-categorization",
+        headers=csrf_headers,
+        json={"enabled": False, "threshold": 0.8},
+    )
+    assert suggestion() is None

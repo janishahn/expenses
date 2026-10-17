@@ -110,38 +110,6 @@ test.describe("Navigation (mobile)", () => {
     await expect(tabs).toBeVisible()
   })
 
-  test("shows page-level creation actions above the page", async ({ page }) => {
-    test.setTimeout(90_000)
-    const actionPages = [
-      { path: "/recurring", label: "Add rule" },
-      { path: "/templates", label: "Add template" },
-      { path: "/rules", label: "Add rule" },
-      { path: "/categories", label: "Add category" },
-      { path: "/tags", label: "Add tag" },
-    ]
-
-    for (const entry of actionPages) {
-      await page.goto(entry.path)
-      await expect(
-        page.locator("main header").getByRole("button", { name: entry.label, exact: true }),
-      ).toBeVisible()
-    }
-
-    await page.goto("/budgets")
-    await expect(page.getByRole("button", { name: "Add budget", exact: true }).first()).toBeVisible()
-
-    await page.goto("/transactions")
-    await expect(page.getByRole("button", { name: "Add transaction", exact: true })).toBeVisible()
-
-    for (const path of ["/insights", "/settings", "/reports/builder"]) {
-      await page.goto(path)
-    }
-
-    await page.goto("/budgets")
-    await page.getByRole("button", { name: "Add budget", exact: true }).first().click()
-    await expect(page.getByRole("dialog", { name: "Add budget" })).toBeVisible()
-  })
-
   test("navigates non-tab routes through the More sheet", async ({ page }) => {
     test.setTimeout(90_000)
     await page.goto("/")

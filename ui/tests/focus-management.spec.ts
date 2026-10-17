@@ -1,18 +1,6 @@
-import { mkdirSync } from "node:fs"
-import { resolve } from "node:path"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { expect, test, type Page } from "./fixtures"
 import { createCategory, ensureCategory, getCsrfToken, loginAsIsolatedUser, waitForEntrance } from "./helpers"
-
-const artifactDirectory = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
-  ? resolve(
-      "..",
-      process.env.UI_POLISH_AUDIT_ARTIFACT_DIR,
-      "repairs",
-      "R-001",
-      "desktop-chromium",
-    )
-  : null
 
 async function useTheme(page: Page, theme: "light" | "dark") {
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" })
@@ -64,15 +52,6 @@ test.describe("Focus management", () => {
     await page.keyboard.press("Escape")
     await expect(categoryDialog).toBeHidden()
     await expect(categoryTrigger).toBeFocused()
-
-    if (artifactDirectory) {
-      mkdirSync(artifactDirectory, { recursive: true })
-      await page.screenshot({
-        path: resolve(artifactDirectory, "controlled-dialog-focus-return.png"),
-        fullPage: true,
-        animations: "disabled",
-      })
-    }
   })
 
   for (const theme of ["light", "dark"] as const) {
@@ -101,13 +80,6 @@ test.describe("Focus management", () => {
         ).toBe(true)
       }
 
-      if (artifactDirectory) {
-        mkdirSync(resolve(artifactDirectory, theme), { recursive: true })
-        await page.screenshot({
-          path: resolve(artifactDirectory, theme, "drawer-focus-trap.png"),
-          animations: "disabled",
-        })
-      }
       await page.keyboard.press("Escape")
       await expect(menu).toBeHidden()
       await expect(menuTrigger).toBeFocused()
@@ -169,15 +141,6 @@ test.describe("Focus management", () => {
     await entry.press("Space")
     await expect(entry).toHaveAttribute("aria-current", "true")
     await expect(peek).toBeVisible()
-
-    if (artifactDirectory) {
-      mkdirSync(artifactDirectory, { recursive: true })
-      await page.screenshot({
-        path: resolve(artifactDirectory, "admin-log-keyboard-selection.png"),
-        fullPage: true,
-        animations: "disabled",
-      })
-    }
   })
 
   test("a confirm opened from a menu returns focus to the menu button", async ({ page, request }) => {
@@ -233,60 +196,6 @@ test.describe("Focus management", () => {
       await expect(list.getByRole("listitem", { name: "Focus row C" })).toBeFocused()
     } finally {
       await request.dispose()
-    }
-  })
-
-  test("keyboard template reorder preserves focus on the moved handle", async ({
-    page,
-    request,
-  }) => {
-    await useTheme(page, "light")
-    const token = await getCsrfToken(request)
-    const suffix = Date.now()
-    const categoryId = await ensureCategory(
-      request,
-      token,
-      "expense",
-      `Focus repair reorder ${suffix}`,
-    )
-    const names = [`Focus repair A ${suffix}`, `Focus repair B ${suffix}`]
-    for (const name of names) {
-      const response = await request.post("/api/templates", {
-        headers: { "X-CSRF-Token": token },
-        data: {
-          name,
-          type: "expense",
-          category_id: categoryId,
-          default_amount_cents: null,
-          title: null,
-          tags: [],
-        },
-      })
-      expect(response.ok()).toBeTruthy()
-    }
-
-    await page.goto("/templates")
-    const handle = page.getByRole("button", { name: `Reorder ${names[0]}` })
-    const reorderResponse = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === "/api/templates/reorder" &&
-        response.request().method() === "POST"
-    )
-    await handle.focus()
-    await handle.press("Space")
-    await page.waitForTimeout(100)
-    await handle.press("ArrowDown")
-    await page.waitForTimeout(100)
-    await handle.press("Space")
-    await reorderResponse
-    await expect(handle).toBeFocused()
-
-    if (artifactDirectory) {
-      mkdirSync(artifactDirectory, { recursive: true })
-      await page.screenshot({
-        path: resolve(artifactDirectory, "template-keyboard-reorder-focus.png"),
-        animations: "disabled",
-      })
     }
   })
 })

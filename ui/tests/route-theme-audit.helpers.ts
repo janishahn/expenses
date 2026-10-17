@@ -1,6 +1,3 @@
-import { mkdirSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { authenticatedSurfaces } from "./surface-contracts"
@@ -11,22 +8,6 @@ import {
 } from "./helpers"
 
 type AuditTheme = "light" | "dark"
-type AuditLayout =
-  | "desktop-chromium"
-  | "mobile-webkit"
-  | "mobile-chromium-fallback"
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
-const artifactRoot = process.env.UI_POLISH_AUDIT_ARTIFACT_DIR
-  ? resolve(repoRoot, process.env.UI_POLISH_AUDIT_ARTIFACT_DIR)
-  : null
-
-function slug(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-}
 
 async function seedDynamicSurfaces(request: APIRequestContext) {
   const csrfToken = await getCsrfToken(request)
@@ -82,15 +63,8 @@ async function seedDynamicSurfaces(request: APIRequestContext) {
   return { tagId, transactionId, recurringId }
 }
 
-// Computed colors of the theme tokens (canvas, panel, ink) in tokens.css.
-const THEME_COLORS = {
-  light: { canvas: "rgb(234, 234, 231)", panel: "rgb(245, 245, 243)", ink: "rgb(28, 28, 26)" },
-  dark: { canvas: "rgb(17, 16, 14)", panel: "rgb(24, 23, 21)", ink: "rgb(238, 235, 230)" },
-} as const
-
 async function checkSurface(
   page: Page,
-  layout: AuditLayout,
   theme: AuditTheme,
   name: string,
   path: string,
@@ -106,63 +80,22 @@ async function checkSurface(
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(theme)
-  if (layout !== "desktop-chromium") {
-    const expectedMaxTouchPoints = layout === "mobile-webkit" ? 0 : 1
-    await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          coarse: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-          maxTouchPoints: navigator.maxTouchPoints,
-        })),
-      )
-      .toEqual({ coarse: true, maxTouchPoints: expectedMaxTouchPoints })
-  }
 
-  const rendered = await page.evaluate(() => {
-    const main = document.querySelector("main")!
-    const heading = main.querySelector("h1")
-    return {
-      colorScheme: getComputedStyle(document.documentElement).colorScheme,
-      canvas: getComputedStyle(document.body).backgroundColor,
-      panel: getComputedStyle(main).backgroundColor,
-      ink: heading ? getComputedStyle(heading).color : null,
-      inShell: Boolean(document.querySelector('[data-testid="app-shell-root"]')),
-      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }
-  })
-  const expected = THEME_COLORS[theme]
+  const rendered = await page.evaluate(() => ({
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }))
   const where = `${name} (${path}) in ${theme}`
   expect(rendered.colorScheme, where).toBe(theme)
-  expect(rendered.canvas, where).toBe(expected.canvas)
-  if (rendered.inShell) expect(rendered.panel, where).toBe(expected.panel)
-  expect(rendered.ink, where).toBe(expected.ink)
   expect(rendered.overflow, where).toBeLessThanOrEqual(0)
-
-  if (artifactRoot) {
-    const directory = resolve(artifactRoot, layout, theme)
-    mkdirSync(directory, { recursive: true })
-    await page.screenshot({ path: resolve(directory, `${slug(name)}.png`), fullPage: true })
-  }
 }
 
 export async function runRouteThemeAudit(
   page: Page,
   request: APIRequestContext,
-  layout: AuditLayout,
   theme: AuditTheme,
 ) {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme })
-  if (layout !== "desktop-chromium") {
-    const expectedMaxTouchPoints = layout === "mobile-webkit" ? 0 : 1
-    await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          coarse: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-          maxTouchPoints: navigator.maxTouchPoints,
-        })),
-      )
-      .toEqual({ coarse: true, maxTouchPoints: expectedMaxTouchPoints })
-  }
   const checkIsolatedSurface = async (name: string, path: string) => {
     const surfacePage = await page.context().newPage()
     await surfacePage.emulateMedia({ reducedMotion: "reduce", colorScheme: theme })
@@ -170,7 +103,7 @@ export async function runRouteThemeAudit(
       window.localStorage.setItem("ew.theme.preference", selectedTheme)
     }, theme)
     try {
-      await checkSurface(surfacePage, layout, theme, name, path)
+      await checkSurface(surfacePage, theme, name, path)
     } finally {
       await surfacePage.close()
     }

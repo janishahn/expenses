@@ -1,6 +1,10 @@
 from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy import update
+
+from expenses.db.models import Transaction
+from expenses.recurrence.engine import local_today
 
 
 def _create_category(
@@ -37,6 +41,37 @@ def _create_transaction(
             "category_id": category_id,
             "title": title,
             "tags": [],
+        },
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
+def _transaction(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    amount_cents: int,
+    title: str,
+    on: date | None = None,
+    category_id: int | None = None,
+    txn_type: str = "expense",
+    tags: list[str] | None = None,
+    is_reimbursement: bool = False,
+) -> int:
+    on = on or local_today()
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": datetime.combine(on, datetime.min.time()).isoformat(),
+            "type": txn_type,
+            "amount_cents": amount_cents,
+            "category_id": category_id,
+            "title": title,
+            "tags": tags or [],
+            "is_reimbursement": is_reimbursement,
         },
     )
     assert response.status_code == 200
@@ -149,3 +184,43 @@ def test_weekly_digest_sections_and_metrics(
 def test_weekly_digest_rejects_invalid_week_of(api_client: TestClient) -> None:
     response = api_client.get("/api/digest?week_of=bad-date")
     assert response.status_code == 400
+
+
+def test_digest_recurring_postings_report_their_type(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Salary", "income")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Payday",
+            "type": "income",
+            "amount_cents": 300_000,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    posted = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=300_000,
+        title="Payday",
+        category_id=category_id,
+        txn_type="income",
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == posted)
+        .values(origin_rule_id=rule["id"])
+    )
+    db_session.commit()
+
+    postings = api_client.get("/api/digest").json()["recurring_postings"]
+    assert [(row["transaction_id"], row["type"]) for row in postings] == [
+        (posted, "income")
+    ]
