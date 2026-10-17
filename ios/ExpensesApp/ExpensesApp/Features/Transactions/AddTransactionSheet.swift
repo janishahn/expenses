@@ -414,7 +414,6 @@ private struct QuickAddButton: View {
             .buttonBorderShape(.circle)
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .accessibilityLabel("Quick Add")
-            .sensoryFeedback(.impact(weight: .light), trigger: adding) { _, opened in opened }
             .padding(.trailing, 18)
             .padding(.bottom, 8)
             .sheet(isPresented: $adding) {

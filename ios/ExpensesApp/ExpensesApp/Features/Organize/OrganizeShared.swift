@@ -177,6 +177,7 @@ struct MergeSheet: View {
     @State private var targetID: Int?
     @State private var counts: Result<MergeResponse, APIErrorInfo>?
     @State private var merging = false
+    @State private var merged = 0
     @State private var error: String?
 
     var body: some View {
@@ -251,6 +252,7 @@ struct MergeSheet: View {
             }
         }
         .interactiveDismissDisabled(merging)
+        .sensoryFeedback(.success, trigger: merged)
     }
 
     private func submit() async {
@@ -262,6 +264,7 @@ struct MergeSheet: View {
         defer { merging = false }
         error = await merge(targetID)
         if error == nil {
+            merged += 1
             dismiss()
             onMerged()
         }

@@ -599,6 +599,7 @@ private struct ReceiptsSection: View {
     @State private var replacing: ReceiptAttachment?
     @State private var removing: ReceiptAttachment?
     @State private var uploading = false
+    @State private var uploaded = 0
     @State private var error: String?
     @State private var previewURL: URL?
     @State private var viewing: ReceiptAttachment?
@@ -709,6 +710,7 @@ private struct ReceiptsSection: View {
             .task(id: files.map(\.id)) {
                 await loadThumbnails()
             }
+            .sensoryFeedback(.success, trigger: uploaded)
         } header: {
             HStack(spacing: 12) {
                 Text("Receipts")
@@ -832,6 +834,7 @@ private struct ReceiptsSection: View {
         uploading = true
         defer { uploading = false }
         if await model.uploadReceipt(receipt, transactionID: transaction.id, replacing: target?.id) {
+            uploaded += 1
             if target == nil {
                 // Receipts list newest first.
                 selected = 0
