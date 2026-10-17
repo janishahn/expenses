@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-17
+
 ### Changed
 - On iOS, an image receipt opens at once like a photo: it zooms out of its preview, sharpens when the original arrives, zooms with a pinch or a double tap, and closes with a swipe down. Opening it again needs no new download until you sign out or the app restarts, when the downloaded copies are deleted. PDFs still open in Quick Look.
 - On iOS, while you edit a field on a detail screen, Done sits in the navigation bar in place of the actions menu instead of floating above the keyboard.
@@ -534,7 +536,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.4...HEAD
+[0.8.4]: https://github.com/janishahn/expenses/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/janishahn/expenses/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/janishahn/expenses/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/janishahn/expenses/compare/v0.8.0...v0.8.1
