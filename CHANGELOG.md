@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- On iOS, sending an Assistant message hides the keyboard so the answer has room, and Send turns into Stop in place.
+
+### Fixed
+- On iOS, coming back to the Assistant showed the open chat from its first message. It now shows the latest answer.
+- On iOS, scrolling to the end of an Assistant chat after sending could show extra empty space and hide the question under the header. The question now rests just below the header, with its answer below it.
+- On iOS, a message could be sent while an Assistant chat was loading or had failed to load. A chat that fails to load now says so and offers Try Again.
+- On iOS, a new Assistant chat could scroll although it fits the screen, its recent chats faded out under the first question, and Retry under a stopped answer without text sat out of line.
+
 ## [0.8.4] - 2026-10-17
 
 ### Changed

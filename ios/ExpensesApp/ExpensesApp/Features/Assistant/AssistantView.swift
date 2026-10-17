@@ -3,16 +3,14 @@ import SwiftUI
 /// The Assistant: one chat at a time, kept on the server, as on the web.
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var input = ""
     @State private var sendTick = 0
     // Bumped to bring the newest question to the top of the screen.
     @State private var scrollRequest = 0
-    @State private var scrollPosition = ScrollPosition(edge: .top)
+    // Coming back to the screen shows the open chat at its latest answer.
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var viewportHeight: CGFloat = 0
-    @State private var latestQuestionHeight: CGFloat = 0
-    @State private var latestAnswerHeight: CGFloat = 0
     // A transaction the answer linked as [title](transaction:<id>).
     @State private var linkedTransactionID: Int?
 
@@ -91,40 +89,52 @@ struct AssistantView: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // Not lazy: scrolling to a turn must work before it has been laid out.
-                VStack(alignment: .leading, spacing: 22) {
+                Group {
                     switch model.assistantChatState {
                     case .loading:
                         ProgressView()
                             .frame(maxWidth: .infinity)
                             .containerRelativeFrame(.vertical)
                     case let .failed(message):
-                        Label(message, systemImage: "exclamationmark.circle")
-                            .foregroundStyle(ExpensesTheme.expense(for: scheme))
-                            .frame(maxWidth: .infinity)
-                            .containerRelativeFrame(.vertical)
+                        ContentUnavailableView {
+                            Label("Couldn't open the chat", systemImage: "exclamationmark.circle")
+                        } description: {
+                            Text(message)
+                        } actions: {
+                            Button("Try Again") {
+                                if let id = model.assistantChatID {
+                                    open(id)
+                                }
+                            }
+                        }
+                        .containerRelativeFrame(.vertical)
                     case .ready:
                         if model.assistantTurns.isEmpty {
                             recentList
                         } else {
-                            turns
+                            // Not lazy: scrolling to a turn must work before it has been laid out.
+                            VStack(alignment: .leading, spacing: 22) {
+                                turns
+                            }
+                            .padding(.vertical, 18)
                         }
                     }
-                    // Room below the newest exchange so a sent question can rest at the top of the
-                    // screen with space for the answer. It shrinks as the answer grows.
-                    Color.clear
-                        .frame(height: bottomReserve)
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 18)
             }
             .scrollPosition($scrollPosition)
             .scrollDismissesKeyboard(.interactively)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            // The header and composer insets settle during the push, after the first position, and
+            // would leave the end of the chat under the composer. It stays at its end until the
+            // person scrolls or sends.
+            .onScrollGeometryChange(for: EdgeInsets.self) { $0.contentInsets } action: { _, _ in
+                if scrollRequest == 0, !scrollPosition.isPositionedByUser {
+                    scrollPosition.scrollTo(edge: .bottom)
+                }
+            }
             .onChange(of: scrollRequest) {
                 guard let last = model.assistantTurns.last else { return }
-                latestQuestionHeight = 0
-                latestAnswerHeight = 0
                 Task {
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
                         proxy.scrollTo("\(last.id)-q", anchor: .top)
@@ -149,24 +159,21 @@ struct AssistantView: View {
     @ViewBuilder
     private var turns: some View {
         ForEach(model.assistantTurns) { turn in
-            AssistantQuestion(text: turn.userText)
-                .id("\(turn.id)-q")
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                    if turn.id == model.assistantTurns.last?.id {
-                        latestQuestionHeight = height
-                    }
+            let isLast = turn.id == model.assistantTurns.last?.id
+            VStack(alignment: .leading, spacing: 22) {
+                AssistantQuestion(text: turn.userText)
+                    .id("\(turn.id)-q")
+                AssistantAnswer(turn: turn, isLast: isLast) {
+                    model.retryLastAssistantTurn()
+                    scrollRequest += 1
                 }
-            AssistantAnswer(turn: turn, isLast: turn.id == model.assistantTurns.last?.id) {
-                model.retryLastAssistantTurn()
-                scrollRequest += 1
+                .id(turn.id)
             }
-            .id(turn.id)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                if turn.id == model.assistantTurns.last?.id {
-                    latestAnswerHeight = height
-                }
-            }
+            // An answer streamed on this screen gets a screen's height, less the bottom padding, so
+            // its question can rest at the top while the answer fills in below. An opened chat
+            // ends at its last answer.
+            .frame(minHeight: isLast && turn.live ? max(0, viewportHeight - 18) : nil, alignment: .top)
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
         }
     }
 
@@ -204,18 +211,14 @@ struct AssistantView: View {
         .frame(maxWidth: 420)
         .frame(maxWidth: .infinity)
         .containerRelativeFrame(.vertical)
+        // Gone at once when the first question goes in, instead of fading out beneath it.
+        .transition(.identity)
     }
 
     // The newest answer that failed while the screen was open.
     private var liveFailureID: String? {
         guard let last = model.assistantTurns.last, last.live, case .failed = last.status else { return nil }
         return last.id
-    }
-
-    // Only an answer streamed on this screen needs room; an opened chat ends at its last answer.
-    private var bottomReserve: CGFloat {
-        guard viewportHeight > 0, model.assistantTurns.last?.live == true else { return 0 }
-        return max(0, viewportHeight - latestQuestionHeight - latestAnswerHeight - 40)
     }
 
     private func send() {
@@ -240,14 +243,12 @@ private struct AssistantComposer: View {
     @ScaledMetric(relativeTo: .body) private var sendSize = 34.0
     @Binding var input: String
     let send: () -> Void
-    @FocusState private var inputFocused: Bool
     @State private var stopTick = 0
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Ask anything", text: $input, axis: .vertical)
                 .lineLimit(1...6)
-                .focused($inputFocused)
                 .padding(.vertical, 7)
                 .accessibilityLabel("Message the Assistant")
                 .accessibilityIdentifier("assistant.input")
@@ -258,11 +259,15 @@ private struct AssistantComposer: View {
                     model.cancelAssistantMessage()
                 } else {
                     send()
+                    // The answer gets the room the keyboard took. FocusState does not reach a field
+                    // in a safe area bar, so the keyboard is dismissed directly.
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             } label: {
                 Image(systemName: model.isAssistantStreaming ? "stop.fill" : "arrow.up")
                     .font(.body.weight(.semibold))
-                    .contentTransition(.symbolEffect(.replace))
+                    // Send and Stop swap in place; a symbol replace drops one out and grows the other.
+                    .contentTransition(.opacity)
                     .foregroundStyle(ExpensesTheme.surface(for: scheme))
                     .frame(width: sendSize, height: sendSize)
                     .background(ExpensesTheme.accent(for: scheme), in: .circle)
@@ -270,6 +275,7 @@ private struct AssistantComposer: View {
             }
             .buttonStyle(.plain)
             .opacity(model.isAssistantStreaming || canSend ? 1 : 0.45)
+            .animation(.easeOut(duration: 0.15), value: model.isAssistantStreaming)
             .disabled(!model.isAssistantStreaming && !canSend)
             .accessibilityLabel(model.isAssistantStreaming ? "Stop" : "Send")
             .accessibilityIdentifier(model.isAssistantStreaming ? "assistant.stop" : "assistant.send")
@@ -283,8 +289,10 @@ private struct AssistantComposer: View {
         .padding(.bottom, 8)
     }
 
+    // A chat that is loading or failed to load has no transcript to answer into.
     private var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isAssistantStreaming
+            && model.assistantChatState == .ready
     }
 }
 
@@ -419,6 +427,12 @@ private struct AssistantAnswer: View {
         isLast && !turn.changedData
     }
 
+    // A failed turn without answer text leads with the labeled Retry, which already lines up.
+    private var leadsWithLabeledRetry: Bool {
+        guard turn.answer.isEmpty, case .failed = turn.status else { return false }
+        return true
+    }
+
     private var actions: some View {
         HStack(spacing: 4) {
             if !turn.answer.isEmpty {
@@ -444,7 +458,8 @@ private struct AssistantAnswer: View {
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
-        .padding(.leading, turn.answer.isEmpty ? 0 : -12)
+        // An icon-only first button pulls left so its glyph lines up with the text above.
+        .padding(.leading, leadsWithLabeledRetry ? 0 : -12)
         .sensoryFeedback(.success, trigger: copied) { _, copied in copied }
         .task(id: copied) {
             guard copied else { return }
