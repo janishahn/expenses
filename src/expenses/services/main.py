@@ -2873,9 +2873,10 @@ class ReceiptAttachmentService:
         partial_path = thumb_path.with_name(f"{thumb_path.name}.{uuid4().hex}.partial")
         try:
             with Image.open(source_path) as image:
+                # JPEGs decode at a reduced scale, so check the size actually decoded.
+                image.draft("RGB", (edge, edge))
                 if image.width * image.height > settings.receipt_thumbnail_max_pixels:
                     raise ValueError("Attachment image is too large")
-                image.draft("RGB", (edge, edge))
                 # Phone cameras store photos sideways with an EXIF turn.
                 rgb = ImageOps.exif_transpose(image).convert("RGB")
                 rgb.thumbnail((edge, edge))

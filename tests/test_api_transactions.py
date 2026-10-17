@@ -855,49 +855,42 @@ def test_attachment_thumbnail_follows_photo_orientation(
     assert Image.open(BytesIO(thumbnail.content)).size == (20, 40)
 
 
-def test_attachment_thumbnail_rejects_images_over_pixel_limit(
+def test_attachment_thumbnail_pixel_limit_applies_to_decoded_size(
     api_client: TestClient,
     csrf_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("EXPENSES_RECEIPT_THUMBNAIL_MAX_PIXELS", "1")
+    # A 2048 px square is over the limit, but a JPEG of it decodes at 1024 px.
+    monkeypatch.setenv("EXPENSES_RECEIPT_THUMBNAIL_MAX_PIXELS", "2000000")
     get_settings.cache_clear()
-
-    category_response = api_client.post(
-        "/api/categories",
-        json={"name": "Receipt bomb", "type": "expense", "order": 0},
-        headers=csrf_headers,
+    category_id = _category(api_client, csrf_headers, "Large receipts")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=999,
+        title="Large receipt",
+        category_id=category_id,
     )
-    category_id = int(category_response.json()["id"])
-    create_response = api_client.post(
-        "/api/transactions",
-        json={
-            "date": "2026-04-19",
-            "occurred_at": "2026-04-19T10:15:00",
-            "type": "expense",
-            "amount_cents": 999,
-            "category_id": category_id,
-            "title": "Receipt bomb transaction",
-        },
-        headers=csrf_headers,
-    )
-    transaction_id = int(create_response.json()["id"])
 
     from PIL import Image
 
-    image_bytes = BytesIO()
-    Image.new("RGB", (3, 1), color="white").save(image_bytes, format="PNG")
-    upload_response = api_client.post(
-        f"/api/transactions/{transaction_id}/attachments",
-        files={"file": ("large-pixels.png", image_bytes.getvalue(), "image/png")},
-        headers=csrf_headers,
-    )
-    assert upload_response.status_code == 200
-    attachment_id = int(upload_response.json()["id"])
+    def thumbnail_status(filename: str, image_format: str, mime_type: str) -> int:
+        image_bytes = BytesIO()
+        Image.new("RGB", (2048, 2048), color="white").save(
+            image_bytes, format=image_format
+        )
+        upload_response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": (filename, image_bytes.getvalue(), mime_type)},
+            headers=csrf_headers,
+        )
+        assert upload_response.status_code == 200
+        attachment_id = int(upload_response.json()["id"])
+        thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
+        return thumbnail.status_code
 
-    thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
-
-    assert thumbnail.status_code == 400
+    assert thumbnail_status("large.jpg", "JPEG", "image/jpeg") == 200
+    assert thumbnail_status("large.png", "PNG", "image/png") == 400
 
 
 def test_transactions_list_total_counts_every_filtered_row(
