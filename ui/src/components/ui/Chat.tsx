@@ -28,6 +28,7 @@ import clsx from "clsx"
 import type { AssistantItem } from "../../app/api-types"
 import { Amount } from "./Amount"
 import { Button } from "./Button"
+import { UNCATEGORIZED } from "./nav"
 import { CategoryGlyph, UnknownGlyph } from "./CategoryGlyph"
 import { Menu, MenuItem } from "./Menu"
 import { Tooltip } from "./Tooltip"
@@ -126,14 +127,44 @@ function TransactionLink({ id, children }: { id: string; children: ReactNode }) 
   )
 }
 
-const urlTransform = (url: string) => (TRANSACTION_HREF.test(url) ? url : defaultUrlTransform(url))
+// The Assistant links a page as [Budgets](page:budgets).
+const PAGE_PREFIX = "page:"
+const PAGE_PATHS = new Map([
+  ["dashboard", "/"],
+  ["transactions", "/transactions"],
+  ["uncategorized", UNCATEGORIZED],
+  ["trash", "/transactions/deleted"],
+  ["budgets", "/budgets"],
+  ["insights", "/insights"],
+  ["forecast", "/forecast"],
+  ["recurring", "/recurring"],
+  ["templates", "/templates"],
+  ["rules", "/rules"],
+  ["categories", "/categories"],
+  ["tags", "/tags"],
+  ["what-if", "/scenarios"],
+  ["reconcile", "/reconciliation"],
+  ["reports", "/reports/builder"],
+  ["digest", "/digest"],
+  ["settings", "/settings"],
+])
+
+const urlTransform = (url: string) =>
+  TRANSACTION_HREF.test(url) || url.startsWith(PAGE_PREFIX) ? url : defaultUrlTransform(url)
 const REMARK_PLUGINS = [remarkGfm, remarkSmartypants]
 const WORD_PLUGINS = [rehypeWords]
+// Answers can quote imported transaction text, so they never load images: an image
+// URL would send whatever it carries to another server as soon as it renders.
+const NO_IMAGES = ["img"]
 const MARKDOWN_COMPONENTS: Components = {
   a: ({ node, href, ...props }) => {
     void node
     const transaction = href?.match(TRANSACTION_HREF)
     if (transaction) return <TransactionLink id={transaction[1]}>{props.children}</TransactionLink>
+    if (href?.startsWith(PAGE_PREFIX)) {
+      const path = PAGE_PATHS.get(href.slice(PAGE_PREFIX.length))
+      return path ? <Link to={path}>{props.children}</Link> : <>{props.children}</>
+    }
     return <a href={href} {...props} target="_blank" rel="noreferrer" />
   },
 }
@@ -156,6 +187,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         rehypePlugins={animate ? WORD_PLUGINS : undefined}
         components={MARKDOWN_COMPONENTS}
         urlTransform={urlTransform}
+        disallowedElements={NO_IMAGES}
       >
         {partial ? healPartial(content) : content}
       </Markdown>
@@ -247,7 +279,9 @@ function ActivityStep({ item, enter, working }: { item: ActivityItem; enter: boo
         {item.kind === "tool" && item.detail ? <div className={s.stepDetail}>{item.detail}</div> : null}
         {item.kind === "thinking" && item.text && summaryOpen ? (
           <div className={clsx(s.md, s.stepDetail, s.stepSummary)}>
-            <Markdown remarkPlugins={REMARK_PLUGINS}>{item.text}</Markdown>
+            <Markdown remarkPlugins={REMARK_PLUGINS} disallowedElements={NO_IMAGES}>
+              {item.text}
+            </Markdown>
           </div>
         ) : null}
       </div>

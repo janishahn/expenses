@@ -34,7 +34,8 @@ ANSWER = (
     "You spent **1 234,56 €** in May.\n\n"
     "- Groceries: 800,00 €\n"
     "- Rent: 434,56 €\n\n"
-    "That is less than in April."
+    "That is less than in April. See [Budgets](page:budgets).\n\n"
+    "![Chart](https://example.invalid/chart.png)"
 )
 SLOW_ANSWER = " ".join(f"Word{index}" for index in range(400))
 LONG_ANSWER = [f"Spending detail {index}.\n\n" for index in range(1, 81)]
@@ -83,11 +84,20 @@ def _call(messages: list[dict], name: str, arguments: dict) -> list[dict]:
 
 
 def _matching(messages: list[dict], token: str, kind: str) -> list[dict]:
+    query = token.replace("'", "''")
     return _call(
         messages,
-        "query_transactions",
-        {"start": "2000-01-01", "end": "2099-12-31", "kind": kind, "text": token},
+        "sql_query",
+        {
+            "label": f"Transactions matching {token}",
+            "sql": f"select id from transactions where kind = '{kind}' "
+            f"and (fuzzy(title, '{query}') or fuzzy(description, '{query}'))",
+        },
     )
+
+
+def _propose(messages: list[dict], change: dict) -> list[dict]:
+    return _call(messages, "propose_change", {"change": change})
 
 
 def _write_script(messages: list[dict], question: str) -> list[dict] | None:
@@ -109,23 +119,22 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
     if words[0] == "tag":
         if not results:
             return _matching(messages, token, "expense")
-        ids = [row["id"] for row in results[0]["transactions"]]
-        return _call(
+        ids = [row[0] for row in results[0]["rows"]]
+        return _propose(
             messages,
-            "edit_transactions",
-            {"transaction_ids": ids, "add_tags": ["work"]},
+            {"kind": "edit_transactions", "transaction_ids": ids, "add_tags": ["work"]},
         )
     if words[0] == "pay":
         if not results:
             return _matching(messages, token, "reimbursement")
         if len(results) == 1:
             return _matching(messages, token, "expense")
-        return _call(
+        return _propose(
             messages,
-            "allocate_reimbursement",
             {
-                "reimbursement_id": results[0]["transactions"][0]["id"],
-                "expense_ids": [row["id"] for row in results[1]["transactions"]],
+                "kind": "allocate_reimbursement",
+                "reimbursement_id": results[0]["rows"][0][0],
+                "expense_ids": [row[0] for row in results[1]["rows"]],
                 "split": "share",
                 "share_percent": 50,
             },
@@ -138,10 +147,10 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
             rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
         )[1]
         today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
-        return _call(
+        return _propose(
             messages,
-            "set_budgets",
             {
+                "kind": "set_budgets",
                 "budgets": [
                     {
                         "category_id": int(category_id),
@@ -149,7 +158,7 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
                         "amount_cents": 30_000,
                         "applies": "onward",
                     }
-                ]
+                ],
             },
         )
     applied = [
@@ -158,7 +167,7 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
         if m["role"] == "tool"
         and (result := json.loads(m["content"])).get("status") == "applied"
     ]
-    return _call(messages, "undo_action", {"action_id": applied[-1]["action_id"]})
+    return _propose(messages, {"kind": "undo", "action_id": applied[-1]["action_id"]})
 
 
 def _script(messages: list[dict]) -> tuple[list[dict], float]:
@@ -187,8 +196,8 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
             "title": "Lunch",
         }
         count = 10 if "ten" in question.lower() else 1
-        return _call(
-            messages, "create_transactions", {"transactions": [lunch] * count}
+        return _propose(
+            messages, {"kind": "create_transactions", "transactions": [lunch] * count}
         ), 0.01
     if (chunks := _write_script(messages, question)) is not None:
         return chunks, 0.01
@@ -205,12 +214,14 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
                         "id": f"call_{len(messages)}",
                         "type": "function",
                         "function": {
-                            "name": "query_transactions",
+                            "name": "sql_query",
                             "arguments": json.dumps(
                                 {
-                                    "start": "2026-05-01",
-                                    "end": "2026-05-31",
-                                    "group_by": "category",
+                                    "label": "Spending by category, May 2026",
+                                    "sql": "select category, sum(net_cents) "
+                                    "from transactions where kind = 'expense' "
+                                    "and date between '2026-05-01' and '2026-05-31' "
+                                    "group by category",
                                 }
                             ),
                         },

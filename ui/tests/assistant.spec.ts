@@ -21,7 +21,7 @@ import {
 // tests/e2e_ai_provider.py scripts the AI backend from the question: "slow", "long",
 // "fail once", "add lunch", the write scenarios, or the default turn with reasoning, a
 // note, one ledger read, and this answer.
-const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April."
+const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April. See [Budgets](page:budgets).\n\n![Chart](https://example.invalid/chart.png)"
 
 const ledgerFooter = (page: Page) => page.getByText(/^\d+–\d+ of \d+$/)
 

@@ -29,16 +29,22 @@ from expenses.ai.assistant import (
     AssistantService,
     stream_turn,
 )
+from expenses.ai import assistant_tools
 from expenses.ai.assistant_actions import (
     ActionConflict,
     BudgetRequest,
+    BudgetScope,
     InvalidProposal,
     NewTransaction,
     apply_action,
     propose_allocate,
+    propose_archive,
     propose_budgets,
     propose_create,
     propose_edit,
+    propose_end_recurring,
+    propose_remove_budgets,
+    propose_trash,
     propose_undo,
 )
 from expenses.ai.assistant_tools import AssistantReader
@@ -50,9 +56,12 @@ from expenses.db.models import (
     AssistantChat,
     AssistantTurn,
     BudgetFrequency,
+    Category,
+    IntervalUnit,
     LLMJob,
     ReimbursementAllocation,
     RuleMatchType,
+    Tag,
     Transaction,
     TransactionType,
     User,
@@ -60,14 +69,17 @@ from expenses.db.models import (
 from expenses.db.session import Base, _enable_sqlite_pragmas
 from expenses.schemas import (
     BudgetOverrideIn,
+    BudgetTemplateApplyFromIn,
     BudgetTemplateIn,
     CategoryIn,
+    RecurringRuleIn,
     RuleIn,
     TransactionIn,
 )
 from expenses.services import (
     BudgetService,
     CategoryService,
+    RecurringRuleService,
     ReimbursementService,
     RuleService,
     TransactionService,
@@ -216,223 +228,103 @@ def _seed_spending_fixture(session: Session) -> dict[str, int]:
 
 def _reader(session: Session, today: date = date(2026, 6, 27)) -> AssistantReader:
     return AssistantReader(
-        session, user_id=1, now=datetime.combine(today, datetime.min.time())
+        session,
+        user_id=1,
+        now=datetime.combine(today, datetime.min.time()),
+        client="web",
     )
 
 
-def test_query_transactions_uses_net_amounts() -> None:
+def test_sql_query_reads_only_the_users_rows_with_net_amounts() -> None:
     with make_session() as session:
         ids = _seed_spending_fixture(session)
-        reader = _reader(session)
-        june = {"start": date(2026, 6, 1), "end": date(2026, 6, 30)}
-
-        by_category = reader.query_transactions(**june, group_by="category")
-        assert by_category["totals"] == {
-            "count": 3,
-            "net_cents": 49_000,
-            "gross_cents": 61_000,
-            "reimbursed_cents": 12_000,
-        }
-        assert [
-            (row["label"], row["net_cents"], row["share_percent"])
-            for row in by_category["groups"]
-        ] == [("Groceries", 31_000, 63.3), ("Free time", 18_000, 36.7)]
-
-        largest = reader.query_transactions(**june, sort="amount_desc", limit=2)
-        assert [row["title"] for row in largest["transactions"]] == [
-            "Big grocery run",
-            "Concert weekend",
-        ]
-        concert = largest["transactions"][1]
-        assert concert["id"] == ids["concert_id"]
-        assert (concert["net_cents"], concert["gross_cents"]) == (18_000, 30_000)
-        assert largest["next_offset"] == 2
-
-        fuzzy = reader.query_transactions(**june, text="grocerry run")
-        assert [row["title"] for row in fuzzy["transactions"]] == ["Big grocery run"]
-
-        reimbursements = reader.query_transactions(**june, kind="reimbursement")
-        assert [row["title"] for row in reimbursements["transactions"]] == [
-            "Friend paid back ticket"
-        ]
-        assert reader.query_transactions(**june, kind="income")["totals"]["count"] == 0
-
-
-def test_query_transactions_compares_groups_with_a_baseline() -> None:
-    with make_session() as session:
-        _seed_spending_fixture(session)
-        category_service = CategoryService(session, user_id=1)
-        transaction_service = TransactionService(session, user_id=1)
-        for index in range(9):
-            category = category_service.create(
-                CategoryIn(
-                    name=f"Baseline small {index + 1}",
-                    type=TransactionType.expense,
-                    order=index + 2,
-                )
-            )
-            _create_txn(
-                transaction_service,
-                title=f"Baseline small spend {index + 1}",
-                amount_cents=(index + 1) * 100,
-                txn_date=date(2026, 5, 10),
-                category_id=category.id,
-            )
-
-        comparison = _reader(session).query_transactions(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            group_by="category",
-            compare_start=date(2026, 5, 1),
-            compare_end=date(2026, 5, 31),
-        )
-
-        assert comparison["baseline"]["totals"]["net_cents"] == 28_500
-        assert comparison["baseline"]["net_delta_cents"] == 20_500
-        groups = {row["label"]: row for row in comparison["groups"]}
-        assert comparison["groups"][0]["label"] == "Free time"
-        assert groups["Free time"]["delta_cents"] == 18_000
-        assert groups["Groceries"]["delta_cents"] == 7_000
-        assert groups["Baseline small 1"]["net_cents"] == 0
-        assert groups["Baseline small 1"]["baseline_net_cents"] == 100
-
-
-def test_query_transactions_groups_by_tag_title_and_time() -> None:
-    with make_session() as session:
-        snacks = CategoryService(session, user_id=1).create(
-            CategoryIn(name="Snacks", type=TransactionType.expense, order=0)
-        )
-        transaction_service = TransactionService(session, user_id=1)
-        for day in range(1, 31):
-            _create_txn(
-                transaction_service,
-                title="REWE" if day % 2 else "rewe ",
-                amount_cents=100,
-                txn_date=date(2026, 6, day),
-                category_id=snacks.id,
-                tags=["Snacks"],
-            )
-        _create_txn(
-            transaction_service,
-            title="Kiosk",
-            amount_cents=250,
-            txn_date=date(2026, 6, 1),
-            category_id=snacks.id,
-        )
-        reader = _reader(session)
-        june = {"start": date(2026, 6, 1), "end": date(2026, 6, 30)}
-
-        by_tag = reader.query_transactions(**june, group_by="tag")
-        assert [
-            (row["label"], row["count"], row["net_cents"]) for row in by_tag["groups"]
-        ] == [
-            ("Snacks", 30, 3_000),
-            ("No tag", 1, 250),
-        ]
-
-        by_title = reader.query_transactions(**june, group_by="title")
-        assert [(row["count"], row["net_cents"]) for row in by_title["groups"]] == [
-            (30, 3_000),
-            (1, 250),
-        ]
-
-        by_week = reader.query_transactions(**june, group_by="week")
-        # 1 June 2026 is a Monday.
-        assert [row["key"] for row in by_week["groups"]] == [
-            "2026-06-01",
-            "2026-06-08",
-            "2026-06-15",
-            "2026-06-22",
-            "2026-06-29",
-        ]
-        assert by_week["groups"][0]["net_cents"] == 950
-        # Time-ordered pages start from the newest week.
-        pages = [
-            reader.query_transactions(**june, group_by="week", limit=2, offset=offset)
-            for offset in (0, 2, 4)
-        ]
-        assert [[row["key"] for row in page["groups"]] for page in pages] == [
-            ["2026-06-22", "2026-06-29"],
-            ["2026-06-08", "2026-06-15"],
-            ["2026-06-01"],
-        ]
-        assert [page.get("next_offset") for page in pages] == [2, 4, None]
-        assert pages[0]["group_count"] == 5
-        second_title = reader.query_transactions(
-            **june, group_by="title", limit=1, offset=1
-        )
-        assert [row["net_cents"] for row in second_title["groups"]] == [250]
-        assert "next_offset" not in second_title
-
-        by_weekday = reader.query_transactions(**june, group_by="weekday")
-        assert [row["label"] for row in by_weekday["groups"]][:2] == [
-            "Monday",
-            "Tuesday",
-        ]
-        assert by_weekday["groups"][-1]["label"] == "Sunday"
-
-        months = reader.query_transactions(**june, group_by="month", limit=1)
-        assert [row["key"] for row in months["groups"]] == ["2026-06"]
-
-
-def test_query_transactions_sorts_by_amount_across_all_matches() -> None:
-    with make_session() as session:
-        category = CategoryService(session, user_id=1).create(
+        other = CategoryService(session, user_id=2).create(
             CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
         )
-        transaction_service = TransactionService(session, user_id=1)
-        for index in range(250):
-            _create_txn(
-                transaction_service,
-                title=f"Small {index}",
-                amount_cents=1_000,
-                txn_date=date(2026, 6, 1),
-                category_id=category.id,
-            )
         _create_txn(
-            transaction_service,
-            title="Largest oldest",
-            amount_cents=500_000,
-            txn_date=date(2020, 1, 1),
-            category_id=category.id,
+            TransactionService(session, user_id=2),
+            title="Someone else's groceries",
+            amount_cents=99_900,
+            txn_date=date(2026, 6, 3),
+            category_id=other.id,
         )
-
-        result = _reader(session).query_transactions(
-            start=date(2020, 1, 1), end=date(2026, 6, 30), sort="amount_desc", limit=1
+        TransactionService(session, user_id=1).soft_delete(
+            _create_txn(
+                TransactionService(session, user_id=1),
+                title="Deleted dinner",
+                amount_cents=5_000,
+                txn_date=date(2026, 6, 4),
+                category_id=ids["leisure_id"],
+            ).id
         )
-
-        assert result["totals"]["count"] == 251
-        assert [txn["title"] for txn in result["transactions"]] == ["Largest oldest"]
-
-
-def test_query_transactions_rejects_bad_periods() -> None:
-    with make_session() as session:
         reader = _reader(session)
-        backwards = reader.query_transactions(
-            start=date(2026, 6, 30), end=date(2026, 6, 1)
+
+        by_category = reader.sql_query(
+            sql="select category, sum(net_cents) from transactions "
+            "where kind = 'expense' and date like '2026-06%' "
+            "group by category order by 2 desc"
         )
-        half_comparison = reader.query_transactions(
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
-            compare_start=date(2026, 5, 1),
+        assert by_category == {
+            "ok": True,
+            "columns": ["category", "sum(net_cents)"],
+            "rows": [["Groceries", 31_000], ["Free time", 18_000]],
+        }
+        concert = reader.sql_query(
+            sql="select amount_cents, reimbursed_cents, net_cents from transactions "
+            f"where id = {ids['concert_id']}"
         )
-    assert backwards["ok"] is False
-    assert half_comparison["status"] == "invalid_comparison"
+        assert concert["rows"] == [[30_000, 12_000, 18_000]]
+        fuzzy = reader.sql_query(
+            sql="select title from transactions where fuzzy(title, 'grocerry run')"
+        )
+        assert fuzzy["rows"] == [["Big grocery run"]]
+        assert reader.sql_query(sql="select title, kind from trash")["rows"] == [
+            ["Deleted dinner", "expense"]
+        ]
+        # A table named in a query is always this user's copy.
+        assert reader.sql_query(
+            sql="with transactions as (select * from main.transactions) "
+            "select count(*) from transactions"
+        )["rows"] == [[5]]
 
 
-def test_reader_reports_budgets_links_and_reimbursements() -> None:
+def test_sql_query_refuses_writes_and_runaway_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with make_session() as session:
+        _seed_spending_fixture(session)
+        reader = _reader(session)
+
+        assert reader.sql_query(sql="delete from transactions") == {
+            "ok": False,
+            "status": "invalid_sql",
+            "message": "Only a SELECT can run; it can't change data or settings.",
+        }
+        assert reader.sql_query(sql="attach ':memory:' as other")["ok"] is False
+        assert reader.sql_query(sql="select * from users")["message"] == (
+            "no such table: users"
+        )
+        assert reader.sql_query(sql="select 1; select 2")["ok"] is False
+        many = reader.sql_query(
+            sql="with recursive n(i) as (select 1 union all select i + 1 from n "
+            "where i < 150) select i from n"
+        )
+        assert (len(many["rows"]), many["more"]) == (100, True)
+
+        monkeypatch.setattr(assistant_tools, "SQL_SECONDS", 0.05)
+        endless = reader.sql_query(
+            sql="with recursive n(i) as (select 1 union all select i + 1 from n) "
+            "select count(*) from n"
+        )
+        assert endless["status"] == "invalid_sql"
+        assert endless["message"].startswith("The query ran longer than")
+        # The copy stays usable after a refused query.
+        assert reader.sql_query(sql="select count(*) from tags")["rows"] == [[2]]
+
+
+def test_reader_reports_budgets_balance_and_reference() -> None:
     with make_session() as session:
         ids = _seed_spending_fixture(session)
-        salary = CategoryService(session, user_id=1).list_all()[2]
-        _create_txn(
-            TransactionService(session, user_id=1),
-            title="Deposit back",
-            amount_cents=5_000,
-            txn_date=date(2026, 6, 20),
-            category_id=salary.id,
-            txn_type=TransactionType.income,
-            is_reimbursement=True,
-        )
         reader = _reader(session)
 
         budgets = {
@@ -442,44 +334,18 @@ def test_reader_reports_budgets_links_and_reimbursements() -> None:
         assert budgets[ids["groceries_id"]]["remaining_cents"] == 4_000
         assert budgets[ids["leisure_id"]]["remaining_cents"] == -6_000
 
-        reimbursement = reader.get_transaction(transaction_id=ids["reimbursement_id"])
-        assert (
-            reimbursement["transaction"]["allocated_to"][0]["transaction_id"]
-            == (ids["concert_id"])
-        )
-        concert = reader.get_transaction(transaction_id=ids["concert_id"])
-        assert concert["transaction"]["net_cents"] == 18_000
-        assert concert["transaction"]["reimbursed_by"][0]["amount_cents"] == 12_000
-
-        open_only = reader.list_reimbursements(
-            start=date(2026, 6, 1), end=date(2026, 6, 30), only_open=True
-        )
-        assert [
-            (row["title"], row["unallocated_cents"])
-            for row in open_only["reimbursements"]
-        ] == [("Deposit back", 5_000)]
+        history = reader.get_balance(months_back=2, months_ahead=0)
+        assert [row["month"] for row in history["history"]] == ["2026-05", "2026-06"]
+        assert "forecast" not in history
+        forecast = reader.get_balance(months_back=0, months_ahead=3)
+        assert len(forecast["forecast"]["months"]) == 3
+        assert "history" not in forecast
 
         reference = reader.reference()
         assert "Today is Saturday, 2026-06-27." in reference
+        assert "The user is in the web app." in reference
         assert f"- {ids['groceries_id']}: Groceries, expense" in reference
         assert ": Food" in reference
-
-        # A transaction lists its newest 100 allocations and says there are more.
-        deposit_id = open_only["reimbursements"][0]["id"]
-        for index in range(101):
-            expense = _create_txn(
-                TransactionService(session, user_id=1),
-                title=f"Shared {index}",
-                amount_cents=10,
-                txn_date=date(2026, 6, 21),
-                category_id=ids["groceries_id"],
-            )
-            ReimbursementService(session, user_id=1).upsert_allocation(
-                deposit_id, expense.id, 10
-            )
-        deposit = reader.get_transaction(transaction_id=deposit_id)["transaction"]
-        assert len(deposit["allocated_to"]) == 100
-        assert deposit["more_allocated_to"] is True
 
 
 def _session_factory(path: Path | None = None):
@@ -532,7 +398,10 @@ async def _collect(
     return [
         json.loads(line)
         async for line in stream_turn(
-            turn, model=_test_model(stream_function), session_factory=factory
+            turn,
+            model=_test_model(stream_function),
+            session_factory=factory,
+            client="web",
         )
     ]
 
@@ -551,18 +420,24 @@ def test_assistant_route_streams_and_saves_a_turn(
 ) -> None:
     _enable_chat(monkeypatch)
     answer = "Nothing matched in June.\n\n- No transactions"
+    heard: list[dict] = []
 
     async def stream(messages, info):
-        if not _after_tool(messages):
+        if returns := _tool_returns(messages):
+            heard.append(returns[-1].content)
+        else:
+            assert "The user is in the web app." in info.instructions
             yield {0: DeltaThinkingPart(content="Look up June.")}
             yield "Checking June."
-            yield {
-                1: DeltaToolCall(
-                    name="query_transactions",
-                    json_args='{"start": "2026-06-01", "end": "2026-06-30"}',
-                    tool_call_id="call-1",
-                )
-            }
+            yield _call(
+                "sql_query",
+                {
+                    "label": "June spending",
+                    "sql": "select count(*) from transactions "
+                    "where date like '2026-06%'",
+                },
+                "call-1",
+            )
             return
         yield answer[:10]
         yield answer[10:]
@@ -595,7 +470,9 @@ def test_assistant_route_streams_and_saves_a_turn(
         ("tool", "done"),
         ("text", "done"),
     ]
+    assert items[2]["label"] == "June spending"
     assert items[3]["text"] == answer
+    assert heard == [{"ok": True, "columns": ["count(*)"], "rows": [[0]]}]
 
     chat = api_client.get(f"/api/assistant/chats/{events[0]['chat_id']}").json()
     [turn] = chat["turns"]
@@ -633,6 +510,8 @@ def test_assistant_allows_mobile_bearer_without_csrf(
     anonymous_api_client.cookies.clear()
 
     async def stream(messages, info):
+        # The bearer token marks the iOS app.
+        assert "The user is in the iOS app." in info.instructions
         yield "Net spending is down."
 
     sessions = app_main.app.dependency_overrides[app_main.get_db]
@@ -833,7 +712,7 @@ async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
     events = [
         json.loads(line)
         async for line in stream_turn(
-            retry, model=_test_model(stream), session_factory=factory
+            retry, model=_test_model(stream), session_factory=factory, client="web"
         )
     ]
 
@@ -870,7 +749,9 @@ async def test_assistant_stop_saves_the_partial_turn() -> None:
         turn = AssistantService(session, user_id=1).new_turn(
             chat_id=None, text="Summarize June"
         )
-    lines = stream_turn(turn, model=_test_model(stream), session_factory=factory)
+    lines = stream_turn(
+        turn, model=_test_model(stream), session_factory=factory, client="web"
+    )
     assert json.loads(await anext(lines))["type"] == "start"
 
     async def buffer_filled() -> None:
@@ -915,7 +796,9 @@ async def test_assistant_keeps_a_chat_deleted_during_a_turn_deleted() -> None:
         follow_up = AssistantService(session, user_id=1).new_turn(
             chat_id=chat_id, text="And now?"
         )
-    lines = stream_turn(follow_up, model=_test_model(stream), session_factory=factory)
+    lines = stream_turn(
+        follow_up, model=_test_model(stream), session_factory=factory, client="web"
+    )
     assert json.loads(await anext(lines))["type"] == "start"
     await streaming.wait()
     with factory() as session:
@@ -1039,7 +922,8 @@ async def test_assistant_strict_tools_stay_within_anthropic_limits() -> None:
         for name in node.get("properties", {})
     )
     unions = sum(
-        "anyOf" in node or isinstance(node.get("type"), list) for node in nodes
+        "anyOf" in node or "oneOf" in node or isinstance(node.get("type"), list)
+        for node in nodes
     )
     assert len(strict_tools) <= 20
     assert optional <= 24
@@ -1114,6 +998,8 @@ def _tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
 
 
 def _call(name: str, args: dict, call_id: str) -> dict[int, DeltaToolCall]:
+    if name == "propose_change":
+        args = {"change": args}
     return {
         1: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=call_id)
     }
@@ -1129,7 +1015,10 @@ async def _decide(
     return [
         json.loads(line)
         async for line in stream_turn(
-            turn, model=_test_model(stream_function), session_factory=factory
+            turn,
+            model=_test_model(stream_function),
+            session_factory=factory,
+            client="web",
         )
     ]
 
@@ -1151,8 +1040,9 @@ async def test_assistant_applies_an_approved_allocation_and_undoes_it() -> None:
         if len(heard) == 0:
             yield "Allocating half of each."
             yield _call(
-                "allocate_reimbursement",
+                "propose_change",
                 {
+                    "kind": "allocate_reimbursement",
                     "reimbursement_id": ids["refund_id"],
                     "expense_ids": [ids["hotel_id"], ids["train_id"]],
                     "split": "share",
@@ -1161,7 +1051,11 @@ async def test_assistant_applies_an_approved_allocation_and_undoes_it() -> None:
                 "call-1",
             )
             return
-        yield _call("undo_action", {"action_id": heard[0]["action_id"]}, "call-2")
+        yield _call(
+            "propose_change",
+            {"kind": "undo", "action_id": heard[0]["action_id"]},
+            "call-2",
+        )
 
     events = await _collect(factory, stream, "The refund covers half of the trip")
     chat_id = events[0]["chat_id"]
@@ -1254,8 +1148,9 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
             return
         # Every turn reuses one tool call id, as some local backends do.
         yield _call(
-            "create_transactions",
+            "propose_change",
             {
+                "kind": "create_transactions",
                 "transactions": [
                     {
                         "date": "2026-06-21",
@@ -1265,7 +1160,7 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
                         "category_id": ids["travel_id"],
                         "tags": ["Work"],
                     }
-                ]
+                ],
             },
             "call-1",
         )
@@ -1326,8 +1221,9 @@ async def test_assistant_retry_keeps_a_change_approved_while_it_ran() -> None:
             yield "Answer again."
             return
         yield _call(
-            "create_transactions",
+            "propose_change",
             {
+                "kind": "create_transactions",
                 "transactions": [
                     {
                         "date": "2026-06-21",
@@ -1337,7 +1233,7 @@ async def test_assistant_retry_keeps_a_change_approved_while_it_ran() -> None:
                         "category_id": ids["travel_id"],
                         "tags": [],
                     }
-                ]
+                ],
             },
             "call-1",
         )
@@ -1347,7 +1243,9 @@ async def test_assistant_retry_keeps_a_change_approved_while_it_ran() -> None:
     [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
     with factory() as session:
         retry = AssistantService(session, user_id=1).retry_turn(chat_id)
-    lines = stream_turn(retry, model=_test_model(stream), session_factory=factory)
+    lines = stream_turn(
+        retry, model=_test_model(stream), session_factory=factory, client="web"
+    )
     assert json.loads(await anext(lines))["type"] == "start"
     await retrying.wait()
     await _decide(factory, stream, chat_id, approval["id"], approve=True)
@@ -1386,8 +1284,12 @@ async def test_assistant_does_not_apply_a_change_the_data_outgrew() -> None:
             yield "It changed meanwhile."
             return
         yield _call(
-            "edit_transactions",
-            {"transaction_ids": [supermarket.id], "category_id": ids["leisure_id"]},
+            "propose_change",
+            {
+                "kind": "edit_transactions",
+                "transaction_ids": [supermarket.id],
+                "category_id": ids["leisure_id"],
+            },
             "call-1",
         )
 
@@ -1441,7 +1343,7 @@ def test_assistant_proposals_refuse_what_they_cannot_do_exactly() -> None:
                     expense_ids=[supermarket.id],
                     split="share",
                     share_percent=50,
-                    amounts_cents=None,
+                    amounts_cents=[],
                 )
             )
             == "exceeds_reimbursement"
@@ -1604,6 +1506,122 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
             propose_undo(reader, created.id)
 
 
+def test_assistant_destructive_changes_undo_exactly() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_spending_fixture(session)
+        reader = _reader(session)
+
+        def refused(build) -> str:
+            with pytest.raises(InvalidProposal) as caught:
+                build()
+            return caught.value.status
+
+        supermarket = session.scalars(
+            select(Transaction).where(Transaction.title == "Weekly supermarket")
+        ).one()
+        trash = propose_trash(reader, [supermarket.id])
+        assert (trash.card.title, trash.card.rows[0].detail) == (
+            "Move 1 transaction to Trash",
+            "Groceries",
+        )
+        trashed = _apply_proposal(session, trash)
+        assert supermarket.deleted_at is not None
+        restore = propose_undo(reader, trashed.id)
+        assert [row.detail for row in restore.card.rows] == ["Restores from Trash"]
+        _apply_proposal(session, restore)
+        assert supermarket.deleted_at is None
+
+        food = session.scalars(select(Tag).where(Tag.name == "Food")).one()
+        uncategorized = CategoryService(session, user_id=1).get_or_create_uncategorized(
+            TransactionType.expense
+        )
+        assert (
+            refused(
+                lambda: propose_archive(
+                    reader, category_ids=[uncategorized.id], tag_ids=[]
+                )
+            )
+            == "uncategorized"
+        )
+        archive = propose_archive(
+            reader, category_ids=[ids["leisure_id"]], tag_ids=[food.id]
+        )
+        assert archive.card.title == "Archive 1 category and 1 tag"
+        archived = _apply_proposal(session, archive)
+        leisure = session.get_one(Category, ids["leisure_id"])
+        assert leisure.archived_at is not None
+        assert food.archived_at is not None
+        _apply_proposal(session, propose_undo(reader, archived.id))
+        assert leisure.archived_at is None
+        assert food.archived_at is None
+
+        budgets = BudgetService(session, user_id=1)
+        budgets.apply_template_from(
+            BudgetTemplateApplyFromIn(
+                frequency=BudgetFrequency.monthly,
+                category_id=ids["leisure_id"],
+                amount_cents=15_000,
+                starts_on=date(2026, 9, 1),
+            )
+        )
+        budgets.upsert_override(
+            BudgetOverrideIn(
+                year=2026, month=8, category_id=ids["leisure_id"], amount_cents=20_000
+            )
+        )
+
+        def leisure_budgets() -> list[int | None]:
+            return [
+                {
+                    row.scope_category_id: row.amount_cents
+                    for row in budgets.effective_budgets_for_month(2026, month)
+                }.get(ids["leisure_id"])
+                for month in (6, 7, 8, 9)
+            ]
+
+        assert leisure_budgets() == [12_000, 12_000, 20_000, 15_000]
+        july_on = [BudgetScope(category_id=ids["leisure_id"], month="2026-07")]
+        remove = propose_remove_budgets(reader, july_on)
+        assert [
+            (row.title, row.detail, row.amount_cents) for row in remove.card.rows
+        ] == [("Free time", "From Jul 2026 on", 12_000)]
+        removed = _apply_proposal(session, remove)
+        assert leisure_budgets() == [12_000, None, None, None]
+        assert refused(lambda: propose_remove_budgets(reader, july_on)) == "no_budget"
+        undo_removal = propose_undo(reader, removed.id)
+        assert [(row.detail, row.amount_cents) for row in undo_removal.card.rows] == [
+            ("Jan 2026 – Aug 2026 · was Jan 2026 – Jun 2026", 12_000),
+            ("From Sep 2026 · restored", 15_000),
+            ("Aug 2026 only · restored", 20_000),
+        ]
+        _apply_proposal(session, undo_removal)
+        assert leisure_budgets() == [12_000, 12_000, 20_000, 15_000]
+
+        gym = RecurringRuleService(session, user_id=1).create(
+            RecurringRuleIn(
+                name="Gym",
+                type=TransactionType.expense,
+                amount_cents=3_000,
+                category_id=ids["leisure_id"],
+                anchor_date=date(2026, 1, 5),
+                interval_unit=IntervalUnit.month,
+                interval_count=1,
+                next_occurrence=date(2026, 7, 5),
+            )
+        )
+        end = propose_end_recurring(
+            reader, recurring_ids=[gym.id], end_date=date(2026, 6, 30)
+        )
+        assert [(row.title, row.detail, row.amount_cents) for row in end.card.rows] == [
+            ("Gym", "Last on 30 Jun 2026", 3_000)
+        ]
+        ended = _apply_proposal(session, end)
+        assert gym.end_date == date(2026, 6, 30)
+        _apply_proposal(session, propose_undo(reader, ended.id))
+        assert gym.end_date is None
+
+
 def test_assistant_adds_transactions_exactly_as_the_card_shows() -> None:
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))
@@ -1651,7 +1669,7 @@ def test_assistant_undo_leaves_expenses_in_trash_as_they_are() -> None:
                 expense_ids=[ids["hotel_id"], ids["train_id"]],
                 split="share",
                 share_percent=50,
-                amounts_cents=None,
+                amounts_cents=[],
             ),
         )
         TransactionService(session, user_id=1).soft_delete(ids["train_id"])
@@ -1679,7 +1697,7 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
             expense_ids=[ids["hotel_id"]],
             split="share",
             share_percent=50,
-            amounts_cents=None,
+            amounts_cents=[],
         )
         # The card showed 87,61 € to allocate from.
         session.get(Transaction, ids["refund_id"]).amount_cents = 9_000

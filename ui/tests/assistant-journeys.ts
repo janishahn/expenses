@@ -44,6 +44,11 @@ export async function followUpJourney(page: Page) {
   // Only the last answer can be answered again.
   await expect(assistantTurns(page).first().getByRole("button", { name: "Retry" })).toHaveCount(0)
   await expect(assistantTurns(page).last().getByRole("button", { name: "Retry" })).toBeVisible()
+
+  // Answers never load images, and page links open the page in the app.
+  await expect(assistantTurns(page).last().locator("img")).toHaveCount(0)
+  await assistantTurns(page).last().getByRole("link", { name: "Budgets" }).click()
+  await expect(page).toHaveURL(/\/budgets$/)
 }
 
 export async function privacyJourney(page: Page) {

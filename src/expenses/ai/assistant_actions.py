@@ -8,11 +8,11 @@ plan in one commit and keeps the plan that undoes it.
 from __future__ import annotations
 
 import datetime as dt
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ApprovalRequired
 from sqlalchemy import delete, func, select
@@ -25,6 +25,8 @@ from expenses.db.models import (
     BudgetOverride,
     BudgetTemplate,
     Category,
+    CurrencyCode,
+    RecurringRule,
     ReimbursementAllocation,
     Tag,
     Transaction,
@@ -33,6 +35,7 @@ from expenses.db.models import (
 from expenses.schemas import BudgetOverrideIn, BudgetTemplateApplyFromIn, TransactionIn
 from expenses.services import (
     BudgetService,
+    CategoryService,
     ReimbursementService,
     TagService,
     TransactionService,
@@ -43,6 +46,8 @@ MAX_NEW = 20
 MAX_EDITED = 200
 MAX_ALLOCATED = 50
 MAX_BUDGETS = 20
+MAX_ARCHIVED = 50
+MAX_RECURRING = 50
 
 
 class InvalidProposal(Exception):
@@ -123,10 +128,26 @@ class TrashRow(BaseModel):
 
 
 class TrashPlan(BaseModel):
-    """Moves transactions to Trash; undoes created transactions."""
+    """Moves transactions to Trash; also undoes created transactions."""
 
     kind: Literal["trash_transactions"] = "trash_transactions"
     rows: list[TrashRow]
+
+
+class RestorePlan(BaseModel):
+    """Brings transactions back from Trash; undoes trash_transactions."""
+
+    kind: Literal["restore_transactions"] = "restore_transactions"
+    rows: list[TrashRow]
+
+
+class ArchivePlan(BaseModel):
+    """Archives categories and tags, or restores them to undo that."""
+
+    kind: Literal["archive"] = "archive"
+    category_ids: list[int]
+    tag_ids: list[int]
+    archived: bool
 
 
 class Classification(BaseModel):
@@ -214,6 +235,20 @@ class BudgetsPlan(BaseModel):
     changes: list[BudgetChange]
 
 
+class BudgetRemoval(BaseModel):
+    category_id: int | None
+    # The first month without this budget.
+    year: int
+    month: int
+    # The budget as the card showed it; approval refuses one that changed since.
+    before: BudgetScopeState
+
+
+class RemoveBudgetsPlan(BaseModel):
+    kind: Literal["remove_budgets"] = "remove_budgets"
+    changes: list[BudgetRemoval]
+
+
 class BudgetRestore(BaseModel):
     category_id: int | None
     current: BudgetScopeState
@@ -221,14 +256,34 @@ class BudgetRestore(BaseModel):
 
 
 class RestoreBudgetsPlan(BaseModel):
-    """Puts budget rows back as they were; undoes set_budgets."""
+    """Puts budget rows back as they were; undoes set_budgets and remove_budgets."""
 
     kind: Literal["restore_budgets"] = "restore_budgets"
     scopes: list[BudgetRestore]
 
 
+class RecurringEndRow(BaseModel):
+    rule_id: int
+    # The end date as the card showed it; approval refuses once it changed.
+    before: date | None
+    after: date | None
+
+
+class EndRecurringPlan(BaseModel):
+    """Sets the last date recurring rules may occur; its inverse puts them back."""
+
+    kind: Literal["end_recurring"] = "end_recurring"
+    rows: list[RecurringEndRow]
+
+
 InversePlan = Annotated[
-    TrashPlan | EditPlan | AllocatePlan | RestoreBudgetsPlan,
+    TrashPlan
+    | RestorePlan
+    | EditPlan
+    | AllocatePlan
+    | RestoreBudgetsPlan
+    | ArchivePlan
+    | EndRecurringPlan,
     Field(discriminator="kind"),
 ]
 
@@ -240,7 +295,15 @@ class UndoPlan(BaseModel):
 
 
 Plan = Annotated[
-    CreatePlan | EditPlan | AllocatePlan | BudgetsPlan | UndoPlan,
+    CreatePlan
+    | EditPlan
+    | TrashPlan
+    | AllocatePlan
+    | BudgetsPlan
+    | RemoveBudgetsPlan
+    | ArchivePlan
+    | EndRecurringPlan
+    | UndoPlan,
     Field(discriminator="kind"),
 ]
 PLAN = TypeAdapter(Plan)
@@ -306,6 +369,19 @@ def _transactions(
             Transaction.deleted_at.is_(None),
         )
     ).unique()
+    return {txn.id: txn for txn in rows}
+
+
+def _trashed(session: Session, user_id: int, ids: list[int]) -> dict[int, Transaction]:
+    rows = session.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.category))
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.id.in_(ids),
+            Transaction.deleted_at.is_not(None),
+        )
+    )
     return {txn.id: txn for txn in rows}
 
 
@@ -578,7 +654,7 @@ def propose_allocate(
     expense_ids: list[int],
     split: Literal["share", "even", "amounts"],
     share_percent: float,
-    amounts_cents: list[int] | None,
+    amounts_cents: list[int],
 ) -> Proposal:
     session, user_id = reader.session, reader.user_id
     [reimbursement] = _existing(session, user_id, [reimbursement_id])
@@ -650,7 +726,7 @@ def propose_allocate(
                 for index, txn in enumerate(expenses)
             ]
         case "amounts":
-            if amounts_cents is None or len(amounts_cents) != len(expense_ids):
+            if len(amounts_cents) != len(expense_ids):
                 raise InvalidProposal(
                     "invalid_amounts",
                     "Give one amount for each expense, in the same order.",
@@ -790,6 +866,289 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
     )
 
 
+def _without_budget(state: BudgetScopeState, start: date) -> BudgetScopeState:
+    """The budget rows once the budget ends before start."""
+    return BudgetScopeState(
+        templates=[
+            row
+            if row.ends_on is not None and row.ends_on < start
+            else row.model_copy(update={"ends_on": start - timedelta(days=1)})
+            for row in state.templates
+            if row.starts_on < start
+        ],
+        overrides=[
+            row
+            for row in state.overrides
+            if (row.year, row.month) < (start.year, start.month)
+        ],
+    )
+
+
+class BudgetScope(BaseModel):
+    category_id: int | None
+    month: str
+
+
+def propose_remove_budgets(
+    reader: AssistantReader, budgets: list[BudgetScope]
+) -> Proposal:
+    if not budgets:
+        raise InvalidProposal("empty", "Name at least one budget.")
+    if len(budgets) > MAX_BUDGETS:
+        raise InvalidProposal(
+            "too_many", f"Remove at most {MAX_BUDGETS} budgets at once."
+        )
+    scopes = [budget.category_id for budget in budgets]
+    if len(set(scopes)) != len(scopes):
+        raise InvalidProposal(
+            "duplicate_scope", "Remove each category's budget once per change."
+        )
+    categories = _categories(reader.session, reader.user_id)
+    service = BudgetService(reader.session, reader.user_id)
+    changes: list[BudgetRemoval] = []
+    rows: list[ApprovalRow] = []
+    for budget in budgets:
+        year, month = _month(budget.month)
+        start = date(year, month, 1)
+        category = None
+        if budget.category_id is not None:
+            category = categories.get(budget.category_id)
+            if category is None:
+                raise InvalidProposal(
+                    "unknown_category", f"Category {budget.category_id} doesn't exist."
+                )
+        label = category.name if category else "Overall budget"
+        before = _budget_state(reader.session, reader.user_id, budget.category_id)
+        if _without_budget(before, start) == before:
+            raise InvalidProposal(
+                "no_budget", f"{label} has no budget from {start:%b %Y} on."
+            )
+        changes.append(
+            BudgetRemoval(
+                category_id=budget.category_id, year=year, month=month, before=before
+            )
+        )
+        rows.append(
+            ApprovalRow(
+                title=label,
+                detail=f"From {start:%b %Y} on",
+                category=_category_card(category),
+                amount_cents=next(
+                    (
+                        effective.amount_cents
+                        for effective in service.effective_budgets_for_month(
+                            year, month
+                        )
+                        if effective.scope_category_id == budget.category_id
+                    ),
+                    None,
+                ),
+            )
+        )
+    count = len(changes)
+    return Proposal(
+        summary=f"Removed the {rows[0].title} budget"
+        if count == 1
+        else f"Removed {count} budgets",
+        card=ApprovalCard(
+            title=f"Remove {_plural(count, 'budget')}",
+            verb="Remove",
+            done="Removed",
+            rows=rows,
+        ),
+        plan=RemoveBudgetsPlan(changes=changes),
+    )
+
+
+def _transaction_row(txn: Transaction, detail: str) -> ApprovalRow:
+    return ApprovalRow(
+        title=txn.title,
+        detail=detail,
+        category=_category_card(txn.category),
+        date=txn.date,
+        amount_cents=txn.amount_cents,
+        income=txn.type == TransactionType.income,
+    )
+
+
+def propose_trash(reader: AssistantReader, transaction_ids: list[int]) -> Proposal:
+    ids = _unique(transaction_ids)
+    if not ids:
+        raise InvalidProposal("empty", "Name at least one transaction.")
+    if len(ids) > MAX_EDITED:
+        raise InvalidProposal(
+            "too_many", f"Move at most {MAX_EDITED} transactions to Trash at once."
+        )
+    transactions = sorted(
+        _existing(reader.session, reader.user_id, ids),
+        key=lambda txn: (txn.date, txn.id),
+        reverse=True,
+    )
+    count = len(transactions)
+    return Proposal(
+        summary=f"Moved {_plural(count, 'transaction')} to Trash",
+        card=ApprovalCard(
+            title=f"Move {_plural(count, 'transaction')} to Trash",
+            verb="Move to Trash",
+            done="Moved to Trash",
+            rows=[_transaction_row(txn, txn.category.name) for txn in transactions],
+        ),
+        plan=TrashPlan(rows=[_trash_row(txn) for txn in transactions]),
+    )
+
+
+def _archive_noun(categories: int, tags: int) -> str:
+    parts = []
+    if categories:
+        parts.append(f"{categories} {'category' if categories == 1 else 'categories'}")
+    if tags:
+        parts.append(_plural(tags, "tag"))
+    return " and ".join(parts)
+
+
+def _tags(session: Session, user_id: int, ids: list[int]) -> dict[int, Tag]:
+    return {
+        tag.id: tag
+        for tag in session.scalars(
+            select(Tag).where(Tag.user_id == user_id, Tag.id.in_(ids))
+        )
+    }
+
+
+def propose_archive(
+    reader: AssistantReader, *, category_ids: list[int], tag_ids: list[int]
+) -> Proposal:
+    category_ids, tag_ids = _unique(category_ids), _unique(tag_ids)
+    if not category_ids and not tag_ids:
+        raise InvalidProposal("empty", "Name at least one category or tag.")
+    if len(category_ids) + len(tag_ids) > MAX_ARCHIVED:
+        raise InvalidProposal(
+            "too_many", f"Archive at most {MAX_ARCHIVED} categories and tags at once."
+        )
+    categories = _categories(reader.session, reader.user_id)
+    tags = _tags(reader.session, reader.user_id, tag_ids)
+    rows: list[ApprovalRow] = []
+    for category_id in category_ids:
+        category = categories.get(category_id)
+        if category is None:
+            raise InvalidProposal(
+                "unknown_category", f"Category {category_id} doesn't exist."
+            )
+        if category.archived_at is not None:
+            raise InvalidProposal(
+                "already_archived", f"{category.name} is already archived."
+            )
+        if category.name.lower() == CategoryService.UNCATEGORIZED_NAME.lower():
+            raise InvalidProposal(
+                "uncategorized",
+                "Uncategorized can't be archived; transactions without a category use it.",
+            )
+        rows.append(
+            ApprovalRow(
+                title=category.name,
+                detail=f"{category.type.value.capitalize()} category",
+                category=_category_card(category),
+            )
+        )
+    for tag_id in tag_ids:
+        tag = tags.get(tag_id)
+        if tag is None:
+            raise InvalidProposal("unknown_tag", f"Tag {tag_id} doesn't exist.")
+        if tag.archived_at is not None:
+            raise InvalidProposal(
+                "already_archived", f"{tag.name} is already archived."
+            )
+        rows.append(ApprovalRow(title=tag.name, detail="Tag"))
+    name = (
+        rows[0].title
+        if len(rows) == 1
+        else _archive_noun(len(category_ids), len(tag_ids))
+    )
+    return Proposal(
+        summary=f"Archived {name}",
+        card=ApprovalCard(
+            title=f"Archive {name}",
+            meta="Their transactions keep them",
+            verb="Archive",
+            done="Archived",
+            rows=rows,
+        ),
+        plan=ArchivePlan(category_ids=category_ids, tag_ids=tag_ids, archived=True),
+    )
+
+
+def _last_on(day: date | None) -> str:
+    return "No end date" if day is None else f"Last on {day.day} {day:%b %Y}"
+
+
+def _recurring_row(rule: RecurringRule, detail: str) -> ApprovalRow:
+    return ApprovalRow(
+        title=rule.name or rule.category.name,
+        detail=detail,
+        category=_category_card(rule.category),
+        # The card shows euros, so a dollar amount stays off it.
+        amount_cents=rule.amount_cents
+        if rule.currency_code == CurrencyCode.eur
+        else None,
+        income=rule.type == TransactionType.income,
+    )
+
+
+def _recurring_rules(
+    session: Session, user_id: int, ids: list[int]
+) -> dict[int, RecurringRule]:
+    return {
+        rule.id: rule
+        for rule in session.scalars(
+            select(RecurringRule)
+            .options(joinedload(RecurringRule.category))
+            .where(RecurringRule.user_id == user_id, RecurringRule.id.in_(ids))
+        )
+    }
+
+
+def propose_end_recurring(
+    reader: AssistantReader, *, recurring_ids: list[int], end_date: date
+) -> Proposal:
+    ids = _unique(recurring_ids)
+    if not ids:
+        raise InvalidProposal("empty", "Name at least one recurring payment.")
+    if len(ids) > MAX_RECURRING:
+        raise InvalidProposal(
+            "too_many", f"End at most {MAX_RECURRING} recurring payments at once."
+        )
+    rules = _recurring_rules(reader.session, reader.user_id, ids)
+    if missing := [rule_id for rule_id in ids if rule_id not in rules]:
+        raise InvalidProposal(
+            "not_found", f"Recurring payments {missing[:10]} don't exist."
+        )
+    plan_rows: list[RecurringEndRow] = []
+    rows: list[ApprovalRow] = []
+    for rule in (rules[rule_id] for rule_id in ids):
+        name = rule.name or rule.category.name
+        if end_date < rule.anchor_date:
+            raise InvalidProposal(
+                "invalid_date",
+                f"{name} starts on {rule.anchor_date}; end it on or after that date.",
+            )
+        if rule.end_date == end_date:
+            raise InvalidProposal("no_change", f"{name} already ends on {end_date}.")
+        plan_rows.append(
+            RecurringEndRow(rule_id=rule.id, before=rule.end_date, after=end_date)
+        )
+        detail = _last_on(end_date)
+        if rule.end_date is not None:
+            detail += f" · was {rule.end_date.day} {rule.end_date:%b %Y}"
+        rows.append(_recurring_row(rule, detail))
+    count = len(rows)
+    name = rows[0].title if count == 1 else f"{count} recurring payments"
+    return Proposal(
+        summary=f"Ended {name}",
+        card=ApprovalCard(title=f"End {name}", verb="End", done="Ended", rows=rows),
+        plan=EndRecurringPlan(rows=plan_rows),
+    )
+
+
 def _span(row: TemplateRow) -> str:
     if row.ends_on is None:
         return f"From {row.starts_on:%b %Y}"
@@ -813,9 +1172,11 @@ def _restore_rows(
         )
 
     rows: list[ApprovalRow] = []
-    # A budget change never deletes a template, so each earlier one is still there.
     current = {template.id: template for template in scope.current.templates}
     for target in scope.target.templates:
+        if target.id not in current:
+            rows.append(row(f"{_span(target)} · restored", target.amount_cents))
+            continue
         was: list[str] = []
         if current[target.id].ends_on != target.ends_on:
             was.append(_span(current[target.id]))
@@ -892,16 +1253,70 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             plan: InversePlan = TrashPlan(
                 rows=[_trash_row(alive[txn_id]) for txn_id in ids]
             )
+            rows = [_transaction_row(alive[txn_id], "Moves to Trash") for txn_id in ids]
+        case RestorePlan():
+            trashed = _trashed(
+                session, user_id, [row.transaction_id for row in inverse.rows]
+            )
+            ids = [
+                row.transaction_id
+                for row in inverse.rows
+                if row.transaction_id in trashed
+            ]
+            if not ids:
+                raise InvalidProposal(
+                    "nothing_to_undo", "Those transactions are no longer in Trash."
+                )
+            plan = RestorePlan(rows=[_trash_row(trashed[txn_id]) for txn_id in ids])
+            rows = [
+                _transaction_row(trashed[txn_id], "Restores from Trash")
+                for txn_id in ids
+            ]
+        case ArchivePlan():
+            tags = _tags(session, user_id, inverse.tag_ids)
+            category_ids = [
+                category_id
+                for category_id in inverse.category_ids
+                if category_id in categories
+                and categories[category_id].archived_at is not None
+            ]
+            tag_ids = [
+                tag_id
+                for tag_id in inverse.tag_ids
+                if tag_id in tags and tags[tag_id].archived_at is not None
+            ]
+            if not category_ids and not tag_ids:
+                raise InvalidProposal("nothing_to_undo", "Those are not archived now.")
+            plan = inverse.model_copy(
+                update={"category_ids": category_ids, "tag_ids": tag_ids}
+            )
             rows = [
                 ApprovalRow(
-                    title=alive[txn_id].title,
-                    detail="Moves to Trash",
-                    category=_category_card(alive[txn_id].category),
-                    date=alive[txn_id].date,
-                    amount_cents=alive[txn_id].amount_cents,
-                    income=alive[txn_id].type == TransactionType.income,
+                    title=categories[category_id].name,
+                    detail="Restores the category",
+                    category=_category_card(categories[category_id]),
                 )
-                for txn_id in ids
+                for category_id in category_ids
+            ] + [
+                ApprovalRow(title=tags[tag_id].name, detail="Restores the tag")
+                for tag_id in tag_ids
+            ]
+        case EndRecurringPlan():
+            rules = _recurring_rules(
+                session, user_id, [row.rule_id for row in inverse.rows]
+            )
+            if any(
+                row.rule_id not in rules or rules[row.rule_id].end_date != row.before
+                for row in inverse.rows
+            ):
+                raise InvalidProposal(
+                    "changed",
+                    "Those recurring payments changed since, so undoing would lose that change.",
+                )
+            plan = inverse
+            rows = [
+                _recurring_row(rules[row.rule_id], _last_on(row.after))
+                for row in inverse.rows
             ]
         case EditPlan():
             transactions = _transactions(
@@ -1001,109 +1416,168 @@ def _checked(build) -> dict[str, Any]:
     return _propose(proposal)
 
 
-def create_transactions(
-    ctx: RunContext[AssistantReader], transactions: list[NewTransaction]
-) -> dict[str, Any]:
-    """Propose new transactions. The user approves them on a card before anything is saved.
-
-    Args:
-        transactions: Up to 20. Leave category_id empty when no category fits; tags
-            are names, and new names become new tags.
-    """
-    return _checked(lambda: propose_create(ctx.deps, transactions))
+def _kind_enum(schema: dict[str, Any]) -> None:
+    # Anthropic's strict schemas drop const but keep enum.
+    kind = schema["properties"]["kind"]
+    kind["enum"] = [kind.pop("const")]
 
 
-def edit_transactions(
-    ctx: RunContext[AssistantReader],
-    transaction_ids: list[int],
-    category_id: int | None = None,
-    add_tags: list[str] | None = None,
-    remove_tags: list[str] | None = None,
-    title: str | None = None,
-) -> dict[str, Any]:
-    """Propose changing the category, tags, or title of up to 200 transactions.
-    The user approves the change on a card first.
-
-    Args:
-        transaction_ids: Transactions to change, from earlier tool results.
-        category_id: New category for all of them.
-        add_tags: Tag names to add; new names become new tags.
-        remove_tags: Tag names to remove.
-        title: New title for all of them.
-    """
-    return _checked(
-        lambda: propose_edit(
-            ctx.deps,
-            transaction_ids=transaction_ids,
-            category_id=category_id,
-            add_tags=add_tags or [],
-            remove_tags=remove_tags or [],
-            title=title,
-        )
-    )
+def _no_discriminator(schema: dict[str, Any]) -> None:
+    # Strict schemas have no discriminator; each change's kind tells them apart.
+    schema.pop("discriminator")
 
 
-def allocate_reimbursement(
-    ctx: RunContext[AssistantReader],
-    reimbursement_id: int,
-    expense_ids: list[int],
-    split: Literal["share", "even", "amounts"],
-    share_percent: float = 50,
-    amounts_cents: list[int] | None = None,
-) -> dict[str, Any]:
-    """Propose allocating an income transaction to expenses as their reimbursement.
-    The server computes the cents; the user approves them on a card first.
-
-    Args:
-        reimbursement_id: The income that pays back the expenses. It becomes a
-            reimbursement if it isn't one yet.
-        expense_ids: Expenses it pays back.
-        split: share takes share_percent of each expense, even splits what is left of
-            the reimbursement evenly, amounts uses amounts_cents.
-        share_percent: For share, such as 50 for half of each expense.
-        amounts_cents: For amounts, one per expense in the same order.
-    """
-    return _checked(
-        lambda: propose_allocate(
-            ctx.deps,
-            reimbursement_id=reimbursement_id,
-            expense_ids=expense_ids,
-            split=split,
-            share_percent=share_percent,
-            amounts_cents=amounts_cents,
-        )
-    )
+class _Change(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_kind_enum)
 
 
-def set_budgets(
-    ctx: RunContext[AssistantReader], budgets: list[BudgetRequest]
-) -> dict[str, Any]:
-    """Propose monthly budgets. The user approves them on a card first.
+class CreateTransactions(_Change):
+    """Add up to 20 transactions. Leave category_id empty when no category fits;
+    tags are names, and new names become new tags."""
 
-    Args:
-        budgets: Up to 20, one per category. Leave category_id empty for the overall
-            budget. month is like 2026-10; applies is month for that month only or
-            onward for that month and later.
-    """
-    return _checked(lambda: propose_budgets(ctx.deps, budgets))
+    kind: Literal["create_transactions"]
+    transactions: list[NewTransaction]
 
 
-def undo_action(ctx: RunContext[AssistantReader], action_id: int) -> dict[str, Any]:
-    """Propose undoing a change you made earlier. The user approves it on a card first.
+class EditTransactions(_Change):
+    """Change the category, tags, or title of up to 200 transactions. Fields left
+    empty stay as they are; new tag names become new tags."""
 
-    Args:
-        action_id: The action_id from the change's result or the recent changes list.
-    """
-    return _checked(lambda: propose_undo(ctx.deps, action_id))
+    kind: Literal["edit_transactions"]
+    transaction_ids: list[int]
+    category_id: int | None = None
+    add_tags: list[str] = Field(default_factory=list)
+    remove_tags: list[str] = Field(default_factory=list)
+    title: str | None = None
 
 
-WRITE_TOOLS = [
-    create_transactions,
-    edit_transactions,
-    allocate_reimbursement,
-    set_budgets,
-    undo_action,
+class TrashTransactions(_Change):
+    """Move up to 200 transactions to Trash, where the user can restore them."""
+
+    kind: Literal["trash_transactions"]
+    transaction_ids: list[int]
+
+
+class AllocateReimbursement(_Change):
+    """Allocate an income to expenses as their reimbursement; the income becomes a
+    reimbursement if it isn't one yet. split share takes share_percent of each
+    expense, even splits what is left of the income evenly, and amounts uses
+    amounts_cents, one per expense in the same order. The server computes the
+    cents."""
+
+    kind: Literal["allocate_reimbursement"]
+    reimbursement_id: int
+    expense_ids: list[int]
+    split: Literal["share", "even", "amounts"]
+    share_percent: float = 50
+    amounts_cents: list[int] = Field(default_factory=list)
+
+
+class SetBudgets(_Change):
+    """Set up to 20 monthly budgets, one per category. Leave category_id empty for
+    the overall budget. month is like 2026-10; applies is month for that month only
+    or onward for that month and later."""
+
+    kind: Literal["set_budgets"]
+    budgets: list[BudgetRequest]
+
+
+class RemoveBudgets(_Change):
+    """Remove up to 20 monthly budgets from a month on; earlier months keep them.
+    category_id null is the overall budget, and month is like 2026-10."""
+
+    kind: Literal["remove_budgets"]
+    budgets: list[BudgetScope]
+
+
+class Archive(_Change):
+    """Archive categories and tags. Their transactions keep them."""
+
+    kind: Literal["archive"]
+    category_ids: list[int] = Field(default_factory=list)
+    tag_ids: list[int] = Field(default_factory=list)
+
+
+class EndRecurring(_Change):
+    """End recurring payments or income: end_date is the last date each may
+    occur."""
+
+    kind: Literal["end_recurring"]
+    recurring_ids: list[int]
+    end_date: date
+
+
+class Undo(_Change):
+    """Undo a change you made, by the action_id from its result or the recent
+    changes list."""
+
+    kind: Literal["undo"]
+    action_id: int
+
+
+Change = Annotated[
+    CreateTransactions
+    | EditTransactions
+    | TrashTransactions
+    | AllocateReimbursement
+    | SetBudgets
+    | RemoveBudgets
+    | Archive
+    | EndRecurring
+    | Undo,
+    Field(discriminator="kind", json_schema_extra=_no_discriminator),
 ]
+
+
+def propose_change(ctx: RunContext[AssistantReader], change: Change) -> dict[str, Any]:
+    """Propose one change to the user's data. The user sees it on an approval card,
+    and nothing changes until they approve it. Amounts are euro cents.
+
+    Args:
+        change: The change, by kind. Each kind lists its own fields.
+    """
+    reader = ctx.deps
+
+    def build() -> Proposal:
+        match change:
+            case CreateTransactions():
+                return propose_create(reader, change.transactions)
+            case EditTransactions():
+                return propose_edit(
+                    reader,
+                    transaction_ids=change.transaction_ids,
+                    category_id=change.category_id,
+                    add_tags=change.add_tags,
+                    remove_tags=change.remove_tags,
+                    title=change.title,
+                )
+            case TrashTransactions():
+                return propose_trash(reader, change.transaction_ids)
+            case AllocateReimbursement():
+                return propose_allocate(
+                    reader,
+                    reimbursement_id=change.reimbursement_id,
+                    expense_ids=change.expense_ids,
+                    split=change.split,
+                    share_percent=change.share_percent,
+                    amounts_cents=change.amounts_cents,
+                )
+            case SetBudgets():
+                return propose_budgets(reader, change.budgets)
+            case RemoveBudgets():
+                return propose_remove_budgets(reader, change.budgets)
+            case Archive():
+                return propose_archive(
+                    reader, category_ids=change.category_ids, tag_ids=change.tag_ids
+                )
+            case EndRecurring():
+                return propose_end_recurring(
+                    reader, recurring_ids=change.recurring_ids, end_date=change.end_date
+                )
+            case Undo():
+                return propose_undo(reader, change.action_id)
+
+    return _checked(build)
 
 
 # ───────── Applying ─────────
@@ -1206,6 +1680,60 @@ def _apply_trash(session: Session, user_id: int, plan: TrashPlan) -> dict[str, A
     for row in plan.rows:
         service.soft_delete(row.transaction_id, commit=False)
     return {"moved_to_trash": len(plan.rows)}
+
+
+def _apply_restore(session: Session, user_id: int, plan: RestorePlan) -> dict[str, Any]:
+    trashed = _trashed(session, user_id, [row.transaction_id for row in plan.rows])
+    if len(trashed) != len(plan.rows):
+        raise ActionConflict("A transaction this would restore is no longer in Trash.")
+    for row in plan.rows:
+        if _trash_row(trashed[row.transaction_id]) != row:
+            raise ActionConflict(f"{row.title} changed since this was proposed.")
+    service = TransactionService(session, user_id)
+    for row in plan.rows:
+        service.restore(row.transaction_id, commit=False)
+    return {"restored": len(plan.rows)}
+
+
+def _apply_archive(session: Session, user_id: int, plan: ArchivePlan) -> dict[str, Any]:
+    categories = _categories(session, user_id)
+    tags = _tags(session, user_id, plan.tag_ids)
+    if any(category_id not in categories for category_id in plan.category_ids) or any(
+        tag_id not in tags for tag_id in plan.tag_ids
+    ):
+        raise ActionConflict("A category or tag in this change no longer exists.")
+    items = [categories[category_id] for category_id in plan.category_ids] + [
+        tags[tag_id] for tag_id in plan.tag_ids
+    ]
+    for item in items:
+        if (item.archived_at is not None) == plan.archived:
+            raise ActionConflict(f"{item.name} changed since this was proposed.")
+    for category_id in plan.category_ids:
+        categories[category_id].archived_at = (
+            datetime.utcnow() if plan.archived else None
+        )
+    for tag_id in plan.tag_ids:
+        tags[tag_id].archived_at = datetime.now(UTC) if plan.archived else None
+    session.flush()
+    return {"archived" if plan.archived else "restored": len(items)}
+
+
+def _apply_end_recurring(
+    session: Session, user_id: int, plan: EndRecurringPlan
+) -> dict[str, Any]:
+    rules = _recurring_rules(session, user_id, [row.rule_id for row in plan.rows])
+    for row in plan.rows:
+        rule = rules.get(row.rule_id)
+        if rule is None:
+            raise ActionConflict("A recurring payment in this change was deleted.")
+        if rule.end_date != row.before:
+            raise ActionConflict(
+                f"{rule.name or rule.category.name} changed since this was proposed."
+            )
+    for row in plan.rows:
+        rules[row.rule_id].end_date = row.after
+    session.flush()
+    return {"recurring_changed": len(plan.rows)}
 
 
 def _apply_edit(
@@ -1404,13 +1932,23 @@ def _apply_restore_budgets(
             )
         )
         session.flush()
-        # A budget change never deletes a template, and the check above found this
-        # budget unchanged since, so every earlier template is still the user's own.
+        # The check above found this budget unchanged since, so each current template
+        # is still the user's own; a removed one comes back as a new row.
+        kept_templates = {row.id for row in scope.current.templates}
         for row in scope.target.templates:
-            template = session.get_one(BudgetTemplate, row.id)
+            template = (
+                session.get_one(BudgetTemplate, row.id)
+                if row.id in kept_templates
+                else BudgetTemplate(
+                    user_id=user_id,
+                    frequency=BudgetFrequency.monthly,
+                    category_id=scope.category_id,
+                )
+            )
             template.amount_cents = row.amount_cents
             template.starts_on = row.starts_on
             template.ends_on = row.ends_on
+            session.add(template)
         # An onward budget deletes that month's override; it comes back as a new row.
         kept_overrides = {row.id for row in scope.current.overrides}
         for row in scope.target.overrides:
@@ -1427,16 +1965,49 @@ def _apply_restore_budgets(
     return {"budgets_restored": len(plan.scopes)}
 
 
+def _apply_remove_budgets(
+    session: Session, user_id: int, plan: RemoveBudgetsPlan
+) -> tuple[dict[str, Any], InversePlan]:
+    removals = [
+        BudgetRestore(
+            category_id=change.category_id,
+            current=change.before,
+            target=_without_budget(change.before, date(change.year, change.month, 1)),
+        )
+        for change in plan.changes
+    ]
+    _apply_restore_budgets(session, user_id, RestoreBudgetsPlan(scopes=removals))
+    return (
+        {"budgets_removed": len(plan.changes)},
+        RestoreBudgetsPlan(
+            scopes=[
+                BudgetRestore(
+                    category_id=removal.category_id,
+                    current=_budget_state(session, user_id, removal.category_id),
+                    target=removal.current,
+                )
+                for removal in removals
+            ]
+        ),
+    )
+
+
 def _apply_inverse(session: Session, user_id: int, plan: InversePlan) -> dict[str, Any]:
     match plan:
         case TrashPlan():
             return _apply_trash(session, user_id, plan)
+        case RestorePlan():
+            return _apply_restore(session, user_id, plan)
         case EditPlan():
             return _apply_edit(session, user_id, plan)[0]
         case AllocatePlan():
             return _apply_allocate(session, user_id, plan)[0]
         case RestoreBudgetsPlan():
             return _apply_restore_budgets(session, user_id, plan)
+        case ArchivePlan():
+            return _apply_archive(session, user_id, plan)
+        case EndRecurringPlan():
+            return _apply_end_recurring(session, user_id, plan)
 
 
 def apply_action(session: Session, action: AssistantAction) -> dict[str, Any]:
@@ -1455,10 +2026,26 @@ def apply_action(session: Session, action: AssistantAction) -> dict[str, Any]:
             details, inverse = _apply_create(session, action.user_id, plan)
         case EditPlan():
             details, inverse = _apply_edit(session, action.user_id, plan)
+        case TrashPlan():
+            details = _apply_trash(session, action.user_id, plan)
+            inverse = RestorePlan(rows=plan.rows)
         case AllocatePlan():
             details, inverse = _apply_allocate(session, action.user_id, plan)
         case BudgetsPlan():
             details, inverse = _apply_budgets(session, action.user_id, plan)
+        case RemoveBudgetsPlan():
+            details, inverse = _apply_remove_budgets(session, action.user_id, plan)
+        case ArchivePlan():
+            details = _apply_archive(session, action.user_id, plan)
+            inverse = plan.model_copy(update={"archived": False})
+        case EndRecurringPlan():
+            details = _apply_end_recurring(session, action.user_id, plan)
+            inverse = EndRecurringPlan(
+                rows=[
+                    row.model_copy(update={"before": row.after, "after": row.before})
+                    for row in plan.rows
+                ]
+            )
         case UndoPlan():
             original = session.get(AssistantAction, plan.action_id)
             if original is None or original.status != "applied":

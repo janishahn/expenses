@@ -32,6 +32,7 @@ export function invalidateTransactionData(queryClient: QueryClient) {
     "tag",
     "digest",
     "reconciliation",
+    "recurring",
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] })
   }

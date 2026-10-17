@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The Assistant can move transactions to Trash, archive categories and tags, remove budgets from a month on, and end recurring payments. Each change waits for your approval on a card, and Undo reverses it: transactions come back from Trash, archived categories and tags return, and budgets and end dates go back to what they were.
+- The Assistant reads your data with a read-only query of your own rows, so it can filter, group, and count transactions in any way, and it now sees Trash, recurring payments, rules, and durable purchases. It also reads your balance history and forecast. Each query runs on a private copy of your rows, stops after 2 seconds, and returns at most 100 rows.
+- The Assistant knows the app's pages and whether you use the web or iOS app, so it can say where to find something. Its links to pages, such as Budgets, open them in the app on the web and iOS.
+
+### Changed
+- Assistant answers on the web no longer show images. An image in an answer could load from any server and send data in its address.
+
 ## [0.8.4] - 2026-10-17
 
 ### Changed
