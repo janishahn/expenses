@@ -186,20 +186,26 @@ extension CalendarMonth {
 struct PeriodMenu: View {
     @Binding var period: PeriodSelection
     @State private var editingRange = false
+    // Only picks in this menu tick, not a period set elsewhere, such as by a drill-down.
+    @State private var picks = 0
+
+    private var picked: Binding<PeriodSelection> {
+        Binding(get: { period }, set: { pick($0) })
+    }
 
     var body: some View {
         Menu {
             Section {
                 Button("Previous Month", systemImage: "chevron.backward") {
-                    period = period.stepped(by: -1) ?? period
+                    pick(period.stepped(by: -1) ?? period)
                 }
                 .disabled(period.stepped(by: -1) == nil)
                 Button("Next Month", systemImage: "chevron.forward") {
-                    period = period.stepped(by: 1) ?? period
+                    pick(period.stepped(by: 1) ?? period)
                 }
                 .disabled(period.stepped(by: 1) == nil)
             }
-            Picker("Period", selection: $period) {
+            Picker("Period", selection: picked) {
                 Text("This Month").tag(PeriodSelection.thisMonth)
                 Text("Last Month").tag(PeriodSelection.lastMonth)
                 Text("All Time").tag(PeriodSelection.all)
@@ -210,10 +216,18 @@ struct PeriodMenu: View {
         } label: {
             Label("Period", systemImage: "calendar")
         }
-        .sensoryFeedback(.selection, trigger: period)
+        .sensoryFeedback(.selection, trigger: picks)
         .sheet(isPresented: $editingRange) {
-            PeriodRangeSheet(period: $period)
+            PeriodRangeSheet(period: picked)
         }
+    }
+
+    private func pick(_ next: PeriodSelection) {
+        guard next != period else {
+            return
+        }
+        period = next
+        picks += 1
     }
 }
 
