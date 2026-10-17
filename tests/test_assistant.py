@@ -1,5 +1,6 @@
 import asyncio
 import json
+import tempfile
 import threading
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
@@ -288,9 +289,10 @@ def test_sql_query_reads_only_the_users_rows_with_net_amounts() -> None:
         )["rows"] == [[5]]
 
 
-def test_sql_query_refuses_writes_and_runaway_queries(
-    monkeypatch: pytest.MonkeyPatch,
+def test_sql_query_refuses_writes_and_runaway_queries_then_deletes_its_copy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     with make_session() as session:
         _seed_spending_fixture(session)
         reader = _reader(session)
@@ -320,6 +322,11 @@ def test_sql_query_refuses_writes_and_runaway_queries(
         assert endless["message"].startswith("The query ran longer than")
         # The copy stays usable after a refused query.
         assert reader.sql_query(sql="select count(*) from tags")["rows"] == [[2]]
+
+        # The copy is one temporary file, deleted when the turn closes the reader.
+        assert len(list(tmp_path.iterdir())) == 1
+        reader.close()
+        assert list(tmp_path.iterdir()) == []
 
 
 def test_reader_reports_budgets_balance_and_reference() -> None:

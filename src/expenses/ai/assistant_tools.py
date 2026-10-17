@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import tempfile
 from datetime import date, datetime
+from pathlib import Path
 from time import monotonic
 from typing import Any, Literal
 
@@ -232,11 +235,15 @@ class AssistantReader:
         self.today = now.date()
         self.client = client
         self._sql: sqlite3.Connection | None = None
+        self._sql_path: Path | None = None
 
     def close(self) -> None:
         if self._sql is not None:
             self._sql.close()
             self._sql = None
+        if self._sql_path is not None:
+            self._sql_path.unlink(missing_ok=True)
+            self._sql_path = None
 
     def reference(self) -> str:
         """The date, client, categories, and tags the model needs to call tools."""
@@ -289,28 +296,37 @@ class AssistantReader:
         return "\n".join(lines)
 
     def _sql_copy(self) -> sqlite3.Connection:
-        """The user's rows in a private in-memory database, copied once per turn."""
+        """The user's rows in a private temporary database, copied once per turn and
+        deleted by close()."""
         if self._sql is not None:
             return self._sql
+        # On disk, the copy holds only SQLite's page cache in memory, however large
+        # the ledger is.
+        handle, name = tempfile.mkstemp(prefix="expenses_assistant_", suffix=".db")
+        os.close(handle)
+        self._sql_path = Path(name)
         # SQLite copies the rows itself, many times faster than Python can. A pooled
         # connection of its own has no open transaction that would block DETACH.
         pooled = self.session.get_bind().raw_connection()
         try:
             source = pooled.driver_connection
-            source.execute("attach ':memory:' as assistant_copy")
+            source.execute("attach ? as assistant_copy", (name,))
             try:
-                for name, query in SQL_TABLES.items():
+                # The copy never outlives the turn, so it needs no journal or fsync.
+                source.execute("pragma assistant_copy.journal_mode = off")
+                source.execute("pragma assistant_copy.synchronous = off")
+                for table, query in SQL_TABLES.items():
                     source.execute(
-                        f"create table assistant_copy.{name} as {query}",
+                        f"create table assistant_copy.{table} as {query}",
                         {"user": self.user_id},
                     )
-                data = source.serialize(name="assistant_copy")
             finally:
                 source.execute("detach assistant_copy")
         finally:
             pooled.close()
-        copy = sqlite3.connect(":memory:", check_same_thread=False)
-        copy.deserialize(data)
+        copy = sqlite3.connect(
+            f"{self._sql_path.as_uri()}?mode=ro", uri=True, check_same_thread=False
+        )
         copy.create_function("fuzzy", 2, _fuzzy, deterministic=True)
         copy.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
         copy.setconfig(sqlite3.SQLITE_DBCONFIG_TRUSTED_SCHEMA, False)
