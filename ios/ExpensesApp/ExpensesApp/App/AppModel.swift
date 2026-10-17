@@ -1923,6 +1923,10 @@ final class AppModel {
         defer { isLoading = false }
         do {
             let download = try await apiClient.downloadAttachment(attachment, token: token)
+            // A session that ended during the download must leave no receipt behind.
+            guard self.token == token else {
+                return nil
+            }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try download.data.write(to: target, options: .atomic)
             return target
