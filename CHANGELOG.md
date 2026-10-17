@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-17
+
 ### Added
 - Admin → AI usage, on the web and iOS, shows every AI feature's usage: the Assistant, categorization suggestions, and rule suggestions. A chart shows cost or tokens by day, week, or month for each feature's model and backend. Open a model to see its usage alone, and open an Assistant chat to see the tokens and cost of each of its latest 100 turns. Other users' chats show as "Chat by" their username, without their titles. Models without a published price, such as a self-hosted model, show tokens only.
 - `GET /api/admin/ai/usage` and `GET /api/admin/ai/usage/chats/{chat_id}` return this usage. They need admin access.
@@ -519,7 +521,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/janishahn/expenses/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/janishahn/expenses/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/janishahn/expenses/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/janishahn/expenses/compare/v0.7.1...v0.8.0
