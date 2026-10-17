@@ -803,6 +803,8 @@ class LLMJob(Base):
     __table_args__ = (
         Index("ix_llm_jobs_user_feature_created", "user_id", "feature", "created_at"),
         Index("ix_llm_jobs_user_status", "user_id", "status", "created_at"),
+        Index("ix_llm_jobs_created", "created_at"),
+        Index("ix_llm_jobs_chat", "chat_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -814,6 +816,8 @@ class LLMJob(Base):
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_type: Mapped[Optional[str]] = mapped_column(String(40))
     entity_id: Mapped[Optional[int]] = mapped_column(Integer)
+    # The Assistant chat a turn ran in. Usage outlives the chat, so there is no foreign key.
+    chat_id: Mapped[Optional[str]] = mapped_column(String(32))
     input_json: Mapped[Optional[str]] = mapped_column(Text)
     output_json: Mapped[Optional[str]] = mapped_column(Text)
     error: Mapped[Optional[str]] = mapped_column(Text)
@@ -827,6 +831,8 @@ class LLMJob(Base):
     usage_tool_call_count: Mapped[Optional[int]] = mapped_column(Integer)
     usage_cost_decimal: Mapped[Optional[str]] = mapped_column(String(80))
     usage_cost_unit: Mapped[Optional[str]] = mapped_column(String(40))
+    # The configured backend's name; llm_provider is its kind.
+    backend: Mapped[Optional[str]] = mapped_column(String(32))
     llm_provider: Mapped[Optional[str]] = mapped_column(String(40))
     provider_name: Mapped[Optional[str]] = mapped_column(String(80))
     provider_model: Mapped[Optional[str]] = mapped_column(String(120))

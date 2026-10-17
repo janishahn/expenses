@@ -11,7 +11,6 @@ import time
 import tomllib
 import urllib.parse
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from threading import Lock
 from typing import Literal, Optional
@@ -34,7 +33,7 @@ from fastapi.responses import (
     FileResponse,
     StreamingResponse,
 )
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
@@ -89,7 +88,6 @@ from expenses.db.models import (
     AutoCategorizationPreference,
     BankStatementRow,
     Category,
-    LLMJob,
     MobileAuthSession,
     RecurringRule,
     Tag,
@@ -114,7 +112,6 @@ from expenses.schemas import (
     AdminRebuildRollupsOut,
     AdminRecurringCatchUpOut,
     AdminSystemHealthOut,
-    AIUsageSummaryOut,
     AuthCredentialsIn,
     BalanceHistoryResponseOut,
     BankAcceptSuggestionsIn,
@@ -4626,194 +4623,6 @@ def api_create_transaction(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": txn.id}
-
-
-def _ai_usage_period_start(period: Literal["week", "month", "all"]) -> datetime | None:
-    if period == "week":
-        return datetime.utcnow() - timedelta(days=7)
-    if period == "month":
-        return datetime.utcnow() - timedelta(days=30)
-    return None
-
-
-def _decimal_scale(value: str) -> int:
-    try:
-        decimal = Decimal(value)
-    except InvalidOperation:
-        return 0
-    exponent = decimal.as_tuple().exponent
-    return -exponent if exponent < 0 else 0
-
-
-def _format_decimal(value: Decimal, scale: int) -> str:
-    if scale <= 0:
-        return format(value, "f")
-    return f"{value:.{scale}f}"
-
-
-@router.get(
-    "/api/ai/usage/summary",
-    response_model=AIUsageSummaryOut,
-)
-def api_ai_usage_summary(
-    request: Request,
-    db: Session = Depends(get_db),
-    feature: str = "spending_chat",
-    period: Literal["week", "month", "all"] = "week",
-):
-    _require_elevated_admin_context(request, db)
-    started_at = _ai_usage_period_start(period)
-    conditions = [LLMJob.feature == feature]
-    if started_at is not None:
-        conditions.append(LLMJob.created_at >= started_at)
-
-    total_tokens_expr = func.coalesce(
-        LLMJob.usage_total_tokens,
-        func.coalesce(LLMJob.usage_input_tokens, 0)
-        + func.coalesce(LLMJob.usage_output_tokens, 0),
-    )
-    summary = db.execute(
-        select(
-            func.count(LLMJob.id).label("total_chats"),
-            func.coalesce(
-                func.sum(case((LLMJob.status == "completed", 1), else_=0)), 0
-            ).label("completed_chats"),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            (LLMJob.status == "failed")
-                            & or_(
-                                LLMJob.error.is_(None),
-                                LLMJob.error != "stream_cancelled",
-                            ),
-                            1,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("failed_chats"),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            (LLMJob.status == "stopped")
-                            | (LLMJob.error == "stream_cancelled"),
-                            1,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("cancelled_chats"),
-            func.coalesce(func.sum(LLMJob.usage_input_tokens), 0).label("input_tokens"),
-            func.coalesce(func.sum(LLMJob.usage_output_tokens), 0).label(
-                "output_tokens"
-            ),
-            func.coalesce(func.sum(total_tokens_expr), 0).label("total_tokens"),
-            func.coalesce(func.sum(LLMJob.usage_cached_input_tokens), 0).label(
-                "cached_input_tokens"
-            ),
-            func.coalesce(func.sum(LLMJob.usage_cache_write_tokens), 0).label(
-                "cache_write_tokens"
-            ),
-            func.coalesce(func.sum(LLMJob.usage_reasoning_tokens), 0).label(
-                "reasoning_tokens"
-            ),
-            func.coalesce(
-                func.sum(
-                    case((LLMJob.status == "completed", total_tokens_expr), else_=0)
-                ),
-                0,
-            ).label("completed_total_tokens"),
-        ).where(*conditions)
-    ).one()
-
-    total_chats = int(summary.total_chats or 0)
-    completed_chats = int(summary.completed_chats or 0)
-    failed_chats = int(summary.failed_chats or 0)
-    cancelled_chats = int(summary.cancelled_chats or 0)
-    input_tokens = int(summary.input_tokens or 0)
-    output_tokens = int(summary.output_tokens or 0)
-    total_tokens = int(summary.total_tokens or 0)
-    cost_total = Decimal("0")
-    cost_scale = 0
-    cost_unit: str | None = None
-    cost_unit_seen = False
-    mixed_cost_units = False
-    costed_chats = 0
-    cost_rows = db.execute(
-        select(LLMJob.usage_cost_decimal, LLMJob.usage_cost_unit).where(
-            *conditions, LLMJob.usage_cost_decimal.is_not(None)
-        )
-    ).all()
-    for row in cost_rows:
-        if not row.usage_cost_decimal:
-            continue
-        try:
-            cost = Decimal(row.usage_cost_decimal)
-        except InvalidOperation:
-            continue
-        cost_total += cost
-        cost_scale = max(cost_scale, _decimal_scale(row.usage_cost_decimal))
-        costed_chats += 1
-        if not cost_unit_seen:
-            cost_unit = row.usage_cost_unit
-            cost_unit_seen = True
-        elif row.usage_cost_unit != cost_unit:
-            mixed_cost_units = True
-    if mixed_cost_units:
-        cost_unit = "mixed"
-
-    duration_count = int(
-        db.scalar(
-            select(func.count(LLMJob.id)).where(
-                *conditions, LLMJob.duration_ms.is_not(None)
-            )
-        )
-        or 0
-    )
-    p95_duration_ms = None
-    if duration_count:
-        index = max(0, min(duration_count - 1, int(duration_count * 0.95 + 0.999) - 1))
-        p95_duration_ms = db.scalar(
-            select(LLMJob.duration_ms)
-            .where(*conditions, LLMJob.duration_ms.is_not(None))
-            .order_by(LLMJob.duration_ms.asc())
-            .offset(index)
-            .limit(1)
-        )
-    completed_total_tokens = int(summary.completed_total_tokens or 0)
-    average_total_tokens = (
-        round(completed_total_tokens / completed_chats) if completed_chats else 0
-    )
-    average_cost = cost_total / costed_chats if costed_chats else Decimal("0")
-    average_cost_scale = min(
-        max(cost_scale, _decimal_scale(format(average_cost, "f"))),
-        cost_scale + 8,
-    )
-    return {
-        "feature": feature,
-        "period": period,
-        "started_at": started_at,
-        "total_chats": total_chats,
-        "completed_chats": completed_chats,
-        "failed_chats": failed_chats,
-        "cancelled_chats": cancelled_chats,
-        "costed_chats": costed_chats,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-        "cached_input_tokens": int(summary.cached_input_tokens or 0),
-        "cache_write_tokens": int(summary.cache_write_tokens or 0),
-        "reasoning_tokens": int(summary.reasoning_tokens or 0),
-        "total_cost_decimal": _format_decimal(cost_total, cost_scale),
-        "average_cost_decimal": _format_decimal(average_cost, average_cost_scale),
-        "cost_unit": cost_unit,
-        "average_total_tokens": average_total_tokens,
-        "p95_duration_ms": p95_duration_ms,
-    }
 
 
 @router.get(

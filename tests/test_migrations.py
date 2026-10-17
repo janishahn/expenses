@@ -497,3 +497,48 @@ def test_bank_row_resolution_and_suggestion_dismissal_migrations_backfill_and_ro
 
     command.upgrade(cfg, "head")
     get_settings.cache_clear()
+
+
+def test_llm_usage_backend_migration_backfills_runs_and_rolls_back(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "migration.db"
+    monkeypatch.setenv("EXPENSES_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("EXPENSES_DATABASE_URL", f"sqlite:///{db_path}")
+    get_settings.cache_clear()
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "202610161300")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO llm_jobs (id, user_id, feature, status, prompt_version, model,
+                input_hash, error, usage_cost_decimal, usage_cost_unit, llm_provider,
+                created_at)
+            VALUES (?, 1, 'spending_chat', ?, 'assistant', 'm', 'h', ?, ?, ?, ?,
+                '2026-10-01')
+            """,
+            [
+                (1, "completed", None, "0.01", "openrouter_credits", "openrouter"),
+                (2, "failed", "stream_cancelled", None, None, "anthropic"),
+                (3, "failed", "provider timeout", "0.02", "usd", None),
+            ],
+        )
+
+    command.upgrade(cfg, "head")
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT backend, chat_id, status, usage_cost_unit FROM llm_jobs ORDER BY id"
+        ).fetchall() == [
+            ("openrouter", None, "completed", "usd"),
+            ("anthropic", None, "stopped", None),
+            (None, None, "failed", "usd"),
+        ]
+
+    command.downgrade(cfg, "202610161300")
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(llm_jobs)")}
+        assert not {"backend", "chat_id"} & columns
+        assert conn.execute("SELECT COUNT(*) FROM llm_jobs").fetchone() == (3,)
+
+    command.upgrade(cfg, "head")
+    get_settings.cache_clear()

@@ -131,10 +131,14 @@ These tokens, the money colors, and number formatting are shared with iOS.
   date and show the day's net.
 - One row height per layout: 36px desktop, 44px mobile. Single line always.
 - Desktop columns in order: checkbox (on hover), category glyph, title, category,
-  tags (two, then `+N`), markers (receipt, location, reimbursed), amount. When an
-  expense is reimbursed, its muted net sits before the gross amount.
+  tags (two, then `+N`), markers (receipt, location, reimbursed), amount.
+- A reimbursed expense's amount is its net after reimbursements, with the charged
+  amount struck through and muted before it. Reimbursement income is `ink-3` and
+  carries the reimbursed marker, since its expense already counts it. Day bands
+  use the same rules, so a day's rows add up to its band.
 - Columns drop by container width: tags and markers first. Mobile rows show glyph,
-  title, and amount only.
+  title, and amount only; the charged amount drops, and the reimbursed marker
+  moves before the amount.
 - No per-row buttons. Row actions live in the context menu; multi-row actions
   live in the floating bulk bar that appears with a selection.
 - Triage queues are the one exception: Uncategorized, Reconcile, and rule
@@ -380,7 +384,7 @@ pages below fix the structure; the current pages show the content.
   band.
 - **Settings and Admin** share one shell: a section list (Account, Appearance;
   Data: Categorization, Assistant, Balance snapshots, Import and export;
-  Server: Health, Maintenance, AI, Assistant usage, Logs, System) and one section at a
+  Server: Health, Maintenance, AI, AI usage, Logs, System) and one section at a
   time. On desktop the section list replaces the sidebar, headed by "Back to
   app"; on mobile it is a horizontal chip row. Settings save on change; there
   is no Save button. Server sections need the admin password, shown as a

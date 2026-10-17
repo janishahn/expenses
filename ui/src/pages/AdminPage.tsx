@@ -7,8 +7,8 @@ import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { ThermometerHotIcon } from "@phosphor-icons/react/ThermometerHot"
 import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { Navigate, useParams } from "react-router-dom"
-import { apiFetch, fetchAIUsageSummary, getApiErrorMessage } from "../app/api"
-import type { AIUsageSummary } from "../app/api-types"
+import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { AIUsagePeriod } from "../app/api-types"
 import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
 import AISettingsPanel from "../components/AISettingsPanel"
 import { confirmDialog } from "../components/confirm"
@@ -24,6 +24,8 @@ import { SettingRow, SettingsShell } from "../components/ui/SettingsShell"
 import { CodeBlock, MetricStrip, Sheet } from "../components/ui/Sheet"
 import { FieldError, TextField } from "../components/ui/TextField"
 import { showToast } from "../components/ui/toast-store"
+import { UsageChatPeek, UsageSection } from "./AIUsage"
+import { usageScopeTitle, useUsageScope } from "./ai-usage"
 import { ADMIN_SECTIONS, useSettingsGroups, type AdminSectionKey } from "./settings-nav"
 
 type AdminInfo = {
@@ -86,7 +88,7 @@ const LOG_COLUMNS: Columns = {
   narrowColumns: "96px 64px minmax(0, 1fr)",
   mobileColumns: "88px 56px minmax(0, 1fr)",
 }
-const USAGE_PERIODS: Array<{ value: AIUsageSummary["period"]; label: string }> = [
+const USAGE_PERIODS: Array<{ value: AIUsagePeriod; label: string }> = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
   { value: "all", label: "All time" },
@@ -103,16 +105,6 @@ const HEALTH_STATUS = {
   warm: { label: "Warm", tone: "neutral", icon: ThermometerHotIcon },
   critical: { label: "Critical", tone: "bad", icon: WarningIcon },
 } as const
-
-// Costs under 1 keep three significant digits, so a fraction of a cent stays short.
-function formatCostAmount(decimal: string, unit: string | null): string {
-  const amount = Number(decimal)
-  const value = amount.toLocaleString("en-US", Math.abs(amount) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 })
-  if (unit === "openrouter_credits") return `${value} credits`
-  if (unit === "usd") return `$${value}`
-  if (unit === "mixed") return `${value} (mixed)`
-  return unit ? `${value} ${unit}` : value
-}
 
 const gigabytes = (bytes: number) => `${DECIMAL.format(bytes / GB)} GB`
 const SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"]
@@ -300,44 +292,6 @@ function MaintenanceSection() {
   )
 }
 
-function UsageSection({ period }: { period: AIUsageSummary["period"] }) {
-  const usage = useQuery({
-    queryKey: ["ai-usage-summary", "spending_chat", period],
-    queryFn: () => fetchAIUsageSummary(period),
-    staleTime: 60_000,
-  })
-  if (usage.isPending) return <LoadingBody label="Loading usage…" />
-  if (usage.error) return <ErrorBody message="Usage is unavailable right now." />
-  const data = usage.data
-  if (data.total_chats === 0) return <EmptyState>No assistant usage in this period.</EmptyState>
-  return (
-    <MetricStrip
-      metrics={[
-        {
-          label: "Cost",
-          value: data.costed_chats > 0 ? formatCostAmount(data.total_cost_decimal, data.cost_unit) : "Not billed",
-          detail: data.costed_chats > 0 ? `${formatCostAmount(data.average_cost_decimal, data.cost_unit)} per chat` : undefined,
-        },
-        {
-          label: "Tokens",
-          value: formatCount(data.total_tokens),
-          detail: `${formatCount(data.cached_input_tokens)} cached · ${formatCount(data.reasoning_tokens)} reasoning`,
-        },
-        {
-          label: "Chats",
-          value: formatCount(data.total_chats),
-          detail: `${formatCount(data.completed_chats)} completed · ${formatCount(data.failed_chats)} failed`,
-        },
-        {
-          label: "Per chat",
-          value: `${formatCount(data.average_total_tokens)} tokens`,
-          detail: data.p95_duration_ms != null ? `${formatCount(data.p95_duration_ms)} ms p95` : undefined,
-        },
-      ]}
-    />
-  )
-}
-
 function useLogs(filter: LogFilter, search: string, cursor: string | null) {
   const params = new URLSearchParams({ limit: "40" })
   if (cursor) params.set("cursor", cursor)
@@ -494,7 +448,9 @@ function SystemSection() {
 function AdminPage() {
   const { section = "health" } = useParams()
   const groups = useSettingsGroups()
-  const [usagePeriod, setUsagePeriod] = useState<AIUsageSummary["period"]>("week")
+  const [usagePeriod, setUsagePeriod] = useState<AIUsagePeriod>("week")
+  const usageScope = useUsageScope()
+  const [selectedChat, setSelectedChat] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
   if (!ADMIN_SECTIONS.includes(section as AdminSectionKey)) {
     return <Navigate to="/admin" replace />
@@ -506,17 +462,36 @@ function AdminPage() {
       title="Admin"
       groups={groups}
       current={key}
+      page={key === "usage" && usageScope ? usageScopeTitle(usageScope) : undefined}
       actions={
         key === "usage" ? (
-          <SegmentedControl label="Assistant usage period" value={usagePeriod} options={USAGE_PERIODS} onChange={setUsagePeriod} />
+          <SegmentedControl label="AI usage period" value={usagePeriod} options={USAGE_PERIODS} onChange={setUsagePeriod} />
         ) : undefined
       }
-      peek={key === "logs" ? selectedLog ? <LogPeek entry={selectedLog} onClose={() => setSelectedLog(null)} /> : null : undefined}
+      peek={
+        key === "logs" ? (
+          selectedLog ? (
+            <LogPeek entry={selectedLog} onClose={() => setSelectedLog(null)} />
+          ) : null
+        ) : key === "usage" ? (
+          selectedChat ? (
+            <UsageChatPeek key={selectedChat} id={selectedChat} onClose={() => setSelectedChat(null)} />
+          ) : null
+        ) : undefined
+      }
     >
       {key === "health" ? <HealthSection /> : null}
       {key === "maintenance" ? <MaintenanceSection /> : null}
       {key === "ai" ? <AISettingsPanel /> : null}
-      {key === "usage" ? <UsageSection period={usagePeriod} /> : null}
+      {key === "usage" ? (
+        <UsageSection
+          key={[usagePeriod, usageScope && usageScopeTitle(usageScope), usageScope?.backend].join("|")}
+          period={usagePeriod}
+          scope={usageScope}
+          selectedChat={selectedChat}
+          onSelectChat={setSelectedChat}
+        />
+      ) : null}
       {key === "logs" ? <LogsSection selected={selectedLog} onSelect={setSelectedLog} /> : null}
       {key === "system" ? <SystemSection /> : null}
     </SettingsShell>

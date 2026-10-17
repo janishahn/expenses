@@ -1,3 +1,5 @@
+import type { AIFeature } from "./auth-context"
+
 export type CategorySummary = {
   id: number
   name: string
@@ -356,24 +358,75 @@ export type AssistantTurn = {
 
 export type AssistantChat = AssistantChatSummary & { turns: AssistantTurn[] }
 
-export type AIUsageSummary = {
-  feature: string
-  period: "week" | "month" | "all"
-  started_at: string | null
-  total_chats: number
-  completed_chats: number
-  failed_chats: number
-  cancelled_chats: number
-  costed_chats: number
+export type AIUsagePeriod = "week" | "month" | "all"
+
+export type AIUsageFigures = {
+  runs: number
+  failed_runs: number
+  stopped_runs: number
+  // Runs whose backend reported a cost; cost_usd sums only these.
+  priced_runs: number
   input_tokens: number
   output_tokens: number
-  total_tokens: number
   cached_input_tokens: number
-  cache_write_tokens: number
   reasoning_tokens: number
-  total_cost_decimal: string
-  average_cost_decimal: string
-  cost_unit: string | null
-  average_total_tokens: number
-  p95_duration_ms: number | null
+  total_tokens: number
+  cost_usd: string
+}
+
+// One model serving one feature, with a value per bucket.
+export type AIUsageSlice = AIUsageFigures & {
+  feature: AIFeature
+  backend: string | null
+  model: string
+  bucket_tokens: number[]
+  bucket_cost_usd: string[]
+}
+
+export type AIUsageChat = {
+  id: string
+  // own: the viewer's chat, with its title. private: another user's chat. deleted: the chat is gone.
+  access: "own" | "private" | "deleted"
+  title: string | null
+  username: string | null
+  started_at: string
+  last_run_at: string
+  turns: number
+  priced_runs: number
+  total_tokens: number
+  cost_usd: string
+}
+
+export type AIUsage = {
+  period: AIUsagePeriod
+  started_at: string | null
+  bucket: "day" | "week" | "month"
+  buckets: string[]
+  totals: AIUsageFigures & { chats: number; turns: number; p95_duration_ms: number | null }
+  slices: AIUsageSlice[]
+  chat_count: number
+  chats: AIUsageChat[]
+}
+
+export type AIUsageRun = {
+  created_at: string
+  status: "running" | "completed" | "failed" | "stopped"
+  backend: string | null
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  total_tokens: number
+  tool_calls: number
+  duration_ms: number | null
+  cost_usd: string | null
+}
+
+export type AIUsageChatDetail = AIUsageChat & {
+  tool_calls: number
+  // In the order the chat first used them.
+  models: { backend: string | null; model: string }[]
+  // The latest 100 turns, oldest first; turns counts them all.
+  runs: AIUsageRun[]
 }

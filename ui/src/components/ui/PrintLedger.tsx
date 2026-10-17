@@ -86,12 +86,14 @@ export function PrintLedger({
                   {row.type === "expense" ? (
                     <>
                       {row.reimbursed_total_cents > 0 ? (
-                        <span className={s.printNet}>net {formatAmountPrivate(row.net_amount_cents, "expense")}</span>
+                        <s className={s.printCharged}>{formatAmountPrivate(row.amount_cents, "expense")}</s>
                       ) : null}
-                      {formatAmountPrivate(row.amount_cents, "expense")}
+                      {formatAmountPrivate(row.net_amount_cents, "expense")}
                     </>
                   ) : (
-                    formatAmountPrivate(row.amount_cents, "income")
+                    <span className={row.is_reimbursement ? s.printMuted : undefined}>
+                      {formatAmountPrivate(row.amount_cents, "income")}
+                    </span>
                   )}
                 </td>
               </tr>

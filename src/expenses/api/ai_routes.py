@@ -1,11 +1,20 @@
-"""Admin settings for the server's AI features."""
+"""Admin settings and usage for the server's AI features."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from expenses.ai import backends, features
+from expenses.ai.usage_report import (
+    AIUsageChatDetailOut,
+    AIUsageOut,
+    UsagePeriod,
+    chat_usage,
+    usage_report,
+)
 from expenses.api.routes import (
     get_db,
     _require_csrf,
@@ -67,3 +76,35 @@ def models(backend: str):
         raise HTTPException(
             502, detail=f"The {backend} backend did not list its models."
         ) from exc
+
+
+@router.get("/usage", response_model=AIUsageOut)
+def usage(
+    request: Request,
+    db: Session = Depends(get_db),
+    period: UsagePeriod = "week",
+    feature: features.Feature | None = None,
+    backend: str | None = None,
+    model: str | None = None,
+    chats: int = Query(50, ge=1, le=500),
+):
+    context = _require_elevated_admin_context(request, db)
+    return usage_report(
+        db,
+        viewer_id=context.user.id,
+        period=period,
+        feature=feature,
+        backend=backend,
+        model=model,
+        chat_limit=chats,
+        now=datetime.utcnow(),
+    )
+
+
+@router.get("/usage/chats/{chat_id}", response_model=AIUsageChatDetailOut)
+def chat(chat_id: str, request: Request, db: Session = Depends(get_db)):
+    context = _require_elevated_admin_context(request, db)
+    detail = chat_usage(db, viewer_id=context.user.id, chat_id=chat_id)
+    if detail is None:
+        raise HTTPException(404, detail="This chat has no usage.")
+    return detail

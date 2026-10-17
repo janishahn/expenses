@@ -568,6 +568,10 @@ test.describe("Transactions Page", () => {
     await expect(popover).toBeHidden()
     await expect(peek.getByRole("link", { name: new RegExp(reimbursementTitle) })).toContainText("40,00")
     await expect(peek.getByText("Net", { exact: true })).toBeVisible()
+    // The row shows what the expense cost after the reimbursement, after its struck charge.
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row.locator("s")).toHaveText(/80,00/)
+    await expect(row).toContainText("40,00")
     const saved = await request.get(`/api/transactions/${expenseId}`)
     expect(((await saved.json()) as { reimbursed_total_cents: number }).reimbursed_total_cents).toBe(4000)
   })

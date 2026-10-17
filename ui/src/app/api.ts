@@ -1,5 +1,4 @@
 import type {
-  AIUsageSummary,
   AssistantChat,
   AssistantChatSummary,
   AssistantStreamEvent,
@@ -231,14 +230,6 @@ export async function apiFetchFormData<T>(
     includeCsrfHeader: true,
     setJsonContentType: false,
   })
-}
-
-export function fetchAIUsageSummary(
-  period: AIUsageSummary["period"] = "week"
-): Promise<AIUsageSummary> {
-  return apiFetch<AIUsageSummary>(
-    `/api/ai/usage/summary?feature=spending_chat&period=${period}`
-  )
 }
 
 function streamErrorMessage(text: string, status: number): string {

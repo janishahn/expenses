@@ -575,6 +575,13 @@ test.describe("Transactions Page (mobile)", () => {
         return [saved.reimbursed_total_cents, saved.durable_purchase !== null]
       })
       .toEqual([2000, true])
+
+    // The row shows the net with the reimbursed mark, without the charged amount.
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row.getByRole("img", { name: "Reimbursed" })).toBeVisible()
+    await expect(row).toContainText("40,00")
+    await expect(row.locator("s")).toBeHidden()
   })
 
   test("deletes a transaction from the peek menu and restores it with Undo", async ({

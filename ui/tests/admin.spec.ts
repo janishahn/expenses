@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { expect, test, type Page } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+import { assistantTurns, chatIdFrom, sendQuestion, unique } from "./assistant-journeys"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
 
@@ -32,7 +33,7 @@ test.describe("Admin Page", () => {
       "Health",
       "Maintenance",
       "AI",
-      "Assistant usage",
+      "AI usage",
       "Logs",
       "System",
     ])
@@ -295,56 +296,35 @@ test.describe("Admin Page", () => {
     }
   })
 
-  test("renders assistant usage stats and switches the reporting period", async ({ page }) => {
-    const requestedPeriods: string[] = []
-    await page.route("**/api/ai/usage/summary?*", async (route) => {
-      const period = new URL(route.request().url()).searchParams.get("period") ?? "week"
-      requestedPeriods.push(period)
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          feature: "spending_chat",
-          period,
-          started_at: period === "all" ? null : "2026-06-21T00:00:00",
-          total_chats: period === "all" ? 42 : period === "month" ? 0 : 7,
-          completed_chats: period === "all" ? 40 : 6,
-          failed_chats: 1,
-          cancelled_chats: 0,
-          costed_chats: 5,
-          input_tokens: 1000,
-          output_tokens: 500,
-          total_tokens: 1500,
-          cached_input_tokens: 200,
-          cache_write_tokens: 0,
-          reasoning_tokens: 50,
-          total_cost_decimal: "0.0123",
-          average_cost_decimal: "0.0000213333333333",
-          cost_unit: "usd",
-          average_total_tokens: 214,
-          p95_duration_ms: 4200,
-        }),
-      })
-    })
+  test("follows an Assistant chat's usage from its model to its turns", async ({ page }) => {
+    const question = unique("What did I spend in May")
+    await page.goto("/assistant")
+    await sendQuestion(page, question)
+    await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
+    // Leaving mid-answer stops the turn, so wait until it is saved as completed.
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
+    const chatId = chatIdFrom(page)
 
-    await openSection(page, "Assistant usage", "/admin/usage")
-    await expect(page.locator("main h1")).toHaveText("Assistant usage")
-    const period = page.getByRole("radiogroup", { name: "Assistant usage period" })
-    await expect(period.getByRole("radio", { name: "Week" })).toBeChecked()
+    await page.goto("/admin")
+    await openSection(page, "AI usage", "/admin/usage")
+    await expect(page.locator("main h1")).toHaveText("AI usage")
+    await expect(page.getByRole("radiogroup", { name: "AI usage period" }).getByRole("radio", { name: "Week" })).toBeChecked()
 
-    const strip = page.locator("section").filter({ hasText: "Per chat" }).first()
-    await expect(strip.getByText("$0.0123")).toBeVisible()
-    await expect(strip.getByText("$0.0000213 per chat")).toBeVisible()
-    await expect(strip.getByText("6 completed · 1 failed")).toBeVisible()
-    await expect(strip.getByText("1 500")).toBeVisible()
-    await expect.poll(() => requestedPeriods.includes("week")).toBeTruthy()
+    // The stub is a self-hosted backend: its runs count tokens and report no cost.
+    await page
+      .getByRole("list", { name: "Usage by feature and model" })
+      .getByRole("listitem", { name: /^Assistant, e2e-large on local, .+, not priced$/ })
+      .click()
+    await expect(page).toHaveURL("/admin/usage?feature=spending_chat&model=e2e-large&backend=local")
+    await expect(page.locator("main h1")).toHaveText("Assistant · e2e-large")
 
-    await period.getByRole("radio", { name: "Month" }).click()
-    await expect(page.getByText("No assistant usage in this period.")).toBeVisible()
-
-    await period.getByRole("radio", { name: "All time" }).click()
-    await expect.poll(() => requestedPeriods.includes("all")).toBeTruthy()
-    await expect(strip.getByText("40 completed · 1 failed")).toBeVisible()
-    await expect(strip.getByText("42", { exact: true })).toBeVisible()
+    await page
+      .getByRole("list", { name: "Assistant chats" })
+      .getByRole("listitem", { name: new RegExp(`^${question}, 1 turn, `) })
+      .click()
+    const peek = page.getByRole("complementary", { name: question })
+    await expect(peek.getByRole("listitem", { name: /^Completed turn at .+, not priced$/ })).toHaveCount(1)
+    await expect(peek).toContainText("e2e-large on local")
+    await expect(peek.getByRole("link", { name: "Open chat" })).toHaveAttribute("href", `/assistant?chat=${chatId}`)
   })
 })

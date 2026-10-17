@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "./fixtures"
 import { ensureElevatedAdmin } from "./auth-helpers"
 import { getCsrfToken, loginAsIsolatedUser } from "./helpers"
+import { assistantTurns, sendQuestion, unique } from "./assistant-journeys"
 
 async function expectNoHorizontalOverflow(page: Page) {
   const width = await page.evaluate(() => ({
@@ -257,6 +258,36 @@ test.describe("Settings and administration (mobile)", () => {
     await expect(page.locator("main h1")).toHaveText("Legacy SQLite import")
     await expect(page.getByLabel("SQLite database file")).toBeAttached()
     await expect(page.getByText("Drop a .db file or choose one")).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test("follows an Assistant chat's usage from its model to its turns", async ({ page }) => {
+    await ensureElevatedAdmin(page)
+    const question = unique("What did I spend in May")
+    await page.goto("/assistant")
+    await sendQuestion(page, question)
+    await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
+    // Leaving mid-answer stops the turn, so wait until it is saved as completed.
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
+
+    await page.goto("/admin")
+    await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "AI usage" }).click()
+    await expect(page).toHaveURL("/admin/usage")
+    const model = page
+      .getByRole("list", { name: "Usage by feature and model" })
+      .getByRole("listitem", { name: /^Assistant, e2e-large on local, .+, not priced$/ })
+    // A row shows the tokens when no backend priced its runs, as for the self-hosted stub.
+    await expect(model).toContainText(/\d tokens$/)
+    await expectNoHorizontalOverflow(page)
+    await model.click()
+    await expect(page).toHaveURL("/admin/usage?feature=spending_chat&model=e2e-large&backend=local")
+
+    await page
+      .getByRole("list", { name: "Assistant chats" })
+      .getByRole("listitem", { name: new RegExp(`^${question}, 1 turn, `) })
+      .click()
+    const peek = page.getByRole("complementary", { name: question })
+    await expect(peek.getByRole("listitem", { name: /^Completed turn at .+, not priced$/ })).toContainText(/\d tokens$/)
     await expectNoHorizontalOverflow(page)
   })
 
