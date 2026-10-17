@@ -35,7 +35,9 @@ API contracts, and tests for those facts.
   before the amount. Mute reimbursement income and give it the same mark, since
   its expense already counts it. Keep the charged amount in the row's
   accessible label and on the detail screen.
-- Use native camera, Photos, Files, Quick Look, and share-sheet flows. Keep
+- Use native camera, Photos, Files, Quick Look, and share-sheet flows. Show image
+  receipts like photos (zoom from the preview, swipe down to close); Quick Look
+  is for documents such as PDFs. Keep
   generated reports, exports, and backups owned by the server.
 - Keep destructive actions explicit and confirm irreversible or broad changes.
 

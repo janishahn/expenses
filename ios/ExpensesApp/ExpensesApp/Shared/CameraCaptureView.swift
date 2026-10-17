@@ -55,9 +55,11 @@ enum ReceiptImageProcessor {
         let size = image.size
         let scale = min(1, maxDimension / max(size.width, size.height))
         let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
-        // One pixel per point; the screen's scale would triple the size.
+        // One pixel per point; the screen's scale would triple the size. A receipt needs no
+        // HDR, and a standard-range JPEG is smaller and opens anywhere.
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
+        format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         let resized = renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))

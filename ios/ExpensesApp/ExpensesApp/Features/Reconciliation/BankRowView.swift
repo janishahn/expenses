@@ -36,8 +36,7 @@ struct BankRowView: View {
                         .font(.largeTitle.weight(.semibold))
                 }
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .detailHeadSection()
 
             Section {
                 LabeledContent("Booked", value: AppFormatters.day(AppFormatters.localDay(row.bookingDate)))

@@ -112,4 +112,15 @@ extension View {
     func expensesRowBackground() -> some View {
         modifier(ExpensesRowBackground())
     }
+
+    /// The name and amount at the top of a detail screen, on the background and in line
+    /// with the cards' edges. The row spans the screen, so the cards' rounded corner
+    /// doesn't clip the first letter.
+    func detailHeadSection() -> some View {
+        listRowBackground(Color.clear)
+            .listSectionMargins(.horizontal, 0)
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(.hidden)
+            .listSectionSeparator(.hidden)
+    }
 }

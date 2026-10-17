@@ -4,6 +4,7 @@ import { CameraIcon } from "@phosphor-icons/react/Camera"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { FilePdfIcon } from "@phosphor-icons/react/FilePdf"
+import { ImageIcon } from "@phosphor-icons/react/Image"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import clsx from "clsx"
@@ -78,6 +79,8 @@ export function ReceiptSection({
   }
   const onPreviewError = (id: number) => () => setMissing((current) => ({ ...current, [id]: true }))
   const showsImage = (target: ReceiptFile) => Boolean(target.previewUrl) && !missing[target.id]
+  const fileIcon = (target: ReceiptFile) =>
+    target.pdf ? <FilePdfIcon aria-hidden="true" /> : <ImageIcon aria-hidden="true" />
 
   return (
     <div {...dropProps}>
@@ -124,9 +127,7 @@ export function ReceiptSection({
               {showsImage(file) && file.previewUrl ? (
                 <img src={file.previewUrl} alt="" onLoad={onPreviewLoad(file.id)} onError={onPreviewError(file.id)} />
               ) : (
-                <span className={s.rprevIcon}>
-                  <FilePdfIcon aria-hidden="true" />
-                </span>
+                <span className={s.rprevIcon}>{fileIcon(file)}</span>
               )}
             </button>
             <div className={s.rcap}>
@@ -159,7 +160,7 @@ export function ReceiptSection({
                     {showsImage(entry) && entry.previewUrl ? (
                       <img src={entry.previewUrl} alt="" onError={onPreviewError(entry.id)} />
                     ) : (
-                      <FilePdfIcon aria-hidden="true" />
+                      fileIcon(entry)
                     )}
                   </button>
                 ))}

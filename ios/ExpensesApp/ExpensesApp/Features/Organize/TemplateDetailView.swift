@@ -117,8 +117,7 @@ struct TemplateDetailView: View {
                 .detailNameField($nameDraft) { nameFocused = false }
                 .fieldError(saves.errors[.name])
         }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+        .detailHeadSection()
     }
 
     private func properties(_ template: TemplateRow, _ shown: TemplateMutationRequest) -> some View {

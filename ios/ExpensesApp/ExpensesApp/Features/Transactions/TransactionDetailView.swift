@@ -1,3 +1,4 @@
+import ImageIO
 import MapKit
 import QuickLook
 import SwiftUI
@@ -94,7 +95,14 @@ struct TransactionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .expensesScreenStyle()
         .toolbar {
-            if transaction != nil {
+            // While a field is edited, Done takes the place of the actions.
+            if focus != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", role: .confirm) {
+                        focus = nil
+                    }
+                }
+            } else if transaction != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if transaction?.type == "expense", transaction?.durablePurchase == nil {
@@ -114,12 +122,6 @@ struct TransactionDetailView: View {
                     } label: {
                         Label("More actions", systemImage: "ellipsis")
                     }
-                }
-            }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    focus = nil
                 }
             }
         }
@@ -226,8 +228,7 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+        .detailHeadSection()
     }
 
     private func properties(_ transaction: TransactionDetail, _ shown: TransactionMutationRequest) -> some View {
@@ -600,10 +601,12 @@ private struct ReceiptsSection: View {
     @State private var uploading = false
     @State private var error: String?
     @State private var previewURL: URL?
+    @State private var viewing: ReceiptAttachment?
+    @Namespace private var zoom
 
     private enum Thumbnail {
         case image(UIImage)
-        // A PDF, or an image the server could not preview.
+        // A PDF, or an image that could not be loaded.
         case unavailable
     }
 
@@ -624,6 +627,7 @@ private struct ReceiptsSection: View {
                         Task { await open(file) }
                     } label: {
                         preview(file)
+                            .matchedTransitionSource(id: file.id, in: zoom)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open \(file.originalFilename)")
@@ -698,6 +702,10 @@ private struct ReceiptsSection: View {
                 Text(file.originalFilename)
             }
             .quickLookPreview($previewURL)
+            .fullScreenCover(item: $viewing) { file in
+                ReceiptPhotoView(file: file, preview: thumbnailImage(file))
+                    .navigationTransition(.zoom(sourceID: file.id, in: zoom))
+            }
             .task(id: files.map(\.id)) {
                 await loadThumbnails()
             }
@@ -785,17 +793,35 @@ private struct ReceiptsSection: View {
         .scrollIndicators(.hidden)
     }
 
+    private func thumbnailImage(_ file: ReceiptAttachment) -> UIImage? {
+        if case let .image(image)? = thumbnails[file.id] {
+            return image
+        }
+        return nil
+    }
+
     private func loadThumbnails() async {
         for file in files where thumbnails[file.id] == nil {
-            if file.mimeType.hasPrefix("image/"),
-               let data = await model.attachmentThumbnail(file),
-               let image = UIImage(data: data)
+            guard isImage(file) else {
+                thumbnails[file.id] = .unavailable
+                continue
+            }
+            // Without the server's preview, the original image stands in.
+            if let data = await model.attachmentThumbnail(file), let image = UIImage(data: data) {
+                thumbnails[file.id] = .image(image)
+            } else if let url = await model.downloadAttachment(file),
+                      let image = await downsampledImage(at: url, maxPixels: 1024)
             {
                 thumbnails[file.id] = .image(image)
-            } else {
+            } else if !Task.isCancelled {
+                // A cancelled load is left to the next one.
                 thumbnails[file.id] = .unavailable
             }
         }
+    }
+
+    private func isImage(_ file: ReceiptAttachment) -> Bool {
+        file.mimeType.hasPrefix("image/")
     }
 
     // A replacement swaps the file in one request, so it also works at the receipt limit.
@@ -815,9 +841,12 @@ private struct ReceiptsSection: View {
         }
     }
 
+    // Images open like a photo; other files open in Quick Look.
     private func open(_ file: ReceiptAttachment) async {
         error = nil
-        if let url = await model.downloadAttachment(file) {
+        if isImage(file) {
+            viewing = file
+        } else if let url = await model.downloadAttachment(file) {
             previewURL = url
         } else {
             error = model.lastError?.message ?? "Unable to open the receipt."
@@ -828,6 +857,155 @@ private struct ReceiptsSection: View {
         error = nil
         if !(await model.deleteAttachment(file, transactionID: transaction.id)) {
             error = model.lastError?.message ?? "Unable to remove the receipt."
+        }
+    }
+}
+
+/// An image receipt on its own, like a photo. It opens on the preview at once and sharpens
+/// when the original arrives; pinch or double-tap to zoom, swipe down to close.
+private struct ReceiptPhotoView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    let file: ReceiptAttachment
+    let preview: UIImage?
+
+    @State private var original: Original?
+
+    private enum Original {
+        case loaded(URL, UIImage)
+        case failed(String)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if case let .loaded(_, image)? = original {
+                    ZoomableImage(image: image)
+                } else if let preview {
+                    ZoomableImage(image: preview)
+                } else if case .none = original {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+            .ignoresSafeArea()
+            .accessibilityElement()
+            .accessibilityLabel(file.originalFilename)
+            .accessibilityAddTraits(.isImage)
+            .overlay(alignment: .bottom) {
+                if case let .failed(message)? = original {
+                    FieldError(message)
+                        .padding(12)
+                        .glassEffect(in: .rect(cornerRadius: 12))
+                        .padding()
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(role: .close) {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    switch original {
+                    case let .loaded(url, _)?:
+                        ShareLink(item: url)
+                    case nil where preview != nil:
+                        ProgressView()
+                            .accessibilityLabel("Loading the original")
+                    default:
+                        EmptyView()
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .task {
+            if let url = await model.downloadAttachment(file),
+               // Sharp enough to read when zoomed, at a fraction of a full decode.
+               let image = await downsampledImage(at: url, maxPixels: 4096)
+            {
+                original = .loaded(url, image)
+            } else if !Task.isCancelled {
+                original = .failed(model.lastError?.message ?? "Unable to load the receipt.")
+            }
+        }
+    }
+}
+
+/// The image at `url`, upright and at most `maxPixels` on its longer side. Decoding a large
+/// photo in full would take hundreds of megabytes.
+private func downsampledImage(at url: URL, maxPixels: Int) async -> UIImage? {
+    await Task.detached(priority: .userInitiated) {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map(UIImage.init(cgImage:))
+    }.value
+}
+
+/// An image fitted to the view that zooms with a pinch or a double tap.
+private struct ZoomableImage: UIViewRepresentable {
+    let image: UIImage
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.maximumZoomScale = 4
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        let imageView = context.coordinator.imageView
+        imageView.contentMode = .scaleAspectFit
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrollView.addSubview(imageView)
+        let doubleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.toggleZoom(_:))
+        )
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.imageView.image = image
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        let imageView = UIImageView()
+
+        func viewForZooming(in _: UIScrollView) -> UIView? {
+            imageView
+        }
+
+        @objc func toggleZoom(_ tap: UITapGestureRecognizer) {
+            guard let scrollView = tap.view as? UIScrollView else {
+                return
+            }
+            if scrollView.zoomScale > 1 {
+                scrollView.setZoomScale(1, animated: true)
+            } else {
+                let point = tap.location(in: imageView)
+                let size = CGSize(width: imageView.bounds.width / 3, height: imageView.bounds.height / 3)
+                let area = CGRect(
+                    origin: CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2),
+                    size: size
+                )
+                scrollView.zoom(to: area, animated: true)
+            }
         }
     }
 }

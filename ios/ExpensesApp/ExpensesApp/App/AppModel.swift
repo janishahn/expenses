@@ -108,6 +108,9 @@ final class AppModel {
 
     private static let appearancePreferenceKey = "expenses.appearancePreference"
     private static let amountsHiddenKey = "expenses.amountsHidden"
+    // Opened receipts, kept for the signed-in session only: finance data stays off the device.
+    private static let receiptDownloads = FileManager.default.temporaryDirectory
+        .appendingPathComponent("receipts", isDirectory: true)
 
     init() {
         let storedURL = UserDefaults.standard.string(forKey: ExpensesAppStorage.baseURLKey)
@@ -117,6 +120,7 @@ final class AppModel {
         amountsHidden = UserDefaults.standard.bool(forKey: Self.amountsHiddenKey)
         apiClient = ExpensesAPIClient(baseURL: URL(string: initialBaseURLString))
         hasSession = token != nil
+        try? FileManager.default.removeItem(at: Self.receiptDownloads)
     }
 
     var token: String? {
@@ -1901,18 +1905,29 @@ final class AppModel {
         }
     }
 
+    /// The receipt's file in the temporary folder. Until the session ends, a file is kept by
+    /// its content hash, so opening the receipt again needs no new download.
     func downloadAttachment(_ attachment: ReceiptAttachment) async -> URL? {
         guard let token else {
             return nil
+        }
+        let folder = Self.receiptDownloads.appendingPathComponent(attachment.sha256Hex, isDirectory: true)
+        let target = folder.appendingPathComponent(
+            attachment.originalFilename.replacingOccurrences(of: "/", with: "_")
+        )
+        if FileManager.default.fileExists(atPath: target.path) {
+            return target
         }
         isLoading = true
         lastError = nil
         defer { isLoading = false }
         do {
             let download = try await apiClient.downloadAttachment(attachment, token: token)
-            let safeName = download.filename.replacingOccurrences(of: "/", with: "_")
-            let target = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(attachment.id)-\(safeName)")
+            // A session that ended during the download must leave no receipt behind.
+            guard self.token == token else {
+                return nil
+            }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try download.data.write(to: target, options: .atomic)
             return target
         } catch let error as APIErrorInfo {
@@ -2192,6 +2207,7 @@ final class AppModel {
     }
 
     private func clearUserScopedState() {
+        try? FileManager.default.removeItem(at: Self.receiptDownloads)
         dashboardLoadID += 1
         transactionsLoadID += 1
         // The superseded loads skip their own reset, which would keep Sign in disabled.
