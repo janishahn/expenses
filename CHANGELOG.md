@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-10-18
+
 ### Added
 - The Assistant can move transactions to Trash, archive categories and tags, remove budgets from a month on, and end recurring payments. Each change waits for your approval on a card, and Undo reverses it: transactions come back from Trash, archived categories and tags return, and budgets and end dates go back to what they were.
-- The Assistant reads your data with a read-only query of your own rows, so it can filter, group, and count transactions in any way, and it now sees Trash, recurring payments, rules, and durable purchases. It also reads your balance history and forecast. Each query runs on a private copy of your rows, stops after 2 seconds, and returns at most 100 rows.
+- The Assistant reads your data with a read-only query of your own rows, so it can filter, group, and count transactions in any way, and it now sees Trash, recurring payments, rules, and durable purchases. It also reads your balance history and forecast. Each query runs on a private copy of your rows, stops after 2 seconds, and returns at most 100 rows. The copy is a temporary file in the server's temp folder, deleted when the answer ends.
 - The Assistant knows the app's pages and whether you use the web or iOS app, so it can say where to find something. Its links to pages, such as Budgets, open them in the app on the web and iOS.
 
 ### Changed
@@ -554,7 +556,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.5...HEAD
+[0.8.5]: https://github.com/janishahn/expenses/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/janishahn/expenses/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/janishahn/expenses/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/janishahn/expenses/compare/v0.8.1...v0.8.2
