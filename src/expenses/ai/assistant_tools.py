@@ -315,12 +315,17 @@ class AssistantReader:
                 # The copy never outlives the turn, so it needs no journal or fsync.
                 source.execute("pragma assistant_copy.journal_mode = off")
                 source.execute("pragma assistant_copy.synchronous = off")
+                # One transaction, so every table shows the ledger at the same moment.
+                source.execute("begin")
                 for table, query in SQL_TABLES.items():
                     source.execute(
                         f"create table assistant_copy.{table} as {query}",
                         {"user": self.user_id},
                     )
+                source.execute("commit")
             finally:
+                if source.in_transaction:
+                    source.rollback()
                 source.execute("detach assistant_copy")
         finally:
             pooled.close()
