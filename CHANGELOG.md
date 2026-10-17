@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On iOS, unlocking with Face ID after more than 20 seconds away opened the Dashboard. It now returns to the screen you left. An open sheet or receipt closes when the app locks.
 - Receipt thumbnails of phone photos could show sideways, because the server ignored the turn the camera stores with the photo. The server makes new thumbnails in the receipts folder's `.thumbnails` folder; the old `.thumbs` folder is no longer used and can be deleted.
 - A receipt thumbnail requested while the server was still making it could arrive cut off.
-- On iOS, a receipt preview could stay a document icon after a slow or interrupted load, or when the server couldn't make a thumbnail. It now loads again next time, and shows the original image when the server has no thumbnail. On the web, such a receipt showed a PDF icon; it now shows the original image too.
+- On iOS, a receipt preview could stay a document icon after a slow or interrupted load, or when the server couldn't make a thumbnail. It now loads again next time, and shows the original image when the server has no thumbnail. On the web, an image receipt without a thumbnail showed a PDF icon; it now shows an image icon.
 - On iOS, the top-left corner of a detail screen's name was clipped.
 
 ## [0.8.3] - 2026-10-17
