@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The Assistant sometimes listed single transactions at 100 times their amount, because it read amounts in cents as euros. Its tools now give each amount as euro text beside the cents, and the Assistant writes amounts from that text.
+- On iOS, the Assistant's send button sat 1 point low in the message field. It is now centered, with even space around it.
+- On iOS, after you sent a question of several lines, the empty message field kept their height until the answer arrived. It now returns to one line when you send.
+
 ## [0.8.7] - 2026-10-18
 
 ### Fixed

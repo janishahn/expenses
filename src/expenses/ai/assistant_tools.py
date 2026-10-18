@@ -39,9 +39,11 @@ Reading data:
   and ask for what is missing instead of guessing.
 
 Amounts:
-- Every amount in tool arguments and results is in euro cents, as an integer:
-  123456 means 1 234,56 €. Fields that hold cents end in _cents. Convert cents
-  before you write an amount, and give cents when you propose one.
+- Amounts in tool arguments and in fields that end in _cents are integer euro
+  cents: 123456 means 1 234,56 €. Give cents when you propose an amount.
+- A tool result shows each _cents amount again as text, under the same name
+  without _cents: net_cents 123456 comes with net "1 234,56". Write amounts from
+  that text, never from the cents.
 - Expenses are net: a reimbursement allocated to an expense lowers that expense.
   Reimbursements are not income.
 - Write amounts the way the app does: a space between thousands, a comma before
@@ -399,10 +401,30 @@ class AssistantReader:
             elif message == "not authorized":
                 message = "Only a SELECT can run; it can't change data or settings."
             return _invalid("invalid_sql", message)
+        amounts = {
+            index for index, name in enumerate(columns) if name.endswith("_cents")
+        }
+        shown_rows = []
+        for row in rows[:SQL_ROWS]:
+            shown = []
+            for index, value in enumerate(row):
+                shown.append(_cell(value))
+                if index in amounts:
+                    # Model-written SQL can put anything in a column it names _cents.
+                    shown.append(
+                        _amount(value) if isinstance(value, int | float) else None
+                    )
+            shown_rows.append(shown)
         result: dict[str, Any] = {
             "ok": True,
-            "columns": columns,
-            "rows": [[_cell(value) for value in row] for row in rows[:SQL_ROWS]],
+            "columns": [
+                shown
+                for index, name in enumerate(columns)
+                for shown in (
+                    (name, name.removesuffix("_cents")) if index in amounts else (name,)
+                )
+            ],
+            "rows": shown_rows,
         }
         if len(rows) > SQL_ROWS:
             result["more"] = True
@@ -428,13 +450,15 @@ class AssistantReader:
                     **progress.get(budget.scope_category_id, {}),
                 }
             )
-        return {
-            "ok": True,
-            "year": year,
-            "month": month,
-            "as_of": self.today.isoformat(),
-            "budgets": budgets,
-        }
+        return with_amounts(
+            {
+                "ok": True,
+                "year": year,
+                "month": month,
+                "as_of": self.today.isoformat(),
+                "budgets": budgets,
+            }
+        )
 
     def get_balance(
         self, *, months_back: int, months_ahead: Literal[0, 3, 6, 12]
@@ -475,7 +499,7 @@ class AssistantReader:
                     for month in forecast["months"]
                 ],
             }
-        return result
+        return with_amounts(result)
 
 
 def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[str, Any]:
@@ -483,7 +507,9 @@ def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[st
     `more` means there are others, so aggregate in SQL or page with LIMIT and OFFSET.
 
     Tables. Dates are YYYY-MM-DD text, every *_cents column is an integer amount in
-    euro cents (123456 is 1 234,56 €), and flags are 1 or 0.
+    euro cents (123456 is 1 234,56 €), and flags are 1 or 0. In the result, each
+    column whose name ends in _cents is followed by the same amount as text, so end
+    the name of a computed amount in _cents too: sum(net_cents) as spent_cents.
     - transactions: id, date, kind (expense, income, or reimbursement), title,
       description, category_id, category, amount_cents, reimbursed_cents,
       net_cents, original_currency, original_amount_cents, recurring_id. net_cents
@@ -560,6 +586,30 @@ def _eur(cents: int) -> str:
     sign = "-" if cents < 0 else ""
     euros = f"{abs(cents) // 100:,}".replace(",", " ")
     return f"{sign}{euros},{abs(cents) % 100:02d} €"
+
+
+def _amount(cents: int | float) -> str:
+    """Cents as the model writes them, without the currency: 1 234,56."""
+    cents = round(cents)
+    sign = "-" if cents < 0 else ""
+    units = f"{abs(cents) // 100:,}".replace(",", " ")
+    return f"{sign}{units},{abs(cents) % 100:02d}"
+
+
+def with_amounts(value: Any) -> Any:
+    """Puts the text of each *_cents number in a tool result beside it, such as net
+    "19,00" beside net_cents 1900, so the model quotes amounts instead of converting
+    cents."""
+    if isinstance(value, list):
+        return [with_amounts(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    shown = {}
+    for key, item in value.items():
+        shown[key] = with_amounts(item)
+        if key.endswith("_cents") and isinstance(item, int | float):
+            shown[key.removesuffix("_cents")] = _amount(item)
+    return shown
 
 
 def tool_label(tool_name: str, args: dict[str, Any]) -> str:
