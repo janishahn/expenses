@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The Assistant knows it can work out totals, averages, and other arithmetic with a data query, which is more reliable than adding numbers up itself.
+
 ### Fixed
 - On iOS, opening the keyboard at the end of an Assistant chat covered the end of the newest answer. The chat now moves up with the keyboard when you are at its end, and keeps its place when you have scrolled back.
 
