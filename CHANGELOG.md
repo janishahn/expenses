@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-10-18
+
 ### Fixed
 - The Assistant sometimes listed single transactions at 100 times their amount, because it read amounts in cents as euros. Its tools now give each amount as euro text beside the cents, and the Assistant writes amounts from that text.
 - On iOS, the Assistant's send button sat 1 point low in the message field. It is now centered, with even space around it.
@@ -574,7 +576,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.7...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.8...HEAD
+[0.8.8]: https://github.com/janishahn/expenses/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/janishahn/expenses/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/janishahn/expenses/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/janishahn/expenses/compare/v0.8.4...v0.8.5
