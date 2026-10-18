@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 import expenses.app as app_main
@@ -242,7 +243,7 @@ def test_forecast_scenario_applies_modifications(
         next_occurrence=next_month,
     )
 
-    for offset in (1, 2, 3):
+    for offset in range(1, 10):
         month_start = _add_months(today.replace(day=1), -offset)
         _create_transaction(
             api_client,
@@ -748,7 +749,7 @@ def test_forecast_applies_seasonality_variable_income_and_stable_prediction_band
     assert first.json() == second.json()
     payload = first.json()
     assert payload["model"] == {
-        "method": "seasonal_median",
+        "method": "seasonal_average",
         "history_months": 24,
         "seasonality_applied": True,
         "prediction_interval_available": True,
@@ -761,3 +762,77 @@ def test_forecast_applies_seasonality_variable_income_and_stable_prediction_band
     for month in payload["months"]:
         assert month["end_balance_p10_cents"] <= month["end_balance_cents"]
         assert month["end_balance_cents"] <= month["end_balance_p90_cents"]
+
+
+@pytest.mark.parametrize(
+    ("amounts", "expected_cents"),
+    [
+        # A single large month counts as the next largest, so it does not repeat.
+        ([10_000, 10_000, 10_000, 10_000, 10_000, 100_000], 10_000),
+        # Large months that come back raise the estimate above a typical month.
+        ([10_000, 10_000, 30_000, 10_000, 10_000, 30_000], 17_450),
+    ],
+)
+def test_forecast_estimates_variable_spending_from_capped_recent_average(
+    monkeypatch,
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    amounts: list[int],
+    expected_cents: int,
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    shopping_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    for offset, amount in zip(range(6, 0, -1), amounts):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=10),
+            txn_type="expense",
+            amount_cents=amount,
+            category_id=shopping_id,
+            title=f"Shopping {month.isoformat()}",
+        )
+
+    response = api_client.get("/api/forecast?horizon=3&mode=full")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model"]["method"] == "recent_average"
+    assert payload["months"][0]["projected_expenses_cents"] == expected_cents
+
+
+@pytest.mark.parametrize(("history_months", "available"), [(8, False), (9, True)])
+def test_forecast_range_needs_six_out_of_sample_months(
+    monkeypatch,
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    history_months: int,
+    available: bool,
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    shopping_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    for offset in range(history_months, 0, -1):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=10),
+            txn_type="expense",
+            amount_cents=10_000 + 2_000 * (offset % 3),
+            category_id=shopping_id,
+            title=f"Shopping {month.isoformat()}",
+        )
+
+    response = api_client.get("/api/forecast?horizon=6&mode=full")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model"]["prediction_interval_available"] is available
+    final = payload["months"][-1]
+    if available:
+        assert final["end_balance_p10_cents"] < final["end_balance_cents"]
+        assert final["end_balance_cents"] < final["end_balance_p90_cents"]
+    else:
+        assert final["end_balance_p10_cents"] is None
+        assert final["end_balance_p90_cents"] is None
