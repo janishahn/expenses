@@ -318,17 +318,20 @@ class AssistantReader:
             .order_by(AssistantAction.decided_at.desc())
             .limit(RECENT_ACTIONS)
         ).all()
-        if actions:
-            sections["changes"] = "\n".join(
-                [
-                    "Changes you made recently (action_id: summary, date):",
-                    *(
+        # Always present, so an emptied list replaces the one the model saw before.
+        sections["changes"] = "\n".join(
+            [
+                "Changes you made recently (action_id: summary, date):",
+                *(
+                    [
                         f"- {action.id}: {action.summary}, {action.decided_at:%Y-%m-%d}"
                         + (", undone" if action.status == "undone" else "")
                         for action in actions
-                    ),
-                ]
-            )
+                    ]
+                    or ["- none"]
+                ),
+            ]
+        )
         return sections
 
     def _sql_copy(self) -> sqlite3.Connection:

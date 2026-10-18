@@ -1066,8 +1066,10 @@ async def test_assistant_requests_keep_their_prefix_across_approvals() -> None:
     # The approval added a recent change, so the next question repeats only that
     # part of the reference; an unchanged reference is not sent again.
     assert "Categories (" in requests[0][-1][1]
-    assert "Changes you made recently" not in requests[0][-1][1]
-    assert "Changes you made recently" in requests[2][-1][1]
+    assert "<changes>\\nChanges you made recently" in requests[0][-1][1]
+    assert "- none\\n</changes>" in requests[0][-1][1]
+    assert "<changes>\\nChanges you made recently" in requests[2][-1][1]
+    assert "- none\\n</changes>" not in requests[2][-1][1]
     assert "Categories (" not in requests[2][-1][1]
     assert requests[3][-1] == ("user-prompt", repr("Thanks again"))
 
