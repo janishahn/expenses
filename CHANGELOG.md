@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-10-18
+
 ### Fixed
 - After you approved a change, Anthropic rejected the Assistant's next request and the model continued without its earlier reasoning, because the start of the chat had changed. The date, categories, tags, and recent changes now come with your question and are sent again only when they change, so each request in a chat repeats the previous one.
 
@@ -567,7 +569,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/janishahn/expenses/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/janishahn/expenses/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/janishahn/expenses/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/janishahn/expenses/compare/v0.8.3...v0.8.4
