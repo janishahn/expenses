@@ -347,7 +347,7 @@ def test_reader_reports_budgets_balance_and_reference() -> None:
         assert len(forecast["forecast"]["months"]) == 3
         assert "history" not in forecast
 
-        reference = reader.reference()
+        reference = assistant_tools.reference_block(reader.reference())
         assert "Today is Saturday, 2026-06-27." in reference
         assert "The user is in the web app." in reference
         assert f"- {ids['groceries_id']}: Groceries, expense" in reference
@@ -385,6 +385,16 @@ def _test_model(stream_function) -> AssistantModel:
 
 def _after_tool(messages: list[ModelMessage]) -> bool:
     return any(isinstance(part, ToolReturnPart) for part in messages[-1].parts)
+
+
+def _prompts(messages: list[ModelMessage]) -> str:
+    """What the user's side sent the model: questions and the app's reference."""
+    return "\n".join(
+        part.content
+        for message in messages
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    )
 
 
 def _apply(items: dict[str, dict], row: dict) -> None:
@@ -432,7 +442,7 @@ def test_assistant_route_streams_and_saves_a_turn(
         if returns := _tool_returns(messages):
             heard.append(returns[-1].content)
         else:
-            assert "The user is in the web app." in info.instructions
+            assert "The user is in the web app." in _prompts(messages)
             yield {0: DeltaThinkingPart(content="Look up June.")}
             yield "Checking June."
             yield _call(
@@ -517,7 +527,7 @@ def test_assistant_allows_mobile_bearer_without_csrf(
 
     async def stream(messages, info):
         # The bearer token marks the iOS app.
-        assert "The user is in the iOS app." in info.instructions
+        assert "The user is in the iOS app." in _prompts(messages)
         yield "Net spending is down."
 
     sessions = app_main.app.dependency_overrides[app_main.get_db]
@@ -702,7 +712,8 @@ async def test_assistant_follow_up_and_retry_use_earlier_turns() -> None:
     async def stream(messages, info):
         histories.append(
             [
-                part.content
+                # The app's reference block comes before the first question.
+                part.content.split("</reference>\n\n", 1)[-1]
                 for message in messages
                 for part in message.parts
                 if isinstance(part, UserPromptPart | TextPart)
@@ -917,10 +928,10 @@ async def test_assistant_dates_use_the_configured_timezone(
 ) -> None:
     monkeypatch.setenv("EXPENSES_TIMEZONE", "Etc/GMT-14")
     get_settings.cache_clear()
-    seen_instructions: list[str] = []
+    seen_prompts: list[str] = []
 
     async def stream(messages, info):
-        seen_instructions.append(info.instructions)
+        seen_prompts.append(_prompts(messages))
         yield "Done."
 
     try:
@@ -929,7 +940,7 @@ async def test_assistant_dates_use_the_configured_timezone(
         get_settings.cache_clear()
 
     today = datetime.now(ZoneInfo("Etc/GMT-14")).date()
-    assert f"{today.isoformat()}." in seen_instructions[0]
+    assert f"{today.isoformat()}." in seen_prompts[0]
 
 
 NBSP = " "
@@ -1004,16 +1015,75 @@ async def _decide(
     ]
 
 
+def _wire(instructions: str | None, messages: list[ModelMessage]) -> list:
+    """What a provider receives, without timestamps: instructions, then every part."""
+    return [
+        instructions,
+        *(
+            (
+                part.part_kind,
+                repr(getattr(part, "content", getattr(part, "args", None))),
+            )
+            for message in messages
+            for part in message.parts
+        ),
+    ]
+
+
+@pytest.mark.anyio
+async def test_assistant_requests_keep_their_prefix_across_approvals() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_trip(session)
+    requests: list[list] = []
+
+    async def stream(messages, info):
+        requests.append(_wire(info.instructions, messages))
+        if _tool_returns(messages):
+            yield "Done."
+        elif len(requests) == 1:
+            yield {0: DeltaThinkingPart(content="Trash the hotel.")}
+            yield _call(
+                "propose_change",
+                {"kind": "trash_transactions", "transaction_ids": [ids["hotel_id"]]},
+                "call-1",
+            )
+        else:
+            yield "You're welcome."
+
+    events = await _collect(factory, stream, "Trash the hotel")
+    chat_id = events[0]["chat_id"]
+    [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    await _decide(factory, stream, chat_id, approval["id"], approve=True)
+    await _collect(factory, stream, "Thanks", chat_id=chat_id)
+    await _collect(factory, stream, "Thanks again", chat_id=chat_id)
+
+    # Each request repeats the one before it, so the provider keeps its cache and
+    # the model's earlier reasoning.
+    assert len(requests) == 4
+    for earlier, later in zip(requests, requests[1:]):
+        assert later[: len(earlier)] == earlier
+    # The approval added a recent change, so the next question repeats only that
+    # part of the reference; an unchanged reference is not sent again.
+    assert "Categories (" in requests[0][-1][1]
+    assert "<changes>\\nChanges you made recently" in requests[0][-1][1]
+    assert "- none\\n</changes>" in requests[0][-1][1]
+    assert "<changes>\\nChanges you made recently" in requests[2][-1][1]
+    assert "- none\\n</changes>" not in requests[2][-1][1]
+    assert "Categories (" not in requests[2][-1][1]
+    assert requests[3][-1] == ("user-prompt", repr("Thanks again"))
+
+
 @pytest.mark.anyio
 async def test_assistant_applies_an_approved_allocation_and_undoes_it() -> None:
     factory = _session_factory()
     with factory() as session:
         ids = _seed_trip(session)
     heard: list[dict] = []
-    instructions: list[str] = []
+    prompts: list[str] = []
 
     async def stream(messages, info):
-        instructions.append(info.instructions)
+        prompts.append(_prompts(messages))
         if returns := _tool_returns(messages):
             heard.append(returns[-1].content)
             yield "Done."
@@ -1091,7 +1161,7 @@ async def test_assistant_applies_an_approved_allocation_and_undoes_it() -> None:
 
     events = await _collect(factory, stream, "Undo that", chat_id=chat_id)
     [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
-    assert f"- {heard[0]['action_id']}: Allocated 87,61{NBSP}€" in instructions[-1]
+    assert f"- {heard[0]['action_id']}: Allocated 87,61{NBSP}€" in prompts[-1]
     assert approval["card"]["title"] == f"Undo: Allocated 87,61{NBSP}€ from Trip refund"
     await _decide(factory, stream, chat_id, approval["id"], approve=True)
 

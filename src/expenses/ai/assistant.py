@@ -23,7 +23,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from pydantic_ai import Agent, AgentRunEvents, RunContext, Tool, UsageLimits
+from pydantic_ai import Agent, AgentRunEvents, Tool, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
     DeferredToolRequestsEvent,
@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -57,9 +58,13 @@ from expenses.ai.assistant_actions import (
 )
 from expenses.ai.assistant_tools import (
     INSTRUCTIONS,
+    REFERENCE_END,
+    REFERENCE_SECTION,
+    REFERENCE_START,
     TOOLS,
     AssistantClient,
     AssistantReader,
+    reference_block,
     tool_detail,
     tool_label,
 )
@@ -443,11 +448,6 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         ],
         instructions=INSTRUCTIONS,
     )
-
-    @agent.instructions
-    def reference(ctx: RunContext[AssistantReader]) -> str:
-        return ctx.deps.reference()
-
     return agent
 
 
@@ -787,6 +787,22 @@ def _history(
     return messages
 
 
+def _seen_reference(history: list[ModelMessage]) -> dict[str, str]:
+    """The latest of each reference section the model can see in this history."""
+    seen: dict[str, str] = {}
+    for message in history:
+        for part in message.parts:
+            if (
+                isinstance(part, UserPromptPart)
+                and isinstance(part.content, str)
+                and part.content.startswith(REFERENCE_START)
+            ):
+                block = part.content.removeprefix(REFERENCE_START)
+                block = block.split(REFERENCE_END, 1)[0]
+                seen.update(REFERENCE_SECTION.findall(block))
+    return seen
+
+
 @dataclass
 class _TurnHandle:
     """Lets the HTTP response stop the run it streams."""
@@ -867,6 +883,18 @@ async def _run_turn(
             ]
         now = datetime.now(ZoneInfo(get_settings().timezone))
         deps = AssistantReader(session, user_id=request.user_id, now=now, client=client)
+        # The reference rides on the question, not in the instructions, so every
+        # request repeats the one before it. A question repeats only the sections
+        # that changed since the model last saw them.
+        if prompt is not None:
+            seen = _seen_reference(history)
+            changed = {
+                name: text
+                for name, text in deps.reference().items()
+                if seen.get(name) != text
+            }
+            if changed:
+                prompt = f"{reference_block(changed)}\n\n{prompt}"
         stream = AssistantEventStream(items=items)
         started_at = datetime.utcnow()
         started = perf_counter()
