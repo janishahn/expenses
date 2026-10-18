@@ -98,7 +98,7 @@ def _matching(messages: list[dict], token: str, kind: str) -> list[dict]:
         {
             "label": f"Transactions matching {token}",
             "sql": f"select id from transactions where kind = '{kind}' "
-            f"and (fuzzy(title, '{query}') or fuzzy(description, '{query}'))",
+            f"and (fuzzy(title, '{query}') or fuzzy(notes, '{query}'))",
         },
     )
 

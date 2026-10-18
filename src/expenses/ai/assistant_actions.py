@@ -47,6 +47,7 @@ MAX_EDITED = 200
 MAX_ALLOCATED = 50
 MAX_BUDGETS = 20
 MAX_ARCHIVED = 50
+MAX_CATEGORIES = 20
 MAX_RECURRING = 50
 
 
@@ -142,12 +143,37 @@ class RestorePlan(BaseModel):
 
 
 class ArchivePlan(BaseModel):
-    """Archives categories and tags, or restores them to undo that."""
+    """Archives categories and tags, or restores them to undo that. Archiving also
+    undoes create_categories."""
 
     kind: Literal["archive"] = "archive"
     category_ids: list[int]
     tag_ids: list[int]
     archived: bool
+
+
+class NewCategoryPlan(BaseModel):
+    name: str
+    type: TransactionType
+
+
+class CreateCategoriesPlan(BaseModel):
+    kind: Literal["create_categories"] = "create_categories"
+    categories: list[NewCategoryPlan]
+
+
+class RenameRow(BaseModel):
+    category_id: int
+    # The name as the card showed it; approval refuses once it changed.
+    before: str
+    after: str
+
+
+class RenameCategoriesPlan(BaseModel):
+    """Renames categories; its inverse renames them back."""
+
+    kind: Literal["rename_categories"] = "rename_categories"
+    rows: list[RenameRow]
 
 
 class Classification(BaseModel):
@@ -157,6 +183,11 @@ class Classification(BaseModel):
     title: str
 
 
+class NotesChange(BaseModel):
+    before: str | None
+    after: str | None
+
+
 class EditRow(BaseModel):
     transaction_id: int
     # As the card showed them; approval refuses once either changed.
@@ -164,6 +195,8 @@ class EditRow(BaseModel):
     amount_cents: int
     before: Classification
     after: Classification
+    # None leaves the notes alone, as edits saved before notes could change do.
+    notes: NotesChange | None = None
 
 
 class EditPlan(BaseModel):
@@ -283,6 +316,7 @@ InversePlan = Annotated[
     | AllocatePlan
     | RestoreBudgetsPlan
     | ArchivePlan
+    | RenameCategoriesPlan
     | EndRecurringPlan,
     Field(discriminator="kind"),
 ]
@@ -302,6 +336,8 @@ Plan = Annotated[
     | BudgetsPlan
     | RemoveBudgetsPlan
     | ArchivePlan
+    | CreateCategoriesPlan
+    | RenameCategoriesPlan
     | EndRecurringPlan
     | UndoPlan,
     Field(discriminator="kind"),
@@ -437,6 +473,13 @@ def _classification(txn: Transaction) -> Classification:
     )
 
 
+def _as_shown(txn: Transaction, row: EditRow) -> bool:
+    """Whether what the edit changes still looks as its card showed it."""
+    return _classification(txn) == row.before and (
+        row.notes is None or txn.description == row.notes.before
+    )
+
+
 def _month(value: str) -> tuple[int, int]:
     try:
         parsed = date.fromisoformat(f"{value}-01")
@@ -519,9 +562,8 @@ def propose_create(
     )
 
 
-def _edit_detail(
-    categories: dict[int, Category], before: Classification, after: Classification
-) -> str:
+def _edit_detail(categories: dict[int, Category], row: EditRow) -> str:
+    before, after = row.before, row.after
     parts: list[str] = []
     if before.category_id != after.category_id:
         parts.append(
@@ -533,6 +575,10 @@ def _edit_detail(
     parts += [f"−{tag}" for tag in before.tags if tag.lower() not in after_tags]
     if before.title != after.title:
         parts.append(f"Renamed to {after.title}")
+    if row.notes is not None:
+        parts.append(
+            f"Notes: {row.notes.after}" if row.notes.after else "Notes removed"
+        )
     return " · ".join(parts)
 
 
@@ -544,7 +590,7 @@ def _edit_rows(
     return [
         ApprovalRow(
             title=transactions[row.transaction_id].title,
-            detail=_edit_detail(categories, row.before, row.after),
+            detail=_edit_detail(categories, row),
             category=_category_card(categories[row.after.category_id]),
             date=transactions[row.transaction_id].date,
             amount_cents=transactions[row.transaction_id].amount_cents,
@@ -562,6 +608,7 @@ def propose_edit(
     add_tags: list[str],
     remove_tags: list[str],
     title: str | None,
+    notes: str | None,
 ) -> Proposal:
     ids = _unique(transaction_ids)
     if not ids:
@@ -573,12 +620,20 @@ def propose_edit(
     new_title = title.strip() if title is not None else None
     if new_title is not None and not 1 <= len(new_title) <= 200:
         raise InvalidProposal("invalid_title", "A title needs 1 to 200 characters.")
+    # Empty notes remove them, as an empty Notes field does in the app.
+    new_notes = (notes.strip() or None) if notes is not None else None
     added = _tag_names(reader.session, reader.user_id, add_tags)
     removing = _tag_names(reader.session, reader.user_id, remove_tags)
     removed = {tag.lower() for tag in removing}
-    if category_id is None and not added and not removed and new_title is None:
+    if (
+        category_id is None
+        and not added
+        and not removed
+        and new_title is None
+        and notes is None
+    ):
         raise InvalidProposal(
-            "no_change", "Say what to change: category, tags, or title."
+            "no_change", "Say what to change: category, tags, title, or notes."
         )
     categories = _categories(reader.session, reader.user_id)
     transactions = _existing(reader.session, reader.user_id, ids)
@@ -597,7 +652,12 @@ def propose_edit(
             ),
             title=new_title if new_title is not None else before.title,
         )
-        if after != before:
+        notes_change = (
+            NotesChange(before=txn.description, after=new_notes)
+            if notes is not None and txn.description != new_notes
+            else None
+        )
+        if after != before or notes_change is not None:
             rows.append(
                 EditRow(
                     transaction_id=txn.id,
@@ -605,6 +665,7 @@ def propose_edit(
                     amount_cents=txn.amount_cents,
                     before=before,
                     after=after,
+                    notes=notes_change,
                 )
             )
     if not rows:
@@ -616,6 +677,8 @@ def propose_edit(
     changes += [f"Remove {tag}" for tag in removing]
     if new_title is not None:
         changes.append(f"Title {new_title}")
+    if notes is not None:
+        changes.append(f"Notes {new_notes}" if new_notes else "Remove notes")
     count = len(rows)
     return Proposal(
         summary=f"Updated {_plural(count, 'transaction')}",
@@ -1075,6 +1138,160 @@ def propose_archive(
     )
 
 
+def _same_name(
+    categories: dict[int, Category],
+    name: str,
+    kind: TransactionType,
+    other_than: int | None = None,
+) -> Category | None:
+    """The category of this type with this name in any case, archived ones too."""
+    return next(
+        (
+            category
+            for category in categories.values()
+            if category.id != other_than
+            and category.type == kind
+            and category.name.lower() == name.lower()
+        ),
+        None,
+    )
+
+
+def _category_name(
+    categories: dict[int, Category],
+    name: str,
+    kind: TransactionType,
+    other_than: int | None = None,
+) -> str:
+    clean = name.strip()
+    if not 1 <= len(clean) <= 100:
+        raise InvalidProposal(
+            "invalid_name", "A category name needs 1 to 100 characters."
+        )
+    if clean.lower() == CategoryService.UNCATEGORIZED_NAME.lower():
+        raise InvalidProposal(
+            "uncategorized", "Uncategorized is kept for transactions without one."
+        )
+    if taken := _same_name(categories, clean, kind, other_than):
+        archived = "archived " if taken.archived_at is not None else ""
+        raise InvalidProposal(
+            "name_taken",
+            f"{taken.name} is already an {archived}{kind.value} category.",
+        )
+    return clean
+
+
+class NewCategory(BaseModel):
+    name: str
+    kind: Literal["expense", "income"]
+
+
+def propose_create_categories(
+    reader: AssistantReader, new: list[NewCategory]
+) -> Proposal:
+    if not new:
+        raise InvalidProposal("empty", "Name at least one category to add.")
+    if len(new) > MAX_CATEGORIES:
+        raise InvalidProposal(
+            "too_many", f"Add at most {MAX_CATEGORIES} categories at once."
+        )
+    categories = _categories(reader.session, reader.user_id)
+    planned: list[NewCategoryPlan] = []
+    for item in new:
+        kind = TransactionType(item.kind)
+        name = _category_name(categories, item.name, kind)
+        if any(
+            row.type == kind and row.name.lower() == name.lower() for row in planned
+        ):
+            raise InvalidProposal("duplicate", f"{name} is in this list twice.")
+        planned.append(NewCategoryPlan(name=name, type=kind))
+    noun = _archive_noun(len(planned), 0)
+    return Proposal(
+        summary=f"Added {planned[0].name if len(planned) == 1 else noun}",
+        card=ApprovalCard(
+            title=f"Add {noun}",
+            verb="Add",
+            done="Added",
+            rows=[
+                ApprovalRow(
+                    title=row.name, detail=f"{row.type.value.capitalize()} category"
+                )
+                for row in planned
+            ],
+        ),
+        plan=CreateCategoriesPlan(categories=planned),
+    )
+
+
+class CategoryName(BaseModel):
+    category_id: int
+    name: str
+
+
+def _rename_row(category: Category, name: str) -> ApprovalRow:
+    return ApprovalRow(
+        title=category.name,
+        detail=f"{category.type.value.capitalize()} category · Renamed to {name}",
+        category=_category_card(category),
+    )
+
+
+def propose_rename_categories(
+    reader: AssistantReader, renames: list[CategoryName]
+) -> Proposal:
+    if not renames:
+        raise InvalidProposal("empty", "Name at least one category to rename.")
+    if len(renames) > MAX_CATEGORIES:
+        raise InvalidProposal(
+            "too_many", f"Rename at most {MAX_CATEGORIES} categories at once."
+        )
+    categories = _categories(reader.session, reader.user_id)
+    rows: list[RenameRow] = []
+    for item in renames:
+        category = categories.get(item.category_id)
+        if category is None:
+            raise InvalidProposal(
+                "unknown_category", f"Category {item.category_id} doesn't exist."
+            )
+        if category.name.lower() == CategoryService.UNCATEGORIZED_NAME.lower():
+            raise InvalidProposal(
+                "uncategorized", "Uncategorized keeps its name; the app relies on it."
+            )
+        name = _category_name(categories, item.name, category.type, category.id)
+        if any(
+            row.category_id == category.id
+            or (
+                categories[row.category_id].type == category.type
+                and row.after.lower() == name.lower()
+            )
+            for row in rows
+        ):
+            raise InvalidProposal(
+                "duplicate", "Each category and new name can appear only once."
+            )
+        if name != category.name:
+            rows.append(
+                RenameRow(category_id=category.id, before=category.name, after=name)
+            )
+    if not rows:
+        raise InvalidProposal("no_change", "These categories already have those names.")
+    noun = _archive_noun(len(rows), 0)
+    return Proposal(
+        summary=(
+            f"Renamed {rows[0].before} to {rows[0].after}"
+            if len(rows) == 1
+            else f"Renamed {noun}"
+        ),
+        card=ApprovalCard(
+            title=f"Rename {noun}",
+            verb="Rename",
+            done="Renamed",
+            rows=[_rename_row(categories[row.category_id], row.after) for row in rows],
+        ),
+        plan=RenameCategoriesPlan(rows=rows),
+    )
+
+
 def _last_on(day: date | None) -> str:
     return "No end date" if day is None else f"Last on {day.day} {day:%b %Y}"
 
@@ -1281,28 +1498,52 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
                 category_id
                 for category_id in inverse.category_ids
                 if category_id in categories
-                and categories[category_id].archived_at is not None
+                and (categories[category_id].archived_at is None) == inverse.archived
             ]
             tag_ids = [
                 tag_id
                 for tag_id in inverse.tag_ids
-                if tag_id in tags and tags[tag_id].archived_at is not None
+                if tag_id in tags
+                and (tags[tag_id].archived_at is None) == inverse.archived
             ]
             if not category_ids and not tag_ids:
-                raise InvalidProposal("nothing_to_undo", "Those are not archived now.")
+                raise InvalidProposal(
+                    "nothing_to_undo",
+                    "Those are archived already."
+                    if inverse.archived
+                    else "Those are not archived now.",
+                )
             plan = inverse.model_copy(
                 update={"category_ids": category_ids, "tag_ids": tag_ids}
             )
+            verb = "Archives" if inverse.archived else "Restores"
             rows = [
                 ApprovalRow(
                     title=categories[category_id].name,
-                    detail="Restores the category",
+                    detail=f"{verb} the category",
                     category=_category_card(categories[category_id]),
                 )
                 for category_id in category_ids
             ] + [
-                ApprovalRow(title=tags[tag_id].name, detail="Restores the tag")
+                ApprovalRow(title=tags[tag_id].name, detail=f"{verb} the tag")
                 for tag_id in tag_ids
+            ]
+        case RenameCategoriesPlan():
+            for row in inverse.rows:
+                category = categories.get(row.category_id)
+                if category is None or category.name != row.before:
+                    raise InvalidProposal(
+                        "changed",
+                        "Those categories changed since, so undoing would lose that change.",
+                    )
+                if _same_name(categories, row.after, category.type, category.id):
+                    raise InvalidProposal(
+                        "name_taken", f"Another category is named {row.after} now."
+                    )
+            plan = inverse
+            rows = [
+                _rename_row(categories[row.category_id], row.after)
+                for row in inverse.rows
             ]
         case EndRecurringPlan():
             rules = _recurring_rules(
@@ -1328,7 +1569,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             safe: list[EditRow] = []
             for row in inverse.rows:
                 txn = transactions.get(row.transaction_id)
-                if txn is not None and _classification(txn) == row.before:
+                if txn is not None and _as_shown(txn, row):
                     # The card shows the date and amount as they are now.
                     safe.append(
                         row.model_copy(
@@ -1443,8 +1684,9 @@ class CreateTransactions(_Change):
 
 
 class EditTransactions(_Change):
-    """Change the category, tags, or title of up to 200 transactions. Fields left
-    empty stay as they are; new tag names become new tags."""
+    """Change the category, tags, title, or notes of up to 200 transactions. Fields
+    left out or null stay as they are. notes replaces all of the notes, so read long
+    notes in full first, and "" removes them. New tag names become new tags."""
 
     kind: Literal["edit_transactions"]
     transaction_ids: list[int]
@@ -1452,6 +1694,7 @@ class EditTransactions(_Change):
     add_tags: list[str] = Field(default_factory=list)
     remove_tags: list[str] = Field(default_factory=list)
     title: str | None = None
+    notes: str | None = None
 
 
 class TrashTransactions(_Change):
@@ -1501,6 +1744,20 @@ class Archive(_Change):
     tag_ids: list[int] = Field(default_factory=list)
 
 
+class CreateCategories(_Change):
+    """Add up to 20 categories. The result has their ids."""
+
+    kind: Literal["create_categories"]
+    categories: list[NewCategory]
+
+
+class RenameCategories(_Change):
+    """Rename up to 20 categories."""
+
+    kind: Literal["rename_categories"]
+    categories: list[CategoryName]
+
+
 class EndRecurring(_Change):
     """End recurring payments or income: end_date is the last date each may
     occur."""
@@ -1526,6 +1783,8 @@ Change = Annotated[
     | SetBudgets
     | RemoveBudgets
     | Archive
+    | CreateCategories
+    | RenameCategories
     | EndRecurring
     | Undo,
     Field(discriminator="kind", json_schema_extra=_no_discriminator),
@@ -1553,6 +1812,7 @@ def propose_change(ctx: RunContext[AssistantReader], change: Change) -> dict[str
                     add_tags=change.add_tags,
                     remove_tags=change.remove_tags,
                     title=change.title,
+                    notes=change.notes,
                 )
             case TrashTransactions():
                 return propose_trash(reader, change.transaction_ids)
@@ -1573,6 +1833,10 @@ def propose_change(ctx: RunContext[AssistantReader], change: Change) -> dict[str
                 return propose_archive(
                     reader, category_ids=change.category_ids, tag_ids=change.tag_ids
                 )
+            case CreateCategories():
+                return propose_create_categories(reader, change.categories)
+            case RenameCategories():
+                return propose_rename_categories(reader, change.categories)
             case EndRecurring():
                 return propose_end_recurring(
                     reader, recurring_ids=change.recurring_ids, end_date=change.end_date
@@ -1721,6 +1985,48 @@ def _apply_archive(session: Session, user_id: int, plan: ArchivePlan) -> dict[st
     return {"archived" if plan.archived else "restored": len(items)}
 
 
+def _apply_create_categories(
+    session: Session, user_id: int, plan: CreateCategoriesPlan
+) -> tuple[dict[str, Any], InversePlan]:
+    categories = _categories(session, user_id)
+    created: list[Category] = []
+    for row in plan.categories:
+        if _same_name(categories, row.name, row.type):
+            raise ActionConflict(f"A category named {row.name} exists now.")
+        created.append(Category(user_id=user_id, name=row.name, type=row.type))
+    session.add_all(created)
+    session.flush()
+    return (
+        {
+            "created": [
+                {"id": category.id, "name": category.name, "kind": category.type.value}
+                for category in created
+            ]
+        },
+        ArchivePlan(
+            category_ids=[category.id for category in created],
+            tag_ids=[],
+            archived=True,
+        ),
+    )
+
+
+def _apply_rename_categories(
+    session: Session, user_id: int, plan: RenameCategoriesPlan
+) -> dict[str, Any]:
+    categories = _categories(session, user_id)
+    for row in plan.rows:
+        category = categories.get(row.category_id)
+        if category is None or category.name != row.before:
+            raise ActionConflict(f"{row.before} changed since this was proposed.")
+        if _same_name(categories, row.after, category.type, category.id):
+            raise ActionConflict(f"Another category is named {row.after} now.")
+    for row in plan.rows:
+        categories[row.category_id].name = row.after
+    session.flush()
+    return {"renamed": len(plan.rows)}
+
+
 def _apply_end_recurring(
     session: Session, user_id: int, plan: EndRecurringPlan
 ) -> dict[str, Any]:
@@ -1752,7 +2058,7 @@ def _apply_edit(
         if txn is None:
             raise ActionConflict("A transaction in this change is in Trash now.")
         if (
-            _classification(txn) != row.before
+            not _as_shown(txn, row)
             or txn.date != row.date
             or txn.amount_cents != row.amount_cents
         ):
@@ -1772,12 +2078,24 @@ def _apply_edit(
         if row.after.tags != row.before.tags:
             txn.tags = [tags.get_or_create(name) for name in row.after.tags]
         txn.title = row.after.title
+        if row.notes is not None:
+            txn.description = row.notes.after
     session.flush()
     return (
         {"edited": len(plan.rows)},
         EditPlan(
             rows=[
-                row.model_copy(update={"before": row.after, "after": row.before})
+                row.model_copy(
+                    update={
+                        "before": row.after,
+                        "after": row.before,
+                        "notes": None
+                        if row.notes is None
+                        else NotesChange(
+                            before=row.notes.after, after=row.notes.before
+                        ),
+                    }
+                )
                 for row in plan.rows
             ]
         ),
@@ -2009,6 +2327,8 @@ def _apply_inverse(session: Session, user_id: int, plan: InversePlan) -> dict[st
             return _apply_restore_budgets(session, user_id, plan)
         case ArchivePlan():
             return _apply_archive(session, user_id, plan)
+        case RenameCategoriesPlan():
+            return _apply_rename_categories(session, user_id, plan)
         case EndRecurringPlan():
             return _apply_end_recurring(session, user_id, plan)
 
@@ -2041,6 +2361,16 @@ def apply_action(session: Session, action: AssistantAction) -> dict[str, Any]:
         case ArchivePlan():
             details = _apply_archive(session, action.user_id, plan)
             inverse = plan.model_copy(update={"archived": False})
+        case CreateCategoriesPlan():
+            details, inverse = _apply_create_categories(session, action.user_id, plan)
+        case RenameCategoriesPlan():
+            details = _apply_rename_categories(session, action.user_id, plan)
+            inverse = RenameCategoriesPlan(
+                rows=[
+                    row.model_copy(update={"before": row.after, "after": row.before})
+                    for row in plan.rows
+                ]
+            )
         case EndRecurringPlan():
             details = _apply_end_recurring(session, action.user_id, plan)
             inverse = EndRecurringPlan(

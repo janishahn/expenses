@@ -34,16 +34,20 @@ from expenses.ai.assistant_actions import (
     ActionConflict,
     BudgetRequest,
     BudgetScope,
+    CategoryName,
     InvalidProposal,
+    NewCategory,
     NewTransaction,
     apply_action,
     propose_allocate,
     propose_archive,
     propose_budgets,
     propose_create,
+    propose_create_categories,
     propose_edit,
     propose_end_recurring,
     propose_remove_budgets,
+    propose_rename_categories,
     propose_trash,
     propose_undo,
 )
@@ -1426,6 +1430,7 @@ def test_assistant_proposals_refuse_what_they_cannot_do_exactly() -> None:
                     add_tags=[],
                     remove_tags=[],
                     title=None,
+                    notes=None,
                 )
             )
             == "category_type"
@@ -1440,6 +1445,7 @@ def test_assistant_proposals_refuse_what_they_cannot_do_exactly() -> None:
                     add_tags=["food"],
                     remove_tags=[],
                     title=None,
+                    notes=None,
                 )
             )
             == "no_change"
@@ -1473,11 +1479,15 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         reader = _reader(session)
         budgets = BudgetService(session, user_id=1)
 
-        def classification(title: str) -> tuple[int, list[str]]:
+        def classification(title: str) -> tuple[int, list[str], str | None]:
             txn = session.scalars(
                 select(Transaction).where(Transaction.title == title)
             ).one()
-            return txn.category_id, sorted(tag.name for tag in txn.tags)
+            return (
+                txn.category_id,
+                sorted(tag.name for tag in txn.tags),
+                txn.description,
+            )
 
         def july_budgets() -> dict[int | None, int]:
             return {
@@ -1503,18 +1513,24 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         supermarket = session.scalars(
             select(Transaction).where(Transaction.title == "Weekly supermarket")
         ).one()
-        edited = _apply_proposal(
-            session,
-            propose_edit(
-                reader,
-                transaction_ids=[supermarket.id],
-                category_id=ids["leisure_id"],
-                add_tags=["trip"],
-                remove_tags=["Food"],
-                title=None,
-            ),
+        edit = propose_edit(
+            reader,
+            transaction_ids=[supermarket.id],
+            category_id=ids["leisure_id"],
+            add_tags=["trip"],
+            remove_tags=["Food"],
+            title=None,
+            notes=" Split with Anna ",
         )
-        assert classification("Weekly supermarket") == (ids["leisure_id"], ["Trip"])
+        assert edit.card.rows[0].detail == (
+            "Groceries → Free time · +Trip · −Food · Notes: Split with Anna"
+        )
+        edited = _apply_proposal(session, edit)
+        assert classification("Weekly supermarket") == (
+            ids["leisure_id"],
+            ["Trip"],
+            "Split with Anna",
+        )
         # An amount edited after the change doesn't block undoing it.
         supermarket.amount_cents += 100
         # The onward budget below deletes this July budget; undo brings it back.
@@ -1564,8 +1580,33 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         for action in (edited, created):
             _apply_proposal(session, propose_undo(reader, action.id))
 
+        # An edit saved before notes could change still undoes.
+        big_run = session.scalars(
+            select(Transaction).where(Transaction.title == "Big grocery run")
+        ).one()
+        tagged = _apply_proposal(
+            session,
+            propose_edit(
+                reader,
+                transaction_ids=[big_run.id],
+                category_id=None,
+                add_tags=["Bulk"],
+                remove_tags=[],
+                title=None,
+                notes=None,
+            ),
+        )
+        tagged.undo_json = tagged.undo_json.replace(',"notes":null', "")
+        assert '"notes"' not in tagged.undo_json
+        _apply_proposal(session, propose_undo(reader, tagged.id))
+        assert [tag.name for tag in big_run.tags] == ["Food"]
+
         assert july_budgets() == before_budgets
-        assert classification("Weekly supermarket") == (ids["groceries_id"], ["Food"])
+        assert classification("Weekly supermarket") == (
+            ids["groceries_id"],
+            ["Food"],
+            None,
+        )
         taxi = session.scalars(
             select(Transaction).where(Transaction.title == "Taxi")
         ).one()
@@ -1691,6 +1732,67 @@ def test_assistant_destructive_changes_undo_exactly() -> None:
         assert gym.end_date is None
 
 
+def test_assistant_adds_and_renames_categories_and_undoes_both() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_spending_fixture(session)
+        reader = _reader(session)
+        uncategorized = CategoryService(session, user_id=1).get_or_create_uncategorized(
+            TransactionType.expense
+        )
+
+        def refused(build) -> str:
+            with pytest.raises(InvalidProposal) as caught:
+                build()
+            return caught.value.status
+
+        def add(*names: tuple[str, str]):
+            return propose_create_categories(
+                reader, [NewCategory(name=name, kind=kind) for name, kind in names]
+            )
+
+        def rename(category_id: int, name: str):
+            return propose_rename_categories(
+                reader, [CategoryName(category_id=category_id, name=name)]
+            )
+
+        # Names match without case, within one type.
+        assert refused(lambda: add(("groceries", "expense"))) == "name_taken"
+        assert refused(lambda: add(("Trips", "expense"), ("trips", "expense"))) == (
+            "duplicate"
+        )
+        assert refused(lambda: rename(uncategorized.id, "Misc")) == "uncategorized"
+        assert refused(lambda: rename(ids["leisure_id"], "GROCERIES")) == "name_taken"
+
+        create = add((" Trips ", "expense"), ("Groceries", "income"))
+        assert create.card.title == "Add 2 categories"
+        assert [(row.title, row.detail) for row in create.card.rows] == [
+            ("Trips", "Expense category"),
+            ("Groceries", "Income category"),
+        ]
+        created = _apply_proposal(session, create)
+        trips = session.scalars(select(Category).where(Category.name == "Trips")).one()
+        assert trips.type == TransactionType.expense
+
+        renaming = rename(ids["groceries_id"], "Food")
+        assert [(row.title, row.detail) for row in renaming.card.rows] == [
+            ("Groceries", "Expense category · Renamed to Food")
+        ]
+        renamed = _apply_proposal(session, renaming)
+        groceries = session.get_one(Category, ids["groceries_id"])
+        assert groceries.name == "Food"
+
+        undo_create = propose_undo(reader, created.id)
+        assert [row.detail for row in undo_create.card.rows] == [
+            "Archives the category",
+            "Archives the category",
+        ]
+        _apply_proposal(session, undo_create)
+        assert trips.archived_at is not None
+        _apply_proposal(session, propose_undo(reader, renamed.id))
+        assert groceries.name == "Groceries"
+
+
 def test_assistant_adds_transactions_exactly_as_the_card_shows() -> None:
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))
@@ -1809,6 +1911,7 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
             add_tags=["Trip"],
             remove_tags=[],
             title=None,
+            notes=None,
         )
         # The card showed 116,80 €.
         session.get(Transaction, ids["hotel_id"]).amount_cents = 12_000
@@ -1859,6 +1962,7 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
             add_tags=[],
             remove_tags=[],
             title=None,
+            notes=None,
         )
         categories.archive(lodging.id)
 

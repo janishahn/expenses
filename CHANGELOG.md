@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The Assistant can change or remove a transaction's notes, add categories, and rename categories. Each change shows an approval card first and can be undone; undoing a new category archives it.
+
 ### Changed
 - Forecasts estimate spending and income outside recurring payments from a weighted average of the last 12 months instead of their median. Recent months count more, and the largest month counts as the next largest, so a one-off purchase does not repeat. The median ignored large months that come back, such as trips, so longer forecasts ended too high.
 - The forecast's 80% range now comes from how far the model missed each past month when it predicted that month from earlier months only, plus the uncertainty of the estimate itself, which repeats in every month. The previous range was too narrow. It now needs 9 months of history instead of 3.
