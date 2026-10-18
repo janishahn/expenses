@@ -5618,13 +5618,14 @@ class ForecastService:
         paths = []
         for _ in range(300):
             # The base amount is itself an estimate, and its error repeats in
-            # every month of the path.
+            # every month of the path. A base fitted from months that ran high
+            # forecasts too high, so its error lowers actual minus forecast.
             base_error = (
                 sum(rng.choice(centered) for _ in range(effective_months))
                 / effective_months
             )
             paths.append(
-                [int(round(rng.choice(centered) + base_error)) for _ in range(length)]
+                [int(round(rng.choice(centered) - base_error)) for _ in range(length)]
             )
         return paths
 
