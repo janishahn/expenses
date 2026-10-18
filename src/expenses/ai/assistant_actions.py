@@ -1417,13 +1417,13 @@ def _checked(build) -> dict[str, Any]:
 
 
 def _kind_enum(schema: dict[str, Any]) -> None:
-    # Anthropic's strict schemas drop const but keep enum.
+    # Some backends drop const from tool schemas but keep enum.
     kind = schema["properties"]["kind"]
     kind["enum"] = [kind.pop("const")]
 
 
 def _no_discriminator(schema: dict[str, Any]) -> None:
-    # Strict schemas have no discriminator; each change's kind tells them apart.
+    # discriminator is OpenAPI, not JSON Schema; each change's kind tells them apart.
     schema.pop("discriminator")
 
 

@@ -2,7 +2,6 @@ import asyncio
 import json
 import tempfile
 import threading
-from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -895,46 +894,21 @@ async def test_assistant_failure_ends_with_a_message() -> None:
     assert "429" in (job.error or "")
 
 
-def _schema_nodes(node: object) -> Iterator[dict]:
-    if isinstance(node, dict):
-        yield node
-        for value in node.values():
-            yield from _schema_nodes(value)
-    elif isinstance(node, list):
-        for value in node:
-            yield from _schema_nodes(value)
-
-
 @pytest.mark.anyio
-async def test_assistant_strict_tools_stay_within_anthropic_limits() -> None:
+async def test_assistant_tools_are_not_strict() -> None:
     factory = _session_factory()
-    strict_tools = []
+    tools = []
 
     async def stream(messages, info):
-        strict_tools.extend(tool for tool in info.function_tools if tool.strict)
+        tools.extend(info.function_tools)
         yield "Done."
 
     await _collect(factory, stream, "Summarize June")
 
-    # Anthropic refuses every request past these totals across its strict schemas.
-    nodes = [
-        node
-        for tool in strict_tools
-        for node in _schema_nodes(tool.parameters_json_schema)
-    ]
-    optional = sum(
-        name not in node.get("required", [])
-        for node in nodes
-        if node.get("type") == "object"
-        for name in node.get("properties", {})
-    )
-    unions = sum(
-        "anyOf" in node or "oneOf" in node or isinstance(node.get("type"), list)
-        for node in nodes
-    )
-    assert len(strict_tools) <= 20
-    assert optional <= 24
-    assert unions <= 16
+    # Anthropic compiles strict schemas into a grammar and rejects propose_change's
+    # union of change kinds as too large, though it is within the documented limits.
+    assert {tool.name for tool in tools} >= {"sql_query", "propose_change"}
+    assert not [tool.name for tool in tools if tool.strict]
 
 
 @pytest.mark.anyio

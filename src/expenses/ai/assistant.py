@@ -434,11 +434,12 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         model_settings=model.settings,
         deps_type=AssistantReader,
         output_type=[str, DeferredToolRequests],
-        # Anthropic rejects requests whose strict schemas together are too complex,
-        # so only the write tool, whose arguments become a card, is strict.
+        # No tool is strict: Anthropic rejects the grammar compiled from
+        # propose_change's union of change kinds as too large. The server validates
+        # every change before it shows a card.
         tools=[
             *(Tool(tool, takes_ctx=True, sequential=True) for tool in TOOLS),
-            Tool(propose_change, takes_ctx=True, strict=True, sequential=True),
+            Tool(propose_change, takes_ctx=True, sequential=True),
         ],
         instructions=INSTRUCTIONS,
     )

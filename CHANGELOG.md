@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - A release publishes its Docker image only after the image starts and answers `/api/mobile/status`, so a release that cannot start never becomes `latest`.
 
+### Fixed
+- With an Anthropic backend, every Assistant question failed in 0.8.5 because Anthropic rejected the schema of the tool that proposes changes as too complex. That tool's arguments are no longer enforced by Anthropic; the server still checks every change before it shows a card.
+
 ## [0.8.5] - 2026-10-18
 
 ### Added
