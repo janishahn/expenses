@@ -54,6 +54,28 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.tag }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event.inputs.tag != '' }}
 
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: expenses:smoke
+          provenance: false
+          cache-from: type=gha
+
+      - name: Smoke test image
+        run: |
+          docker run -d --name expenses-smoke -e EXPENSES_ENV=Production -p 8000:8000 expenses:smoke
+          for attempt in $(seq 60); do
+            if curl -fsS http://127.0.0.1:8000/api/mobile/status; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs expenses-smoke
+          exit 1
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
