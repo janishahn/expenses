@@ -1580,6 +1580,27 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         for action in (edited, created):
             _apply_proposal(session, propose_undo(reader, action.id))
 
+        # An edit saved before notes could change still undoes.
+        big_run = session.scalars(
+            select(Transaction).where(Transaction.title == "Big grocery run")
+        ).one()
+        tagged = _apply_proposal(
+            session,
+            propose_edit(
+                reader,
+                transaction_ids=[big_run.id],
+                category_id=None,
+                add_tags=["Bulk"],
+                remove_tags=[],
+                title=None,
+                notes=None,
+            ),
+        )
+        tagged.undo_json = tagged.undo_json.replace(',"notes":null', "")
+        assert '"notes"' not in tagged.undo_json
+        _apply_proposal(session, propose_undo(reader, tagged.id))
+        assert [tag.name for tag in big_run.tags] == ["Food"]
+
         assert july_budgets() == before_budgets
         assert classification("Weekly supermarket") == (
             ids["groceries_id"],

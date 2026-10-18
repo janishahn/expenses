@@ -181,7 +181,11 @@ class Classification(BaseModel):
     # Sorted case-insensitively, so equal tag sets compare equal.
     tags: list[str]
     title: str
-    notes: str | None
+
+
+class NotesChange(BaseModel):
+    before: str | None
+    after: str | None
 
 
 class EditRow(BaseModel):
@@ -191,6 +195,8 @@ class EditRow(BaseModel):
     amount_cents: int
     before: Classification
     after: Classification
+    # None leaves the notes alone, as edits saved before notes could change do.
+    notes: NotesChange | None = None
 
 
 class EditPlan(BaseModel):
@@ -464,7 +470,13 @@ def _classification(txn: Transaction) -> Classification:
         category_id=txn.category_id,
         tags=_sorted_tags([tag.name for tag in txn.tags]),
         title=txn.title,
-        notes=txn.description,
+    )
+
+
+def _as_shown(txn: Transaction, row: EditRow) -> bool:
+    """Whether what the edit changes still looks as its card showed it."""
+    return _classification(txn) == row.before and (
+        row.notes is None or txn.description == row.notes.before
     )
 
 
@@ -550,9 +562,8 @@ def propose_create(
     )
 
 
-def _edit_detail(
-    categories: dict[int, Category], before: Classification, after: Classification
-) -> str:
+def _edit_detail(categories: dict[int, Category], row: EditRow) -> str:
+    before, after = row.before, row.after
     parts: list[str] = []
     if before.category_id != after.category_id:
         parts.append(
@@ -564,8 +575,10 @@ def _edit_detail(
     parts += [f"−{tag}" for tag in before.tags if tag.lower() not in after_tags]
     if before.title != after.title:
         parts.append(f"Renamed to {after.title}")
-    if before.notes != after.notes:
-        parts.append(f"Notes: {after.notes}" if after.notes else "Notes removed")
+    if row.notes is not None:
+        parts.append(
+            f"Notes: {row.notes.after}" if row.notes.after else "Notes removed"
+        )
     return " · ".join(parts)
 
 
@@ -577,7 +590,7 @@ def _edit_rows(
     return [
         ApprovalRow(
             title=transactions[row.transaction_id].title,
-            detail=_edit_detail(categories, row.before, row.after),
+            detail=_edit_detail(categories, row),
             category=_category_card(categories[row.after.category_id]),
             date=transactions[row.transaction_id].date,
             amount_cents=transactions[row.transaction_id].amount_cents,
@@ -638,9 +651,13 @@ def propose_edit(
                 kept + [tag for tag in added if tag.lower() not in kept_lower]
             ),
             title=new_title if new_title is not None else before.title,
-            notes=new_notes if notes is not None else before.notes,
         )
-        if after != before:
+        notes_change = (
+            NotesChange(before=txn.description, after=new_notes)
+            if notes is not None and txn.description != new_notes
+            else None
+        )
+        if after != before or notes_change is not None:
             rows.append(
                 EditRow(
                     transaction_id=txn.id,
@@ -648,6 +665,7 @@ def propose_edit(
                     amount_cents=txn.amount_cents,
                     before=before,
                     after=after,
+                    notes=notes_change,
                 )
             )
     if not rows:
@@ -1551,7 +1569,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             safe: list[EditRow] = []
             for row in inverse.rows:
                 txn = transactions.get(row.transaction_id)
-                if txn is not None and _classification(txn) == row.before:
+                if txn is not None and _as_shown(txn, row):
                     # The card shows the date and amount as they are now.
                     safe.append(
                         row.model_copy(
@@ -2040,7 +2058,7 @@ def _apply_edit(
         if txn is None:
             raise ActionConflict("A transaction in this change is in Trash now.")
         if (
-            _classification(txn) != row.before
+            not _as_shown(txn, row)
             or txn.date != row.date
             or txn.amount_cents != row.amount_cents
         ):
@@ -2060,13 +2078,24 @@ def _apply_edit(
         if row.after.tags != row.before.tags:
             txn.tags = [tags.get_or_create(name) for name in row.after.tags]
         txn.title = row.after.title
-        txn.description = row.after.notes
+        if row.notes is not None:
+            txn.description = row.notes.after
     session.flush()
     return (
         {"edited": len(plan.rows)},
         EditPlan(
             rows=[
-                row.model_copy(update={"before": row.after, "after": row.before})
+                row.model_copy(
+                    update={
+                        "before": row.after,
+                        "after": row.before,
+                        "notes": None
+                        if row.notes is None
+                        else NotesChange(
+                            before=row.notes.after, after=row.notes.before
+                        ),
+                    }
+                )
                 for row in plan.rows
             ]
         ),
