@@ -46,3 +46,17 @@ const TEXT_AMOUNT =
 export function maskTextAmounts(text: string): string {
   return text.replace(TEXT_AMOUNT, "••••")
 }
+
+// Free text split at its amounts, for privacy mode to cover each one in place. An amount
+// keeps its length with its digits zeroed, so a mask over it takes about the same width.
+export function maskedTextParts(text: string): { text: string; masked: boolean }[] {
+  const parts: { text: string; masked: boolean }[] = []
+  let end = 0
+  for (const match of text.matchAll(TEXT_AMOUNT)) {
+    if (match.index > end) parts.push({ text: text.slice(end, match.index), masked: false })
+    parts.push({ text: match[0].replace(/\d/g, "0"), masked: true })
+    end = match.index + match[0].length
+  }
+  if (end < text.length) parts.push({ text: text.slice(end), masked: false })
+  return parts
+}

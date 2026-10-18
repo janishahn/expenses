@@ -64,15 +64,18 @@ export async function privacyJourney(page: Page) {
   await page.goto("/assistant")
   await sendQuestion(page, unique("Did I spend more than 1 000 € in May?"))
 
-  await expect(assistantTurns(page).last()).toContainText("You spent •••• in May.")
-  await expect(userTurns(page).last()).toContainText("Did I spend more than •••• in May?")
+  // Each amount is masked in place, like an amount anywhere else in the app.
+  await expect(assistantTurns(page).last()).toContainText("in May.")
+  await expect(assistantTurns(page).last().getByText("Hidden amount")).toHaveCount(3)
+  await expect(userTurns(page).last().getByText("Hidden amount")).toHaveCount(1)
   await expect(thread(page)).not.toContainText("1 234")
+  await expect(thread(page)).not.toContainText("1 000")
 
   // Recent chats are named by their first question, masked the same way.
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
   await page.getByRole("button", { name: "New chat" }).click()
-  const recent = page.getByRole("region", { name: "Recent" })
-  await expect(recent).toContainText("Did I spend more than •••• in May?")
+  const recent = page.getByRole("region", { name: "Recent chats" })
+  await expect(recent.getByText("Hidden amount")).toHaveCount(1)
   await expect(recent).not.toContainText("1 000")
 }
 
@@ -111,10 +114,29 @@ export async function failureJourney(page: Page) {
   await expect(assistant).toContainText("The AI backend rejected the server's credentials.")
   await expect(composer(page)).toBeEnabled()
 
+  // The saved turn keeps its reason.
+  await page.reload()
+  await expect(assistant).toContainText("The AI backend rejected the server's credentials.")
+
   await assistant.getByRole("button", { name: "Retry" }).click()
   await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
   await expect(page.getByText("The AI backend rejected the server's credentials.")).toHaveCount(0)
   await expect(userTurns(page)).toHaveCount(1)
+}
+
+// A chat that can't be loaded, such as one past its retention, takes no message.
+export async function missingChatJourney(page: Page) {
+  await page.goto("/assistant?chat=missing")
+  await expect(page.getByRole("alert")).toBeVisible()
+  await composer(page).fill("Are you there?")
+  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled()
+  await composer(page).press("Enter")
+  await expect(composer(page)).toHaveValue("Are you there?")
+  await expect(userTurns(page)).toHaveCount(0)
+
+  await page.getByRole("link", { name: "New chat" }).click()
+  await expect(page).toHaveURL(/\/assistant$/)
+  await expect(page.getByRole("alert")).toHaveCount(0)
 }
 
 export async function chatRetentionJourney(page: Page) {
@@ -154,25 +176,25 @@ export async function editAndUndoJourney(page: Page) {
 
   await page.goto("/assistant")
   await sendQuestion(page, `Tag the coffees as work ${token}`)
-  const card = assistantTurns(page).last().getByRole("region", { name: "Edit 2 transactions" })
+  const card = assistantTurns(page).last().getByRole("region", { name: "Update 2 transactions" })
   await expect(card).toContainText("Add work")
   await expect(card.getByText(`Coffee ${token}`, { exact: true })).toHaveCount(2)
   await expect(card).toContainText("+work")
-  await card.getByRole("button", { name: "Apply" }).click()
-  await expect(card).toContainText("Applied")
-  await expect(assistantTurns(page).last()).toContainText("Done: Edited 2 transactions.")
+  await card.getByRole("button", { name: "Update" }).click()
+  await expect(card).toContainText("Updated")
+  await expect(assistantTurns(page).last()).toContainText("Done: Updated 2 transactions.")
   await expect.poll(tags).toEqual([["work"], ["work"]])
 
   // The undo card names the change it reverses and keeps its outcome after a reload.
   await sendQuestion(page, "Undo that")
-  const undo = assistantTurns(page).last().getByRole("region", { name: "Undo: Edited 2 transactions" })
+  const undo = assistantTurns(page).last().getByRole("region", { name: "Undo: Updated 2 transactions" })
   await expect(undo.getByText(`Coffee ${token}`, { exact: true })).toHaveCount(2)
   await expect(undo).toContainText("−work")
   await undo.getByRole("button", { name: "Undo" }).click()
   await expect(undo).toContainText("Undone")
   await expect.poll(tags).toEqual([[], []])
   await page.reload()
-  await expect(assistantTurns(page).last().getByRole("region", { name: "Undo: Edited 2 transactions" })).toContainText("Undone")
+  await expect(assistantTurns(page).last().getByRole("region", { name: "Undo: Updated 2 transactions" })).toContainText("Undone")
 }
 
 export async function allocateJourney(page: Page) {
@@ -240,9 +262,9 @@ export async function budgetAndUndoJourney(page: Page) {
 
   await page.goto("/assistant")
   await sendQuestion(page, `Budget 300 € a month for hobbies ${token}`)
-  const card = assistantTurns(page).last().getByRole("region", { name: "Set 1 budget" })
+  const card = assistantTurns(page).last().getByRole("region", { name: "Save 1 budget" })
   await expect(card).toContainText(`Hobbies ${token}`)
-  await expect(card).toContainText(/From \w{3} \d{4} · new/)
+  await expect(card).toContainText(/From \w{3} \d{4} on · new/)
   await expect(card).toContainText("300,00 €")
   await card.getByRole("button", { name: "Save" }).click()
   await expect(card).toContainText("Saved")
@@ -250,7 +272,7 @@ export async function budgetAndUndoJourney(page: Page) {
 
   await sendQuestion(page, "Undo that")
   const undo = assistantTurns(page).last().getByRole("region", { name: `Undo: Set the Hobbies ${token} budget` })
-  await expect(undo).toContainText(/From \w{3} \d{4} · removed/)
+  await expect(undo).toContainText(/From \w{3} \d{4} on · removed/)
   await undo.getByRole("button", { name: "Undo" }).click()
   await expect(undo).toContainText("Undone")
   await expect.poll(budget).toBeNull()
@@ -336,8 +358,8 @@ export async function archiveAndUndoJourney(page: Page) {
 
   await page.goto("/assistant")
   await sendQuestion(page, `Archive the category crafts ${token}`)
-  const card = assistantTurns(page).last().getByRole("region", { name: `Archive Crafts ${token}` })
-  await expect(card).toContainText("Their transactions keep them")
+  const card = assistantTurns(page).last().getByRole("region", { name: "Archive 1 category" })
+  await expect(card).toContainText("Existing transactions keep them")
   await card.getByRole("button", { name: "Archive" }).click()
   await expect(card).toContainText("Archived")
   await expect.poll(archived).toBe(true)
@@ -381,7 +403,7 @@ export async function endRecurringAndUndoJourney(page: Page) {
 
   await page.goto("/assistant")
   await sendQuestion(page, `End the gym membership after June 2021 ${token}`)
-  const card = assistantTurns(page).last().getByRole("region", { name: `End Gym ${token}` })
+  const card = assistantTurns(page).last().getByRole("region", { name: "End 1 recurring payment" })
   await expect(card).toContainText("Last on 30 Jun 2021")
   await expect(card).toContainText("30,00 €")
   await card.getByRole("button", { name: "End", exact: true }).click()

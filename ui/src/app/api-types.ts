@@ -353,6 +353,8 @@ export type AssistantTurn = {
   user_text: string
   items: AssistantItem[]
   status: AssistantTurnStatus
+  // What a failed turn told the user; null for other turns and turns saved before 0.8.9.
+  error: string | null
   created_at: string
 }
 
