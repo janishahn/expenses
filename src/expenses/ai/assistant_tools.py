@@ -66,13 +66,13 @@ Changing data:
 - Nothing you change is lost for good: Trash keeps trashed transactions, archived
   categories and tags keep their transactions, and kind undo with an action_id
   reverses a change you made.
-- You cannot change the amount or date of an existing transaction, create, rename,
-  or merge categories, edit rules, restore from Trash, or change settings. Say
-  where in the app the user can do it.
+- You cannot change the amount or date of an existing transaction, merge
+  categories, edit rules, restore from Trash, or change settings. Say where in the
+  app the user can do it.
 
 The app:
 - Dashboard: an overview of the balance, spending, and budgets.
-- Transactions: the ledger. Open a transaction to edit its amount, date, or notes.
+- Transactions: the ledger. Open a transaction to edit its amount or date.
   Trash opens from the menu on Transactions; restore transactions there.
 - Uncategorized: transactions waiting for a category, listed only when there are
   some.
@@ -143,7 +143,7 @@ SQL_TABLES = {
         select t.id, t.date,
             case when t.type = 'expense' then 'expense'
                 when t.is_reimbursement then 'reimbursement' else 'income' end as kind,
-            t.title, t.description, t.category_id, c.name as category,
+            t.title, t.description as notes, t.category_id, c.name as category,
             t.amount_cents, coalesce(r.cents, 0) as reimbursed_cents,
             max(0, t.amount_cents - coalesce(r.cents, 0)) as net_cents,
             t.source_currency_code as original_currency,
@@ -516,7 +516,7 @@ def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[st
     column whose name ends in _cents is followed by the same amount as text, so end
     the name of a computed amount in _cents too: sum(net_cents) as spent_cents.
     - transactions: id, date, kind (expense, income, or reimbursement), title,
-      description, category_id, category, amount_cents, reimbursed_cents,
+      notes, category_id, category, amount_cents, reimbursed_cents,
       net_cents, original_currency, original_amount_cents, recurring_id. net_cents
       is what an expense cost after reimbursements; use it for spending.
       original_currency is USD when the user paid in dollars. Trash is not here.
@@ -581,6 +581,8 @@ CHANGE_LABELS = {
     "set_budgets": "Budget changes",
     "remove_budgets": "Budget removal",
     "archive": "Archiving",
+    "create_categories": "New categories",
+    "rename_categories": "Category names",
     "end_recurring": "End of recurring payments",
     "undo": "Undo",
 }

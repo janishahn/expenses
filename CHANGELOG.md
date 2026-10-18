@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The Assistant can change or remove a transaction's notes, add categories, and rename categories. Each change shows an approval card first and can be undone; undoing a new category archives it.
+
 ## [0.8.9] - 2026-10-18
 
 ### Added
