@@ -5,6 +5,12 @@ from expenses.db.session import SessionLocal
 from expenses.services import ForecastService
 
 
+def _amount(cents: int | None, samples: int) -> str:
+    if cents is None:
+        return "-"
+    return f"{cents / 100:,.2f} ({samples})"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Backtest variable cash-flow forecasting against prior months."
@@ -20,10 +26,39 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True))
         return 0
 
-    print(f"Months evaluated: {result['months_evaluated']}")
-    print(f"Model MAE: {result['model_mae_cents']}")
-    print(f"Three-month baseline MAE: {result['baseline_mae_cents']}")
-    print(f"80% interval coverage (bps): {result['interval_coverage_bps']}")
+    print(f"History: {result['history_months']} months")
+    print(
+        "Mean absolute error of the variable balance change, in EUR, "
+        "with the number of tests in brackets."
+    )
+    rows = [
+        (
+            "Ahead",
+            "Model",
+            "12-month average",
+            "Same month last year",
+            "80% range coverage",
+        )
+    ]
+    for row in result["horizons"]:
+        coverage = row["range_coverage_bps"]
+        rows.append(
+            (
+                f"{row['months']} months" if row["months"] > 1 else "1 month",
+                _amount(row["model_mae_cents"], row["samples"]),
+                _amount(row["average_mae_cents"], row["samples"]),
+                _amount(
+                    row["same_month_last_year_mae_cents"],
+                    row["same_month_last_year_samples"],
+                ),
+                "-"
+                if coverage is None
+                else f"{coverage / 100:.0f}% ({row['range_samples']})",
+            )
+        )
+    widths = [max(len(row[column]) for row in rows) for column in range(5)]
+    for row in rows:
+        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)))
     return 0
 
 

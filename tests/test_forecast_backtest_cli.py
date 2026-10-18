@@ -45,8 +45,18 @@ def test_forecast_backtest_prints_machine_readable_metrics(monkeypatch, capsys) 
 
     assert main() == 0
     assert json.loads(capsys.readouterr().out) == {
-        "months_evaluated": 1,
-        "model_mae_cents": 0,
-        "baseline_mae_cents": 0,
-        "interval_coverage_bps": 10_000,
+        "history_months": 4,
+        "horizons": [
+            {
+                "months": months,
+                "samples": 1 if months == 1 else 0,
+                "model_mae_cents": 0 if months == 1 else None,
+                "average_mae_cents": 0 if months == 1 else None,
+                "same_month_last_year_samples": 0,
+                "same_month_last_year_mae_cents": None,
+                "range_samples": 0,
+                "range_coverage_bps": None,
+            }
+            for months in (1, 3, 6, 12)
+        ],
     }

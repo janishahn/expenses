@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Forecasts estimate spending and income outside recurring payments from a weighted average of the last 12 months instead of their median. Recent months count more, and the largest month counts as the next largest, so a one-off purchase does not repeat. The median ignored large months that come back, such as trips, so longer forecasts ended too high.
+- The forecast's 80% range now comes from how far the model missed each past month when it predicted that month from earlier months only, plus the uncertainty of the estimate itself, which repeats in every month. The previous range was too narrow. It now needs 9 months of history instead of 3.
+- `uv run forecast-backtest` reports errors 1, 3, 6, and 12 months ahead, compares them with the 12-month average and with the same months last year, and reports range coverage for each horizon. Its JSON output changed.
+- The forecast API reports `model.method` as `recent_average` or `seasonal_average` instead of `recent_median` or `seasonal_median`. Older iOS builds describe these forecasts as recurring only.
+
 ## [0.8.9] - 2026-10-18
 
 ### Added

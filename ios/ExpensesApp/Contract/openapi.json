@@ -5116,8 +5116,8 @@
           "method": {
             "enum": [
               "recurring_only",
-              "recent_median",
-              "seasonal_median"
+              "recent_average",
+              "seasonal_average"
             ],
             "title": "Method",
             "type": "string"
