@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- On iOS, opening the keyboard at the end of an Assistant chat covered the end of the newest answer. The chat now moves up with the keyboard when you are at its end, and keeps its place when you have scrolled back.
+
 ## [0.8.8] - 2026-10-18
 
 ### Fixed

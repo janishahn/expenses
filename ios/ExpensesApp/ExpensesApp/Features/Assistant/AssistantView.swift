@@ -26,6 +26,8 @@ struct AssistantView: View {
     // Coming back to the screen shows the open chat at its latest answer.
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var viewportHeight: CGFloat = 0
+    // Whether the end of the chat is in view.
+    @State private var showsEnd = true
     // A transaction the answer linked as [title](transaction:<id>).
     @State private var linkedTransactionID: Int?
 
@@ -141,6 +143,18 @@ struct AssistantView: View {
                 .padding(.horizontal, 20)
             }
             .scrollPosition($scrollPosition)
+            // The keyboard or a taller message field takes room from the bottom. A chat read at its
+            // end keeps the end in view; one scrolled back keeps its place. A streaming answer fills
+            // in below its question instead of pulling the chat along.
+            .defaultScrollAnchor(showsEnd && !model.isAssistantStreaming ? .bottom : nil, for: .sizeChanges)
+            // The end counts as in view within the bottom padding, since a sent question can come to
+            // rest a few points short of it.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top + geometry.containerSize.height
+                    >= geometry.contentSize.height - 18
+            } action: { _, atEnd in
+                showsEnd = atEnd
+            }
             .scrollDismissesKeyboard(.interactively)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             // The header and composer insets settle during the push, after the first position, and
