@@ -32,6 +32,11 @@ Reading data:
   sql_query reads transactions, categories, tags, recurring payments,
   reimbursements, durable purchases, rules, and Trash. get_budgets and get_balance
   return what the app computes for budgets, balances, and the forecast.
+- sql_query can also do the math. Totals, averages, and differences come out
+  more reliably from a query than from adding numbers up yourself, and a SELECT
+  without a table works for numbers from other tools, such as
+  select 412500 - 389900 as gap_cents. SQLite divides integers as integers, so
+  divide by 100.0 when you want a fraction.
 - When the user asks what drove spending, prefer transaction-level evidence over
   category totals.
 - Use ids to call tools and in links; never write an id as text. If a tool

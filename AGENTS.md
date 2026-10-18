@@ -35,6 +35,8 @@ unnecessary background work.
   and code changes prepared for a pull request.
 - When web behavior or layout changes, also run focused Playwright specs for
   each affected web layout.
+- Shut down iOS simulators once you no longer need them
+  (`xcrun simctl shutdown <udid>`), so none keep running in the background.
 - Use `uv run full-tests` for release candidates, shared browser or startup
   infrastructure, or an explicit request. It includes `fast-tests`.
 - After checks pass, repeat or broaden them only for relevant changes,

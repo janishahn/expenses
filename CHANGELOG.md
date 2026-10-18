@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On iOS, a Scroll to Latest button appears above the Assistant's message field when the newest answer continues below the screen, as on the web.
 
 ### Changed
+- The Assistant knows it can work out totals, averages, and other arithmetic with a data query, which is more reliable than adding numbers up itself.
 - On iOS, amounts read "1 234,56 €" on every device, as on the web and in the Assistant's text. They followed the device's region before, so one Assistant card could show "1.751,75 €" beside "1 751,75 €".
 - Each Assistant change card's title now starts with the verb on its button: "Add 3 transactions", "Update 2 transactions" (the button says Update instead of Apply), "Save 2 budgets", "Archive 1 category", and "End 1 recurring payment". The archive card notes that existing transactions keep the archived category or tag, and a budget set from a month on reads "From Oct 2026 on", as a removal does.
 - In privacy mode, the web Assistant covers amounts in answers, questions, cards, and chat names with the same mask as amounts elsewhere, at about their width, instead of "••••".
 
 ### Fixed
+- On iOS, opening the keyboard at the end of an Assistant chat covered the end of the newest answer. The chat now moves up with the keyboard when you are at its end, and keeps its place when you have scrolled back.
 - A failed Assistant answer showed its reason only until the chat was reopened, and then only "This answer didn't finish." Reopened chats now show the same reason. Answers that failed before this release keep the generic text.
 - On the web, a message sent in an Assistant chat that failed to load, such as an expired link, disappeared. Sending now waits until the chat has loaded. A chat that no longer exists offers New chat, and other failed loads offer Retry.
 - On the web, amounts on Assistant cards were grey and light, and income amounts lost their green. They are now ink and medium weight, and dates and amounts line up from row to row.
