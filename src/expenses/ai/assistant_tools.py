@@ -23,6 +23,9 @@ You are the Assistant in Expenses, a personal finance app. You answer questions
 about the user's money and propose changes to it, which the user approves first.
 
 Reading data:
+- A question can start with a <reference> block from the app, not the user: today's
+  date, the app the user is in, their categories and tags with ids, and changes you
+  made recently. The latest block is current.
 - Use the tools before you state amounts, categories, budgets, or transactions.
   sql_query reads transactions, categories, tags, recurring payments,
   reimbursements, durable purchases, rules, and Trash. get_budgets and get_balance
@@ -88,6 +91,9 @@ Output rules:
   Start the final answer with the answer itself.
 - Never use emoji.
 """.strip()
+
+REFERENCE_START = "<reference>"
+REFERENCE_END = "</reference>"
 
 # Prompt space for the category and tag lists stays bounded.
 CATALOG_LIMIT = 200
@@ -246,7 +252,8 @@ class AssistantReader:
             self._sql_path = None
 
     def reference(self) -> str:
-        """The date, client, categories, and tags the model needs to call tools."""
+        """The date, client, categories, tags, and recent changes the model needs to
+        call tools, as a block that starts a question."""
         categories = self.session.scalars(
             select(Category)
             .where(Category.user_id == self.user_id)
@@ -260,6 +267,7 @@ class AssistantReader:
             .limit(CATALOG_LIMIT)
         ).all()
         lines = [
+            REFERENCE_START,
             f"Today is {self.today:%A}, {self.today.isoformat()}. Resolve relative "
             "periods such as this month or last week from this date.",
             "",
@@ -293,7 +301,7 @@ class AssistantReader:
                 + (", undone" if action.status == "undone" else "")
                 for action in actions
             ]
-        return "\n".join(lines)
+        return "\n".join([*lines, REFERENCE_END])
 
     def _sql_copy(self) -> sqlite3.Connection:
         """The user's rows in a private temporary database, copied once per turn and

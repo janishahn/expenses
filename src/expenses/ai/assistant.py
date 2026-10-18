@@ -23,7 +23,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from pydantic_ai import Agent, AgentRunEvents, RunContext, Tool, UsageLimits
+from pydantic_ai import Agent, AgentRunEvents, Tool, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
     DeferredToolRequestsEvent,
@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -57,6 +58,8 @@ from expenses.ai.assistant_actions import (
 )
 from expenses.ai.assistant_tools import (
     INSTRUCTIONS,
+    REFERENCE_END,
+    REFERENCE_START,
     TOOLS,
     AssistantClient,
     AssistantReader,
@@ -443,11 +446,6 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         ],
         instructions=INSTRUCTIONS,
     )
-
-    @agent.instructions
-    def reference(ctx: RunContext[AssistantReader]) -> str:
-        return ctx.deps.reference()
-
     return agent
 
 
@@ -787,6 +785,19 @@ def _history(
     return messages
 
 
+def _last_reference(history: list[ModelMessage]) -> str | None:
+    """The latest reference block the model can see in this history."""
+    for message in reversed(history):
+        for part in message.parts:
+            if (
+                isinstance(part, UserPromptPart)
+                and isinstance(part.content, str)
+                and part.content.startswith(REFERENCE_START)
+            ):
+                return part.content.split(REFERENCE_END, 1)[0] + REFERENCE_END
+    return None
+
+
 @dataclass
 class _TurnHandle:
     """Lets the HTTP response stop the run it streams."""
@@ -867,6 +878,12 @@ async def _run_turn(
             ]
         now = datetime.now(ZoneInfo(get_settings().timezone))
         deps = AssistantReader(session, user_id=request.user_id, now=now, client=client)
+        # The reference rides on the question, not in the instructions, so every
+        # request repeats the one before it; it is sent again only when it changed.
+        if prompt is not None and (reference := deps.reference()) != _last_reference(
+            history
+        ):
+            prompt = f"{reference}\n\n{prompt}"
         stream = AssistantEventStream(items=items)
         started_at = datetime.utcnow()
         started = perf_counter()

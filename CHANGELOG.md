@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- After you approved a change, Anthropic rejected the Assistant's next request and the model continued without its earlier reasoning, because the start of the chat had changed. The date, categories, tags, and recent changes now come with your question and are sent again only when they change, so each request in a chat repeats the previous one.
+
 ## [0.8.6] - 2026-10-18
 
 ### Changed

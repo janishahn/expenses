@@ -25,7 +25,8 @@ The last user message picks the script:
 - "undo ...": proposes undoing the latest change applied in the chat.
 - anything else: reasoning, a note, a ledger read, then a short answer.
 
-Write scenarios read ids only from tool results and the instructions, as a model would.
+Write scenarios read ids only from tool results and the app's reference, as a model
+would.
 """
 
 import json
@@ -183,12 +184,15 @@ def _write_script(messages: list[dict], question: str) -> list[dict] | None:
                 "end_date": "2021-06-30",
             },
         )
-    instructions = "\n".join(
-        m["content"] for m in messages if m["role"] in ("system", "developer")
+    # The latest reference block the app sent comes first.
+    reference = "\n".join(
+        m["content"]
+        for m in reversed(messages)
+        if m["role"] == "user" and isinstance(m["content"], str)
     )
-    today = re.search(r"Today is \w+, (\d{4}-\d{2})", instructions)[1]
+    today = re.search(r"Today is \w+, (\d{4}-\d{2})", reference)[1]
     category = re.search(
-        rf"^- (\d+): .* {re.escape(token)}, expense$", instructions, re.MULTILINE
+        rf"^- (\d+): .* {re.escape(token)}, expense$", reference, re.MULTILINE
     )
     if words[0] == "remove":
         return _propose(
@@ -231,7 +235,8 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
     """The chunks to stream and the pause between them."""
     last = messages[-1]
     user = next(m for m in reversed(messages) if m["role"] == "user")
-    question = user["content"] if isinstance(user["content"], str) else ""
+    content = user["content"] if isinstance(user["content"], str) else ""
+    question = content.split("</reference>\n\n", 1)[-1]
     if "slow" in question.lower():
         return _text(SLOW_ANSWER), 0.08
     if "long" in question.lower():
