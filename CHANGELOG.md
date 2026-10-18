@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-10-18
+
 ### Added
 - The Assistant can change or remove a transaction's notes, add categories, and rename categories. Each change shows an approval card first and can be undone; undoing a new category archives it.
 
@@ -611,7 +613,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.9...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.10...HEAD
+[0.8.10]: https://github.com/janishahn/expenses/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/janishahn/expenses/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/janishahn/expenses/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/janishahn/expenses/compare/v0.8.6...v0.8.7
