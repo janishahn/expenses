@@ -211,7 +211,7 @@ private struct ForecastMetricsSection: View {
         if options.mode == .recurring {
             return "recurring only"
         }
-        return data.model?.method == "seasonal_median" ? "seasonal median spending" : "recent median spending"
+        return data.model?.method == "seasonal_average" ? "seasonal average spending" : "recent average spending"
     }
 
     private var belowZero: (value: String, detail: String) {
@@ -287,10 +287,10 @@ private struct ForecastBalanceSection: View {
 
     private var note: String {
         let method = switch data.model?.method {
-        case "seasonal_median":
-            "Seasonal median of \(data.model!.historyMonths) months of history."
-        case "recent_median":
-            "Recent median of \(data.model!.historyMonths) months of history."
+        case "seasonal_average":
+            "Seasonal average of \(data.model!.historyMonths) months of history."
+        case "recent_average":
+            "Recent average of \(data.model!.historyMonths) months of history."
         default:
             "Recurring commitments only."
         }

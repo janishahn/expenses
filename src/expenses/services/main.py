@@ -5118,9 +5118,16 @@ class ForecastService:
         income_estimates: dict[int, "ForecastService.VariableEstimate"]
         expense_factors: dict[int, float]
         income_factors: dict[int, float]
-        residuals: list[int]
         history_months: int
+        effective_months: int
         seasonality_applied: bool
+
+        def predicted_net(self, month: date) -> int:
+            income = sum(row.amount_cents for row in self.income_estimates.values())
+            expense = sum(row.amount_cents for row in self.expense_estimates.values())
+            return int(round(income * self.income_factors[month.month])) - int(
+                round(expense * self.expense_factors[month.month])
+            )
 
     @dataclass
     class OneTimeEvent:
@@ -5479,26 +5486,63 @@ class ForecastService:
         if not months:
             neutral_factors = {month: 1.0 for month in range(1, 13)}
             return ForecastService.VariableModel(
-                {}, {}, neutral_factors, neutral_factors.copy(), [], 0, False
+                {}, {}, neutral_factors, neutral_factors.copy(), 0, 0, False
             )
 
         recent_months = months[-min(12, history_months) :]
-        expense_base = int(
-            round(
-                median(history.expense_totals.get(month, 0) for month in recent_months)
-            )
+        # A month's weight halves every six months, so recent changes count more.
+        weights = [
+            0.5 ** ((len(recent_months) - 1 - index) / 6)
+            for index in range(len(recent_months))
+        ]
+        effective_months = round(
+            sum(weights) ** 2 / sum(weight**2 for weight in weights)
         )
-        income_base = int(
-            round(
-                median(history.income_totals.get(month, 0) for month in recent_months)
-            )
-        )
+        seasonality_applied = history_months >= 24
+
+        def seasonal_offsets(totals: dict[date, int]) -> dict[int, float]:
+            offsets = {month: 0.0 for month in range(1, 13)}
+            if not seasonality_applied:
+                return offsets
+            overall_median = float(median(totals.get(month, 0) for month in months))
+            for month_number in range(1, 13):
+                values = [
+                    totals.get(month, 0)
+                    for month in months
+                    if month.month == month_number
+                ]
+                if len(values) < 2:
+                    continue
+                weight = len(values) / (len(values) + 1)
+                offsets[month_number] = weight * (
+                    float(median(values)) - overall_median
+                )
+            return offsets
+
+        def base_amount(totals: dict[date, int], offsets: dict[int, float]) -> int:
+            values = [
+                totals.get(month, 0) - offsets[month.month] for month in recent_months
+            ]
+            # The largest month counts as the next largest, so a one-off purchase
+            # does not repeat in every forecast month.
+            if len(values) >= 3:
+                largest = max(range(len(values)), key=values.__getitem__)
+                values[largest] = max(
+                    value for index, value in enumerate(values) if index != largest
+                )
+            average = sum(
+                value * weight for value, weight in zip(values, weights)
+            ) / sum(weights)
+            return max(0, int(round(average)))
 
         def build_estimates(
             category_months: dict[int, dict[date, int]], total: int
         ) -> dict[int, ForecastService.VariableEstimate]:
             category_totals = {
-                category_id: sum(values.get(month, 0) for month in recent_months)
+                category_id: sum(
+                    values.get(month, 0) * weight
+                    for month, weight in zip(recent_months, weights)
+                )
                 for category_id, values in category_months.items()
             }
             overall = sum(category_totals.values())
@@ -5520,66 +5564,69 @@ class ForecastService:
                 largest.amount_cents += difference
             return estimates
 
-        expense_estimates = build_estimates(history.expense_by_category, expense_base)
-        income_estimates = build_estimates(history.income_by_category, income_base)
-        seasonality_applied = history_months >= 24
+        def seasonal_factors(offsets: dict[int, float], base: int) -> dict[int, float]:
+            if base <= 0:
+                return {month: 1.0 for month in range(1, 13)}
+            return {
+                month: max(0.0, base + offsets[month]) / base for month in range(1, 13)
+            }
 
-        def seasonal_factors(totals: dict[date, int], base: int) -> dict[int, float]:
-            factors = {month: 1.0 for month in range(1, 13)}
-            if not seasonality_applied or base <= 0:
-                return factors
-            overall_median = float(median(totals.get(month, 0) for month in months))
-            for month_number in range(1, 13):
-                values = [
-                    totals.get(month, 0)
-                    for month in months
-                    if month.month == month_number
-                ]
-                if len(values) < 2:
-                    continue
-                weight = len(values) / (len(values) + 1)
-                seasonal_amount = max(
-                    0.0,
-                    base + weight * (float(median(values)) - overall_median),
-                )
-                factors[month_number] = seasonal_amount / base
-            return factors
-
-        expense_factors = seasonal_factors(history.expense_totals, expense_base)
-        income_factors = seasonal_factors(history.income_totals, income_base)
-        residuals = []
-        for month in months:
-            predicted_income = int(round(income_base * income_factors[month.month]))
-            predicted_expense = int(round(expense_base * expense_factors[month.month]))
-            residuals.append(
-                history.income_totals.get(month, 0)
-                - history.expense_totals.get(month, 0)
-                - (predicted_income - predicted_expense)
-            )
+        expense_offsets = seasonal_offsets(history.expense_totals)
+        income_offsets = seasonal_offsets(history.income_totals)
+        expense_base = base_amount(history.expense_totals, expense_offsets)
+        income_base = base_amount(history.income_totals, income_offsets)
 
         return ForecastService.VariableModel(
-            expense_estimates=expense_estimates,
-            income_estimates=income_estimates,
-            expense_factors=expense_factors,
-            income_factors=income_factors,
-            residuals=residuals,
+            expense_estimates=build_estimates(
+                history.expense_by_category, expense_base
+            ),
+            income_estimates=build_estimates(history.income_by_category, income_base),
+            expense_factors=seasonal_factors(expense_offsets, expense_base),
+            income_factors=seasonal_factors(income_offsets, income_base),
             history_months=history_months,
+            effective_months=effective_months,
             seasonality_applied=seasonality_applied,
         )
+
+    def _out_of_sample_residuals(
+        self, history: "ForecastService.VariableHistory"
+    ) -> list[int]:
+        # Each month's error when it is predicted only from the months before it.
+        return [
+            history.income_totals.get(month, 0)
+            - history.expense_totals.get(month, 0)
+            - self._fit_variable_model(
+                history, months=history.months[:index]
+            ).predicted_net(month)
+            for index, month in enumerate(history.months)
+            if index >= 3
+        ]
 
     def _prediction_paths(
         self,
         *,
-        model: "ForecastService.VariableModel",
-        today: date,
-        horizon: int,
+        residuals: list[int],
+        effective_months: int,
+        seed: str,
+        length: int,
     ) -> list[list[int]]:
-        if model.history_months < 3 or not model.residuals:
+        if len(residuals) < 6:
             return []
-        residual_median = int(round(median(model.residuals)))
-        centered = [value - residual_median for value in model.residuals]
-        rng = random.Random(f"{self.user_id}:{today.isoformat()}:{horizon}")
-        return [[rng.choice(centered) for _ in range(horizon + 1)] for _ in range(300)]
+        mean_residual = sum(residuals) / len(residuals)
+        centered = [value - mean_residual for value in residuals]
+        rng = random.Random(seed)
+        paths = []
+        for _ in range(300):
+            # The base amount is itself an estimate, and its error repeats in
+            # every month of the path.
+            base_error = (
+                sum(rng.choice(centered) for _ in range(effective_months))
+                / effective_months
+            )
+            paths.append(
+                [int(round(rng.choice(centered) + base_error)) for _ in range(length)]
+            )
+        return paths
 
     def _clone_rules(
         self, rules: list["ForecastService.ProjectionRule"]
@@ -5992,9 +6039,9 @@ class ForecastService:
                     "recurring_only"
                     if mode == "recurring"
                     else (
-                        "seasonal_median"
+                        "seasonal_average"
                         if variable_model.seasonality_applied
-                        else "recent_median"
+                        else "recent_average"
                     )
                 ),
                 "history_months": variable_model.history_months,
@@ -6207,9 +6254,10 @@ class ForecastService:
         )
         variable_model = self._fit_variable_model(variable_history)
         prediction_paths = self._prediction_paths(
-            model=variable_model,
-            today=today,
-            horizon=horizon,
+            residuals=self._out_of_sample_residuals(variable_history),
+            effective_months=variable_model.effective_months,
+            seed=f"{self.user_id}:{today.isoformat()}:{horizon}",
+            length=horizon + 1,
         )
         start_balance = self._starting_balance_cents(today=today)
 
@@ -6229,72 +6277,83 @@ class ForecastService:
             **projection,
         }
 
-    def backtest(self, *, today: date | None = None) -> dict[str, int | None]:
+    def backtest(self, *, today: date | None = None) -> dict[str, object]:
         today = today or local_today()
         history = self._load_variable_history(today=today)
-        model_errors: list[int] = []
-        baseline_errors: list[int] = []
-        covered = 0
-        interval_tests = 0
-        for index in range(3, len(history.months)):
-            training_months = history.months[:index]
-            target_month = history.months[index]
-            model = self._fit_variable_model(history, months=training_months)
-            predicted_income = int(
-                round(
-                    sum(row.amount_cents for row in model.income_estimates.values())
-                    * model.income_factors[target_month.month]
+        months = history.months
+        net = [
+            history.income_totals[month] - history.expense_totals[month]
+            for month in months
+        ]
+        residuals = self._out_of_sample_residuals(history)
+        # Per horizon: model errors, 12-month average errors, same month last
+        # year errors, and whether the 80% range held the actual balance change.
+        errors: dict[int, tuple[list[int], list[int], list[int], list[bool]]] = {
+            horizon: ([], [], [], []) for horizon in (1, 3, 6, 12)
+        }
+        for index in range(3, len(months)):
+            model = self._fit_variable_model(history, months=months[:index])
+            paths = self._prediction_paths(
+                residuals=residuals[: index - 3],
+                effective_months=model.effective_months,
+                seed=f"{self.user_id}:{months[index].isoformat()}",
+                length=12,
+            )
+            recent = net[max(0, index - 12) : index]
+            for horizon, (
+                model_errors,
+                average_errors,
+                last_year_errors,
+                covered,
+            ) in errors.items():
+                if index + horizon > len(months):
+                    continue
+                actual = sum(net[index : index + horizon])
+                predicted = sum(
+                    model.predicted_net(month)
+                    for month in months[index : index + horizon]
                 )
-            )
-            predicted_expense = int(
-                round(
-                    sum(row.amount_cents for row in model.expense_estimates.values())
-                    * model.expense_factors[target_month.month]
+                model_errors.append(abs(actual - predicted))
+                average_errors.append(
+                    abs(actual - int(round(sum(recent) * horizon / len(recent))))
                 )
-            )
-            predicted_net = predicted_income - predicted_expense
-            actual_net = (
-                history.income_totals[target_month]
-                - history.expense_totals[target_month]
-            )
-            previous_three = training_months[-3:]
-            baseline_net = -int(
-                round(
-                    sum(history.expense_totals[month] for month in previous_three)
-                    / len(previous_three)
-                )
-            )
-            model_errors.append(abs(actual_net - predicted_net))
-            baseline_errors.append(abs(actual_net - baseline_net))
+                if index >= 12:
+                    last_year_errors.append(
+                        abs(actual - sum(net[index - 12 : index - 12 + horizon]))
+                    )
+                if paths:
+                    simulated = [predicted + sum(path[:horizon]) for path in paths]
+                    low = min(predicted, self._percentile(simulated, 0.10))
+                    high = max(predicted, self._percentile(simulated, 0.90))
+                    covered.append(low <= actual <= high)
 
-            if model.residuals:
-                residual_median = int(round(median(model.residuals)))
-                interval_values = [
-                    predicted_net + residual - residual_median
-                    for residual in model.residuals
-                ]
-                lower = self._percentile(interval_values, 0.10)
-                upper = self._percentile(interval_values, 0.90)
-                covered += int(lower <= actual_net <= upper)
-                interval_tests += 1
+        def mean_cents(values: list[int]) -> int | None:
+            return int(round(sum(values) / len(values))) if values else None
 
         return {
-            "months_evaluated": len(model_errors),
-            "model_mae_cents": (
-                int(round(sum(model_errors) / len(model_errors)))
-                if model_errors
-                else None
-            ),
-            "baseline_mae_cents": (
-                int(round(sum(baseline_errors) / len(baseline_errors)))
-                if baseline_errors
-                else None
-            ),
-            "interval_coverage_bps": (
-                int(round(covered * 10_000 / interval_tests))
-                if interval_tests
-                else None
-            ),
+            "history_months": len(months),
+            "horizons": [
+                {
+                    "months": horizon,
+                    "samples": len(model_errors),
+                    "model_mae_cents": mean_cents(model_errors),
+                    "average_mae_cents": mean_cents(average_errors),
+                    "same_month_last_year_samples": len(last_year_errors),
+                    "same_month_last_year_mae_cents": mean_cents(last_year_errors),
+                    "range_samples": len(covered),
+                    "range_coverage_bps": (
+                        int(round(sum(covered) * 10_000 / len(covered)))
+                        if covered
+                        else None
+                    ),
+                }
+                for horizon, (
+                    model_errors,
+                    average_errors,
+                    last_year_errors,
+                    covered,
+                ) in errors.items()
+            ],
         }
 
     def scenario(self, *, payload: ForecastScenarioIn, mode: str) -> dict[str, object]:
@@ -6313,9 +6372,10 @@ class ForecastService:
         )
         variable_model = self._fit_variable_model(variable_history)
         prediction_paths = self._prediction_paths(
-            model=variable_model,
-            today=today,
-            horizon=int(payload.horizon),
+            residuals=self._out_of_sample_residuals(variable_history),
+            effective_months=variable_model.effective_months,
+            seed=f"{self.user_id}:{today.isoformat()}:{int(payload.horizon)}",
+            length=int(payload.horizon) + 1,
         )
         base_variable = variable_model.expense_estimates
         start_balance = self._starting_balance_cents(today=today)

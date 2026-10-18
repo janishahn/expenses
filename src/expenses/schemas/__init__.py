@@ -1200,7 +1200,7 @@ class ForecastSummaryOut(BaseModel):
 
 
 class ForecastModelOut(BaseModel):
-    method: Literal["recurring_only", "recent_median", "seasonal_median"]
+    method: Literal["recurring_only", "recent_average", "seasonal_average"]
     history_months: int
     seasonality_applied: bool
     prediction_interval_available: bool

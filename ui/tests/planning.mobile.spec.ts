@@ -25,7 +25,7 @@ test.describe("Planning surfaces (mobile)", () => {
   }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Forecast")
-    for (const [index, amount] of [12000, 18000, 15000].entries()) {
+    for (const [index, amount] of [12000, 18000, 15000, 12000, 18000, 15000, 12000, 18000, 15000].entries()) {
       const transactionDate = previousMonthDate(index + 1)
       await createTransaction(request, token, {
         date: transactionDate,

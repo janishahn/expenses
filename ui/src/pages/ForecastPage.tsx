@@ -59,7 +59,7 @@ type ForecastResponse = {
   current_month_net_cents: number
   months: ForecastMonth[]
   model: {
-    method: "recurring_only" | "recent_median" | "seasonal_median"
+    method: "recurring_only" | "recent_average" | "seasonal_average"
     history_months: number
     prediction_interval_available: boolean
   }
@@ -151,7 +151,7 @@ function ForecastPage() {
   const modelNote =
     data.model.method === "recurring_only"
       ? "Recurring commitments only."
-      : `${data.model.method === "seasonal_median" ? "Seasonal median" : "Recent median"} of ${data.model.history_months} months of history.`
+      : `${data.model.method === "seasonal_average" ? "Seasonal average" : "Recent average"} of ${data.model.history_months} months of history.`
   const expectedNote = `Includes ${formatAmountPrivate(data.current_month_net_cents, "signed")} still expected this month.`
 
   const belowZero: Metric = (() => {
@@ -192,7 +192,7 @@ function ForecastPage() {
           tone={summary.average_monthly_net_cents >= 0 ? "income" : undefined}
         />
       ),
-      detail: mode === "full" ? (data.model.method === "seasonal_median" ? "seasonal median spending" : "recent median spending") : "recurring only",
+      detail: mode === "full" ? (data.model.method === "seasonal_average" ? "seasonal average spending" : "recent average spending") : "recurring only",
     },
     belowZero,
   ]
