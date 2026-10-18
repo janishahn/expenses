@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-10-18
+
 ### Changed
 - A release publishes its Docker image only after the image starts and answers `/api/mobile/status`, so a release that cannot start never becomes `latest`.
 
@@ -562,7 +564,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.5...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/janishahn/expenses/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/janishahn/expenses/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/janishahn/expenses/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/janishahn/expenses/compare/v0.8.2...v0.8.3
