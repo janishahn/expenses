@@ -191,9 +191,11 @@ struct AssistantChat: Decodable {
         let userText: String
         let items: [AssistantItem]
         let status: AssistantTurnStatus
+        /// A failed turn's reason, as its stream showed it.
+        let error: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, items, status
+            case id, items, status, error
             case userText = "user_text"
         }
     }

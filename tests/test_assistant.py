@@ -915,6 +915,8 @@ async def test_assistant_failure_ends_with_a_message() -> None:
         saved = session.scalars(select(AssistantTurn)).one()
         job = session.scalars(select(LLMJob)).one()
     assert saved.status == "failed"
+    # A reopened chat shows the same reason.
+    assert saved.error_message == events[-1]["message"]
     # A failed turn adds nothing to what the model sees next time.
     assert saved.messages_json == "[]"
     assert job.status == "failed"
@@ -1235,7 +1237,7 @@ async def test_assistant_dismissed_or_ignored_proposals_change_nothing() -> None
     events = await _collect(factory, stream, "Add lunch for 12,50")
     chat_id = events[0]["chat_id"]
     [approval] = [item for item in _final_items(events) if item["kind"] == "approval"]
-    assert approval["card"]["title"] == "1 new transaction"
+    assert approval["card"]["title"] == "Add 1 transaction"
     assert approval["card"]["rows"][0]["detail"] == "Travel · Work"
     decided = await _decide(factory, stream, chat_id, approval["id"], approve=False)
     assert _final_items(decided)[0]["state"] == "dismissed"
@@ -1553,8 +1555,8 @@ def test_assistant_undo_restores_the_exact_earlier_state() -> None:
         assert [
             (row.title, row.detail, row.amount_cents) for row in undo_budgets.card.rows
         ] == [
-            ("Groceries", "From Jan 2026 · was Jan 2026 – Jun 2026", 35_000),
-            ("Groceries", "From Jul 2026 · removed", 40_000),
+            ("Groceries", "From Jan 2026 on · was Jan 2026 – Jun 2026", 35_000),
+            ("Groceries", "From Jul 2026 on · removed", 40_000),
             ("Groceries", "Jul 2026 only · restored", 38_000),
             ("Overall budget", "Jul 2026 only · removed", 100_000),
         ]
@@ -1659,7 +1661,7 @@ def test_assistant_destructive_changes_undo_exactly() -> None:
         undo_removal = propose_undo(reader, removed.id)
         assert [(row.detail, row.amount_cents) for row in undo_removal.card.rows] == [
             ("Jan 2026 – Aug 2026 · was Jan 2026 – Jun 2026", 12_000),
-            ("From Sep 2026 · restored", 15_000),
+            ("From Sep 2026 on · restored", 15_000),
             ("Aug 2026 only · restored", 20_000),
         ]
         _apply_proposal(session, undo_removal)

@@ -10,6 +10,7 @@ import {
   endRecurringAndUndoJourney,
   failureJourney,
   followUpJourney,
+  missingChatJourney,
   offsetInThread,
   privacyJourney,
   removeBudgetAndUndoJourney,
@@ -80,7 +81,7 @@ test.describe("Assistant (mobile)", () => {
     await page.goto("/assistant")
     await sendQuestion(page, unique("Add ten lunches for 12,50"))
 
-    const card = assistantTurns(page).last().getByRole("region", { name: "10 new transactions" })
+    const card = assistantTurns(page).last().getByRole("region", { name: "Add 10 transactions" })
     await expect(card.getByText("Lunch", { exact: true })).toHaveCount(8)
     await card.getByRole("button", { name: "Show 2 more" }).click()
     await expect(card.getByText("Lunch", { exact: true })).toHaveCount(10)
@@ -143,6 +144,10 @@ test.describe("Assistant (mobile)", () => {
 
   test("shows a backend failure and answers again with Retry", async ({ page }) => {
     await failureJourney(page)
+  })
+
+  test("takes no message in a chat that couldn't be loaded", async ({ page }) => {
+    await missingChatJourney(page)
   })
 
   test("saves how many days to keep chats in Settings", async ({ page }) => {

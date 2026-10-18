@@ -65,6 +65,7 @@ overspent, failed, destructive.
 | `sheet` | `#ffffff` | `#1f1d1a` | Cards, lists, peek |
 | `day` | `#f2f2f0` | `#1b1a17` | Day bands, receipt preview, map placeholder |
 | `float` | `#ffffff` | `#262420` | Floating layers |
+| `seg-bg` | `#ececea` | white at 6% | Segmented control track, the Assistant's question bubble |
 | `ink` | `#1c1c1a` | `#eeebe6` | Primary text, primary button fill |
 | `ink-2` | `#55554f` | `#bdb8af` | Secondary text, labels, all text on canvas |
 | `ink-3` | `#6b6b65` | `#969087` | Tertiary text and icons. Never on canvas. |
@@ -112,7 +113,8 @@ These tokens, the money colors, and number formatting are shared with iOS.
 
 ## Controls
 
-- Primary button: `ink` fill, inverted text. One per view at most.
+- Primary button: `ink` fill, inverted text. One per view at most; each open
+  Assistant change card has its own.
 - Secondary controls: ghost or `sheet` with the `edge` ring. Never colored.
 - Segmented controls and active nav use the `selected` tone.
 - Sort menus list the sort keys, then a separator and two direction items
@@ -395,16 +397,19 @@ pages below fix the structure; the current pages show the content.
   own row (Active with the training time, Training, Not enough history with
   its requirement, or Training failed in `over` with the fallback model's
   date), then Minimum confidence as a percentage field.
-- **Assistant.** One conversation column with 14px answers. The composer is the
-  only input in a bottom-fixed position; on mobile the tab bar hides while it
-  has focus. The header holds Recent chats and New chat, and the URL names the
-  open chat. Reasoning, progress notes, and ledger reads share one activity
-  line: while the Assistant works it names the current step, and once the answer
-  starts it folds into a summary ("Reviewed 3 ledger views") that opens to list
-  each step. A new chat lists recent chats instead of suggested questions.
-  A proposed change is a card in the answer: a bold title, the affected rows
-  with glyph, date, and amount, then Dismiss and one ink verb (Add, Apply,
-  Allocate). Once decided, the buttons give way to the outcome and the answer
+- **Assistant.** One conversation column with 14px answers. The composer is
+  the only input in a bottom-fixed position; on mobile the tab bar hides while
+  it has focus. It is a `sheet` with the `edge` ring rather than a field
+  boundary, and the conversation keeps its insets. The header holds Recent
+  chats and New chat, and the URL names the open chat. Reasoning, progress
+  notes, and ledger reads share one activity line: while the Assistant works
+  it names the current step, and once the answer starts it folds into a
+  summary ("Reviewed 3 ledger views") that opens to list each step. A new chat
+  lists recent chats instead of suggested questions. A proposed change is a
+  card in the answer: a bold title that starts with its verb, the affected
+  rows with glyph, date, and amount, then Dismiss and that verb in ink (Add,
+  Update, Allocate), destructive ones included, since the title names what
+  changes. Once decided, the buttons give way to the outcome and the answer
   continues below the card. A transaction the answer names is an underlined
   link that opens it in a peek beside the conversation; the URL names it.
 - **Sign in, setup, 404.** Bare pages: a centered sheet with the app name, the
@@ -455,7 +460,7 @@ decorative exceptions.
 | Press | `scale(0.98)` |
 | 404 calendar | Cells fill in week by week once (about 2s, opacity and scale from 0.3); a few light cells then fade in and out slowly |
 | Server receipt | Feeds up from the slot in line steps once (about 1.3s); each dot fades and scales in; on an answer, feeds out, tears off with a slight tilt, and fades |
-| Assistant | A sent question rises 6px into place (200ms); streamed answer words fade in (240ms); the activity label rises in (220ms) as the old one leaves upward (150ms); while the Assistant works, a highlight sweeps the label (1.8s, linear); steps that arrive while the list is open rise in; send and stop cross-fade (160ms); a change card rises 6px and settles from 98.5% scale (260ms), and its outcome fades in. Opened chats appear without motion |
+| Assistant | A sent question rises 6px into place (200ms); streamed answer words fade in (240ms); the activity label rises 6px in (220ms) as the old one leaves upward (150ms); while the Assistant works, a highlight sweeps the label (1.8s, linear); the step list and a reasoning summary fade in as they open (200ms) while the caret turns (160ms), and steps that arrive while the list is open rise in; send and stop cross-fade and scale (160ms); the scroll-to-latest button fades in (150ms); a change card rises 6px and settles from 98.5% scale (260ms), its outcome fades in, and a dismissed or failed card's rows dim (200ms). Opened chats appear without motion |
 
 Animate only `transform` and `opacity`; the Assistant's working highlight moves
 its background instead. Under reduced motion, keep opacity changes and drop

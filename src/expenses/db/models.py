@@ -116,6 +116,8 @@ class AssistantTurn(Base):
     items_json: Mapped[str] = mapped_column(Text, nullable=False)
     messages_json: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    # What a failed turn told the user; null for other turns.
+    error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- On iOS, a Scroll to Latest button appears above the Assistant's message field when the newest answer continues below the screen, as on the web.
+
+### Changed
+- On iOS, amounts read "1 234,56 €" on every device, as on the web and in the Assistant's text. They followed the device's region before, so one Assistant card could show "1.751,75 €" beside "1 751,75 €".
+- Each Assistant change card's title now starts with the verb on its button: "Add 3 transactions", "Update 2 transactions" (the button says Update instead of Apply), "Save 2 budgets", "Archive 1 category", and "End 1 recurring payment". The archive card notes that existing transactions keep the archived category or tag, and a budget set from a month on reads "From Oct 2026 on", as a removal does.
+- In privacy mode, the web Assistant covers amounts in answers, questions, cards, and chat names with the same mask as amounts elsewhere, at about their width, instead of "••••".
+
+### Fixed
+- A failed Assistant answer showed its reason only until the chat was reopened, and then only "This answer didn't finish." Reopened chats now show the same reason. Answers that failed before this release keep the generic text.
+- On the web, a message sent in an Assistant chat that failed to load, such as an expired link, disappeared. Sending now waits until the chat has loaded. A chat that no longer exists offers New chat, and other failed loads offer Retry.
+- On the web, amounts on Assistant cards were grey and light, and income amounts lost their green. They are now ink and medium weight, and dates and amounts line up from row to row.
+- On the web, recent chats in a new Assistant chat sat off-center: long titles widened the list past the right edge of the message field, and on phones pushed the dates off the screen. Long titles now end in an ellipsis, and the list has the field's width: titles start where its text starts, and dates end at the send button. On phones, the message field now has the conversation's insets, so cards and questions are as wide as the field.
+- On the web, wide tables in Assistant answers scroll sideways instead of breaking amounts across lines, and answer headings are no longer smaller than the text.
+- On the web, approving a change in a reopened Assistant chat faded in the whole answer above the card again. Only new text fades in now.
+- After you stopped the Assistant while it was reasoning, its activity line read "Thinking". It now reads "Thought", and "Reviewed N ledger views" counts only the reads that finished.
+- On the web, Copy showed "Copied" even when the browser refused the clipboard. It now shows it only after the text was copied.
+- On iOS, allocation rows on Assistant cards split "of" across two lines or dropped it ("214,00 €428,00 €") and cut titles short, and in privacy mode "of" vanished from every row. Each amount phrase now stays in one piece and moves under the titles when it doesn't fit beside them. The card footer no longer hyphenates Dismiss, and at large text sizes rows stack and dates stay on one line.
+- On iOS, tables, code blocks, and quotes in Assistant answers ran together into one paragraph. They now show as a table, a code block, and an indented quote.
+- On iOS, Copy Response on earlier Assistant answers was unavailable while a new answer streamed; now only Retry waits. Opening a chat shows the app's usual loading and "Couldn't load" states, "Stopped" matches the failure label, failed cards dim like dismissed ones, Dismiss and the card's verb have full-size touch targets, VoiceOver announces when an answer starts and ends, and Reduce Motion also stills the answer's fade-in.
+- On the web, Assistant cards had several small inconsistencies: failed cards didn't dim like dismissed ones, outcomes used different icons and sizes, a narrow card wrapped its total onto two lines, and the first activity label appeared without its motion. Outcomes now share one style, a narrow card moves its buttons to their own line, and the activity line has a 44-pixel touch target on phones.
+
 ## [0.8.8] - 2026-10-18
 
 ### Fixed

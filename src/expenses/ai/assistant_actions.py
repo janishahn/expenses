@@ -510,9 +510,7 @@ def propose_create(
     return Proposal(
         summary=f"Added {_plural(count, 'transaction')}",
         card=ApprovalCard(
-            title=f"{count} new transaction"
-            if count == 1
-            else f"{count} new transactions",
+            title=f"Add {_plural(count, 'transaction')}",
             verb="Add",
             done="Added",
             rows=rows,
@@ -620,12 +618,12 @@ def propose_edit(
         changes.append(f"Title {new_title}")
     count = len(rows)
     return Proposal(
-        summary=f"Edited {_plural(count, 'transaction')}",
+        summary=f"Updated {_plural(count, 'transaction')}",
         card=ApprovalCard(
-            title=f"Edit {_plural(count, 'transaction')}",
+            title=f"Update {_plural(count, 'transaction')}",
             meta=" · ".join(changes),
-            verb="Apply",
-            done="Applied",
+            verb="Update",
+            done="Updated",
             rows=_edit_rows(categories, {txn.id: txn for txn in transactions}, rows),
         ),
         plan=EditPlan(rows=rows),
@@ -844,7 +842,7 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
             ApprovalRow(
                 title=category.name if category else "Overall budget",
                 detail=(
-                    f"From {when}" if budget.applies == "onward" else f"{when} only"
+                    f"From {when} on" if budget.applies == "onward" else f"{when} only"
                 )
                 + (f" · was {_eur(previous)}" if previous is not None else " · new"),
                 category=_category_card(category),
@@ -857,7 +855,7 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
         if count == 1
         else f"Set {count} budgets",
         card=ApprovalCard(
-            title=f"Set {_plural(count, 'budget')}",
+            title=f"Save {_plural(count, 'budget')}",
             verb="Save",
             done="Saved",
             rows=rows,
@@ -1067,8 +1065,8 @@ def propose_archive(
     return Proposal(
         summary=f"Archived {name}",
         card=ApprovalCard(
-            title=f"Archive {name}",
-            meta="Their transactions keep them",
+            title=f"Archive {_archive_noun(len(category_ids), len(tag_ids))}",
+            meta="Existing transactions keep them",
             verb="Archive",
             done="Archived",
             rows=rows,
@@ -1144,14 +1142,19 @@ def propose_end_recurring(
     name = rows[0].title if count == 1 else f"{count} recurring payments"
     return Proposal(
         summary=f"Ended {name}",
-        card=ApprovalCard(title=f"End {name}", verb="End", done="Ended", rows=rows),
+        card=ApprovalCard(
+            title=f"End {_plural(count, 'recurring payment')}",
+            verb="End",
+            done="Ended",
+            rows=rows,
+        ),
         plan=EndRecurringPlan(rows=plan_rows),
     )
 
 
 def _span(row: TemplateRow) -> str:
     if row.ends_on is None:
-        return f"From {row.starts_on:%b %Y}"
+        return f"From {row.starts_on:%b %Y} on"
     return f"{row.starts_on:%b %Y} – {row.ends_on:%b %Y}"
 
 
