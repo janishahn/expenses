@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import date, datetime
@@ -25,7 +26,8 @@ about the user's money and propose changes to it, which the user approves first.
 Reading data:
 - A question can start with a <reference> block from the app, not the user: today's
   date, the app the user is in, their categories and tags with ids, and changes you
-  made recently. The latest block is current.
+  made recently. A later block repeats only the parts that changed; the latest of
+  each part is current.
 - Use the tools before you state amounts, categories, budgets, or transactions.
   sql_query reads transactions, categories, tags, recurring payments,
   reimbursements, durable purchases, rules, and Trash. get_budgets and get_balance
@@ -94,6 +96,19 @@ Output rules:
 
 REFERENCE_START = "<reference>"
 REFERENCE_END = "</reference>"
+REFERENCE_SECTION = re.compile(r"<(\w+)>\n(.*?)\n</\1>", re.DOTALL)
+
+
+def reference_block(sections: dict[str, str]) -> str:
+    """The block that starts a question, one tagged part per section."""
+    return "\n".join(
+        [
+            REFERENCE_START,
+            *(f"<{name}>\n{text}\n</{name}>" for name, text in sections.items()),
+            REFERENCE_END,
+        ]
+    )
+
 
 # Prompt space for the category and tag lists stays bounded.
 CATALOG_LIMIT = 200
@@ -251,9 +266,9 @@ class AssistantReader:
             self._sql_path.unlink(missing_ok=True)
             self._sql_path = None
 
-    def reference(self) -> str:
+    def reference(self) -> dict[str, str]:
         """The date, client, categories, tags, and recent changes the model needs to
-        call tools, as a block that starts a question."""
+        call tools, by section."""
         categories = self.session.scalars(
             select(Category)
             .where(Category.user_id == self.user_id)
@@ -266,25 +281,34 @@ class AssistantReader:
             .order_by(Tag.archived_at.is_not(None), Tag.name)
             .limit(CATALOG_LIMIT)
         ).all()
-        lines = [
-            REFERENCE_START,
-            f"Today is {self.today:%A}, {self.today.isoformat()}. Resolve relative "
-            "periods such as this month or last week from this date.",
-            "",
-            CLIENT_LINES[self.client],
-            "",
-            "Categories (id: name, type):",
-        ]
-        lines += [
-            f"- {category.id}: {category.name}, {category.type.value}"
-            + (", archived" if category.archived_at else "")
-            for category in categories
-        ]
-        lines += ["", "Tags (id: name):"]
-        lines += [
-            f"- {tag.id}: {tag.name}" + (", archived" if tag.archived_at else "")
-            for tag in tags
-        ] or ["- none"]
+        sections = {
+            "date": f"Today is {self.today:%A}, {self.today.isoformat()}. Resolve "
+            "relative periods such as this month or last week from this date.",
+            "client": CLIENT_LINES[self.client],
+            "categories": "\n".join(
+                [
+                    "Categories (id: name, type):",
+                    *(
+                        f"- {category.id}: {category.name}, {category.type.value}"
+                        + (", archived" if category.archived_at else "")
+                        for category in categories
+                    ),
+                ]
+            ),
+            "tags": "\n".join(
+                [
+                    "Tags (id: name):",
+                    *(
+                        [
+                            f"- {tag.id}: {tag.name}"
+                            + (", archived" if tag.archived_at else "")
+                            for tag in tags
+                        ]
+                        or ["- none"]
+                    ),
+                ]
+            ),
+        }
         actions = self.session.scalars(
             select(AssistantAction)
             .where(
@@ -295,13 +319,17 @@ class AssistantReader:
             .limit(RECENT_ACTIONS)
         ).all()
         if actions:
-            lines += ["", "Changes you made recently (action_id: summary, date):"]
-            lines += [
-                f"- {action.id}: {action.summary}, {action.decided_at:%Y-%m-%d}"
-                + (", undone" if action.status == "undone" else "")
-                for action in actions
-            ]
-        return "\n".join([*lines, REFERENCE_END])
+            sections["changes"] = "\n".join(
+                [
+                    "Changes you made recently (action_id: summary, date):",
+                    *(
+                        f"- {action.id}: {action.summary}, {action.decided_at:%Y-%m-%d}"
+                        + (", undone" if action.status == "undone" else "")
+                        for action in actions
+                    ),
+                ]
+            )
+        return sections
 
     def _sql_copy(self) -> sqlite3.Connection:
         """The user's rows in a private temporary database, copied once per turn and

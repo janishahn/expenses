@@ -347,7 +347,7 @@ def test_reader_reports_budgets_balance_and_reference() -> None:
         assert len(forecast["forecast"]["months"]) == 3
         assert "history" not in forecast
 
-        reference = reader.reference()
+        reference = assistant_tools.reference_block(reader.reference())
         assert "Today is Saturday, 2026-06-27." in reference
         assert "The user is in the web app." in reference
         assert f"- {ids['groceries_id']}: Groceries, expense" in reference
@@ -1063,10 +1063,12 @@ async def test_assistant_requests_keep_their_prefix_across_approvals() -> None:
     assert len(requests) == 4
     for earlier, later in zip(requests, requests[1:]):
         assert later[: len(earlier)] == earlier
-    # The approval added a recent change, so the next question carries the new
-    # reference; an unchanged reference is not sent again.
+    # The approval added a recent change, so the next question repeats only that
+    # part of the reference; an unchanged reference is not sent again.
+    assert "Categories (" in requests[0][-1][1]
     assert "Changes you made recently" not in requests[0][-1][1]
     assert "Changes you made recently" in requests[2][-1][1]
+    assert "Categories (" not in requests[2][-1][1]
     assert requests[3][-1] == ("user-prompt", repr("Thanks again"))
 
 
