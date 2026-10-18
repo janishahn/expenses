@@ -1776,7 +1776,7 @@ def test_assistant_adds_and_renames_categories_and_undoes_both() -> None:
 
         renaming = rename(ids["groceries_id"], "Food")
         assert [(row.title, row.detail) for row in renaming.card.rows] == [
-            ("Groceries", "Renamed to Food")
+            ("Groceries", "Expense category · Renamed to Food")
         ]
         renamed = _apply_proposal(session, renaming)
         groceries = session.get_one(Category, ids["groceries_id"])

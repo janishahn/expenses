@@ -1231,7 +1231,7 @@ class CategoryName(BaseModel):
 def _rename_row(category: Category, name: str) -> ApprovalRow:
     return ApprovalRow(
         title=category.name,
-        detail=f"Renamed to {name}",
+        detail=f"{category.type.value.capitalize()} category · Renamed to {name}",
         category=_category_card(category),
     )
 
@@ -1685,8 +1685,8 @@ class CreateTransactions(_Change):
 
 class EditTransactions(_Change):
     """Change the category, tags, title, or notes of up to 200 transactions. Fields
-    left out stay as they are, and empty notes remove them; new tag names become new
-    tags."""
+    left out or null stay as they are. notes replaces all of the notes, so read long
+    notes in full first, and "" removes them. New tag names become new tags."""
 
     kind: Literal["edit_transactions"]
     transaction_ids: list[int]

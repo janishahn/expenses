@@ -510,6 +510,7 @@ class AssistantReader:
 def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[str, Any]:
     """Run one read-only SQLite SELECT over the user's data. Returns up to 100 rows;
     `more` means there are others, so aggregate in SQL or page with LIMIT and OFFSET.
+    Text past 300 characters is cut and ends in …; read the rest with substr.
 
     Tables. Dates are YYYY-MM-DD text, every *_cents column is an integer amount in
     euro cents (123456 is 1 234,56 €), and flags are 1 or 0. In the result, each
