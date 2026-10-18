@@ -816,7 +816,7 @@ final class AppModel {
                 id: "turn-\(turn.id)",
                 userText: turn.userText,
                 items: turn.items,
-                status: assistantStatus(turn.status, message: nil),
+                status: assistantStatus(turn.status, message: turn.error),
                 live: false,
                 received: true
             )

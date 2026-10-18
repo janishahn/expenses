@@ -1,8 +1,13 @@
-export function copyText(text: string) {
+// Resolves whether the text reached the clipboard.
+export async function copyText(text: string): Promise<boolean> {
   // Self-hosted plain-HTTP deployments have no navigator.clipboard.
   if (navigator.clipboard) {
-    void navigator.clipboard.writeText(text)
-    return
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      return false
+    }
   }
   const area = document.createElement("textarea")
   area.value = text
@@ -11,6 +16,7 @@ export function copyText(text: string) {
   area.style.opacity = "0"
   document.body.append(area)
   area.select()
-  document.execCommand("copy")
+  const copied = document.execCommand("copy")
   area.remove()
+  return copied
 }

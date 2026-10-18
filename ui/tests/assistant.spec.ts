@@ -11,6 +11,7 @@ import {
   endRecurringAndUndoJourney,
   failureJourney,
   followUpJourney,
+  missingChatJourney,
   offsetInThread,
   privacyJourney,
   removeBudgetAndUndoJourney,
@@ -78,7 +79,7 @@ test.describe("Assistant", () => {
     await page.getByRole("button", { name: "New chat" }).click()
     await expect(userTurns(page)).toHaveCount(0)
     await expect(page).toHaveURL(/\/assistant$/)
-    const recent = page.getByRole("region", { name: "Recent" })
+    const recent = page.getByRole("region", { name: "Recent chats" })
     await expect(recent.getByRole("button").filter({ hasText: question })).toContainText("Today")
     await recent.getByRole("button").filter({ hasText: question }).click()
     await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
@@ -103,7 +104,7 @@ test.describe("Assistant", () => {
 
     // The proposal ends the turn with a card; nothing is saved yet.
     const assistant = assistantTurns(page).last()
-    const card = assistant.getByRole("region", { name: "1 new transaction" })
+    const card = assistant.getByRole("region", { name: "Add 1 transaction" })
     await expect(card).toContainText("Lunch")
     await expect(card).toContainText("Uncategorized")
     await expect(card).toContainText("12,50 €")
@@ -133,10 +134,10 @@ test.describe("Assistant", () => {
     await expect(page.getByRole("complementary", { name: "Lunch" })).toHaveCount(0)
 
     await page.reload()
-    await expect(assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })).toContainText("Added")
+    await expect(assistantTurns(page).last().getByRole("region", { name: "Add 1 transaction" })).toContainText("Added")
 
     await sendQuestion(page, "Add ten lunches again")
-    const second = assistantTurns(page).last().getByRole("region", { name: "10 new transactions" })
+    const second = assistantTurns(page).last().getByRole("region", { name: "Add 10 transactions" })
     await expect(second.getByText("Lunch", { exact: true })).toHaveCount(8)
     await second.getByRole("button", { name: "Show 2 more" }).click()
     await expect(second.getByText("Lunch", { exact: true })).toHaveCount(10)
@@ -151,7 +152,7 @@ test.describe("Assistant", () => {
     const totalBefore = await ledgerTotal(page)
     await page.getByRole("link", { name: "Assistant", exact: true }).click()
     await sendQuestion(page, unique("Add lunch for 12,50"))
-    const card = assistantTurns(page).last().getByRole("region", { name: "1 new transaction" })
+    const card = assistantTurns(page).last().getByRole("region", { name: "Add 1 transaction" })
     await expect(card).toContainText("Lunch")
 
     // The server applies the change, but the connection drops before any of its stream arrives.
@@ -206,6 +207,10 @@ test.describe("Assistant", () => {
 
   test("shows a backend failure and answers again with Retry", async ({ page }) => {
     await failureJourney(page)
+  })
+
+  test("takes no message in a chat that couldn't be loaded", async ({ page }) => {
+    await missingChatJourney(page)
   })
 
   test("sends a follow-up again with Retry when the server never received it", async ({ page }) => {

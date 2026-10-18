@@ -1388,6 +1388,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -1444,6 +1455,7 @@
           "user_text",
           "items",
           "status",
+          "error",
           "created_at"
         ],
         "title": "AssistantTurnOut",

@@ -171,6 +171,7 @@ class AssistantTurnOut(BaseModel):
     user_text: str
     items: list[AssistantItem]
     status: TurnStatus
+    error: str | None
     created_at: datetime
 
 
@@ -530,6 +531,7 @@ class AssistantService:
                     user_text=turn.user_text,
                     items=ITEMS.validate_json(turn.items_json),
                     status=turn.status,
+                    error=turn.error_message,
                     created_at=turn.created_at,
                 )
                 for turn in reversed(turns)
@@ -933,6 +935,7 @@ async def _run_turn(
                 usage = result.usage
         for event in stream.finish(status):
             await put(event)
+        failure = _failure_message(stream.error) if stream.error is not None else None
         _save_turn(
             session,
             request,
@@ -945,12 +948,13 @@ async def _run_turn(
             answer=stream.answer,
             history_size=len(history),
             error=repr(stream.error) if stream.error is not None else None,
+            failure=failure,
             started_at=started_at,
             duration_ms=int((perf_counter() - started) * 1000),
         )
         end: dict[str, Any] = {"type": "end", "status": status}
-        if stream.error is not None:
-            end["message"] = _failure_message(stream.error)
+        if failure is not None:
+            end["message"] = failure
         await put(end)
     except Exception as exc:
         session.rollback()
@@ -996,6 +1000,7 @@ def _save_turn(
     answer: str,
     history_size: int,
     error: str | None,
+    failure: str | None,
     started_at: datetime,
     duration_ms: int,
 ) -> None:
@@ -1038,6 +1043,7 @@ def _save_turn(
                 [*ModelMessagesTypeAdapter.validate_json(turn.messages_json), *messages]
             ).decode()
             turn.status = status
+            turn.error_message = failure
         else:
             if request.replace_seq is not None:
                 session.execute(
@@ -1070,6 +1076,7 @@ def _save_turn(
                     items_json=ITEMS.dump_json(items).decode(),
                     messages_json=ModelMessagesTypeAdapter.dump_json(messages).decode(),
                     status=status,
+                    error_message=failure,
                     created_at=now,
                 )
             )

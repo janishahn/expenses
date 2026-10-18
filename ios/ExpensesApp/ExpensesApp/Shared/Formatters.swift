@@ -112,10 +112,14 @@ enum AppFormatters {
         date.formatted(date: .omitted, time: .shortened)
     }
 
+    // Euros read "1 234,56 €" on every device, as the web and the Assistant's text write them.
+    // The spaces don't break, so an amount stays on one line inside wrapping text.
     private static let currencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
         formatter.numberStyle = .currency
         formatter.currencyCode = "EUR"
+        formatter.currencyGroupingSeparator = "\u{00A0}"
         formatter.maximumFractionDigits = 2
         formatter.minimumFractionDigits = 2
         return formatter
@@ -123,8 +127,10 @@ enum AppFormatters {
 
     private static let wholeCurrencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
         formatter.numberStyle = .currency
         formatter.currencyCode = "EUR"
+        formatter.currencyGroupingSeparator = "\u{00A0}"
         formatter.maximumFractionDigits = 0
         // Halves round away from zero, as the web's Intl formatting does.
         formatter.roundingMode = .halfUp

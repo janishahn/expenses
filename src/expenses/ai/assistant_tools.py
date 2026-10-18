@@ -576,12 +576,12 @@ TOOLS = [sql_query, get_budgets, get_balance]
 CHANGE_LABELS = {
     "create_transactions": "New transactions",
     "edit_transactions": "Transaction changes",
-    "trash_transactions": "Move to Trash",
+    "trash_transactions": "Transactions for Trash",
     "allocate_reimbursement": "Reimbursement allocation",
     "set_budgets": "Budget changes",
     "remove_budgets": "Budget removal",
-    "archive": "Archive",
-    "end_recurring": "End recurring",
+    "archive": "Archiving",
+    "end_recurring": "End of recurring payments",
     "undo": "Undo",
 }
 

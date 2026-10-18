@@ -5,12 +5,14 @@ import { ArrowClockwiseIcon } from "@phosphor-icons/react/ArrowClockwise"
 import { CheckIcon } from "@phosphor-icons/react/Check"
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/ClockCounterClockwise"
 import { CopyIcon } from "@phosphor-icons/react/Copy"
+import { MinusCircleIcon } from "@phosphor-icons/react/MinusCircle"
 import { NotePencilIcon } from "@phosphor-icons/react/NotePencil"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
 import {
   fetchAssistantChat,
   fetchAssistantChats,
   getApiErrorMessage,
+  isApiErrorStatus,
   streamAssistantDecision,
   streamAssistantMessage,
   streamAssistantRetry,
@@ -26,14 +28,17 @@ import {
   ChatApproval,
   ChatBubble,
   ChatComposer,
+  ChatLoadError,
   ChatMarkdown,
   ChatRecent,
   ChatRecentMenu,
   ChatThread,
   ChatTurn,
+  PrivateText,
   type ChatRecentEntry,
 } from "../components/ui/Chat"
 import { Status } from "../components/ui/EmptyState"
+import { useIsDesktop } from "../components/ui/layout-state"
 import { LoadingBody, Panel } from "../components/ui/Panel"
 import { PeekLayout } from "../components/ui/Peek"
 
@@ -73,11 +78,14 @@ function savedTurns(chat: AssistantChat): Turn[] {
     userText: turn.user_text,
     items: turn.items,
     status: turn.status,
-    error: turn.status === "failed" ? SAVED_FAILURE : null,
+    error: turn.status === "failed" ? (turn.error ?? SAVED_FAILURE) : null,
     live: false,
     received: true,
   }))
 }
+
+// The first activity line takes over from the placeholder shown before any step arrives.
+const FIRST_ACTIVITY = "activity"
 
 // Steps between answer text and approval cards fold into one activity line each.
 function segments(items: AssistantItem[]): Segment[] {
@@ -89,7 +97,7 @@ function segments(items: AssistantItem[]): Segment[] {
     }
     const last = result[result.length - 1]
     if (last?.kind === "activity") last.items.push(item)
-    else result.push({ kind: "activity", key: item.id, items: [item] })
+    else result.push({ kind: "activity", key: result.length === 0 ? FIRST_ACTIVITY : item.id, items: [item] })
   }
   return result
 }
@@ -130,22 +138,16 @@ function answerText(items: AssistantItem[]): string {
     .join("\n\n")
 }
 
-function maskItem(item: AssistantItem): AssistantItem {
-  if (item.kind === "tool") return { ...item, label: maskTextAmounts(item.label), detail: item.detail === null ? null : maskTextAmounts(item.detail) }
-  if (item.kind === "approval") {
-    const mask = (text: string | null) => (text === null ? null : maskTextAmounts(text))
-    return {
-      ...item,
-      message: mask(item.message),
-      card: {
-        ...item.card,
-        title: maskTextAmounts(item.card.title),
-        meta: mask(item.card.meta),
-        rows: item.card.rows.map((row) => ({ ...row, title: maskTextAmounts(row.title), detail: mask(row.detail) })),
-      },
-    }
-  }
-  return { ...item, text: maskTextAmounts(item.text) }
+// What a screen reader hears when an answer ends: its words without Markdown, then the
+// changes it proposes.
+function announcedAnswer(items: AssistantItem[]): string {
+  const words = answerText(items)
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^[\s|:-]+$/gm, "")
+    .replace(/^\s*(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/[*_`~|]/g, "")
+  const changes = items.flatMap((item) => (item.kind === "approval" && item.state === "pending" ? [item.card.title] : []))
+  return [words, ...changes].join(" ").replace(/\s+/g, " ").trim()
 }
 
 // Sending a new message leaves open cards undecided; the server dismisses them the same way.
@@ -177,13 +179,9 @@ function chatWhen(updatedAt: string, now: Date): string {
   return date.getFullYear() === now.getFullYear() ? dayMonth : `${dayMonth} ${date.getFullYear()}`
 }
 
-function recentEntries(chats: AssistantChatSummary[] | undefined, privacy: boolean): ChatRecentEntry[] {
+function recentEntries(chats: AssistantChatSummary[] | undefined): ChatRecentEntry[] {
   const now = new Date()
-  return (chats ?? []).map((chat) => ({
-    id: chat.id,
-    title: privacy ? maskTextAmounts(chat.title) : chat.title,
-    when: chatWhen(chat.updated_at, now),
-  }))
+  return (chats ?? []).map((chat) => ({ id: chat.id, title: chat.title, when: chatWhen(chat.updated_at, now) }))
 }
 
 function CopyButton({ copied, label, onCopy }: { copied: boolean; label: string; onCopy: () => void }) {
@@ -205,7 +203,8 @@ function Conversation({
   const queryClient = useQueryClient()
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(initialChat !== null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  // A missing chat, such as one past its retention, can't come back with Retry.
+  const [loadError, setLoadError] = useState<{ message: string; missing: boolean } | null>(null)
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
@@ -223,7 +222,9 @@ function Conversation({
   const frameRef = useRef<number | null>(null)
   // Privacy mode masks amounts in the conversation; copying keeps the exact text.
   const privacy = usePrivacy()
-  const shown = (text: string) => (privacy ? maskTextAmounts(text) : text)
+  const isDesktop = useIsDesktop()
+  // A chat that is loading or failed to load takes no new message.
+  const blocked = loading || loadError !== null
 
   // Leaving the chat stops its answer; the server keeps what was written so far.
   useEffect(() => {
@@ -244,7 +245,9 @@ function Conversation({
         setTurns(savedTurns(chat))
       })
       .catch((error: unknown) => {
-        if (!cancelled) setLoadError(getApiErrorMessage(error, "This chat couldn't be loaded."))
+        if (!cancelled) {
+          setLoadError({ message: getApiErrorMessage(error, "This chat couldn't be loaded."), missing: isApiErrorStatus(error, 404) })
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -269,7 +272,7 @@ function Conversation({
     const userEl = key ? thread.querySelector<HTMLElement>(`[data-turn-id="${key}-q"]`) : null
     if (!key || !userEl) return
     pendingScrollRef.current = null
-    setAnswerReserve({ key, px: Math.max(0, thread.clientHeight - userEl.offsetHeight - 64) })
+    setAnswerReserve({ key, px: Math.max(0, thread.clientHeight - userEl.offsetHeight - 60) })
     window.requestAnimationFrame(() => {
       const top = userEl.getBoundingClientRect().top - thread.getBoundingClientRect().top + thread.scrollTop - 20
       thread.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
@@ -320,7 +323,7 @@ function Conversation({
       const controller = new AbortController()
       abortRef.current = controller
       setBusy(true)
-      setAnnouncement("Assistant is working")
+      setAnnouncement("Thinking")
       // A copy of the turn's events, for the announcement once it ends.
       let local: Turn = { key: "", userText: "", items: [], status: "streaming", error: null, live: true, received: true }
       let failure: string | null = null
@@ -360,8 +363,8 @@ function Conversation({
             : turn
         )
       )
-      if (status === "completed") setAnnouncement(answerText(local.items))
-      else if (status === "stopped") setAnnouncement("Response stopped")
+      if (status === "completed") setAnnouncement(announcedAnswer(local.items))
+      else if (status === "stopped") setAnnouncement("Stopped")
       else setAnnouncement(error)
       return local
     },
@@ -371,18 +374,16 @@ function Conversation({
   const sendMessage = useCallback(
     (raw: string) => {
       const text = raw.trim()
-      if (!text || abortRef.current) return
+      if (!text || abortRef.current || blocked) return
       const key = nextTurnKey()
       pendingScrollRef.current = key
       setTurns((prev) => [...prev.map(dismissPending), { key, userText: text, items: [], status: "streaming", error: null, live: true, received: false }])
       setInput("")
-      if (window.matchMedia("(min-width: 861px)").matches) {
-        window.requestAnimationFrame(() => inputRef.current?.focus())
-      }
+      if (isDesktop) window.requestAnimationFrame(() => inputRef.current?.focus())
       const id = chatIdRef.current
       void runStream((signal) => streamAssistantMessage(id, text, signal))
     },
-    [runStream]
+    [blocked, isDesktop, runStream]
   )
 
   // Answers the last question again, replacing its answer.
@@ -426,10 +427,12 @@ function Conversation({
   )
 
   const handleCopy = useCallback((key: string, content: string) => {
-    copyText(content)
-    setCopiedKey(key)
-    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
-    copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 2000)
+    void copyText(content).then((copied) => {
+      if (!copied) return
+      setCopiedKey(key)
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 2000)
+    })
   }, [])
 
   const empty = turns.length === 0
@@ -438,30 +441,28 @@ function Conversation({
   if (loading) {
     body = <LoadingBody label="Loading chat" />
   } else if (loadError) {
-    body = (
-      <Status icon={WarningCircleIcon} tone="bad" wrap>
-        {loadError}
-      </Status>
-    )
+    body = <ChatLoadError message={loadError.message} missing={loadError.missing} />
   } else if (empty) {
     body = <ChatRecent chats={recent.slice(0, 5)} onOpen={onOpen} />
   } else {
     body = turns.map((turn, index) => {
       const streaming = turn.status === "streaming"
-      const parts = segments(privacy ? turn.items.map(maskItem) : turn.items)
+      const parts = segments(turn.items)
+      if (streaming && parts.length === 0) parts.push({ kind: "activity", key: FIRST_ACTIVITY, items: [] })
       const answer = answerText(turn.items)
       const isLast = index === lastIndex
       // An answer that changed data can't run again; undoing goes through the Assistant.
       const canRetry = isLast && !changedData(turn.items)
       return [
         <ChatTurn key={`${turn.key}-q`} id={`${turn.key}-q`} from="user">
-          <ChatBubble enter={turn.live}>{shown(turn.userText)}</ChatBubble>
+          <ChatBubble enter={turn.live}>
+            <PrivateText text={turn.userText} />
+          </ChatBubble>
           <ChatActions>
             <CopyButton copied={copiedKey === `${turn.key}-q`} label="Copy message" onCopy={() => handleCopy(`${turn.key}-q`, turn.userText)} />
           </ChatActions>
         </ChatTurn>,
         <ChatTurn key={turn.key} id={turn.key} from="assistant" reserve={answerReserve?.key === turn.key ? answerReserve.px : undefined}>
-          {streaming && parts.length === 0 ? <ChatActivity items={[]} working /> : null}
           {parts.map((part, partIndex) =>
             part.kind === "activity" ? (
               <ChatActivity key={part.key} items={part.items} working={streaming && partIndex === parts.length - 1} />
@@ -477,7 +478,7 @@ function Conversation({
               <ChatMarkdown key={part.key} content={part.item.text} animate={turn.live} partial={part.item.state === "streaming"} />
             )
           )}
-          {turn.status === "stopped" ? <Status>Stopped</Status> : null}
+          {turn.status === "stopped" ? <Status icon={MinusCircleIcon}>Stopped</Status> : null}
           {turn.status === "failed" ? (
             <Status icon={WarningCircleIcon} tone="bad" wrap>
               {turn.error ?? SAVED_FAILURE}
@@ -504,7 +505,7 @@ function Conversation({
 
   return (
     <>
-      <ChatThread ref={threadRef} empty={empty} announcement={shown(announcement)} onScroll={updateScrollPill}>
+      <ChatThread ref={threadRef} empty={empty} announcement={privacy ? maskTextAmounts(announcement) : announcement} onScroll={updateScrollPill}>
         {body}
       </ChatThread>
       <ChatComposer
@@ -514,6 +515,7 @@ function Conversation({
         onSend={() => sendMessage(input)}
         onStop={() => abortRef.current?.abort()}
         busy={busy}
+        disabled={blocked}
         label="Message the Assistant"
         placeholder="Ask anything"
         onScrollToLatest={showScrollToBottom ? scrollToBottom : undefined}
@@ -531,8 +533,8 @@ function AssistantPage() {
   const requestedChat = searchParams.get("chat")
   const peekId = Number(searchParams.get("peek")) || null
   const chatsQuery = useQuery({ queryKey: CHATS_KEY, queryFn: fetchAssistantChats })
-  const privacy = usePrivacy()
-  const recent = recentEntries(chatsQuery.data, privacy)
+  const recent = recentEntries(chatsQuery.data)
+  const recentStatus = chatsQuery.data ? "loaded" : chatsQuery.isError ? "failed" : "loading"
   const [view, setView] = useState({ key: 0, chat: requestedChat })
   // The chat the conversation shows. A chat it starts gets its id after the first message.
   const [openChatId, setOpenChatId] = useState(requestedChat)
@@ -580,7 +582,12 @@ function AssistantPage() {
       peekOpen={peekId !== null}
       actions={
         <>
-          <ChatRecentMenu chats={recent} onOpen={open} trigger={<IconButton icon={ClockCounterClockwiseIcon} label="Recent chats" />} />
+          <ChatRecentMenu
+            chats={recent}
+            status={recentStatus}
+            onOpen={open}
+            trigger={<IconButton icon={ClockCounterClockwiseIcon} label="Recent chats" />}
+          />
           <IconButton icon={NotePencilIcon} label="New chat" onClick={() => open(null)} />
         </>
       }

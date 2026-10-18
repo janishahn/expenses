@@ -28,6 +28,12 @@ struct AssistantView: View {
     @State private var viewportHeight: CGFloat = 0
     // Whether the end of the chat is in view.
     @State private var showsEnd = true
+    // Where the newest answer ends in the transcript; a live turn's frame reaches further.
+    @State private var latestEnd: CGFloat = 0
+    // The newest answer ends more than a line below the screen.
+    @State private var latestBelow = false
+    // The open turn's items when its stream started, so the end announces only what it added.
+    @State private var itemsBeforeStream: Set<String> = []
     // A transaction the answer linked as [title](transaction:<id>).
     @State private var linkedTransactionID: Int?
 
@@ -63,6 +69,34 @@ struct AssistantView: View {
             await model.loadAssistantChats()
         }
         .sensoryFeedback(.error, trigger: liveFailureID) { _, failed in failed != nil }
+        .onChange(of: model.isAssistantStreaming) { _, streaming in
+            announce(streaming: streaming)
+        }
+    }
+
+    // VoiceOver hears that the Assistant started, then the answer or how it ended, as on the web.
+    private func announce(streaming: Bool) {
+        guard let turn = model.assistantTurns.last else { return }
+        if streaming {
+            itemsBeforeStream = Set(turn.items.map(\.id))
+            AccessibilityNotification.Announcement("Thinking").post()
+            return
+        }
+        let message: String
+        switch turn.status {
+        case .streaming:
+            return
+        case .stopped:
+            message = "Stopped"
+        case let .failed(error):
+            message = error
+        case .completed:
+            let added = turn.items.filter { !itemsBeforeStream.contains($0.id) }
+            let answer = added.filter { $0.kind == .text }.map { MarkdownBlock.plainText($0.text) }
+            let changes = added.filter { $0.state == .pending }.compactMap { $0.card?.title }
+            message = (answer + changes).joined(separator: "\n")
+        }
+        AccessibilityNotification.Announcement(shown(message, amountsHidden: model.amountsHidden)).post()
     }
 
     private var recentMenu: some View {
@@ -86,6 +120,26 @@ struct AssistantView: View {
 
     private var conversation: some View {
         transcript
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if latestBelow && model.assistantChatState == .ready && !model.assistantTurns.isEmpty {
+                        Button("Scroll to Latest", systemImage: "arrow.down") {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                                scrollPosition.scrollTo(edge: .bottom)
+                            }
+                        }
+                        .labelStyle(.iconOnly)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                        .padding(.bottom, 8)
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: latestBelow)
+            }
             .safeAreaBar(edge: .bottom) {
                 AssistantComposer(input: $input, send: send)
                     .sensoryFeedback(.impact(flexibility: .soft), trigger: sendTick)
@@ -112,21 +166,15 @@ struct AssistantView: View {
                 Group {
                     switch model.assistantChatState {
                     case .loading:
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
+                        LoadingStateSection(title: "Loading chat")
                             .containerRelativeFrame(.vertical)
                     case let .failed(message):
-                        ContentUnavailableView {
-                            Label("Couldn't open the chat", systemImage: "exclamationmark.circle")
-                        } description: {
-                            Text(message)
-                        } actions: {
-                            Button("Try Again") {
-                                if let id = model.assistantChatID {
-                                    open(id)
-                                }
-                            }
-                        }
+                        UnavailableStateSection(
+                            title: "Couldn't load the chat",
+                            systemImage: "exclamationmark.triangle",
+                            message: message,
+                            retry: model.assistantChatID.map { id in { await model.openAssistantChat(id) } }
+                        )
                         .containerRelativeFrame(.vertical)
                     case .ready:
                         if model.assistantTurns.isEmpty {
@@ -136,11 +184,12 @@ struct AssistantView: View {
                             VStack(alignment: .leading, spacing: 22) {
                                 turns
                             }
+                            .padding(.horizontal, 20)
                             .padding(.vertical, 18)
                         }
                     }
                 }
-                .padding(.horizontal, 20)
+                .coordinateSpace(.named("transcript"))
             }
             .scrollPosition($scrollPosition)
             // The keyboard or a taller message field takes room from the bottom. A chat read at its
@@ -157,6 +206,12 @@ struct AssistantView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                // The visible rect reaches under the composer.
+                latestEnd - (geometry.visibleRect.maxY - geometry.contentInsets.bottom) > 48
+            } action: { _, below in
+                latestBelow = below
+            }
             // The header and composer insets settle during the push, after the first position, and
             // would leave the end of the chat under the composer. It stays at its end until the
             // person scrolls or sends.
@@ -200,6 +255,11 @@ struct AssistantView: View {
                     scrollRequest += 1
                 }
                 .id(turn.id)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("transcript")).maxY } action: { end in
+                    if isLast {
+                        latestEnd = end
+                    }
+                }
             }
             // An answer streamed on this screen gets a screen's height, less the bottom padding, so
             // its question can rest at the top while the answer fills in below. An opened chat
@@ -209,30 +269,31 @@ struct AssistantView: View {
         }
     }
 
-    // A new chat lists recent chats instead of suggested questions.
+    // A new chat lists recent chats instead of suggested questions. They take the composer's
+    // width and insets, so titles line up with its text and dates with the send button.
     private var recentList: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !model.assistantChats.isEmpty {
-                Text("Recent")
+                Text("Recent chats")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 18)
                     .padding(.bottom, 4)
                     .accessibilityAddTraits(.isHeader)
                 ForEach(model.assistantChats.prefix(5)) { chat in
                     Button {
                         open(chat.id)
                     } label: {
-                        HStack(spacing: 12) {
+                        TrailingRow {
                             Text(shown(chat.title, amountsHidden: model.amountsHidden))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } trailing: {
                             Text(chatWhen(chat.updatedAt))
                                 .font(.subheadline)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.leading, 18)
+                        .padding(.trailing, 7)
                         .frame(minHeight: 44)
                         .contentShape(.rect)
                     }
@@ -240,7 +301,7 @@ struct AssistantView: View {
                 }
             }
         }
-        .frame(maxWidth: 420)
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
         .containerRelativeFrame(.vertical)
         // Gone at once when the first question goes in, instead of fading out beneath it.
@@ -372,6 +433,8 @@ private struct AssistantQuestion: View {
                     }
                 }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("You")
     }
 }
 
@@ -409,6 +472,7 @@ private enum AnswerPart: Identifiable {
 private struct AssistantAnswer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let turn: AssistantTurn
     let isLast: Bool
     let retry: () -> Void
@@ -429,7 +493,7 @@ private struct AssistantAnswer: View {
                     AssistantMarkdownText(
                         content: shown(item.text, amountsHidden: model.amountsHidden),
                         partial: item.state == .streaming,
-                        fadesIn: turn.live
+                        fadesIn: turn.live && !reduceMotion
                     )
                     .equatable()
                 case let .approval(item):
@@ -442,8 +506,8 @@ private struct AssistantAnswer: View {
             }
             switch turn.status {
             case .stopped:
-                Text("Stopped")
-                    .font(.footnote)
+                Label("Stopped", systemImage: "minus.circle")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             case let .failed(message):
                 Label(message, systemImage: "exclamationmark.circle")
@@ -457,6 +521,8 @@ private struct AssistantAnswer: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Assistant")
     }
 
     // An answer that changed data can't run again; undoing goes through the Assistant.
@@ -481,17 +547,19 @@ private struct AssistantAnswer: View {
                 .frame(minWidth: 44, minHeight: 44)
             }
             if canRetry {
-                if case .failed = turn.status {
-                    Button("Retry", systemImage: "arrow.clockwise", action: retry)
-                    .frame(minHeight: 44)
-                } else {
-                    Button("Retry", systemImage: "arrow.clockwise", action: retry)
-                    .labelStyle(.iconOnly)
-                    .frame(minWidth: 44, minHeight: 44)
+                Group {
+                    if case .failed = turn.status {
+                        Button("Retry", systemImage: "arrow.clockwise", action: retry)
+                        .frame(minHeight: 44)
+                    } else {
+                        Button("Retry", systemImage: "arrow.clockwise", action: retry)
+                        .labelStyle(.iconOnly)
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
                 }
+                .disabled(model.isAssistantStreaming)
             }
         }
-        .disabled(model.isAssistantStreaming)
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
@@ -512,6 +580,9 @@ private struct AssistantApprovalCardView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    // The narrowest a row title gets beside its amounts before they move under it.
+    @ScaledMetric(relativeTo: .body) private var titleMinWidth = 120.0
     let item: AssistantItem
     let card: AssistantApprovalCard
     /// Cards streamed while the screen is open rise in; opened chats show them as they are.
@@ -538,51 +609,60 @@ private struct AssistantApprovalCardView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Long cards list eight rows; the rest open on request, before approving.
                 let rows = showsAllRows ? card.rows : Array(card.rows.prefix(8))
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    rowView(row)
+                if typeSize.isAccessibilitySize {
+                    rowList(rows, stacked: true)
+                } else {
+                    // Every row keeps its amounts beside its title, or every row puts them under it.
+                    ViewThatFits(in: .horizontal) {
+                        rowList(rows, stacked: false)
+                        rowList(rows, stacked: true)
+                    }
                 }
                 if rows.count < card.rows.count {
-                    Button("Show \(card.rows.count - rows.count) More") {
-                        showsAllRows = true
+                    HStack(spacing: 10) {
+                        // Lines up with the row titles at every text size.
+                        Color.clear.glyphColumn()
+                        Button {
+                            showsAllRows = true
+                        } label: {
+                            Text("Show \(card.rows.count - rows.count) More")
+                                .padding(.vertical, 4)
+                                .expandedTouchArea(8)
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 52)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 16)
                 }
             }
-            .opacity(item.state == .dismissed ? 0.55 : 1)
+            .opacity(item.state == .dismissed || item.state == .failed ? 0.55 : 1)
 
-            HStack(spacing: 8) {
-                if let total = card.totalCents, let totalOf = card.totalOfCents {
-                    HStack(spacing: 0) {
-                        AmountText(total)
-                            .fontWeight(.medium)
-                        Text(" of ")
-                            .foregroundStyle(.secondary)
-                        AmountText(totalOf)
-                            .foregroundStyle(.secondary)
-                    }
+            // The total and the buttons share a line, or the total goes above them; neither wraps.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    total
+                        .fixedSize()
+                    Spacer(minLength: 0)
+                    decision
+                        .fixedSize()
                 }
-                Spacer(minLength: 0)
-                if item.state == .pending {
-                    choices
-                        .transition(.opacity)
-                } else {
-                    outcome
-                        .transition(.opacity)
+                VStack(alignment: .leading, spacing: 8) {
+                    total
+                    decision
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             .font(.subheadline)
             .padding(.leading, 16)
             .padding(.trailing, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 7)
             .frame(minHeight: 58)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ExpensesTheme.surface(for: scheme), in: .rect(cornerRadius: 20))
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: item.state)
         .sensoryFeedback(.success, trigger: item.state) { _, state in state == .applied }
+        .sensoryFeedback(.error, trigger: item.state) { _, state in state == .failed }
         .opacity(appeared || !enters ? 1 : 0)
         .offset(y: appeared || !enters || reduceMotion ? 0 : 6)
         .scaleEffect(appeared || !enters || reduceMotion ? 1 : 0.985, anchor: .top)
@@ -595,39 +675,64 @@ private struct AssistantApprovalCardView: View {
         .accessibilityLabel(shown(card.title, amountsHidden: model.amountsHidden))
     }
 
-    private func rowView(_ row: AssistantApprovalCard.Row) -> some View {
-        let sub = [row.detail.map { shown($0, amountsHidden: model.amountsHidden) }, row.date.map(AppFormatters.bookingDay)]
-            .compactMap { $0 }
-            .joined(separator: " · ")
-        return HStack(spacing: 10) {
+    private func rowList(_ rows: [AssistantApprovalCard.Row], stacked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                rowView(row, stacked: stacked)
+            }
+        }
+    }
+
+    /// `stacked` puts the amounts under the title. At accessibility sizes the text wraps too, as in
+    /// `LedgerRow`.
+    private func rowView(_ row: AssistantApprovalCard.Row, stacked: Bool) -> some View {
+        let wraps = typeSize.isAccessibilitySize
+        let detail = row.detail.map { shown($0, amountsHidden: model.amountsHidden) }
+        // A date never breaks across lines.
+        let day = row.date.map { AppFormatters.bookingDay($0).replacing(" ", with: "\u{00A0}") }
+        let label = VStack(alignment: .leading, spacing: 1) {
+            Text(shown(row.title, amountsHidden: model.amountsHidden))
+                .fontWeight(.medium)
+                .lineLimit(wraps ? 3 : 1)
+            if wraps, detail != nil || day != nil {
+                Text([detail, day].compactMap { $0 }.joined(separator: " · "))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            } else if detail != nil || day != nil {
+                // On one line the detail gives way before the date.
+                HStack(spacing: 0) {
+                    if let detail {
+                        Text(detail)
+                    }
+                    if let day {
+                        Text(detail == nil ? day : " · \(day)")
+                            .layoutPriority(1)
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+        }
+        return HStack(alignment: stacked ? .firstTextBaseline : .center, spacing: 10) {
             if row.category != nil || row.date != nil {
                 // A transaction without a category shows a question mark.
                 CategoryGlyph(categoryID: row.category?.id, iconKey: row.category?.icon, name: row.category?.name)
             } else {
                 Color.clear.glyphColumn()
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(shown(row.title, amountsHidden: model.amountsHidden))
-                    .lineLimit(1)
-                if !sub.isEmpty {
-                    Text(sub)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            if stacked {
+                VStack(alignment: .leading, spacing: 2) {
+                    label
+                    amounts(row.amountCents, of: row.ofCents, income: row.income)
                 }
-            }
-            Spacer(minLength: 8)
-            HStack(spacing: 0) {
-                if let amount = row.amountCents {
-                    AmountText(amount, signed: row.income)
-                        .fontWeight(.medium)
-                        .foregroundStyle(row.income ? ExpensesTheme.income(for: scheme) : .primary)
-                }
-                if let of = row.ofCents {
-                    Text(" of ")
-                        .foregroundStyle(.secondary)
-                    AmountText(of)
-                        .foregroundStyle(.secondary)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                label
+                    .frame(idealWidth: titleMinWidth, maxWidth: .infinity, alignment: .leading)
+                amounts(row.amountCents, of: row.ofCents, income: row.income)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 16)
@@ -636,34 +741,101 @@ private struct AssistantApprovalCardView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// An amount, or "925,00 € of 1 850,00 €" on one line. When that line can't fit, "of …" goes
+    /// under the amount.
+    @ViewBuilder
+    private func amounts(_ cents: Int?, of ofCents: Int?, income: Bool = false) -> some View {
+        let amount = cents.map {
+            AmountText($0, signed: income)
+                .fontWeight(.medium)
+                .foregroundStyle(income ? ExpensesTheme.income(for: scheme) : .primary)
+        }
+        if let ofCents {
+            let of = HStack(spacing: 0) {
+                Text("of ")
+                AmountText(ofCents)
+            }
+            .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    amount
+                    Text(" ")
+                    of
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    amount
+                    of
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            amount
+        }
+    }
+
+    @ViewBuilder
+    private var total: some View {
+        if let total = card.totalCents, let totalOf = card.totalOfCents {
+            amounts(total, of: totalOf)
+        }
+    }
+
+    @ViewBuilder
+    private var decision: some View {
+        if item.state == .pending {
+            choices
+                .transition(.opacity)
+        } else {
+            outcome
+                .transition(.opacity)
+        }
+    }
+
+    // At the largest text sizes the buttons stack.
     private var choices: some View {
-        HStack(spacing: 4) {
-            Button {
-                decide(false)
-            } label: {
-                Text("Dismiss")
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 38)
-                    .contentShape(.capsule)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                dismissButton
+                approveButton
             }
-            .accessibilityIdentifier("assistant.dismiss")
-            Button {
-                decide(true)
-            } label: {
-                Text(card.verb)
-                    .foregroundStyle(ExpensesTheme.surface(for: scheme))
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 38)
-                    .background(ExpensesTheme.accent(for: scheme), in: .capsule)
+            VStack(alignment: .trailing, spacing: 0) {
+                dismissButton
+                approveButton
             }
-            .accessibilityIdentifier("assistant.approve")
         }
         .fontWeight(.medium)
         .buttonStyle(.plain)
-        .expandedTouchArea(3)
         .disabled(model.isAssistantStreaming)
         .opacity(model.isAssistantStreaming ? 0.45 : 1)
+    }
+
+    private var dismissButton: some View {
+        Button {
+            decide(false)
+        } label: {
+            Text("Dismiss")
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .accessibilityIdentifier("assistant.dismiss")
+    }
+
+    private var approveButton: some View {
+        Button {
+            decide(true)
+        } label: {
+            Text(card.verb)
+                .foregroundStyle(ExpensesTheme.surface(for: scheme))
+                .padding(.horizontal, 16)
+                .frame(minHeight: 38)
+                .background(ExpensesTheme.accent(for: scheme), in: .capsule)
+                // The capsule takes a 44-point target without reaching Dismiss.
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .accessibilityIdentifier("assistant.approve")
     }
 
     @ViewBuilder
@@ -683,11 +855,10 @@ private struct AssistantApprovalCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(ExpensesTheme.expense(for: scheme))
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(ExpensesTheme.expense(for: scheme))
         default:
-            Text("Dismissed")
+            Label("Dismissed", systemImage: "minus.circle")
                 .foregroundStyle(.secondary)
         }
     }
@@ -711,16 +882,19 @@ private struct AssistantActivity: View {
         if working {
             text = items.last.map(Self.liveLabel) ?? "Thinking"
         } else {
-            let tools = items.filter { $0.kind == .tool }
+            // Only reads that finished count; a stopped turn's reasoning reads "Thought".
+            let reads = items.filter { $0.kind == .tool && $0.state == .done }
             let seconds = items.reduce(0) { $0 + ($1.kind == .thinking ? $1.seconds ?? 0 : 0) }
-            if tools.count > 1 {
-                text = "Reviewed \(tools.count) ledger views"
-            } else if let tool = tools.first {
-                text = tool.label
+            if reads.count > 1 {
+                text = "Reviewed \(reads.count) ledger views"
+            } else if let read = reads.first {
+                text = read.label
             } else if seconds > 0 {
                 text = "Thought for \(seconds)s"
+            } else if let last = items.last, last.kind != .thinking {
+                text = Self.liveLabel(last)
             } else {
-                text = items.last.map(Self.liveLabel) ?? "Thought"
+                text = "Thought"
             }
         }
         return shown(text, amountsHidden: model.amountsHidden)
@@ -749,6 +923,7 @@ private struct AssistantActivity: View {
                     }
                 } label: {
                     head
+                        .expandedTouchArea(8)
                 }
                 .buttonStyle(.plain)
                 .accessibilityValue(expanded ? "Expanded" : "Collapsed")
@@ -835,6 +1010,7 @@ private struct WorkingLabel: View {
 private struct AssistantStep: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: AssistantItem
     let working: Bool
     @State private var summaryShown = false
@@ -847,9 +1023,11 @@ private struct AssistantStep: View {
             VStack(alignment: .leading, spacing: 2) {
                 if item.kind == .thinking && !item.text.isEmpty {
                     Button {
-                        withAnimation(.easeOut(duration: 0.2)) { summaryShown.toggle() }
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { summaryShown.toggle() }
                     } label: {
                         WorkingLabel(text: title, working: running)
+                            // Within the gap to the steps around it.
+                            .expandedTouchArea(4)
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(summaryShown ? "Expanded" : "Collapsed")
@@ -873,8 +1051,9 @@ private struct AssistantStep: View {
         .accessibilityElement(children: .combine)
     }
 
+    // A note reads still, as on the web.
     private var running: Bool {
-        working && item.isOpen
+        working && item.isOpen && item.kind != .note
     }
 
     private var title: String {
@@ -936,10 +1115,14 @@ private struct AssistantMarkdownText: View, Equatable {
         .textSelection(.enabled)
     }
 
-    // Half-written bold or code would show its markers until the stream closes them.
+    // Half-written bold or code would show its markers until the stream closes them. An open code
+    // block shows its text as written.
     private static func healed(_ text: String) -> String {
+        if text.components(separatedBy: "```").count.isMultiple(of: 2) {
+            return text
+        }
         var healed = text
-        if healed.components(separatedBy: "`").count.isMultiple(of: 2) {
+        if healed.replacing("```", with: "").components(separatedBy: "`").count.isMultiple(of: 2) {
             healed += "`"
         }
         if healed.components(separatedBy: "**").count.isMultiple(of: 2) {
@@ -958,6 +1141,48 @@ private struct AssistantMarkdownText: View, Equatable {
             Text(text)
                 .font(headingFont(for: level))
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+        case let .quote(text):
+            Text(text)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(.quaternary)
+                        .frame(width: 3)
+                }
+        case let .code(text):
+            ScrollView(.horizontal) {
+                Text(text)
+                    .font(.subheadline.monospaced())
+                    .padding(12)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .background(Color.primary.opacity(0.05), in: .rect(cornerRadius: 12))
+        case let .table(header, rows, trailing):
+            ScrollView(.horizontal) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                    GridRow {
+                        ForEach(header.indices, id: \.self) { column in
+                            Text(header[column])
+                                .fontWeight(.medium)
+                                .gridColumnAlignment(trailing[column] ? .trailing : .leading)
+                        }
+                    }
+                    Divider()
+                    ForEach(rows.indices, id: \.self) { index in
+                        GridRow {
+                            ForEach(rows[index].indices, id: \.self) { column in
+                                Text(rows[index][column])
+                            }
+                        }
+                    }
+                }
+                .font(.subheadline)
+                .monospacedDigit()
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         case let .list(rows):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(rows.indices, id: \.self) { index in
@@ -989,6 +1214,11 @@ private enum MarkdownBlock {
     case paragraph(AttributedString)
     case heading(level: Int, AttributedString)
     case list(rows: [ListRow])
+    case quote(AttributedString)
+    /// A fenced block, with its line breaks.
+    case code(String)
+    /// `trailing` marks the columns of figures.
+    case table(header: [AttributedString], rows: [[AttributedString]], trailing: [Bool])
 
     struct ListRow {
         let marker: String
@@ -999,6 +1229,10 @@ private enum MarkdownBlock {
         var blocks: [MarkdownBlock] = []
         var paragraphLines: [String] = []
         var listRows: [ListRow] = []
+        var tableLines: [String] = []
+        var quoteLines: [String] = []
+        // Inside a fenced code block.
+        var codeLines: [String]?
 
         func flushParagraph() {
             guard !paragraphLines.isEmpty else { return }
@@ -1010,11 +1244,52 @@ private enum MarkdownBlock {
             blocks.append(.list(rows: listRows))
             listRows.removeAll(keepingCapacity: true)
         }
+        func flushTable() {
+            guard !tableLines.isEmpty else { return }
+            blocks.append(table(tableLines) ?? .paragraph(inline(tableLines.joined(separator: " "))))
+            tableLines.removeAll(keepingCapacity: true)
+        }
+        func flushQuote() {
+            guard !quoteLines.isEmpty else { return }
+            // An empty ">" line starts a new paragraph in the quote.
+            let paragraphs = quoteLines.split(separator: "").map { $0.joined(separator: " ") }
+            blocks.append(.quote(inline(paragraphs.joined(separator: "\n\n"))))
+            quoteLines.removeAll(keepingCapacity: true)
+        }
 
         for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(rawLine).trimmingCharacters(in: .whitespaces)
 
-            if line.isEmpty {
+            if let code = codeLines {
+                if line.count >= 3, line.allSatisfy({ $0 == "`" }) {
+                    blocks.append(.code(code.joined(separator: "\n")))
+                    codeLines = nil
+                } else {
+                    codeLines = code + [String(rawLine)]
+                }
+                continue
+            }
+            if !line.hasPrefix("|") {
+                flushTable()
+            }
+            if !line.hasPrefix(">") {
+                flushQuote()
+            }
+
+            // A fence's info string has no backticks; "```code```" is inline code.
+            if line.hasPrefix("```"), !line.drop(while: { $0 == "`" }).contains("`") {
+                flushParagraph()
+                flushList()
+                codeLines = []
+            } else if line.hasPrefix("|") {
+                flushParagraph()
+                flushList()
+                tableLines.append(line)
+            } else if line.hasPrefix(">") {
+                flushParagraph()
+                flushList()
+                quoteLines.append(line.dropFirst().trimmingCharacters(in: .whitespaces))
+            } else if line.isEmpty {
                 flushParagraph()
                 flushList()
             } else if let heading = parseHeading(line) {
@@ -1032,9 +1307,58 @@ private enum MarkdownBlock {
                 paragraphLines.append(line)
             }
         }
+        // A code block still streaming shows what has arrived.
+        if let codeLines {
+            blocks.append(.code(codeLines.joined(separator: "\n")))
+        }
         flushParagraph()
         flushList()
+        flushTable()
+        flushQuote()
         return blocks
+    }
+
+    /// The text without Markdown markers, as VoiceOver reads an answer.
+    static func plainText(_ content: String) -> String {
+        parse(content).map { block in
+            switch block {
+            case let .paragraph(text), let .heading(_, text), let .quote(text):
+                String(text.characters)
+            case let .list(rows):
+                rows.map { "\($0.marker) \(String($0.text.characters))" }.joined(separator: "\n")
+            case let .code(text):
+                text
+            case let .table(header, rows, _):
+                ([header] + rows).map { $0.map { String($0.characters) }.joined(separator: ", ") }.joined(separator: "\n")
+            }
+        }
+        .joined(separator: "\n")
+    }
+
+    /// A GitHub table: a header row, its "---" separator row, then the body. Nil until the
+    /// separator arrives.
+    private static func table(_ lines: [String]) -> MarkdownBlock? {
+        let rows = lines.map { line in
+            // An escaped pipe stays in its cell, where the inline parser unescapes it.
+            var row = Substring(line.replacing("\\|", with: "\u{1}"))
+            if row.hasPrefix("|") { row = row.dropFirst() }
+            if row.hasSuffix("|") { row = row.dropLast() }
+            return row.split(separator: "|", omittingEmptySubsequences: false).map {
+                $0.replacing("\u{1}", with: "\\|").trimmingCharacters(in: .whitespaces)
+            }
+        }
+        guard rows.count > 1, rows[1].allSatisfy({ $0.wholeMatch(of: #/:?-+:?/#) != nil }) else { return nil }
+        let header = rows[0]
+        // Rows take the header's columns.
+        let body = rows.dropFirst(2).map { row in
+            header.indices.map { $0 < row.count ? row[$0] : "" }
+        }
+        // A column of amounts, counts, or shares, possibly hidden as "••••".
+        let trailing = header.indices.map { column in
+            let cells = body.map { $0[column] }.filter { !$0.isEmpty }
+            return !cells.isEmpty && cells.allSatisfy { $0.wholeMatch(of: #/[-−+]?[€$]?\s?[\d•][\d•.,\s\x{00A0}\x{202F}]*\s?(?:€|\$|%|EUR)?/#) != nil }
+        }
+        return .table(header: header.map(inline), rows: body.map { $0.map(inline) }, trailing: trailing)
     }
 
     private static func parseHeading(_ line: String) -> MarkdownBlock? {
