@@ -269,11 +269,26 @@ def test_sql_query_reads_only_the_users_rows_with_net_amounts() -> None:
             "columns": ["category", "sum(net_cents)"],
             "rows": [["Groceries", 31_000], ["Free time", 18_000]],
         }
+        # Each _cents column comes with its amount as text for the model to quote.
         concert = reader.sql_query(
             sql="select amount_cents, reimbursed_cents, net_cents from transactions "
             f"where id = {ids['concert_id']}"
         )
-        assert concert["rows"] == [[30_000, 12_000, 18_000]]
+        assert concert == {
+            "ok": True,
+            "columns": [
+                "amount_cents",
+                "amount",
+                "reimbursed_cents",
+                "reimbursed",
+                "net_cents",
+                "net",
+            ],
+            "rows": [[30_000, "300,00", 12_000, "120,00", 18_000, "180,00"]],
+        }
+        assert reader.sql_query(
+            sql="select 123456 as total_cents, -5 as change_cents, 'x' as odd_cents"
+        )["rows"] == [[123_456, "1 234,56", -5, "-0,05", "x", None]]
         fuzzy = reader.sql_query(
             sql="select title from transactions where fuzzy(title, 'grocerry run')"
         )
@@ -339,6 +354,7 @@ def test_reader_reports_budgets_balance_and_reference() -> None:
         }
         assert budgets[ids["groceries_id"]]["remaining_cents"] == 4_000
         assert budgets[ids["leisure_id"]]["remaining_cents"] == -6_000
+        assert budgets[ids["leisure_id"]]["remaining"] == "-60,00"
 
         history = reader.get_balance(months_back=2, months_ahead=0)
         assert [row["month"] for row in history["history"]] == ["2026-05", "2026-06"]

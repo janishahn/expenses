@@ -67,6 +67,7 @@ from expenses.ai.assistant_tools import (
     reference_block,
     tool_detail,
     tool_label,
+    with_amounts,
 )
 from expenses.ai.usage import (
     apply_usage_metadata,
@@ -690,7 +691,7 @@ class AssistantService:
         if approve:
             try:
                 with self.session.begin_nested():
-                    content = apply_action(self.session, action)
+                    content = with_amounts(apply_action(self.session, action))
                 item.state = "applied"
             except ActionConflict as exc:
                 action.status = "failed"

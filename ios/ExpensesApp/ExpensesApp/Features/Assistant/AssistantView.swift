@@ -267,7 +267,10 @@ private struct AssistantComposer: View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Ask anything", text: $input, axis: .vertical)
                 .lineLimit(1...6)
-                .padding(.vertical, 7)
+                // One line and its padding are as tall as the button, so the button centers on it
+                // and stays beside the last line as the text grows.
+                .padding(.vertical, 6)
+                .frame(minHeight: sendSize)
                 .accessibilityLabel("Message the Assistant")
                 .accessibilityIdentifier("assistant.input")
 
@@ -276,10 +279,11 @@ private struct AssistantComposer: View {
                     stopTick += 1
                     model.cancelAssistantMessage()
                 } else {
-                    send()
                     // The answer gets the room the keyboard took. FocusState does not reach a field
-                    // in a safe area bar, so the keyboard is dismissed directly.
+                    // in a safe area bar, so the keyboard is dismissed directly. It goes first: a
+                    // field cleared while it still has focus keeps the height of the sent text.
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    send()
                 }
             } label: {
                 Image(systemName: model.isAssistantStreaming ? "stop.fill" : "arrow.up")
@@ -300,8 +304,9 @@ private struct AssistantComposer: View {
         }
         .sensoryFeedback(.impact(weight: .light), trigger: stopTick)
         .padding(.leading, 18)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
+        // 7 points around the button keep it concentric with the bar's rounded end.
+        .padding(.trailing, 7)
+        .padding(.vertical, 7)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
