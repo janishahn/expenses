@@ -107,11 +107,14 @@ export function PrivateText({ text }: { text: string }) {
   )
 }
 
-// The same masks inside rendered Markdown.
+// The same masks inside rendered Markdown. A link's title shows as a tooltip, so it is masked too.
 function maskAmounts(node: Root | Element) {
   const children: (RootContent | ElementContent)[] = []
   for (const child of node.children) {
-    if (child.type === "element") maskAmounts(child)
+    if (child.type === "element") {
+      if (typeof child.properties.title === "string") child.properties.title = maskTextAmounts(child.properties.title)
+      maskAmounts(child)
+    }
     if (child.type !== "text") {
       children.push(child)
       continue
