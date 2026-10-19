@@ -384,7 +384,8 @@
 .tab { font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }
 .faint { color: var(--ink-3); }
-.mask { color: transparent !important; background: var(--chip); border-radius: 4px; user-select: none; }
+/* Blurs by a share of the font size, so large and small amounts look equally soft. */
+.mask { display: inline-block; filter: blur(0.3em); user-select: none; }
 
 /* Lists */
 .list {

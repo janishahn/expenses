@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- In privacy mode, the web blurs hidden amounts, as the iOS app does, instead of covering them with grey blocks. The blur covers the same placeholder for every amount, so it no longer shows how large an amount is; amounts in the Assistant's text keep their length. Chart labels, tooltips, and printouts still show "••••".
+
 ## [0.8.10] - 2026-10-18
 
 ### Added

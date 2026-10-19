@@ -35,10 +35,11 @@ export function Amount({
             ? s.faint
             : undefined
   if (hidden) {
+    // A fixed placeholder, so neither the digits nor the length of the real amount show.
     return (
       <span className={clsx(s.tab, className)}>
         <span className={s.mask} aria-hidden="true">
-          {text}
+          {formatAmount(888_888, "balance", decimals, symbol)}
         </span>
         <span className="sr-only">Hidden amount</span>
       </span>
