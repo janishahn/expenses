@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-10-19
+
 ### Changed
 - In privacy mode, the web blurs hidden amounts, as the iOS app does, instead of covering them with grey blocks. The blur covers the same placeholder for every amount, so it no longer shows how large an amount is; amounts in the Assistant's text keep their length. Chart labels, tooltips, and printouts still show "••••".
 
@@ -616,7 +618,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.10...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.11...HEAD
+[0.8.11]: https://github.com/janishahn/expenses/compare/v0.8.10...v0.8.11
 [0.8.10]: https://github.com/janishahn/expenses/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/janishahn/expenses/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/janishahn/expenses/compare/v0.8.7...v0.8.8
