@@ -24,7 +24,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "httpx>=0.28.1",
     "tenacity>=9.1.4",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "pyjwt[crypto]>=2.10.1",
     "cryptography>=46.0.0",
 ]
