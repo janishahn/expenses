@@ -1342,20 +1342,25 @@ struct TransactionBankRow: Codable, Equatable {
 struct DurablePurchase: Codable, Equatable {
     let expectedLifespanDays: Int
     let acquiredOn: Date
+    /// When it was sold or stopped being used; nil while in use.
+    let endedOn: Date?
 
     enum CodingKeys: String, CodingKey {
         case expectedLifespanDays = "expected_lifespan_days"
         case acquiredOn = "acquired_on"
+        case endedOn = "ended_on"
     }
 }
 
 struct DurablePurchaseRequest: Encodable, Equatable {
     let expectedLifespanDays: Int
     let acquiredOn: String
+    let endedOn: String?
 
     enum CodingKeys: String, CodingKey {
         case expectedLifespanDays = "expected_lifespan_days"
         case acquiredOn = "acquired_on"
+        case endedOn = "ended_on"
     }
 }
 

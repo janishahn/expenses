@@ -42,17 +42,19 @@ def seeded_session(tmp_path: Path, monkeypatch) -> Iterator[Session]:
         get_settings.cache_clear()
 
 
-def test_mock_db_seed_has_active_and_fully_amortized_durable_purchase(
+def test_mock_db_seed_has_active_amortized_and_ended_durable_purchases(
     tmp_path, monkeypatch
 ) -> None:
     with seeded_session(tmp_path, monkeypatch) as session:
         durable_items = DurablePurchaseService(session).list_computed()
 
-    assert len(durable_items) == 2
+    assert len(durable_items) == 3
 
     by_title = {str(item["title"]): item for item in durable_items}
     assert by_title["MacBook Pro 14"]["fully_amortized"] is False
     assert by_title["Ergonomic office chair"]["fully_amortized"] is True
+    assert by_title["Ergonomic office chair"]["ended_on"] is None
+    assert by_title["Espresso machine"]["ended_on"] is not None
 
 
 def test_mock_db_seed_creates_test_account_for_local_login(

@@ -298,4 +298,45 @@ test.describe("Insights Page", () => {
     await page.getByRole("button", { name: "Open budgets" }).click()
     await expect(page).toHaveURL(/\/budgets$/)
   })
+
+  test("spreads durables over the days of their life and keeps Spent on the purchase", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    // A 1.000 € laptop over 1.000 days from the first of last month: 1 € a day.
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonth = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`
+    const lastMonthDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate()
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Electronics")
+    const transactionId = await createTransaction(isolated.request, isolated.csrfToken, {
+      date: `${lastMonth}-01`,
+      occurred_at: `${lastMonth}-01T09:00:00`,
+      type: "expense",
+      amount_cents: 100_000,
+      category_id: category,
+      title: "Laptop",
+      tags: [],
+    })
+    const durable = await isolated.request.post(`/api/transactions/${transactionId}/durable`, {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { expected_lifespan_days: 1000 },
+    })
+    expect(durable.ok()).toBeTruthy()
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const flow = await showAsTable(page, "Income and expenses")
+    const lastRow = flow
+      .getByRole("table", { name: "Income and expenses by month" })
+      .getByRole("row", { name: new RegExp(`^${monthLabel(lastMonth)}`) })
+    await expect(lastRow).toContainText(eur("1.000,00 €"))
+
+    const spread = page.getByRole("button", { name: "Spread durables" })
+    await spread.click()
+    await expect(spread).toHaveAttribute("aria-pressed", "true")
+    await expect(page).toHaveURL(/spread_durables=true/)
+    await expect(lastRow).toContainText(eur(`${lastMonthDays},00 €`))
+    await expect(lastRow).not.toContainText(eur("1.000,00 €"))
+    await expect(metric(page, "Spent")).toContainText(eur("1.000,00 €"))
+  })
 })

@@ -564,17 +564,23 @@ test.describe("Transactions Page (mobile)", () => {
     await peek.getByRole("button", { name: "More actions" }).tap()
     await page.getByRole("menuitem", { name: "Track as durable…" }).tap()
     await page.getByRole("dialog", { name: "Durable purchase" }).getByRole("button", { name: "Track" }).tap()
-    await expect(peek.getByRole("button", { name: /^Durable / })).toBeVisible()
+    // A year at the 40 € left after the reimbursement.
+    await expect(peek.getByRole("button", { name: /^Durable / })).toContainText("0,11 € per day")
+    await peek.getByRole("button", { name: /^Durable / }).tap()
+    const editor = page.getByRole("dialog", { name: "Durable purchase" })
+    await editor.getByLabel("Ended").fill(today)
+    await editor.getByRole("button", { name: "Save" }).tap()
+    await expect(peek.getByRole("button", { name: /^Durable .*, ended / })).toBeVisible()
 
     await expect
       .poll(async () => {
         const saved = (await (await request.get(`/api/transactions/${id}`)).json()) as {
           reimbursed_total_cents: number
-          durable_purchase: object | null
+          durable_purchase: { ended_on: string | null } | null
         }
-        return [saved.reimbursed_total_cents, saved.durable_purchase !== null]
+        return [saved.reimbursed_total_cents, saved.durable_purchase?.ended_on]
       })
-      .toEqual([2000, true])
+      .toEqual([2000, today])
 
     // The row shows the net with the reimbursed mark, without the charged amount.
     await page.goto(`/transactions?q=${encodeURIComponent(title)}`)

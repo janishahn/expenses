@@ -327,7 +327,7 @@ pages below fix the structure; the current pages show the content.
   a month's peek splits Recurring, Estimated, and One-time.
 - **What If.** Strip: baseline, scenario, difference. Scenario chart, impact
   table, and an Adjustments card with an Add menu.
-- **Insights.** One view. View row: the period control and Filter. Then a strip (Income, Spent, Saved with its share of income,
+- **Insights.** One view. View row: the period control, a Spread durables toggle that counts each durable's cost per day of its life, and Filter. Then a strip (Income, Spent, Saved with its share of income,
   Recurring with its share of spending), then Income and expenses beside the
   Recurring split, the month grid ("By month", with Expenses, Income, and Tags
   segments), Daily spending (the day calendar without recurring, beside

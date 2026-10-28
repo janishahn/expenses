@@ -80,8 +80,10 @@ type DurablePurchase = {
   id: number
   transaction_id: number
   expected_lifespan_days: number
+  ended_on: string | null
   days_owned: number
   cost_per_day_cents: number
+  actual_cost_per_day_cents: number
   percent_amortized: number
   fully_amortized: boolean
   title: string | null
@@ -141,7 +143,7 @@ function DashboardPage() {
   const [bandMonths, setBandMonths] = useState<"6" | "12">("6")
   const [shareType, setShareType] = useState<"expense" | "income">("expense")
   const [showRange, setShowRange] = useState(true)
-  const [showAmortized, setShowAmortized] = useState(false)
+  const [showEnded, setShowEnded] = useState(false)
   const [hiddenCards, setHiddenCards] = useState<CardKey[]>(readHiddenCards)
   const [emptyTagMode, setEmptyTagMode] = useState<TagMode>("include")
   const [now] = useState(() => new Date())
@@ -393,8 +395,8 @@ function DashboardPage() {
       }
     : undefined
 
-  const durableItems = (durable.data?.items ?? []).filter((item) => showAmortized || !item.fully_amortized)
-  const amortizedCount = (durable.data?.items ?? []).filter((item) => item.fully_amortized).length
+  const durableItems = (durable.data?.items ?? []).filter((item) => showEnded || !item.ended_on)
+  const endedCount = (durable.data?.items ?? []).filter((item) => item.ended_on).length
 
   const chartMenu = (key: CardKey, insights: boolean) => (
     <>
@@ -711,9 +713,9 @@ function DashboardPage() {
       <Sheet
         title="Durable purchases"
         menu={
-          amortizedCount ? (
-            <MenuItem checked={showAmortized} onSelect={() => setShowAmortized(!showAmortized)}>
-              Show fully amortized ({amortizedCount})
+          endedCount ? (
+            <MenuItem checked={showEnded} onSelect={() => setShowEnded(!showEnded)}>
+              Show ended ({endedCount})
             </MenuItem>
           ) : undefined
         }
@@ -732,7 +734,8 @@ function DashboardPage() {
                 <CategoryGlyph categoryId={item.category?.id} icon={item.category?.icon} name={item.category?.name} />
                 <Cell>{item.title || "Untitled"}</Cell>
                 <Cell align="right" tone="muted" hide="mobile">
-                  <Amount cents={Math.round(item.cost_per_day_cents)} />
+                  {/* Past its lifespan or ended, an item shows what it cost per day it was owned. */}
+                  <Amount cents={Math.round(item.fully_amortized ? item.actual_cost_per_day_cents : item.cost_per_day_cents)} />
                   /day
                 </Cell>
                 <Cell hide="mobile">

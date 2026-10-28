@@ -248,6 +248,7 @@ class TransactionListItemOut(BaseModel):
 class DurablePurchaseOut(BaseModel):
     expected_lifespan_days: int
     acquired_on: date
+    ended_on: Optional[date] = None
 
 
 class TransactionBankRowOut(BaseModel):
@@ -384,14 +385,17 @@ class DashboardDurablePurchaseOut(BaseModel):
     transaction_id: int
     expected_lifespan_days: int
     acquired_on: date
+    ended_on: Optional[date] = None
     days_owned: int
     cost_per_day_cents: float
+    actual_cost_per_day_cents: float
     amortized_cents: int
     remaining_cents: int
     percent_amortized: float
     fully_amortized: bool
     paid_for_itself_on: date
     original_amount_cents: int
+    net_amount_cents: int
     title: Optional[str] = None
     category: Optional[CategorySummaryOut] = None
 
@@ -1096,6 +1100,7 @@ class TemplateReorderIn(BaseModel):
 class DurablePurchaseIn(BaseModel):
     expected_lifespan_days: int = Field(..., gt=0)
     acquired_on: Optional[date] = None
+    ended_on: Optional[date] = None
 
 
 class ScenarioRemoveRuleIn(BaseModel):

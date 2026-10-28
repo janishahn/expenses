@@ -347,12 +347,14 @@ struct TransactionDetailView: View {
                 } label: {
                     LabeledContent("Durable") {
                         VStack(alignment: .trailing, spacing: 2) {
+                            let acquiredOn = AppFormatters.localDay(durable.acquiredOn)
+                            let endedOn = durable.endedOn.map { AppFormatters.localDay($0) }
                             HStack(spacing: 4) {
-                                AmountText(DurableSheet.perDay(transaction.amountCents, days: durable.expectedLifespanDays))
+                                AmountText(DurableSheet.perDay(transaction.netAmountCents, days: durable.expectedLifespanDays, acquiredOn: acquiredOn, endedOn: endedOn))
                                 Text("per day")
                             }
                             .foregroundStyle(.primary)
-                            Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(AppFormatters.localDay(durable.acquiredOn)))")
+                            Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(acquiredOn))\(endedOn.map { ", ended \(AppFormatters.shortDay($0))" } ?? "")")
                                 .font(.footnote)
                         }
                     }
@@ -1023,6 +1025,8 @@ private struct DurableSheet: View {
     @State private var lifespan: Int
     @State private var customDays: String
     @State private var acquiredOn: Date
+    @State private var endedOn: Date?
+    @State private var choosingEnd = false
     @State private var error: String?
     @State private var saving = false
 
@@ -1040,8 +1044,10 @@ private struct DurableSheet: View {
         lifespans.first { $0.days == days }?.label ?? "\(days) days"
     }
 
-    static func perDay(_ amountCents: Int, days: Int) -> Int {
-        Int((Double(amountCents) / Double(days)).rounded())
+    /// The planned cost per day, or the actual one over the days owned once the item has ended.
+    static func perDay(_ amountCents: Int, days: Int, acquiredOn: Date, endedOn: Date?) -> Int {
+        let owned = endedOn.map { max(1, Calendar.current.dateComponents([.day], from: acquiredOn, to: $0).day!) } ?? days
+        return Int((Double(amountCents) / Double(owned)).rounded())
     }
 
     init(transaction: TransactionDetail) {
@@ -1051,6 +1057,7 @@ private struct DurableSheet: View {
         _lifespan = State(initialValue: preset ? days : Self.custom)
         _customDays = State(initialValue: preset ? "" : String(days))
         _acquiredOn = State(initialValue: AppFormatters.localDay(transaction.durablePurchase?.acquiredOn ?? transaction.date))
+        _endedOn = State(initialValue: transaction.durablePurchase?.endedOn.map { AppFormatters.localDay($0) })
     }
 
     private var days: Int? {
@@ -1082,9 +1089,23 @@ private struct DurableSheet: View {
                         }
                     }
                     DatePicker("Acquired", selection: $acquiredOn, displayedComponents: .date)
+                    Button {
+                        choosingEnd = true
+                    } label: {
+                        LabeledContent("Ended") {
+                            Text(endedOn.map(AppFormatters.shortDay) ?? "In use")
+                                .foregroundStyle(endedOn == nil ? .secondary : .primary)
+                        }
+                    }
+                    .tint(.primary)
+                    .popover(isPresented: $choosingEnd) {
+                        DayPopover(day: endedOn ?? .now, confirm: "Done", onClear: endedOn == nil ? nil : { endedOn = nil }) { day in
+                            endedOn = day
+                        }
+                    }
                     if let days {
                         LabeledContent("Per day") {
-                            AmountText(Self.perDay(transaction.amountCents, days: days))
+                            AmountText(Self.perDay(transaction.netAmountCents, days: days, acquiredOn: acquiredOn, endedOn: endedOn))
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -1118,8 +1139,16 @@ private struct DurableSheet: View {
                             error = "Expected lifespan must be greater than 0 days."
                             return
                         }
+                        if let endedOn, AppFormatters.isoDay(endedOn) < AppFormatters.isoDay(acquiredOn) {
+                            error = "End date must be on or after the acquired date."
+                            return
+                        }
                         Task {
-                            await finish(DurablePurchaseRequest(expectedLifespanDays: days, acquiredOn: AppFormatters.isoDay(acquiredOn)))
+                            await finish(DurablePurchaseRequest(
+                                expectedLifespanDays: days,
+                                acquiredOn: AppFormatters.isoDay(acquiredOn),
+                                endedOn: endedOn.map(AppFormatters.isoDay)
+                            ))
                         }
                     }
                     .disabled(saving)
@@ -1133,6 +1162,7 @@ private struct DurableSheet: View {
     private var hasChanges: Bool {
         days != (transaction.durablePurchase?.expectedLifespanDays ?? 365)
             || acquiredOn != AppFormatters.localDay(transaction.durablePurchase?.acquiredOn ?? transaction.date)
+            || endedOn != transaction.durablePurchase?.endedOn.map { AppFormatters.localDay($0) }
     }
 
     private func finish(_ body: DurablePurchaseRequest?) async {

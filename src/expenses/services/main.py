@@ -1296,6 +1296,8 @@ class DurablePurchaseService:
         if transaction.type != TransactionType.expense:
             raise ValueError("Durable tracking requires an expense transaction")
         acquired_on = data.acquired_on or transaction.date
+        if data.ended_on is not None and data.ended_on < acquired_on:
+            raise ValueError("End date must be on or after the acquired date")
 
         durable = self.session.scalar(
             select(DurablePurchase).where(
@@ -1309,11 +1311,13 @@ class DurablePurchaseService:
                 transaction_id=transaction_id,
                 expected_lifespan_days=data.expected_lifespan_days,
                 acquired_on=acquired_on,
+                ended_on=data.ended_on,
             )
             self.session.add(durable)
         else:
             durable.expected_lifespan_days = data.expected_lifespan_days
             durable.acquired_on = acquired_on
+            durable.ended_on = data.ended_on
         self.session.commit()
         self.session.refresh(durable)
         return durable
@@ -1358,19 +1362,30 @@ class DurablePurchaseService:
                 Transaction.type == TransactionType.expense,
             )
         ).all()
+        TransactionService(self.session, self.user_id).hydrate_reimbursement_totals(
+            [row.transaction for row in rows]
+        )
 
         items: list[dict[str, object]] = []
         for row in rows:
             transaction = row.transaction
             amount_cents = int(transaction.amount_cents)
+            net_cents = int(transaction.net_amount_cents)
             lifespan_days = int(row.expected_lifespan_days)
-            days_owned = max(0, (current_day - row.acquired_on).days)
+            # Days owned stop at the end date, and by then the whole amount is spent.
+            ended = row.ended_on is not None and row.ended_on <= current_day
+            last_day = row.ended_on if ended else current_day
+            days_owned = max(0, (last_day - row.acquired_on).days)
             active_days = min(days_owned, lifespan_days)
-            cost_per_day_cents = amount_cents / lifespan_days
-            amortized_cents = int(round(cost_per_day_cents * active_days))
-            remaining_cents = max(0, amount_cents - amortized_cents)
-            percent_amortized = min(100.0, days_owned / lifespan_days * 100)
-            fully_amortized = days_owned >= lifespan_days
+            cost_per_day_cents = net_cents / lifespan_days
+            amortized_cents = (
+                net_cents if ended else int(round(cost_per_day_cents * active_days))
+            )
+            remaining_cents = max(0, net_cents - amortized_cents)
+            percent_amortized = (
+                100.0 if ended else min(100.0, days_owned / lifespan_days * 100)
+            )
+            fully_amortized = ended or days_owned >= lifespan_days
             paid_for_itself_on = row.acquired_on + timedelta(days=lifespan_days)
             items.append(
                 {
@@ -1378,14 +1393,17 @@ class DurablePurchaseService:
                     "transaction_id": row.transaction_id,
                     "expected_lifespan_days": lifespan_days,
                     "acquired_on": row.acquired_on.isoformat(),
+                    "ended_on": row.ended_on.isoformat() if row.ended_on else None,
                     "days_owned": days_owned,
                     "cost_per_day_cents": cost_per_day_cents,
+                    "actual_cost_per_day_cents": net_cents / max(1, days_owned),
                     "amortized_cents": amortized_cents,
                     "remaining_cents": remaining_cents,
                     "percent_amortized": percent_amortized,
                     "fully_amortized": fully_amortized,
                     "paid_for_itself_on": paid_for_itself_on.isoformat(),
                     "original_amount_cents": amount_cents,
+                    "net_amount_cents": net_cents,
                     "title": transaction.title,
                     "category": (
                         {
@@ -3981,6 +3999,62 @@ class InsightsService:
         self.user_id = user_id or get_current_user_id()
         self.metrics = MetricsService(session, self.user_id)
 
+    def durable_spread(
+        self,
+        start: date,
+        end: date,
+        *,
+        tag_ids: Optional[list[int]] = None,
+        excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+    ) -> list[tuple[Transaction, date, int]]:
+        """Each durable's amount after reimbursements, as a share per day of its life.
+
+        Every day of the lifespan takes an equal share. An item that ended early
+        puts what is left on its end date, so its shares add up to the amount.
+        Only days from start to end, and none after today, are returned.
+        """
+        end = min(end, local_today())
+        stmt = (
+            select(DurablePurchase)
+            .options(
+                joinedload(DurablePurchase.transaction).selectinload(Transaction.tags)
+            )
+            .join(Transaction, DurablePurchase.transaction_id == Transaction.id)
+            .where(
+                DurablePurchase.user_id == self.user_id,
+                DurablePurchase.acquired_on <= end,
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+            )
+        )
+        stmt = _apply_transaction_tag_scope(
+            stmt, Transaction, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+        )
+        durables = self.session.scalars(stmt).all()
+        TransactionService(self.session, self.user_id).hydrate_reimbursement_totals(
+            [durable.transaction for durable in durables]
+        )
+        shares: list[tuple[Transaction, date, int]] = []
+        for durable in durables:
+            amount = int(durable.transaction.net_amount_cents)
+            lifespan = int(durable.expected_lifespan_days)
+            last = durable.acquired_on + timedelta(days=lifespan - 1)
+            if durable.ended_on is not None:
+                last = min(last, durable.ended_on)
+            day = max(start, durable.acquired_on)
+            while day <= min(end, last):
+                offset = (day - durable.acquired_on).days
+                spread_before = amount * offset // lifespan
+                share = (
+                    amount - spread_before
+                    if day == durable.ended_on
+                    else amount * (offset + 1) // lifespan - spread_before
+                )
+                shares.append((durable.transaction, day, share))
+                day += timedelta(days=1)
+        return shares
+
     def monthly_category_bands(
         self,
         *,
@@ -4137,6 +4211,7 @@ class InsightsService:
         months_back: int = 12,
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+        spread_durables: bool = False,
     ) -> list[dict[str, object]]:
         start_month = month_start(period.start.year, period.start.month)
         end_month = month_start(period.end.year, period.end.month)
@@ -4192,6 +4267,10 @@ class InsightsService:
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
+        if spread_durables:
+            expense_gross_stmt = expense_gross_stmt.where(
+                ~Transaction.durable_purchase.has()
+            )
 
         income_totals: dict[tuple[int, int], int] = {}
         for row in self.session.execute(income_stmt):
@@ -4200,6 +4279,15 @@ class InsightsService:
         expense_gross_totals: dict[tuple[int, int], int] = {}
         for row in self.session.execute(expense_gross_stmt):
             expense_gross_totals[(int(row.year), int(row.month))] = int(row.total or 0)
+        if spread_durables:
+            for _, day, share in self.durable_spread(
+                base_start,
+                base_end,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            ):
+                key = (day.year, day.month)
+                expense_gross_totals[key] = expense_gross_totals.get(key, 0) + share
 
         ExpenseTxn = aliased(Transaction)
         ReimbursementTxn = aliased(Transaction)
@@ -4239,6 +4327,8 @@ class InsightsService:
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
+        if spread_durables:
+            reimb_stmt = reimb_stmt.where(~ExpenseTxn.durable_purchase.has())
 
         reimb_totals: dict[tuple[int, int], int] = {}
         for row in self.session.execute(reimb_stmt):
@@ -4404,6 +4494,7 @@ class InsightsService:
         months_back: int = 12,
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+        spread_durables: bool = False,
     ) -> list[dict[str, object]]:
         end_month = month_start(end.year, end.month)
         start_month = add_months(end_month, -(months_back - 1))
@@ -4433,11 +4524,23 @@ class InsightsService:
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
+        if spread_durables:
+            stmt = stmt.where(~Transaction.durable_purchase.has())
 
         gross_totals = {
             (int(r.year), int(r.month)): int(r.total or 0)
             for r in self.session.execute(stmt)
         }
+        if spread_durables:
+            for txn, day, share in self.durable_spread(
+                start_month,
+                end,
+                tag_ids=tag_ids,
+                excluded_tag_ids=excluded_tag_ids,
+            ):
+                if txn.category_id == category_id:
+                    key = (day.year, day.month)
+                    gross_totals[key] = gross_totals.get(key, 0) + share
 
         ExpenseTxn = aliased(Transaction)
         ReimbursementTxn = aliased(Transaction)
@@ -4478,6 +4581,8 @@ class InsightsService:
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
         )
+        if spread_durables:
+            reimb_stmt = reimb_stmt.where(~ExpenseTxn.durable_purchase.has())
         reimb_totals = {
             (int(r.year), int(r.month)): int(r.total or 0)
             for r in self.session.execute(reimb_stmt)
@@ -4755,6 +4860,7 @@ class InsightsService:
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
         limit: int = 8,
+        spread_durables: bool = False,
     ) -> dict[str, list[dict[str, object]]]:
         duration_days = (period.end - period.start).days + 1
         prev_end = period.start - timedelta(days=1)
@@ -4781,10 +4887,20 @@ class InsightsService:
                 tag_ids=tag_ids,
                 excluded_tag_ids=excluded_tag_ids,
             )
+            if spread_durables:
+                gross_stmt = gross_stmt.where(~Transaction.durable_purchase.has())
             gross = {
                 int(r.category_id): int(r.total or 0)
                 for r in self.session.execute(gross_stmt)
             }
+            if spread_durables:
+                for txn, _, share in self.durable_spread(
+                    p.start,
+                    p.end,
+                    tag_ids=tag_ids,
+                    excluded_tag_ids=excluded_tag_ids,
+                ):
+                    gross[txn.category_id] = gross.get(txn.category_id, 0) + share
 
             ExpenseTxn = aliased(Transaction)
             ReimbursementTxn = aliased(Transaction)
@@ -4823,6 +4939,8 @@ class InsightsService:
                 tag_ids=tag_ids,
                 excluded_tag_ids=excluded_tag_ids,
             )
+            if spread_durables:
+                reimb_stmt = reimb_stmt.where(~ExpenseTxn.durable_purchase.has())
             reimb = {
                 int(r.category_id): int(r.total or 0)
                 for r in self.session.execute(reimb_stmt)
@@ -4878,12 +4996,14 @@ class InsightsService:
         recurring: Optional[bool] = None,
         tag_ids: Optional[list[int]] = None,
         excluded_tag_ids: Optional[list[int] | tuple[int, ...]] = None,
+        exclude_durables: bool = False,
     ) -> dict[tuple, int]:
         """Sum amounts per `dims(Transaction)` key in SQL.
 
         Expenses are net of reimbursement allocations and income excludes
         reimbursements, matching the other insight queries. `dims` receives the
-        Transaction (or alias) and returns the grouping columns.
+        Transaction (or alias) and returns the grouping columns. Callers that
+        spread durables leave them out here and add their `durable_spread`.
         """
 
         def scoped(stmt, txn):
@@ -4899,6 +5019,8 @@ class InsightsService:
                     if recurring
                     else txn.origin_rule_id.is_(None)
                 )
+            if exclude_durables:
+                stmt = stmt.where(~txn.durable_purchase.has())
             return _apply_transaction_tag_scope(
                 stmt, txn, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
             )
@@ -4970,10 +5092,14 @@ class InsightsService:
         current = month_start(today.year, today.month)
         return [add_months(current, offset) for offset in range(-12, 1)]
 
-    def month_grid(self, kind: str, *, today: date) -> dict[str, object]:
+    def month_grid(
+        self, kind: str, *, today: date, spread_durables: bool = False
+    ) -> dict[str, object]:
         months = self.grid_months(today)
         labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
         start, end = months[0], month_end(today.year, today.month)
+        spread = spread_durables and kind != "income"
+        shares = self.durable_spread(start, end) if spread else []
         if kind == "tag":
             amounts = self.grouped_amounts(
                 TransactionType.expense,
@@ -4981,7 +5107,12 @@ class InsightsService:
                 end,
                 lambda txn: [self._month_column(txn), transaction_tags.c.tag_id],
                 by_tag=True,
+                exclude_durables=spread,
             )
+            for txn, day, share in shares:
+                for tag in txn.tags:
+                    key = (f"{day:%Y-%m}", tag.id)
+                    amounts[key] = amounts.get(key, 0) + share
             tags = self.session.scalars(
                 select(Tag)
                 .where(
@@ -4998,7 +5129,11 @@ class InsightsService:
                 start,
                 end,
                 lambda txn: [self._month_column(txn), txn.category_id],
+                exclude_durables=spread,
             )
+            for txn, day, share in shares:
+                key = (f"{day:%Y-%m}", txn.category_id)
+                amounts[key] = amounts.get(key, 0) + share
             categories = self.session.scalars(
                 select(Category)
                 .where(
@@ -5022,15 +5157,24 @@ class InsightsService:
         rows.sort(key=lambda row: (-sum(row["values_cents"]), row["name"]))
         return {"months": labels, "current_month": labels[-1], "rows": rows}
 
-    def recurring_split(self, *, today: date) -> dict[str, object]:
+    def recurring_split(
+        self, *, today: date, spread_durables: bool = False
+    ) -> dict[str, object]:
         months = self.grid_months(today)
         labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
+        start, end = months[0], month_end(today.year, today.month)
         amounts = self.grouped_amounts(
             TransactionType.expense,
-            months[0],
-            month_end(today.year, today.month),
+            start,
+            end,
             lambda txn: [self._month_column(txn), txn.origin_rule_id.is_not(None)],
+            exclude_durables=spread_durables,
         )
+        for txn, day, share in (
+            self.durable_spread(start, end) if spread_durables else []
+        ):
+            key = (f"{day:%Y-%m}", txn.origin_rule_id is not None)
+            amounts[key] = amounts.get(key, 0) + share
         return {
             "months": labels,
             "current_month": labels[-1],
@@ -5044,7 +5188,9 @@ class InsightsService:
             ],
         }
 
-    def day_calendar(self, *, today: date) -> dict[str, object]:
+    def day_calendar(
+        self, *, today: date, spread_durables: bool = False
+    ) -> dict[str, object]:
         start = today - timedelta(days=53 * 7 - 1)
         amounts = self.grouped_amounts(
             TransactionType.expense,
@@ -5052,7 +5198,13 @@ class InsightsService:
             today,
             lambda txn: [txn.date],
             recurring=False,
+            exclude_durables=spread_durables,
         )
+        for txn, day, share in (
+            self.durable_spread(start, today) if spread_durables else []
+        ):
+            if txn.origin_rule_id is None:
+                amounts[(day,)] = amounts.get((day,), 0) + share
         weekday_totals = [0] * 7
         weekday_counts = [0] * 7
         for offset in range((today - start).days + 1):
@@ -5250,6 +5402,8 @@ class ForecastService:
                 Transaction.deleted_at.is_(None),
                 Transaction.type == TransactionType.expense,
                 Transaction.origin_rule_id.is_(None),
+                # A durable purchase is a one-off already paid; it is not a habit.
+                ~Transaction.durable_purchase.has(),
                 Transaction.date.between(trailing_start, trailing_end),
             )
             .group_by(
@@ -5299,6 +5453,7 @@ class ForecastService:
                 ExpenseTxn.deleted_at.is_(None),
                 ExpenseTxn.type == TransactionType.expense,
                 ExpenseTxn.origin_rule_id.is_(None),
+                ~ExpenseTxn.durable_purchase.has(),
                 ExpenseTxn.date.between(trailing_start, trailing_end),
                 ReimbursementTxn.deleted_at.is_(None),
                 ReimbursementTxn.type == TransactionType.income,

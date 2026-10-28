@@ -163,6 +163,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
                     transaction_id=expense.id,
                     expected_lifespan_days=365,
                     acquired_on=date(2026, 1, 12),
+                    ended_on=date(2026, 9, 30),
                 ),
                 ReimbursementAllocation(
                     user_id=1,
@@ -338,6 +339,9 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             assert bank_rows[0]["resolution"] == "ignored"
             assert bank_rows[0]["resolved_at"] == "2026-01-14T08:00:00"
             assert bank_rows[0]["ignore_reason"] == "Duplicate of a card slip"
+
+            durables = _read_ndjson(archive, "data/durable_purchases.ndjson")
+            assert durables[0]["ended_on"] == "2026-09-30"
 
             tags = _read_ndjson(archive, "data/tags.ndjson")
             assert tags == [

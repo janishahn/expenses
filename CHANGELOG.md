@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A durable purchase can have an end date, for when it is sold, breaks, or stops being used. Its days owned stop on that date, and the purchase shows what it actually cost per day. The dashboard keeps items past their lifespan at their actual cost per day and hides ended items until **Show ended**.
+- Insights on the web and iOS has **Spread durables**, off by default. It counts each durable purchase at its cost per day for every day of its life instead of in full on its purchase date; an item that ended early puts what is left on its end date. Spent, budgets, the forecast, and the transaction list still count the purchase on its date. The Insights endpoints take `spread_durables=true`.
+
 ### Changed
+- Forecasts leave expenses tracked as durable purchases out of the spending history they learn from, so a large one-off purchase no longer raises expected spending.
+- Durable purchases spread their amount after reimbursements, as Spent does, so a shared purchase shows only its own share per day. The durable purchase API adds `ended_on`, `actual_cost_per_day_cents`, and `net_amount_cents`.
 - Security updates move the web build to Node.js 24.22.1, markdown-it to 14.3.3, Vite to 7.3.7, Pillow to 13.0.0, and certifi to 2026.10.19. These updates address the October Node.js security release, denial-of-service flaws in Markdown parsing, development-server command injection, image parsing flaws, and compromised eMudhra intermediate CA keys.
 - Security updates move Brotli to 1.2.1 and the OpenTelemetry API to 1.45.1, and the development-only filelock and msgpack packages to 4.2.4 and 1.2.4. These updates address an out-of-bounds write in the Brotli decoder, slow parsing of long `tracestate` headers, lock-file flaws in filelock, and a msgpack memory leak on malformed input.
 

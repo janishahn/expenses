@@ -4252,6 +4252,10 @@
             "title": "Acquired On",
             "type": "string"
           },
+          "actual_cost_per_day_cents": {
+            "title": "Actual Cost Per Day Cents",
+            "type": "number"
+          },
           "amortized_cents": {
             "title": "Amortized Cents",
             "type": "integer"
@@ -4274,6 +4278,18 @@
             "title": "Days Owned",
             "type": "integer"
           },
+          "ended_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended On"
+          },
           "expected_lifespan_days": {
             "title": "Expected Lifespan Days",
             "type": "integer"
@@ -4284,6 +4300,10 @@
           },
           "id": {
             "title": "Id",
+            "type": "integer"
+          },
+          "net_amount_cents": {
+            "title": "Net Amount Cents",
             "type": "integer"
           },
           "original_amount_cents": {
@@ -4326,12 +4346,14 @@
           "acquired_on",
           "days_owned",
           "cost_per_day_cents",
+          "actual_cost_per_day_cents",
           "amortized_cents",
           "remaining_cents",
           "percent_amortized",
           "fully_amortized",
           "paid_for_itself_on",
-          "original_amount_cents"
+          "original_amount_cents",
+          "net_amount_cents"
         ],
         "title": "DashboardDurablePurchaseOut",
         "type": "object"
@@ -4955,6 +4977,18 @@
             ],
             "title": "Acquired On"
           },
+          "ended_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended On"
+          },
           "expected_lifespan_days": {
             "exclusiveMinimum": 0.0,
             "title": "Expected Lifespan Days",
@@ -4973,6 +5007,18 @@
             "format": "date",
             "title": "Acquired On",
             "type": "string"
+          },
+          "ended_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended On"
           },
           "expected_lifespan_days": {
             "title": "Expected Lifespan Days",
@@ -13199,6 +13245,18 @@
     "/api/insights": {
       "get": {
         "operationId": "api_insights_api_insights_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "spread_durables",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Spread Durables",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13209,6 +13267,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Api Insights"
@@ -13235,6 +13303,18 @@
     "/api/insights/day-calendar": {
       "get": {
         "operationId": "api_insights_day_calendar_api_insights_day_calendar_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "spread_durables",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Spread Durables",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13245,6 +13325,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Api Insights Day Calendar"
@@ -13286,6 +13376,16 @@
               "title": "Kind",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "spread_durables",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Spread Durables",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -13316,6 +13416,18 @@
     "/api/insights/recurring-split": {
       "get": {
         "operationId": "api_insights_recurring_split_api_insights_recurring_split_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "spread_durables",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Spread Durables",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13326,6 +13438,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Api Insights Recurring Split"

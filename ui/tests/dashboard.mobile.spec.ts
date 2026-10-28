@@ -27,8 +27,10 @@ function monthKey(offsetMonths: number): string {
   return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}`
 }
 
-function localToday(): string {
+// Today's local date, or the date a number of days before it.
+function localToday(daysBack = 0): string {
   const now = new Date()
+  now.setDate(now.getDate() - daysBack)
   return [
     now.getFullYear(),
     String(now.getMonth() + 1).padStart(2, "0"),
@@ -381,31 +383,43 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(page).toHaveURL(/\/budgets/)
   })
 
-  test("lists a durable purchase with its days owned and opens its transaction", async ({ page }) => {
+  test("lists durable purchases with their days owned, shows ended ones on request, and opens one", async ({ page }) => {
     await page.goto("/")
     const isolated = await loginAsIsolatedUser(page)
-    const today = localToday()
     const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Electronics")
+    const track = async (title: string, amount_cents: number, daysBack: number, durable: object) => {
+      const date = localToday(daysBack)
+      const transactionId = await createTransaction(isolated.request, isolated.csrfToken, {
+        date,
+        occurred_at: `${date}T09:00:00`,
+        type: "expense",
+        amount_cents,
+        category_id: category,
+        title,
+        tags: [],
+      })
+      const response = await isolated.request.post(`/api/transactions/${transactionId}/durable`, {
+        headers: { "X-CSRF-Token": isolated.csrfToken },
+        data: { acquired_on: date, ...durable },
+      })
+      expect(response.ok()).toBeTruthy()
+      return transactionId
+    }
     const title = "Noise-cancelling headphones"
-    const transactionId = await createTransaction(isolated.request, isolated.csrfToken, {
-      date: today,
-      occurred_at: `${today}T09:00:00`,
-      type: "expense",
-      amount_cents: 120_000,
-      category_id: category,
-      title,
-      tags: [],
-    })
-    const durable = await isolated.request.post(`/api/transactions/${transactionId}/durable`, {
-      headers: { "X-CSRF-Token": isolated.csrfToken },
-      data: { expected_lifespan_days: 730, acquired_on: today },
-    })
-    expect(durable.ok()).toBeTruthy()
+    const transactionId = await track(title, 120_000, 0, { expected_lifespan_days: 730 })
+    await track("Office chair", 73_000, 1000, { expected_lifespan_days: 730 })
+    await track("Espresso machine", 50_000, 400, { expected_lifespan_days: 1095, ended_on: localToday(100) })
     await isolated.request.dispose()
 
     await page.goto("/")
-    const row = page.getByRole("region", { name: "Durable purchases" }).getByRole("listitem", { name: title })
+    const purchases = page.getByRole("region", { name: "Durable purchases" })
+    const row = purchases.getByRole("listitem", { name: title })
     await expect(row).toContainText("0 of 730 days")
+    await expect(purchases.getByRole("listitem", { name: "Office chair" })).toContainText(eur("1.000 of 730 days"))
+    await expect(purchases.getByRole("listitem", { name: "Espresso machine" })).toHaveCount(0)
+    await purchases.getByRole("button", { name: "More actions" }).tap()
+    await page.getByRole("menuitemcheckbox", { name: "Show ended (1)" }).tap()
+    await expect(purchases.getByRole("listitem", { name: "Espresso machine" })).toContainText(eur("300 of 1.095 days"))
 
     await row.tap()
     await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`))

@@ -61,6 +61,12 @@ function lifespanLabel(days: number): string {
   return LIFESPANS.find((entry) => entry.days === days)?.label ?? `${days} days`
 }
 
+// The planned cost per day, or the actual one over the days owned once the item has ended.
+function costPerDay(netCents: number, lifespanDays: number, acquiredOn: string, endedOn: string | null): number {
+  const days = endedOn ? Math.max(1, Math.round((Date.parse(endedOn) - Date.parse(acquiredOn)) / 86_400_000)) : lifespanDays
+  return Math.round(netCents / days)
+}
+
 // Title and amount, both edited in place.
 export function TransactionHead({ record }: { record: TransactionRecordState }) {
   const view = record.view
@@ -165,6 +171,7 @@ function DurableForm({
   const [preset, setPreset] = useState(presetMatch ? String(initialDays) : "custom")
   const [customDays, setCustomDays] = useState(presetMatch ? "" : String(initialDays))
   const [acquiredOn, setAcquiredOn] = useState(durable?.acquired_on ?? view?.date ?? "")
+  const [endedOn, setEndedOn] = useState(durable?.ended_on ?? "")
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   if (!view) return null
@@ -187,8 +194,12 @@ function DurableForm({
       setFormError("Acquired date is required.")
       return
     }
+    if (endedOn && endedOn < acquiredOn) {
+      setFormError("End date must be on or after the acquired date.")
+      return
+    }
     setFormError(null)
-    void finish({ expected_lifespan_days: days, acquired_on: acquiredOn })
+    void finish({ expected_lifespan_days: days, acquired_on: acquiredOn, ended_on: endedOn || null })
   }
 
   return (
@@ -218,10 +229,13 @@ function DurableForm({
         <Field label="Acquired">
           <TextField type="date" value={acquiredOn} onChange={(event) => setAcquiredOn(event.target.value)} />
         </Field>
+        <Field label="Ended">
+          <TextField type="date" value={endedOn} onChange={(event) => setEndedOn(event.target.value)} />
+        </Field>
       </FieldGrid>
       {validDays ? (
         <Status>
-          <Amount cents={Math.round(view.amount_cents / days)} kind="expense" /> per day
+          <Amount cents={costPerDay(view.net_amount_cents, days, acquiredOn, endedOn || null)} kind="expense" /> per day
         </Status>
       ) : null}
       {formError ? <FieldError>{formError}</FieldError> : null}
@@ -259,8 +273,13 @@ function DurableProperty({ record }: { record: TransactionRecordState }) {
           <PropertyButton empty={!durable}>
             {durable ? (
               <>
-                {lifespanLabel(durable.expected_lifespan_days)} from {shortDateLabel(durable.acquired_on)} ·{" "}
-                <Amount cents={Math.round(view.amount_cents / durable.expected_lifespan_days)} kind="expense" /> per day
+                {lifespanLabel(durable.expected_lifespan_days)} from {shortDateLabel(durable.acquired_on)}
+                {durable.ended_on ? `, ended ${shortDateLabel(durable.ended_on)}` : null} ·{" "}
+                <Amount
+                  cents={costPerDay(view.net_amount_cents, durable.expected_lifespan_days, durable.acquired_on, durable.ended_on)}
+                  kind="expense"
+                />{" "}
+                per day
               </>
             ) : (
               "Not tracked"

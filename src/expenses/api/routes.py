@@ -4128,6 +4128,7 @@ def api_get_transaction(
             {
                 "expected_lifespan_days": durable.expected_lifespan_days,
                 "acquired_on": durable.acquired_on.isoformat(),
+                "ended_on": durable.ended_on,
             }
             if durable
             else None
@@ -4157,6 +4158,7 @@ def api_upsert_durable_purchase(
         "transaction_id": durable.transaction_id,
         "expected_lifespan_days": durable.expected_lifespan_days,
         "acquired_on": durable.acquired_on.isoformat(),
+        "ended_on": durable.ended_on,
     }
 
 
@@ -5098,24 +5100,35 @@ def api_dismiss_category_suggestion(
 def api_insights_month_grid(
     request: Request,
     kind: Literal["expense", "income", "tag"] = "expense",
+    spread_durables: bool = False,
     db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
-    return InsightsService(db, user_id=user_id).month_grid(kind, today=local_today())
+    return InsightsService(db, user_id=user_id).month_grid(
+        kind, today=local_today(), spread_durables=spread_durables
+    )
 
 
 @router.get(
     "/api/insights/recurring-split", response_model=InsightsRecurringSplitResponseOut
 )
-def api_insights_recurring_split(request: Request, db: Session = Depends(get_db)):
+def api_insights_recurring_split(
+    request: Request, spread_durables: bool = False, db: Session = Depends(get_db)
+):
     user_id = _require_current_user_id(request, db)
-    return InsightsService(db, user_id=user_id).recurring_split(today=local_today())
+    return InsightsService(db, user_id=user_id).recurring_split(
+        today=local_today(), spread_durables=spread_durables
+    )
 
 
 @router.get("/api/insights/day-calendar", response_model=InsightsDayCalendarResponseOut)
-def api_insights_day_calendar(request: Request, db: Session = Depends(get_db)):
+def api_insights_day_calendar(
+    request: Request, spread_durables: bool = False, db: Session = Depends(get_db)
+):
     user_id = _require_current_user_id(request, db)
-    return InsightsService(db, user_id=user_id).day_calendar(today=local_today())
+    return InsightsService(db, user_id=user_id).day_calendar(
+        today=local_today(), spread_durables=spread_durables
+    )
 
 
 @router.get(
@@ -5133,7 +5146,9 @@ def api_insights_budget_history(request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/api/insights", response_model=InsightsResponseOut)
-def api_insights(request: Request, db: Session = Depends(get_db)):
+def api_insights(
+    request: Request, spread_durables: bool = False, db: Session = Depends(get_db)
+):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
@@ -5147,6 +5162,7 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         months_back=12,
         tag_ids=tag_ids,
         excluded_tag_ids=excluded_tag_ids,
+        spread_durables=spread_durables,
     )
     totals = MetricsService(db, user_id=user_id).kpis(
         period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
@@ -5181,7 +5197,10 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
         excluded_tag_ids=excluded_tag_ids,
     )
     deltas = insights.expense_category_deltas(
-        period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
+        period,
+        tag_ids=tag_ids,
+        excluded_tag_ids=excluded_tag_ids,
+        spread_durables=spread_durables,
     )
     top_tags = insights.top_tags(
         period,
@@ -5215,6 +5234,7 @@ def api_insights(request: Request, db: Session = Depends(get_db)):
             months_back=12,
             tag_ids=tag_ids,
             excluded_tag_ids=excluded_tag_ids,
+            spread_durables=spread_durables,
         )
         if trend_category_id
         else []
@@ -5450,9 +5470,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         }
     recent = txn_service.list_for_period(period, filters, limit=10)
     durable_items = DurablePurchaseService(db, user_id=user_id).list_computed()
-    active_durable = [
-        item for item in durable_items if not bool(item["fully_amortized"])
-    ][:10]
+    active_durable = [item for item in durable_items if item["ended_on"] is None][:10]
     budget_service = BudgetService(db, user_id=user_id)
     today = local_today()
     # Monthly budgets track the selected period's month: a completed last month

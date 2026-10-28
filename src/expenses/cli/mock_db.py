@@ -1009,6 +1009,26 @@ def _seed(session: Session) -> None:
             acquired_on=today - timedelta(days=980),
         ),
     )
+    espresso_txn = txn_svc.create(
+        TransactionIn(
+            date=today - timedelta(days=410),
+            occurred_at=datetime.combine(today - timedelta(days=410), time(10, 5)),
+            type=TransactionType.expense,
+            amount_cents=54_900,
+            category_id=expense_cats["Shopping"],
+            title="Espresso machine",
+            description="Broke after a year, so it ended before its lifespan.",
+            tags=[],
+        )
+    )
+    DurablePurchaseService(session).upsert(
+        espresso_txn.id,
+        DurablePurchaseIn(
+            expected_lifespan_days=1095,
+            acquired_on=today - timedelta(days=410),
+            ended_on=today - timedelta(days=35),
+        ),
+    )
 
     # ── balance anchor ────────────────────────────────────────────────────────
     # Pre-dates all seeded transactions so the running-balance report has a
@@ -1136,7 +1156,7 @@ def seed(yes: bool = False) -> int:
         "  → 6 transactions with stored coordinates around Berlin and Munich\n"
         "  → 12 tags, 5 auto-categorisation rules\n"
         "  → 5 recurring rules (next due next month)\n"
-        "  → budgets, a balance anchor, templates, and two durable purchases\n"
+        "  → budgets, a balance anchor, templates, and three durable purchases\n"
         "  → linked reimbursement example and soft-deleted transaction sample\n"
         "  → generated PNG receipt attachments and bank reconciliation examples"
     )

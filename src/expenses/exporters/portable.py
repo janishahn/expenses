@@ -205,6 +205,7 @@ class DurablePurchaseExport(ExportModel):
     transaction_id: int
     expected_lifespan_days: int
     acquired_on: date
+    ended_on: date | None
     created_at: datetime
     updated_at: datetime
 
@@ -615,6 +616,7 @@ class PortableExportService:
                 transaction_id=row.transaction_id,
                 expected_lifespan_days=row.expected_lifespan_days,
                 acquired_on=row.acquired_on,
+                ended_on=row.ended_on,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
