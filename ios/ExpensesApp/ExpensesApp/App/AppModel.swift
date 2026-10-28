@@ -1784,6 +1784,8 @@ final class AppModel {
             } else {
                 try await apiClient.deleteDurablePurchase(transactionID: transactionID, token: token)
             }
+            // Durables change the Dashboard, Insights and the forecast too.
+            ledgerRevision += 1
             let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
             if selectedTransaction?.id == transactionID {
                 selectedTransaction = detail

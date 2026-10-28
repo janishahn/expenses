@@ -354,7 +354,7 @@ struct TransactionDetailView: View {
                                 Text("per day")
                             }
                             .foregroundStyle(.primary)
-                            Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(acquiredOn))\(endedOn.map { ", ended \(AppFormatters.shortDay($0))" } ?? "")")
+                            Text("\(DurableSheet.lifespanLabel(durable.expectedLifespanDays)) from \(AppFormatters.shortDay(acquiredOn))\(endedOn.map { ", \(DurableSheet.hasEnded($0) ? "ended" : "ends") \(AppFormatters.shortDay($0))" } ?? "")")
                                 .font(.footnote)
                         }
                     }
@@ -1044,9 +1044,15 @@ private struct DurableSheet: View {
         lifespans.first { $0.days == days }?.label ?? "\(days) days"
     }
 
+    /// An item with an end date still to come is in use, as on the server.
+    static func hasEnded(_ endedOn: Date) -> Bool {
+        AppFormatters.isoDay(endedOn) <= AppFormatters.isoDay(.now)
+    }
+
     /// The planned cost per day, or the actual one over the days owned once the item has ended.
     static func perDay(_ amountCents: Int, days: Int, acquiredOn: Date, endedOn: Date?) -> Int {
-        let owned = endedOn.map { max(1, Calendar.current.dateComponents([.day], from: acquiredOn, to: $0).day!) } ?? days
+        let ended = endedOn.flatMap { hasEnded($0) ? $0 : nil }
+        let owned = ended.map { max(1, Calendar.current.dateComponents([.day], from: acquiredOn, to: $0).day!) } ?? days
         return Int((Double(amountCents) / Double(owned)).rounded())
     }
 

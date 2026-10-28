@@ -510,6 +510,9 @@ test.describe("Transactions Page", () => {
     await peek.getByRole("button", { name: /^Durable/ }).click()
     const editor = page.getByRole("dialog", { name: "Durable purchase" })
     await editor.getByLabel("Acquired").fill("2026-01-01")
+    // An end date still to come keeps the planned cost per day.
+    await editor.getByLabel("Ended").fill("2099-01-01")
+    await expect(editor).toContainText("1,64 € per day")
     await editor.getByLabel("Ended").fill("2026-04-11")
     const ended = page.waitForResponse(
       (response) =>

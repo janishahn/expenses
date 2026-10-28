@@ -123,8 +123,8 @@ export function useTransactionRecord(id: number) {
       )
       return false
     }
-    void queryClient.invalidateQueries({ queryKey: key })
-    void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    // Durables change Insights and the forecast too.
+    invalidateTransactionData(queryClient)
     void queryClient.invalidateQueries({ queryKey: ["durable-purchases"] })
     return true
   }

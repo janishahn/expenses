@@ -15,6 +15,8 @@ struct InsightsView: View {
     @State private var query = TransactionQuery()
     // Counts each durable's cost per day of its life instead of on its purchase date.
     @State private var spreadDurables = false
+    // The mode of the last reload; a change to it reloads every figure.
+    @State private var loadedSpread = false
     @State private var presentingFilter = false
     @State private var gridKind = GridKind.expense
     @State private var insights: (query: TransactionQuery, result: Result<InsightsResponse, APIErrorInfo>)?
@@ -86,7 +88,7 @@ struct InsightsView: View {
                 }
             }
             .task(id: spreadDurables) {
-                if insights != nil {
+                if spreadDurables != loadedSpread {
                     await reload()
                 }
             }
@@ -110,6 +112,7 @@ struct InsightsView: View {
     }
 
     private func reload() async {
+        loadedSpread = spreadDurables
         grids = [:]
         async let insights: Void = loadInsights()
         async let grid: Void = loadGrid()
@@ -121,7 +124,8 @@ struct InsightsView: View {
         let query = query
         let spreadDurables = spreadDurables
         let result = await model.chart { try await $0.insights(query, spreadDurables: spreadDurables, token: $1) }
-        if !Task.isCancelled {
+        // A response for the other mode, still running when it changed, is dropped.
+        if !Task.isCancelled, spreadDurables == self.spreadDurables {
             insights = (query, result)
         }
     }
@@ -130,7 +134,7 @@ struct InsightsView: View {
         let kind = gridKind
         let spreadDurables = spreadDurables
         let result = await model.chart { try await $0.insightsMonthGrid(kind: kind.rawValue, spreadDurables: spreadDurables, token: $1) }
-        if !Task.isCancelled {
+        if !Task.isCancelled, spreadDurables == self.spreadDurables {
             grids[kind] = result
         }
     }
@@ -142,7 +146,7 @@ struct InsightsView: View {
         async let calendar = model.chart { try await $0.insightsDayCalendar(spreadDurables: spreadDurables, token: $1) }
         async let budgetHistory = model.chart { try await $0.insightsBudgetHistory(token: $1) }
         let results = await (split, calendar, budgetHistory)
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, spreadDurables == self.spreadDurables else {
             return
         }
         (self.split, self.calendar, self.budgetHistory) = results

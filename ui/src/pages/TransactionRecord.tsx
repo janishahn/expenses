@@ -21,6 +21,7 @@ import type {
 import { formatAmountPrivate, formatCoordinate } from "../app/format"
 import {
   amountInput,
+  currentLocalDateTime,
   invalidateTransactionData,
   occurredAtInput,
   occurredLabel,
@@ -61,9 +62,17 @@ function lifespanLabel(days: number): string {
   return LIFESPANS.find((entry) => entry.days === days)?.label ?? `${days} days`
 }
 
+// An item with an end date still to come is in use, as on the server.
+function hasEnded(endedOn: string): boolean {
+  return endedOn <= currentLocalDateTime().slice(0, 10)
+}
+
 // The planned cost per day, or the actual one over the days owned once the item has ended.
 function costPerDay(netCents: number, lifespanDays: number, acquiredOn: string, endedOn: string | null): number {
-  const days = endedOn ? Math.max(1, Math.round((Date.parse(endedOn) - Date.parse(acquiredOn)) / 86_400_000)) : lifespanDays
+  const days =
+    endedOn && hasEnded(endedOn)
+      ? Math.max(1, Math.round((Date.parse(endedOn) - Date.parse(acquiredOn)) / 86_400_000))
+      : lifespanDays
   return Math.round(netCents / days)
 }
 
@@ -274,7 +283,10 @@ function DurableProperty({ record }: { record: TransactionRecordState }) {
             {durable ? (
               <>
                 {lifespanLabel(durable.expected_lifespan_days)} from {shortDateLabel(durable.acquired_on)}
-                {durable.ended_on ? `, ended ${shortDateLabel(durable.ended_on)}` : null} ·{" "}
+                {durable.ended_on
+                  ? `, ${hasEnded(durable.ended_on) ? "ended" : "ends"} ${shortDateLabel(durable.ended_on)}`
+                  : null}{" "}
+                ·{" "}
                 <Amount
                   cents={costPerDay(view.net_amount_cents, durable.expected_lifespan_days, durable.acquired_on, durable.ended_on)}
                   kind="expense"
