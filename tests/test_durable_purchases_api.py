@@ -205,7 +205,12 @@ def test_durables_spread_their_net_cost_until_they_end(
         assert response.status_code == 200
         return transaction_id
 
-    phone = track("Phone", 92_999, date(2025, 10, 28), {"expected_lifespan_days": 1095})
+    phone = track(
+        "Phone",
+        92_999,
+        date(2025, 10, 28),
+        {"expected_lifespan_days": 1095, "ended_on": "2028-10-27"},
+    )
     refund = _create_transaction(
         api_client,
         csrf_headers,
@@ -240,7 +245,9 @@ def test_durables_spread_their_net_cost_until_they_end(
         item["title"]: item
         for item in api_client.get("/api/durable-purchases").json()["items"]
     }
-    # The phone is spread at its cost after the refund.
+    # The phone is spread at its cost after the refund and stays in use until its
+    # planned end date.
+    assert items["Phone"]["ended"] is False
     assert items["Phone"]["original_amount_cents"] == 92_999
     assert items["Phone"]["net_amount_cents"] == 90_000
     assert items["Phone"]["cost_per_day_cents"] == 90_000 / 1095
@@ -255,6 +262,7 @@ def test_durables_spread_their_net_cost_until_they_end(
     assert items["Chair"]["actual_cost_per_day_cents"] == 42_000 / 1031
     # The espresso machine ended early: its days stop and its whole cost is spent.
     assert items["Espresso machine"]["ended_on"] == "2026-04-26"
+    assert items["Espresso machine"]["ended"] is True
     assert items["Espresso machine"]["days_owned"] == 180
     assert items["Espresso machine"]["actual_cost_per_day_cents"] == 300
     assert items["Espresso machine"]["fully_amortized"] is True

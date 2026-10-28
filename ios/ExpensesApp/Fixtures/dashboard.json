@@ -72,6 +72,7 @@
       "category": null,
       "cost_per_day_cents": 109.58904109589041,
       "days_owned": 181,
+      "ended": false,
       "ended_on": null,
       "expected_lifespan_days": 1095,
       "fully_amortized": false,

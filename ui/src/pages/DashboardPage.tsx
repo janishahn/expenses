@@ -81,6 +81,7 @@ type DurablePurchase = {
   transaction_id: number
   expected_lifespan_days: number
   ended_on: string | null
+  ended: boolean
   days_owned: number
   cost_per_day_cents: number
   actual_cost_per_day_cents: number
@@ -395,8 +396,8 @@ function DashboardPage() {
       }
     : undefined
 
-  const durableItems = (durable.data?.items ?? []).filter((item) => showEnded || !item.ended_on)
-  const endedCount = (durable.data?.items ?? []).filter((item) => item.ended_on).length
+  const durableItems = (durable.data?.items ?? []).filter((item) => showEnded || !item.ended)
+  const endedCount = (durable.data?.items ?? []).filter((item) => item.ended).length
 
   const chartMenu = (key: CardKey, insights: boolean) => (
     <>

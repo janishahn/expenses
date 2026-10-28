@@ -1394,6 +1394,7 @@ class DurablePurchaseService:
                     "expected_lifespan_days": lifespan_days,
                     "acquired_on": row.acquired_on.isoformat(),
                     "ended_on": row.ended_on.isoformat() if row.ended_on else None,
+                    "ended": ended,
                     "days_owned": days_owned,
                     "cost_per_day_cents": cost_per_day_cents,
                     "actual_cost_per_day_cents": net_cents / max(1, days_owned),

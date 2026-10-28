@@ -126,6 +126,7 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
                 "expected_lifespan_days": 1095,
                 "acquired_on": "2025-11-17",
                 "ended_on": None,
+                "ended": False,
                 "days_owned": 181,
                 "cost_per_day_cents": 120000 / 1095,
                 "actual_cost_per_day_cents": 120000 / 181,

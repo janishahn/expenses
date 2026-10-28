@@ -386,6 +386,8 @@ class DashboardDurablePurchaseOut(BaseModel):
     expected_lifespan_days: int
     acquired_on: date
     ended_on: Optional[date] = None
+    # Whether ended_on has come; an item with a later end date is still in use.
+    ended: bool
     days_owned: int
     cost_per_day_cents: float
     actual_cost_per_day_cents: float

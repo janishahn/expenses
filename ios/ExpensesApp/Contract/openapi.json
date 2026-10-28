@@ -4278,6 +4278,10 @@
             "title": "Days Owned",
             "type": "integer"
           },
+          "ended": {
+            "title": "Ended",
+            "type": "boolean"
+          },
           "ended_on": {
             "anyOf": [
               {
@@ -4344,6 +4348,7 @@
           "transaction_id",
           "expected_lifespan_days",
           "acquired_on",
+          "ended",
           "days_owned",
           "cost_per_day_cents",
           "actual_cost_per_day_cents",

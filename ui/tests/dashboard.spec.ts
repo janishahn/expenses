@@ -439,7 +439,8 @@ test.describe("Dashboard Page", () => {
       return transactionId
     }
     const title = "Noise-cancelling headphones"
-    const transactionId = await track(title, 120_000, 0, { expected_lifespan_days: 730 })
+    // A planned end date leaves the headphones in use until it comes.
+    const transactionId = await track(title, 120_000, 0, { expected_lifespan_days: 730, ended_on: localToday(-30) })
     await track("Office chair", 73_000, 1000, { expected_lifespan_days: 730 })
     await track("Espresso machine", 50_000, 400, { expected_lifespan_days: 1095, ended_on: localToday(100) })
     await isolated.request.dispose()

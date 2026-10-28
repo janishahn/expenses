@@ -5470,7 +5470,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         }
     recent = txn_service.list_for_period(period, filters, limit=10)
     durable_items = DurablePurchaseService(db, user_id=user_id).list_computed()
-    active_durable = [item for item in durable_items if item["ended_on"] is None][:10]
+    active_durable = [item for item in durable_items if not item["ended"]][:10]
     budget_service = BudgetService(db, user_id=user_id)
     today = local_today()
     # Monthly budgets track the selected period's month: a completed last month
