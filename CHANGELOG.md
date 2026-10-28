@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Security updates move the web build to Node.js 24.22.1, markdown-it to 14.3.3, Vite to 7.3.7, Pillow to 13.0.0, and certifi to 2026.10.19. These updates address the October Node.js security release, denial-of-service flaws in Markdown parsing, development-server command injection, image parsing flaws, and compromised eMudhra intermediate CA keys.
+- Security updates move Brotli to 1.2.1 and the OpenTelemetry API to 1.45.1, and the development-only filelock and msgpack packages to 4.2.4 and 1.2.4. These updates address an out-of-bounds write in the Brotli decoder, slow parsing of long `tracestate` headers, lock-file flaws in filelock, and a msgpack memory leak on malformed input.
 
 ## [0.8.11] - 2026-10-19
 
