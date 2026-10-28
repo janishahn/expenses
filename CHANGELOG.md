@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-10-28
+
 ### Added
 - A durable purchase can have an end date, for when it is sold, breaks, or stops being used. Its days owned stop on that date, and the purchase shows what it actually cost per day. The dashboard keeps items past their lifespan at their actual cost per day and hides ended items until **Show ended**.
 - Insights on the web and iOS has **Spread durables**, off by default. It counts each durable purchase at its cost per day for every day of its life instead of in full on its purchase date; an item that ended early puts what is left on its end date. Spent, budgets, the forecast, and the transaction list still count the purchase on its date. The Insights endpoints take `spread_durables=true`.
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Durable purchases spread their amount after reimbursements, as Spent does, so a shared purchase shows only its own share per day. The durable purchase API adds `ended_on`, `ended`, `actual_cost_per_day_cents`, and `net_amount_cents`.
 - Security updates move the web build to Node.js 24.22.1, markdown-it to 14.3.3, Vite to 7.3.7, Pillow to 13.0.0, and certifi to 2026.10.19. These updates address the October Node.js security release, denial-of-service flaws in Markdown parsing, development-server command injection, image parsing flaws, and compromised eMudhra intermediate CA keys.
 - Security updates move Brotli to 1.2.1 and the OpenTelemetry API to 1.45.1, and the development-only filelock and msgpack packages to 4.2.4 and 1.2.4. These updates address an out-of-bounds write in the Brotli decoder, slow parsing of long `tracestate` headers, lock-file flaws in filelock, and a msgpack memory leak on malformed input.
+- brotlicffi moves to 1.2.1.0 for the same Brotli decoder flaw. It is installed only on Python implementations other than CPython, so the container image did not include it.
 
 ## [0.8.11] - 2026-10-19
 
@@ -628,7 +631,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.11...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.12...HEAD
+[0.8.12]: https://github.com/janishahn/expenses/compare/v0.8.11...v0.8.12
 [0.8.11]: https://github.com/janishahn/expenses/compare/v0.8.10...v0.8.11
 [0.8.10]: https://github.com/janishahn/expenses/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/janishahn/expenses/compare/v0.8.8...v0.8.9
