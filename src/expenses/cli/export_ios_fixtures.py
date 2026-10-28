@@ -119,7 +119,28 @@ def export_ios_fixtures(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             {"id": 10, "name": "Groceries", "type": "expense", "icon": "shopping-cart"}
         ],
         "tags": [{"id": 7, "name": "Home"}],
-        "durable_purchases": None,
+        "durable_purchases": [
+            {
+                "id": 3,
+                "transaction_id": 88,
+                "expected_lifespan_days": 1095,
+                "acquired_on": "2025-11-17",
+                "ended_on": None,
+                "ended": False,
+                "days_owned": 181,
+                "cost_per_day_cents": 120000 / 1095,
+                "actual_cost_per_day_cents": 120000 / 181,
+                "amortized_cents": 19836,
+                "remaining_cents": 100164,
+                "percent_amortized": 181 / 1095 * 100,
+                "fully_amortized": False,
+                "paid_for_itself_on": "2028-11-16",
+                "original_amount_cents": 120000,
+                "net_amount_cents": 120000,
+                "title": "Laptop",
+                "category": None,
+            }
+        ],
         "budget_pace": {
             "velocity_ratio": 0.82,
             "projected_cents": 178000,

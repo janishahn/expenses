@@ -576,6 +576,7 @@ class DurablePurchase(Base, TimestampMixin):
     )
     expected_lifespan_days: Mapped[int] = mapped_column(Integer, nullable=False)
     acquired_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ended_on: Mapped[Optional[date]] = mapped_column(Date)
 
     transaction: Mapped["Transaction"] = relationship(
         "Transaction",

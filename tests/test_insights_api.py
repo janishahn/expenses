@@ -529,3 +529,97 @@ def test_budget_history_reports_budget_and_spend_per_month(
         "spent_cents": 12_000,
     }
     assert overall["cells"][-1]["spent_cents"] == 12_000
+
+
+def test_spread_durables_counts_each_day_of_their_life(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: today)
+    monkeypatch.setattr("expenses.api.routes.local_today", lambda: today)
+    gear = _create_category(api_client, csrf_headers, "Gear", "expense")
+    refunds = _create_category(api_client, csrf_headers, "Refunds", "income")
+    # 11,000 less a 1,000 refund over 100 days: 100 a day from 22 May.
+    bike = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=11_000,
+        title="Bike",
+        on=date(2026, 5, 22),
+        category_id=gear,
+    )
+    refund = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=1_000,
+        title="Bike refund",
+        on=date(2026, 5, 25),
+        category_id=refunds,
+        txn_type="income",
+        is_reimbursement=True,
+    )
+    api_client.post(
+        f"/api/reimbursements/{refund}/allocations",
+        headers=csrf_headers,
+        json={"expense_transaction_id": bike, "amount_cents": 1_000},
+    )
+    # 5,000 over 50 days that ended after 10: 100 a day, then 4,000 on its end date.
+    lamp = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=5_000,
+        title="Lamp",
+        on=date(2026, 6, 1),
+        category_id=gear,
+    )
+    for transaction_id, durable in (
+        (bike, {"expected_lifespan_days": 100}),
+        (lamp, {"expected_lifespan_days": 50, "ended_on": "2026-06-11"}),
+    ):
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/durable",
+            headers=csrf_headers,
+            json=durable,
+        )
+        assert response.status_code == 200
+
+    query = (
+        "/api/insights?period=custom&start=2026-05-01&end=2026-07-31"
+        f"&trend_category={gear}"
+    )
+    cash = api_client.get(query).json()
+    spread = api_client.get(f"{query}&spread_durables=true").json()
+    assert [point["expense_cents"] for point in cash["series"]] == [10_000, 5_000, 0]
+    # July counts its days up to today.
+    assert [point["expense_cents"] for point in spread["series"]] == [
+        1_000,
+        8_000,
+        1_500,
+    ]
+    assert [point["amount_cents"] for point in spread["trend"][-3:]] == [
+        1_000,
+        8_000,
+        1_500,
+    ]
+    assert spread["expense_cents"] == cash["expense_cents"] == 15_000
+
+    june = api_client.get(
+        "/api/insights?period=custom&start=2026-06-01&end=2026-06-30"
+        "&spread_durables=true"
+    ).json()
+    assert june["deltas"]["increases"][0]["current_cents"] == 8_000
+    assert june["deltas"]["increases"][0]["previous_cents"] == 1_000
+
+    grid = api_client.get("/api/insights/month-grid?spread_durables=true").json()
+    rows = {row["name"]: row["values_cents"] for row in grid["rows"]}
+    assert rows["Gear"][-3:] == [1_000, 8_000, 1_500]
+    split = api_client.get("/api/insights/recurring-split?spread_durables=true").json()
+    assert [row["other_cents"] for row in split["rows"][-3:]] == [1_000, 8_000, 1_500]
+    calendar = api_client.get("/api/insights/day-calendar?spread_durables=true").json()
+    days = {day["date"]: day["amount_cents"] for day in calendar["days"]}
+    assert (days["2026-06-10"], days["2026-06-11"], days["2026-06-12"]) == (
+        200,
+        4_100,
+        100,
+    )
+    assert sum(days.values()) == 10_500

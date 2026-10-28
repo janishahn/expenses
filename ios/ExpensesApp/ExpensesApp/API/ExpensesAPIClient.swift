@@ -516,24 +516,25 @@ struct ExpensesAPIClient {
     }
 
     /// Insights for the query's period and tags; it takes no type, category or search.
-    func insights(_ query: TransactionQuery, token: String) async throws -> InsightsResponse {
+    /// With `spreadDurables`, the monthly figures count each durable's cost per day of its life.
+    func insights(_ query: TransactionQuery, spreadDurables: Bool, token: String) async throws -> InsightsResponse {
         var components = URLComponents()
         components.path = "/api/insights"
-        components.queryItems = query.queryItems
+        components.queryItems = query.queryItems + [URLQueryItem(name: "spread_durables", value: String(spreadDurables))]
         return try await request(path: components.string!, bearerToken: token)
     }
 
     /// `kind` is "expense", "income" or "tag".
-    func insightsMonthGrid(kind: String, token: String) async throws -> InsightsMonthGridResponse {
-        try await request(path: "/api/insights/month-grid?kind=\(kind)", bearerToken: token)
+    func insightsMonthGrid(kind: String, spreadDurables: Bool, token: String) async throws -> InsightsMonthGridResponse {
+        try await request(path: "/api/insights/month-grid?kind=\(kind)&spread_durables=\(spreadDurables)", bearerToken: token)
     }
 
-    func insightsRecurringSplit(token: String) async throws -> InsightsRecurringSplitResponse {
-        try await request(path: "/api/insights/recurring-split", bearerToken: token)
+    func insightsRecurringSplit(spreadDurables: Bool, token: String) async throws -> InsightsRecurringSplitResponse {
+        try await request(path: "/api/insights/recurring-split?spread_durables=\(spreadDurables)", bearerToken: token)
     }
 
-    func insightsDayCalendar(token: String) async throws -> InsightsDayCalendarResponse {
-        try await request(path: "/api/insights/day-calendar", bearerToken: token)
+    func insightsDayCalendar(spreadDurables: Bool, token: String) async throws -> InsightsDayCalendarResponse {
+        try await request(path: "/api/insights/day-calendar?spread_durables=\(spreadDurables)", bearerToken: token)
     }
 
     func insightsBudgetHistory(token: String) async throws -> InsightsBudgetHistoryResponse {

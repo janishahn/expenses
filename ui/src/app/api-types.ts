@@ -104,6 +104,7 @@ export type TransactionRouteState = {
 export type DurablePurchase = {
   expected_lifespan_days: number
   acquired_on: string
+  ended_on: string | null
 }
 
 export type ReceiptAttachment = {

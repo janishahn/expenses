@@ -64,7 +64,28 @@
     ],
     "mode": "both"
   },
-  "durable_purchases": null,
+  "durable_purchases": [
+    {
+      "acquired_on": "2025-11-17",
+      "actual_cost_per_day_cents": 662.9834254143647,
+      "amortized_cents": 19836,
+      "category": null,
+      "cost_per_day_cents": 109.58904109589041,
+      "days_owned": 181,
+      "ended": false,
+      "ended_on": null,
+      "expected_lifespan_days": 1095,
+      "fully_amortized": false,
+      "id": 3,
+      "net_amount_cents": 120000,
+      "original_amount_cents": 120000,
+      "paid_for_itself_on": "2028-11-16",
+      "percent_amortized": 16.5296803652968,
+      "remaining_cents": 100164,
+      "title": "Laptop",
+      "transaction_id": 88
+    }
+  ],
   "filters": {
     "excluded_tag_ids": [],
     "included_tag_ids": []

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
-import { loginAsIsolatedUser, provisionInsightsData } from "./helpers"
+import { createCategory, createTransaction, loginAsIsolatedUser, provisionInsightsData } from "./helpers"
 
 test.describe.configure({ mode: "parallel" })
 
@@ -149,5 +149,43 @@ test.describe("Insights Page (mobile)", () => {
       .tap()
     await expect(page).toHaveURL(new RegExp(`/budgets\\?month=${thisMonth}`))
     await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible()
+  })
+
+  test("spreads durables over the days of their life in By month", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    // A 1.000 € laptop over 1.000 days from the first of last month: 1 € a day.
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonth = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`
+    const lastMonthDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate()
+    const category = await createCategory(isolated.request, isolated.csrfToken, "expense", "Electronics")
+    const transactionId = await createTransaction(isolated.request, isolated.csrfToken, {
+      date: `${lastMonth}-01`,
+      occurred_at: `${lastMonth}-01T09:00:00`,
+      type: "expense",
+      amount_cents: 100_000,
+      category_id: category,
+      title: "Laptop",
+      tags: [],
+    })
+    const durable = await isolated.request.post(`/api/transactions/${transactionId}/durable`, {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { expected_lifespan_days: 1000 },
+    })
+    expect(durable.ok()).toBeTruthy()
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = await showAsTable(page, "By month")
+    const row = card.getByRole("table", { name: "Amounts by month" }).getByRole("row", { name: /^Electronics/ })
+    await expect(row).toContainText(eur("1.000 €"))
+
+    const spread = page.getByRole("button", { name: "Spread durables" })
+    await spread.tap()
+    await expect(spread).toHaveAttribute("aria-pressed", "true")
+    await expect(row).toContainText(`${lastMonthDays} €`)
+    await expect(row).not.toContainText(eur("1.000 €"))
+    await expect(metric(page, "Spent")).toContainText(eur("1.000,00 €"))
   })
 })

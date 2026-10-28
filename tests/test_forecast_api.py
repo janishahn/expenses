@@ -802,6 +802,46 @@ def test_forecast_estimates_variable_spending_from_capped_recent_average(
     assert payload["months"][0]["projected_expenses_cents"] == expected_cents
 
 
+def test_forecast_leaves_durable_purchases_out_of_variable_spending(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    shopping_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    for offset in range(6, 0, -1):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=10),
+            txn_type="expense",
+            amount_cents=10_000,
+            category_id=shopping_id,
+            title=f"Shopping {month.isoformat()}",
+        )
+        if offset in (4, 1):
+            durable_id = _create_transaction(
+                api_client,
+                csrf_headers,
+                txn_date=month.replace(day=20),
+                txn_type="expense",
+                amount_cents=20_000,
+                category_id=shopping_id,
+                title=f"Laptop {month.isoformat()}",
+            )
+            response = api_client.post(
+                f"/api/transactions/{durable_id}/durable",
+                headers=csrf_headers,
+                json={"expected_lifespan_days": 1095},
+            )
+            assert response.status_code == 200
+
+    response = api_client.get("/api/forecast?horizon=3&mode=full")
+    assert response.status_code == 200
+    # Counted as spending, the two laptops would raise the estimate to 17,450.
+    assert response.json()["months"][0]["projected_expenses_cents"] == 10_000
+
+
 @pytest.mark.parametrize(("history_months", "available"), [(8, False), (9, True)])
 def test_forecast_range_needs_six_out_of_sample_months(
     monkeypatch,

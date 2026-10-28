@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
 import { FunnelIcon } from "@phosphor-icons/react/Funnel"
+import { PackageIcon } from "@phosphor-icons/react/Package"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatAmount } from "../app/format"
@@ -134,6 +135,9 @@ function InsightsPage() {
   const excludedTagIds = parseTagIds(searchParams, ["exclude_tags"])
   const tagMode: TagMode = excludedTagIds.length ? "exclude" : includedTagIds.length ? "include" : emptyTagMode
   const tagIds = tagMode === "exclude" ? excludedTagIds : includedTagIds
+  // Spread durables counts each durable's cost per day of its life instead of on its purchase date.
+  const spread = searchParams.get("spread_durables") === "true"
+  const spreadParam = spread ? "spread_durables=true" : ""
   const queryString = useMemo(() => {
     const params = canonicalizeTagScope(searchParams)
     if (!params.get("period")) params.set("period", "all")
@@ -146,16 +150,16 @@ function InsightsPage() {
     queryFn: () => apiFetch<InsightsResponse>(`/api/insights?${queryString}`),
   })
   const split = useQuery({
-    queryKey: ["insights", "recurring-split"],
-    queryFn: () => apiFetch<RecurringSplitResponse>("/api/insights/recurring-split"),
+    queryKey: ["insights", "recurring-split", spread],
+    queryFn: () => apiFetch<RecurringSplitResponse>(`/api/insights/recurring-split?${spreadParam}`),
   })
   const grid = useQuery({
-    queryKey: ["insights", "month-grid", gridKind],
-    queryFn: () => apiFetch<MonthGridResponse>(`/api/insights/month-grid?kind=${gridKind}`),
+    queryKey: ["insights", "month-grid", gridKind, spread],
+    queryFn: () => apiFetch<MonthGridResponse>(`/api/insights/month-grid?kind=${gridKind}&${spreadParam}`),
   })
   const calendar = useQuery({
-    queryKey: ["insights", "day-calendar"],
-    queryFn: () => apiFetch<DayCalendarResponse>("/api/insights/day-calendar"),
+    queryKey: ["insights", "day-calendar", spread],
+    queryFn: () => apiFetch<DayCalendarResponse>(`/api/insights/day-calendar?${spreadParam}`),
   })
   const budgets = useQuery({
     queryKey: ["insights", "budget-history"],
@@ -333,6 +337,14 @@ function InsightsPage() {
           }
         >
           <PeriodControl value={period} onChange={setPeriod} />
+          <Pill
+            icon={PackageIcon}
+            set={spread}
+            aria-pressed={spread}
+            onClick={() => setSearchParams(buildSearchParams(searchParams, { spread_durables: spread ? null : "true" }))}
+          >
+            Spread durables
+          </Pill>
         </ViewRow>
       }
     >

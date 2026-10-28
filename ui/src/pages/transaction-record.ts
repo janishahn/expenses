@@ -21,7 +21,7 @@ import { showToast } from "../components/ui/toast-store"
 
 export type RecordField = "title" | "amount" | "type" | "date" | "category" | "tags" | "notes" | "reimbursement" | "durable"
 
-export type DurableInput = { expected_lifespan_days: number; acquired_on: string }
+export type DurableInput = { expected_lifespan_days: number; acquired_on: string; ended_on: string | null }
 
 // Pickers show their entered value while it saves and after it fails. Text editors keep
 // their own draft instead, so the stored value stays what the draft is compared with.
@@ -123,8 +123,8 @@ export function useTransactionRecord(id: number) {
       )
       return false
     }
-    void queryClient.invalidateQueries({ queryKey: key })
-    void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+    // Durables change Insights and the forecast too.
+    invalidateTransactionData(queryClient)
     void queryClient.invalidateQueries({ queryKey: ["durable-purchases"] })
     return true
   }

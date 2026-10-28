@@ -205,7 +205,7 @@ SQL_TABLES = {
     """,
     "durable_purchases": """
         select d.transaction_id, d.expected_lifespan_days as lifespan_days,
-            d.acquired_on
+            d.acquired_on, d.ended_on
         from durable_purchases d
         join transactions t on t.id = d.transaction_id
         where d.user_id = :user and t.deleted_at is null
@@ -529,7 +529,8 @@ def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[st
     - recurring: id, name, kind, amount_cents (in currency), currency (EUR or USD),
       category_id, interval_count, interval_unit (day, week, month, or year),
       anchor_date, next_date, end_date (the last date it may occur), auto_post.
-    - durable_purchases: transaction_id, lifespan_days, acquired_on.
+    - durable_purchases: transaction_id, lifespan_days, acquired_on, ended_on (when
+      it was sold or stopped being used; null while in use).
     - rules: id, name, enabled, priority, match_type (contains, equals,
       starts_with, or regex), match_value, transaction_type, min_amount_cents,
       max_amount_cents, set_category_id, add_tags (a JSON list),

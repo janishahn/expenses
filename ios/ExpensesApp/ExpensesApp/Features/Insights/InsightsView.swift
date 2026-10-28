@@ -13,6 +13,10 @@ struct InsightsView: View {
 
     // The period and tags; Insights takes no type, category or search.
     @State private var query = TransactionQuery()
+    // Counts each durable's cost per day of its life instead of on its purchase date.
+    @State private var spreadDurables = false
+    // The mode of the last reload; a change to it reloads every figure.
+    @State private var loadedSpread = false
     @State private var presentingFilter = false
     @State private var gridKind = GridKind.expense
     @State private var insights: (query: TransactionQuery, result: Result<InsightsResponse, APIErrorInfo>)?
@@ -55,7 +59,7 @@ struct InsightsView: View {
             .headerProminence(.increased)
             .environment(\.defaultMinListRowHeight, 28)
             .navigationTitle("Insights")
-            .navigationSubtitle(([query.period.title] + [query.tagSummary(tags)].compactMap { $0 }).joined(separator: " · "))
+            .navigationSubtitle(([query.period.title] + [query.tagSummary(tags), spreadDurables ? "Durables spread" : nil].compactMap { $0 }).joined(separator: " · "))
             .expensesScreenStyle()
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -68,7 +72,7 @@ struct InsightsView: View {
                 }
             }
             .sheet(isPresented: $presentingFilter) {
-                InsightsFilterSheet(query: $query, tags: tags)
+                InsightsFilterSheet(query: $query, spreadDurables: $spreadDurables, tags: tags)
             }
             .navigationDestination(for: MonthGridRoute.self) { route in
                 MonthGridRowView(route: route, openTransactions: openTransactions)
@@ -81,6 +85,11 @@ struct InsightsView: View {
             .task(id: query) {
                 if insights?.query != query {
                     await loadInsights()
+                }
+            }
+            .task(id: spreadDurables) {
+                if spreadDurables != loadedSpread {
+                    await reload()
                 }
             }
             .task(id: gridKind) {
@@ -103,6 +112,7 @@ struct InsightsView: View {
     }
 
     private func reload() async {
+        loadedSpread = spreadDurables
         grids = [:]
         async let insights: Void = loadInsights()
         async let grid: Void = loadGrid()
@@ -112,42 +122,51 @@ struct InsightsView: View {
 
     private func loadInsights() async {
         let query = query
-        let result = await model.chart { try await $0.insights(query, token: $1) }
-        if !Task.isCancelled {
+        let spreadDurables = spreadDurables
+        let result = await model.chart { try await $0.insights(query, spreadDurables: spreadDurables, token: $1) }
+        // A response for the other mode, still running when it changed, is dropped.
+        if !Task.isCancelled, spreadDurables == self.spreadDurables {
             insights = (query, result)
         }
     }
 
     private func loadGrid() async {
         let kind = gridKind
-        let result = await model.chart { try await $0.insightsMonthGrid(kind: kind.rawValue, token: $1) }
-        if !Task.isCancelled {
+        let spreadDurables = spreadDurables
+        let result = await model.chart { try await $0.insightsMonthGrid(kind: kind.rawValue, spreadDurables: spreadDurables, token: $1) }
+        if !Task.isCancelled, spreadDurables == self.spreadDurables {
             grids[kind] = result
         }
     }
 
     // The fixed windows, which follow neither the period nor the tags.
     private func loadWindows() async {
-        async let split = model.chart { try await $0.insightsRecurringSplit(token: $1) }
-        async let calendar = model.chart { try await $0.insightsDayCalendar(token: $1) }
+        let spreadDurables = spreadDurables
+        async let split = model.chart { try await $0.insightsRecurringSplit(spreadDurables: spreadDurables, token: $1) }
+        async let calendar = model.chart { try await $0.insightsDayCalendar(spreadDurables: spreadDurables, token: $1) }
         async let budgetHistory = model.chart { try await $0.insightsBudgetHistory(token: $1) }
         let results = await (split, calendar, budgetHistory)
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, spreadDurables == self.spreadDurables else {
             return
         }
         (self.split, self.calendar, self.budgetHistory) = results
     }
 }
 
-/// Tags to include or exclude. Changes apply as they are made.
+/// Whether durables are spread, and tags to include or exclude. Changes apply as they are made.
 private struct InsightsFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var query: TransactionQuery
+    @Binding var spreadDurables: Bool
     let tags: [TransactionTag]
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle("Spread durables", isOn: $spreadDurables)
+                }
+                .expensesRowBackground()
                 TagFilterSection(mode: $query.tagMode, ids: $query.tagIDs, tags: tags)
             }
             .navigationTitle("Filter")
