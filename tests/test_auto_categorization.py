@@ -201,6 +201,56 @@ def test_corrections_stick_and_unrelated_edits_do_not_confirm_predictions(histor
     assert txn.auto_category_confidence is None
 
 
+def test_corrected_ingest_titles_teach_the_original_title(history):
+    session, bakery, _ = history
+    categorization.train_user(session.get_bind(), 1)
+    ingest = IngestService(session, 1)
+    terminal_title = IngestTransactionIn(amount_cents=500, title="SUMUP *KD MLR GMBH")
+    for _ in range(2):
+        txn = ingest.ingest_expense(terminal_title).transaction
+        assert txn.category.name == "Uncategorized"
+        TransactionService(session, 1).update(txn.id, expense(bakery))
+    rows = categorization.training_rows(session, 1)
+    assert rows[-1].title == "SUMUP *KD MLR GMBH Corner bakery"
+    assert len(rows) == 92
+
+    preference = session.get(AutoCategorizationPreference, 1)
+    preference.checked_at = datetime.utcnow() - timedelta(days=8)
+    session.commit()
+    categorization.train_due_users(session.get_bind())
+    session.expire_all()
+    txn = ingest.ingest_expense(terminal_title).transaction
+    assert txn.category_id == bakery
+    assert txn.auto_category_confidence is not None
+
+
+def test_renamed_titles_count_once_toward_category_support(history):
+    session, _, _ = history
+    kiosk = CategoryService(session, 1).create(
+        CategoryIn(name="Kiosk", type=TransactionType.expense)
+    )
+    ingest = IngestService(session, 1)
+    terminal_title = IngestTransactionIn(amount_cents=500, title="ZETTLE *KSK 22")
+    for _ in range(3):
+        txn = ingest.ingest_expense(terminal_title).transaction
+        TransactionService(session, 1).update(
+            txn.id, expense(kiosk.id, "Station kiosk")
+        )
+    spaced = TransactionService(session, 1).create(
+        expense(kiosk.id, " Station  kiosk ")
+    )
+    TransactionService(session, 1).update(spaced.id, expense(kiosk.id, "Station kiosk"))
+    rows = categorization.training_rows(session, 1)
+    assert [row.category_id for row in rows].count(kiosk.id) == 4
+    assert rows[-1].title == "Station kiosk"
+
+    categorization.train_user(session.get_bind(), 1)
+    session.expire_all()
+    # Four kiosk transactions stay below the five needed to assign automatically.
+    txn = ingest.ingest_expense(terminal_title).transaction
+    assert txn.category.name == "Uncategorized"
+
+
 def test_unknown_titles_disabled_users_and_unusable_categories_abstain(history):
     session, bakery, _ = history
     categorization.train_user(session.get_bind(), 1)
