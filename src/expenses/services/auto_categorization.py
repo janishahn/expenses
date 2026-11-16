@@ -46,7 +46,7 @@ def settings_for(session: Session, user_id: int) -> AutoCategorizationSettingsOu
 
 def training_rows(session: Session, user_id: int) -> list[Example]:
     # The title a transaction arrived with, e.g. a terminal's merchant string,
-    # also teaches the category the user settled on.
+    # also teaches the category the user settled on after renaming it.
     created_title = (
         select(TransactionClassificationEvent.after_title)
         .where(
@@ -84,24 +84,23 @@ def training_rows(session: Session, user_id: int) -> list[Example]:
         .limit(MAX_HISTORY)
     ).all()
     examples: list[Example] = []
-    for row in rows:
-        titles = [row.title]
-        original = (row.created_title or "").strip()
-        if original and original.casefold() != row.title.strip().casefold():
-            titles.append(original)
-        for title in titles:
-            examples.append(
-                Example(
-                    title=title,
-                    amount_cents=row.amount_cents,
-                    latitude=float(row.latitude) if row.latitude is not None else None,
-                    longitude=(
-                        float(row.longitude) if row.longitude is not None else None
-                    ),
-                    category_id=row.category_id,
-                )
+    for row in reversed(rows):
+        title = row.title
+        original = " ".join((row.created_title or "").split())
+        if original and original.casefold() != " ".join(title.split()).casefold():
+            # One example per transaction keeps support counts, votes and
+            # calibration splits per transaction while matching either title.
+            title = f"{original} {title}"
+        examples.append(
+            Example(
+                title=title,
+                amount_cents=row.amount_cents,
+                latitude=float(row.latitude) if row.latitude is not None else None,
+                longitude=float(row.longitude) if row.longitude is not None else None,
+                category_id=row.category_id,
             )
-    return examples[:MAX_HISTORY][::-1]
+        )
+    return examples
 
 
 def train_user(bind: Engine | Connection, user_id: int) -> None:

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Auto-categorization also learns from the title a transaction arrived with when you later rename it. An ingested merchant string such as a card terminal's name gets the category you chose for it the next time it arrives, after the weekly retraining.
+- Auto-categorization also learns the title a transaction arrived with when you rename it, so after the weekly retraining it can recognize an ingested merchant string, such as a card terminal's name, and suggest or assign the category you chose for it.
 
 ## [0.8.12] - 2026-10-28
 
