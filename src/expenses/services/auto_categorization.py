@@ -15,6 +15,7 @@ from expenses.db.models import (
     AutoCategorizationPreference,
     Category,
     Transaction,
+    TransactionClassificationEvent,
     TransactionType,
 )
 from expenses.schemas import AutoCategorizationSettingsOut
@@ -44,9 +45,23 @@ def settings_for(session: Session, user_id: int) -> AutoCategorizationSettingsOu
 
 
 def training_rows(session: Session, user_id: int) -> list[Example]:
+    # The title a transaction arrived with, e.g. a terminal's merchant string,
+    # also teaches the category the user settled on.
+    created_title = (
+        select(TransactionClassificationEvent.after_title)
+        .where(
+            TransactionClassificationEvent.user_id == user_id,
+            TransactionClassificationEvent.transaction_id == Transaction.id,
+            TransactionClassificationEvent.event_type == "created",
+        )
+        .order_by(TransactionClassificationEvent.id)
+        .limit(1)
+        .scalar_subquery()
+    )
     rows = session.execute(
         select(
             Transaction.title,
+            created_title.label("created_title"),
             Transaction.amount_cents,
             Transaction.latitude,
             Transaction.longitude,
@@ -68,16 +83,25 @@ def training_rows(session: Session, user_id: int) -> list[Example]:
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
         .limit(MAX_HISTORY)
     ).all()
-    return [
-        Example(
-            title=row.title,
-            amount_cents=row.amount_cents,
-            latitude=float(row.latitude) if row.latitude is not None else None,
-            longitude=float(row.longitude) if row.longitude is not None else None,
-            category_id=row.category_id,
-        )
-        for row in reversed(rows)
-    ]
+    examples: list[Example] = []
+    for row in rows:
+        titles = [row.title]
+        original = (row.created_title or "").strip()
+        if original and original.casefold() != row.title.strip().casefold():
+            titles.append(original)
+        for title in titles:
+            examples.append(
+                Example(
+                    title=title,
+                    amount_cents=row.amount_cents,
+                    latitude=float(row.latitude) if row.latitude is not None else None,
+                    longitude=(
+                        float(row.longitude) if row.longitude is not None else None
+                    ),
+                    category_id=row.category_id,
+                )
+            )
+    return examples[:MAX_HISTORY][::-1]
 
 
 def train_user(bind: Engine | Connection, user_id: int) -> None:
