@@ -1,6 +1,7 @@
 import SwiftUI
 
-// A category's symbol in its color, as list rows show it. No category shows a question mark.
+// A category's symbol in its color, as list rows show it. No category shows the Uncategorized
+// category's receipt, in gray.
 struct CategoryGlyph: View {
     @Environment(\.colorScheme) private var scheme
 
@@ -9,7 +10,7 @@ struct CategoryGlyph: View {
     let name: String?
 
     var body: some View {
-        Image(systemName: categoryID == nil ? "questionmark" : categorySymbolName(for: resolvedCategoryIconKey(iconKey, name: name)))
+        Image(systemName: categoryID == nil ? uncategorizedSymbolName : categorySymbolName(for: resolvedCategoryIconKey(iconKey, name: name)))
             .font(.callout)
             .foregroundStyle(ExpensesTheme.category(categoryID, for: scheme))
             .glyphColumn()
@@ -27,6 +28,8 @@ struct CategoryIconOption: Identifiable {
 
 let defaultCategoryIconKey = "currency-circle-dollar"
 
+let uncategorizedSymbolName = categorySymbolName(for: resolvedCategoryIconKey(nil, name: "Uncategorized"))
+
 let categoryIconOptions = [
     CategoryIconOption(key: "house", label: "Housing", symbolName: "house"),
     CategoryIconOption(key: "coffee", label: "Coffee", symbolName: "cup.and.saucer"),
@@ -38,7 +41,7 @@ let categoryIconOptions = [
     CategoryIconOption(key: "briefcase", label: "Work", symbolName: "briefcase"),
     CategoryIconOption(key: "airplane", label: "Travel", symbolName: "airplane"),
     CategoryIconOption(key: "fork-knife", label: "Dining", symbolName: "fork.knife"),
-    CategoryIconOption(key: "piggy-bank", label: "Savings", symbolName: "banknote"),
+    CategoryIconOption(key: "piggy-bank", label: "Savings", symbolName: "dollarsign.bank.building"),
     CategoryIconOption(key: "graduation-cap", label: "Education", symbolName: "graduationcap"),
     CategoryIconOption(key: "gift", label: "Gifts", symbolName: "gift"),
     CategoryIconOption(key: "scissors", label: "Personal care", symbolName: "scissors"),

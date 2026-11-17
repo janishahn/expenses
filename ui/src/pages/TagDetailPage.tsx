@@ -20,7 +20,7 @@ import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../
 import { Property, PropertyButton } from "../components/ui/PropertyList"
 import { MetricStrip, Sheet } from "../components/ui/Sheet"
 import { showToast } from "../components/ui/toast-store"
-import { categoryColor } from "../components/ui/tokens"
+import { neighbourCategoryColors } from "../components/ui/tokens"
 import { useTagLifecycle, useTagSave, type TagRecord } from "./tag-record"
 import { TagMenuItems, TagMergeDialog, TagSettingsList } from "./TagSettings"
 
@@ -43,6 +43,7 @@ const TRANSACTION_COLUMNS: Columns = {
 
 function BreakdownCard({ title, items, centerLabel, empty }: { title: string; items: BreakdownItem[]; centerLabel: string; empty: string }) {
   const total = items.reduce((sum, item) => sum + item.amount_cents, 0)
+  const colors = neighbourCategoryColors(items.map((item) => item.id))
   return (
     <ChartCard
       title={title}
@@ -63,11 +64,11 @@ function BreakdownCard({ title, items, centerLabel, empty }: { title: string; it
           focus={focus}
           center={<Amount cents={total} decimals={false} />}
           centerLabel={centerLabel}
-          items={items.map((item) => ({
+          items={items.map((item, index) => ({
             key: String(item.id),
             label: item.name,
             value: item.amount_cents,
-            color: categoryColor(item.id),
+            color: colors[index],
             amount: <Amount cents={item.amount_cents} />,
             share: `${Math.round(item.percent)} %`,
           }))}

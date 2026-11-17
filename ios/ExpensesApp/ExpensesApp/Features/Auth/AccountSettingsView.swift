@@ -14,6 +14,7 @@ struct AccountSettingsView: View {
     @State private var sessionError: String?
     @State private var loadError: String?
     @State private var signOutError: String?
+    @State private var confirmingSignOut = false
 
     var body: some View {
         List {
@@ -21,7 +22,7 @@ struct AccountSettingsView: View {
                 Section {
                     LabeledContent("Username", value: user.username)
                     Button("Sign out", role: .destructive) {
-                        Task { await signOut() }
+                        confirmingSignOut = true
                     }
                     if let signOutError {
                         FieldError(signOutError)
@@ -48,6 +49,12 @@ struct AccountSettingsView: View {
         }
         .refreshable {
             await load()
+        }
+        .alert("Sign out?", isPresented: $confirmingSignOut) {
+            Button("Cancel", role: .cancel) {}
+            Button("Sign out", role: .destructive) {
+                Task { await signOut() }
+            }
         }
         .alert("Revoke the ingest token?", isPresented: $revokingToken) {
             Button("Cancel", role: .cancel) {}

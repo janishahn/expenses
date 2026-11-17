@@ -6,6 +6,7 @@ struct TagDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     let tagID: Int
     let openTransactions: (TransactionQuery) -> Void
@@ -154,7 +155,11 @@ struct TagDetailView: View {
                     .focused($nameFocused)
                     .detailNameField($nameDraft) { nameFocused = false }
                     .fieldError(saves.errors[.name])
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                // At accessibility sizes the label goes under the amount.
+                let layout = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+                    : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                layout {
                     AmountText(tag.expenseCents)
                         .font(.largeTitle.weight(.semibold))
                     Text("spent")

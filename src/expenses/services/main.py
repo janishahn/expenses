@@ -6972,9 +6972,13 @@ class CSVService:
         for row in rows:
             category_id = lookup.get((row.type, row.category.lower()))
             if not category_id:
-                errors.append(f"Missing category '{row.category}' for {row.type.value}")
+                errors.append(
+                    f"Row {row.row_number}: Missing category '{row.category}' for {row.type.value}"
+                )
             if row.is_reimbursement and row.type != TransactionType.income:
-                errors.append("IsReimbursement can only be set for income transactions")
+                errors.append(
+                    f"Row {row.row_number}: IsReimbursement can only be set for income transactions"
+                )
             preview_rows.append(
                 {
                     "date": row.date,

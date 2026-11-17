@@ -481,7 +481,8 @@ struct RecurringRuleView: View {
                 } else {
                     let end = shown.endDate.map(ruleDay)
                     let dates = preview.occurrences.filter { day in end.map { day <= $0 } ?? true }
-                    Text(dates.isEmpty ? "None" : dates.map { AppFormatters.shortDay(AppFormatters.localDay($0)) }.joined(separator: " · "))
+                    // No-break spaces keep each date on one line.
+                    Text(dates.isEmpty ? "None" : dates.map { AppFormatters.shortDay(AppFormatters.localDay($0)).replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · "))
                         .foregroundStyle(dates.isEmpty ? .secondary : .primary)
                 }
             }

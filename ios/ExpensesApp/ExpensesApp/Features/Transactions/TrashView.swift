@@ -21,22 +21,31 @@ struct TrashView: View {
                 } else {
                     Section {
                         ForEach(response.transactions) { row in
-                            LedgerRow(
+                            let day = AppFormatters.shortDay(AppFormatters.localDay(row.date))
+                            let label = LedgerRow(
                                 title: row.title ?? "Untitled",
-                                detail: row.deletedAt.map { "Deleted \(AppFormatters.shortDay($0))" },
+                                detail: row.deletedAt.map { "\(day) · Deleted \(AppFormatters.shortDay($0))" } ?? day,
                                 categoryID: row.category?.id,
                                 iconKey: row.category?.icon,
                                 categoryName: row.category?.name,
                                 amountCents: row.amountCents,
                                 income: row.type == "income"
                             )
-                            .contextMenu {
-                                Button("Restore", systemImage: "arrow.uturn.backward") {
-                                    Task { await restore([row.id]) }
+                            if selecting {
+                                label
+                            } else {
+                                // A tap offers the row's actions, since a deleted transaction has no detail screen.
+                                Menu {
+                                    Button("Restore", systemImage: "arrow.uturn.backward") {
+                                        Task { await restore([row.id]) }
+                                    }
+                                    Button("Delete Forever", systemImage: "trash", role: .destructive) {
+                                        pendingPurge = [row.id]
+                                    }
+                                } label: {
+                                    label
                                 }
-                                Button("Delete Forever", systemImage: "trash", role: .destructive) {
-                                    pendingPurge = [row.id]
-                                }
+                                .tint(.primary)
                             }
                         }
                     }

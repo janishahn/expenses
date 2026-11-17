@@ -51,6 +51,7 @@ type SystemHealth = {
   db_size_bytes: number
   receipts_size_bytes: number
   status: "healthy" | "warm" | "critical"
+  status_reason?: string | null
 }
 
 type RecurringCatchUpResult = {
@@ -143,7 +144,7 @@ function HealthSection() {
         ]}
       />
       <Sheet title="Status" body="flush">
-        <SettingRow label="Server">
+        <SettingRow label="Server" detail={data.status_reason ?? undefined}>
           <Status icon={status.icon} tone={status.tone}>
             {status.label}
           </Status>

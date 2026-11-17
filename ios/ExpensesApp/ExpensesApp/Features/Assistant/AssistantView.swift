@@ -23,9 +23,12 @@ struct AssistantView: View {
     @State private var sendTick = 0
     // Bumped to bring the newest question to the top of the screen.
     @State private var scrollRequest = 0
+    // A decided card's answer continues below it, so the chat follows its end while it streams.
+    @State private var followsDecision = false
     // Coming back to the screen shows the open chat at its latest answer.
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var viewportHeight: CGFloat = 0
+    @State private var keyboardShown = false
     // Whether the end of the chat is in view.
     @State private var showsEnd = true
     // Where the newest answer ends in the transcript; a live turn's frame reaches further.
@@ -185,17 +188,19 @@ struct AssistantView: View {
                                 turns
                             }
                             .padding(.horizontal, 20)
-                            .padding(.vertical, 18)
+                            .padding(.bottom, 18)
                         }
                     }
                 }
                 .coordinateSpace(.named("transcript"))
             }
             .scrollPosition($scrollPosition)
+            // Scrolled to its top, a question rests a gap below the header.
+            .contentMargins(.top, model.assistantTurns.isEmpty ? 0 : questionGap, for: .scrollContent)
             // The keyboard or a taller message field takes room from the bottom. A chat read at its
             // end keeps the end in view; one scrolled back keeps its place. A streaming answer fills
             // in below its question instead of pulling the chat along.
-            .defaultScrollAnchor(showsEnd && !model.isAssistantStreaming ? .bottom : nil, for: .sizeChanges)
+            .defaultScrollAnchor(showsEnd && (!model.isAssistantStreaming || followsDecision) ? .bottom : nil, for: .sizeChanges)
             // The end counts as in view within the bottom padding, since a sent question can come to
             // rest a few points short of it.
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -205,7 +210,22 @@ struct AssistantView: View {
                 showsEnd = atEnd
             }
             .scrollDismissesKeyboard(.interactively)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            // Measured with the keyboard down: a keyboard raised while an answer streams, or still
+            // up as a question is sent, would otherwise shrink the live turn and move its question
+            // off the top. The keyboard reports itself after the layout, so the height waits a turn.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                DispatchQueue.main.async {
+                    if !keyboardShown {
+                        viewportHeight = height
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                keyboardShown = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboardShown = false
+            }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 // The visible rect reaches under the composer.
                 latestEnd - (geometry.visibleRect.maxY - geometry.contentInsets.bottom) > 48
@@ -223,6 +243,10 @@ struct AssistantView: View {
             .onChange(of: scrollRequest) {
                 guard let last = model.assistantTurns.last else { return }
                 Task {
+                    // The keyboard goes down as the question is sent. A scroll started before its
+                    // insets change is dropped, which left a question sent from an opened chat in
+                    // place.
+                    try? await Task.sleep(for: .milliseconds(100))
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
                         proxy.scrollTo("\(last.id)-q", anchor: .top)
                     }
@@ -252,7 +276,11 @@ struct AssistantView: View {
                     .id("\(turn.id)-q")
                 AssistantAnswer(turn: turn, isLast: isLast) {
                     model.retryLastAssistantTurn()
+                    followsDecision = false
                     scrollRequest += 1
+                } decide: { itemID, approve in
+                    followsDecision = true
+                    model.decideAssistantApproval(itemID: itemID, approve: approve)
                 }
                 .id(turn.id)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("transcript")).maxY } action: { end in
@@ -262,8 +290,9 @@ struct AssistantView: View {
                 }
             }
             // An answer streamed on this screen gets a screen's height, less the bottom padding, so
-            // its question can rest at the top while the answer fills in below. An opened chat
-            // ends at its last answer.
+            // its question can rest at the top while the answer fills in below. The gap above the
+            // question is left in: a transcript that exactly fills the screen doesn't scroll to the
+            // next question. An opened chat ends at its last answer.
             .frame(minHeight: isLast && turn.live ? max(0, viewportHeight - 18) : nil, alignment: .top)
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
         }
@@ -321,6 +350,7 @@ struct AssistantView: View {
             model.sendAssistantMessage(input)
         }
         input = ""
+        followsDecision = false
         scrollRequest += 1
     }
 
@@ -393,6 +423,8 @@ private struct AssistantComposer: View {
             && model.assistantChatState == .ready
     }
 }
+
+private let questionGap: CGFloat = 18
 
 // "Today", "Yesterday", a weekday within the week, then the date.
 private func chatWhen(_ date: Date, now: Date = .now) -> String {
@@ -476,6 +508,7 @@ private struct AssistantAnswer: View {
     let turn: AssistantTurn
     let isLast: Bool
     let retry: () -> Void
+    let decide: (_ itemID: String, _ approve: Bool) -> Void
     @State private var copied = false
 
     var body: some View {
@@ -499,14 +532,15 @@ private struct AssistantAnswer: View {
                 case let .approval(item):
                     if let card = item.card {
                         AssistantApprovalCardView(item: item, card: card, enters: turn.live) { approve in
-                            model.decideAssistantApproval(itemID: item.id, approve: approve)
+                            decide(item.id, approve)
                         }
                     }
                 }
             }
             switch turn.status {
             case .stopped:
-                Label("Stopped", systemImage: "minus.circle")
+                // The server saves a turn stopped with Stop and one cut off by leaving the chat alike.
+                Label(turn.live ? "Stopped" : "Interrupted", systemImage: "minus.circle")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             case let .failed(message):
@@ -700,14 +734,16 @@ private struct AssistantApprovalCardView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             } else if detail != nil || day != nil {
-                // On one line the detail gives way before the date.
-                HStack(spacing: 0) {
-                    if let detail {
-                        Text(detail)
-                    }
-                    if let day {
-                        Text(detail == nil ? day : " · \(day)")
-                            .layoutPriority(1)
+                // The detail and date share a line when they fit, or take one line each.
+                ViewThatFits(in: .horizontal) {
+                    Text([detail, day].compactMap { $0 }.joined(separator: " · "))
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let detail {
+                            Text(detail)
+                        }
+                        if let day {
+                            Text(day)
+                        }
                     }
                 }
                 .font(.subheadline)
@@ -717,7 +753,7 @@ private struct AssistantApprovalCardView: View {
         }
         return HStack(alignment: stacked ? .firstTextBaseline : .center, spacing: 10) {
             if row.category != nil || row.date != nil {
-                // A transaction without a category shows a question mark.
+                // A transaction without a category shows the Uncategorized glyph.
                 CategoryGlyph(categoryID: row.category?.id, iconKey: row.category?.icon, name: row.category?.name)
             } else {
                 Color.clear.glyphColumn()
@@ -1258,7 +1294,9 @@ private enum MarkdownBlock {
         }
 
         for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            // Images never load, as on the web: an image URL could carry quoted text to another
+            // server. Their alt text goes too.
+            let line = String(rawLine).replacing(#/!\[[^\]]*\]\([^)]*\)/#, with: "").trimmingCharacters(in: .whitespaces)
 
             if let code = codeLines {
                 if line.count >= 3, line.allSatisfy({ $0 == "`" }) {

@@ -37,7 +37,7 @@ struct CategoryPickerSheet: View {
     let categories: [CategorySummary]
     var selectedID: Int?
     var noneTitle = "Uncategorized"
-    var noneSymbol = "questionmark"
+    var noneSymbol = uncategorizedSymbolName
     var onSelectNone: (() -> Void)?
     let onSelect: (CategorySummary) -> Void
 
@@ -126,10 +126,13 @@ struct TagPickerSheet: View {
 
     let title: String
     let options: [String]
+    // Done waits for a choice, as when the chosen tags are added to a selection.
+    let requiresSelection: Bool
     let onApply: ([String]) -> Void
 
-    init(title: String, options: [String], selected: [String] = [], onApply: @escaping ([String]) -> Void) {
+    init(title: String, options: [String], selected: [String] = [], requiresSelection: Bool = false, onApply: @escaping ([String]) -> Void) {
         self.title = title
+        self.requiresSelection = requiresSelection
         // A chosen tag missing from the options, such as an archived one, stays listed.
         self.options = selected.filter { name in !options.contains { $0.caseInsensitiveCompare(name) == .orderedSame } } + options
         self.onApply = onApply
@@ -176,6 +179,7 @@ struct TagPickerSheet: View {
                         onApply(selected)
                         dismiss()
                     }
+                    .disabled(requiresSelection && selected.isEmpty)
                 }
             }
         }

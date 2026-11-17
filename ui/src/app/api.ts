@@ -92,7 +92,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
       throw parseError
     }
   }
-  return message
+  // A server body that is not JSON is a raw error page such as "Internal Server Error".
+  return error instanceof ApiError ? fallback : message
 }
 
 function invalidateCsrfToken(): void {

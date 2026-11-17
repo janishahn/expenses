@@ -66,7 +66,7 @@ function counted(value: number, noun: string): string {
 }
 
 function seconds(ms: number): string {
-  return `${(ms / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })} s`
+  return `${(ms / 1000).toLocaleString("de-DE", { maximumFractionDigits: 1 })} s`
 }
 
 function sliceKey(slice: AIUsageSlice): string {

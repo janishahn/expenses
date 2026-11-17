@@ -144,7 +144,7 @@ test.describe("Templates page", () => {
   })
 
   test("requires a name and a valid default amount before adding", async ({ page, request }) => {
-    await seedCategory(request, "Validation")
+    const { categoryName } = await seedCategory(request, "Validation")
     await page.goto("/templates")
     await addTemplate(page).click()
     const dialog = page.getByRole("dialog", { name: "Add template" })
@@ -153,6 +153,8 @@ test.describe("Templates page", () => {
     await expect(dialog.getByRole("alert")).toHaveText("Name is required.")
 
     await dialog.getByRole("textbox", { name: "Name" }).fill(`E2E Invalid ${unique()}`)
+    await dialog.getByRole("button", { name: /^Category / }).click()
+    await page.getByRole("option", { name: categoryName }).click()
     await dialog.getByRole("textbox", { name: "Default amount" }).fill("abc")
     await dialog.getByRole("button", { name: "Add template" }).click()
     await expect(dialog.getByRole("alert")).toHaveText("Default amount must be a valid number.")

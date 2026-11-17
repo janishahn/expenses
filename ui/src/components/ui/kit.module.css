@@ -6,6 +6,8 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+  /* Clears the notch and rounded corners in landscape. */
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
   background: var(--canvas);
   color: var(--ink);
   font: 13px/1.4 var(--font-ui);
@@ -119,6 +121,7 @@
 .pill.pillStepper { gap: 0; padding: 0 2px; cursor: default; }
 .pill.pillStepper:active { transform: none; }
 .pillStepper .pillInner { height: 100%; padding: 0 4px; }
+.pillStepper[aria-busy="true"] .pillLabel { opacity: 0.5; transition: opacity 150ms var(--ease-out) 150ms; }
 .pillStep {
   width: 22px; height: 22px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0;
   border-radius: calc(var(--r-ctl) - 2px); background: none; color: var(--ink-2); cursor: pointer;
@@ -147,7 +150,7 @@
   flex: 1; min-width: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; outline: 0; box-shadow: none;
   background: transparent; color: inherit; font: inherit; min-height: 0;
 }
-.input select { appearance: none; }
+.input select { appearance: none; text-overflow: ellipsis; }
 .input input::placeholder, .textarea textarea::placeholder { color: var(--ink-3); }
 .input input:focus-visible, .input select:focus-visible, .textarea textarea:focus-visible { outline: 0; }
 /* Browsers force an !important autofill background and text color on the inner input. Clip the background to the text and paint the text over it. */
@@ -365,10 +368,11 @@
 .skel { display: block; height: 12px; border-radius: 4px; background: var(--chip); }
 
 .strip { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); }
-.strip > div { min-width: 0; padding: 12px 16px 14px; border-left: 1px solid var(--line-soft); }
+.strip > div { min-width: 0; padding: 12px 16px 14px; border-left: 1px solid var(--line-soft); container-type: inline-size; }
 .strip > div:first-child { border-left: 0; }
 .lab { color: var(--ink-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.num { margin: 2px 0; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
+/* Shrinks with its column so a long amount never runs into the next metric. */
+.num { margin: 2px 0; font-size: min(22px, 12cqi); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
 .delta { color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .summary { padding: 12px 16px 0; }
 /* Figures wrap rather than clip, so an extreme amount stays readable. */
@@ -377,9 +381,10 @@
 .summaryLine { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
 .summaryRow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 12px -16px 0; border-top: 1px solid var(--line-soft); }
 /* A narrow right inset leaves room for a full amount in wide fonts; labels keep the card's left edge. */
-.summaryRow > div { min-width: 0; padding: 10px 8px 12px 16px; border-left: 1px solid var(--line-soft); }
+.summaryRow > div { min-width: 0; padding: 10px 8px 12px 16px; border-left: 1px solid var(--line-soft); container-type: inline-size; }
 .summaryRow > div:first-child { border-left: 0; }
-.summaryValue { margin-top: 1px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Shrinks on narrow phones so the currency sign stays on the amount's line. */
+.summaryValue { margin-top: 1px; font-size: min(14px, 15cqi); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .in { color: var(--income); }
 .over { color: var(--over); }
 .tab { font-variant-numeric: tabular-nums; }
@@ -419,6 +424,8 @@
   grid-template-columns: var(--cols); color: inherit; text-decoration: none; outline-offset: -2px;
 }
 .row[data-clickable] { cursor: pointer; }
+/* Inside the row: the list clips its sides and the sticky day band covers its top. */
+.row:focus-visible { outline-offset: -2px; }
 .row[aria-selected="true"], .row[data-selected] { background: var(--selected); }
 .rowDim { color: var(--ink-2); }
 .row.rowControls { padding-block: 3px; }
@@ -443,10 +450,14 @@
 .cellR { text-align: right; justify-self: end; }
 /* An icon within a cell's text, such as an arrow between two category names. */
 .cell > svg { display: inline-block; vertical-align: -1px; }
+/* Room for the buttons' rings inside the cell's clip. */
+.cell > .acts { padding: 2px; }
 .cellWrap { white-space: normal; }
 .strong { font-weight: 500; }
 .cb { opacity: 0; }
 .hasSel .cb, .cb[data-state="checked"], .cb:focus-visible { opacity: 1; }
+/* Room below the last row and the pager for the floating bulk bar. */
+.list.hasSel { padding-bottom: 64px; }
 .rowHover { opacity: 0; }
 .acts { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .glyph { display: inline-grid; place-items: center; flex: none; }
@@ -543,12 +554,12 @@
 .suggActs { display: flex; gap: 6px; margin-top: 12px; }
 .pkSec { display: flex; align-items: center; gap: 6px; margin: 20px 0 6px; color: var(--ink-2); font-size: 12.5px; }
 .pkSec h3 { margin: 0; font: inherit; }
-.props { display: grid; grid-template-columns: 92px minmax(0, 1fr); row-gap: 2px; column-gap: 8px; align-items: center; }
+.props { display: grid; grid-template-columns: 92px minmax(0, 1fr); row-gap: 2px; column-gap: 8px; align-items: start; }
 .propsWide { grid-template-columns: 140px minmax(0, 1fr); }
 .pl { min-height: 30px; display: flex; align-items: center; color: var(--ink-2); font-size: 12.5px; }
 .pv {
   position: relative; min-height: 30px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  margin-left: -6px; padding: 0 6px; border-radius: var(--r-ctl);
+  margin-left: -6px; padding: 4px 6px; border-radius: var(--r-ctl);
 }
 .pvCell { min-width: 0; display: grid; }
 .pv > svg { width: 14px; height: 14px; flex: none; }
@@ -560,7 +571,8 @@
 .recLink svg { width: 14px; height: 14px; flex: none; }
 .recLinkText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recLinkEnd { flex: none; font-variant-numeric: tabular-nums; }
-.pv.ed { width: calc(100% + 6px); }
+/* A long value wraps beside its glyph rather than onto a line of its own. */
+.pv.ed { width: calc(100% + 6px); flex-wrap: nowrap; }
 .notes.ed { display: block; width: calc(100% + 6px); }
 .pkTitle.inlineInput, .pkAmt.inlineInput { width: calc(100% + 12px); }
 .fullMain .pkTitle { font-size: 20px; }
@@ -568,11 +580,24 @@
 .notesText { cursor: text; }
 .notesEditing { width: calc(100% + 6px); background: var(--sheet); box-shadow: inset 0 0 0 1px var(--focus); }
 .notesEditing :global(.ProseMirror) { min-height: 3em; outline: 0; }
+.notesSource {
+  display: block; width: 100%; min-height: 3em; margin: 0; padding: 0; border: 0; outline: 0; resize: vertical;
+  field-sizing: content; background: transparent; color: inherit; font: inherit; line-height: 1.5;
+}
+.notesSource:focus-visible { outline: 0; }
+.md { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p, .md ul, .md ol, .md pre, .md blockquote { margin: 6px 0; }
 .md ul, .md ol { padding-left: 20px; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
 .md li { margin: 2px 0; }
+.md li::marker { color: var(--ink-3); }
+.md ul:has(> li > input[type="checkbox"]) { padding-left: 0; list-style: none; }
+.md table { display: block; max-width: 100%; overflow-x: auto; margin: 6px 0; border-collapse: collapse; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.md th, .md td { padding: 4px 8px; text-align: left; box-shadow: inset 0 -1px 0 var(--control-edge); }
+.md th { color: var(--ink-2); font-weight: 500; background: var(--day); }
 .md li > p { margin: 0; }
 .md a { color: inherit; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 2px; }
 .md code { padding: 1px 4px; border-radius: 4px; background: var(--day); font-size: 0.92em; }
@@ -619,13 +644,13 @@
 .chartTipRow b { margin-left: auto; padding-left: 12px; }
 .pointerTip { position: absolute; z-index: 60; pointer-events: none; }
 .chartWrap { position: relative; }
-.chartWrapY { padding-left: 56px; }
+.chartWrapY { padding-left: calc(max(50px, var(--yw, 0px)) + 6px); }
 .plot { position: relative; touch-action: pan-y; }
 .chart { display: block; width: 100%; overflow: visible; }
 .chart polyline, .chart polygon { transition: opacity 120ms ease; }
 .xlab { position: relative; height: 16px; margin-top: 4px; color: var(--ink-2); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .xlab > span { position: absolute; top: 0; white-space: nowrap; }
-.yax { position: absolute; left: 0; top: 0; width: 50px; }
+.yax { position: absolute; left: 0; top: 0; width: max(50px, var(--yw, 0px)); }
 .ylab { position: absolute; right: 0; color: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; transform: translateY(-50%); }
 .dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
 .bands { position: relative; display: grid; row-gap: 10px; }
@@ -705,7 +730,8 @@
   color: var(--ink-2); font-size: 11px;
 }
 .calDays span { display: flex; align-items: center; }
-.calScroll { overflow: hidden; direction: rtl; }
+/* The padding keeps today's outline inside the clip. */
+.calScroll { overflow: hidden; direction: rtl; margin: -3px; padding: 3px; }
 .calIn { direction: ltr; }
 .calMonths, .cal { display: grid; grid-template-columns: repeat(var(--weeks), minmax(0, 1fr)); column-gap: 3px; }
 .calMonths { height: 18px; margin-bottom: 3px; color: var(--ink-2); font-size: 11px; white-space: nowrap; }
@@ -750,7 +776,7 @@
 .map :global(.leaflet-control-attribution a) { color: inherit; }
 :global(html[data-theme="dark"]) .map :global(.leaflet-tile-pane) { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
 .rprev {
-  position: relative; display: block; width: 100%; max-height: 240px; margin-top: 8px; padding: 0; border: 0;
+  position: relative; display: block; width: 100%; min-height: 72px; max-height: 240px; margin-top: 8px; padding: 0; border: 0;
   border-radius: var(--r-ctl); background: var(--day); cursor: zoom-in;
 }
 .rprev img, .vwStage img {
@@ -808,7 +834,7 @@
   color: var(--ink); font: inherit; line-height: 1.5;
 }
 .dgPreview { padding: 0 6px 12px; color: var(--ink-2); }
-.tplRow { display: flex; align-items: center; gap: 6px; overflow: auto; padding: 10px 6px 0; scrollbar-width: none; }
+.tplRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 6px 0; scrollbar-width: none; }
 
 /* Settings */
 .settings { flex: 1; min-height: 0; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px; margin: 0 8px 8px; }
@@ -1051,19 +1077,20 @@ button.actHead { cursor: pointer; }
   .calMonths, .cal { grid-template-columns: repeat(var(--weeks), 11px); }
   .donutWrap { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .dl { width: 100%; }
-  .num { font-size: 19px; }
+  .num { font-size: min(19px, 12cqi); }
   .row { min-height: 44px; padding: 0 16px; }
   /* A flat row that edits in place keeps a full touch target. */
   .listFlat .row:has(.ed) { min-height: 44px; }
   .row.rowControls { row-gap: 6px; padding-block: 8px; }
   .rowControls + .rowControls { box-shadow: 0 -1px 0 var(--line-soft); }
   .row[data-cols-mobile], .lhead[data-cols-mobile] { grid-template-columns: var(--cols-mobile); }
+  .rowEndControl { grid-row: 1; grid-column: -2; justify-self: end; }
   .hideMobile { display: none !important; }
   .amtMarkMobile { display: inline-block; }
   .ledgerRow { height: 44px; }
   .day { padding: 0 16px; }
   .dayLedger { padding-left: 46px; }
-  .bulk { left: 8px; right: 8px; bottom: 8px; transform: none; justify-content: space-between; animation: none; }
+  .bulk { left: calc(8px + env(safe-area-inset-left)); right: calc(8px + env(safe-area-inset-right)); bottom: 8px; transform: none; justify-content: space-between; animation: none; }
   .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
   .split { position: relative; margin-bottom: 0; }
   /* The peek covers the list, which stays laid out so Back returns to the same scroll position. */
@@ -1089,7 +1116,7 @@ button.actHead { cursor: pointer; }
   .fullMain { padding: 12px 16px 20px; }
   .fullSide { position: static; }
   .dialog, .dialogNarrow, .dialogWide, .viewer {
-    left: 0; right: 0; top: auto; bottom: 0; width: 100%; max-height: 88vh; transform: none;
+    left: env(safe-area-inset-left); right: env(safe-area-inset-right); top: auto; bottom: var(--kb, 0px); width: auto; max-height: calc(var(--vvh, 100vh) * 0.88); transform: none;
     border-radius: var(--r-card) var(--r-card) 0 0; padding-bottom: env(safe-area-inset-bottom);
   }
   .viewer { height: 88vh; }
@@ -1099,7 +1126,7 @@ button.actHead { cursor: pointer; }
   /* Compact controls keep their look and reach 44px touch targets through hit areas.
      The view row is 44px tall because it scrolls sideways and clips anything beyond it. */
   .viewrow { min-height: 44px; }
-  .tplRow { padding-bottom: 9px; }
+  .tplRow { flex-wrap: nowrap; overflow: auto; padding-bottom: 9px; }
   .dgChips { row-gap: 18px; }
   .btn::before { content: ""; position: absolute; inset: -8px 0; }
   .btnSmall::before { inset: -11px 0; }
@@ -1138,6 +1165,11 @@ button.actHead { cursor: pointer; }
 @keyframes sheetIn { from { transform: translateY(100%); } }
 @keyframes sheetOut { to { transform: translateY(100%); } }
 
+/* iOS Safari zooms the page into any field under 16px when it gets focus. */
+@media (pointer: coarse) {
+  .input input, .input select, .textarea textarea, .comboQuery input, .dgName, .dgNotes, .cmp textarea, .notesSource,
+  .notes.inlineInput, .notesEditing :global(.ProseMirror) { font-size: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .menu[data-state], .popover[data-state], .toast, .bulk { animation-name: fadeIn; }
   .menu[data-state="closed"], .popover[data-state="closed"] { animation-name: fadeOut; }

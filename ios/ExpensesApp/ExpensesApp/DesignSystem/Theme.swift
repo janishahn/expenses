@@ -43,10 +43,36 @@ enum ExpensesTheme {
         guard let id else {
             return scheme == .dark ? Color(rgb: 0x77776F) : Color(rgb: 0x86867F)
         }
-        let palette: [UInt32] = scheme == .dark
+        let palette = categoryPalette(for: scheme)
+        return Color(rgb: palette[abs(id) % palette.count])
+    }
+
+    /// Hues for categories a chart or legend shows in this order, by the web's rule: a
+    /// category whose hue matches the one before it takes the next hue.
+    static func categoryColors(_ ids: [Int?], for scheme: ColorScheme) -> [Int?: Color] {
+        let palette = categoryPalette(for: scheme)
+        var colors: [Int?: Color] = [:]
+        var previous: Int?
+        for id in ids {
+            guard let id else {
+                colors[nil] = category(nil, for: scheme)
+                previous = nil
+                continue
+            }
+            var index = abs(id) % palette.count
+            if index == previous {
+                index = (index + 1) % palette.count
+            }
+            colors[id] = Color(rgb: palette[index])
+            previous = index
+        }
+        return colors
+    }
+
+    private static func categoryPalette(for scheme: ColorScheme) -> [UInt32] {
+        scheme == .dark
             ? [0x7B86E8, 0x45B882, 0xEC8A57, 0xD872A6, 0x45B5CC, 0xE0BB4A, 0x9A80E6, 0xC99645]
             : [0x5563D1, 0x278A5C, 0xC75F2A, 0xC2508A, 0x21879C, 0xA8801A, 0x7A5BD0, 0x9A6A22]
-        return Color(rgb: palette[abs(id) % palette.count])
     }
 }
 

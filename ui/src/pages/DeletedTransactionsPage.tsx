@@ -103,7 +103,7 @@ function DeletedTransactionsPage() {
       })
       afterRemoval(result.restored)
       invalidateTransactionData(queryClient)
-      showToast({ message: `Restored ${countLabel(result.restored)}` })
+      showToast({ message: `Restored ${countLabel(result.restored)}.` })
     } catch (failure) {
       showToast({ message: getApiErrorMessage(failure, "Unable to restore the transactions.") })
     } finally {
@@ -126,7 +126,7 @@ function DeletedTransactionsPage() {
       })
       afterRemoval(result.deleted)
       void queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
-      showToast({ message: `Deleted ${countLabel(result.deleted)} forever` })
+      showToast({ message: `Deleted ${countLabel(result.deleted)} forever.` })
     } catch (failure) {
       showToast({ message: getApiErrorMessage(failure, "Unable to delete the transactions.") })
     } finally {

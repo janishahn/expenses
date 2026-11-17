@@ -215,6 +215,26 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(searchbox).toBeHidden()
   })
 
+  test("hides and shows amounts from More actions", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const title = `Mobile privacy ${Date.now()}`
+    await seed(request, token, title)
+    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row).toContainText("12,34 €")
+
+    const toggle = page.getByRole("dialog", { name: "More actions" }).getByRole("menuitemcheckbox", { name: "Hide amounts" })
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await toggle.tap()
+    await expect(row).toContainText("Hidden amount")
+    await expect(row).not.toContainText("12,34")
+
+    await page.getByRole("button", { name: "More actions" }).tap()
+    await expect(toggle).toHaveAttribute("aria-checked", "true")
+    await toggle.tap()
+    await expect(row).toContainText("12,34 €")
+  })
+
   test("selects rows from More actions and changes their category from the bulk bar", async ({
     page,
     request,
@@ -353,7 +373,7 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(peek.getByRole("button", { name: "Edit Title" })).toHaveText(`${title} renamed`)
 
     await peek.getByRole("button", { name: "Edit Amount" }).tap()
-    for (const invalid of ["abc", "", "12,345"]) {
+    for (const invalid of ["abc", "", "12,345", "0"]) {
       await peek.getByRole("textbox", { name: "Amount" }).fill(invalid)
       await peek.getByRole("textbox", { name: "Amount" }).press("Enter")
       await expect(peek.getByText("Enter a valid amount.")).toBeVisible()
@@ -519,9 +539,11 @@ test.describe("Transactions Page (mobile)", () => {
     await submit.tap()
     await expect(dialog.getByText("Enter an amount.")).toBeVisible()
     await expect(dialog.getByText("Enter a title.")).toBeVisible()
-    await dialog.getByLabel("Amount").fill("abc")
-    await submit.tap()
-    await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
+    for (const invalid of ["abc", "0"]) {
+      await dialog.getByLabel("Amount").fill(invalid)
+      await submit.tap()
+      await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
+    }
 
     await dialog.getByLabel("Amount").fill("12,34")
     await dialog.getByLabel("Title").fill(title)

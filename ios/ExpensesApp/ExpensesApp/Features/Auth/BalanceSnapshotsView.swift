@@ -132,6 +132,8 @@ private struct SnapshotSheet: View {
 
                     ChipFlow {
                         Button {
+                            // With the keyboard up the popover opens sideways and clips the calendar.
+                            balanceFocused = false
                             choosingDate = true
                         } label: {
                             EntryChip(AppFormatters.dateTime(asOf, in: timeZone), systemImage: "calendar", isSet: true)

@@ -15,7 +15,7 @@ import { AmountCell, Cell, List, Row, type Columns } from "../components/ui/Ledg
 import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
 import { WeekStepper } from "../components/ui/PeriodControl"
 import { MetricStrip, Sheet } from "../components/ui/Sheet"
-import { categoryColor } from "../components/ui/tokens"
+import { categoryColor, neighbourCategoryColors } from "../components/ui/tokens"
 
 type CategoryRef = { id: number; name: string; icon: string | null }
 
@@ -133,12 +133,13 @@ function DigestPage() {
   const topTotal = data.top_categories.reduce((sum, category) => sum + category.amount_cents, 0)
   const weekTotal = Math.max(headline.total_spent_cents, topTotal)
   const otherCents = weekTotal - topTotal
+  const weekColors = neighbourCategoryColors(data.top_categories.map((category) => category.category_id))
   const weekItems: DonutItem[] = [
-    ...data.top_categories.map((category) => ({
+    ...data.top_categories.map((category, index) => ({
       key: String(category.category_id),
       label: category.name,
       value: category.amount_cents,
-      color: categoryColor(category.category_id),
+      color: weekColors[index],
       amount: <Amount cents={category.amount_cents} />,
       share: share(category.amount_cents, weekTotal),
     })),

@@ -55,6 +55,8 @@ struct ValuePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.headline)
             TextField(title, text: $text)
                 .font(.title3)
                 .keyboardType(keyboard)

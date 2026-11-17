@@ -167,22 +167,23 @@ struct TagsView: View {
 /// A tag in the list: its name and state, its use, and what it spent or earned.
 private struct TagListRow: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     let tag: TagRow
 
     var body: some View {
         let state = tag.archivedAt.map { "Archived \(AppFormatters.shortDay($0))" }
             ?? tag.autoAttachPeriod.map { "Auto \(autoAddRange($0)) · \(autoAddStatus($0))" }
-        HStack(spacing: 12) {
+        TrailingRow {
             Image(systemName: "tag")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .glyphColumn()
                 .accessibilityHidden(true)
+        } content: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(tag.name)
-                        .lineLimit(1)
                         .foregroundStyle(tag.archivedAt == nil ? .primary : .secondary)
                     if tag.isHiddenFromBudget {
                         Image(systemName: "nosign")
@@ -194,10 +195,9 @@ private struct TagListRow: View {
                 Text(([state, usesText(tag.usageCount)].compactMap { $0 }).joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
+        } trailing: {
+            VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
                 if tag.expenseCents == 0 && tag.incomeCents > 0 {
                     AmountText(tag.incomeCents, signed: true)
                         .foregroundStyle(ExpensesTheme.income(for: scheme))

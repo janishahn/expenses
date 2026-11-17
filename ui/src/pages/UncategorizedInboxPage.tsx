@@ -214,7 +214,7 @@ function UncategorizedInboxPage() {
     if (peekId === row.id) closePeek()
     invalidateTransactionData(queryClient)
     showToast({
-      message: `Moved to ${category.name}`,
+      message: `Moved to ${category.name}.`,
       action:
         previousId === undefined
           ? undefined
@@ -305,7 +305,7 @@ function UncategorizedInboxPage() {
       })
       clearSelection()
       invalidateTransactionData(queryClient)
-      showToast({ message: `Updated ${countLabel(result.eligible_count)}` })
+      showToast({ message: `Updated ${countLabel(result.eligible_count)}.` })
     } catch (failure) {
       showToast({ message: getApiErrorMessage(failure, "Unable to apply the bulk change.") })
     } finally {
@@ -379,9 +379,16 @@ function UncategorizedInboxPage() {
             footer={
               items.length ? (
                 <ListFooter>
-                  {first}–{first + items.length - 1} of {total}
-                  <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
-                  <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                  {/* One page needs no range or paging, only the count. */}
+                  {page > 1 || has_more ? (
+                    <>
+                      {first}–{first + items.length - 1} of {total}
+                      <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
+                      <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                    </>
+                  ) : (
+                    countLabel(total)
+                  )}
                 </ListFooter>
               ) : isPlaceholderData ? null : filtered ? (
                 <EmptyState

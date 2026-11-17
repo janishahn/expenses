@@ -124,7 +124,6 @@ struct WhatIfView: View {
             async let result: Void = calculate()
             _ = await (base, result)
         }
-        .headerProminence(.increased)
         .navigationTitle("What If")
         .navigationSubtitle(options.title)
         .expensesScreenStyle()

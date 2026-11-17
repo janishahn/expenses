@@ -452,7 +452,7 @@ test.describe("Dashboard Page", () => {
     // Past its lifespan, the chair stays listed at what it cost per day it was owned.
     const chair = purchases.getByRole("listitem", { name: "Office chair" })
     await expect(chair).toContainText(eur("0,73 €/day"))
-    await expect(chair).toContainText(eur("1.000 of 730 days"))
+    await expect(chair).toContainText(eur("1.000 days"))
     await expect(purchases.getByRole("listitem", { name: "Espresso machine" })).toHaveCount(0)
     await purchases.getByRole("button", { name: "More actions" }).click()
     await page.getByRole("menuitemcheckbox", { name: "Show ended (1)" }).click()

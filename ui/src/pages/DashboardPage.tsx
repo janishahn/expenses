@@ -20,14 +20,14 @@ import { EmptyState } from "../components/ui/EmptyState"
 import { useIsDesktop } from "../components/ui/layout-state"
 import { AmountCell, Cell, List, Row, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
-import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
 import { PeriodControl } from "../components/ui/PeriodControl"
 import { periodFromSearch, periodLabel, writePeriodToSearch, DEFAULT_PERIOD_PRESETS, type PeriodSelection } from "../components/ui/period"
 import { Pill } from "../components/ui/Pill"
 import { Popover } from "../components/ui/Popover"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
 import { MetricStrip, Sheet, SummaryCard, type Metric, type SummaryBudget } from "../components/ui/Sheet"
-import { categoryColor } from "../components/ui/tokens"
+import { neighbourCategoryColors } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 
@@ -189,13 +189,32 @@ function DashboardPage() {
     queryFn: () => apiFetch<{ items: DurablePurchase[] }>("/api/durable-purchases"),
   })
 
-  if (dashboard.isLoading) return <PanelLoading title="Dashboard" label="Loading dashboard…" />
+  const setPeriod = (next: PeriodSelection) => setSearchParams(writePeriodToSearch(searchParams, next))
+  const periodControl = <PeriodControl value={period} onChange={setPeriod} loading={dashboard.isPlaceholderData} />
+  const privacyToggle = (
+    <IconButton
+      icon={hidden ? EyeIcon : EyeSlashIcon}
+      label={hidden ? "Show amounts" : "Hide amounts"}
+      aria-pressed={hidden}
+      onClick={() => setPrivacy(!hidden)}
+    />
+  )
+  // The header and period control stay, so a period that fails to load can be left.
+  if (dashboard.isLoading) {
+    return (
+      <Panel title="Dashboard" actions={privacyToggle} viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <LoadingBody label="Loading dashboard…" />
+      </Panel>
+    )
+  }
   if (dashboard.error || !dashboard.data) {
-    return <PanelError title="Dashboard" message="Unable to load dashboard data." />
+    return (
+      <Panel title="Dashboard" actions={privacyToggle} viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <ErrorBody message="Unable to load dashboard data." />
+      </Panel>
+    )
   }
   const data = dashboard.data
-
-  const setPeriod = (next: PeriodSelection) => setSearchParams(writePeriodToSearch(searchParams, next))
   const setTagFilter = (mode: TagMode, ids: number[]) => {
     setEmptyTagMode(mode)
     setSearchParams(
@@ -255,7 +274,13 @@ function DashboardPage() {
   const spentMetric: Metric = { label: "Spent", value: <Amount cents={kpis.expenses} />, detail: deltas ? delta(deltas.expenses) : undefined }
   const netMetric: Metric = {
     label: "Net",
-    value: <Amount cents={kpis.income - kpis.expenses} kind="signed" tone={kpis.income >= kpis.expenses ? "income" : undefined} />,
+    value: (
+      <Amount
+        cents={kpis.income - kpis.expenses}
+        kind="signed"
+        tone={kpis.income > kpis.expenses ? "income" : undefined}
+      />
+    ),
     detail: deltas ? delta(deltas.income - deltas.expenses) : undefined,
   }
   const metrics = [balanceMetric, cashInMetric, spentMetric, netMetric]
@@ -308,7 +333,7 @@ function DashboardPage() {
                         label: "80% range",
                         value: (
                           <>
-                            <Amount cents={projectedPoint.end_balance_p10_cents ?? 0} decimals={false} /> –{" "}
+                            <Amount cents={projectedPoint.end_balance_p10_cents ?? 0} decimals={false} /> to{" "}
                             <Amount cents={projectedPoint.end_balance_p90_cents ?? 0} decimals={false} />
                           </>
                         ),
@@ -325,35 +350,45 @@ function DashboardPage() {
   // Spending by category: one band per month, newest first, scaled to the largest month.
   const bandData = bands.data?.months ?? []
   const bandMax = Math.max(1, ...bandData.map((month) => month.total_cents))
-  const bandCategories = new Map<string, { label: string; color: string; total: number }>()
+  const bandCategories = new Map<string, { id: number | null; label: string; total: number }>()
   for (const month of bandData) {
     for (const segment of month.segments) {
       const key = String(segment.category_id)
-      const entry = bandCategories.get(key) ?? { label: segment.name, color: categoryColor(segment.category_id), total: 0 }
+      const entry = bandCategories.get(key) ?? { id: segment.category_id, label: segment.name, total: 0 }
       entry.total += segment.amount_cents
       bandCategories.set(key, entry)
     }
   }
+  // Colors follow the legend order, the largest category first.
+  const bandOrder = [...bandCategories.entries()].sort((a, b) => b[1].total - a[1].total)
+  const bandColors = neighbourCategoryColors(bandOrder.map(([, entry]) => entry.id))
+  const bandLegend: LegendEntry[] = bandOrder.map(([key, entry], index) => ({ key, label: entry.label, color: bandColors[index] }))
+  const bandColor = new Map(bandLegend.map((entry) => [entry.key, entry.color]))
   const bandRows: StackedRow[] = [...bandData].reverse().map((month) => ({
     key: month.month,
     label: SHORT_MONTH.format(monthDate(month.month)),
     total: <Amount cents={month.total_cents} />,
     segments: month.segments
       .filter((segment) => segment.amount_cents > 0)
-      .map((segment) => ({ key: String(segment.category_id), value: segment.amount_cents, color: categoryColor(segment.category_id) })),
+      .map((segment) => ({ key: String(segment.category_id), value: segment.amount_cents, color: bandColor.get(String(segment.category_id))! })),
   }))
-  const bandLegend: LegendEntry[] = [...bandCategories.entries()]
-    .sort((a, b) => b[1].total - a[1].total)
-    .map(([key, entry]) => ({ key, label: entry.label, color: entry.color }))
 
   // Category share for the period.
   const shareItems = (shareType === "expense" ? data.donut.expense_breakdown : data.donut.income_breakdown) ?? []
   const shareTotal = shareItems.reduce((sum, item) => sum + item.amount_cents, 0)
+  const shareColors = neighbourCategoryColors(shareItems.map((item) => item.category_id))
   const periodName = periodLabel(period, DEFAULT_PERIOD_PRESETS)
 
   // Budgets: the most urgent category budgets of the month, with even pace as of today.
   const budgets = data.category_budget_pulse ?? []
-  const asOf = data.period.slug === "last_month" ? new Date(`${data.period.end}T00:00:00`) : now
+  // Mirrors the server: a single past or future month is evaluated at its end or start.
+  const singleMonth = data.period.start.slice(0, 7) === data.period.end.slice(0, 7)
+  const asOf =
+    singleMonth && data.period.end < today
+      ? new Date(`${data.period.end}T00:00:00`)
+      : singleMonth && data.period.start > today
+        ? new Date(`${data.period.start}T00:00:00`)
+        : now
   const pace = asOf.getDate() / new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0).getDate()
 
   const overall = data.budget_pace
@@ -447,7 +482,7 @@ function DashboardPage() {
               index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index] as number} /> : "–",
               index > todayIndex && rangeAvailable ? (
                 <>
-                  <Amount cents={rangeLo[index] as number} /> – <Amount cents={rangeHi[index] as number} />
+                  <Amount cents={rangeLo[index] as number} /> to <Amount cents={rangeHi[index] as number} />
                 </>
               ) : (
                 "–"
@@ -591,11 +626,11 @@ function DashboardPage() {
           center={<Amount cents={shareTotal} decimals={false} />}
           centerLabel={isDesktop ? periodName : undefined}
           compact={!isDesktop}
-          items={shareItems.map((item) => ({
+          items={shareItems.map((item, index) => ({
             key: String(item.category_id),
             label: item.name,
             value: item.amount_cents,
-            color: categoryColor(item.category_id),
+            color: shareColors[index],
             amount: <Amount cents={item.amount_cents} />,
             share: `${Math.round(item.percent)} %`,
           }))}
@@ -654,12 +689,7 @@ function DashboardPage() {
       title="Dashboard"
       actions={
         <>
-          <IconButton
-            icon={hidden ? EyeIcon : EyeSlashIcon}
-            label={hidden ? "Show amounts" : "Hide amounts"}
-            aria-pressed={hidden}
-            onClick={() => setPrivacy(!hidden)}
-          />
+          {privacyToggle}
           {hiddenCards.length ? (
             <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
               <MenuItem onSelect={showAllCards}>Show hidden cards ({hiddenCards.length})</MenuItem>
@@ -684,7 +714,7 @@ function DashboardPage() {
             </Popover>
           }
         >
-          <PeriodControl value={period} onChange={setPeriod} />
+          {periodControl}
         </ViewRow>
       }
     >
@@ -743,7 +773,9 @@ function DashboardPage() {
                   <BudgetBar ratio={item.percent_amortized / 100} />
                 </Cell>
                 <Cell align="right" tone="muted">
-                  {formatCount(item.days_owned)} of {formatCount(item.expected_lifespan_days)} days
+                  {item.days_owned > item.expected_lifespan_days
+                    ? `${formatCount(item.days_owned)} days`
+                    : `${formatCount(item.days_owned)} of ${formatCount(item.expected_lifespan_days)} days`}
                 </Cell>
               </Row>
             ))}

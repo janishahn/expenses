@@ -169,11 +169,12 @@ struct UncategorizedView: View {
 
     private func rowLabel(_ row: UncategorizedTransaction, definition: UncategorizedDefinition) -> some View {
         let suggested = suggestedCategory(row, definition: definition)
+        let day = AppFormatters.shortDay(AppFormatters.localDay(row.transaction.date))
         return LedgerRow(
             title: row.transaction.title ?? "Untitled",
             detail: suggested.map { category in
-                "\(category.name) · \((row.suggestion?.confidence ?? 0).formatted(.percent.precision(.fractionLength(0))))"
-            },
+                "\(day) · \(category.name) · \((row.suggestion?.confidence ?? 0).formatted(.percent.precision(.fractionLength(0))))"
+            } ?? day,
             categoryID: suggested?.id,
             iconKey: suggested?.icon,
             categoryName: suggested?.name,

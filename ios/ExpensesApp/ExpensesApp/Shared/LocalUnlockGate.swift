@@ -150,7 +150,9 @@ struct LocalUnlockGate<Content: View>: View {
         switch phase {
         case .active:
             coversProtectedContent = false
-            guard let lastProtectedAt else {
+            // Only unlocked content locks again. Canceling the passcode sheet also returns here,
+            // and locking then would present the sheet again, endlessly.
+            guard let lastProtectedAt, isUnlocked else {
                 return
             }
             if Date().timeIntervalSince(lastProtectedAt) >= unlockGraceInterval {

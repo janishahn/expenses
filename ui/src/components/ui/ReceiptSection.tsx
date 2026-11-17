@@ -48,6 +48,18 @@ export function ReceiptSection({
   const [ratios, setRatios] = useState<Record<number, number>>({})
   const [missing, setMissing] = useState<Record<number, true>>({})
 
+  // After this section adds or replaces a file, the preview moves to the new one.
+  const [awaitingFile, setAwaitingFile] = useState(false)
+  const [knownIds, setKnownIds] = useState(() => files.map((entry) => entry.id))
+  if (files.length !== knownIds.length || files.some((entry, position) => entry.id !== knownIds[position])) {
+    setKnownIds(files.map((entry) => entry.id))
+    const added = files.findIndex((entry) => !knownIds.includes(entry.id))
+    if (awaitingFile && added >= 0) {
+      setAwaitingFile(false)
+      setSelected(added)
+    }
+  }
+
   const index = Math.min(selected, Math.max(files.length - 1, 0))
   const file = files[index]
 
@@ -57,6 +69,7 @@ export function ReceiptSection({
   }
   const onFileChosen = (chosen: File | undefined) => {
     if (!chosen) return
+    setAwaitingFile(true)
     if (replaceTarget.current) onReplace(replaceTarget.current, chosen)
     else onUpload(chosen)
     replaceTarget.current = null
@@ -72,7 +85,10 @@ export function ReceiptSection({
       event.preventDefault()
       setDragging(false)
       const dropped = event.dataTransfer.files[0]
-      if (dropped && !uploading) onUpload(dropped)
+      if (dropped && !uploading) {
+        setAwaitingFile(true)
+        onUpload(dropped)
+      }
     },
   }
   const onPreviewLoad = (id: number) => (event: SyntheticEvent<HTMLImageElement>) => {
@@ -103,7 +119,9 @@ export function ReceiptSection({
         action={
           files.length ? (
             <>
-              {files.length > 1 ? (
+              {uploading ? (
+                <span className={s.muted}>Uploading…</span>
+              ) : files.length > 1 ? (
                 <span className={clsx(s.muted, s.tab)}>
                   {index + 1} of {files.length}
                 </span>

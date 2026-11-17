@@ -10,6 +10,7 @@ import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { useAuth } from "../app/auth"
 import { copyText } from "../app/clipboard"
 import { formatShortDate, formatShortDateTime } from "../app/format"
+import { amountInput } from "../app/transactions"
 import AutoCategorizationSettings, { type AutoCategorizationSettingsData } from "../components/AutoCategorizationSettings"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
@@ -246,7 +247,7 @@ function invalidateSnapshotViews(queryClient: QueryClient) {
 function SnapshotDialog({ anchor, onClose }: { anchor: BalanceAnchor | null; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [asOf, setAsOf] = useState(anchor ? anchor.as_of_at.slice(0, 16) : "")
-  const [balance, setBalance] = useState(anchor ? (anchor.balance_cents / 100).toFixed(2) : "")
+  const [balance, setBalance] = useState(anchor ? amountInput(anchor.balance_cents) : "")
   const [note, setNote] = useState(anchor?.note ?? "")
   const [errors, setErrors] = useState<{ asOf?: string; balance?: string }>({})
   const save = useMutation({
@@ -460,7 +461,7 @@ function CsvImportCard() {
       title="Import CSV"
       meta={file ? file.name : undefined}
       actions={
-        file && result?.rows.length ? (
+        file && result?.rows.length && !result.errors.length ? (
           <Button variant="primary" disabled={commit.isPending} onClick={() => commit.mutate(file)}>
             {commit.isPending
               ? "Importing…"

@@ -21,6 +21,19 @@ const queryClient = new QueryClient({
 
 initThemeRuntime()
 
+// Bottom sheets sit on the visible viewport, so an open on-screen keyboard does not cover them.
+const visualViewport = window.visualViewport
+if (visualViewport) {
+  const syncViewport = () => {
+    const style = document.documentElement.style
+    style.setProperty("--kb", `${Math.max(0, window.innerHeight - visualViewport.height - visualViewport.offsetTop)}px`)
+    style.setProperty("--vvh", `${visualViewport.height}px`)
+  }
+  visualViewport.addEventListener("resize", syncViewport)
+  visualViewport.addEventListener("scroll", syncViewport)
+  syncViewport()
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

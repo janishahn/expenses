@@ -68,9 +68,12 @@ def _connect_readonly(path: Path) -> sqlite3.Connection:
 
 def _require_legacy_schema(con: sqlite3.Connection) -> None:
     cur = con.cursor()
-    cur.execute(
-        "select name from sqlite_master where type='table' and name not like 'sqlite_%'"
-    )
+    try:
+        cur.execute(
+            "select name from sqlite_master where type='table' and name not like 'sqlite_%'"
+        )
+    except sqlite3.DatabaseError as exc:
+        raise ValueError("File is not a SQLite database") from exc
     tables = {r[0] for r in cur.fetchall()}
     required_tables = {"categories", "transactions", "recurring_transactions"}
     missing = required_tables - tables

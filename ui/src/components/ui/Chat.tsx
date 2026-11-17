@@ -710,7 +710,15 @@ export const ChatComposer = forwardRef<
             data-busy={busy}
             className={s.send}
             disabled={!busy && !canSend}
-            onClick={busy ? onStop : undefined}
+            onClick={
+              busy
+                ? (event) => {
+                    // Stopping re-renders this button as submit before the click's default action runs.
+                    event.preventDefault()
+                    onStop()
+                  }
+                : undefined
+            }
           >
             <ArrowUpIcon aria-hidden="true" weight="bold" className={s.sendGo} />
             <StopIcon aria-hidden="true" weight="fill" className={s.sendStop} />

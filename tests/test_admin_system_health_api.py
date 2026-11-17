@@ -48,6 +48,7 @@ def test_admin_system_health_validation_override_cookie_flow(
 
     payload = api_client.get("/api/admin/system-health").json()
     assert payload["status"] == "critical"
+    assert payload["status_reason"] == "Less than 10 % disk space free"
     assert payload["disk_total_bytes"] == 10_000_000_000
     assert payload["disk_free_bytes"] == 800_000_000
     assert payload["disk_used_bytes"] == 9_200_000_000

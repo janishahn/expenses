@@ -224,7 +224,7 @@ export function useTransactionRecord(id: number) {
 
   // Moves the transaction to Trash; the toast offers Undo. Returns whether it was deleted.
   const deleteRecord = async (): Promise<boolean> => {
-    if (!(await confirmDialog({ title: "Delete this transaction?" }))) return false
+    if (!(await confirmDialog({ title: "Delete this transaction?", description: "It moves to Trash." }))) return false
     setActionError(null)
     try {
       await apiFetch(`/api/transactions/${id}`, { method: "DELETE" })
@@ -236,7 +236,7 @@ export function useTransactionRecord(id: number) {
     invalidateTransactionData(queryClient)
     void queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] })
     showToast({
-      message: "Moved to Trash",
+      message: "Moved to Trash.",
       action: {
         label: "Undo",
         onClick: () => {
@@ -252,9 +252,9 @@ export function useTransactionRecord(id: number) {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/transactions/${id}`)
-      showToast({ message: "Link copied" })
+      showToast({ message: "Link copied." })
     } catch {
-      showToast({ message: "Unable to copy the link" })
+      showToast({ message: "Unable to copy the link." })
     }
   }
 

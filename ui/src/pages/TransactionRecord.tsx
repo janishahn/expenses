@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowBendUpLeftIcon } from "@phosphor-icons/react/ArrowBendUpLeft"
 import { BankIcon } from "@phosphor-icons/react/Bank"
@@ -112,7 +112,7 @@ export function TransactionHead({ record }: { record: TransactionRecordState }) 
         onCancel={() => record.setError("amount", null)}
         onSave={(next) => {
           const cents = parseAmountCents(next)
-          if (cents === null) {
+          if (!cents) {
             record.setError("amount", "Enter a valid amount.")
             return false
           }
@@ -410,9 +410,17 @@ export function TransactionProperties({
   linkTo: LinkTo
   variant: "peek" | "full"
 }) {
+  // The category each type last had, so switching the type back restores it.
+  const lastCategory = useRef<Partial<Record<"expense" | "income", number | null>>>({})
   const view = record.view
   if (!view) return null
   const isExpense = view.type === "expense"
+  const switchType = (type: "expense" | "income") => {
+    lastCategory.current[isExpense ? "expense" : "income"] = view.category_id
+    const restored = lastCategory.current[type] ?? null
+    const categoryId = record.categories.some((entry) => entry.id === restored && entry.archived_at === null) ? restored : null
+    void record.save("type", { type, category_id: categoryId, ...(type === "expense" ? { is_reimbursement: false } : {}) })
+  }
   const reimbursements = record.reimbursements
   const category = record.category
   const pickable = record.categories.filter((entry) => entry.archived_at === null && entry.type === view.type)
@@ -425,7 +433,7 @@ export function TransactionProperties({
           <MenuItem
             checked={isExpense}
             onSelect={() => {
-              if (!isExpense || record.errors.type) void record.save("type", { type: "expense", category_id: null, is_reimbursement: false })
+              if (!isExpense || record.errors.type) switchType("expense")
             }}
           >
             Expense
@@ -433,7 +441,7 @@ export function TransactionProperties({
           <MenuItem
             checked={!isExpense}
             onSelect={() => {
-              if (isExpense || record.errors.type) void record.save("type", { type: "income", category_id: null })
+              if (isExpense || record.errors.type) switchType("income")
             }}
           >
             Income

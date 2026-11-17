@@ -571,7 +571,7 @@ def test_user_csv_export_and_import_preview_commit_are_user_scoped(
     )
     assert preview_before_category.status_code == 200
     assert any(
-        "Missing category 'Bootstrap groceries'" in error
+        "Row 1: Missing category 'Bootstrap groceries'" in error
         for error in preview_before_category.json()["errors"]
     )
 

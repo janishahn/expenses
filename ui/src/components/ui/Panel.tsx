@@ -71,6 +71,8 @@ export function ViewRow({ children, end }: { children?: ReactNode; end?: ReactNo
 
 // A page whose data is still loading: the header at once, placeholder rows only after
 // 250 ms so fast loads never flash. The rows are static, which keeps Pi-class hosts calm.
+// Pages that keep header controls while loading render Panel with LoadingBody or ErrorBody
+// themselves, so the controls stay mounted, and an open period menu stays open, when the data arrives.
 export function PanelLoading({ title, parents, label }: { title: ReactNode; parents?: Crumb[]; label: string }) {
   return (
     <Panel title={title} parents={parents}>

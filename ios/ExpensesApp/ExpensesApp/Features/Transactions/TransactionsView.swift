@@ -9,6 +9,7 @@ enum TransactionsRoute: Hashable {
 struct TransactionsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var path: [TransactionsRoute]
     @Binding var selecting: Bool
     @State private var search = ""
@@ -50,11 +51,13 @@ struct TransactionsView: View {
             }
             .checkedTint()
             .quickAddButton(shown: !selecting)
+            // Room under the last row, so the add button never sits on its amount.
+            .contentMargins(.bottom, selecting ? 0 : 24, for: .scrollContent)
             .environment(\.editMode, .constant(selecting ? .active : .inactive))
             .navigationTitle(selecting ? "\(selectionCount) Selected" : "Transactions")
             .navigationSubtitle(selecting ? "" : subtitle)
             .expensesScreenStyle()
-            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic))
+            .ledgerSearch(text: $search, shown: !selecting)
             .toolbar {
                 if selecting {
                     selectionToolbar
@@ -81,6 +84,14 @@ struct TransactionsView: View {
                             }
                             Button("Export CSV", systemImage: "square.and.arrow.up") {
                                 Task { await exportCSV() }
+                            }
+                            Divider()
+                            Button {
+                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                                    model.amountsHidden.toggle()
+                                }
+                            } label: {
+                                Label(model.amountsHidden ? "Show amounts" : "Hide amounts", systemImage: model.amountsHidden ? "eye" : "eye.slash")
                             }
                         } label: {
                             Label("More", systemImage: "ellipsis")
@@ -140,10 +151,7 @@ struct TransactionsView: View {
                         }
                     }
                 case let .tags(mode):
-                    TagPickerSheet(title: mode.title, options: tagOptions) { names in
-                        guard !names.isEmpty else {
-                            return
-                        }
+                    TagPickerSheet(title: mode.title, options: tagOptions, requiresSelection: true) { names in
                         Task {
                             await prepareBulk(
                                 BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: mode.rawValue, tags: names), lifecycle: "none"),
@@ -209,7 +217,7 @@ struct TransactionsView: View {
                     }
                 }
                 Divider()
-                Button("Clear Tags", systemImage: "eraser") {
+                Button("Clear tags", systemImage: "eraser") {
                     Task {
                         await prepareBulk(
                             BulkOperationRequest(setCategoryID: nil, tagPatch: BulkTagPatchRequest(mode: "clear", tags: []), lifecycle: "none"),
@@ -280,7 +288,7 @@ struct TransactionsView: View {
                 ContentUnavailableView {
                     Label("No matching transactions", systemImage: "magnifyingglass")
                 } actions: {
-                    Button("Clear filters") {
+                    Button(query.hasFilters ? "Clear filters" : "Clear search") {
                         search = ""
                         model.transactionQuery = TransactionQuery(period: query.period)
                     }
@@ -597,6 +605,18 @@ private struct TransactionFilterSheet: View {
             .sensoryFeedback(.selection, trigger: query)
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+private extension View {
+    /// Select mode drops the search field: SwiftUI squashes it when the title changes.
+    @ViewBuilder
+    func ledgerSearch(text: Binding<String>, shown: Bool) -> some View {
+        if shown {
+            searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic))
+        } else {
+            self
+        }
     }
 }
 

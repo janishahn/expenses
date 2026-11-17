@@ -141,12 +141,14 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
   const applyTemplate = (template: TemplateRow) => {
     setType(template.type === "income" ? "income" : "expense")
     setCategoryId(template.category_id)
-    setTitle(template.title || "")
-    setNotes("")
+    // Templates have no notes, and a template without a title or amount keeps what was typed.
+    if (template.title) setTitle(template.title)
     setExplicitTags(template.tags)
     setErrors({})
     if (template.type !== "income") setIsReimbursement(false)
-    setAmount(template.default_amount_cents === null ? "" : (template.default_amount_cents / 100).toFixed(2).replace(".", ","))
+    if (template.default_amount_cents !== null) {
+      setAmount((template.default_amount_cents / 100).toFixed(2).replace(".", ","))
+    }
     window.setTimeout(() => amountRef.current?.focus(), 0)
   }
 
@@ -154,12 +156,12 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
     const next: FieldErrors = {}
     const amountCents = parseAmountCents(amount)
     if (!amount.trim()) next.amount = "Enter an amount."
-    else if (amountCents === null) next.amount = "Enter a valid amount."
+    else if (!amountCents) next.amount = "Enter a valid amount."
     if (!title.trim()) next.title = "Enter a title."
     if (!occurredAt) next.form = "Date and time are required"
     else if (!tagsData || tagsLoading || tagsFailed) next.form = "Wait for tags to load before adding the transaction"
     setErrors(next)
-    if (next.amount || next.title || next.form || amountCents === null) return
+    if (next.amount || next.title || next.form || !amountCents) return
 
     setPending(true)
     let createdId: number
@@ -197,7 +199,7 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
     setPending(false)
     invalidateTransactionData(queryClient)
     showToast({
-      message: receiptFailed ? "Transaction added, but the receipt could not be uploaded" : "Transaction added",
+      message: receiptFailed ? "Transaction added, but the receipt could not be uploaded." : "Transaction added.",
       action: { label: "Open", onClick: () => navigate(`/transactions?peek=${createdId}`) },
     })
     onClose()
