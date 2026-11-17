@@ -243,11 +243,19 @@ class LLMAssistantService:
                         ReceiptItem.product,
                         ReceiptItem.product_named_by_user,
                     )
+                    # Only each label's latest item.
                     .where(
-                        ReceiptItem.user_id == self.user_id,
-                        ReceiptItem.label.in_({line.label for line in output.items}),
+                        ReceiptItem.id.in_(
+                            select(func.max(ReceiptItem.id))
+                            .where(
+                                ReceiptItem.user_id == self.user_id,
+                                ReceiptItem.label.in_(
+                                    {line.label for line in output.items}
+                                ),
+                            )
+                            .group_by(ReceiptItem.label)
+                        )
                     )
-                    .order_by(ReceiptItem.id)
                 )
             }
             attachment.items.clear()
