@@ -117,9 +117,10 @@ const MATCH_TYPES: Array<{ value: MatchType; label: string; phrase: string }> = 
   { value: "regex", label: "Regex", phrase: "matches" },
 ]
 const RULE_COLUMNS: Columns = {
-  columns: "32px minmax(0, 170px) minmax(0, 1fr) minmax(0, 240px) 32px",
+  columns: "32px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 240px) 32px",
   narrowColumns: "32px minmax(0, 1fr) minmax(0, 220px) 32px",
-  mobileColumns: "32px minmax(0, 1fr) minmax(0, 130px) 28px",
+  // The priority gives its room to the name and the action on phones.
+  mobileColumns: "minmax(0, 1fr) minmax(0, 1fr) 28px",
 }
 const SUGGESTION_COLUMNS: Columns = {
   columns: "18px minmax(0, 1fr) minmax(0, 180px) 44px 64px",
@@ -905,7 +906,9 @@ function RulesPage() {
         {suggestions.length ? <SuggestionRows suggestions={suggestions} categories={data.categories} /> : null}
         {suggestions.length ? <DayBand label="Rules" end={data.rules.length} /> : null}
         <ListHead {...RULE_COLUMNS}>
-          <Cell align="right">#</Cell>
+          <Cell align="right" hide="mobile">
+            #
+          </Cell>
           <span>Name</span>
           <Cell hide="narrow">When</Cell>
           <span>Then</span>
@@ -922,7 +925,7 @@ function RulesPage() {
               selected={rule.id === peekId}
               onOpen={() => setSearchParams(buildSearchParams(searchParams, { peek: String(rule.id) }))}
             >
-              <Cell align="right" tone="faint">
+              <Cell align="right" tone="faint" hide="mobile">
                 {rule.priority}
               </Cell>
               <Cell strong>{rule.name}</Cell>

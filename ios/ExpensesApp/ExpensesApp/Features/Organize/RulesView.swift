@@ -421,6 +421,7 @@ private struct AddRuleSheet: View {
     @State private var formError: String?
     @State private var saving = false
     @FocusState private var nameFocused: Bool
+    @FocusState private var valueFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -429,9 +430,12 @@ private struct AddRuleSheet: View {
                     TextField("Name", text: $draft.name)
                         .font(.title3)
                         .focused($nameFocused)
+                        .submitLabel(.next)
+                        .onSubmit { valueFocused = true }
                         .fieldError(nameError)
 
                     TextField("Title \(draft.matchType.phrase)…", text: $draft.matchValue)
+                        .focused($valueFocused)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .fieldError(valueError)
@@ -448,6 +452,18 @@ private struct AddRuleSheet: View {
                         }
                         .accessibilityLabel("Match")
                         .accessibilityValue(draft.matchType.title)
+
+                        Menu {
+                            Picker("Type", selection: appliesTo) {
+                                Text("Any").tag(TransactionKind?.none)
+                                Text("Expense").tag(Optional(TransactionKind.expense))
+                                Text("Income").tag(Optional(TransactionKind.income))
+                            }
+                        } label: {
+                            EntryChip(typeTitle, systemImage: "arrow.left.arrow.right", isSet: draft.transactionType != nil)
+                        }
+                        .accessibilityLabel("Type")
+                        .accessibilityValue(typeTitle)
 
                         Button {
                             choosingAmount = true
@@ -545,19 +561,11 @@ private struct AddRuleSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(ExpensesTheme.surface(for: scheme))
+            .navigationTitle("New Rule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     DiscardButton(hasChanges: hasInput)
-                }
-                ToolbarItem(placement: .principal) {
-                    Picker("Applies to", selection: appliesTo) {
-                        Text("Any").tag(TransactionKind?.none)
-                        Text("Expenses").tag(Optional(TransactionKind.expense))
-                        Text("Income").tag(Optional(TransactionKind.income))
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", role: .confirm) {
@@ -579,7 +587,7 @@ private struct AddRuleSheet: View {
                 }
             }
             .sheet(isPresented: $choosingTags) {
-                TagPickerSheet(title: "Add Tags", options: tagOptions, selected: draft.addTags) { draft.addTags = $0 }
+                TagPickerSheet(title: "Tags", options: tagOptions, selected: draft.addTags) { draft.addTags = $0 }
             }
         }
         .interactiveDismissDisabled(hasInput || saving)
@@ -620,6 +628,14 @@ private struct AddRuleSheet: View {
                 }
             }
         )
+    }
+
+    private var typeTitle: String {
+        switch draft.transactionType {
+        case nil: "Any type"
+        case .expense: "Expense"
+        case .income: "Income"
+        }
     }
 
     private var offered: [CategorySummary] {

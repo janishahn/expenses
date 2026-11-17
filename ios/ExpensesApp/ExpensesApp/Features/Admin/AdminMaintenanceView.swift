@@ -42,7 +42,7 @@ struct AdminMaintenanceView: View {
                 NavigationLink {
                     LegacyImportView()
                 } label: {
-                    Label("Legacy SQLite Import", systemImage: "tray.and.arrow.down")
+                    Label("Legacy SQLite import", systemImage: "tray.and.arrow.down")
                 }
                 .navigationLinkIndicatorVisibility(.hidden)
                 if let jobResult {

@@ -478,7 +478,8 @@ function Conversation({
               <ChatMarkdown key={part.key} content={part.item.text} animate={turn.live} partial={part.item.state === "streaming"} />
             )
           )}
-          {turn.status === "stopped" ? <Status icon={MinusCircleIcon}>Stopped</Status> : null}
+          {/* The server saves a turn stopped with Stop and one cut off by leaving or reloading the page alike. */}
+          {turn.status === "stopped" ? <Status icon={MinusCircleIcon}>{turn.live ? "Stopped" : "Interrupted"}</Status> : null}
           {turn.status === "failed" ? (
             <Status icon={WarningCircleIcon} tone="bad" wrap>
               {turn.error ?? SAVED_FAILURE}

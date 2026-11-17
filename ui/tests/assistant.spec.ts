@@ -28,13 +28,15 @@ import {
 // note, one ledger read, and this answer.
 const ANSWER = "You spent **1 234,56 €** in May.\n\n- Groceries: 800,00 €\n- Rent: 434,56 €\n\nThat is less than in April. See [Budgets](page:budgets).\n\n![Chart](https://example.invalid/chart.png)"
 
-const ledgerFooter = (page: Page) => page.getByText(/^\d+–\d+ of \d+$/)
+// The ledger footer shows "1–50 of 120" across pages, or only "3 transactions" on one page.
+const ledgerFooter = (page: Page) => page.getByText(/^(\d+–\d+ of \d+|\d+ transactions?)$/)
+const ledgerCount = (total: number) => new RegExp(`(^| of )${total}( transactions?)?$`)
 
 // Loads Transactions, so its cached list has to refresh after a change, and returns its total.
 async function ledgerTotal(page: Page): Promise<number> {
   await page.goto("/transactions")
   await expect(ledgerFooter(page).or(page.getByText("No transactions yet"))).toBeVisible()
-  return (await ledgerFooter(page).count()) ? Number(/of (\d+)$/.exec(await ledgerFooter(page).innerText())![1]) : 0
+  return (await ledgerFooter(page).count()) ? Number(/(\d+)( transactions?)?$/.exec(await ledgerFooter(page).innerText())![1]) : 0
 }
 
 test.describe("Assistant", () => {
@@ -118,7 +120,7 @@ test.describe("Assistant", () => {
     await expect(assistant.getByRole("button", { name: "Retry" })).toHaveCount(0)
 
     await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await expect(ledgerFooter(page)).toHaveText(ledgerCount(totalBefore + 1))
     await page.goBack()
     await expect(assistant).toContainText("Added Lunch.")
 
@@ -145,7 +147,7 @@ test.describe("Assistant", () => {
     await expect(second).toContainText("Dismissed")
     await expect(assistantTurns(page).last()).toContainText("Okay, nothing changed.")
     await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await expect(ledgerFooter(page)).toHaveText(ledgerCount(totalBefore + 1))
   })
 
   test("shows a change the server applied when the approval's stream was cut off", async ({ page }) => {
@@ -166,7 +168,7 @@ test.describe("Assistant", () => {
     await page.unroute("**/approvals/stream")
 
     await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter(page)).toHaveText(new RegExp(` of ${totalBefore + 1}$`))
+    await expect(ledgerFooter(page)).toHaveText(ledgerCount(totalBefore + 1))
   })
 
   test("tags transactions from a card and undoes it", async ({ page }) => {

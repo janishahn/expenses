@@ -5,6 +5,7 @@ import { CalendarBlankIcon } from "@phosphor-icons/react/CalendarBlank"
 import { CalendarSlashIcon } from "@phosphor-icons/react/CalendarSlash"
 import { CalendarXIcon } from "@phosphor-icons/react/CalendarX"
 import { CurrencyDollarIcon } from "@phosphor-icons/react/CurrencyDollar"
+import { CurrencyEurIcon } from "@phosphor-icons/react/CurrencyEur"
 import { LightningIcon } from "@phosphor-icons/react/Lightning"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ShapesIcon } from "@phosphor-icons/react/Shapes"
@@ -37,7 +38,7 @@ import { MetricStrip, Sheet } from "../components/ui/Sheet"
 import { Switch } from "../components/ui/Switch"
 import { TagChips } from "../components/ui/TagChip"
 import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
-import { categoryColor } from "../components/ui/tokens"
+import { neighbourCategoryColors } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import {
   MONTH_DAY_POLICIES,
@@ -268,9 +269,7 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   const [amount, setAmount] = useState("")
   const [name, setName] = useState("")
   const [currency, setCurrency] = useState<Currency>("EUR")
-  const [categoryId, setCategoryId] = useState<number | null>(
-    () => data.categories.find((category) => category.type === "expense")?.id ?? null
-  )
+  const [categoryId, setCategoryId] = useState<number | null>(null)
   const [schedule, setSchedule] = useState<Schedule>({ unit: "month", count: 1, policy: "snap_to_end" })
   const [start, setStart] = useState(() => todayIso(now))
   const [end, setEnd] = useState("")
@@ -332,7 +331,7 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
           ]}
           onChange={(next) => {
             setType(next)
-            setCategoryId(data.categories.find((entry) => entry.type === next)?.id ?? null)
+            setCategoryId(null)
           }}
         />
       }
@@ -418,7 +417,7 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
           value={currency}
           onSelect={setCurrency}
           trigger={
-            <Pill icon={CurrencyDollarIcon} set={currency === "USD"} aria-label={`Currency ${currency}`}>
+            <Pill icon={currency === "USD" ? CurrencyDollarIcon : CurrencyEurIcon} set={currency === "USD"} aria-label={`Currency ${currency}`}>
               {currency}
             </Pill>
           }
@@ -621,7 +620,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
             checked={rule.skip_weekends}
             onCheckedChange={(checked) => void save("weekends", { skip_weekends: checked })}
           />
-          {rule.skip_weekends ? "Moved to Monday" : "Allowed"}
+          {rule.skip_weekends ? "Moved to Monday" : "Kept as scheduled"}
         </Property>
       </PropertyList>
       {rule.type === "expense" ? (
@@ -739,6 +738,7 @@ function RecurringRulesPage() {
       }, new Map<number, { rule: RecurringRule; perYear: number }>())
       .values()
   ).sort((a, b) => b.perYear - a.perYear)
+  const mixColors = neighbourCategoryColors(mix.map((entry) => entry.rule.category_id))
   const annualTotal = stats.total_monthly_expenses * 12
   const share = (cents: number) => `${annualTotal ? Math.round((cents / annualTotal) * 100) : 0} %`
 
@@ -830,11 +830,11 @@ function RecurringRulesPage() {
             focus={focus}
             center={<Amount cents={annualTotal} decimals={false} />}
             centerLabel="per year"
-            items={mix.map((entry) => ({
+            items={mix.map((entry, index) => ({
               key: String(entry.rule.category_id),
               label: entry.rule.category?.name ?? "Uncategorized",
               value: entry.perYear,
-              color: categoryColor(entry.rule.category_id),
+              color: mixColors[index],
               amount: <Amount cents={entry.perYear} />,
               share: share(entry.perYear),
             }))}

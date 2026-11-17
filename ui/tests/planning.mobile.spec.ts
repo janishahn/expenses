@@ -41,7 +41,7 @@ test.describe("Planning surfaces (mobile)", () => {
     await page.goto("/forecast")
     await expect(page.getByText(/80% range/).first()).toBeVisible()
     await page.getByRole("radio", { name: "12M" }).click()
-    await page.getByRole("radio", { name: "Recurring only" }).click()
+    await page.getByRole("radio", { name: "Recurring", exact: true }).click()
     await expect(page).toHaveURL(/horizon=12/)
     await expect(page).toHaveURL(/mode=recurring/)
     await expect(
@@ -52,7 +52,7 @@ test.describe("Planning surfaces (mobile)", () => {
     await expect(page).toHaveURL(/\/scenarios\?horizon=12&mode=recurring/)
     await expect(page.getByRole("heading", { name: "What If", level: 1 })).toBeVisible()
     await expect(page.getByRole("radio", { name: "12M" })).toBeChecked()
-    await expect(page.getByRole("radio", { name: "Recurring only" })).toBeChecked()
+    await expect(page.getByRole("radio", { name: "Recurring", exact: true })).toBeChecked()
   })
 
   test("opens a forecast month and returns to the outlook", async ({ page, request }) => {
@@ -102,6 +102,7 @@ test.describe("Planning surfaces (mobile)", () => {
     await adjustments.getByRole("button", { name: "Add", exact: true }).click()
     await page.getByRole("menuitem", { name: "One-time event" }).click()
     const form = adjustments.locator("form")
+    await expect(form.getByLabel("Adjustment")).toBeFocused()
     await form.getByLabel("Name").fill("Mobile vacation")
     await form.getByLabel("Amount").fill("300.00")
     await form.getByRole("button", { name: "Add", exact: true }).click()

@@ -56,6 +56,18 @@ struct TransactionDetailView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                // A growing notes field doesn't scroll itself, so its last line follows the caret above the keyboard.
+                .onChange(of: notesDraft) {
+                    if focus == .notes {
+                        proxy.scrollTo(Field.notes, anchor: .bottom)
+                    }
+                }
+        }
+    }
+
+    private var list: some View {
         List {
             if let transaction {
                 let shown = shown(transaction)
@@ -66,6 +78,7 @@ struct TransactionDetailView: View {
                         .lineLimit(3...)
                         .focused($focus, equals: .notes)
                         .fieldError(saves.errors[.notes])
+                        .id(Field.notes)
                 }
                 .expensesRowBackground()
                 reimbursements(transaction)
@@ -526,7 +539,7 @@ struct TransactionDetailView: View {
         guard let transaction else {
             return
         }
-        guard let cents = AppFormatters.parseAmountCents(amountDraft) else {
+        guard let cents = AppFormatters.parseAmountCents(amountDraft), cents > 0 else {
             saves.errors[.amount] = "Enter a valid amount."
             return
         }

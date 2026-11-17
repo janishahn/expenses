@@ -10,18 +10,21 @@ export function CategoryGlyph({
   icon,
   name,
   inline = false,
+  color,
 }: {
   categoryId: number | null | undefined
   icon: string | null | undefined
   name: string | null | undefined
   // Inline glyphs sit before text in cells, pills, and tags.
   inline?: boolean
+  // A chart row's color when it differs from the category's own, see neighbourCategoryColors.
+  color?: string
 }) {
   return (
     <span
       aria-hidden="true"
       className={clsx(s.glyph, inline && s.glyphInline)}
-      style={{ color: categoryColor(categoryId) }}
+      style={{ color: color ?? categoryColor(categoryId) }}
     >
       <CategoryIconSvg icon={icon ?? null} label={name} />
     </span>

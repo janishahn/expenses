@@ -148,12 +148,16 @@ export function occurredLabel(occurredAt: string): string {
   return `${WEEKDAY.format(date)} ${dayMonth(date)} ${date.getFullYear()}, ${TIME.format(date)}`
 }
 
+// "Today", "Yesterday", or the dayLabel, for the ledger's day bands.
+export function relativeDayLabel(isoDate: string, today = new Date()): string {
+  const date = localDate(isoDate)
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+  return sameDay(date, today) ? "Today" : sameDay(date, yesterday) ? "Yesterday" : dayLabel(isoDate, today)
+}
+
 // "Today, 14:32", "Yesterday, 09:10", or "Thu 22 Oct, 20:15" for the entry dialog's date chip.
 export function occurredChipLabel(occurredAt: string, today = new Date()): string {
-  const date = localDate(occurredAt)
-  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
-  const day = sameDay(date, today) ? "Today" : sameDay(date, yesterday) ? "Yesterday" : dayLabel(occurredAt, today)
-  return `${day}, ${occurredAt.slice(11, 16)}`
+  return `${relativeDayLabel(occurredAt, today)}, ${occurredAt.slice(11, 16)}`
 }
 
 export function currentLocalDateTime(): string {

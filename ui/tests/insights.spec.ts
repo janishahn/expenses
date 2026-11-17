@@ -262,12 +262,9 @@ test.describe("Insights Page", () => {
     await expect(weekdays.getByRole("row", { name: /^Sunday/ })).toBeVisible()
 
     const day = `${thisMonth}-01`
-    const dayLabel = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    })
+    // The app's day label: "Sun 1 Nov" (the year only outside the current one).
+    const dayDate = new Date(`${day}T00:00:00Z`)
+    const dayLabel = `${dayDate.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" })} ${dayDate.getUTCDate()} ${dayDate.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}`
     const days = card.getByRole("table", { name: "Spending by day" })
     await expect(days.getByRole("row")).toHaveCount(3)
     await expect(days.getByRole("row", { name: new RegExp(`^${dayLabel}`) })).toContainText("120,00 €")

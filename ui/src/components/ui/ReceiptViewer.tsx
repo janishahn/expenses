@@ -41,8 +41,14 @@ export function ReceiptViewer({
   const [zoom, setZoom] = useState<Zoom>({ mode: "fit" })
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
   const [stage, setStage] = useState<HTMLDivElement | null>(null)
+  // A file stored as an image that the browser cannot show.
+  const [broken, setBroken] = useState<number | null>(null)
+  // Focus returns to whatever had it as the viewer opened, as in Dialog.
+  const [opener, setOpener] = useState(() => ({ open, element: open ? document.activeElement : null }))
+  if (opener.open !== open) setOpener({ open, element: open ? document.activeElement : opener.element })
   const file = files[index] ?? files[0]
   if (!file) return null
+  const showsImage = !file.pdf && broken !== file.id
 
   const show = (next: number) => {
     setZoom({ mode: "fit" })
@@ -85,6 +91,16 @@ export function ReceiptViewer({
           aria-describedby={undefined}
           className={clsx(s.floatLayer, s.viewer)}
           onKeyDown={onKeyDown}
+          // Focus starts on the viewer itself, so Esc closes it rather than a toolbar tooltip.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            const content = event.currentTarget as HTMLElement
+            content.focus()
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (opener.element instanceof HTMLElement) opener.element.focus()
+          }}
         >
           <div className={s.vwBar} {...dragHandleProps}>
             {file.pdf ? <FilePdfIcon aria-hidden="true" className={s.faint} /> : <ImageIcon aria-hidden="true" className={s.faint} />}
@@ -101,7 +117,7 @@ export function ReceiptViewer({
                 <span className={s.vwDiv} />
               </>
             ) : null}
-            {file.pdf ? null : (
+            {!showsImage ? null : (
               <>
                 <IconButton icon={MagnifyingGlassMinusIcon} label="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)} />
                 <Button variant="ghost" aria-pressed={zoom.mode === "fit"} onClick={() => setZoom({ mode: "fit" })}>
@@ -118,11 +134,22 @@ export function ReceiptViewer({
           <div ref={setStage} className={s.vwStage}>
             {file.pdf ? (
               <iframe key={file.id} src={file.fileUrl} title={file.name} />
+            ) : !showsImage ? (
+              <span className={s.rprevIcon}>
+                <ImageIcon aria-hidden="true" />
+              </span>
             ) : zoom.mode === "fit" ? (
-              <img key={file.id} src={file.fileUrl} alt={file.name} onLoad={onImageLoad} />
+              <img key={file.id} src={file.fileUrl} alt={file.name} onLoad={onImageLoad} onError={() => setBroken(file.id)} />
             ) : (
               <div className={s.vwZoom}>
-                <img key={file.id} src={file.fileUrl} alt={file.name} style={{ width: zoom.width }} onLoad={onImageLoad} />
+                <img
+                  key={file.id}
+                  src={file.fileUrl}
+                  alt={file.name}
+                  style={{ width: zoom.width }}
+                  onLoad={onImageLoad}
+                  onError={() => setBroken(file.id)}
+                />
               </div>
             )}
           </div>

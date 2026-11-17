@@ -13,7 +13,8 @@ import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
-import { amountInput, parseAmountCents } from "../app/transactions"
+import { formatCount } from "../app/format"
+import { amountInput, dayLabel, parseAmountCents, shortDateLabel } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
 import { Button, IconButton } from "../components/ui/Button"
@@ -27,7 +28,7 @@ import { EntryAmount, EntryChips, EntryDialog, EntryPreview } from "../component
 import { useIsDesktop } from "../components/ui/layout-state"
 import { Cell, List, Row, RowActions, type Columns } from "../components/ui/LedgerRow"
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu"
-import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
 import { Peek, PeekHeadline, PeekLayout, PeekSection } from "../components/ui/Peek"
 import { MonthPicker } from "../components/ui/PeriodControl"
 import { Pill } from "../components/ui/Pill"
@@ -99,8 +100,6 @@ type BudgetRequest = { path: string; body: Record<string, unknown> }
 
 const MONTH_LONG = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
 const MONTH_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
-const DAY_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
-const WEEKDAY_SHORT = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
 
 const BUDGET_COLUMNS: Columns = {
   columns: "18px minmax(0, 1fr) minmax(80px, 220px) 150px 120px",
@@ -241,7 +240,7 @@ function PaceChart({
       ]}
       tooltip={(index) => (
         <ChartTooltip
-          title={DAY_SHORT.format(dayDate(index + 1))}
+          title={shortDateLabel(dayDate(index + 1).toISOString().slice(0, 10))}
           rows={[
             { key: "even", label: "Even pace", value: <Amount cents={lines.even[index]} decimals={false} />, color: "var(--ink-3)", mark: "dash" },
             ...(lines.actual[index] !== null
@@ -621,7 +620,7 @@ function BudgetsPage() {
   const month = searchParams.get("month") ?? currentMonth(now)
   const peekKey = searchParams.get("peek")
   const queryString = `view=workspace&month=${month}&year=${month.slice(0, 4)}`
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isPlaceholderData, error } = useQuery({
     queryKey: ["budgets", queryString],
     queryFn: () => apiFetch<BudgetResponse>(`/api/budgets?${queryString}`),
   })
@@ -641,10 +640,32 @@ function BudgetsPage() {
     onSuccess: () => invalidateBudgetViews(queryClient),
   })
 
-  if (isLoading) return <PanelLoading title="Budgets" label="Loading budgets…" />
-  if (error || !data) return <PanelError title="Budgets" message="Unable to load budgets." />
-
   const setMonth = (next: string) => setSearchParams(buildSearchParams(searchParams, { month: next, peek: null }))
+  // The month control stays, so a month that fails to load can be left. A malformed URL month shows the loaded one.
+  const shownMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : (data?.month_value ?? currentMonth(now))
+  const viewRow = (
+    <ViewRow>
+      <MonthPicker value={shownMonth} onChange={setMonth} loading={isPlaceholderData} />
+      <Button variant="ghost" disabled={shownMonth === currentMonth(now)} onClick={() => setMonth(currentMonth(now))}>
+        Today
+      </Button>
+    </ViewRow>
+  )
+  if (isLoading) {
+    return (
+      <Panel title="Budgets" viewRow={viewRow}>
+        <LoadingBody label="Loading budgets…" />
+      </Panel>
+    )
+  }
+  if (error || !data) {
+    return (
+      <Panel title="Budgets" viewRow={viewRow}>
+        <ErrorBody message="Unable to load budgets." />
+      </Panel>
+    )
+  }
+
   const openPeek = (kind: Kind, row: BudgetRow) =>
     setSearchParams(buildSearchParams(searchParams, { peek: `${kind}:${scopeKey(row.scope_category_id)}` }), { replace: true })
   const closePeek = () => setSearchParams(buildSearchParams(searchParams, { peek: null }), { replace: true })
@@ -688,7 +709,7 @@ function BudgetsPage() {
     {
       label: "Spent",
       value: <Amount cents={spent} />,
-      detail: allocation ? `${Math.round((spent / allocation) * 100)} % used` : undefined,
+      detail: allocation ? `${formatCount(Math.round((spent / allocation) * 100))} % used` : undefined,
     },
     {
       label: remaining < 0 ? "Over" : "Left",
@@ -890,9 +911,7 @@ function BudgetsPage() {
                   {burndown.top_spending_days.map((day) => (
                     <Row key={day.day} columns={TOP_DAY_COLUMNS}>
                       <Cell tone="muted">
-                        {WEEKDAY_SHORT.format(
-                          new Date(Date.UTC(Number(data.month_value.slice(0, 4)), Number(data.month_value.slice(5, 7)) - 1, day.day))
-                        )}
+                        {dayLabel(`${data.month_value.slice(0, 7)}-${String(day.day).padStart(2, "0")}`)}
                       </Cell>
                       <Cell>{day.transactions.map((transaction) => transaction.title || "Untitled").join(", ")}</Cell>
                       <Cell align="right">
@@ -935,14 +954,7 @@ function BudgetsPage() {
           </Menu>
         </>
       }
-      viewRow={
-        <ViewRow>
-          <MonthPicker value={data.month_value} onChange={setMonth} />
-          <Button variant="ghost" disabled={data.month_value === currentMonth(now)} onClick={() => setMonth(currentMonth(now))}>
-            Today
-          </Button>
-        </ViewRow>
-      }
+      viewRow={viewRow}
     >
       <PeekLayout
         scroll

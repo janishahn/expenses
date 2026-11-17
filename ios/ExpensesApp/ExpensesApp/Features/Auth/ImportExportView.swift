@@ -9,6 +9,7 @@ struct ImportExportView: View {
     @State private var exporting: Export?
     @State private var exportedFile: URL?
     @State private var exportError: String?
+    @State private var savedExport: String?
     @State private var choosingFile = false
     @State private var file: URL?
     @State private var preview: CSVPreviewResponse?
@@ -31,6 +32,14 @@ struct ImportExportView: View {
                 exportButton("Portable archive", systemImage: "archivebox", export: .archive)
                 if let exportError {
                     FieldError(exportError)
+                }
+                if let savedExport {
+                    Label {
+                        Text("Saved \(savedExport)")
+                    } icon: {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(ExpensesTheme.income(for: scheme))
+                    }
                 }
             }
             .expensesRowBackground()
@@ -112,7 +121,10 @@ struct ImportExportView: View {
             isPresented: Binding(get: { exportedFile != nil }, set: { if !$0 { exportedFile = nil } }),
             file: exportedFile
         ) { result in
-            if case let .failure(error) = result {
+            switch result {
+            case let .success(url):
+                savedExport = url.lastPathComponent
+            case let .failure(error):
                 exportError = error.localizedDescription
             }
             exportedFile = nil
@@ -141,6 +153,7 @@ struct ImportExportView: View {
 
     private func run(_ export: Export) async {
         exportError = nil
+        savedExport = nil
         exporting = export
         defer { exporting = nil }
         switch export {

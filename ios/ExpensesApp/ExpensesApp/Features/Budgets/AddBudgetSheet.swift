@@ -109,6 +109,11 @@ struct AddBudgetSheet: View {
         .task {
             amountFocused = true
         }
+        .onChange(of: amount) { amountError = nil }
+        .onChange(of: categoryID) { formError = nil }
+        .onChange(of: yearly) { formError = nil }
+        .onChange(of: start) { formError = nil }
+        .onChange(of: end) { formError = nil }
     }
 
     // The period kind and start are defaults, so they alone are no input to lose.

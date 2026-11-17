@@ -18,7 +18,7 @@ import { EmptyState } from "../components/ui/EmptyState"
 import { EntryChips, EntryDialog, EntryName } from "../components/ui/EntryDialog"
 import { useIsDesktop } from "../components/ui/layout-state"
 import { AmountCell, AmountPrefix, Cell, List, Row, RowFlags, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
-import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
 import { Peek, PeekHeadline, PeekLayout, PeekSection, PeekSubline } from "../components/ui/Peek"
 import { PeriodControl } from "../components/ui/PeriodControl"
 import { DEFAULT_PERIOD_PRESETS, periodFromSearch, periodLabel, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
@@ -284,8 +284,22 @@ function TagsPage() {
     queryFn: () => apiFetch<TagsResponse>(`/api/tags?${queryString}`),
   })
 
-  if (isLoading) return <PanelLoading title="Tags" label="Loading tags…" />
-  if (error || !data) return <PanelError title="Tags" message="Unable to load tags." />
+  const periodControl = <PeriodControl value={period} onChange={(next) => setSearchParams(writePeriodToSearch(searchParams, next))} />
+  // The period control stays, so a period that fails to load can be left.
+  if (isLoading) {
+    return (
+      <Panel title="Tags" viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <LoadingBody label="Loading tags…" />
+      </Panel>
+    )
+  }
+  if (error || !data) {
+    return (
+      <Panel title="Tags" viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <ErrorBody message="Unable to load tags." />
+      </Panel>
+    )
+  }
 
   const update = (values: Record<string, string | null>, replace = false) =>
     setSearchParams(buildSearchParams(searchParams, values), { replace })
@@ -382,7 +396,7 @@ function TagsPage() {
             />
           }
         >
-          <PeriodControl value={period} onChange={(next) => setSearchParams(writePeriodToSearch(searchParams, next))} />
+          {periodControl}
         </ViewRow>
       }
     >

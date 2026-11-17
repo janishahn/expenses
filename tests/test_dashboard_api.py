@@ -365,3 +365,26 @@ def test_dashboard_category_share_lists_every_category(
     assert len(donut) == 10
     assert sum(item["amount_cents"] for item in donut) == 55_000
     assert round(sum(item["percent"] for item in donut)) == 100
+
+
+def test_dashboard_balance_excludes_transactions_dated_later_this_month(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = local_today()
+    later = today + timedelta(days=1)
+    if later.month != today.month:
+        later = today.replace(day=1) + timedelta(days=40)
+    category_id = _create_category(api_client, csrf_headers, "Later spend", "expense")
+    before = api_client.get("/api/dashboard?period=this_month").json()["kpis"]
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=4_000,
+        title="Planned later",
+        on=later,
+        category_id=category_id,
+    )
+
+    after = api_client.get("/api/dashboard?period=this_month").json()["kpis"]
+    # The balance is shown "as of today", so a later-dated expense does not count yet.
+    assert after["balance"] == before["balance"]

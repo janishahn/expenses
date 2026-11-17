@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Editor } from "@tiptap/core"
 import { EditorContent, useEditor } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
@@ -11,8 +11,47 @@ function getMarkdown(editor: Editor): string {
   return (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
 }
 
-// The rich-text editor behind Notes, loaded only when someone edits.
-export default function NotesEditor({
+// StarterKit has no table or task-list nodes, so the rich editor would flatten them.
+const UNSUPPORTED_GFM = /^\s*\|.*\|\s*$|^\s*[-*+]\s+\[[ xX]\]\s/m
+
+// The rich-text editor behind Notes, loaded only when someone edits. Notes with GFM tables or
+// task lists are edited as plain Markdown so saving keeps them intact.
+export default function NotesEditor(props: { value: string; label: string; onChange: (markdown: string) => void; onBlur: () => void }) {
+  const [plain] = useState(() => UNSUPPORTED_GFM.test(props.value))
+  return plain ? <PlainNotesEditor {...props} /> : <RichNotesEditor {...props} />
+}
+
+function PlainNotesEditor({
+  value,
+  label,
+  onChange,
+  onBlur,
+}: {
+  value: string
+  label: string
+  onChange: (markdown: string) => void
+  onBlur: () => void
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const field = ref.current
+    if (!field) return
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+  }, [])
+  return (
+    <textarea
+      ref={ref}
+      className={s.notesSource}
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
+    />
+  )
+}
+
+function RichNotesEditor({
   value,
   label,
   onChange,

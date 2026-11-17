@@ -416,7 +416,7 @@ test.describe("Dashboard Page (mobile)", () => {
     const purchases = page.getByRole("region", { name: "Durable purchases" })
     const row = purchases.getByRole("listitem", { name: title })
     await expect(row).toContainText("0 of 730 days")
-    await expect(purchases.getByRole("listitem", { name: "Office chair" })).toContainText(eur("1.000 of 730 days"))
+    await expect(purchases.getByRole("listitem", { name: "Office chair" })).toContainText(eur("1.000 days"))
     await expect(purchases.getByRole("listitem", { name: "Espresso machine" })).toHaveCount(0)
     await purchases.getByRole("button", { name: "More actions" }).tap()
     await page.getByRole("menuitemcheckbox", { name: "Show ended (1)" }).tap()

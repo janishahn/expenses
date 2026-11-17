@@ -27,10 +27,13 @@ export function PeriodControl({
   value,
   onChange,
   presets = DEFAULT_PERIOD_PRESETS,
+  loading = false,
 }: {
   value: PeriodSelection
   onChange: (next: PeriodSelection) => void
   presets?: PeriodPreset[]
+  // The page still shows the previous period's data while this one loads.
+  loading?: boolean
 }) {
   const [draft, setDraft] = useState<CustomDraft | null>(null)
   const previous = stepPeriod(value, -1)
@@ -56,7 +59,7 @@ export function PeriodControl({
   }
 
   return (
-    <span role="group" aria-label="Period" className={clsx(s.pill, s.pillStepper)}>
+    <span role="group" aria-label="Period" aria-busy={loading || undefined} className={clsx(s.pill, s.pillStepper)}>
       {previous ? (
         <button type="button" className={s.pillStep} aria-label="Previous month" onClick={() => onChange(previous)}>
           <CaretLeftIcon aria-hidden="true" />
@@ -140,12 +143,21 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 // One month (YYYY-MM) for month-scoped pages such as Budgets: ‹ October 2026 › with a month grid.
-export function MonthPicker({ value, onChange }: { value: string; onChange: (month: string) => void }) {
+export function MonthPicker({
+  value,
+  onChange,
+  loading = false,
+}: {
+  value: string
+  onChange: (month: string) => void
+  // The page still shows the previous month's data while this one loads.
+  loading?: boolean
+}) {
   const [year, setYear] = useState(() => Number(value.slice(0, 4)))
   const [valueYear, valueIndex] = value.split("-").map(Number)
   const label = MONTH_LABEL.format(new Date(Date.UTC(valueYear, valueIndex - 1, 1)))
   return (
-    <span role="group" aria-label="Month" className={clsx(s.pill, s.pillStepper)}>
+    <span role="group" aria-label="Month" aria-busy={loading || undefined} className={clsx(s.pill, s.pillStepper)}>
       <button type="button" className={s.pillStep} aria-label="Previous month" onClick={() => onChange(shiftMonth(value, -1))}>
         <CaretLeftIcon aria-hidden="true" />
       </button>

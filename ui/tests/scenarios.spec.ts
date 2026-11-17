@@ -57,6 +57,8 @@ async function openAdjustmentForm(page: Page, kind: string): Promise<Locator> {
   await page.getByRole("menuitem", { name: kind }).click()
   const form = adjustments(page).locator("form")
   await expect(form).toBeVisible()
+  // The opened form takes focus from the Add menu.
+  await expect(form.getByLabel("Adjustment")).toBeFocused()
   return form
 }
 

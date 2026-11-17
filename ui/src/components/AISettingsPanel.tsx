@@ -8,7 +8,7 @@ import type { AIFeature } from "../app/auth-context"
 import { Button } from "./ui/Button"
 import { Status } from "./ui/EmptyState"
 import { useIsDesktop } from "./ui/layout-state"
-import { Cell, CellControls, List, ListHead, Row, type Columns } from "./ui/LedgerRow"
+import { Cell, CellControls, List, ListHead, Row, RowEndControl, type Columns } from "./ui/LedgerRow"
 import { ErrorBody, LoadingBody } from "./ui/Panel"
 import { SettingRow } from "./ui/SettingsShell"
 import { Sheet } from "./ui/Sheet"
@@ -213,12 +213,14 @@ function FeatureSettings({ settings }: { settings: AISettings }) {
                   </option>
                 ))}
               </Select>
-              <Switch
-                labelledBy={`ai-feature-${feature.id}`}
-                checked={selected.enabled}
-                disabled={disabled || !catalog || !selected.model.trim()}
-                onCheckedChange={(enabled) => change(feature.id, { enabled })}
-              />
+              <RowEndControl>
+                <Switch
+                  labelledBy={`ai-feature-${feature.id}`}
+                  checked={selected.enabled}
+                  disabled={disabled || !catalog || !selected.model.trim()}
+                  onCheckedChange={(enabled) => change(feature.id, { enabled })}
+                />
+              </RowEndControl>
             </Row>
           )
         })}

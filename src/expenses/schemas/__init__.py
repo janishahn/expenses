@@ -525,7 +525,7 @@ class InsightsResponseOut(BaseModel):
     # months and at most 12 of them.
     income_cents: int
     expense_cents: int
-    # Calendar months the period spans; all time starts at the first transaction.
+    # Calendar months the period spans; for all time, the months with transactions.
     month_count: int
 
 
@@ -832,6 +832,7 @@ class AdminSystemHealthOut(BaseModel):
     db_size_bytes: int
     receipts_size_bytes: int
     status: Literal["healthy", "warm", "critical"]
+    status_reason: Optional[str] = None
 
 
 class AdminLogsResponseOut(BaseModel):
@@ -1409,6 +1410,7 @@ class RecurringOccurrencesResponseOut(BaseModel):
 
 
 class CSVRow(BaseModel):
+    row_number: int
     date: date
     type: TransactionType
     is_reimbursement: bool = False

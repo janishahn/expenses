@@ -92,6 +92,30 @@ test.describe("Transactions Page", () => {
     expect(await readFile((await download.path())!, "utf8")).toContain(title)
   })
 
+  test("hides and shows amounts from the more actions menu", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Privacy")
+    const title = `privacyx${Date.now()}x`
+    await createExpense(request, token, categoryId, title, { amount_cents: 4321 })
+    await page.goto(`/transactions?q=${title}`)
+    const row = page.getByRole("listitem", { name: title })
+    await expect(row).toContainText("43,21 €")
+
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitemcheckbox", { name: "Hide amounts" }).click()
+    await expect(row).toContainText("Hidden amount")
+    await expect(row).not.toContainText("43,21")
+
+    // The Dashboard's toggle is the same setting.
+    await page.goto("/")
+    await expect(page.getByRole("button", { name: "Show amounts" })).toBeVisible()
+    await page.goto(`/transactions?q=${title}`)
+    await page.getByRole("button", { name: "More actions" }).click()
+    await expect(page.getByRole("menuitemcheckbox", { name: "Hide amounts" })).toBeChecked()
+    await page.getByRole("menuitemcheckbox", { name: "Hide amounts" }).click()
+    await expect(row).toContainText("43,21 €")
+  })
+
   test("opens Trash from the more actions menu", async ({ page }) => {
     await page.goto("/transactions")
     await page.getByRole("button", { name: "More actions" }).click()
@@ -151,7 +175,8 @@ test.describe("Transactions Page", () => {
     ]) {
       await expect(page.getByRole("term").filter({ hasText: term }).locator("..")).toContainText(amount)
     }
-    await expect(page.getByText("3 transactions")).toBeVisible()
+    // The ledger footer, hidden while printing, shows the same count.
+    await expect(page.getByRole("paragraph").filter({ hasText: /^3 transactions$/ })).toBeVisible()
 
     await page.evaluate(() => window.dispatchEvent(new Event("afterprint")))
     await expect(ledger).toHaveCount(0)
@@ -178,10 +203,20 @@ test.describe("Transactions Page", () => {
       tags: [],
     })
     await createExpense(request, token, expenseId, `${marker} train`, { date: "2026-03-10", amount_cents: 1500 })
+    const localDay = (daysBack: number) => {
+      const day = new Date()
+      day.setDate(day.getDate() - daysBack)
+      return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`
+    }
+    await createExpense(request, token, expenseId, `${marker} coffee`, { date: localDay(0), amount_cents: 300 })
+    await createExpense(request, token, expenseId, `${marker} snack`, { date: localDay(1), amount_cents: 200 })
 
     await page.goto(`/transactions?q=${marker}`)
     const list = page.getByRole("list", { name: "Transactions" })
-    await expect(list.getByRole("listitem")).toHaveCount(3)
+    await expect(list.getByRole("listitem")).toHaveCount(5)
+    // Today and yesterday are named; other days of the year show the weekday and date.
+    await expect(list.getByText(/^Today$/).locator("..")).toContainText("− 3,00 €")
+    await expect(list.getByText(/^Yesterday$/).locator("..")).toContainText("− 2,00 €")
     // The newer day first; its net is income minus expenses.
     await expect(list.getByText(/^Wed 11 Mar/).locator("..")).toContainText("+ 30,00 €")
     await expect(list.getByText(/^Tue 10 Mar/).locator("..")).toContainText("− 15,00 €")
@@ -635,10 +670,12 @@ test.describe("Transactions Page", () => {
       await expect(dialog.getByText("Enter an amount.")).toBeVisible()
       await expect(dialog.getByText("Enter a title.")).toBeVisible()
 
-      await dialog.getByLabel("Amount").fill("abc")
       await dialog.getByLabel("Title").fill("Valid title")
-      await dialog.getByRole("button", { name: "Add transaction" }).click()
-      await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
+      for (const invalid of ["abc", "0,00"]) {
+        await dialog.getByLabel("Amount").fill(invalid)
+        await dialog.getByRole("button", { name: "Add transaction" }).click()
+        await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
+      }
       await expect(dialog).toBeVisible()
     })
 

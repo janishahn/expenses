@@ -275,10 +275,9 @@ def test_insights_totals_cover_the_exact_period(
     assert sum(point["expense_cents"] for point in partial["series"]) == 105_000
     assert (partial["expense_cents"], partial["month_count"]) == (5_000, 1)
 
+    # All time averages over the months with transactions, not the gaps between them.
     all_time = api_client.get("/api/insights?period=all").json()
-    today = date.today()
-    assert all_time["expense_cents"] == 107_000
-    assert all_time["month_count"] == (today.year - 2024) * 12 + today.month
+    assert (all_time["expense_cents"], all_time["month_count"]) == (107_000, 2)
 
 
 def test_month_grid_returns_thirteen_months_per_category_income_and_tag(

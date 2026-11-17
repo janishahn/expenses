@@ -130,7 +130,10 @@ struct DashboardView: View {
                                         Text(item.title ?? "Untitled")
                                             .lineLimit(1)
                                         Spacer(minLength: 8)
-                                        Text("\(item.daysOwned.formatted()) of \(item.expectedLifespanDays.formatted()) days")
+                                        // Past its expected lifespan, the count stands alone, as on the web.
+                                        Text(item.daysOwned > item.expectedLifespanDays
+                                            ? "\(item.daysOwned.formatted()) days"
+                                            : "\(item.daysOwned.formatted()) of \(item.expectedLifespanDays.formatted()) days")
                                             .font(.subheadline)
                                             .monospacedDigit()
                                             .foregroundStyle(.secondary)
@@ -156,7 +159,6 @@ struct DashboardView: View {
                 _ = await (period, balance)
             }
             .quickAddButton()
-            .headerProminence(.increased)
             .navigationTitle("Dashboard")
             .navigationSubtitle(periodSubtitle)
             .expensesScreenStyle()
@@ -582,9 +584,12 @@ private struct SpendingBandsSection: View {
             case .success(let response) where !response.months.contains(where: { $0.totalCents > 0 }):
                 ChartMessage(text: "No spending in these months.")
             case .success(let response):
+                // A category keeps one hue in every month: the hues follow the legend's order.
+                let entries = legendEntries(response.months)
+                let colors = ExpensesTheme.categoryColors(entries.map(\.categoryID), for: scheme)
                 VStack(alignment: .leading, spacing: 10) {
-                    rows(response.months)
-                    legend(response.months)
+                    rows(response.months, colors: colors)
+                    legend(entries, colors: colors)
                 }
                 .padding(.vertical, 8)
             }
@@ -593,7 +598,7 @@ private struct SpendingBandsSection: View {
     }
 
     // One stacked track per month, scaled to the largest month, as on the web.
-    private func rows(_ months: [CategoryBandMonth]) -> some View {
+    private func rows(_ months: [CategoryBandMonth], colors: [Int?: Color]) -> some View {
         let largest = CGFloat(max(1, months.map(\.totalCents).max() ?? 0))
         return Grid(horizontalSpacing: 12, verticalSpacing: 10) {
             ForEach(months.reversed()) { month in
@@ -609,7 +614,7 @@ private struct SpendingBandsSection: View {
                         HStack(spacing: 1) {
                             ForEach(segments, id: \.categoryID) { segment in
                                 Rectangle()
-                                    .fill(ExpensesTheme.category(segment.categoryID, for: scheme))
+                                    .fill(colors[segment.categoryID]!)
                                     .frame(width: width * CGFloat(segment.amountCents) / largest)
                             }
                         }
@@ -626,18 +631,28 @@ private struct SpendingBandsSection: View {
         .font(.subheadline)
     }
 
-    private func legend(_ months: [CategoryBandMonth]) -> some View {
+    private func legendEntries(_ months: [CategoryBandMonth]) -> [LegendEntry] {
         var entries: [Int?: LegendEntry] = [:]
+        var firstSeen: [Int?] = []
         for segment in months.flatMap(\.segments) {
+            if entries[segment.categoryID] == nil {
+                firstSeen.append(segment.categoryID)
+            }
             let total = (entries[segment.categoryID]?.totalCents ?? 0) + segment.amountCents
             entries[segment.categoryID] = LegendEntry(categoryID: segment.categoryID, name: segment.name, totalCents: total)
         }
-        let sorted = entries.values.sorted { $0.totalCents > $1.totalCents }
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: legendColumn), alignment: .leading)], alignment: .leading, spacing: 6) {
-            ForEach(sorted) { entry in
+        // Ties keep their first order, as on the web, so the hues stay put between loads.
+        return firstSeen.enumerated()
+            .sorted { (entries[$0.element]!.totalCents, $1.offset) > (entries[$1.element]!.totalCents, $0.offset) }
+            .map { entries[$0.element]! }
+    }
+
+    private func legend(_ entries: [LegendEntry], colors: [Int?: Color]) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: legendColumn), alignment: .leading)], alignment: .leading, spacing: 6) {
+            ForEach(entries) { entry in
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(ExpensesTheme.category(entry.categoryID, for: scheme))
+                        .fill(colors[entry.categoryID]!)
                         .frame(width: 8, height: 8)
                     Text(entry.name)
                         .lineLimit(1)

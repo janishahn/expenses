@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type RefObject } from "react"
 import clsx from "clsx"
-import { pointerAt, type PointerAt } from "./chart-pointer"
+import { pointerAt, useInlineSize, type PointerAt } from "./chart-pointer"
 import { PointerTip } from "./Charts"
 import s from "./kit.module.css"
 
@@ -24,12 +24,18 @@ function useHover<T>() {
   return { root, hover, track, clear: () => setHover(null) }
 }
 
-function MonthHeads({ months, shortMonths }: { months: string[]; shortMonths?: string[] }) {
+// Short month labels once the full ones (such as "Nov 2025") would run into each other.
+function useShortMonths(root: RefObject<HTMLDivElement | null>, months: string[], shortMonths?: string[]) {
+  const width = useInlineSize(root)
+  return shortMonths && width > 0 && (width - 300) / months.length < 48 ? shortMonths : undefined
+}
+
+function MonthHeads({ months, shortMonths, short }: { months: string[]; shortMonths?: string[]; short?: string[] }) {
   return (
     <>
       {months.map((month, index) => (
         <span key={index} className={s.hmHead} data-short={shortMonths?.[index]}>
-          {month}
+          {short ? short[index] : month}
         </span>
       ))}
     </>
@@ -66,6 +72,7 @@ export function MonthGrid({
   onSelect?: (row: MonthGridRow, index: number) => void
 }) {
   const { root, hover, track, clear } = useHover<{ row: MonthGridRow; index: number }>()
+  const short = useShortMonths(root, months, shortMonths)
   const cells = useMemo(() => {
     const last = months.length - 1
     return (
@@ -75,7 +82,7 @@ export function MonthGrid({
         aria-hidden="true"
       >
         <span />
-        <MonthHeads months={months} shortMonths={shortMonths} />
+        <MonthHeads months={months} shortMonths={shortMonths} short={short} />
         <span className={clsx(s.hmHead, s.hmRight)}>{totalLabel}</span>
         {changeLabel ? <span className={clsx(s.hmHead, s.hmRight, s.hmChange)}>{changeLabel}</span> : null}
         {rows.map((row) => {
@@ -104,7 +111,7 @@ export function MonthGrid({
         })}
       </div>
     )
-  }, [months, shortMonths, rows, totalLabel, changeLabel, onSelect, track])
+  }, [months, shortMonths, short, rows, totalLabel, changeLabel, onSelect, track])
   return (
     <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
       {cells}
@@ -142,11 +149,12 @@ export function BudgetGrid({
   onSelect?: (row: BudgetGridRow, index: number) => void
 }) {
   const { root, hover, track, clear } = useHover<{ row: BudgetGridRow; index: number }>()
+  const short = useShortMonths(root, months, shortMonths)
   const cells = useMemo(
     () => (
       <div className={clsx(s.hm, s.hmBudget)} style={{ "--n": months.length } as CSSProperties} aria-hidden="true">
         <span />
-        <MonthHeads months={months} shortMonths={shortMonths} />
+        <MonthHeads months={months} shortMonths={shortMonths} short={short} />
         <span className={clsx(s.hmHead, s.hmRight)}>{totalLabel}</span>
         {rows.map((row) => (
           <div key={row.key} className={s.hmRow}>
@@ -165,7 +173,7 @@ export function BudgetGrid({
         ))}
       </div>
     ),
-    [months, shortMonths, rows, totalLabel, onSelect, track]
+    [months, shortMonths, short, rows, totalLabel, onSelect, track]
   )
   return (
     <div ref={root} className={s.chartWrap} onPointerLeave={clear}>
@@ -176,7 +184,7 @@ export function BudgetGrid({
         <i className={clsx(s.bc, s.bcOver)} />
         <span>Over</span>
         <i className={clsx(s.bc, s.hmNow)} />
-        <span>In progress</span>
+        <span>In progress, not counted</span>
         <i className={clsx(s.bc, s.bcNone)} />
         <span>No budget</span>
       </div>

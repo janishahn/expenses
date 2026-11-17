@@ -90,12 +90,12 @@ struct CategoriesView: View {
                     NavigationLink {
                         CategoryDetailView(categoryID: category.id, openTransactions: openTransactions)
                     } label: {
-                        HStack(spacing: 12) {
+                        TrailingRow {
                             CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
+                        } content: {
                             Text(category.name)
-                                .lineLimit(1)
                                 .foregroundStyle(category.archivedAt == nil ? .primary : .secondary)
-                            Spacer(minLength: 8)
+                        } trailing: {
                             Text(category.archivedAt.map { "Archived \(AppFormatters.shortDay($0))" } ?? usesText(category.usageCount))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)

@@ -26,10 +26,11 @@ struct CategoryShareDonut<Center: View>: View {
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
             : AnyLayout(HStackLayout(spacing: 18))
+        let colors = ExpensesTheme.categoryColors(slices.map(\.categoryID), for: scheme)
         layout {
             Chart(slices) { slice in
                 SectorMark(angle: .value("Amount", slice.cents), innerRadius: .ratio(0.64), angularInset: 1)
-                    .foregroundStyle(ExpensesTheme.category(slice.categoryID, for: scheme))
+                    .foregroundStyle(colors[slice.categoryID]!)
                     .accessibilityLabel(slice.name)
                     .accessibilityValue(model.amountString(slice.cents))
             }
@@ -43,7 +44,7 @@ struct CategoryShareDonut<Center: View>: View {
                 ForEach(slices.prefix(5)) { slice in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(ExpensesTheme.category(slice.categoryID, for: scheme))
+                            .fill(colors[slice.categoryID]!)
                             .frame(width: 8, height: 8)
                         Text(slice.name)
                             .lineLimit(1)

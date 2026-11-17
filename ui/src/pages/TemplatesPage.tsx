@@ -104,9 +104,7 @@ function AddTemplateDialog({
   const [name, setName] = useState("")
   const [title, setTitle] = useState("")
   const [tags, setTags] = useState<string[]>([])
-  const [categoryId, setCategoryId] = useState<number | null>(
-    () => categories.find((category) => category.type === "expense")?.id ?? null
-  )
+  const [categoryId, setCategoryId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const options = categories.filter((category) => category.type === type)
   const category = options.find((entry) => entry.id === categoryId)
@@ -154,7 +152,7 @@ function AddTemplateDialog({
           ]}
           onChange={(next) => {
             setType(next)
-            setCategoryId(categories.find((entry) => entry.type === next)?.id ?? null)
+            setCategoryId(null)
           }}
         />
       }

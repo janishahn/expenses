@@ -101,9 +101,20 @@ export async function stopJourney(page: Page) {
       return response.ok() ? ((await response.json()) as { turns: { status: string }[] }).turns[0]?.status : null
     })
     .toBe("stopped")
+  // The saved turn can't tell Stop from a closed page, so a reopened chat says Interrupted.
   await page.reload()
   await expect(assistantTurns(page).last()).toContainText("Word30")
-  await expect(assistantTurns(page).last()).toContainText("Stopped")
+  await expect(assistantTurns(page).last()).toContainText("Interrupted")
+
+  // Reloading mid-answer ends the run the same way, and the reloaded chat shows what was written.
+  await page.getByRole("button", { name: "New chat" }).click()
+  await sendQuestion(page, unique("Give me a slow answer"))
+  await expect(assistantTurns(page).last().locator("p")).toContainText("Word30")
+  await expect(page).toHaveURL(/[?&]chat=[0-9a-f]+/)
+  await page.reload()
+  await expect(assistantTurns(page).last()).toContainText("Word30")
+  await expect(assistantTurns(page).last()).not.toContainText("Word399")
+  await expect(assistantTurns(page).last()).toContainText("Interrupted")
 }
 
 export async function failureJourney(page: Page) {

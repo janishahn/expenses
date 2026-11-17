@@ -12,7 +12,7 @@ struct AssistantSettingsView: View {
         List {
             if let settings = model.assistantSettings {
                 Section {
-                    Picker("Keep Chats", selection: Binding(
+                    Picker("Keep chats", selection: Binding(
                         get: { enteredDays ?? settings.chatDays },
                         set: { days in
                             enteredDays = days

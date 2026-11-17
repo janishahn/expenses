@@ -56,7 +56,6 @@ struct InsightsView: View {
             .refreshable {
                 await reload()
             }
-            .headerProminence(.increased)
             .environment(\.defaultMinListRowHeight, 28)
             .navigationTitle("Insights")
             .navigationSubtitle(([query.period.title] + [query.tagSummary(tags), spreadDurables ? "Durables spread" : nil].compactMap { $0 }).joined(separator: " · "))
@@ -468,9 +467,9 @@ private struct RecurringSection: View {
                 .padding(.vertical, 8)
             }
         } header: {
-            HStack(alignment: .firstTextBaseline) {
+            AdaptiveRow(alignment: .firstTextBaseline) {
                 Text("Recurring spending")
-                Spacer()
+            } trailing: {
                 // The full months only; the current one is still under way.
                 if case .success(let data) = split {
                     let full = data.rows.dropLast()
@@ -579,10 +578,11 @@ private struct MonthGridSection: View {
             case .success(let data) where data.rows.isEmpty:
                 ChartMessage(text: kind == .tag ? "No tagged spending in these months." : "Nothing in these months.")
             case .success(let data):
+                let colors = ExpensesTheme.categoryColors(data.rows.map(\.id), for: scheme)
                 MonthHeads(months: data.months, total: "Total")
                 ForEach(data.rows) { row in
                     NavigationLink(value: MonthGridRoute(kind: kind, months: data.months, row: row)) {
-                        line(row)
+                        line(row, color: kind == .tag ? Color.primary : colors[row.id]!)
                     }
                     .navigationLinkIndicatorVisibility(.hidden)
                     .listRowInsets(gridRowInsets)
@@ -613,11 +613,10 @@ private struct MonthGridSection: View {
         .expensesRowBackground()
     }
 
-    private func line(_ row: InsightsMonthGridRow) -> some View {
+    private func line(_ row: InsightsMonthGridRow, color: Color) -> some View {
         let full = row.valuesCents.dropLast()
         let low = full.min() ?? 0
         let high = full.max() ?? 0
-        let color = kind == .tag ? Color.primary : ExpensesTheme.category(row.id, for: scheme)
         let total = row.valuesCents.reduce(0, +)
         return GridLine(count: row.valuesCents.count) {
             HStack(spacing: 5) {
@@ -736,9 +735,9 @@ private struct DailySpendingSection: View {
                 weekdays(data)
             }
         } header: {
-            HStack(alignment: .firstTextBaseline) {
+            AdaptiveRow(alignment: .firstTextBaseline) {
                 Text("Daily spending")
-                Spacer()
+            } trailing: {
                 Text("without recurring")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -822,6 +821,8 @@ private struct DailySpendingSection: View {
             .scrollIndicators(.hidden)
         }
         .font(.caption2)
+        // The labels sit on fixed-size cells, so they stop growing before they overlap.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .foregroundStyle(.secondary)
         .sensoryFeedback(trigger: selected) { _, index in
             .impact(weight: .medium, intensity: Self.tickIntensities[Self.level(days.amounts[index] ?? 0)])
@@ -1007,7 +1008,8 @@ private struct BudgetHistorySection: View {
             case .success(let data) where data.rows.isEmpty:
                 ChartMessage(text: "No budgets yet.")
             case .success(let data):
-                MonthHeads(months: data.months, total: "Within")
+                // The current month is not counted until it ends.
+                MonthHeads(months: data.months, total: "Past months\nwithin")
                 ForEach(data.rows, id: \.categoryID) { row in
                     NavigationLink(value: BudgetHistoryRoute(categoryID: row.categoryID)) {
                         line(row)
@@ -1148,14 +1150,12 @@ private struct GridLine<Name: View, Cell: View, Total: View>: View {
     @ViewBuilder let total: Total
 
     var body: some View {
-        // At accessibility sizes the name and total take a line above the months.
+        // At accessibility sizes the name and total take their own lines above the months,
+        // the same in every line of the grid.
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 4) {
-                AdaptiveRow {
-                    name
-                } trailing: {
-                    total
-                }
+                name
+                total
                 cells
             }
         } else {
@@ -1193,6 +1193,8 @@ private struct MonthHeads: View {
             Text(CalendarMonth(months[index]).shortTitle.prefix(1))
         } total: {
             Text(total)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
         }
         .font(.caption2)
         .foregroundStyle(.secondary)

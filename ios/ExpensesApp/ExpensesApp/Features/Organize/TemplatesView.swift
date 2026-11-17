@@ -150,6 +150,7 @@ private struct AddTemplateSheet: View {
     @State private var formError: String?
     @State private var saving = false
     @FocusState private var nameFocused: Bool
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -161,9 +162,12 @@ private struct AddTemplateSheet: View {
                     TextField("Name", text: $name)
                         .font(.title3)
                         .focused($nameFocused)
+                        .submitLabel(.next)
+                        .onSubmit { titleFocused = true }
                         .fieldError(nameError)
 
                     TextField("Transaction title", text: $title)
+                        .focused($titleFocused)
 
                     ChipFlow {
                         categoryChip
@@ -213,24 +217,21 @@ private struct AddTemplateSheet: View {
         .interactiveDismissDisabled(hasInput || saving)
         .task {
             nameFocused = true
-            if categoryID == nil {
-                categoryID = typed.first?.id
-            }
         }
     }
 
-    // The type and its first category are defaults, so they alone are no input to lose.
+    // The type is a default, so it alone is no input to lose.
     private var hasInput: Bool {
-        !amount.isEmpty || !name.isEmpty || !title.isEmpty || !tags.isEmpty
+        !amount.isEmpty || !name.isEmpty || !title.isEmpty || categoryID != nil || !tags.isEmpty
     }
 
-    // A new type starts on that type's first category.
+    // A category of the other type could never apply, so a new type clears it.
     private var typeSelection: Binding<TransactionKind> {
         Binding(
             get: { type },
             set: { next in
                 type = next
-                categoryID = typed.first?.id
+                categoryID = nil
             }
         )
     }

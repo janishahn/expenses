@@ -87,7 +87,7 @@ struct RuleDetailView: View {
         .sheet(isPresented: $choosingTags) {
             if let rule, let rules = model.rules {
                 let shown = shown(rule)
-                TagPickerSheet(title: "Add Tags", options: rules.tags.filter { !$0.isHiddenFromBudget }.map(\.name), selected: shown.addTags) { names in
+                TagPickerSheet(title: "Tags", options: rules.tags.filter { !$0.isHiddenFromBudget }.map(\.name), selected: shown.addTags) { names in
                     if names != shown.addTags || saves.errors[.tags] != nil {
                         save(.tags) { $0.addTags = names }
                     }
