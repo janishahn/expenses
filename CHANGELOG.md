@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-17
+
 ### Added
 - **Receipt items**, a new AI feature an admin turns on in **Admin → AI** with a model that reads images. A receipt image added to a transaction is read in the background into its lines: what each item is, as printed and as a short product name shared across stores, with its quantity, unit price, and amount. A label read before keeps its product name, and each night at 04:30 the model merges product names that mean the same kind of product, but never merges away a name you typed. Clicking or tapping an item renames its product, on every receipt with the same printed line. An item shows its earlier price when the same printed line cost something else on an earlier receipt. The transaction shows the items on the web and iOS, and notes when they don't add up to its amount. **Read again** retries a receipt that failed or was misread; if reading again fails, the earlier items stay. A photo that is not a receipt shows no items section. Readings cut off by a restart resume at startup, and readings that could not reach the model are tried again each night at 04:30, before the merge. The Assistant can query the items, for example what you spend on eggs or how their price changed. Receipts added before the feature was on can be read with **Read items**. Attachments in the API add `items_status`, `items_error`, and `items`, with each item's `previous_price_cents`, `POST /api/attachments/{id}/items/read` starts a reading, and `PUT /api/attachments/{id}/items/{item_id}` renames an item's product. The portable export adds a `receipt_items` dataset.
 
@@ -661,7 +663,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.8.12...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/janishahn/expenses/compare/v0.8.12...v0.9.0
 [0.8.12]: https://github.com/janishahn/expenses/compare/v0.8.11...v0.8.12
 [0.8.11]: https://github.com/janishahn/expenses/compare/v0.8.10...v0.8.11
 [0.8.10]: https://github.com/janishahn/expenses/compare/v0.8.9...v0.8.10
