@@ -22,6 +22,7 @@ from expenses.db.models import (
     Category,
     DurablePurchase,
     ReceiptAttachment,
+    ReceiptItem,
     ReimbursementAllocation,
     RecurringRule,
     Rule,
@@ -62,6 +63,8 @@ details, recurring links, and reimbursement links may only appear on a few recor
 Amounts are integer cents. Dates and datetimes are ISO strings. IDs are scoped to
 this export and are included so relationships can be reconstructed. Attachment
 metadata references receipt binaries by `archive_path`, relative to the ZIP root.
+Receipt items are lines read from those receipts, in the receipt's currency; they
+detail their transaction and are already part of its amount.
 
 A non-null `auto_category_confidence` marks an unreviewed automatic category
 assignment. Preserve it so predictions are not treated as confirmed training data.
@@ -163,6 +166,20 @@ class ReceiptAttachmentExport(ExportModel):
     sha256_hex: str
     created_at: datetime
     updated_at: datetime
+
+
+class ReceiptItemExport(ExportModel):
+    id: int
+    user_id: int
+    attachment_id: int
+    position: int
+    label: str
+    product: str
+    kind: str
+    quantity: Decimal | None
+    unit: str | None
+    unit_price_cents: int | None
+    amount_cents: int
 
 
 class RecurringRuleExport(ExportModel):
@@ -314,6 +331,7 @@ DATASET_MODELS: dict[str, type[ExportModel]] = {
     "tags": TagExport,
     "transactions": TransactionExport,
     "receipt_attachments": ReceiptAttachmentExport,
+    "receipt_items": ReceiptItemExport,
     "recurring_rules": RecurringRuleExport,
     "transaction_templates": TransactionTemplateExport,
     "durable_purchases": DurablePurchaseExport,
@@ -458,6 +476,7 @@ class PortableExportService:
             "categories": self._category_rows,
             "tags": self._tag_rows,
             "transactions": self._transaction_rows,
+            "receipt_items": self._receipt_item_rows,
             "recurring_rules": self._recurring_rule_rows,
             "transaction_templates": self._transaction_template_rows,
             "durable_purchases": self._durable_purchase_rows,
@@ -554,6 +573,27 @@ class PortableExportService:
             .where(ReceiptAttachment.user_id == self.user_id)
             .order_by(ReceiptAttachment.id.asc())
         ).all()
+
+    def _receipt_item_rows(self) -> Iterator[ReceiptItemExport]:
+        rows = self.session.scalars(
+            select(ReceiptItem)
+            .where(ReceiptItem.user_id == self.user_id)
+            .order_by(ReceiptItem.id.asc())
+        ).yield_per(_STREAM_BATCH)
+        for row in rows:
+            yield ReceiptItemExport(
+                id=row.id,
+                user_id=row.user_id,
+                attachment_id=row.attachment_id,
+                position=row.position,
+                label=row.label,
+                product=row.product,
+                kind=row.kind,
+                quantity=row.quantity,
+                unit=row.unit,
+                unit_price_cents=row.unit_price_cents,
+                amount_cents=row.amount_cents,
+            )
 
     def _recurring_rule_rows(self) -> Iterator[RecurringRuleExport]:
         rows = self.session.scalars(

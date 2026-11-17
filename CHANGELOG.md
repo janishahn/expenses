@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Receipt items**, a new AI feature an admin turns on in **Admin → AI** with a model that reads images. A receipt image added to a transaction is read in the background into its lines: what each item is, as printed and as a short product name shared across stores, with its quantity, unit price, and amount. A label read before keeps its product name, and each night at 04:30 the model merges product names that mean the same kind of product. Clicking or tapping an item renames its product, on every receipt with the same printed line. The transaction shows the items on the web and iOS, and notes when they don't add up to its amount. **Read again** retries a receipt that failed or was misread. The Assistant can query the items, for example what you spend on eggs or how their price changed. Receipts added before the feature was on can be read with **Read items**. Attachments in the API add `items_status`, `items_error`, and `items`, `POST /api/attachments/{id}/items/read` starts a reading, and `PUT /api/attachments/{id}/items/{item_id}` renames an item's product. The portable export adds a `receipt_items` dataset.
+
 ## [0.8.12] - 2026-10-28
 
 ### Added

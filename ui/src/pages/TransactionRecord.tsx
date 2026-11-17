@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowBendUpLeftIcon } from "@phosphor-icons/react/ArrowBendUpLeft"
 import { BankIcon } from "@phosphor-icons/react/Bank"
+import { CircleNotchIcon } from "@phosphor-icons/react/CircleNotch"
 import { LinkSimpleIcon } from "@phosphor-icons/react/LinkSimple"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
@@ -9,6 +10,7 @@ import { PackageIcon } from "@phosphor-icons/react/Package"
 import { PlusIcon } from "@phosphor-icons/react/Plus"
 import { ReceiptIcon } from "@phosphor-icons/react/Receipt"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
+import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate } from "react-router-dom"
 import { apiFetch, getApiErrorMessage, isApiErrorStatus } from "../app/api"
@@ -16,8 +18,10 @@ import type {
   OpenReimbursementsResponse,
   ReimbursementExpenseSearchResponse,
   ReimbursementExpenseSearchResult,
+  TransactionDetail,
   TransactionReimbursementsIncome,
 } from "../app/api-types"
+import { useAuth } from "../app/auth-context"
 import { formatAmountPrivate, formatCoordinate } from "../app/format"
 import {
   amountInput,
@@ -41,6 +45,7 @@ import { Notes } from "../components/ui/Notes"
 import { Peek, PeekSection } from "../components/ui/Peek"
 import { Popover, PopoverActions } from "../components/ui/Popover"
 import { InlineText, Property, PropertyButton, PropertyLink, PropertyList } from "../components/ui/PropertyList"
+import type { ReceiptFile } from "../components/ui/receipt-file"
 import { ReceiptSection } from "../components/ui/ReceiptSection"
 import { Status } from "../components/ui/EmptyState"
 import { Switch } from "../components/ui/Switch"
@@ -543,17 +548,112 @@ export function TransactionLocation({ record }: { record: TransactionRecordState
 }
 
 export function TransactionReceipts({ record }: { record: TransactionRecordState }) {
+  const readsItems = useAuth().aiFeatures.includes("receipt_items")
   const view = record.view
   if (!view) return null
+  const files = receiptFiles(view.attachments)
+  const readItems = readsItems ? (target: ReceiptFile) => void record.receipts.readItems(target) : undefined
   return (
-    <ReceiptSection
-      files={receiptFiles(view.attachments)}
-      uploading={record.receipts.uploading}
-      error={record.receipts.error}
-      onUpload={(file) => void record.receipts.upload(file)}
-      onReplace={(target, file) => void record.receipts.replace(target, file)}
-      onRemove={(target) => void record.receipts.remove(target)}
-    />
+    <>
+      <ReceiptSection
+        files={files}
+        uploading={record.receipts.uploading}
+        error={record.receipts.error}
+        onUpload={(file) => void record.receipts.upload(file)}
+        onReplace={(target, file) => void record.receipts.replace(target, file)}
+        onRemove={(target) => void record.receipts.remove(target)}
+        onReadItems={readItems}
+      />
+      <ReceiptItems view={view} files={files} onReadItems={readItems} onRenameItem={record.receipts.renameItem} />
+    </>
+  )
+}
+
+const QUANTITY = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 })
+
+// The lines read from the receipt images, in euros like the transaction's amount.
+function ReceiptItems({
+  view,
+  files,
+  onReadItems,
+  onRenameItem,
+}: {
+  view: TransactionDetail
+  files: ReceiptFile[]
+  onReadItems?: (target: ReceiptFile) => void
+  onRenameItem: (attachmentId: number, itemId: number, product: string) => Promise<string | null>
+}) {
+  const [errors, setErrors] = useState<Record<number, string | null>>({})
+  const attachments = view.attachments.filter((attachment) => attachment.items_status !== null)
+  if (!attachments.length) return null
+  const read = attachments.filter((attachment) => attachment.items_status === "read")
+  const items = read.flatMap((attachment) => attachment.items.map((item) => ({ ...item, attachmentId: attachment.id })))
+  const itemsCents = items.reduce((sum, item) => sum + item.amount_cents, 0)
+  const reading = attachments.some((attachment) => attachment.items_status === "reading")
+  const failed = attachments.filter((attachment) => attachment.items_status === "failed")
+  return (
+    <PeekSection title="Items">
+      {items.length ? (
+        <List flat label="Receipt items">
+          {items.map((item) => (
+            <Row key={item.id} columns="minmax(0, 1fr) auto">
+              <Cell>
+                <InlineText
+                  label={`product of ${item.label}`}
+                  value={item.product}
+                  error={errors[item.id]}
+                  onCancel={() => setErrors((current) => ({ ...current, [item.id]: null }))}
+                  onSave={async (next) => {
+                    const product = next.trim()
+                    const error = product
+                      ? await onRenameItem(item.attachmentId, item.id, product)
+                      : "Enter a product name."
+                    setErrors((current) => ({ ...current, [item.id]: error }))
+                    return error === null
+                  }}
+                  detail={
+                    <Status>
+                      · {item.label}
+                      {item.quantity !== null && item.unit_price_cents !== null ? (
+                        <>
+                          {" "}
+                          · {QUANTITY.format(item.quantity)}
+                          {item.unit && item.unit !== "pcs" ? ` ${item.unit}` : ""} ×{" "}
+                          <Amount cents={item.unit_price_cents} />
+                        </>
+                      ) : null}
+                    </Status>
+                  }
+                />
+              </Cell>
+              <Amount cents={item.amount_cents} />
+            </Row>
+          ))}
+        </List>
+      ) : null}
+      {read.length && !reading && itemsCents !== view.amount_cents ? (
+        <Status>
+          Items cover <Amount cents={itemsCents} /> of <Amount cents={view.amount_cents} />
+        </Status>
+      ) : null}
+      {reading ? <Status icon={CircleNotchIcon}>Reading receipt…</Status> : null}
+      {failed.map((attachment) => {
+        const file = files.find((entry) => entry.id === attachment.id)
+        return (
+          <div key={attachment.id}>
+            <Status icon={WarningIcon} tone="bad" wrap>
+              {view.attachments.length > 1 ? `${attachment.original_filename}: ` : ""}
+              {attachment.items_error ?? "Unable to read the receipt."}
+            </Status>{" "}
+            {onReadItems && file ? (
+              <Button variant="ghost" size="small" onClick={() => onReadItems(file)}>
+                Read again
+              </Button>
+            ) : null}
+          </div>
+        )
+      })}
+    </PeekSection>
   )
 }
 

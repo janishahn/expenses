@@ -24,7 +24,12 @@ export async function aiSettingsJourney(page: Page) {
   await triage.getByRole("switch").click()
   await expect
     .poll(async () => (await storedFeatures(page)).map((f) => `${f.id}:${f.enabled}:${f.model}:${f.thinking}`))
-    .toEqual(["spending_chat:true:e2e-small:high", "transaction_triage:false:e2e-large:auto", "rule_mining:true:e2e-large:auto"])
+    .toEqual([
+      "spending_chat:true:e2e-small:high",
+      "transaction_triage:false:e2e-large:auto",
+      "rule_mining:true:e2e-large:auto",
+      "receipt_items:true:e2e-large:auto",
+    ])
 
   await page.reload()
   await expect(assistant.getByLabel("Model", { exact: true })).toHaveValue("e2e-small")

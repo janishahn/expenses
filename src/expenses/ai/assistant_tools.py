@@ -29,8 +29,8 @@ Reading data:
   made recently. A later block repeats only the parts that changed; the latest of
   each part is current.
 - Use the tools before you state amounts, categories, budgets, or transactions.
-  sql_query reads transactions, categories, tags, recurring payments,
-  reimbursements, durable purchases, rules, and Trash. get_budgets and get_balance
+  sql_query reads transactions, the items read from their receipts, categories,
+  tags, recurring payments, reimbursements, durable purchases, rules, and Trash. get_budgets and get_balance
   return what the app computes for budgets, balances, and the forecast.
 - sql_query can also do the math. Totals, averages, and differences come out
   more reliably from a query than from adding numbers up yourself, and a SELECT
@@ -176,6 +176,22 @@ SQL_TABLES = {
         join tags g on g.id = tt.tag_id
         join transactions t on t.id = tt.transaction_id
         where t.user_id = :user and t.deleted_at is null
+    """,
+    # Receipts for payments in another currency are converted at the
+    # transaction's own rate, so every amount here is in euro cents.
+    "receipt_items": """
+        select i.id, t.id as transaction_id, t.date, t.title as store,
+            i.position, i.product, i.label, i.kind, i.quantity, i.unit,
+            case when t.source_amount_cents > 0 then cast(round(
+                i.unit_price_cents * t.amount_cents * 1.0 / t.source_amount_cents
+            ) as integer) else i.unit_price_cents end as unit_price_cents,
+            case when t.source_amount_cents > 0 then cast(round(
+                i.amount_cents * t.amount_cents * 1.0 / t.source_amount_cents
+            ) as integer) else i.amount_cents end as amount_cents
+        from receipt_items i
+        join receipt_attachments a on a.id = i.attachment_id
+        join transactions t on t.id = a.transaction_id
+        where i.user_id = :user and t.deleted_at is null
     """,
     "categories": """
         select id, name, type as kind, archived_at is not null as archived
@@ -521,6 +537,13 @@ def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[st
       net_cents, original_currency, original_amount_cents, recurring_id. net_cents
       is what an expense cost after reimbursements; use it for spending.
       original_currency is USD when the user paid in dollars. Trash is not here.
+    - receipt_items: id, transaction_id, date, store (the transaction's title),
+      position, product, label, kind (item, discount, or deposit), quantity, unit,
+      unit_price_cents, amount_cents. Lines read from receipt images: product is a
+      short generic name shared across receipts and stores, such as Eier; label is
+      the line as printed. Discounts and deposit returns are negative. Items detail
+      their transaction and are already part of its amount, so never add them to
+      transaction amounts; they may not add up to it exactly.
     - trash: id, date, kind, title, category, amount_cents, deleted_at.
     - transaction_tags: transaction_id, tag_id, tag.
     - categories: id, name, kind (expense or income), archived.

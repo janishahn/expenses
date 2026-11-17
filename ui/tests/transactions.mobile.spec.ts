@@ -13,7 +13,7 @@ import {
 test.describe.configure({ mode: "parallel" })
 
 const onePixelPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pfdvK0AAAAASUVORK5CYII=",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC",
   "base64"
 )
 
@@ -440,6 +440,21 @@ test.describe("Transactions Page (mobile)", () => {
     await (await chooser).setFiles({ name: fileName, mimeType: "image/png", buffer: onePixelPng })
     await expect(peek.getByRole("button", { name: `Open ${fileName}` })).toBeVisible()
     await expect(peek.getByRole("button", { name: "Add a receipt" })).toHaveCount(0)
+
+    // The stub AI backend reads the image as a grocery receipt.
+    const items = peek.getByRole("list", { name: "Receipt items" })
+    await expect(items.getByRole("listitem")).toHaveCount(5)
+    await expect(items.getByRole("listitem").filter({ hasText: "Milch" })).toContainText("2 × 1,19 €")
+    await expect(peek.getByText("Items cover 6,18 € of 12,34 €")).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+
+    // Later readings keep a renamed label's name, so the name stays findable as Bananen.
+    const bananas = `Bananen ${Date.now()}`
+    const banana = items.getByRole("listitem").filter({ hasText: "Bananen" })
+    await banana.getByRole("button", { name: "Edit product of BANANEN" }).tap()
+    await items.getByRole("textbox", { name: "product of BANANEN" }).fill(bananas)
+    await page.keyboard.press("Enter")
+    await expect(items.getByRole("listitem").filter({ hasText: bananas })).toContainText("0,532 kg")
 
     await peek.getByRole("button", { name: `Open ${fileName}` }).tap()
     const viewer = page.getByRole("dialog", { name: fileName })

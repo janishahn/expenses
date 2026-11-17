@@ -1,5 +1,8 @@
+import json
+import runpy
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -10,7 +13,8 @@ from sqlalchemy.orm import sessionmaker
 
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.db.models import Transaction, TransactionType
+from expenses.ai.service import fail_interrupted_receipt_readings
+from expenses.db.models import LLMJob, ReceiptAttachment, Transaction, TransactionType
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.recurrence.engine import local_today
 from expenses.schemas import TransactionIn
@@ -895,6 +899,172 @@ def test_attachment_thumbnail_pixel_limit_applies_to_decoded_size(
         == 400
     )
     assert thumbnail_status("large.png", "image/png", format="PNG") == 400
+
+
+def _png(width: int) -> bytes:
+    from PIL import Image
+
+    out = BytesIO()
+    Image.new("RGB", (width, 4), color="white").save(out, format="PNG")
+    return out.getvalue()
+
+
+def test_receipt_images_are_read_into_items_after_upload(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_AI_BACKENDS", "local")
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_KIND", "openai-compatible")
+    # Restored after the test; the stub's install() points it at the stub.
+    monkeypatch.setenv("EXPENSES_AI_LOCAL_BASE_URL", "")
+    runpy.run_path(str(Path(__file__).with_name("e2e_ai_provider.py")))["install"]()
+    get_settings.cache_clear()
+    category_id = _category(api_client, csrf_headers, "Groceries")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=618,
+        title="Rewe",
+        category_id=category_id,
+    )
+
+    def upload(name: str, content: bytes, mime_type: str = "image/png") -> dict:
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": (name, content, mime_type)},
+            headers=csrf_headers,
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    def attachments() -> dict[str, dict]:
+        detail = api_client.get(f"/api/transactions/{transaction_id}").json()
+        return {row["original_filename"]: row for row in detail["attachments"]}
+
+    assert upload("before.png", _png(4))["items_status"] is None
+    assert (
+        api_client.post(
+            f"/api/attachments/{attachments()['before.png']['id']}/items/read",
+            headers=csrf_headers,
+        ).status_code
+        == 503
+    )
+
+    assert (
+        api_client.post(
+            "/api/auth/admin-elevation",
+            headers=csrf_headers,
+            json={"password": "pw-12345"},
+        ).status_code
+        == 200
+    )
+    enabled = api_client.put(
+        "/api/admin/ai/settings",
+        headers=csrf_headers,
+        json={
+            "features": {
+                "receipt_items": {
+                    "enabled": True,
+                    "backend": "local",
+                    "model": "e2e-large",
+                }
+            }
+        },
+    )
+    assert enabled.status_code == 200, enabled.text
+
+    # The response comes before the reading; the test client finishes it.
+    assert upload("rewe.png", _png(4))["items_status"] == "reading"
+    assert upload("photo.png", _png(2))["items_status"] == "reading"
+    assert (
+        upload("invoice.pdf", b"%PDF-1.4\n", "application/pdf")["items_status"] is None
+    )
+    rows = attachments()
+    read = rows["rewe.png"]
+    assert read["items_status"] == "read"
+    assert read["items_error"] is None
+    assert [
+        (item["product"], item["label"], item["kind"], item["amount_cents"])
+        for item in read["items"]
+    ] == [
+        ("Eier", "BIO EIER M 10ST", "item", 299),
+        ("Milch", "H-MILCH 3,5%", "item", 238),
+        ("Bananen", "BANANEN", "item", 106),
+        ("Pfand", "PFAND", "deposit", 25),
+        ("Rabatt", "COUPON", "discount", -50),
+    ]
+    assert read["items"][2]["quantity"] == 0.532
+    assert read["items"][2]["unit"] == "kg"
+    assert read["items"][2]["unit_price_cents"] == 199
+    assert rows["photo.png"]["items_status"] == "failed"
+    assert rows["photo.png"]["items_error"] == "This image is not a receipt."
+    assert rows["photo.png"]["items"] == []
+
+    # Reading again replaces the items and passes the products read so far.
+    again = api_client.post(
+        f"/api/attachments/{rows['before.png']['id']}/items/read",
+        headers=csrf_headers,
+    )
+    assert again.json()["items_status"] == "reading"
+    assert len(attachments()["before.png"]["items"]) == 5
+    latest = db_session.query(LLMJob).order_by(LLMJob.id.desc()).first()
+    assert latest.feature == "receipt_items"
+    assert "Bananen" in json.loads(latest.input_json)["products"]
+    assert latest.usage_input_tokens == 900
+    pdf = api_client.post(
+        f"/api/attachments/{rows['invoice.pdf']['id']}/items/read",
+        headers=csrf_headers,
+    )
+    assert pdf.status_code == 400
+
+    # Naming a product renames its label everywhere, and later readings keep it.
+    milk = read["items"][1]
+    renamed = api_client.put(
+        f"/api/attachments/{read['id']}/items/{milk['id']}",
+        json={"product": " Haferdrink "},
+        headers=csrf_headers,
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["items"][1]["product"] == "Haferdrink"
+    api_client.post(
+        f"/api/attachments/{rows['before.png']['id']}/items/read",
+        headers=csrf_headers,
+    )
+    api_client.post(f"/api/attachments/{read['id']}/items/read", headers=csrf_headers)
+    assert attachments()["before.png"]["items"][1]["product"] == "Haferdrink"
+    assert attachments()["rewe.png"]["items"][1]["product"] == "Haferdrink"
+    other = api_client.put(
+        f"/api/attachments/{rows['photo.png']['id']}/items/{milk['id']}",
+        json={"product": "Milch"},
+        headers=csrf_headers,
+    )
+    assert other.status_code == 404
+
+    # A receipt for a payment in another currency shows its items in euro.
+    db_session.query(Transaction).filter_by(id=transaction_id).update(
+        {"source_currency_code": "USD", "source_amount_cents": 1236}
+    )
+    db_session.commit()
+    converted = attachments()["rewe.png"]["items"]
+    assert [item["amount_cents"] for item in converted] == [150, 119, 53, 13, -25]
+    assert converted[1]["unit_price_cents"] == 60
+
+    # A reading cut off by a restart can be read again.
+    db_session.query(ReceiptAttachment).filter_by(id=read["id"]).update(
+        {"items_status": "reading"}
+    )
+    db_session.commit()
+    busy = api_client.post(
+        f"/api/attachments/{read['id']}/items/read", headers=csrf_headers
+    )
+    assert busy.status_code == 409
+    assert fail_interrupted_receipt_readings(db_session) == 1
+    assert attachments()["rewe.png"]["items_status"] == "failed"
+    assert attachments()["rewe.png"]["items_error"] == (
+        "Reading stopped when the server restarted."
+    )
 
 
 def test_transactions_list_total_counts_every_filtered_row(

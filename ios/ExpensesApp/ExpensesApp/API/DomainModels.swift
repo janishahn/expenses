@@ -1372,6 +1372,10 @@ struct ReceiptAttachment: Codable, Equatable, Identifiable {
     let sizeBytes: Int
     let sha256Hex: String
     let createdAt: Date
+    /// Nil when the server never read it: a PDF, or receipt reading was off at upload.
+    let itemsStatus: ReceiptItemsStatus?
+    let itemsError: String?
+    let items: [ReceiptItem]
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1381,6 +1385,43 @@ struct ReceiptAttachment: Codable, Equatable, Identifiable {
         case sizeBytes = "size_bytes"
         case sha256Hex = "sha256_hex"
         case createdAt = "created_at"
+        case itemsStatus = "items_status"
+        case itemsError = "items_error"
+        case items
+    }
+}
+
+enum ReceiptItemsStatus: String, Codable {
+    case reading
+    case read
+    case failed
+}
+
+/// Names an item's product; the server renames every item with the same label.
+struct ReceiptItemProductRequest: Encodable, Equatable {
+    let product: String
+}
+
+/// One line of a read receipt, in receipt order. Discounts and deposit returns are negative.
+struct ReceiptItem: Codable, Equatable, Identifiable {
+    let id: Int
+    /// The line as printed, as "BIO EIER M 10ST".
+    let label: String
+    /// A short generic name, as "Eier".
+    let product: String
+    let quantity: Double?
+    let unit: String?
+    let unitPriceCents: Int?
+    let amountCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case product
+        case quantity
+        case unit
+        case unitPriceCents = "unit_price_cents"
+        case amountCents = "amount_cents"
     }
 }
 
@@ -2799,6 +2840,8 @@ struct AIUsage: Decodable, Equatable {
             "Categorization suggestions"
         case "rule_mining":
             "Rule suggestions"
+        case "receipt_items":
+            "Receipt items"
         default:
             feature
         }

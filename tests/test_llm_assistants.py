@@ -2,18 +2,30 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 import pytest
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
-from expenses.ai.client import LLMOutputError
+from expenses.ai import backends
+from expenses.ai.client import LLMOutputError, PydanticAILLMRunner
+from expenses.ai.features import ResolvedFeature
 from expenses.ai.schemas import (
+    ProductMergeOut,
+    ProductMergesOutput,
+    ReceiptLineOut,
+    ReceiptReadingOutput,
     RuleMiningOutput,
     RuleProposalOut,
     TransactionTriageOutput,
 )
+from expenses.core.config import AIBackend
+from expenses.ai import service as ai_service
 from expenses.ai.service import LLMAssistantService
 from expenses.db.models import (
     LLMJob,
+    ReceiptAttachment,
+    ReceiptItem,
     RuleLLMSuggestion,
     TransactionClassificationEvent,
     TransactionType,
@@ -28,7 +40,7 @@ class FakeLLMRunner:
         self.output = output
         self.calls = []
 
-    async def run(self, *, feature, prompt_version, payload, output_type):
+    async def run(self, *, feature, prompt_version, payload, output_type, images=None):
         self.calls.append(
             {
                 "feature": feature,
@@ -45,7 +57,7 @@ class FailingLLMRunner:
         self.exc = exc
         self.calls = []
 
-    async def run(self, *, feature, prompt_version, payload, output_type):
+    async def run(self, *, feature, prompt_version, payload, output_type, images=None):
         self.calls.append(
             {
                 "feature": feature,
@@ -715,3 +727,153 @@ def test_trace_clearing_fails_runs_cut_off_mid_call() -> None:
             ("running", None),
             ("failed", "interrupted"),
         ]
+
+
+@pytest.mark.anyio
+async def test_receipt_total_mismatch_is_retried_once_then_kept(monkeypatch) -> None:
+    requests = []
+
+    def misread(messages, info):
+        requests.append(messages)
+        return ModelResponse(
+            parts=[
+                TextPart(
+                    '{"is_receipt": true, "total_cents": 500, "items": ['
+                    '{"label": "EIER", "product": "Eier", "kind": "item", '
+                    '"amount_cents": 299}]}'
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        backends, "build_model", lambda backend, name: FunctionModel(misread)
+    )
+    runner = PydanticAILLMRunner(
+        ResolvedFeature(
+            feature="receipt_items",
+            backend=AIBackend(
+                name="local", kind="openai-compatible", base_url=None, api_key=""
+            ),
+            model="vision",
+            thinking="auto",
+        )
+    )
+
+    result = await runner.run(
+        feature="receipt_items",
+        prompt_version="receipt_items_v1",
+        payload={"products": []},
+        output_type=ReceiptReadingOutput,
+        images=[(b"\xff\xd8", "image/jpeg")],
+    )
+
+    assert len(requests) == 2
+    assert "add up to 299 cents" in str(requests[1][-1])
+    assert [item.amount_cents for item in result.output.items] == [299]
+
+
+@pytest.mark.anyio
+async def test_receipt_products_follow_known_labels_and_merges(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(ai_service, "_receipt_image", lambda path: b"jpeg")
+    engine = create_engine(f"sqlite:///{tmp_path / 'receipts.db'}")
+    Base.metadata.create_all(engine)
+    nightly = ai_service.merge_products_for_users_with_new_readings
+    with Session(engine) as session:
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2026, 5, 1),
+                occurred_at=datetime(2026, 5, 1, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=600,
+                category_id=None,
+                title="REWE",
+                tags=[],
+            )
+        )
+
+        def receipt(name: str) -> ReceiptAttachment:
+            attachment = ReceiptAttachment(
+                transaction_id=txn.id,
+                storage_key=name,
+                original_filename=name,
+                mime_type="image/jpeg",
+                size_bytes=4,
+                sha256_hex="0" * 64,
+                items_status="reading",
+            )
+            session.add(attachment)
+            session.commit()
+            return attachment
+
+        def line(label: str, product: str) -> ReceiptLineOut:
+            return ReceiptLineOut(
+                label=label, product=product, kind="item", amount_cents=200
+            )
+
+        first = receipt("first.jpg")
+        await LLMAssistantService(
+            session,
+            user_id=1,
+            runner=FakeLLMRunner(
+                ReceiptReadingOutput(
+                    is_receipt=True,
+                    total_cents=400,
+                    items=[line("BASMATI", "Basmatireis"), line("JASMIN", "Reis")],
+                )
+            ),
+        ).read_receipt_items(first.id)
+
+        # The same printed label keeps the product it was read as before.
+        second = receipt("second.jpg")
+        await LLMAssistantService(
+            session,
+            user_id=1,
+            runner=FakeLLMRunner(
+                ReceiptReadingOutput(
+                    is_receipt=True,
+                    total_cents=400,
+                    items=[line("BASMATI", "Reis"), line("HAFERDR", "Haferdrink")],
+                )
+            ),
+        ).read_receipt_items(second.id)
+        assert [item.product for item in second.items] == ["Basmatireis", "Haferdrink"]
+
+        runner = FakeLLMRunner(
+            ProductMergesOutput(
+                merges=[ProductMergeOut(names=["Basmatireis", "Reis"], into="Reis")]
+            )
+        )
+        renamed = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).merge_receipt_products()
+
+        assert runner.calls[0]["payload"]["products"]["Basmatireis"] == {
+            "items": 2,
+            "labels": ["BASMATI"],
+        }
+        assert renamed == 2
+        assert session.scalars(
+            select(ReceiptItem.product).order_by(ReceiptItem.id)
+        ).all() == ["Reis", "Reis", "Reis", "Haferdrink"]
+
+        # The nightly pass skips users with no reading since their last merge.
+        merged_users = []
+
+        async def record(self):
+            merged_users.append(self.user_id)
+
+        monkeypatch.setattr(LLMAssistantService, "merge_receipt_products", record)
+        await asyncio.to_thread(nightly, engine)
+        assert merged_users == []
+        third = receipt("third.jpg")
+        await LLMAssistantService(
+            session,
+            user_id=1,
+            runner=FakeLLMRunner(
+                ReceiptReadingOutput(is_receipt=True, items=[line("TOFU", "Tofu")])
+            ),
+        ).read_receipt_items(third.id)
+        await asyncio.to_thread(nightly, engine)
+        assert merged_users == [1]

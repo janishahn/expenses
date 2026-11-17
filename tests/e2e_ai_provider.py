@@ -27,8 +27,13 @@ The last user message picks the script:
 
 Write scenarios read ids only from tool results and the app's reference, as a model
 would.
+
+A request with an image is a receipt to read. An image 2 pixels wide is not a
+receipt; any other image reads as RECEIPT, whose lines add up to 6,18 €.
 """
 
+import base64
+import io
 import json
 import os
 import re
@@ -46,6 +51,44 @@ ANSWER = (
 )
 SLOW_ANSWER = " ".join(f"Word{index}" for index in range(400))
 LONG_ANSWER = [f"Spending detail {index}.\n\n" for index in range(1, 81)]
+RECEIPT = {
+    "is_receipt": True,
+    "total_cents": 618,
+    "items": [
+        {
+            "label": "BIO EIER M 10ST",
+            "product": "Eier",
+            "kind": "item",
+            "amount_cents": 299,
+        },
+        {
+            "label": "H-MILCH 3,5%",
+            "product": "Milch",
+            "kind": "item",
+            "quantity": 2,
+            "unit": "pcs",
+            "unit_price_cents": 119,
+            "amount_cents": 238,
+        },
+        {
+            "label": "BANANEN",
+            "product": "Bananen",
+            "kind": "item",
+            "quantity": 0.532,
+            "unit": "kg",
+            "unit_price_cents": 199,
+            "amount_cents": 106,
+        },
+        {"label": "PFAND", "product": "Pfand", "kind": "deposit", "amount_cents": 25},
+        {
+            "label": "COUPON",
+            "product": "Rabatt",
+            "kind": "discount",
+            "amount_cents": -50,
+        },
+    ],
+}
+NOT_A_RECEIPT = {"is_receipt": False, "total_cents": None, "items": []}
 _failed_once: set[str] = set()
 _lock = threading.Lock()
 
@@ -295,6 +338,20 @@ def _script(messages: list[dict]) -> tuple[list[dict], float]:
     ], 0.01
 
 
+def _image_width(messages: list[dict]) -> int | None:
+    from PIL import Image
+
+    for message in messages:
+        if message["role"] != "user" or isinstance(message["content"], str):
+            continue
+        for part in message["content"]:
+            if part.get("type") == "image_url":
+                data = part["image_url"]["url"].split(",", 1)[1]
+                with Image.open(io.BytesIO(base64.b64decode(data))) as image:
+                    return image.width
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/v1/models":
@@ -311,6 +368,34 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         messages = body["messages"]
+        width = _image_width(messages)
+        if width is not None:
+            reading = NOT_A_RECEIPT if width == 2 else RECEIPT
+            self._json(
+                200,
+                {
+                    "id": "chatcmpl-e2e",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": body["model"],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": json.dumps(reading),
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 900,
+                        "completion_tokens": 120,
+                        "total_tokens": 1020,
+                    },
+                },
+            )
+            return
         question = next(m for m in reversed(messages) if m["role"] == "user")["content"]
         if isinstance(question, str) and "fail once" in question.lower():
             with _lock:

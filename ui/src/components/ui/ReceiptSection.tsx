@@ -5,6 +5,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { FilePdfIcon } from "@phosphor-icons/react/FilePdf"
 import { ImageIcon } from "@phosphor-icons/react/Image"
+import { ListBulletsIcon } from "@phosphor-icons/react/ListBullets"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { UploadSimpleIcon } from "@phosphor-icons/react/UploadSimple"
 import clsx from "clsx"
@@ -24,6 +25,7 @@ export function ReceiptSection({
   onUpload,
   onReplace,
   onRemove,
+  onReadItems,
   uploading = false,
   error,
 }: {
@@ -31,6 +33,8 @@ export function ReceiptSection({
   onUpload: (file: File) => void
   onReplace: (target: ReceiptFile, file: File) => void
   onRemove: (target: ReceiptFile) => void
+  // Reads an image's items; unset while reading receipts is off.
+  onReadItems?: (target: ReceiptFile) => void
   uploading?: boolean
   error?: string | null
 }) {
@@ -140,6 +144,11 @@ export function ReceiptSection({
                 <MenuItem icon={ArrowsClockwiseIcon} disabled={uploading} onSelect={() => choose(file)}>
                   Replace
                 </MenuItem>
+                {onReadItems && !file.pdf && file.itemsStatus !== "reading" ? (
+                  <MenuItem icon={ListBulletsIcon} onSelect={() => onReadItems(file)}>
+                    {file.itemsStatus === null ? "Read items" : "Read again"}
+                  </MenuItem>
+                ) : null}
                 <MenuSeparator />
                 <MenuItem icon={TrashIcon} danger onSelect={() => onRemove(file)}>
                   Remove

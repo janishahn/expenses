@@ -2814,6 +2814,7 @@ class ReceiptAttachmentService:
         size_bytes: int,
         sha256_hex: str,
         replaces: ReceiptAttachment | None = None,
+        items_status: Literal["reading"] | None = None,
     ) -> ReceiptAttachment:
         attachment = ReceiptAttachment(
             user_id=self.user_id,
@@ -2823,6 +2824,7 @@ class ReceiptAttachmentService:
             mime_type=mime_type,
             size_bytes=size_bytes,
             sha256_hex=sha256_hex,
+            items_status=items_status,
         )
         self.session.add(attachment)
         # A replacement swaps the two rows in one commit; its files go once that lands.

@@ -1126,6 +1126,20 @@ struct ExpensesAPIClient {
         )
     }
 
+    /// Starts a new background read of an image receipt's items.
+    func readReceiptItems(attachmentID: Int, token: String) async throws -> ReceiptAttachment {
+        try await request(path: "/api/attachments/\(attachmentID)/items/read", method: "POST", bearerToken: token)
+    }
+
+    func renameReceiptItem(attachmentID: Int, itemID: Int, product: String, token: String) async throws -> ReceiptAttachment {
+        try await request(
+            path: "/api/attachments/\(attachmentID)/items/\(itemID)",
+            method: "PUT",
+            bearerToken: token,
+            body: ReceiptItemProductRequest(product: product)
+        )
+    }
+
     func deleteAttachment(id: Int, token: String) async throws {
         let _: EmptyResponse = try await request(
             path: "/api/attachments/\(id)",

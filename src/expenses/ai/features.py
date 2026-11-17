@@ -12,11 +12,12 @@ from expenses.ai.client import LLMDisabledError
 from expenses.core.config import AIBackend, AIBackendKind, get_settings
 from expenses.db.models import AIFeatureSetting
 
-Feature = Literal["spending_chat", "transaction_triage", "rule_mining"]
+Feature = Literal["spending_chat", "transaction_triage", "rule_mining", "receipt_items"]
 FEATURE_NAMES: dict[Feature, str] = {
     "spending_chat": "Assistant",
     "transaction_triage": "Categorization suggestions",
     "rule_mining": "Rule suggestions",
+    "receipt_items": "Receipt items",
 }
 Thinking = Literal["auto", "off", "low", "medium", "high"]
 THINKING_LEVELS: tuple[Thinking, ...] = get_args(Thinking)

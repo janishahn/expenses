@@ -5,6 +5,7 @@ export const FEATURE_NAMES: Record<AIFeature, string> = {
   spending_chat: "Assistant",
   transaction_triage: "Categorization suggestions",
   rule_mining: "Rule suggestions",
+  receipt_items: "Receipt items",
 }
 
 // One model serving one feature; the URL names it so Back returns to the overview.

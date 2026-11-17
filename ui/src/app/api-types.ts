@@ -107,6 +107,18 @@ export type DurablePurchase = {
   ended_on: string | null
 }
 
+// One line of a read receipt, in euro cents. Discounts and deposit returns are negative.
+export type ReceiptItem = {
+  id: number
+  label: string
+  product: string
+  kind: "item" | "discount" | "deposit"
+  quantity: number | null
+  unit: string | null
+  unit_price_cents: number | null
+  amount_cents: number
+}
+
 export type ReceiptAttachment = {
   id: number
   transaction_id: number
@@ -115,6 +127,10 @@ export type ReceiptAttachment = {
   size_bytes: number
   sha256_hex: string
   created_at: string
+  // Null: never read, because the file is a PDF or reading was off at upload.
+  items_status: "reading" | "read" | "failed" | null
+  items_error: string | null
+  items: ReceiptItem[]
 }
 
 export type TransactionBankRow = {

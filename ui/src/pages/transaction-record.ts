@@ -37,6 +37,9 @@ export function useTransactionRecord(id: number) {
     queryFn: () => apiFetch<TransactionDetail>(`/api/transactions/${id}`),
     // Never show another record while this one loads.
     placeholderData: undefined,
+    // The server reads receipts in the background; check back until each one is done.
+    refetchInterval: (query) =>
+      query.state.data?.attachments.some((attachment) => attachment.items_status === "reading") ? 2000 : false,
   })
   const categoriesQuery = useQuery({
     queryKey: ["categories", "options"],
@@ -165,6 +168,47 @@ export function useTransactionRecord(id: number) {
     }
     refreshReceipts()
   }
+  const readReceiptItems = async (target: ReceiptFile) => {
+    setReceiptError(null)
+    let reading: ReceiptAttachment
+    try {
+      reading = await apiFetch<ReceiptAttachment>(`/api/attachments/${target.id}/items/read`, { method: "POST" })
+    } catch (error) {
+      setReceiptError(getApiErrorMessage(error, "Unable to read the receipt."))
+      return
+    }
+    // The attachment now reads as reading, which starts the polling above.
+    storeAttachment(reading)
+  }
+  // Returns the error to show at the item, or null once renamed.
+  const renameReceiptItem = async (attachmentId: number, itemId: number, product: string) => {
+    let renamed: ReceiptAttachment
+    try {
+      renamed = await apiFetch<ReceiptAttachment>(`/api/attachments/${attachmentId}/items/${itemId}`, {
+        method: "PUT",
+        body: JSON.stringify({ product }),
+      })
+    } catch (error) {
+      return getApiErrorMessage(error, "Unable to rename the item.")
+    }
+    storeAttachment(renamed)
+    // Items with the same label on other receipts took the name too.
+    void queryClient.invalidateQueries({
+      queryKey: ["transaction"],
+      predicate: (query) => query.queryKey[1] !== String(id),
+    })
+    return null
+  }
+  const storeAttachment = (updated: ReceiptAttachment) => {
+    queryClient.setQueryData<TransactionDetail>(
+      key,
+      (current) =>
+        current && {
+          ...current,
+          attachments: current.attachments.map((attachment) => (attachment.id === updated.id ? updated : attachment)),
+        }
+    )
+  }
 
   const removeAllocation = async (allocationId: number) => {
     if (!(await confirmDialog({ title: "Remove this reimbursement allocation?", confirmLabel: "Remove" }))) return
@@ -229,7 +273,7 @@ export function useTransactionRecord(id: number) {
     saveDurable,
     durableOpen,
     setDurableOpen,
-    receipts: { uploading, error: receiptError, upload: uploadReceipt, replace: replaceReceipt, remove: removeReceipt },
+    receipts: { uploading, error: receiptError, upload: uploadReceipt, replace: replaceReceipt, remove: removeReceipt, readItems: readReceiptItems, renameItem: renameReceiptItem },
     removeAllocation,
     actionError,
     deleteRecord,

@@ -66,6 +66,7 @@ def _seed(session: Session) -> None:
         CurrencyCode,
         IntervalUnit,
         MonthDayPolicy,
+        ReceiptItem,
         RuleMatchType,
         Transaction,
         TransactionType,
@@ -748,7 +749,7 @@ def _seed(session: Session) -> None:
         path = attachment_svc.path_for_storage_key(storage_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
-        attachment_svc.create_metadata(
+        attachment = attachment_svc.create_metadata(
             transaction_id=txn.id,
             storage_key=storage_key,
             original_filename=filename,
@@ -756,6 +757,20 @@ def _seed(session: Session) -> None:
             size_bytes=len(content),
             sha256_hex=hashlib.sha256(content).hexdigest(),
         )
+        # The lines printed on the image, as a receipt reading would store them.
+        attachment.items_status = "read"
+        for position, (label, amount) in enumerate(line_items):
+            attachment.items.append(
+                ReceiptItem(
+                    user_id=1,
+                    position=position,
+                    label=label.upper(),
+                    product=label,
+                    kind="item",
+                    amount_cents=amount,
+                )
+            )
+    session.commit()
 
     # ── bank reconciliation examples ─────────────────────────────────────────
     assert matched_salary_txn is not None

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from pydantic import BaseModel
 
 from expenses.ai.schemas import (
+    ProductMergesOutput,
+    ReceiptReadingOutput,
     RuleMiningOutput,
     TransactionTriageOutput,
 )
@@ -52,7 +54,10 @@ class LLMRunner:
         prompt_version: str,
         payload: dict[str, Any],
         output_type: type[OutputT],
+        images: list[tuple[bytes, str]] | None = None,
     ) -> OutputT | LLMRunResult[OutputT]:
+        """Runs one structured call. images are (data, media type) pairs sent
+        after the payload."""
         raise NotImplementedError
 
 
@@ -79,8 +84,15 @@ class PydanticAILLMRunner(LLMRunner):
         prompt_version: str,
         payload: dict[str, Any],
         output_type: type[OutputT],
+        images: list[tuple[bytes, str]] | None = None,
     ) -> LLMRunResult[OutputT]:
-        from pydantic_ai import Agent, ModelRetry, PromptedOutput, RunContext
+        from pydantic_ai import (
+            Agent,
+            BinaryContent,
+            ModelRetry,
+            PromptedOutput,
+            RunContext,
+        )
         from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
         from pydantic_ai.usage import UsageLimits
 
@@ -94,15 +106,17 @@ class PydanticAILLMRunner(LLMRunner):
             model,
             deps_type=dict[str, Any],
             output_type=PromptedOutput(output_type),
-            instructions=_instructions_for_feature(feature),
+            instructions=_instructions_for_feature(feature, output_type),
             retries=2,
             model_settings=model_settings(self.resolved),
         )
+        total_retried = False
 
         @agent.output_validator
         async def validate_output(
             ctx: RunContext[dict[str, Any]], output: OutputT
         ) -> OutputT:
+            nonlocal total_retried
             if isinstance(output, TransactionTriageOutput):
                 if output.clean_title is None:
                     raise ModelRetry(
@@ -162,18 +176,58 @@ class PydanticAILLMRunner(LLMRunner):
                         raise ModelRetry(
                             "Every rule proposal needs set_category_id or add_tags."
                         )
+            if isinstance(output, ReceiptReadingOutput):
+                if any(
+                    item.kind == "discount" and item.amount_cents >= 0
+                    for item in output.items
+                ):
+                    raise ModelRetry("Give every discount a negative amount_cents.")
+                lines_cents = sum(item.amount_cents for item in output.items)
+                # One retry catches most misread prices. A receipt that still
+                # does not add up is kept as read rather than lost.
+                if (
+                    output.total_cents is not None
+                    and lines_cents != output.total_cents
+                    and not total_retried
+                ):
+                    total_retried = True
+                    raise ModelRetry(
+                        f"The lines add up to {lines_cents} cents, but the receipt's "
+                        f"total is {output.total_cents} cents. Read the prices, "
+                        "quantities, and discounts again."
+                    )
+            if isinstance(output, ProductMergesOutput):
+                known = set(ctx.deps.get("products", {}))
+                sources = [name for merge in output.merges for name in merge.names]
+                if any(name not in known for name in sources):
+                    raise ModelRetry("Merge only names from the payload's products.")
+                if len(sources) != len(set(sources)):
+                    raise ModelRetry("Put each name in at most one merge.")
+                if any(merge.into in sources for merge in output.merges):
+                    raise ModelRetry(
+                        "Never merge into a name that is itself merged away."
+                    )
             return output
 
+        prompt = json.dumps(
+            {
+                "prompt_version": prompt_version,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         try:
             result = await agent.run(
-                json.dumps(
-                    {
-                        "prompt_version": prompt_version,
-                        "payload": payload,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
+                [
+                    prompt,
+                    *(
+                        BinaryContent(data=data, media_type=media_type)
+                        for data, media_type in images or []
+                    ),
+                ]
+                if images
+                else prompt,
                 deps=payload,
                 usage_limits=UsageLimits(output_tokens_limit=OUTPUT_TOKENS_LIMIT),
             )
@@ -194,7 +248,32 @@ class PydanticAILLMRunner(LLMRunner):
         )
 
 
-def _instructions_for_feature(feature: str) -> str:
+# How broad a receipt item's product name is. Shared by reading and merging so both
+# group at the same level.
+PRODUCT_NAME_RULE = (
+    "A product name says what kind of thing was bought, at the level a shopper "
+    "compares prices across stores: the type, not the variety, flavour, brand, "
+    "size, packaging, or quality label such as Bio. So Reis for any rice, Aufstrich "
+    "for any bread spread, Joghurt for any yoghurt including plant-based ones, "
+    "Nudeln for any dry pasta, Käse for any cheese that is not cream cheese "
+    "including Mozzarella and Halloumi, Frischkäse for cream cheese and Crème "
+    "fraîche, Limonade for any soft drink including cola, Energydrink for any drink "
+    "sold for its caffeine or energy, Saft, Smoothie, Schokolade, Chips. A "
+    "sandwich, wrap, or other ready-made snack is Sandwich, never Brot. Keep kinds "
+    "apart when they are bought for different uses or differ clearly in price: "
+    "Milch and Haferdrink, Brot and Brötchen, Käse and Frischkäse, Saft and "
+    "Smoothie, Joghurt and Zaziki, Bier and Malzbier, Tofu and Veganes Hack. "
+    "Fresh fruit and "
+    "vegetables keep their kind: Tomaten, Cherrytomaten, Champignons, Zucchini. "
+    "Dishes and drinks served in restaurants, cafés, and bars are named by their "
+    "type as served, such as Burger, Pommes, Nudelgericht, Cocktail, Bier vom Fass, "
+    "Kaffee, never with the name of a grocery such as Nudeln or Bier. Medicines and "
+    "drugstore goods use their common type, such as Hautgel or Nahrungsergänzung. "
+    "Use German names."
+)
+
+
+def _instructions_for_feature(feature: str, output_type: type) -> str:
     common = (
         "Return only data matching the requested schema. Do not invent categories, "
         "tags, ids, dates, or amounts. Use only ids and labels present in the payload. "
@@ -218,5 +297,47 @@ def _instructions_for_feature(feature: str) -> str:
             "when there is no actionable repeated pattern. Every proposal must include "
             "evidence_transaction_ids from the payload, a title match_value derived from "
             "the repeated merchant token, and either set_category_id or add_tags."
+        )
+    if output_type is ProductMergesOutput:
+        return (
+            common + " You keep the product names of one household's receipt items "
+            "consistent. The payload maps each product name to how many items use "
+            "it and some of their labels as printed on receipts. "
+            + PRODUCT_NAME_RULE
+            + " Return a merge for every group of names that this rule makes one "
+            "product, such as a variety and its type: names are the names merged "
+            "away, into the name they all take, which may be one of them or a new "
+            "name. Merge only names from the payload, each into one name. Never "
+            "merge different kinds of product: two different fruits or vegetables, "
+            "a fresh food and a preserved or dried one, or a food and a dish made "
+            "from it stay apart, and so does every pair the rule keeps apart. When "
+            "unsure, leave the names apart. Return merges [] when every name "
+            "already fits."
+        )
+    if feature == "receipt_items":
+        return (
+            common + " Read the attached image into the lines of what was bought. Any "
+            "document that shows bought items with prices counts, such as a till "
+            "receipt, a restaurant bill, an invoice, or a pharmacy prescription "
+            "with its price. Set is_receipt false and items [] when the image shows "
+            "no prices for bought items or cannot be read. total_cents is the total "
+            "printed on it, or null when none is legible. Amounts are integer cents "
+            "in the document's currency. List every purchased line in printed order "
+            "with label as printed and amount_cents as the line's total. A "
+            "quantity line such as 2 X 5,90 belongs to the line whose amount is that "
+            "quantity times that price, even when printed next to another line. A "
+            "discount printed directly under a line belongs to that line: subtract "
+            "it from that line's amount_cents. Discounts or coupons on the whole "
+            "receipt are kind discount with a negative amount_cents. Bottle deposits "
+            "are kind deposit, and deposit returns are deposit lines with a negative "
+            "amount_cents. Never list subtotals, totals, tax summaries, payment, "
+            "change, tips written by hand, or loyalty lines. quantity and unit are "
+            "the printed count or weight, such as 2 pcs or 0.532 kg, and "
+            "unit_price_cents the printed price per unit; leave them null when none "
+            "is printed. "
+            + PRODUCT_NAME_RULE
+            + " Work out abbreviated labels from what the store sells. When the "
+            "payload's products list holds a name for this kind of product, use "
+            "exactly that name."
         )
     return common

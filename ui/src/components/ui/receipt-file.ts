@@ -8,6 +8,8 @@ export type ReceiptFile = {
   previewUrl: string | null
   // The original file, served inline.
   fileUrl: string
+  // Reading the receipt's items; null when it was never read.
+  itemsStatus: "reading" | "read" | "failed" | null
 }
 
 export const RECEIPT_ACCEPT = "application/pdf,image/jpeg,image/png,image/webp"
