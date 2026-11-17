@@ -1113,8 +1113,13 @@ def _receipt_image(path: Path) -> bytes:
 
     try:
         with Image.open(path) as image:
+            pixels = image.width * image.height
             image.draft("RGB", (RECEIPT_IMAGE_EDGE, RECEIPT_IMAGE_EDGE))
-            if image.width * image.height > get_settings().receipt_thumbnail_max_pixels:
+            # Baseline JPEGs decode at the reduced draft size. Progressive JPEGs
+            # still buffer every source pixel while decoding.
+            if not image.info.get("progressive"):
+                pixels = image.width * image.height
+            if pixels > get_settings().receipt_thumbnail_max_pixels:
                 raise ValueError("The image is too large to read.")
             rgb = ImageOps.exif_transpose(image).convert("RGB")
             rgb.thumbnail((RECEIPT_IMAGE_EDGE, RECEIPT_IMAGE_EDGE))

@@ -996,6 +996,7 @@ class ReceiptItem(Base):
     __table_args__ = (
         Index("ix_receipt_items_attachment", "attachment_id"),
         Index("ix_receipt_items_user_product", "user_id", "product"),
+        Index("ix_receipt_items_user_label", "user_id", "label"),
         CheckConstraint(
             "kind in ('item', 'discount', 'deposit')", name="ck_receipt_item_kind"
         ),

@@ -48,6 +48,9 @@ def upgrade() -> None:
     op.create_index(
         "ix_receipt_items_user_product", "receipt_items", ["user_id", "product"]
     )
+    op.create_index(
+        "ix_receipt_items_user_label", "receipt_items", ["user_id", "label"]
+    )
 
 
 def downgrade() -> None:

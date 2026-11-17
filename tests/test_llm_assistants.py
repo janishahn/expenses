@@ -19,7 +19,7 @@ from expenses.ai.schemas import (
     RuleProposalOut,
     TransactionTriageOutput,
 )
-from expenses.core.config import AIBackend
+from expenses.core.config import AIBackend, get_settings
 from expenses.ai import service as ai_service
 from expenses.ai.service import LLMAssistantService
 from expenses.db.models import (
@@ -906,3 +906,21 @@ async def test_receipt_products_follow_known_labels_and_merges(
         session.refresh(replaced)
         assert replaced.items_status == "reading"
         assert replaced.items == []
+
+
+def test_receipt_image_limit_counts_progressive_jpegs_at_full_size(
+    monkeypatch, tmp_path
+) -> None:
+    from PIL import Image
+
+    # A 4000 px square is over the limit, but a baseline JPEG of it decodes at 2000 px.
+    monkeypatch.setenv("EXPENSES_RECEIPT_THUMBNAIL_MAX_PIXELS", "5000000")
+    get_settings.cache_clear()
+    for name, progressive in (("baseline.jpg", False), ("progressive.jpg", True)):
+        Image.new("RGB", (4000, 4000), color="white").save(
+            tmp_path / name, format="JPEG", progressive=progressive
+        )
+    assert ai_service._receipt_image(tmp_path / "baseline.jpg")
+    with pytest.raises(ValueError, match="too large"):
+        ai_service._receipt_image(tmp_path / "progressive.jpg")
+    get_settings.cache_clear()

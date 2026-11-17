@@ -1159,33 +1159,52 @@ def _previous_prices(attachment) -> dict[str, int]:
     labels = {item.label for item in attachment.items if item.kind == "item"}
     if not labels:
         return {}
-    rows = (
-        object_session(attachment)
-        .execute(
-            select(ReceiptItem, Transaction)
-            .join(ReceiptAttachment, ReceiptItem.attachment_id == ReceiptAttachment.id)
-            .join(Transaction, ReceiptAttachment.transaction_id == Transaction.id)
-            .where(
-                ReceiptItem.user_id == attachment.user_id,
-                ReceiptItem.label.in_(labels),
-                ReceiptItem.kind == "item",
-                ReceiptAttachment.items_status == "read",
-                Transaction.deleted_at.is_(None),
-                or_(
-                    Transaction.date < txn.date,
-                    and_(Transaction.date == txn.date, Transaction.id < txn.id),
+    # Only the latest earlier line with a price, per label, leaves the database.
+    latest = (
+        select(
+            ReceiptItem.id.label("item_id"),
+            Transaction.id.label("transaction_id"),
+            func.row_number()
+            .over(
+                partition_by=ReceiptItem.label,
+                order_by=(
+                    Transaction.date.desc(),
+                    Transaction.id.desc(),
+                    ReceiptItem.id.desc(),
                 ),
             )
-            .order_by(Transaction.date, Transaction.id, ReceiptItem.id)
+            .label("rank"),
         )
-        .all()
+        .join(ReceiptAttachment, ReceiptItem.attachment_id == ReceiptAttachment.id)
+        .join(Transaction, ReceiptAttachment.transaction_id == Transaction.id)
+        .where(
+            ReceiptItem.user_id == attachment.user_id,
+            ReceiptItem.label.in_(labels),
+            ReceiptItem.kind == "item",
+            or_(
+                ReceiptItem.unit_price_cents.is_not(None),
+                ReceiptItem.quantity.is_(None),
+                ReceiptItem.quantity == 1,
+            ),
+            ReceiptAttachment.items_status == "read",
+            Transaction.deleted_at.is_(None),
+            or_(
+                Transaction.date < txn.date,
+                and_(Transaction.date == txn.date, Transaction.id < txn.id),
+            ),
+        )
+        .subquery()
     )
-    prices: dict[str, int] = {}
-    for item, earlier in rows:
-        price = _euro_cents(_item_price_cents(item), earlier)
-        if price is not None:
-            prices[item.label] = price
-    return prices
+    rows = object_session(attachment).execute(
+        select(ReceiptItem, Transaction)
+        .join(latest, ReceiptItem.id == latest.c.item_id)
+        .join(Transaction, Transaction.id == latest.c.transaction_id)
+        .where(latest.c.rank == 1)
+    )
+    return {
+        item.label: _euro_cents(_item_price_cents(item), earlier)
+        for item, earlier in rows
+    }
 
 
 def _serialize_attachment(attachment) -> dict[str, object]:
