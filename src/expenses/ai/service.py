@@ -1107,6 +1107,15 @@ def retry_receipt_readings(bind: Engine | Connection, *, interrupted: bool) -> N
         asyncio.run(read_receipt_in_background(bind, user_id, attachment_id))
 
 
+def run_nightly_receipt_jobs(bind: Engine | Connection) -> None:
+    """Retries readings that could not reach the model, then merges product names.
+
+    One after the other, so the merge sees the items the retries read.
+    """
+    retry_receipt_readings(bind, interrupted=False)
+    merge_products_for_users_with_new_readings(bind)
+
+
 def _receipt_image(path: Path) -> bytes:
     """The receipt as a JPEG no longer than RECEIPT_IMAGE_EDGE on either side."""
     from PIL import Image, ImageOps, UnidentifiedImageError
