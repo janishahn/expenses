@@ -183,9 +183,10 @@ class LLMAssistantService:
             or attachment.items_status != "reading"
         ):
             return
+        storage_key = attachment.storage_key
         path = ReceiptAttachmentService(
             self.session, user_id=self.user_id
-        ).path_for_storage_key(attachment.storage_key)
+        ).path_for_storage_key(storage_key)
         payload = {"products": self._receipt_product_names()}
         output: ReceiptReadingOutput | None = None
         error: str | None = None
@@ -207,10 +208,17 @@ class LLMAssistantService:
         except Exception:
             # _run_llm has logged the cause.
             error = RECEIPT_MODEL_UNREACHABLE
-        # The receipt may have been deleted or read again during the call.
+        # The receipt may have been deleted, replaced, or read again during the
+        # call. SQLite can give a deleted receipt's id to a new upload, so the
+        # owner and stored file must still match.
         self.session.expire_all()
         attachment = self.session.get(ReceiptAttachment, attachment_id)
-        if attachment is None or attachment.items_status != "reading":
+        if (
+            attachment is None
+            or attachment.user_id != self.user_id
+            or attachment.storage_key != storage_key
+            or attachment.items_status != "reading"
+        ):
             return
         if output is None or not output.is_receipt:
             if attachment.items:

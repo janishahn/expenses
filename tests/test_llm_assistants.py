@@ -885,3 +885,24 @@ async def test_receipt_products_follow_known_labels_and_merges(
         ).read_receipt_items(third.id)
         await asyncio.to_thread(nightly, engine)
         assert merged_users == [1]
+
+        # A reading whose receipt was replaced by another upload during the call,
+        # as when SQLite gives a deleted receipt's id to a new one, is dropped.
+        replaced = receipt("replaced.jpg")
+
+        class ReplacingRunner(FakeLLMRunner):
+            async def run(self, **kwargs):
+                replaced.storage_key = "new-upload.jpg"
+                session.commit()
+                return await super().run(**kwargs)
+
+        await LLMAssistantService(
+            session,
+            user_id=1,
+            runner=ReplacingRunner(
+                ReceiptReadingOutput(is_receipt=True, items=[line("TOFU", "Tofu")])
+            ),
+        ).read_receipt_items(replaced.id)
+        session.refresh(replaced)
+        assert replaced.items_status == "reading"
+        assert replaced.items == []
