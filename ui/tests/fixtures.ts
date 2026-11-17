@@ -114,7 +114,7 @@ async function enableAIFeatures(url: string): Promise<void> {
   const feature = { enabled: true, backend: "local", model: "e2e-large", thinking: "auto" }
   const response = await context.put("/api/admin/ai/settings", {
     headers: await csrf(),
-    data: { features: { spending_chat: feature, transaction_triage: feature, rule_mining: feature } },
+    data: { features: { spending_chat: feature, transaction_triage: feature, rule_mining: feature, receipt_items: feature } },
   })
   if (!response.ok()) throw new Error(`enabling AI features failed: ${await response.text()}`)
   await context.dispose()

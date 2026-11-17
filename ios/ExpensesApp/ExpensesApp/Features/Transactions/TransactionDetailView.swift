@@ -618,6 +618,10 @@ private struct ReceiptsSection: View {
     @State private var error: String?
     @State private var previewURL: URL?
     @State private var viewing: ReceiptAttachment?
+    @State private var itemsError: String?
+    @State private var renaming: RenamingItem?
+    @State private var productDraft = ""
+    @State private var renameError: String?
     @Namespace private var zoom
 
     private enum Thumbnail {
@@ -632,6 +636,10 @@ private struct ReceiptsSection: View {
 
     private var index: Int {
         min(selected, max(files.count - 1, 0))
+    }
+
+    private var isReading: Bool {
+        files.contains { $0.itemsStatus == .reading }
     }
 
     var body: some View {
@@ -666,6 +674,11 @@ private struct ReceiptsSection: View {
                                 }
                             }
                             .disabled(uploading)
+                            if canRead(file) {
+                                Button(file.itemsStatus == nil ? "Read Items" : "Read Again", systemImage: "text.viewfinder") {
+                                    Task { await read(file) }
+                                }
+                            }
                             Divider()
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 removing = file
@@ -725,6 +738,20 @@ private struct ReceiptsSection: View {
             .task(id: files.map(\.id)) {
                 await loadThumbnails()
             }
+            // Checks for read items until no receipt is being read.
+            .task(id: isReading) {
+                guard isReading else {
+                    return
+                }
+                while true {
+                    do {
+                        try await Task.sleep(for: .seconds(2))
+                    } catch {
+                        return
+                    }
+                    await model.refreshReceiptItems(transactionID: transaction.id)
+                }
+            }
             .sensoryFeedback(.success, trigger: uploaded)
         } header: {
             HStack(spacing: 12) {
@@ -749,6 +776,136 @@ private struct ReceiptsSection: View {
             }
         }
         .expensesRowBackground()
+        itemsSection
+    }
+
+    /// The lines of every read receipt, in receipt order, with each read's progress or failure.
+    @ViewBuilder
+    private var itemsSection: some View {
+        // Items stay visible while their receipt is read again.
+        let readFiles = files.filter { !$0.items.isEmpty }
+        let items = readFiles.flatMap(\.items)
+        let failed = files.filter { $0.itemsStatus != .reading && $0.itemsError != nil }
+        if !items.isEmpty || isReading || !failed.isEmpty || itemsError != nil {
+            Section {
+                ForEach(readFiles) { file in
+                    ForEach(file.items) { item in
+                        itemButton(item, attachmentID: file.id)
+                    }
+                }
+                if isReading {
+                    Label {
+                        Text("Reading receipt…")
+                    } icon: {
+                        ProgressView()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                ForEach(failed) { file in
+                    AdaptiveRow {
+                        Text((file.itemsError ?? "") + (file.items.isEmpty ? "" : " Earlier items kept."))
+                            .foregroundStyle(.secondary)
+                    } trailing: {
+                        if canRead(file) {
+                            Button("Read Again") {
+                                Task { await read(file) }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                if let itemsError {
+                    FieldError(itemsError)
+                }
+            } header: {
+                Text("Items")
+            } footer: {
+                let sum = items.reduce(0) { $0 + $1.amountCents }
+                if !items.isEmpty, !isReading, sum != transaction.amountCents {
+                    HStack(spacing: 4) {
+                        Text("Items cover")
+                        AmountText(sum)
+                        Text("of")
+                        AmountText(transaction.amountCents)
+                    }
+                }
+            }
+            .expensesRowBackground()
+            .alert(
+                "Rename Product",
+                isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+                presenting: renaming
+            ) { target in
+                TextField("Product", text: $productDraft)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    Task { await rename(target) }
+                }
+                .disabled(productDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            } message: { target in
+                Text(renameMessage(target))
+            }
+        }
+    }
+
+    private func itemButton(_ item: ReceiptItem, attachmentID: Int) -> some View {
+        Button {
+            productDraft = item.product
+            renameError = nil
+            renaming = RenamingItem(attachmentID: attachmentID, item: item)
+        } label: {
+            itemRow(item)
+                .contentShape(Rectangle())
+        }
+        .tint(.primary)
+        .accessibilityHint("Renames the product")
+    }
+
+    private func renameMessage(_ target: RenamingItem) -> String {
+        let scope = "Used for \(target.item.label) on all receipts, past and future."
+        guard let renameError else {
+            return scope
+        }
+        return "\(renameError)\n\(scope)"
+    }
+
+    private func itemRow(_ item: ReceiptItem) -> some View {
+        TrailingRow {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.product)
+                HStack(spacing: 4) {
+                    Text(item.label)
+                    if let quantity = item.quantity, let unitPrice = item.unitPriceCents {
+                        Text("· \(Self.quantityText(quantity, unit: item.unit)) ×")
+                            .fixedSize()
+                        AmountText(unitPrice)
+                    }
+                    if let previous = item.previousPriceCents {
+                        Text("· was")
+                            .fixedSize()
+                        AmountText(previous)
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        } trailing: {
+            AmountText(item.amountCents, signed: item.amountCents < 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // Decimals as in the euro amounts beside it: "0,532 kg"; a count needs no unit: "2".
+    private static func quantityText(_ quantity: Double, unit: String?) -> String {
+        let number = quantity.formatted(.number.locale(Locale(identifier: "de_DE")))
+        guard let unit, unit != "pcs" else {
+            return number
+        }
+        return "\(number) \(unit)"
+    }
+
+    private func canRead(_ file: ReceiptAttachment) -> Bool {
+        model.aiFeatures.contains("receipt_items") && isImage(file) && file.itemsStatus != .reading
     }
 
     private func preview(_ file: ReceiptAttachment) -> some View {
@@ -868,6 +1025,31 @@ private struct ReceiptsSection: View {
             previewURL = url
         } else {
             error = model.lastError?.message ?? "Unable to open the receipt."
+        }
+    }
+
+    private func read(_ file: ReceiptAttachment) async {
+        itemsError = nil
+        if !(await model.readReceiptItems(file, transactionID: transaction.id)) {
+            itemsError = model.lastError?.message ?? "Unable to read the receipt."
+        }
+    }
+
+    private func rename(_ target: RenamingItem) async {
+        let product = productDraft.trimmingCharacters(in: .whitespaces)
+        guard product != target.item.product else {
+            return
+        }
+        renameError = nil
+        if !(await model.renameReceiptItem(
+            target.item,
+            attachmentID: target.attachmentID,
+            product: product,
+            transactionID: transaction.id
+        )) {
+            // The alert opens again with the typed name and the reason.
+            renameError = model.lastError?.message ?? "Unable to rename the product."
+            renaming = target
         }
     }
 
@@ -1440,4 +1622,12 @@ private struct ReimbursedRow: View {
             allocating = entry
         }
     }
+}
+
+/// A receipt item whose product name is being edited.
+private struct RenamingItem: Identifiable {
+    let attachmentID: Int
+    let item: ReceiptItem
+
+    var id: Int { item.id }
 }

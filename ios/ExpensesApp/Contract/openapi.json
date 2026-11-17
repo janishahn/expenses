@@ -42,7 +42,8 @@
             "enum": [
               "spending_chat",
               "transaction_triage",
-              "rule_mining"
+              "rule_mining",
+              "receipt_items"
             ],
             "title": "Id",
             "type": "string"
@@ -145,7 +146,8 @@
               "enum": [
                 "spending_chat",
                 "transaction_triage",
-                "rule_mining"
+                "rule_mining",
+                "receipt_items"
               ]
             },
             "title": "Features",
@@ -576,7 +578,8 @@
             "enum": [
               "spending_chat",
               "transaction_triage",
-              "rule_mining"
+              "rule_mining",
+              "receipt_items"
             ],
             "title": "Feature",
             "type": "string"
@@ -7522,6 +7525,41 @@
             "title": "Id",
             "type": "integer"
           },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReceiptItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "items_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Error"
+          },
+          "items_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "reading",
+                  "read",
+                  "not_receipt",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Status"
+          },
           "mime_type": {
             "title": "Mime Type",
             "type": "string"
@@ -7569,6 +7607,107 @@
           "attachments"
         ],
         "title": "ReceiptAttachmentsResponseOut",
+        "type": "object"
+      },
+      "ReceiptItemOut": {
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "item",
+              "discount",
+              "deposit"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "previous_price_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Price Cents"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_price_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price Cents"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "product",
+          "kind",
+          "quantity",
+          "unit",
+          "unit_price_cents",
+          "amount_cents",
+          "previous_price_cents"
+        ],
+        "title": "ReceiptItemOut",
+        "type": "object"
+      },
+      "ReceiptItemProductIn": {
+        "properties": {
+          "product": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Product",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "title": "ReceiptItemProductIn",
         "type": "object"
       },
       "RecurringBreakdownOut": {
@@ -10864,7 +11003,8 @@
                   "enum": [
                     "spending_chat",
                     "transaction_triage",
-                    "rule_mining"
+                    "rule_mining",
+                    "receipt_items"
                   ],
                   "type": "string"
                 },
@@ -12131,6 +12271,104 @@
           }
         },
         "summary": "Api Download Attachment"
+      }
+    },
+    "/api/attachments/{attachment_id}/items/read": {
+      "post": {
+        "operationId": "api_read_attachment_items_api_attachments__attachment_id__items_read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptAttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Read Attachment Items"
+      }
+    },
+    "/api/attachments/{attachment_id}/items/{item_id}": {
+      "put": {
+        "description": "Names an item's product, on this receipt and every item with its label.",
+        "operationId": "api_update_attachment_item_api_attachments__attachment_id__items__item_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReceiptItemProductIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptAttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Update Attachment Item"
       }
     },
     "/api/attachments/{attachment_id}/thumbnail": {

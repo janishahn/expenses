@@ -973,8 +973,53 @@ class ReceiptAttachment(Base, TimestampMixin):
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Null: never read, because the file is not an image or the feature was off.
+    items_status: Mapped[Optional[str]] = mapped_column(String(12))
+    items_error: Mapped[Optional[str]] = mapped_column(Text)
 
     transaction: Mapped["Transaction"] = relationship(
         "Transaction",
         back_populates="attachments",
+    )
+    items: Mapped[list["ReceiptItem"]] = relationship(
+        "ReceiptItem",
+        back_populates="attachment",
+        cascade="all, delete-orphan",
+        order_by="ReceiptItem.position",
+    )
+
+
+class ReceiptItem(Base):
+    """One line read from a receipt image. Details its transaction; never adds to it."""
+
+    __tablename__ = "receipt_items"
+    __table_args__ = (
+        Index("ix_receipt_items_attachment", "attachment_id"),
+        Index("ix_receipt_items_user_product", "user_id", "product"),
+        Index("ix_receipt_items_user_label", "user_id", "label"),
+        CheckConstraint(
+            "kind in ('item', 'discount', 'deposit')", name="ck_receipt_item_kind"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    attachment_id: Mapped[int] = mapped_column(
+        ForeignKey("receipt_attachments.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    product: Mapped[str] = mapped_column(String(80), nullable=False)
+    # A name the owner typed; the nightly merge never renames it away.
+    product_named_by_user: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    unit: Mapped[Optional[str]] = mapped_column(String(10))
+    unit_price_cents: Mapped[Optional[int]] = mapped_column(Integer)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    attachment: Mapped[ReceiptAttachment] = relationship(
+        "ReceiptAttachment", back_populates="items"
     )

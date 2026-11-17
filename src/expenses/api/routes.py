@@ -33,9 +33,9 @@ from fastapi.responses import (
     FileResponse,
     StreamingResponse,
 )
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 from starlette.background import BackgroundTask
 
 from expenses.auth import (
@@ -68,7 +68,11 @@ from expenses.ai.schemas import (
     RuleSuggestionOut,
     TransactionSuggestionOut,
 )
-from expenses.ai.service import LLMAssistantService
+from expenses.ai.service import (
+    READABLE_RECEIPT_TYPES,
+    LLMAssistantService,
+    read_receipt_in_background,
+)
 from expenses.core.app_logging import (
     build_log_query,
     environment_label,
@@ -90,6 +94,8 @@ from expenses.db.models import (
     Category,
     MobileAuthSession,
     RecurringRule,
+    ReceiptAttachment,
+    ReceiptItem,
     Tag,
     Transaction,
     TransactionType,
@@ -181,6 +187,7 @@ from expenses.schemas import (
     RecurringResponseOut,
     RecurringToggleIn,
     ReceiptAttachmentOut,
+    ReceiptItemProductIn,
     ReceiptAttachmentsResponseOut,
     ReimbursementAllocationIn,
     ReimbursementExpenseSearchResponseOut,
@@ -1127,7 +1134,90 @@ def filters_from_request(request: Request) -> TransactionFilters:
     )
 
 
+def _euro_cents(cents: int | None, txn) -> int | None:
+    """Converts receipt cents at the transaction's rate, as the Assistant reads them."""
+    if cents is None or not txn.source_amount_cents:
+        return cents
+    # Halves round away from zero, as SQLite's round() does in the Assistant.
+    scaled = abs(cents) * txn.amount_cents * 2 + txn.source_amount_cents
+    whole = scaled // (txn.source_amount_cents * 2)
+    return whole if cents >= 0 else -whole
+
+
+def _item_price_cents(item) -> int | None:
+    """The price per unit, or the amount of a single item; None when it is neither."""
+    if item.unit_price_cents is not None:
+        return item.unit_price_cents
+    if item.quantity is None or item.quantity == 1:
+        return item.amount_cents
+    return None
+
+
+def _previous_prices(attachment) -> dict[str, int]:
+    """Each printed line's price, in euro, on the latest earlier receipt with it."""
+    txn = attachment.transaction
+    labels = {item.label for item in attachment.items if item.kind == "item"}
+    if not labels:
+        return {}
+    # Only the latest earlier line with a price, per label, leaves the database.
+    latest = (
+        select(
+            ReceiptItem.id.label("item_id"),
+            Transaction.id.label("transaction_id"),
+            func.row_number()
+            .over(
+                partition_by=ReceiptItem.label,
+                order_by=(
+                    Transaction.date.desc(),
+                    Transaction.id.desc(),
+                    ReceiptItem.id.desc(),
+                ),
+            )
+            .label("rank"),
+        )
+        .join(ReceiptAttachment, ReceiptItem.attachment_id == ReceiptAttachment.id)
+        .join(Transaction, ReceiptAttachment.transaction_id == Transaction.id)
+        .where(
+            ReceiptItem.user_id == attachment.user_id,
+            ReceiptItem.label.in_(labels),
+            ReceiptItem.kind == "item",
+            or_(
+                ReceiptItem.unit_price_cents.is_not(None),
+                ReceiptItem.quantity.is_(None),
+                ReceiptItem.quantity == 1,
+            ),
+            ReceiptAttachment.items_status == "read",
+            Transaction.deleted_at.is_(None),
+            or_(
+                Transaction.date < txn.date,
+                and_(Transaction.date == txn.date, Transaction.id < txn.id),
+            ),
+        )
+        .subquery()
+    )
+    rows = object_session(attachment).execute(
+        select(ReceiptItem, Transaction)
+        .join(latest, ReceiptItem.id == latest.c.item_id)
+        .join(Transaction, Transaction.id == latest.c.transaction_id)
+        .where(latest.c.rank == 1)
+    )
+    return {
+        item.label: _euro_cents(_item_price_cents(item), earlier)
+        for item, earlier in rows
+    }
+
+
 def _serialize_attachment(attachment) -> dict[str, object]:
+    # Items are stored in the receipt's currency; a payment in another currency
+    # converts them at the transaction's own rate.
+    txn = attachment.transaction
+    previous = _previous_prices(attachment)
+
+    def previous_price(item) -> int | None:
+        price = _euro_cents(_item_price_cents(item), txn)
+        before = previous.get(item.label) if item.kind == "item" else None
+        return before if before is not None and before != price else None
+
     return {
         "id": attachment.id,
         "transaction_id": attachment.transaction_id,
@@ -1136,6 +1226,22 @@ def _serialize_attachment(attachment) -> dict[str, object]:
         "size_bytes": attachment.size_bytes,
         "sha256_hex": attachment.sha256_hex,
         "created_at": attachment.created_at.isoformat(),
+        "items_status": attachment.items_status,
+        "items_error": attachment.items_error,
+        "items": [
+            {
+                "id": item.id,
+                "label": item.label,
+                "product": item.product,
+                "kind": item.kind,
+                "quantity": float(item.quantity) if item.quantity is not None else None,
+                "unit": item.unit,
+                "unit_price_cents": _euro_cents(item.unit_price_cents, txn),
+                "amount_cents": _euro_cents(item.amount_cents, txn),
+                "previous_price_cents": previous_price(item),
+            }
+            for item in attachment.items
+        ],
     }
 
 
@@ -4215,6 +4321,7 @@ def api_list_transaction_attachments(
 def api_upload_transaction_attachment(
     transaction_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     replaces_attachment_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
@@ -4286,6 +4393,9 @@ def api_upload_transaction_attachment(
         full_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Attachment is empty")
 
+    reads_items = (
+        mime_type in READABLE_RECEIPT_TYPES and "receipt_items" in enabled_features(db)
+    )
     attachment = service.create_metadata(
         transaction_id=transaction_id,
         storage_key=storage_key,
@@ -4294,16 +4404,77 @@ def api_upload_transaction_attachment(
         size_bytes=size_bytes,
         sha256_hex=digest.hexdigest(),
         replaces=replaced,
+        items_status="reading" if reads_items else None,
     )
-    return ReceiptAttachmentOut(
-        id=attachment.id,
-        transaction_id=attachment.transaction_id,
-        original_filename=attachment.original_filename,
-        mime_type=attachment.mime_type,
-        size_bytes=attachment.size_bytes,
-        sha256_hex=attachment.sha256_hex,
-        created_at=attachment.created_at,
+    if reads_items:
+        background_tasks.add_task(
+            read_receipt_in_background, db.get_bind(), user_id, attachment.id
+        )
+    return _serialize_attachment(attachment)
+
+
+@router.post(
+    "/api/attachments/{attachment_id}/items/read",
+    response_model=ReceiptAttachmentOut,
+    dependencies=[Depends(require_ai_feature("receipt_items"))],
+)
+def api_read_attachment_items(
+    attachment_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        attachment = ReceiptAttachmentService(db, user_id=user_id).get(attachment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if attachment.mime_type not in READABLE_RECEIPT_TYPES:
+        raise HTTPException(status_code=400, detail="Only images can be read")
+    if attachment.items_status == "reading":
+        raise HTTPException(status_code=409, detail="The receipt is being read")
+    attachment.items_status = "reading"
+    attachment.items_error = None
+    db.commit()
+    background_tasks.add_task(
+        read_receipt_in_background, db.get_bind(), user_id, attachment.id
     )
+    return _serialize_attachment(attachment)
+
+
+@router.put(
+    "/api/attachments/{attachment_id}/items/{item_id}",
+    response_model=ReceiptAttachmentOut,
+)
+def api_update_attachment_item(
+    attachment_id: int,
+    item_id: int,
+    payload: ReceiptItemProductIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Names an item's product, on this receipt and every item with its label."""
+    user_id = _require_current_user_id(request, db)
+    _require_csrf(request, db)
+    try:
+        attachment = ReceiptAttachmentService(db, user_id=user_id).get(attachment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    item = next((item for item in attachment.items if item.id == item_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    # Label memory reads earlier items with this label, so they all take the name.
+    db.execute(
+        update(ReceiptItem)
+        .where(ReceiptItem.user_id == user_id, ReceiptItem.label == item.label)
+        .values(product=payload.product, product_named_by_user=True)
+    )
+    db.commit()
+    db.refresh(attachment)
+    for item in attachment.items:
+        db.refresh(item)
+    return _serialize_attachment(attachment)
 
 
 @router.get("/api/attachments/{attachment_id}/download")

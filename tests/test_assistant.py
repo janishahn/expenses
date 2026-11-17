@@ -63,6 +63,8 @@ from expenses.db.models import (
     Category,
     IntervalUnit,
     LLMJob,
+    ReceiptAttachment,
+    ReceiptItem,
     ReimbursementAllocation,
     RuleMatchType,
     Tag,
@@ -305,6 +307,76 @@ def test_sql_query_reads_only_the_users_rows_with_net_amounts() -> None:
             sql="with transactions as (select * from main.transactions) "
             "select count(*) from transactions"
         )["rows"] == [[5]]
+
+
+def test_sql_query_reads_receipt_items_in_euro_with_their_transaction() -> None:
+    with make_session() as session:
+        ids = _seed_spending_fixture(session)
+        service = TransactionService(session, user_id=1)
+        market = _create_txn(
+            service,
+            title="Rewe",
+            amount_cents=618,
+            txn_date=date(2026, 6, 5),
+            category_id=ids["groceries_id"],
+        )
+        # Paid 10.00 USD, booked as 9.00 EUR.
+        abroad = _create_txn(
+            service,
+            title="Whole Foods",
+            amount_cents=900,
+            txn_date=date(2026, 6, 6),
+            category_id=ids["groceries_id"],
+        )
+        abroad.source_currency_code = "USD"
+        abroad.source_amount_cents = 1000
+        trashed = _create_txn(
+            service,
+            title="Edeka",
+            amount_cents=299,
+            txn_date=date(2026, 6, 7),
+            category_id=ids["groceries_id"],
+        )
+        for txn, lines in (
+            (market, [("Eier", "item", 299), ("Rabatt", "discount", -50)]),
+            (abroad, [("Eggs", "item", 1000)]),
+            (trashed, [("Eier", "item", 299)]),
+        ):
+            attachment = ReceiptAttachment(
+                user_id=1,
+                transaction_id=txn.id,
+                storage_key=f"txn_{txn.id}/receipt.jpg",
+                original_filename="receipt.jpg",
+                mime_type="image/jpeg",
+                size_bytes=1,
+                sha256_hex="0" * 64,
+                items_status="read",
+            )
+            for position, (product, kind, cents) in enumerate(lines):
+                attachment.items.append(
+                    ReceiptItem(
+                        user_id=1,
+                        position=position,
+                        label=product.upper(),
+                        product=product,
+                        kind=kind,
+                        amount_cents=cents,
+                    )
+                )
+            session.add(attachment)
+        session.commit()
+        service.soft_delete(trashed.id)
+
+        result = _reader(session).sql_query(
+            sql="select store, date, product, kind, amount_cents from receipt_items "
+            "order by date, position"
+        )
+
+    assert result["rows"] == [
+        ["Rewe", "2026-06-05", "Eier", "item", 299, "2,99"],
+        ["Rewe", "2026-06-05", "Rabatt", "discount", -50, "-0,50"],
+        ["Whole Foods", "2026-06-06", "Eggs", "item", 900, "9,00"],
+    ]
 
 
 def test_sql_query_refuses_writes_and_runaway_queries_then_deletes_its_copy(

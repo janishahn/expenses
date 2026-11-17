@@ -1892,6 +1892,30 @@ class TagMergeResponseOut(BaseModel):
     counts: dict[str, int]
 
 
+class ReceiptItemOut(BaseModel):
+    id: int
+    label: str
+    product: str
+    kind: Literal["item", "discount", "deposit"]
+    quantity: float | None
+    unit: str | None
+    unit_price_cents: int | None
+    amount_cents: int
+    # This printed line's price on the latest earlier receipt, when it was different.
+    previous_price_cents: int | None
+
+
+class ReceiptItemProductIn(BaseModel):
+    product: str = Field(..., min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def strip_product(self):
+        self.product = self.product.strip()
+        if not self.product:
+            raise ValueError("Product cannot be blank")
+        return self
+
+
 class ReceiptAttachmentOut(BaseModel):
     id: int
     transaction_id: int
@@ -1900,6 +1924,11 @@ class ReceiptAttachmentOut(BaseModel):
     size_bytes: int
     sha256_hex: str
     created_at: datetime
+    # Null: never read, because the file is not an image or the feature was off.
+    items_status: Literal["reading", "read", "not_receipt", "failed"] | None = None
+    items_error: str | None = None
+    # In euro cents, converted at the transaction's rate for a foreign payment.
+    items: list[ReceiptItemOut] = Field(default_factory=list)
 
 
 class ReceiptAttachmentsResponseOut(BaseModel):

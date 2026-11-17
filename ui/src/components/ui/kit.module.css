@@ -166,6 +166,7 @@
 .textarea:focus-within { box-shadow: inset 0 0 0 1px var(--focus), 0 0 0 2px color-mix(in srgb, var(--focus) 25%, transparent); }
 .textarea textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 .errText { display: block; color: var(--over); font-size: 12px; }
+.hintText { display: block; color: var(--ink-3); font-size: 12px; }
 .form { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 16px; row-gap: 10px; align-items: center; }
 .formNarrow { grid-template-columns: 88px minmax(0, 1fr); }
 .fl { color: var(--ink-2); }
@@ -1078,6 +1079,8 @@ button.actHead { cursor: pointer; }
   .dl { width: 100%; }
   .num { font-size: min(19px, 12cqi); }
   .row { min-height: 44px; padding: 0 16px; }
+  /* A flat row that edits in place keeps a full touch target. */
+  .listFlat .row:has(.ed) { min-height: 44px; }
   .row.rowControls { row-gap: 6px; padding-block: 8px; }
   .rowControls + .rowControls { box-shadow: 0 -1px 0 var(--line-soft); }
   .row[data-cols-mobile], .lhead[data-cols-mobile] { grid-template-columns: var(--cols-mobile); }

@@ -105,6 +105,7 @@ export function receiptFiles(attachments: ReceiptAttachment[]): ReceiptFile[] {
     pdf: attachment.mime_type === "application/pdf",
     previewUrl: attachment.mime_type.startsWith("image/") ? `/api/attachments/${attachment.id}/thumbnail` : null,
     fileUrl: `/api/attachments/${attachment.id}/download`,
+    itemsStatus: attachment.items_status,
   }))
 }
 

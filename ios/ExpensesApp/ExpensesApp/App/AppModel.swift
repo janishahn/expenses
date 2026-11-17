@@ -1893,6 +1893,49 @@ final class AppModel {
         }
     }
 
+    func readReceiptItems(_ attachment: ReceiptAttachment, transactionID: Int) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            _ = try await apiClient.readReceiptItems(attachmentID: attachment.id, token: token)
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+        }
+    }
+
+    func renameReceiptItem(_ item: ReceiptItem, attachmentID: Int, product: String, transactionID: Int) async -> Bool {
+        guard let token else {
+            return false
+        }
+        return await runRequestReturningSuccess {
+            _ = try await apiClient.renameReceiptItem(
+                attachmentID: attachmentID,
+                itemID: item.id,
+                product: product,
+                token: token
+            )
+            let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
+            if selectedTransaction?.id == transactionID {
+                selectedTransaction = detail
+            }
+        }
+    }
+
+    /// Picks up receipt items the server read in the background. A failed check is left
+    /// to the next one, so it shows no loading state or error.
+    func refreshReceiptItems(transactionID: Int) async {
+        guard let token,
+              let detail = try? await apiClient.transactionDetail(id: transactionID, token: token),
+              selectedTransaction?.id == transactionID
+        else {
+            return
+        }
+        selectedTransaction = detail
+    }
+
     func deleteAttachment(_ attachment: ReceiptAttachment, transactionID: Int) async -> Bool {
         guard let token else {
             return false

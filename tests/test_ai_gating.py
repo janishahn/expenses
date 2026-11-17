@@ -16,6 +16,7 @@ FEATURE_POST_ENDPOINTS = (
     "/api/ai/transaction-suggestions/1/accept",
     "/api/ai/transaction-suggestions/1/reject",
     "/api/assistant/messages/stream",
+    "/api/attachments/1/items/read",
 )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -44,6 +45,45 @@ class RuleProposalOut(BaseModel):
 
 class RuleMiningOutput(BaseModel):
     proposals: list[RuleProposalOut] = Field(default_factory=list)
+
+
+class ReceiptLineOut(BaseModel):
+    label: str = Field(..., min_length=1, max_length=200)
+    product: str = Field(..., min_length=1, max_length=80)
+    kind: Literal["item", "discount", "deposit"]
+    quantity: Decimal | None = Field(default=None, gt=0, lt=1_000_000)
+    unit: str | None = Field(default=None, max_length=10)
+    unit_price_cents: int | None = None
+    amount_cents: int
+
+    @model_validator(mode="after")
+    def strip_names(self):
+        self.label = self.label.strip()
+        self.product = self.product.strip()
+        if self.unit is not None:
+            self.unit = self.unit.strip() or None
+        return self
+
+
+class ReceiptReadingOutput(BaseModel):
+    is_receipt: bool
+    total_cents: int | None = None
+    items: list[ReceiptLineOut] = Field(default_factory=list, max_length=300)
+
+
+class ProductMergeOut(BaseModel):
+    names: list[str] = Field(..., min_length=1, max_length=50)
+    into: str = Field(..., min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def strip_names(self):
+        self.into = self.into.strip()
+        self.names = [name for name in _unique_names(self.names) if name != self.into]
+        return self
+
+
+class ProductMergesOutput(BaseModel):
+    merges: list[ProductMergeOut] = Field(default_factory=list, max_length=100)
 
 
 class RuleSuggestionResult(RuleProposalOut):
