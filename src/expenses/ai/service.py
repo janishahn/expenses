@@ -288,32 +288,49 @@ class LLMAssistantService:
 
         Returns how many items took a new name.
         """
-        rows = self.session.execute(
+        # The most common products, and each one's most common labels, are
+        # chosen in SQL, so the history never loads whole.
+        products: dict[str, dict[str, Any]] = {
+            product: {"items": count, "labels": [], "named_by_owner": bool(by_user)}
+            for product, count, by_user in self.session.execute(
+                select(
+                    ReceiptItem.product,
+                    func.count(),
+                    func.max(ReceiptItem.product_named_by_user),
+                )
+                .where(ReceiptItem.user_id == self.user_id)
+                .group_by(ReceiptItem.product)
+                .order_by(func.count().desc(), ReceiptItem.product)
+                .limit(MERGE_PRODUCT_NAMES)
+            )
+        }
+        if len(products) < 2:
+            return 0
+        pairs = (
             select(
                 ReceiptItem.product,
                 ReceiptItem.label,
-                func.count(),
-                func.max(ReceiptItem.product_named_by_user),
+                func.row_number()
+                .over(
+                    partition_by=ReceiptItem.product,
+                    order_by=(func.count().desc(), ReceiptItem.label),
+                )
+                .label("rank"),
             )
-            .where(ReceiptItem.user_id == self.user_id)
+            .where(
+                ReceiptItem.user_id == self.user_id,
+                ReceiptItem.product.in_(products),
+            )
             .group_by(ReceiptItem.product, ReceiptItem.label)
-            .order_by(ReceiptItem.product, func.count().desc())
-        ).all()
-        products: dict[str, dict[str, Any]] = {}
-        for product, label, count, by_user in rows:
-            entry = products.setdefault(
-                product, {"items": 0, "labels": [], "named_by_owner": False}
-            )
-            entry["items"] += count
-            entry["named_by_owner"] = entry["named_by_owner"] or bool(by_user)
-            if len(entry["labels"]) < MERGE_SAMPLE_LABELS:
-                entry["labels"].append(label)
-        if len(products) < 2:
-            return 0
-        common = sorted(products, key=lambda name: -products[name]["items"])
-        payload = {
-            "products": {name: products[name] for name in common[:MERGE_PRODUCT_NAMES]}
-        }
+            .subquery()
+        )
+        for product, label in self.session.execute(
+            select(pairs.c.product, pairs.c.label)
+            .where(pairs.c.rank <= MERGE_SAMPLE_LABELS)
+            .order_by(pairs.c.product, pairs.c.rank)
+        ):
+            products[product]["labels"].append(label)
+        payload = {"products": products}
         output, _ = await self._run_llm(
             feature="receipt_items",
             prompt_version=RECEIPT_PRODUCTS_PROMPT,
