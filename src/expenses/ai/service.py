@@ -1044,7 +1044,8 @@ def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> Non
         last_merge = (
             select(func.max(merge_job.created_at))
             .where(
-                merge_job.user_id == ReceiptItem.user_id,
+                # Correlates with the reading job's query directly around it.
+                merge_job.user_id == LLMJob.user_id,
                 merge_job.prompt_version == RECEIPT_PRODUCTS_PROMPT,
                 merge_job.status == "completed",
             )

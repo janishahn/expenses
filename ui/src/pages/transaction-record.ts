@@ -192,11 +192,8 @@ export function useTransactionRecord(id: number) {
       return getApiErrorMessage(error, "Unable to rename the item.")
     }
     storeAttachment(renamed)
-    // Items with the same label on other receipts took the name too.
-    void queryClient.invalidateQueries({
-      queryKey: ["transaction"],
-      predicate: (query) => query.queryKey[1] !== String(id),
-    })
+    // Items with the same label on other receipts, also of this transaction, took the name too.
+    void queryClient.invalidateQueries({ queryKey: ["transaction"] })
     return null
   }
   const storeAttachment = (updated: ReceiptAttachment) => {

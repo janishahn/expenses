@@ -25,6 +25,7 @@ from expenses.db.models import (
     IntervalUnit,
     MonthDayPolicy,
     ReceiptAttachment,
+    ReceiptItem,
     ReimbursementAllocation,
     RecurringRule,
     Rule,
@@ -257,7 +258,7 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
         attachment_path = attachment_service.path_for_storage_key(storage_key)
         attachment_path.parent.mkdir(parents=True, exist_ok=True)
         attachment_path.write_bytes(attachment_bytes)
-        attachment_service.create_metadata(
+        receipt = attachment_service.create_metadata(
             transaction_id=expense.id,
             storage_key=storage_key,
             original_filename="receipt.pdf",
@@ -265,6 +266,19 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
             size_bytes=len(attachment_bytes),
             sha256_hex=hashlib.sha256(attachment_bytes).hexdigest(),
         )
+        session.add(
+            ReceiptItem(
+                user_id=1,
+                attachment_id=receipt.id,
+                position=0,
+                label="H-MILCH 3,5%",
+                product="Haferdrink",
+                product_named_by_user=True,
+                kind="item",
+                amount_cents=238,
+            )
+        )
+        session.commit()
 
         output_path = tmp_path / "portable.zip"
         PortableExportService(session, user_id=1).write_zip(
@@ -362,6 +376,11 @@ def test_portable_export_zip_is_self_describing_and_includes_rare_fields(
 
             attachments = _read_ndjson(archive, "data/receipt_attachments.ndjson")
             assert len(attachments) == 1
+            receipt_items = _read_ndjson(archive, "data/receipt_items.ndjson")
+            assert [
+                (item["product"], item["product_named_by_user"])
+                for item in receipt_items
+            ] == [("Haferdrink", True)]
             attachment_export = attachments[0]
             archive_path = str(attachment_export["archive_path"])
             assert archive_path.startswith("attachments/")

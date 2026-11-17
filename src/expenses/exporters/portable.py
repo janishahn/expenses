@@ -589,6 +589,7 @@ class PortableExportService:
                 position=row.position,
                 label=row.label,
                 product=row.product,
+                product_named_by_user=row.product_named_by_user,
                 kind=row.kind,
                 quantity=row.quantity,
                 unit=row.unit,
