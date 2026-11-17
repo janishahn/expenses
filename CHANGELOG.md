@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "All time" monthly average in Insights divides by months that have transactions. `GET /api/insights` `month_count` counts only those months.
 - A zero amount is rejected when adding a transaction or editing its amount.
 - A stopped Assistant answer seen after a reload or on reopening reads "Interrupted". Budget history makes clear that the current month is not counted, and the web Transactions footer shows only the count when everything fits on one page.
+- Auto-categorization also learns the title a transaction arrived with when you rename it, so after the weekly retraining it can recognize an ingested merchant string, such as a card terminal's name, and suggest or assign the category you chose for it.
+- A security update moves the OpenTelemetry API to 1.45.2 for CVE-2026-126360.
 
 ### Fixed
 - Web: Stop in the Assistant no longer sends the text in the composer. Editing a note with a table or task list no longer flattens it; such notes are edited as Markdown. Notes show list bullets, wrap long links, and style tables.
