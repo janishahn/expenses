@@ -5,7 +5,8 @@ import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { PackageIcon } from "@phosphor-icons/react/Package"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import { formatAmount } from "../app/format"
+import { formatAmount, formatCount } from "../app/format"
+import { dayLabel } from "../app/transactions"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
 import { Amount } from "../components/ui/Amount"
 import { IconButton } from "../components/ui/Button"
@@ -14,7 +15,7 @@ import { ChartCard, ChartTable, ChartTooltip, TableLink, type LegendEntry } from
 import { CardRow, ChartWithAside, ColumnChart, LineChart, WeekdayBars } from "../components/ui/Charts"
 import { BudgetGrid, DayCalendar, MonthGrid, type BudgetGridRow, type CalendarLevel, type MonthGridRow } from "../components/ui/Grids"
 import { useIsDesktop } from "../components/ui/layout-state"
-import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
 import { PeriodControl } from "../components/ui/PeriodControl"
 import { periodFromSearch, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
 import { Pill } from "../components/ui/Pill"
@@ -22,7 +23,7 @@ import { Popover } from "../components/ui/Popover"
 import { SegmentedControl } from "../components/ui/SegmentedControl"
 import { MetricStrip, type Metric } from "../components/ui/Sheet"
 import { TagChip } from "../components/ui/TagChip"
-import { categoryColor } from "../components/ui/tokens"
+import { neighbourCategoryColors } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 
@@ -72,7 +73,6 @@ type BudgetHistoryResponse = {
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
 const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
 const MONTH_YEAR = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
-const DAY_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const DAY_LEVELS = ["None", "Under 25 €", "25–60 €", "60–120 €", "120 € or more"]
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -111,7 +111,13 @@ function axisLabels(months: string[]): string[] {
 
 function percentChange(ratio: number): string {
   const rounded = Math.round(ratio * 100)
-  return rounded === 0 ? "0 %" : `${rounded > 0 ? "+" : "−"} ${Math.abs(rounded)} %`
+  return rounded === 0 ? "0 %" : `${rounded > 0 ? "+" : "−"} ${formatCount(Math.abs(rounded))} %`
+}
+
+// "−2 221 %": grouped, with a real minus sign.
+function percent(ratio: number): string {
+  const rounded = Math.round(ratio * 100)
+  return `${rounded < 0 ? "−" : ""}${formatCount(Math.abs(rounded))} %`
 }
 
 function dayLevel(cents: number): CalendarLevel {
@@ -166,11 +172,24 @@ function InsightsPage() {
     queryFn: () => apiFetch<BudgetHistoryResponse>("/api/insights/budget-history"),
   })
 
-  if (insights.isLoading) return <PanelLoading title="Insights" label="Loading insights…" />
-  if (insights.error || !insights.data) return <PanelError title="Insights" message="Unable to load insights." />
-  const data = insights.data
-
   const setPeriod = (next: PeriodSelection) => setSearchParams(writePeriodToSearch(searchParams, next))
+  const periodControl = <PeriodControl value={period} onChange={setPeriod} loading={insights.isPlaceholderData} />
+  // The period control stays, so a period that fails to load can be left.
+  if (insights.isLoading) {
+    return (
+      <Panel title="Insights" viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <LoadingBody label="Loading insights…" />
+      </Panel>
+    )
+  }
+  if (insights.error || !insights.data) {
+    return (
+      <Panel title="Insights" viewRow={<ViewRow>{periodControl}</ViewRow>}>
+        <ErrorBody message="Unable to load insights." />
+      </Panel>
+    )
+  }
+  const data = insights.data
   const setTagFilter = (mode: TagMode, ids: number[]) => {
     setEmptyTagMode(mode)
     setSearchParams(
@@ -222,11 +241,11 @@ function InsightsPage() {
     {
       label: "Saved",
       value: <Amount cents={saved} tone={saved > 0 ? "income" : undefined} />,
-      detail: income > 0 ? `${Math.round((saved / income) * 100)} % of income` : undefined,
+      detail: income > 0 ? `${percent(saved / income)} of income` : undefined,
     },
     {
       label: "Recurring",
-      value: spent ? `${Math.round((recurring / spent) * 100)} %` : "–",
+      value: spent ? percent(recurring / spent) : "–",
       detail: "of spending",
     },
   ]
@@ -249,7 +268,8 @@ function InsightsPage() {
   const gridLabels = monthLabels(gridMonths)
   const gridShort = gridMonths.map((month) => SHORT_MONTH.format(monthDate(month)).slice(0, 1))
   const lastFull = gridMonths.length > 1 ? gridMonths[gridMonths.length - 2] : null
-  const gridRows: MonthGridRow[] = (grid.data?.rows ?? []).map((row) => {
+  const gridColors = neighbourCategoryColors((grid.data?.rows ?? []).map((row) => row.id))
+  const gridRows: MonthGridRow[] = (grid.data?.rows ?? []).map((row, index) => {
     const full = row.values_cents.slice(0, -1)
     const average = sum(full) / (full.length || 1)
     const regular = full.filter((value) => value > 0).length >= 6
@@ -260,12 +280,12 @@ function InsightsPage() {
           <TagChip>{row.name}</TagChip>
         ) : (
           <>
-            <CategoryGlyph categoryId={row.id} icon={row.icon} name={row.name} inline />
+            <CategoryGlyph categoryId={row.id} icon={row.icon} name={row.name} inline color={gridColors[index]} />
             {row.name}
           </>
         ),
       values: row.values_cents,
-      color: gridKind === "tag" ? "var(--ink-2)" : categoryColor(row.id),
+      color: gridKind === "tag" ? "var(--ink-2)" : gridColors[index],
       total: <Amount cents={sum(row.values_cents)} decimals={false} />,
       change: regular && average ? percentChange((full[full.length - 1] - average) / average) : "–",
     }
@@ -336,7 +356,7 @@ function InsightsPage() {
             </Popover>
           }
         >
-          <PeriodControl value={period} onChange={setPeriod} />
+          {periodControl}
           <Pill
             icon={PackageIcon}
             set={spread}
@@ -352,7 +372,7 @@ function InsightsPage() {
       <CardRow>
         <ChartCard
           title="Income and expenses"
-          meta={income > 0 ? `${Math.round((Math.abs(saved) / income) * 100)} % ${saved < 0 ? "overspent" : "saved"}` : undefined}
+          meta={income > 0 ? `${percent(Math.abs(saved) / income)} ${saved < 0 ? "overspent" : "saved"}` : undefined}
           legend={flowLegend}
           empty={series.length ? undefined : "No transactions in this period."}
           table={
@@ -392,7 +412,7 @@ function InsightsPage() {
               tooltip={(index) => {
                 const point = series[index]
                 const pointSaved = point.income_cents - point.expense_cents
-                const share = point.income_cents > 0 ? ` (${Math.round((Math.abs(pointSaved) / point.income_cents) * 100)} %)` : ""
+                const share = point.income_cents > 0 ? ` (${percent(Math.abs(pointSaved) / point.income_cents)})` : ""
                 return (
                   <ChartTooltip
                     title={`${MONTH_YEAR.format(monthDate(seriesMonths[index]))}${index === seriesPartial ? " so far" : ""}`}
@@ -413,7 +433,7 @@ function InsightsPage() {
         </ChartCard>
         <ChartCard
           title="Recurring and other spending"
-          meta={spentFull ? `${Math.round((recurringFull / spentFull) * 100)} % recurring` : undefined}
+          meta={spentFull ? `${percent(recurringFull / spentFull)} recurring` : undefined}
           legend={[
             { key: "recurring", label: "Recurring", color: "var(--rec)" },
             { key: "other", label: "Other", color: "var(--ink-2)" },
@@ -556,7 +576,7 @@ function InsightsPage() {
                   key: day.date,
                   cells: [
                     <TableLink to={ledgerUrl({ start: day.date, end: day.date })}>
-                      {DAY_LABEL.format(new Date(`${day.date}T00:00:00Z`))}
+                      {dayLabel(day.date)}
                     </TableLink>,
                     <Amount cents={day.amount_cents} />,
                   ],
@@ -576,7 +596,7 @@ function InsightsPage() {
                   scale={DAY_LEVELS}
                   tooltip={(index) => (
                     <ChartTooltip
-                      title={DAY_LABEL.format(days.dates[index])}
+                      title={dayLabel(days.dates[index].toISOString().slice(0, 10))}
                       rows={[
                         {
                           key: "spent",
@@ -624,7 +644,7 @@ function InsightsPage() {
         table={
           <ChartTable
             label="Budget history by month"
-            columns={["Budget", ...budgetMonths.map((month) => MONTH_YEAR.format(monthDate(month))), "Within"]}
+            columns={["Budget", ...budgetMonths.map((month) => MONTH_YEAR.format(monthDate(month))), "Past months within"]}
             rows={budgetRows.map((row) => ({
               key: row.key,
               cells: [
@@ -664,7 +684,7 @@ function InsightsPage() {
                       : [
                           {
                             key: "spent",
-                            label: `${Math.round((cell.spent_cents / (cell.budget_cents || 1)) * 100)} % used`,
+                            label: `${percent(cell.spent_cents / (cell.budget_cents || 1))} used`,
                             value: (
                               <>
                                 <Amount cents={cell.spent_cents} decimals={false} /> of <Amount cents={cell.budget_cents} decimals={false} />

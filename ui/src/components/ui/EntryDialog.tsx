@@ -1,5 +1,6 @@
-import { forwardRef, useId, type FormEvent, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react"
+import { forwardRef, useEffect, useId, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react"
 import clsx from "clsx"
+import { confirmDialog } from "../confirm"
 import { Button } from "./Button"
 import { Dialog } from "./Dialog"
 import s from "./kit.module.css"
@@ -34,6 +35,26 @@ export function EntryDialog({
   children: ReactNode
 }) {
   const formId = useId()
+  // Typing in any field marks the entry as edited; Esc, the backdrop, and ✕ then ask before discarding it.
+  const edited = useRef(false)
+  const asking = useRef(false)
+  useEffect(() => {
+    if (open) edited.current = false
+  }, [open])
+  const dismiss = async () => {
+    if (edited.current) {
+      if (asking.current) return
+      asking.current = true
+      const discard = await confirmDialog({
+        title: "Discard this entry?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      })
+      asking.current = false
+      if (!discard) return
+    }
+    onOpenChange(false)
+  }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!pending && !submitDisabled) onSubmit()
@@ -42,8 +63,8 @@ export function EntryDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && pending) return
-        onOpenChange(next)
+        if (next) onOpenChange(next)
+        else if (!pending) void dismiss()
       }}
       title={title}
       header={direction}
@@ -58,7 +79,7 @@ export function EntryDialog({
         </>
       }
     >
-      <form id={formId} noValidate onSubmit={submit}>
+      <form id={formId} noValidate onSubmit={submit} onInput={() => (edited.current = true)}>
         {templates ? <div className={s.tplRow}>{templates}</div> : null}
         {children}
         {error ? (

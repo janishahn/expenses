@@ -85,7 +85,6 @@ struct ForecastView: View {
                 ForecastMonthsSection(months: data.months, mode: loaded.mode)
             }
         }
-        .headerProminence(.increased)
         .navigationTitle("Forecast")
         .navigationSubtitle(options.title)
         .expensesScreenStyle()
@@ -420,10 +419,10 @@ private struct ForecastAxes: ViewModifier {
             .chartYScale(domain: .automatic(includesZero: false))
             .chartXAxis {
                 AxisMarks(values: Array(stride(from: 0, through: last, by: step))) { value in
-                    AxisValueLabel(anchor: .top) {
-                        if let index = value.as(Int.self) {
-                            Text(labels[index])
-                        }
+                    let index = value.as(Int.self) ?? 0
+                    // Centred, the last label runs past the plot and the chart drops it.
+                    AxisValueLabel(anchor: index == last ? .topTrailing : .top) {
+                        Text(labels[index])
                     }
                 }
             }

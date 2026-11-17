@@ -94,6 +94,7 @@ def parse_csv(
             description = description_raw if description_raw else None
             rows.append(
                 CSVRow(
+                    row_number=idx,
                     date=date_value,
                     type=type_value,
                     is_reimbursement=is_reimbursement_value,

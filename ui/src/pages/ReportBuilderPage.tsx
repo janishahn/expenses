@@ -139,6 +139,7 @@ function ReportBuilderPage() {
     const activeIds = activeCategories.map((category) => category.id)
     const chosenCategories = categoryIds.filter((id) => activeIds.includes(id))
     const chosenTags = tagIds.filter((id) => filterTags.some((tag) => tag.id === id))
+    if (categoryMode === "selected" && !chosenCategories.length) return setError("Select at least one category.")
     if (tagMode !== "all" && !chosenTags.length) return setError("Select at least one tag.")
     // Opened before the request so the browser treats it as a response to the click.
     const popup = window.open("about:blank", "_blank")

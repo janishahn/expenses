@@ -176,7 +176,7 @@ function ForecastPage() {
       detail:
         summary.projected_balance_p10_cents !== null && summary.projected_balance_p90_cents !== null ? (
           <>
-            80% range <Amount cents={summary.projected_balance_p10_cents} decimals={false} /> –{" "}
+            80% range <Amount cents={summary.projected_balance_p10_cents} decimals={false} /> to{" "}
             <Amount cents={summary.projected_balance_p90_cents} decimals={false} />
           </>
         ) : (
@@ -211,7 +211,7 @@ function ForecastPage() {
         {peekRow.end_balance_p10_cents !== null && peekRow.end_balance_p90_cents !== null ? (
           <Property label="80% range">
             <span>
-              <Amount cents={peekRow.end_balance_p10_cents} decimals={false} /> –{" "}
+              <Amount cents={peekRow.end_balance_p10_cents} decimals={false} /> to{" "}
               <Amount cents={peekRow.end_balance_p90_cents} decimals={false} />
             </span>
           </Property>
@@ -324,8 +324,9 @@ function ForecastPage() {
             label="Forecast model"
             value={mode}
             options={[
-              { value: "recurring", label: "Recurring only" },
-              { value: "full", label: "With estimates" },
+              // Short on phones, like the horizon, so both fit beside it.
+              { value: "recurring", label: isDesktop ? "Recurring only" : "Recurring" },
+              { value: "full", label: isDesktop ? "With estimates" : "Estimates" },
             ]}
             onChange={(next) => update({ mode: next })}
           />
@@ -357,7 +358,7 @@ function ForecastPage() {
                               "–"
                             ) : (
                               <>
-                                <Amount cents={low[index] as number} /> – <Amount cents={high[index] as number} />
+                                <Amount cents={low[index] as number} /> to <Amount cents={high[index] as number} />
                               </>
                             ),
                           ]
@@ -404,7 +405,7 @@ function ForecastPage() {
                                   label: "80% range",
                                   value: (
                                     <>
-                                      <Amount cents={low[index] as number} decimals={false} /> –{" "}
+                                      <Amount cents={low[index] as number} decimals={false} /> to{" "}
                                       <Amount cents={high[index] as number} decimals={false} />
                                     </>
                                   ),
@@ -476,7 +477,7 @@ function ForecastPage() {
                   <Cell align="right" tone="muted" hide="narrow">
                     {row.end_balance_p10_cents !== null && row.end_balance_p90_cents !== null && interval ? (
                       <>
-                        <Amount cents={row.end_balance_p10_cents} decimals={false} /> –{" "}
+                        <Amount cents={row.end_balance_p10_cents} decimals={false} /> to{" "}
                         <Amount cents={row.end_balance_p90_cents} decimals={false} />
                       </>
                     ) : null}

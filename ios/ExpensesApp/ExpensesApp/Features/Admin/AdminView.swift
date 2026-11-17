@@ -62,6 +62,7 @@ struct AdminUnlockSection: View {
     @State private var password = ""
     @State private var unlocking = false
     @State private var unlockError: String?
+    @FocusState private var focused: Bool
 
     let title: String
     var onUnlock: () async -> Void = {}
@@ -70,6 +71,7 @@ struct AdminUnlockSection: View {
         Section(title) {
             SecureField("Password", text: $password)
                 .textContentType(.password)
+                .focused($focused)
                 .submitLabel(.go)
                 .onSubmit {
                     Task { await unlock() }
@@ -80,6 +82,7 @@ struct AdminUnlockSection: View {
                     }
                 }
                 .fieldError(unlockError)
+                .task { focused = true }
             Button(unlocking ? "Checking…" : "Unlock") {
                 Task { await unlock() }
             }
@@ -92,6 +95,7 @@ struct AdminUnlockSection: View {
     private func unlock() async {
         guard !password.isEmpty else {
             unlockError = "Enter your password."
+            focused = true
             return
         }
         unlockError = nil
@@ -104,6 +108,7 @@ struct AdminUnlockSection: View {
             await onUnlock()
         } else {
             unlockError = model.lastError?.message ?? "Couldn't unlock admin access."
+            focused = true
         }
     }
 }

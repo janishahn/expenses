@@ -50,10 +50,15 @@ struct AdminHealthView: View {
                 .expensesRowBackground()
 
                 Section("Status") {
-                    LabeledContent("Server") {
+                    LabeledContent {
                         status(health.status)
+                    } label: {
+                        Text("Server")
+                        if let reason = health.statusReason {
+                            Text(reason)
+                        }
                     }
-                    LabeledContent("Database", value: Int64(health.dbSizeBytes).formatted(.byteCount(style: .binary)))
+                    LabeledContent("Database", value: Int64(health.dbSizeBytes).formatted(.byteCount(style: .binary, allowedUnits: .mb)))
                     LabeledContent("Receipts", value: Int64(health.receiptsSizeBytes).formatted(.byteCount(style: .binary)))
                     LabeledContent("Free disk space", value: Int64(health.diskFreeBytes).formatted(.byteCount(style: .binary)))
                 }

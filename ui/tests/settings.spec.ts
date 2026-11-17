@@ -247,7 +247,7 @@ test.describe.serial("Settings and ordinary-user flows", () => {
 
     await row.click()
     const editDialog = page.getByRole("dialog", { name: "Edit snapshot" })
-    await expect(editDialog.getByLabel("Balance")).toHaveValue("123.45")
+    await expect(editDialog.getByLabel("Balance")).toHaveValue("123,45")
     await editDialog.getByLabel("Balance").fill("200")
     await editDialog.getByLabel("Note").fill(`Updated snapshot ${unique}`)
     await editDialog.getByRole("button", { name: "Save" }).click()

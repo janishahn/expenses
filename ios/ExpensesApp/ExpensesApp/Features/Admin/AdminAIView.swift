@@ -57,8 +57,10 @@ struct AdminAIView: View {
         .refreshable {
             await load()
         }
-        .onChange(of: choices.map(\.backend)) {
+        .onChange(of: choices) {
             saveError = nil
+        }
+        .onChange(of: choices.map(\.backend)) {
             Task { await loadModels() }
         }
     }
@@ -132,9 +134,16 @@ struct AdminAIView: View {
         guard !Task.isCancelled else {
             return
         }
+        // A refresh keeps unsaved edits.
+        var edited = false
+        if case .success(let previous) = stored {
+            edited = choices != previous.features
+        }
         stored = result
         if case .success(let settings) = result {
-            choices = settings.features
+            if !edited {
+                choices = settings.features
+            }
             saveError = nil
             catalogs = [:]
             await loadModels()

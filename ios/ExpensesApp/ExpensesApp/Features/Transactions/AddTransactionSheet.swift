@@ -8,7 +8,8 @@ struct AddTransactionSheet: View {
     @Environment(\.colorScheme) private var scheme
 
     @State private var type = TransactionKind.expense
-    @State private var occurredAt = Date()
+    // Nil follows the clock until a date is chosen.
+    @State private var occurredAt: Date?
     @State private var amount = ""
     @State private var title = ""
     @State private var categoryID: Int?
@@ -48,136 +49,157 @@ struct AddTransactionSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let templates = model.templates?.templates, !templates.isEmpty {
-                        ScrollView(.horizontal) {
-                            HStack(spacing: 8) {
-                                ForEach(templates) { template in
-                                    Button {
-                                        apply(template)
-                                    } label: {
-                                        EntryChip(template.name, isSet: false) {
-                                            CategoryGlyph(
-                                                categoryID: template.categoryID,
-                                                iconKey: template.category?.icon,
-                                                name: template.category?.name ?? template.name
-                                            )
-                                            .glyphColumn(18)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if let templates = model.templates?.templates, !templates.isEmpty {
+                            ScrollView(.horizontal) {
+                                HStack(spacing: 8) {
+                                    ForEach(templates) { template in
+                                        Button {
+                                            apply(template)
+                                        } label: {
+                                            EntryChip(template.name, isSet: false) {
+                                                CategoryGlyph(
+                                                    categoryID: template.categoryID,
+                                                    iconKey: template.category?.icon,
+                                                    name: template.category?.name ?? template.name
+                                                )
+                                                .glyphColumn(18)
+                                            }
                                         }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
-                        }
-                        .scrollIndicators(.hidden)
-                        .scrollClipDisabled()
-                    }
-
-                    EntryAmountField(text: $amount, income: type == .income)
-                        .focused($focus, equals: .amount)
-                        .fieldError(amountError)
-
-                    TextField("Title", text: $title)
-                        .font(.title3)
-                        .focused($focus, equals: .title)
-                        .submitLabel(.next)
-                        .onSubmit {
-                            focus = .notes
-                        }
-                        .fieldError(titleError)
-
-                    ChipFlow {
-                        Button {
-                            choosingDate = true
-                        } label: {
-                            EntryChip(AppFormatters.occurred(occurredAt), systemImage: "calendar", isSet: true)
-                        }
-                        .accessibilityLabel("Date")
-                        .accessibilityValue(AppFormatters.occurred(occurredAt))
-                        .popover(isPresented: $choosingDate) {
-                            DatePicker("Date", selection: $occurredAt)
-                                .datePickerStyle(.graphical)
-                                .labelsHidden()
-                                .padding()
-                                .frame(width: 340)
-                                .presentationCompactAdaptation(.popover)
+                            .scrollIndicators(.hidden)
+                            .scrollClipDisabled()
                         }
 
-                        Button {
-                            picker = .category
-                        } label: {
-                            if let category {
-                                EntryChip(category.name, isSet: true) {
-                                    CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
-                                        .glyphColumn(18)
-                                }
-                            } else {
-                                EntryChip("Category", systemImage: "square.on.circle", isSet: false)
+                        EntryAmountField(text: $amount, income: type == .income)
+                            .focused($focus, equals: .amount)
+                            .fieldError(amountError)
+                            .onChange(of: amount) {
+                                amountError = nil
                             }
-                        }
-                        .accessibilityLabel("Category")
-                        .accessibilityValue(category?.name ?? "")
 
-                        Button {
-                            picker = .tags
-                        } label: {
-                            EntryChip(tags.isEmpty ? "Tags" : tags.joined(separator: ", "), systemImage: "tag", isSet: !tags.isEmpty)
-                        }
-                        .accessibilityLabel("Tags")
-                        .accessibilityValue(tags.joined(separator: ", "))
+                        // Wraps so a long title stays readable; Return moves on to the notes.
+                        TextField("Title", text: $title, axis: .vertical)
+                            .font(.title3)
+                            .focused($focus, equals: .title)
+                            .submitLabel(.next)
+                            .returnEndsEditing($title) {
+                                focus = .notes
+                            }
+                            .onChange(of: title) {
+                                titleError = nil
+                            }
+                            .fieldError(titleError)
 
-                        if type == .income {
+                        ChipFlow {
                             Button {
-                                isReimbursement.toggle()
+                                // With the keyboard up there is no room above or below the chip,
+                                // so the popover would open sideways and clip the calendar.
+                                focus = nil
+                                choosingDate = true
                             } label: {
-                                EntryChip("Reimbursement", systemImage: "arrow.uturn.backward", isSet: isReimbursement)
-                            }
-                            .accessibilityAddTraits(isReimbursement ? .isSelected : [])
-                        }
-
-                        Menu {
-                            ReceiptSourceButtons { receiptSource = $0 }
-                            if receipt != nil {
-                                Button("Remove Receipt", systemImage: "trash", role: .destructive) {
-                                    receipt = nil
+                                TimelineView(.everyMinute) { context in
+                                    EntryChip(AppFormatters.occurred(occurredAt ?? context.date), systemImage: "calendar", isSet: true)
+                                        .accessibilityValue(AppFormatters.occurred(occurredAt ?? context.date))
                                 }
                             }
-                        } label: {
-                            EntryChip(receipt?.name ?? "Receipt", systemImage: "paperclip", isSet: receipt != nil)
-                        }
-                        .accessibilityLabel("Receipt")
-                        .accessibilityValue(receipt?.name ?? "")
-
-                        Button {
-                            if coordinate == nil {
-                                Task { await locate() }
-                            } else {
-                                coordinate = nil
+                            .accessibilityLabel("Date")
+                            .popover(isPresented: $choosingDate) {
+                                DatePicker("Date", selection: Binding(get: { occurredAt ?? Date() }, set: { occurredAt = $0 }))
+                                    .datePickerStyle(.graphical)
+                                    .labelsHidden()
+                                    .padding()
+                                    .frame(width: 340)
+                                    .presentationCompactAdaptation(.popover)
                             }
-                        } label: {
-                            EntryChip(
-                                locating ? "Locating…" : "Location",
-                                systemImage: coordinate == nil ? "location" : "location.fill",
-                                isSet: coordinate != nil
-                            )
+
+                            Button {
+                                picker = .category
+                            } label: {
+                                if let category {
+                                    EntryChip(category.name, isSet: true) {
+                                        CategoryGlyph(categoryID: category.id, iconKey: category.icon, name: category.name)
+                                            .glyphColumn(18)
+                                    }
+                                } else {
+                                    EntryChip("Category", systemImage: "square.on.circle", isSet: false)
+                                }
+                            }
+                            .accessibilityLabel("Category")
+                            .accessibilityValue(category?.name ?? "")
+
+                            Button {
+                                picker = .tags
+                            } label: {
+                                EntryChip(tags.isEmpty ? "Tags" : tags.joined(separator: ", "), systemImage: "tag", isSet: !tags.isEmpty)
+                            }
+                            .accessibilityLabel("Tags")
+                            .accessibilityValue(tags.joined(separator: ", "))
+
+                            if type == .income {
+                                Button {
+                                    isReimbursement.toggle()
+                                } label: {
+                                    EntryChip("Reimbursement", systemImage: "arrow.uturn.backward", isSet: isReimbursement)
+                                }
+                                .accessibilityAddTraits(isReimbursement ? .isSelected : [])
+                            }
+
+                            Menu {
+                                ReceiptSourceButtons { receiptSource = $0 }
+                                if receipt != nil {
+                                    Button("Remove Receipt", systemImage: "trash", role: .destructive) {
+                                        receipt = nil
+                                    }
+                                }
+                            } label: {
+                                EntryChip(receipt?.name ?? "Receipt", systemImage: "paperclip", isSet: receipt != nil)
+                            }
+                            .accessibilityLabel("Receipt")
+                            .accessibilityValue(receipt?.name ?? "")
+
+                            Button {
+                                if coordinate == nil {
+                                    Task { await locate() }
+                                } else {
+                                    coordinate = nil
+                                }
+                            } label: {
+                                EntryChip(
+                                    locating ? "Locating…" : "Location",
+                                    systemImage: coordinate == nil ? "location" : "location.fill",
+                                    isSet: coordinate != nil
+                                )
+                            }
+                            .disabled(locating)
+                            .accessibilityAddTraits(coordinate != nil ? .isSelected : [])
                         }
-                        .disabled(locating)
-                        .accessibilityAddTraits(coordinate != nil ? .isSelected : [])
-                    }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
 
-                    TextField("Notes", text: $notes, axis: .vertical)
-                        .lineLimit(2...6)
-                        .focused($focus, equals: .notes)
+                        TextField("Notes", text: $notes, axis: .vertical)
+                            .lineLimit(2...)
+                            .focused($focus, equals: .notes)
+                            .id(Focus.notes)
+                            // A growing field doesn't scroll itself, so its last line follows the caret above the keyboard.
+                            .onChange(of: notes) {
+                                if focus == .notes {
+                                    proxy.scrollTo(Focus.notes, anchor: .bottom)
+                                }
+                            }
 
-                    if let formError {
-                        FieldError(formError)
+                        if let formError {
+                            FieldError(formError)
+                        }
                     }
+                    .padding(20)
                 }
-                .padding(20)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .scrollDismissesKeyboard(.interactively)
             .background(ExpensesTheme.surface(for: scheme))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -268,7 +290,7 @@ struct AddTransactionSheet: View {
 
     // Tags scheduled for the chosen day join automatically unless removed.
     private var scheduledTags: [String] {
-        let day = AppFormatters.isoDay(occurredAt)
+        let day = AppFormatters.isoDay(occurredAt ?? Date())
         return model.activeTags.compactMap { tag in
             guard let period = tag.autoAttachPeriod, period.start <= day, period.end >= day else {
                 return nil
@@ -301,8 +323,9 @@ struct AddTransactionSheet: View {
     private func apply(_ template: TemplateRow) {
         type = template.type
         categoryID = template.categoryID
-        title = template.title ?? ""
-        notes = ""
+        if let templateTitle = template.title, !templateTitle.isEmpty {
+            title = templateTitle
+        }
         explicitTags = template.tags
         amountError = nil
         titleError = nil
@@ -310,7 +333,10 @@ struct AddTransactionSheet: View {
         if type != .income {
             isReimbursement = false
         }
-        amount = template.defaultAmountCents.map(AppFormatters.amountInput) ?? ""
+        // Templates have no notes, and a template without a title or amount keeps what was typed.
+        if let cents = template.defaultAmountCents {
+            amount = AppFormatters.amountInput(cents)
+        }
         focus = .amount
     }
 
@@ -329,7 +355,7 @@ struct AddTransactionSheet: View {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         amountError = amount.trimmingCharacters(in: .whitespaces).isEmpty
             ? "Enter an amount."
-            : cents == nil ? "Enter a valid amount." : nil
+            : cents == nil || cents == 0 ? "Enter a valid amount." : nil
         titleError = trimmedTitle.isEmpty ? "Enter a title." : nil
         formError = tagsLoaded ? nil : "Wait for tags to load before adding the transaction"
         if !tagsLoaded {
@@ -343,7 +369,7 @@ struct AddTransactionSheet: View {
         defer { pending = false }
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = TransactionMutationRequest(
-            occurredAt: occurredAt,
+            occurredAt: occurredAt ?? Date(),
             // A new transaction takes the device's clock time, as on the web the browser's.
             timeZone: .current,
             type: type,

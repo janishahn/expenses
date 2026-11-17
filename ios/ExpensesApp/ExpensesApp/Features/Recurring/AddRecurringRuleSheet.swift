@@ -31,7 +31,6 @@ struct AddRecurringRuleSheet: View {
 
     init(categories: [CategorySummary]) {
         self.categories = categories
-        _categoryID = State(initialValue: categories.first { $0.type == TransactionKind.expense.rawValue }?.id)
     }
 
     var body: some View {
@@ -158,16 +157,16 @@ struct AddRecurringRuleSheet: View {
 
     // The schedule and its options are defaults, so they alone are no input to lose.
     private var hasInput: Bool {
-        !amount.isEmpty || !name.isEmpty || end != nil
+        !amount.isEmpty || !name.isEmpty || categoryID != nil || end != nil
     }
 
-    // A new type starts on that type's first category.
+    // A category of the other type could never apply, so a new type clears it.
     private var typeSelection: Binding<TransactionKind> {
         Binding(
             get: { type },
             set: { next in
                 type = next
-                categoryID = typed.first?.id
+                categoryID = nil
             }
         )
     }
@@ -222,7 +221,8 @@ struct AddRecurringRuleSheet: View {
             }
             let last = end.map { ruleDay(AppFormatters.isoDay($0)) }
             let days = preview.occurrences.filter { day in last.map { day <= $0 } ?? true }
-            return days.isEmpty ? nil : "Next " + days.map { AppFormatters.shortDay(AppFormatters.localDay($0)) }.joined(separator: " · ")
+            // No-break spaces keep each date on one line.
+            return days.isEmpty ? nil : "Next " + days.map { AppFormatters.shortDay(AppFormatters.localDay($0)).replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · ")
         }
     }
 

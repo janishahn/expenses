@@ -2,7 +2,7 @@ import { useId, useRef, useState, type CSSProperties, type PointerEvent, type Re
 import clsx from "clsx"
 import { usePrivacy } from "../../app/privacy"
 import type { ChartFocus } from "./ChartCard"
-import { pointerAt, type PointerAt } from "./chart-pointer"
+import { pointerAt, useInlineSize, type PointerAt } from "./chart-pointer"
 import s from "./kit.module.css"
 
 // Chart bodies drawn inside a ChartCard. Marks under the pointer or a hovered legend
@@ -32,6 +32,11 @@ function niceTicks(lo: number, hi: number, count: number): number[] {
       .map(ticksFor)
       .find((ticks) => ticks.length >= 2) ?? ticksFor(steps[0])
   )
+}
+
+// Widens the y-axis for long tick labels, such as a negative amount in the thousands.
+function yAxisStyle(labels: string[]): CSSProperties {
+  return { "--yw": `${Math.ceil(Math.max(0, ...labels.map((label) => label.length)) * 6.5)}px` } as CSSProperties
 }
 
 // Splits a series at missing values so gaps stay gaps.
@@ -122,7 +127,11 @@ export function LineChart({
   const values = [...series.flatMap((entry) => entry.values), ...bands.flatMap((band) => [...band.lo, ...band.hi])].filter(
     (value): value is number => value !== null
   )
+  const width = useInlineSize(root, n > 0 && values.length > 0)
   if (!n || !values.length) return null
+  // Thins labels further when the chart is too narrow to fit them about 40px apart.
+  const plotWidth = width - (yAxis ? 56 : 0)
+  const every = plotWidth > 0 && n > 1 ? Math.max(xEvery, Math.ceil((40 * (n - 1)) / plotWidth)) : xEvery
   let lo = Math.min(...values)
   let hi = Math.max(...values)
   if (zero) {
@@ -135,6 +144,7 @@ export function LineChart({
   const x = (index: number) => (n > 1 ? 8 + (index / (n - 1)) * (W - 16) : W / 2)
   const y = (value: number) => 6 + (1 - (value - lo) / (hi - lo)) * (H - 12)
   const ticks = niceTicks(lo, hi, 3)
+  const yLabels = ticks.map((tick) => (hidden ? "••••" : formatY ? formatY(tick) : String(tick)))
   const cut = partial ?? n
 
   const track = (event: PointerEvent<HTMLDivElement>) => {
@@ -147,17 +157,17 @@ export function LineChart({
   const active = hover?.index ?? idle
   // Thinned labels step from today's mark; the last point keeps one unless another sits close before it.
   const labelled = (index: number) => {
-    const offset = (((index - (mark ?? 0)) % xEvery) + xEvery) % xEvery
-    return offset === 0 || (index === n - 1 && offset >= xEvery / 2)
+    const offset = (((index - (mark ?? 0)) % every) + every) % every
+    return offset === 0 || (index === n - 1 && offset >= every / 2)
   }
 
   return (
-    <div ref={root} className={clsx(s.chartWrap, yAxis && s.chartWrapY)}>
+    <div ref={root} className={clsx(s.chartWrap, yAxis && s.chartWrapY)} style={yAxis ? yAxisStyle(yLabels) : undefined}>
       {yAxis ? (
         <div className={s.yax} style={{ height: H }} aria-hidden="true">
-          {ticks.map((tick) => (
+          {ticks.map((tick, index) => (
             <span key={tick} className={s.ylab} style={{ top: `${(y(tick) / H) * 100}%` }}>
-              {hidden ? "••••" : formatY ? formatY(tick) : tick}
+              {yLabels[index]}
             </span>
           ))}
         </div>
@@ -519,13 +529,22 @@ export function ColumnChart({
   const totals = labels.map((_, index) => series.reduce((sum, entry) => sum + entry.values[index], 0))
   const top = Math.max(...totals, 0) * 1.06 || 1
   const ticks = niceTicks(0, top, 4)
+  const yLabels = ticks.map((tick) => (hidden ? "••••" : formatY ? formatY(tick) : String(tick)))
   const columns = { "--n": labels.length } as CSSProperties
+  // Short labels once full ones would run into each other.
+  const width = useInlineSize(root)
+  const short = Boolean(shortLabels) && width > 0 && (width - 56) / labels.length < 30
   return (
-    <div ref={root} className={clsx(s.chartWrap, s.chartWrapY)} onPointerLeave={() => setHover(null)}>
+    <div
+      ref={root}
+      className={clsx(s.chartWrap, s.chartWrapY)}
+      style={yAxisStyle(yLabels)}
+      onPointerLeave={() => setHover(null)}
+    >
       <div className={s.yax} style={{ height }} aria-hidden="true">
-        {ticks.map((tick) => (
+        {ticks.map((tick, index) => (
           <span key={tick} className={s.ylab} style={{ top: `${(1 - tick / top) * 100}%` }}>
-            {hidden ? "••••" : formatY ? formatY(tick) : tick}
+            {yLabels[index]}
           </span>
         ))}
       </div>
@@ -555,7 +574,7 @@ export function ColumnChart({
       <div className={s.colLabels} style={columns} aria-hidden="true">
         {labels.map((label, index) => (
           <span key={index} data-short={shortLabels?.[index]}>
-            {label}
+            {short ? shortLabels?.[index] : label}
           </span>
         ))}
       </div>

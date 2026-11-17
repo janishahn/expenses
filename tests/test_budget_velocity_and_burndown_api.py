@@ -310,6 +310,13 @@ def test_dashboard_budget_pulse_tracks_selected_period_month(
     # The dashboard budget pulse reflects the month the selected period refers to.
     assert pulse_spent("this_month") == 12_000
     assert pulse_spent("last_month") == 30_000
+    # A month stepped to as a custom period is evaluated like last month.
+    assert (
+        pulse_spent(
+            f"custom&start={last_month_first.isoformat()}&end={last_month_end.isoformat()}"
+        )
+        == 30_000
+    )
     # "All time" includes the current month, so it falls back to the current month.
     assert pulse_spent("all") == 12_000
 

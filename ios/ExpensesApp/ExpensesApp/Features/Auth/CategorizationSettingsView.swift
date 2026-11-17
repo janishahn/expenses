@@ -41,12 +41,21 @@ struct CategorizationSettingsView: View {
                     }
                     .tint(.primary)
                     .popover(isPresented: $choosingThreshold) {
+                        let shown = (threshold * 100).formatted(.number.precision(.fractionLength(0...2)).grouping(.never))
                         ValuePopover(
                             title: "Minimum confidence",
-                            text: (threshold * 100).formatted(.number.precision(.fractionLength(0...2)).grouping(.never)),
+                            text: shown,
                             keyboard: .numberPad,
                             confirm: "Save"
                         ) { raw in
+                            // The server may hold a fractional value; leaving it unchanged keeps it.
+                            if raw.trimmingCharacters(in: .whitespaces) == shown {
+                                if error != nil {
+                                    enteredThreshold = threshold
+                                    Task { await save(settings) }
+                                }
+                                return nil
+                            }
                             guard let percent = Int(raw.trimmingCharacters(in: .whitespaces)), (0...100).contains(percent) else {
                                 return "Enter a whole number from 0 to 100."
                             }

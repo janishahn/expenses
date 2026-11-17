@@ -86,6 +86,8 @@ canvas, so `ink-3` is never used there.
 
 Category colors are a provisional palette. Each must reach 3:1 against `sheet`
 as an icon glyph and as a chart mark. Assign them deterministically by category.
+In a chart or legend, a category whose color matches the one before it in
+displayed order takes the next palette color, so neighbors differ.
 
 | Category | Light | Dark |
 | --- | --- | --- |

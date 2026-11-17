@@ -106,6 +106,9 @@ test.describe("Transaction peek and full view", () => {
 
     await peek.getByRole("button", { name: "Edit Amount" }).click()
     const amount = peek.getByRole("textbox", { name: "Amount" })
+    await amount.fill("0,00")
+    await amount.press("Enter")
+    await expect(peek.getByRole("alert")).toHaveText("Enter a valid amount.")
     await amount.fill("abc")
     await amount.press("Enter")
     await expect(peek.getByRole("alert")).toHaveText("Enter a valid amount.")
@@ -326,6 +329,46 @@ test.describe("Transaction peek and full view", () => {
     await main.getByRole("link", { name: "Transactions", exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`^[^?]*/transactions\\?${listParams.toString().replace(/[+]/g, "\\+")}$`))
     await expect(page.getByRole("list", { name: "Transactions" }).getByRole("listitem")).toHaveCount(1)
+  })
+
+  test("restores the list scroll position and peek on Back from the full view", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Scroll Back")
+    const prefix = `E2E Scroll Back ${Date.now()}`
+    for (let index = 0; index < 40; index += 1) {
+      const day = String((index % 28) + 1).padStart(2, "0")
+      await createTransaction(request, token, {
+        date: `2026-03-${day}`,
+        occurred_at: `2026-03-${day}T09:${String(index).padStart(2, "0")}:00`,
+        type: "expense",
+        amount_cents: 100 + index,
+        category_id: categoryId,
+        title: `${prefix} ${index}`,
+        tags: [],
+      })
+    }
+    await page.goto(`/transactions?period=all&q=${encodeURIComponent(prefix)}`)
+    const list = page.getByRole("list", { name: "Transactions" })
+    await expect(list.getByRole("listitem")).toHaveCount(40)
+    const scroller = list.locator("xpath=..")
+    await scroller.evaluate((element) => element.scrollTo({ top: 600 }))
+    const target = list.getByRole("listitem").nth(20)
+    const title = (await target.getAttribute("aria-label")) ?? ""
+    await target.click()
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek).toBeVisible()
+    const before = await scroller.evaluate((element) => element.scrollTop)
+    expect(before).toBeGreaterThan(0)
+
+    await peek.getByRole("button", { name: "Open full view" }).click()
+    await expect(page.getByRole("main").getByRole("heading", { name: title })).toBeVisible()
+
+    await page.goBack()
+    await expect(page.getByRole("complementary", { name: title })).toBeVisible()
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(before)
   })
 
   test("loads the full view directly with a breadcrumb back to the ledger", async ({

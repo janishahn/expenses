@@ -87,6 +87,8 @@ export function periodLabel(selection: PeriodSelection, presets: PeriodPreset[],
   return `${startLabel} – ${dayMonth(end)} ${end.getUTCFullYear()}`
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
 // Reads the selection from URL search params. Pages differ in their default period,
 // so a missing or invalid one falls back to the page's own.
 export function periodFromSearch(params: URLSearchParams, fallback: PeriodSelection): PeriodSelection {
@@ -94,7 +96,9 @@ export function periodFromSearch(params: URLSearchParams, fallback: PeriodSelect
   const start = params.get("start")
   const end = params.get("end")
   if (slug === "this_month" || slug === "last_month" || slug === "all") return { slug }
-  if (slug === "custom" && start && end) return { slug, start, end }
+  if (slug === "custom" && start && end && ISO_DATE.test(start) && ISO_DATE.test(end) && start <= end) {
+    return { slug, start, end }
+  }
   return fallback
 }
 

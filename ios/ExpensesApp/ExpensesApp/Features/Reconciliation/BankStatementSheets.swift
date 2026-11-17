@@ -96,15 +96,13 @@ struct ImportStatementSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    DiscardButton(hasChanges: hasInput)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(importing ? "Importing…" : "Import", role: .confirm) {
                         Task { await commit() }
                     }
-                    .disabled(importing)
+                    .disabled(importing || reading || fileURL == nil)
                 }
             }
             .fileImporter(isPresented: $choosingFile, allowedContentTypes: Self.csvTypes) { result in
@@ -125,7 +123,12 @@ struct ImportStatementSheet: View {
                 fileError = nil
             }
         }
-        .interactiveDismissDisabled(importing)
+        .interactiveDismissDisabled(hasInput || importing)
+    }
+
+    // The account defaults to the last one imported, so it alone is no input to lose.
+    private var hasInput: Bool {
+        fileURL != nil || !newName.isEmpty
     }
 
     @ViewBuilder
@@ -246,6 +249,7 @@ struct CreateFromBankRowSheet: View {
     @State private var receiptSource: ReceiptSource?
     @State private var choosingDate = false
     @State private var picker: Choice?
+    @FocusState private var focusedField: Field?
     @State private var titleError: String?
     @State private var formError: String?
     @State private var pending = false
@@ -257,6 +261,11 @@ struct CreateFromBankRowSheet: View {
         case tags
 
         var id: Self { self }
+    }
+
+    private enum Field {
+        case title
+        case notes
     }
 
     init(row: BankStatementRow, onCreated: @escaping () async -> Void) {
@@ -276,10 +285,13 @@ struct CreateFromBankRowSheet: View {
 
                     TextField("Title", text: $title)
                         .font(.title3)
+                        .focused($focusedField, equals: .title)
                         .fieldError(titleError)
 
                     ChipFlow {
                         Button {
+                            // With the keyboard up the popover opens sideways and clips the calendar.
+                            focusedField = nil
                             choosingDate = true
                         } label: {
                             EntryChip(AppFormatters.shortDay(date), systemImage: "calendar", isSet: true)
@@ -335,6 +347,7 @@ struct CreateFromBankRowSheet: View {
 
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(2...6)
+                        .focused($focusedField, equals: .notes)
 
                     if let formError {
                         FieldError(formError)

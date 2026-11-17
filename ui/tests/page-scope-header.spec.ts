@@ -66,6 +66,10 @@ test.describe("Page scope headers", () => {
       const period = main.getByRole("group", { name: "Period" })
       await expect(title).toBeVisible()
       await expect(period).toBeVisible()
+      // The period control also shows while the page loads; measure the loaded header.
+      await expect(
+        main.getByRole("button", { name: entry.filter ? "Filter" : /^Sort by/, exact: entry.filter }),
+      ).toBeVisible()
 
       const [titleBox, periodBox] = await Promise.all([
         title.boundingBox(),

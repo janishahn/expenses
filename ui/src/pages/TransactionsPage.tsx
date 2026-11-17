@@ -8,6 +8,7 @@ import { ChecksIcon } from "@phosphor-icons/react/Checks"
 import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
 import { EraserIcon } from "@phosphor-icons/react/Eraser"
+import { EyeSlashIcon } from "@phosphor-icons/react/EyeSlash"
 import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass"
 import { MinusIcon } from "@phosphor-icons/react/Minus"
@@ -22,7 +23,8 @@ import { useLocation, useOutletContext, useSearchParams } from "react-router-dom
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { TagsResponse, TransactionsResponse, TransactionsSummary } from "../app/api-types"
 import type { AppShellOutletContext } from "../app/AppShell"
-import { dayLabel, dayNet, groupByDay, invalidateTransactionData, reimbursementOf, rowTitle, useSettledSearch } from "../app/transactions"
+import { setPrivacy, usePrivacy } from "../app/privacy"
+import { dayNet, groupByDay, invalidateTransactionData, reimbursementOf, relativeDayLabel, rowTitle, useSettledSearch } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
 import { confirmDialog } from "../components/confirm"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -38,7 +40,7 @@ import { EntryChips } from "../components/ui/EntryDialog"
 import { useIsDesktop } from "../components/ui/layout-state"
 import { LedgerRow, List, ListFooter, TransactionAmount } from "../components/ui/LedgerRow"
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "../components/ui/Menu"
-import { Panel, PanelError, PanelLoading, ViewRow } from "../components/ui/Panel"
+import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
 import { PeekLayout } from "../components/ui/Peek"
 import { PeriodControl } from "../components/ui/PeriodControl"
 import {
@@ -105,6 +107,7 @@ function TransactionsPage() {
   const queryClient = useQueryClient()
   const location = useLocation()
   const isDesktop = useIsDesktop()
+  const amountsHidden = usePrivacy()
   const [searchParams, setSearchParams] = useSearchParams()
   const peekId = Number(searchParams.get("peek")) || null
   const searchQuery = searchParams.get("q") ?? ""
@@ -169,6 +172,16 @@ function TransactionsPage() {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
 
+  // Back restores the list's scroll offset; a peek opened without one (a link or a reload) brings its row into view once.
+  const revealedPeek = useRef(false)
+  useEffect(() => {
+    if (revealedPeek.current || !data) return
+    revealedPeek.current = true
+    if (isDesktop && peekId !== null) {
+      document.querySelector("[role='listitem'][data-selected]")?.scrollIntoView({ block: "nearest" })
+    }
+  }, [data, isDesktop, peekId])
+
   // Printing loads every row for the filters first; the ledger then opens the print dialog.
   const [printout, setPrintout] = useState<{ list: TransactionsResponse; summary: TransactionsSummary } | "loading" | null>(
     null
@@ -214,11 +227,33 @@ function TransactionsPage() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [printable, printout, startPrint])
 
+  // The header and period control stay, so a period that fails to load can be left.
+  const addButton = (
+    <Button variant="primary" icon={PlusIcon} aria-label="Add transaction" onClick={openAddTransaction}>
+      {isDesktop ? "Add transaction" : "Add"}
+    </Button>
+  )
+  const loadingViewRow = (
+    <ViewRow>
+      <PeriodControl
+        value={periodFromSearch(searchParams, DEFAULT_PERIOD)}
+        onChange={(next) => setSearchParams(buildSearchParams(writePeriodToSearch(searchParams, next), { page: "1" }))}
+      />
+    </ViewRow>
+  )
   if (isLoading) {
-    return <PanelLoading title="Transactions" label="Loading transactions…" />
+    return (
+      <Panel title="Transactions" actions={addButton} viewRow={loadingViewRow}>
+        <LoadingBody label="Loading transactions…" />
+      </Panel>
+    )
   }
   if (error || !data) {
-    return <PanelError title="Transactions" message="Unable to load transactions." />
+    return (
+      <Panel title="Transactions" actions={addButton} viewRow={loadingViewRow}>
+        <ErrorBody message="Unable to load transactions." />
+      </Panel>
+    )
   }
 
   const { items, has_more, page, limit, total, categories, tags } = data
@@ -330,7 +365,7 @@ function TransactionsPage() {
   }
 
   // Previews the change, confirms it with the affected count, then applies it.
-  const runBulk = async (operation: BulkOperation, verb: string, confirmLabel: string): Promise<boolean> => {
+  const runBulk = async (operation: BulkOperation, verb: string, confirmLabel: string, detail?: string): Promise<boolean> => {
     const payload = bulkPayload(operation)
     if (!payload) return false
     setBulkPending(true)
@@ -341,7 +376,14 @@ function TransactionsPage() {
       })
       const confirmed = await confirmDialog({
         title: `${verb} ${countLabel(preview.eligible_count)}?`,
-        description: preview.skipped_count ? `${countLabel(preview.skipped_count)} will be skipped.` : undefined,
+        description:
+          [
+            detail ?? null,
+            operation.lifecycle === "soft_delete" ? "They move to Trash." : null,
+            preview.skipped_count ? `${countLabel(preview.skipped_count)} will be skipped.` : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined,
         tone: operation.lifecycle === "soft_delete" ? "danger" : "primary",
         confirmLabel,
       })
@@ -356,8 +398,8 @@ function TransactionsPage() {
       showToast({
         message:
           operation.lifecycle === "soft_delete"
-            ? `Moved ${countLabel(result.eligible_count)} to Trash`
-            : `Updated ${countLabel(result.eligible_count)}`,
+            ? `Moved ${countLabel(result.eligible_count)} to Trash.`
+            : `Updated ${countLabel(result.eligible_count)}.`,
       })
       return true
     } catch (failure) {
@@ -368,7 +410,12 @@ function TransactionsPage() {
     }
   }
   const bulkCategory = (categoryId: number | null) =>
-    void runBulk({ set_category_id: categoryId, tag_patch: null, lifecycle: "none" }, "Change the category of", "Apply")
+    void runBulk(
+      { set_category_id: categoryId, tag_patch: null, lifecycle: "none" },
+      "Change the category of",
+      "Apply",
+      `New category: ${categories.find((entry) => entry.id === categoryId)?.name ?? "Uncategorized"}.`
+    )
   const bulkClearTags = () =>
     void runBulk({ set_category_id: null, tag_patch: { mode: "clear", tags: [] }, lifecycle: "none" }, "Clear tags on", "Clear tags")
   const bulkDelete = () =>
@@ -552,9 +599,7 @@ function TransactionsPage() {
               searchInputRef.current?.focus()
             }}
           />
-          <Button variant="primary" icon={PlusIcon} aria-label="Add transaction" onClick={openAddTransaction}>
-            {isDesktop ? "Add transaction" : "Add"}
-          </Button>
+          {addButton}
           <Menu label="More actions" trigger={<IconButton icon={DotsThreeIcon} label="More actions" />}>
             {isDesktop ? null : (
               <MenuItem icon={CheckSquareIcon} onSelect={() => setSelectMode(true)}>
@@ -569,6 +614,9 @@ function TransactionsPage() {
             </MenuItem>
             <MenuItem icon={PrinterIcon} disabled={printout !== null || total === 0} onSelect={() => void startPrint()}>
               Print…
+            </MenuItem>
+            <MenuItem icon={EyeSlashIcon} checked={amountsHidden} onSelect={() => setPrivacy(!amountsHidden)}>
+              Hide amounts
             </MenuItem>
           </Menu>
         </>
@@ -602,13 +650,21 @@ function TransactionsPage() {
         main={
           <List
             label="Transactions"
+            restoreScroll
             hasSelection={selectionCount > 0 || selecting}
             footer={
               items.length ? (
                 <ListFooter>
-                  {first}–{first + items.length - 1} of {total}
-                  <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
-                  <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                  {/* One page needs no range or paging, only the count. */}
+                  {page > 1 || has_more ? (
+                    <>
+                      {first}–{first + items.length - 1} of {total}
+                      <IconButton icon={CaretLeftIcon} label="Previous page" disabled={page <= 1} onClick={() => changePage(page - 1)} />
+                      <IconButton icon={CaretRightIcon} label="Next page" disabled={!has_more} onClick={() => changePage(page + 1)} />
+                    </>
+                  ) : (
+                    countLabel(total)
+                  )}
                 </ListFooter>
               ) : filterCount || searchQuery || period.slug !== "all" ? (
                 <EmptyState
@@ -633,7 +689,7 @@ function TransactionsPage() {
           >
             {groups.map((group, index) => (
               <Fragment key={`${group.date}-${index}`}>
-                <DayBand ledger label={dayLabel(group.date)} end={bandNet(index)} />
+                <DayBand ledger label={relativeDayLabel(group.date)} end={bandNet(index)} />
                 {group.rows.map((row) => (
                   <LedgerRow
                     key={row.id}

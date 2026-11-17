@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The dashboard balance for a period that reaches today counts transactions up to now, as its "as of today" label says, instead of up to the end of the period. Budget pace and the budgets card follow any single selected month, not only the current and last month.
+- Admin Health shows why the server status is not healthy. `GET /api/admin/system-health` adds the optional `status_reason`.
+- CSV import in Settings cannot start while the preview has errors, and category and reimbursement errors name their row.
+- Create dialogs on the web ask before discarding typed input. Add rule, Add template, and their iOS sheets start without a category instead of preselecting the first one.
+- A durable purchase past its expected lifespan shows its days owned alone instead of "980 of 730 days".
+- iOS asks before signing out and before discarding a chosen bank statement, confirms a saved export, and opens Restore and Delete Forever from a Trash row.
+- Transaction day headers read "Today" and "Yesterday" and add the year for earlier years. The Transactions "…" menu can hide or show amounts. iOS section headers use one grey style on every screen.
+- Neighbouring categories in a chart no longer share a colour.
+- The "All time" monthly average in Insights divides by months that have transactions. `GET /api/insights` `month_count` counts only those months.
+- A zero amount is rejected when adding a transaction or editing its amount.
+- A stopped Assistant answer seen after a reload or on reopening reads "Interrupted". Budget history makes clear that the current month is not counted, and the web Transactions footer shows only the count when everything fits on one page.
+
+### Fixed
+- Web: Stop in the Assistant no longer sends the text in the composer. Editing a note with a table or task list no longer flattens it; such notes are edited as Markdown. Notes show list bullets, wrap long links, and style tables.
+- Web: chart axes no longer clip the minus sign of negative balances, dashboard metrics and Insights labels no longer overlap on narrow windows, and the bulk bar no longer covers the last row and pager.
+- Mobile web: form fields no longer make iOS Safari zoom, sheets stay above the on-screen keyboard, and landscape layouts keep clear of the notch.
+- Web: a legacy import of a file that is not a SQLite database reports that instead of "Internal Server Error".
+- iOS: a sent Assistant message keeps a gap below the header, and raising the keyboard during an answer no longer makes the chat jump.
+- iOS: Return in a detail title no longer deletes a selected word. Notes, Reports notes, and Reconcile match results stay above the keyboard.
+- iOS: the date picker in Add transaction, balance snapshots, and Create from bank row no longer opens sideways and clipped while the keyboard is up.
+- iOS: the last transaction row scrolls clear of the Quick Add button, and the search field no longer squashes in Select mode.
+- iOS: cancelling the device passcode sheet after returning to the app no longer shows it again in a loop.
+- iOS: form errors clear when the field is corrected, a template keeps the amount and notes already typed (also on the web), and the Tags, Categories, and Insights screens stay readable at accessibility text sizes.
+
 ## [0.8.12] - 2026-10-28
 
 ### Added

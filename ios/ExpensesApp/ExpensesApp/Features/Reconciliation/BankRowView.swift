@@ -13,6 +13,7 @@ struct BankRowView: View {
     @State private var selected: BankReconciliationTransaction?
     @State private var search = ""
     @State private var found: [BankReconciliationTransaction]?
+    @State private var searching = false
     @State private var setAmount = true
     @State private var selectionError: String?
     @State private var prompt: BankRowPrompt?
@@ -27,58 +28,69 @@ struct BankRowView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(row.title)
-                        .font(.title2.weight(.semibold))
-                    BankAmount(cents: row.amountCents, currency: row.currency)
-                        .font(.largeTitle.weight(.semibold))
-                }
-            }
-            .detailHeadSection()
-
-            Section {
-                LabeledContent("Booked", value: AppFormatters.day(AppFormatters.localDay(row.bookingDate)))
-                LabeledContent("Account", value: row.accountLabel)
-                if resolved, let resolution = row.resolution {
-                    LabeledContent("Outcome", value: resolution.title)
-                    if resolution == .ignored {
-                        LabeledContent("Reason", value: row.ignoreReason ?? "None")
-                    }
-                    if let resolvedAt = row.resolvedAt {
-                        LabeledContent("Resolved", value: AppFormatters.day(resolvedAt))
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.title)
+                            .font(.title2.weight(.semibold))
+                        BankAmount(cents: row.amountCents, currency: row.currency)
+                            .font(.largeTitle.weight(.semibold))
                     }
                 }
-            }
-            .expensesRowBackground()
+                .detailHeadSection()
 
-            if resolved, row.resolution != .ignored, let transaction = row.suggestedTransaction {
-                Section("Transaction") {
-                    NavigationLink {
-                        TransactionDetailView(transactionID: transaction.id)
-                    } label: {
-                        candidateLabel(transaction)
+                Section {
+                    LabeledContent("Booked", value: AppFormatters.day(AppFormatters.localDay(row.bookingDate)))
+                    LabeledContent("Account", value: row.accountLabel)
+                    if resolved, let resolution = row.resolution {
+                        LabeledContent("Outcome", value: resolution.title)
+                        if resolution == .ignored {
+                            LabeledContent("Reason", value: row.ignoreReason ?? "None")
+                        }
+                        if let resolvedAt = row.resolvedAt {
+                            LabeledContent("Resolved", value: AppFormatters.day(resolvedAt))
+                        }
                     }
-                    .navigationLinkIndicatorVisibility(.hidden)
                 }
                 .expensesRowBackground()
-            }
 
-            Section("Purpose") {
-                Text(row.purpose ?? row.rawDescription)
-                    .textSelection(.enabled)
-            }
-            .expensesRowBackground()
+                if resolved, row.resolution != .ignored, let transaction = row.suggestedTransaction {
+                    Section("Transaction") {
+                        NavigationLink {
+                            TransactionDetailView(transactionID: transaction.id)
+                        } label: {
+                            candidateLabel(transaction)
+                        }
+                        .navigationLinkIndicatorVisibility(.hidden)
+                    }
+                    .expensesRowBackground()
+                }
 
-            if !resolved {
-                matchSection
+                Section("Purpose") {
+                    Text(row.purpose ?? row.rawDescription)
+                        .textSelection(.enabled)
+                }
+                .expensesRowBackground()
+
+                if !resolved {
+                    matchSection
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            // Results land at the bottom of the screen; bring them up above the keyboard.
+            .onChange(of: found) {
+                if found != nil {
+                    withAnimation {
+                        proxy.scrollTo("match", anchor: .top)
+                    }
+                }
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .expensesScreenStyle()
-        .modifier(CandidateSearch(enabled: !resolved, text: $search, prompt: row.candidates.isEmpty ? "Find a transaction" : "Find another transaction"))
+        .modifier(CandidateSearch(enabled: !resolved, text: $search, isPresented: $searching, prompt: row.candidates.isEmpty ? "Find a transaction" : "Find another transaction"))
         .toolbar {
             if resolved {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -129,6 +141,8 @@ struct BankRowView: View {
         .onChange(of: selected) {
             selectionError = nil
             setAmount = true
+            // Searching covers the toolbar; close it so Match is reachable. The chosen result stays listed.
+            searching = false
         }
         .bankRowPrompt($prompt, failure: $failure) { succeeded in
             if succeeded {
@@ -175,6 +189,7 @@ struct BankRowView: View {
         } header: {
             Text("Match")
         }
+        .id("match")
         .expensesRowBackground()
         .sensoryFeedback(.selection, trigger: selected)
     }
@@ -258,11 +273,12 @@ struct BankRowView: View {
 private struct CandidateSearch: ViewModifier {
     let enabled: Bool
     @Binding var text: String
+    @Binding var isPresented: Bool
     let prompt: String
 
     func body(content: Content) -> some View {
         if enabled {
-            content.searchable(text: $text, prompt: prompt)
+            content.searchable(text: $text, isPresented: $isPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
         } else {
             content
         }

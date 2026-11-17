@@ -33,9 +33,16 @@ enum AppFormatters {
         date.formatted(date: .abbreviated, time: .omitted)
     }
 
-    /// "Thu 22 Oct" for a booking day, with the year outside the current one. Days
-    /// decode as UTC midnight, so they format in UTC.
+    /// "Today", "Yesterday", or "Thu 22 Oct" for a booking day, with the year outside the
+    /// current one. Days decode as UTC midnight, so they format in UTC.
     static func bookingDay(_ date: Date) -> String {
+        let day = localDay(date)
+        if Calendar.current.isDateInToday(day) {
+            return "Today"
+        }
+        if Calendar.current.isDateInYesterday(day) {
+            return "Yesterday"
+        }
         let style = Date.FormatStyle(timeZone: .gmt).weekday(.abbreviated).day().month(.abbreviated)
         let year = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: date).year
         return date.formatted(year == Calendar.current.component(.year, from: .now) ? style : style.year())

@@ -3,6 +3,7 @@ import { ArrowsLeftRightIcon } from "@phosphor-icons/react/ArrowsLeftRight"
 import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
 import clsx from "clsx"
+import { useLocation } from "react-router-dom"
 import type { TransactionListItem } from "../../app/api-types"
 import { reimbursementOf, type Reimbursement } from "../../app/transactions"
 import { Amount } from "./Amount"
@@ -14,6 +15,9 @@ import s from "./kit.module.css"
 
 export type { Columns }
 
+// Scroll offsets of lists that restore their position, by history entry, so Back returns to the same place.
+const savedScrolls = new Map<string, number>()
+
 // A complete, flat list in one sheet. `scroll` lists fill the remaining height and scroll;
 // in-flow lists grow with their rows.
 export function List({
@@ -23,6 +27,7 @@ export function List({
   flat = false,
   hasSelection = false,
   label,
+  restoreScroll = false,
 }: {
   children: ReactNode
   // Paging or an empty state below the rows; it stays outside the list role, which holds only rows and bands.
@@ -33,7 +38,29 @@ export function List({
   // While any row is selected, every row shows its checkbox.
   hasSelection?: boolean
   label?: string
+  // The page has one such list; leaving and coming Back restores its scroll offset.
+  restoreScroll?: boolean
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+  const historyKey = useRef(location.key)
+  useLayoutEffect(() => {
+    historyKey.current = location.key
+  })
+  useLayoutEffect(() => {
+    const list = scrollRef.current
+    if (!restoreScroll || !list) return
+    let offset = savedScrolls.get(historyKey.current) ?? 0
+    list.scrollTop = offset
+    const track = () => {
+      offset = list.scrollTop
+    }
+    list.addEventListener("scroll", track, { passive: true })
+    return () => {
+      list.removeEventListener("scroll", track)
+      savedScrolls.set(historyKey.current, offset)
+    }
+  }, [restoreScroll])
   const listRef = useRef<HTMLDivElement>(null)
   const lastRow = useRef<LastRow | null>(null)
   const lastFocused = useRef<Element | null>(null)
@@ -63,7 +90,7 @@ export function List({
     setRowFocusRestorer(restore.current)
   }
   return (
-    <div className={clsx(s.list, (!scroll || flat) && s.listStatic, flat && s.listFlat, hasSelection && s.hasSel)}>
+    <div ref={scrollRef} className={clsx(s.list, (!scroll || flat) && s.listStatic, flat && s.listFlat, hasSelection && s.hasSel)}>
       <div ref={listRef} role="list" aria-label={label} onFocus={onFocus}>
         {children}
       </div>
@@ -88,6 +115,12 @@ export function Row({ children, dim = false, controls = false, ...props }: RowPr
       {children}
     </div>
   )
+}
+
+// The last control of a `controls` row; on mobile it moves up beside the row's first cell,
+// such as a feature's on switch beside the feature name that labels it.
+export function RowEndControl({ children }: { children: ReactNode }) {
+  return <span className={s.rowEndControl}>{children}</span>
 }
 
 // Two controls side by side in one cell of a `controls` row.

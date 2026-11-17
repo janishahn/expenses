@@ -2543,6 +2543,7 @@ struct AdminSystemHealth: Codable, Equatable {
     let dbSizeBytes: Int
     let receiptsSizeBytes: Int
     let status: Status
+    let statusReason: String?
 
     enum CodingKeys: String, CodingKey {
         case cpuTempCelsius = "cpu_temp_celsius"
@@ -2555,6 +2556,7 @@ struct AdminSystemHealth: Codable, Equatable {
         case dbSizeBytes = "db_size_bytes"
         case receiptsSizeBytes = "receipts_size_bytes"
         case status
+        case statusReason = "status_reason"
     }
 }
 

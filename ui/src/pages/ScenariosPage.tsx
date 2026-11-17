@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { Icon } from "@phosphor-icons/react"
 import { CalendarDotIcon } from "@phosphor-icons/react/CalendarDot"
@@ -159,6 +159,13 @@ function AdjustmentForm({
   const [amount, setAmount] = useState("")
   const [month, setMonth] = useState(nextMonthValue)
   const [error, setError] = useState("")
+  const typeSelect = useRef<HTMLSelectElement>(null)
+
+  // The form opens from the sheet header, often below the fold, and takes focus from the Add menu.
+  useEffect(() => {
+    typeSelect.current?.closest("form")?.scrollIntoView({ block: "nearest" })
+    typeSelect.current?.focus({ preventScroll: true })
+  }, [])
 
   const submit = () => {
     const cents = parseAmount(amount)
@@ -215,7 +222,7 @@ function AdjustmentForm({
     <CardForm onSubmit={submit}>
       <FieldGrid narrow>
         <Field label="Adjustment">
-          <Select value={type} onChange={(event) => onTypeChange(event.target.value as ModificationType)}>
+          <Select ref={typeSelect} value={type} onChange={(event) => onTypeChange(event.target.value as ModificationType)}>
             {KINDS.map((kind) => (
               <option key={kind.type} value={kind.type}>
                 {kind.label}
@@ -511,8 +518,9 @@ function ScenariosPage() {
             label="Scenario model"
             value={mode}
             options={[
-              { value: "recurring", label: "Recurring only" },
-              { value: "full", label: "With estimates" },
+              // Short on phones, like the horizon, so both fit beside it.
+              { value: "recurring", label: isDesktop ? "Recurring only" : "Recurring" },
+              { value: "full", label: isDesktop ? "With estimates" : "Estimates" },
             ]}
             onChange={(next) => update({ mode: next })}
           />

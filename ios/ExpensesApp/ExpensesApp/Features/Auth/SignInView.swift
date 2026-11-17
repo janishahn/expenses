@@ -139,6 +139,9 @@ struct SignInView: View {
         .onAppear {
             server = model.baseURLString
         }
+        // A rejected sign-in stays readable until the user edits what it rejected.
+        .onChange(of: username) { model.lastError = nil }
+        .onChange(of: password) { model.lastError = nil }
         // The server may have finished setup since its status was last read.
         .task {
             if model.status == nil {

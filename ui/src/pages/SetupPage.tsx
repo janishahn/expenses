@@ -40,7 +40,16 @@ function SetupPage() {
     >
       <FieldGrid stacked>
         <Field label="Username">
-          <TextField value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required autoFocus />
+          <TextField
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            required
+            autoFocus
+          />
         </Field>
         {setupTokenRequired ? (
           <Field label="Setup token">

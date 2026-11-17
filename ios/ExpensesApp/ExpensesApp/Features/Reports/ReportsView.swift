@@ -85,88 +85,106 @@ struct ReportsView: View {
     @State private var error: String?
     @State private var file: GeneratedFile?
     @State private var previewURL: URL?
+    @FocusState private var notesFocused: Bool
 
     var body: some View {
-        List {
-            if let file {
-                Section {
-                    HStack {
-                        Button {
-                            previewURL = file.url
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(file.name)
-                                        .lineLimit(1)
-                                    Text("Generated \(AppFormatters.time(file.at))")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            List {
+                if let file {
+                    Section {
+                        HStack {
+                            Button {
+                                previewURL = file.url
+                            } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(file.name)
+                                            .lineLimit(1)
+                                        Text("Generated \(AppFormatters.time(file.at))")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "doc.richtext")
                                 }
-                            } icon: {
-                                Image(systemName: "doc.richtext")
                             }
+                            .tint(.primary)
+                            Spacer(minLength: 8)
+                            ShareLink(item: file.url) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .tint(.primary)
-                        Spacer(minLength: 8)
-                        ShareLink(item: file.url) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                                .labelStyle(.iconOnly)
+                    }
+                    .expensesRowBackground()
+                }
+
+                Section {
+                    DatePicker("From", selection: $start, displayedComponents: .date)
+                    DatePicker("Until", selection: $end, displayedComponents: .date)
+                        .fieldError(problem == .range ? Problem.range.message : nil)
+                    Picker("Type", selection: $type) {
+                        Text("All").tag(TransactionKind?.none)
+                        Text("Income").tag(TransactionKind?.some(.income))
+                        Text("Expense").tag(TransactionKind?.some(.expense))
+                    }
+                    if runningBalance {
+                        LabeledContent("Sort", value: "Oldest first")
+                    } else {
+                        Picker("Sort", selection: $sort) {
+                            Text("Newest first").tag(Sort.newest)
+                            Text("Oldest first").tag(Sort.oldest)
                         }
-                        .buttonStyle(.borderless)
+                    }
+                    Toggle("Running balance", isOn: $runningBalance)
+                    Toggle("Category subtotals", isOn: $categorySubtotals)
+                    Toggle("Cents in tables", isOn: $includeCents)
+                }
+                .expensesRowBackground()
+
+                Section("Sections") {
+                    ForEach(ReportSection.allCases) { section in
+                        Toggle(section.title, isOn: sectionBinding(section))
+                    }
+                    if problem == .sections {
+                        FieldError(Problem.sections.message)
                     }
                 }
                 .expensesRowBackground()
-            }
 
-            Section {
-                DatePicker("From", selection: $start, displayedComponents: .date)
-                DatePicker("Until", selection: $end, displayedComponents: .date)
-                    .fieldError(problem == .range ? Problem.range.message : nil)
-                Picker("Type", selection: $type) {
-                    Text("All").tag(TransactionKind?.none)
-                    Text("Income").tag(TransactionKind?.some(.income))
-                    Text("Expense").tag(TransactionKind?.some(.expense))
-                }
-                if runningBalance {
-                    LabeledContent("Sort", value: "Oldest first")
-                } else {
-                    Picker("Sort", selection: $sort) {
-                        Text("Newest first").tag(Sort.newest)
-                        Text("Oldest first").tag(Sort.oldest)
-                    }
-                }
-                Toggle("Running balance", isOn: $runningBalance)
-                Toggle("Category subtotals", isOn: $categorySubtotals)
-                Toggle("Cents in tables", isOn: $includeCents)
-            }
-            .expensesRowBackground()
+                scopeSection
 
-            Section("Sections") {
-                ForEach(ReportSection.allCases) { section in
-                    Toggle(section.title, isOn: sectionBinding(section))
+                Section("Notes") {
+                    TextField("Shown at the top of the report", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                        .focused($notesFocused)
+                        .id("notes")
                 }
-                if problem == .sections {
-                    FieldError(Problem.sections.message)
+                .expensesRowBackground()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            // The notes field grows as lines are added; keep its last line above the keyboard.
+            .onChange(of: notes) {
+                if notesFocused {
+                    proxy.scrollTo("notes", anchor: .bottom)
                 }
             }
-            .expensesRowBackground()
-
-            scopeSection
-
-            Section("Notes") {
-                TextField("Shown at the top of the report", text: $notes, axis: .vertical)
-                    .lineLimit(3...6)
-            }
-            .expensesRowBackground()
         }
         .navigationTitle("Reports")
         .expensesScreenStyle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button(generating ? "Generating…" : "Generate") {
-                    Task { await generate() }
+                if notesFocused {
+                    Button("Done", role: .confirm) {
+                        notesFocused = false
+                    }
+                } else {
+                    Button(generating ? "Generating…" : "Generate") {
+                        Task { await generate() }
+                    }
+                    .disabled(generating)
                 }
-                .disabled(generating)
             }
         }
         .task {

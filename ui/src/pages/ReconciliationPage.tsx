@@ -80,9 +80,10 @@ const OUTCOMES: Record<BankRowResolution, { label: string; icon: Icon }> = {
 }
 
 // The match cell and the row actions drop beside the peek; mobile rows show the icon, name, and amount.
+// The actions column has one width, so Ignore and Match, Choose or Create… line up across bands.
 const OPEN_COLUMNS: Columns = {
-  columns: "18px minmax(0, 220px) 56px minmax(0, 1fr) auto 110px",
-  narrowColumns: "18px minmax(0, 1fr) 56px auto 110px",
+  columns: "18px minmax(0, 220px) 56px minmax(0, 1fr) 160px 110px",
+  narrowColumns: "18px minmax(0, 1fr) 56px 160px 110px",
   mobileColumns: "18px minmax(0, 1fr) auto",
 }
 const RESOLVED_COLUMNS: Columns = {
@@ -477,7 +478,7 @@ function ReconciliationPage() {
         run: async () => {
           matchedId = (await post(`${row.id}/accept-suggestion`)).transaction_id ?? undefined
         },
-        message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}`,
+        message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}.`,
         undo: () => reopen(row.id, { resolution: "matched", transactionId: matchedId }),
       })
     )
@@ -494,9 +495,9 @@ function ReconciliationPage() {
             body: JSON.stringify({ row_ids: band.map((row) => row.id) }),
           })
           matches = result.matches
-          return `Matched ${plural(matches.length, "row")}`
+          return `Matched ${plural(matches.length, "row")}.`
         },
-        message: "Matched",
+        message: "Matched.",
         undo: () =>
           reopenMany(
             matches.map((match) => ({
@@ -527,9 +528,9 @@ function ReconciliationPage() {
             body: JSON.stringify({ account }),
           })
           rowIds = result.row_ids
-          return `Ignored ${plural(rowIds.length, "row")}`
+          return `Ignored ${plural(rowIds.length, "row")}.`
         },
-        message: "Ignored",
+        message: "Ignored.",
         undo: () => reopenMany(rowIds.map((id) => ({ row_id: id, expected_resolution: "ignored" as const }))),
       })
     )
@@ -546,7 +547,7 @@ function ReconciliationPage() {
           })
           replacedAmount = result.previous_amount_cents ?? undefined
         },
-        message: `Matched with ${candidateTitle(transaction)}`,
+        message: `Matched with ${candidateTitle(transaction)}.`,
         undo: () =>
           reopen(row.id, { resolution: "matched", transactionId: transaction.id, restoreAmountCents: replacedAmount }),
         transactions: setAmount,
@@ -557,7 +558,7 @@ function ReconciliationPage() {
     act({
       row,
       run: () => post(`${row.id}/ignore`, { reason }).then(() => undefined),
-      message: reason ? `Ignored · ${reason}` : "Ignored",
+      message: reason ? `Ignored · ${reason}.` : "Ignored.",
       undo: () => reopen(row.id, { resolution: "ignored" }),
     })
   // Undoing a create moves the new transaction to Trash.
@@ -575,10 +576,10 @@ function ReconciliationPage() {
           form.append("file", receipt)
           await apiFetchFormData(`/api/transactions/${created.transaction_id}/attachments`, { method: "POST", body: form })
         } catch {
-          return `Created ${payload.title}, but the receipt could not be uploaded`
+          return `Created ${payload.title}, but the receipt could not be uploaded.`
         }
       },
-      message: `Created ${payload.title}`,
+      message: `Created ${payload.title}.`,
       undo: () => reopen(row.id, { resolution: "created", transactionId: createdId }, true),
       transactions: true,
     })
@@ -595,7 +596,7 @@ function ReconciliationPage() {
         reopen(row.id, resolution ? { resolution, transactionId: transaction?.id } : undefined, trashCreatedTransaction).then(
           () => undefined
         ),
-      message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash" : "Moved back to review",
+      message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash." : "Moved back to review.",
       undo:
         resolution === "ignored"
           ? () => post(`${row.id}/ignore`, { reason })
@@ -880,8 +881,8 @@ function ReconciliationPage() {
             update({ view: null, outcome: null, page: null, peek: null })
             showToast({
               message: duplicates
-                ? `Imported ${plural(imported, "row")} · ${duplicates} already imported`
-                : `Imported ${plural(imported, "row")}`,
+                ? `Imported ${plural(imported, "row")} · ${duplicates} already imported.`
+                : `Imported ${plural(imported, "row")}.`,
             })
           }}
         />

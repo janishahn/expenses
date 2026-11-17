@@ -29,7 +29,6 @@ struct DigestView: View {
                 autoPostedSection(data)
             }
         }
-        .headerProminence(.increased)
         .navigationTitle("Digest")
         .navigationSubtitle(weekTitle)
         .expensesScreenStyle()
@@ -42,7 +41,7 @@ struct DigestView: View {
                 Button("Next week", systemImage: "chevron.forward") {
                     step(by: 1)
                 }
-                .disabled(weekStart == nil)
+                .disabled(!hasNextWeek)
             }
         }
         .task(id: weekOf) {
@@ -68,7 +67,16 @@ struct DigestView: View {
             return "This week"
         }
         let end = CalendarMonth.calendar.date(byAdding: .day, value: 6, to: weekStart)!
-        return (weekStart..<end).formatted(Date.IntervalFormatStyle(timeZone: .gmt).day().month(.abbreviated).year())
+        return "\(AppFormatters.shortDay(AppFormatters.localDay(weekStart))) – \(AppFormatters.shortDay(AppFormatters.localDay(end)))"
+    }
+
+    // A week that hasn't started has nothing to digest.
+    private var hasNextWeek: Bool {
+        guard let weekStart else {
+            return false
+        }
+        let next = CalendarMonth.calendar.date(byAdding: .day, value: 7, to: weekStart)!
+        return AppFormatters.isoDay(next, in: .gmt) <= AppFormatters.isoDay(.now)
     }
 
     private func step(by weeks: Int) {
@@ -283,6 +291,7 @@ private struct WeekShareBar: View {
         let total = max(totalCents, top)
         let segments = categories.map { Segment(id: $0.categoryID, name: $0.name, cents: $0.amountCents) }
             + (total > top ? [Segment(id: nil, name: "Other", cents: total - top)] : [])
+        let colors = ExpensesTheme.categoryColors(segments.map(\.id), for: scheme)
         // A week whose spending was all reimbursed has nothing to split.
         if total > 0 {
             GeometryReader { geometry in
@@ -290,7 +299,7 @@ private struct WeekShareBar: View {
                 HStack(spacing: 2) {
                     ForEach(segments) { segment in
                         Rectangle()
-                            .fill(ExpensesTheme.category(segment.id, for: scheme))
+                            .fill(colors[segment.id]!)
                             .frame(width: width * CGFloat(segment.cents) / CGFloat(total))
                     }
                 }

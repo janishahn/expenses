@@ -56,14 +56,14 @@ export function formatCoordinate(value: number): string {
   return value.toFixed(6)
 }
 
-// expense: ink, no sign. income: income tone with "+". signed: "+"/"−" by value.
+// expense: ink, no sign. income: income tone with "+". signed: "+"/"−" by value, none at zero.
 // balance: "−" only when negative. Expenses are never red.
 export type AmountKind = "expense" | "income" | "signed" | "balance"
 
 export function formatAmount(cents: number, kind: AmountKind = "balance", decimals = true, symbol = "€"): string {
   const value = formatCurrency(Math.abs(cents), decimals)
   if (kind === "income") return `+ ${value} ${symbol}`
-  if (kind === "signed") return `${cents < 0 ? "−" : "+"} ${value} ${symbol}`
+  if (kind === "signed") return cents === 0 ? `${value} ${symbol}` : `${cents < 0 ? "−" : "+"} ${value} ${symbol}`
   if (kind === "balance" && cents < 0) return `− ${value} ${symbol}`
   return `${value} ${symbol}`
 }

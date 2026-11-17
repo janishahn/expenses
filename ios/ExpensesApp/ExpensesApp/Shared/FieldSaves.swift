@@ -74,11 +74,19 @@ extension View {
     func detailNameField(_ text: Binding<String>, endEditing: @escaping () -> Void) -> some View {
         font(.title2.weight(.semibold))
             .submitLabel(.done)
-            .onChange(of: text.wrappedValue) { _, draft in
-                if draft.contains("\n") {
-                    text.wrappedValue = draft.replacingOccurrences(of: "\n", with: "")
-                    endEditing()
-                }
+            .returnEndsEditing(text, perform: endEditing)
+    }
+
+    /// For a wrapping single-value field: Return runs `perform` instead of starting a new line.
+    func returnEndsEditing(_ text: Binding<String>, perform: @escaping () -> Void) -> some View {
+        onChange(of: text.wrappedValue) { previous, draft in
+            if draft.contains("\n") {
+                let stripped = draft.replacingOccurrences(of: "\n", with: "")
+                // Return over a selection replaces it with the newline; keep the selected text.
+                let replacedSelection = draft.count(where: { $0 == "\n" }) == 1 && stripped.count < previous.count
+                text.wrappedValue = replacedSelection ? previous : stripped
+                perform()
             }
+        }
     }
 }

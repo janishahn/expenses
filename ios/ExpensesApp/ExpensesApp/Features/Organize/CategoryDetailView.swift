@@ -76,7 +76,8 @@ struct CategoryDetailView: View {
         }
         .sheet(isPresented: $choosingIcon) {
             if let category {
-                IconPickerSheet(selected: shown(category).icon) { icon in
+                // A category without an icon of its own shows one from its name; that one is current.
+                IconPickerSheet(selected: resolvedCategoryIconKey(shown(category).icon, name: shown(category).name)) { icon in
                     if icon != shown(category).icon || saves.errors[.icon] != nil {
                         save(.icon) { $0.icon = icon }
                     }

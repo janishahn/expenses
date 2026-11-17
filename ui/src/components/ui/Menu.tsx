@@ -28,7 +28,7 @@ export function Menu({
   const [open, setOpen] = useState(false)
   if (!isDesktop) {
     return (
-      <BottomSheet open={open} onOpenChange={setOpen} title={label} trigger={trigger}>
+      <BottomSheet open={open} onOpenChange={setOpen} title={label} trigger={trigger} onCloseAutoFocus={keepItemFocus}>
         <MenuModeContext.Provider value={{ sheet: true, close: () => setOpen(false) }}>
           {children}
         </MenuModeContext.Provider>
@@ -44,10 +44,7 @@ export function Menu({
           sideOffset={4}
           collisionPadding={8}
           className={clsx(s.floatLayer, s.menu)}
-          // An item that opened a dialog hands focus to it; returning focus to the trigger would leave it on the page.
-          onCloseAutoFocus={(event) => {
-            if (document.querySelector(OPEN_DIALOG)) event.preventDefault()
-          }}
+          onCloseAutoFocus={keepItemFocus}
           // Radix can ignore Esc for a few hundred milliseconds after the menu opens on a busy page,
           // so the focused menu closes itself. Stopping the event keeps an open peek open.
           onKeyDown={(event) => {
@@ -78,6 +75,11 @@ type MenuItemProps = {
 }
 
 const OPEN_DIALOG = "[role='dialog'][data-state='open'], [role='alertdialog']"
+
+// An item that opened a dialog or a form hands focus to it; returning focus to the trigger would take it away.
+function keepItemFocus(event: Event) {
+  if (document.querySelector(OPEN_DIALOG) || document.activeElement?.matches("input, select, textarea")) event.preventDefault()
+}
 
 // When an item opens a dialog, the overlay appearing under the pointer counts as leaving the item, and Radix
 // would focus the closing menu. Skipping that keeps focus in the dialog.

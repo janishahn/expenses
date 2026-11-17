@@ -662,6 +662,14 @@ def test_sqlite_import_commits_to_elevated_callers_account_only(
     elevated = _elevate(anonymous_api_client, bootstrap_token, "bootstrap-pass")
     assert elevated["status_code"] == 200
 
+    not_sqlite = anonymous_api_client.post(
+        "/api/import/sqlite/preview",
+        headers=_csrf_headers_for_token(anonymous_api_client, bootstrap_token),
+        files={"file": ("garbage.db", b"not a database", "application/octet-stream")},
+    )
+    assert not_sqlite.status_code == 400
+    assert not_sqlite.json()["detail"] == "File is not a SQLite database"
+
     legacy_db = _create_legacy_sqlite(tmp_path / "legacy.db")
     preview = anonymous_api_client.post(
         "/api/import/sqlite/preview",

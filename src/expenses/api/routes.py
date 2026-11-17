@@ -377,6 +377,9 @@ def _serialize_admin_system_health_override(
     fixture = ADMIN_SYSTEM_HEALTH_VALIDATION_PROFILES[profile]
     disk_total_bytes = int(fixture["disk_total_bytes"])
     disk_free_bytes = int(fixture["disk_free_bytes"])
+    _, status_reason = _system_health_status(
+        disk_free_bytes / disk_total_bytes, fixture["cpu_temp_celsius"]
+    )
     return {
         "cpu_temp_celsius": fixture["cpu_temp_celsius"],
         "cpu_load_percent": fixture["cpu_load_percent"],
@@ -388,7 +391,25 @@ def _serialize_admin_system_health_override(
         "db_size_bytes": int(db_size_bytes),
         "receipts_size_bytes": int(receipts_size_bytes),
         "status": profile,
+        "status_reason": status_reason,
     }
+
+
+def _system_health_status(
+    free_ratio: float, cpu_temp_celsius: float | None
+) -> tuple[str, str | None]:
+    for status, min_free_ratio, max_temp in (
+        ("critical", 0.1, 80),
+        ("warm", 0.2, 70),
+    ):
+        reasons = []
+        if free_ratio < min_free_ratio:
+            reasons.append(f"Less than {round(min_free_ratio * 100)} % disk space free")
+        if cpu_temp_celsius is not None and cpu_temp_celsius > max_temp:
+            reasons.append(f"CPU above {max_temp} °C")
+        if reasons:
+            return status, ", ".join(reasons)
+    return "healthy", None
 
 
 def _require_csrf(request: Request, db: Session) -> None:
@@ -2944,11 +2965,7 @@ def api_admin_system_health(request: Request, db: Session = Depends(get_db)):
         )
 
     free_ratio = disk.free / disk.total if disk.total else 0
-    status = "healthy"
-    if free_ratio < 0.1 or (cpu_temp_celsius is not None and cpu_temp_celsius > 80):
-        status = "critical"
-    elif free_ratio < 0.2 or (cpu_temp_celsius is not None and cpu_temp_celsius > 70):
-        status = "warm"
+    status, status_reason = _system_health_status(free_ratio, cpu_temp_celsius)
 
     return {
         "cpu_temp_celsius": cpu_temp_celsius,
@@ -2961,6 +2978,7 @@ def api_admin_system_health(request: Request, db: Session = Depends(get_db)):
         "db_size_bytes": int(db_size_bytes),
         "receipts_size_bytes": int(receipts_size_bytes),
         "status": status,
+        "status_reason": status_reason,
     }
 
 
@@ -5167,23 +5185,25 @@ def api_insights(
     totals = MetricsService(db, user_id=user_id).kpis(
         period, tag_ids=tag_ids, excluded_tag_ids=excluded_tag_ids
     )
-    first_day = period.start
     if period.slug == "all":
-        first_day = (
-            db.scalar(
-                select(func.min(Transaction.date)).where(
-                    Transaction.user_id == user_id, Transaction.deleted_at.is_(None)
-                )
+        # All time counts only months with transactions, so gaps in the ledger
+        # do not lower the monthly average.
+        month_count = db.scalar(
+            select(
+                func.count(func.distinct(func.strftime("%Y-%m", Transaction.date)))
+            ).where(
+                Transaction.user_id == user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.date <= period.end,
             )
-            or period.end
         )
-    month_count = max(
-        0,
-        (period.end.year - first_day.year) * 12
-        + period.end.month
-        - first_day.month
-        + 1,
-    )
+    else:
+        month_count = (
+            (period.end.year - period.start.year) * 12
+            + period.end.month
+            - period.start.month
+            + 1
+        )
     expense_breakdown = MetricsService(db, user_id=user_id).category_breakdown(
         period,
         TransactionType.expense,
@@ -5442,10 +5462,17 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
         excluded_tag_ids=filters.excluded_tag_ids,
         include_balance=not has_tag_scope,
     )
-    if has_tag_scope:
+    # The balance is labelled "as of today" for periods that reach today, so it
+    # must not count transactions dated later in the period.
+    balance_target = min(
+        datetime.combine(period.end, datetime.max.time()),
+        datetime.now(ZoneInfo(get_settings().timezone)).replace(tzinfo=None),
+    )
+    if has_tag_scope or period.end >= local_today():
         kpis["balance"] = BalanceAnchorService(db, user_id=user_id).balance_as_of(
-            datetime.combine(period.end, datetime.max.time())
+            balance_target
         )
+    if has_tag_scope:
         actual_sparklines = metrics_service.kpi_sparklines(period)
         sparklines["balance"] = actual_sparklines["balance"]
     deltas = None
@@ -5473,10 +5500,16 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     active_durable = [item for item in durable_items if not item["ended"]][:10]
     budget_service = BudgetService(db, user_id=user_id)
     today = local_today()
-    # Monthly budgets track the selected period's month: a completed last month
-    # is evaluated as of its final day (so pace reflects actual spend, not a
-    # partway projection), while this_month/all/custom stay on the current month.
-    budget_as_of = period.end if period.slug == "last_month" else today
+    # Monthly budgets track the selected period's month: a completed month is
+    # evaluated as of its final day (so pace reflects actual spend, not a
+    # partway projection) and a future month as of its first day, while periods
+    # spanning several months stay on the current month.
+    budget_as_of = today
+    if (period.start.year, period.start.month) == (period.end.year, period.end.month):
+        if period.end < today:
+            budget_as_of = period.end
+        elif period.start > today:
+            budget_as_of = period.start
     budget_pace = budget_service.dashboard_budget_pace(today=budget_as_of)
     category_budget_overview = budget_service.dashboard_category_budget_overview(
         today=budget_as_of
