@@ -53,7 +53,8 @@ jobs:
         run: uv run pip-audit
 
       - name: Audit UI dependencies
-        run: npm audit --prefix ui --audit-level=high
+        # Build-only tools such as vite never ship to the browser.
+        run: npm audit --prefix ui --omit=dev --audit-level=high
 
       - name: Apply database migrations
         run: |
