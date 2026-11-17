@@ -1899,6 +1899,8 @@ class ReceiptItemOut(BaseModel):
     unit: str | None
     unit_price_cents: int | None
     amount_cents: int
+    # This printed line's price on the latest earlier receipt, when it was different.
+    previous_price_cents: int | None
 
 
 class ReceiptItemProductIn(BaseModel):
@@ -1921,7 +1923,7 @@ class ReceiptAttachmentOut(BaseModel):
     sha256_hex: str
     created_at: datetime
     # Null: never read, because the file is not an image or the feature was off.
-    items_status: Literal["reading", "read", "failed"] | None = None
+    items_status: Literal["reading", "read", "not_receipt", "failed"] | None = None
     items_error: str | None = None
     # In euro cents, converted at the transaction's rate for a foreign payment.
     items: list[ReceiptItemOut] = Field(default_factory=list)

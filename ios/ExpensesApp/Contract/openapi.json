@@ -7538,6 +7538,7 @@
                 "enum": [
                   "reading",
                   "read",
+                  "not_receipt",
                   "failed"
                 ],
                 "type": "string"
@@ -7620,6 +7621,17 @@
             "title": "Label",
             "type": "string"
           },
+          "previous_price_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Price Cents"
+          },
           "product": {
             "title": "Product",
             "type": "string"
@@ -7666,7 +7678,8 @@
           "quantity",
           "unit",
           "unit_price_cents",
-          "amount_cents"
+          "amount_cents",
+          "previous_price_cents"
         ],
         "title": "ReceiptItemOut",
         "type": "object"

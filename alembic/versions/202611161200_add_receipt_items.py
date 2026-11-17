@@ -14,7 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     with op.batch_alter_table("receipt_attachments") as batch_op:
-        batch_op.add_column(sa.Column("items_status", sa.String(10)))
+        batch_op.add_column(sa.Column("items_status", sa.String(12)))
         batch_op.add_column(sa.Column("items_error", sa.Text()))
     op.create_table(
         "receipt_items",
@@ -29,6 +29,12 @@ def upgrade() -> None:
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("label", sa.Text(), nullable=False),
         sa.Column("product", sa.String(80), nullable=False),
+        sa.Column(
+            "product_named_by_user",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.false(),
+        ),
         sa.Column("kind", sa.String(10), nullable=False),
         sa.Column("quantity", sa.Numeric(10, 3)),
         sa.Column("unit", sa.String(10)),

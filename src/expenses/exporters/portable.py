@@ -175,6 +175,7 @@ class ReceiptItemExport(ExportModel):
     position: int
     label: str
     product: str
+    product_named_by_user: bool
     kind: str
     quantity: Decimal | None
     unit: str | None

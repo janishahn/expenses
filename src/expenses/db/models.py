@@ -974,7 +974,7 @@ class ReceiptAttachment(Base, TimestampMixin):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
     # Null: never read, because the file is not an image or the feature was off.
-    items_status: Mapped[Optional[str]] = mapped_column(String(10))
+    items_status: Mapped[Optional[str]] = mapped_column(String(12))
     items_error: Mapped[Optional[str]] = mapped_column(Text)
 
     transaction: Mapped["Transaction"] = relationship(
@@ -1009,6 +1009,10 @@ class ReceiptItem(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     label: Mapped[str] = mapped_column(Text, nullable=False)
     product: Mapped[str] = mapped_column(String(80), nullable=False)
+    # A name the owner typed; the nightly merge never renames it away.
+    product_named_by_user: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
     unit: Mapped[Optional[str]] = mapped_column(String(10))

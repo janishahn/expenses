@@ -840,9 +840,15 @@ async def test_receipt_products_follow_known_labels_and_merges(
         ).read_receipt_items(second.id)
         assert [item.product for item in second.items] == ["Basmatireis", "Haferdrink"]
 
+        # A name the owner typed is never merged away.
+        second.items[1].product_named_by_user = True
+        session.commit()
         runner = FakeLLMRunner(
             ProductMergesOutput(
-                merges=[ProductMergeOut(names=["Basmatireis", "Reis"], into="Reis")]
+                merges=[
+                    ProductMergeOut(names=["Basmatireis", "Reis"], into="Reis"),
+                    ProductMergeOut(names=["Haferdrink"], into="Milch"),
+                ]
             )
         )
         renamed = await LLMAssistantService(
@@ -852,7 +858,9 @@ async def test_receipt_products_follow_known_labels_and_merges(
         assert runner.calls[0]["payload"]["products"]["Basmatireis"] == {
             "items": 2,
             "labels": ["BASMATI"],
+            "named_by_owner": False,
         }
+        assert runner.calls[0]["payload"]["products"]["Haferdrink"]["named_by_owner"]
         assert renamed == 2
         assert session.scalars(
             select(ReceiptItem.product).order_by(ReceiptItem.id)

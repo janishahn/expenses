@@ -13,12 +13,19 @@ from sqlalchemy.orm import sessionmaker
 
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.ai.service import fail_interrupted_receipt_readings
-from expenses.db.models import LLMJob, ReceiptAttachment, Transaction, TransactionType
+from expenses.ai.service import retry_receipt_readings
+from expenses.db.models import (
+    LLMJob,
+    ReceiptAttachment,
+    ReceiptItem,
+    Transaction,
+    TransactionType,
+)
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.recurrence.engine import local_today
 from expenses.schemas import TransactionIn
 from expenses.services import (
+    ReceiptAttachmentService,
     ReimbursementService,
     TransactionFilters,
     TransactionService,
@@ -998,8 +1005,8 @@ def test_receipt_images_are_read_into_items_after_upload(
     assert read["items"][2]["quantity"] == 0.532
     assert read["items"][2]["unit"] == "kg"
     assert read["items"][2]["unit_price_cents"] == 199
-    assert rows["photo.png"]["items_status"] == "failed"
-    assert rows["photo.png"]["items_error"] == "This image is not a receipt."
+    assert rows["photo.png"]["items_status"] == "not_receipt"
+    assert rows["photo.png"]["items_error"] is None
     assert rows["photo.png"]["items"] == []
 
     # Reading again replaces the items and passes the products read so far.
@@ -1042,29 +1049,73 @@ def test_receipt_images_are_read_into_items_after_upload(
     )
     assert other.status_code == 404
 
+    # A later receipt shows what a printed line cost when its price changed.
+    db_session.query(ReceiptItem).filter_by(
+        attachment_id=read["id"], label="BIO EIER M 10ST"
+    ).update({"amount_cents": 279})
+    db_session.commit()
+    later_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=618,
+        title="Rewe",
+        category_id=category_id,
+    )
+    api_client.post(
+        f"/api/transactions/{later_id}/attachments",
+        files={"file": ("later.png", _png(4), "image/png")},
+        headers=csrf_headers,
+    )
+    later = api_client.get(f"/api/transactions/{later_id}").json()["attachments"][0]
+    assert [item["previous_price_cents"] for item in later["items"]] == [
+        279,
+        None,
+        None,
+        None,
+        None,
+    ]
+    assert all(item["previous_price_cents"] is None for item in read["items"])
+
+    # A failed re-read keeps the items read before.
+    stored = db_session.get(ReceiptAttachment, read["id"])
+    path = ReceiptAttachmentService(
+        db_session, user_id=stored.user_id
+    ).path_for_storage_key(stored.storage_key)
+    original = path.read_bytes()
+    path.write_bytes(_png(2))
+    api_client.post(f"/api/attachments/{read['id']}/items/read", headers=csrf_headers)
+    kept = attachments()["rewe.png"]
+    assert kept["items_status"] == "read"
+    assert kept["items_error"] == "This image is not a receipt."
+    assert len(kept["items"]) == 5
+    path.write_bytes(original)
+
     # A receipt for a payment in another currency shows its items in euro.
     db_session.query(Transaction).filter_by(id=transaction_id).update(
         {"source_currency_code": "USD", "source_amount_cents": 1236}
     )
     db_session.commit()
     converted = attachments()["rewe.png"]["items"]
-    assert [item["amount_cents"] for item in converted] == [150, 119, 53, 13, -25]
+    assert [item["amount_cents"] for item in converted] == [140, 119, 53, 13, -25]
     assert converted[1]["unit_price_cents"] == 60
 
-    # A reading cut off by a restart can be read again.
+    # A reading cut off by a restart, or one that could not reach the model,
+    # is read again by itself.
     db_session.query(ReceiptAttachment).filter_by(id=read["id"]).update(
         {"items_status": "reading"}
+    )
+    db_session.query(ReceiptAttachment).filter_by(id=rows["before.png"]["id"]).update(
+        {"items_status": "failed", "items_error": "The model could not be reached."}
     )
     db_session.commit()
     busy = api_client.post(
         f"/api/attachments/{read['id']}/items/read", headers=csrf_headers
     )
     assert busy.status_code == 409
-    assert fail_interrupted_receipt_readings(db_session) == 1
-    assert attachments()["rewe.png"]["items_status"] == "failed"
-    assert attachments()["rewe.png"]["items_error"] == (
-        "Reading stopped when the server restarted."
-    )
+    retry_receipt_readings(db_session.get_bind(), interrupted=True)
+    for name in ("rewe.png", "before.png"):
+        assert attachments()[name]["items_status"] == "read"
+        assert attachments()[name]["items_error"] is None
 
 
 def test_transactions_list_total_counts_every_filtered_row(

@@ -55,6 +55,7 @@ test.describe("Transaction receipts and location", () => {
     // Later readings keep a renamed label's name, so the name stays findable as Bananen.
     const bananas = `Bananen ${Date.now()}`
     await item("Bananen").getByRole("button", { name: "Edit product of BANANEN" }).click()
+    await expect(items.getByText("Used for BANANEN on all receipts, past and future.")).toBeVisible()
     await items.getByRole("textbox", { name: "product of BANANEN" }).fill(bananas)
     await page.keyboard.press("Enter")
     await expect(item(bananas)).toContainText("BANANEN · 0,532 kg × 1,99 €")
@@ -72,7 +73,7 @@ test.describe("Transaction receipts and location", () => {
     await expect(peek.getByText("Reading receipt…")).toHaveCount(0)
   })
 
-  test("shows why an image could not be read and reads it again", async ({ page, request }) => {
+  test("keeps a photo that is not a receipt quiet and reads its replacement", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryId = await ensureCategory(request, token, "expense", "E2E Receipt")
     const title = `E2E Receipt unreadable ${Date.now()}`
@@ -86,18 +87,14 @@ test.describe("Transaction receipts and location", () => {
       tags: [],
     })
     await uploadAttachment(request, token, id, { name: "photo.png", mimeType: "image/png", buffer: twoPixelPng })
+    await expect
+      .poll(async () => (await (await request.get(`/api/transactions/${id}`)).json()).attachments[0].items_status)
+      .toBe("not_receipt")
 
     await page.goto(`/transactions?q=${encodeURIComponent(title)}&peek=${id}`)
     const peek = page.getByRole("complementary", { name: title })
-    await expect(peek.getByText("This image is not a receipt.")).toBeVisible()
-    await expect(peek.getByRole("list", { name: "Receipt items" })).toHaveCount(0)
-
-    const read = page.waitForResponse(
-      (response) => response.url().endsWith("/items/read") && response.request().method() === "POST",
-    )
-    await peek.getByRole("button", { name: "Read again" }).click()
-    expect((await read).status()).toBe(200)
-    await expect(peek.getByText("This image is not a receipt.")).toBeVisible()
+    await expect(peek.getByRole("button", { name: "Open photo.png" })).toBeVisible()
+    await expect(peek.getByRole("heading", { name: "Items" })).toHaveCount(0)
 
     // Replacing it with a receipt reads that instead; its items match the amount.
     await peek.getByRole("button", { name: "Receipt actions" }).click()

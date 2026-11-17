@@ -608,6 +608,7 @@ private struct ReceiptsSection: View {
     @State private var itemsError: String?
     @State private var renaming: RenamingItem?
     @State private var productDraft = ""
+    @State private var renameError: String?
     @Namespace private var zoom
 
     private enum Thumbnail {
@@ -768,9 +769,10 @@ private struct ReceiptsSection: View {
     /// The lines of every read receipt, in receipt order, with each read's progress or failure.
     @ViewBuilder
     private var itemsSection: some View {
-        let readFiles = files.filter { $0.itemsStatus == .read }
+        // Items stay visible while their receipt is read again.
+        let readFiles = files.filter { !$0.items.isEmpty }
         let items = readFiles.flatMap(\.items)
-        let failed = files.filter { $0.itemsStatus == .failed }
+        let failed = files.filter { $0.itemsStatus != .reading && $0.itemsError != nil }
         if !items.isEmpty || isReading || !failed.isEmpty || itemsError != nil {
             Section {
                 ForEach(readFiles) { file in
@@ -788,7 +790,7 @@ private struct ReceiptsSection: View {
                 }
                 ForEach(failed) { file in
                     AdaptiveRow {
-                        Text(file.itemsError ?? "Couldn't read the receipt.")
+                        Text((file.itemsError ?? "") + (file.items.isEmpty ? "" : " Earlier items kept."))
                             .foregroundStyle(.secondary)
                     } trailing: {
                         if canRead(file) {
@@ -817,7 +819,7 @@ private struct ReceiptsSection: View {
             }
             .expensesRowBackground()
             .alert(
-                "Product",
+                "Rename Product",
                 isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
                 presenting: renaming
             ) { target in
@@ -828,7 +830,7 @@ private struct ReceiptsSection: View {
                 }
                 .disabled(productDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             } message: { target in
-                Text("Also renames \(target.item.label) on other receipts.")
+                Text(renameMessage(target))
             }
         }
     }
@@ -836,6 +838,7 @@ private struct ReceiptsSection: View {
     private func itemButton(_ item: ReceiptItem, attachmentID: Int) -> some View {
         Button {
             productDraft = item.product
+            renameError = nil
             renaming = RenamingItem(attachmentID: attachmentID, item: item)
         } label: {
             itemRow(item)
@@ -843,6 +846,14 @@ private struct ReceiptsSection: View {
         }
         .tint(.primary)
         .accessibilityHint("Renames the product")
+    }
+
+    private func renameMessage(_ target: RenamingItem) -> String {
+        let scope = "Used for \(target.item.label) on all receipts, past and future."
+        guard let renameError else {
+            return scope
+        }
+        return "\(renameError)\n\(scope)"
     }
 
     private func itemRow(_ item: ReceiptItem) -> some View {
@@ -855,6 +866,11 @@ private struct ReceiptsSection: View {
                         Text("· \(Self.quantityText(quantity, unit: item.unit)) ×")
                             .fixedSize()
                         AmountText(unitPrice)
+                    }
+                    if let previous = item.previousPriceCents {
+                        Text("· was")
+                            .fixedSize()
+                        AmountText(previous)
                     }
                 }
                 .font(.footnote)
@@ -1011,14 +1027,16 @@ private struct ReceiptsSection: View {
         guard product != target.item.product else {
             return
         }
-        itemsError = nil
+        renameError = nil
         if !(await model.renameReceiptItem(
             target.item,
             attachmentID: target.attachmentID,
             product: product,
             transactionID: transaction.id
         )) {
-            itemsError = model.lastError?.message ?? "Unable to rename the item."
+            // The alert opens again with the typed name and the reason.
+            renameError = model.lastError?.message ?? "Unable to rename the product."
+            renaming = target
         }
     }
 

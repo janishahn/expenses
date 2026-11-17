@@ -203,6 +203,15 @@ class PydanticAILLMRunner(LLMRunner):
                     raise ModelRetry("Merge only names from the payload's products.")
                 if len(sources) != len(set(sources)):
                     raise ModelRetry("Put each name in at most one merge.")
+                fixed = {
+                    name
+                    for name, entry in ctx.deps.get("products", {}).items()
+                    if entry.get("named_by_owner")
+                }
+                if fixed.intersection(sources):
+                    raise ModelRetry(
+                        "Never merge away a name the owner chose; merge into it instead."
+                    )
                 if any(merge.into in sources for merge in output.merges):
                     raise ModelRetry(
                         "Never merge into a name that is itself merged away."
@@ -302,7 +311,9 @@ def _instructions_for_feature(feature: str, output_type: type) -> str:
         return (
             common + " You keep the product names of one household's receipt items "
             "consistent. The payload maps each product name to how many items use "
-            "it and some of their labels as printed on receipts. "
+            "it, some of their labels as printed on receipts, and whether the owner "
+            "named it. A name the owner named is never merged away; other names may "
+            "be merged into it. "
             + PRODUCT_NAME_RULE
             + " Return a merge for every group of names that this rule makes one "
             "product, such as a variety and its type: names are the names merged "

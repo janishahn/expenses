@@ -118,6 +118,7 @@ export function InlineText({
   display,
   detail,
   error,
+  hint,
   onCancel,
 }: {
   value: string
@@ -133,6 +134,8 @@ export function InlineText({
   // Muted text after the shown value, such as "every month" after an amount.
   detail?: ReactNode
   error?: string | null
+  // Shown under the editor, such as what a save changes beyond this value.
+  hint?: ReactNode
   // Esc discards the entered text; the owner clears its error here.
   onCancel?: () => void
 }) {
@@ -201,6 +204,7 @@ export function InlineText({
           onChange={(event) => setDraft(event.target.value)}
         />
       )}
+      {hint ? <span className={s.hintText}>{hint}</span> : null}
       {error ? (
         <span role="alert" className={s.errText}>
           {error}

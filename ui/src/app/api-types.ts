@@ -117,6 +117,8 @@ export type ReceiptItem = {
   unit: string | null
   unit_price_cents: number | null
   amount_cents: number
+  // This printed line's price on the latest earlier receipt, when it was different.
+  previous_price_cents: number | null
 }
 
 export type ReceiptAttachment = {
@@ -128,7 +130,8 @@ export type ReceiptAttachment = {
   sha256_hex: string
   created_at: string
   // Null: never read, because the file is a PDF or reading was off at upload.
-  items_status: "reading" | "read" | "failed" | null
+  // "read" with an error: reading again failed and the earlier items were kept.
+  items_status: "reading" | "read" | "not_receipt" | "failed" | null
   items_error: string | null
   items: ReceiptItem[]
 }

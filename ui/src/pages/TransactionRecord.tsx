@@ -584,13 +584,20 @@ function ReceiptItems({
   onRenameItem: (attachmentId: number, itemId: number, product: string) => Promise<string | null>
 }) {
   const [errors, setErrors] = useState<Record<number, string | null>>({})
-  const attachments = view.attachments.filter((attachment) => attachment.items_status !== null)
+  // A photo that is not a receipt has no Items section; its menu still offers Read again.
+  const attachments = view.attachments.filter(
+    (attachment) => attachment.items_status !== null && attachment.items_status !== "not_receipt",
+  )
   if (!attachments.length) return null
-  const read = attachments.filter((attachment) => attachment.items_status === "read")
-  const items = read.flatMap((attachment) => attachment.items.map((item) => ({ ...item, attachmentId: attachment.id })))
+  // Items stay visible while their receipt is read again.
+  const items = attachments.flatMap((attachment) =>
+    attachment.items.map((item) => ({ ...item, attachmentId: attachment.id })),
+  )
   const itemsCents = items.reduce((sum, item) => sum + item.amount_cents, 0)
   const reading = attachments.some((attachment) => attachment.items_status === "reading")
-  const failed = attachments.filter((attachment) => attachment.items_status === "failed")
+  const failed = attachments.filter(
+    (attachment) => attachment.items_status !== "reading" && attachment.items_error !== null,
+  )
   return (
     <PeekSection title="Items">
       {items.length ? (
@@ -601,6 +608,7 @@ function ReceiptItems({
                 <InlineText
                   label={`product of ${item.label}`}
                   value={item.product}
+                  hint={`Used for ${item.label} on all receipts, past and future.`}
                   error={errors[item.id]}
                   onCancel={() => setErrors((current) => ({ ...current, [item.id]: null }))}
                   onSave={async (next) => {
@@ -622,6 +630,12 @@ function ReceiptItems({
                           <Amount cents={item.unit_price_cents} />
                         </>
                       ) : null}
+                      {item.previous_price_cents !== null ? (
+                        <>
+                          {" "}
+                          · was <Amount cents={item.previous_price_cents} />
+                        </>
+                      ) : null}
                     </Status>
                   }
                 />
@@ -631,7 +645,7 @@ function ReceiptItems({
           ))}
         </List>
       ) : null}
-      {read.length && !reading && itemsCents !== view.amount_cents ? (
+      {items.length && !reading && itemsCents !== view.amount_cents ? (
         <Status>
           Items cover <Amount cents={itemsCents} /> of <Amount cents={view.amount_cents} />
         </Status>
@@ -643,7 +657,8 @@ function ReceiptItems({
           <div key={attachment.id}>
             <Status icon={WarningIcon} tone="bad" wrap>
               {view.attachments.length > 1 ? `${attachment.original_filename}: ` : ""}
-              {attachment.items_error ?? "Unable to read the receipt."}
+              {attachment.items_error}
+              {attachment.items.length ? " Earlier items kept." : ""}
             </Status>{" "}
             {onReadItems && file ? (
               <Button variant="ghost" size="small" onClick={() => onReadItems(file)}>

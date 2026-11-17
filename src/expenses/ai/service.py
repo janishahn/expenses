@@ -69,6 +69,8 @@ RECEIPT_PRODUCTS_PROMPT = "receipt_products_v1"
 RECEIPT_IMAGE_EDGE = 1600
 RECEIPT_PRODUCT_NAMES = 300
 READABLE_RECEIPT_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+# A reading that failed with this error is tried again, at startup and each night.
+RECEIPT_MODEL_UNREACHABLE = "The model could not be reached."
 # The merge pass sees each product with a few of its printed labels.
 MERGE_PRODUCT_NAMES = 1_000
 MERGE_SAMPLE_LABELS = 3
@@ -186,6 +188,7 @@ class LLMAssistantService:
         ).path_for_storage_key(attachment.storage_key)
         payload = {"products": self._receipt_product_names()}
         output: ReceiptReadingOutput | None = None
+        error: str | None = None
         try:
             image = await asyncio.to_thread(_receipt_image, path)
             output, _ = await self._run_llm(
@@ -197,50 +200,60 @@ class LLMAssistantService:
                 entity_id=attachment_id,
                 images=[(image, "image/jpeg")],
             )
-            error = None if output.is_receipt else "This image is not a receipt."
         except (ValueError, LLMDisabledError) as exc:
             error = str(exc)
         except LLMOutputError:
             error = "The model's answer was not a readable list of items."
         except Exception:
             # _run_llm has logged the cause.
-            error = "The model could not be reached."
+            error = RECEIPT_MODEL_UNREACHABLE
         # The receipt may have been deleted or read again during the call.
         self.session.expire_all()
         attachment = self.session.get(ReceiptAttachment, attachment_id)
         if attachment is None or attachment.items_status != "reading":
             return
-        # A label read before keeps its product, also on this receipt when read
-        # again, so the same line always groups the same way and a product named
-        # by hand stays named.
-        known = (
-            dict(
-                self.session.execute(
-                    select(ReceiptItem.label, ReceiptItem.product)
+        if output is None or not output.is_receipt:
+            if attachment.items:
+                # A failed re-read keeps the items read before.
+                attachment.items_status = "read"
+                attachment.items_error = error or "This image is not a receipt."
+            elif output is not None:
+                attachment.items_status = "not_receipt"
+                attachment.items_error = None
+            else:
+                attachment.items_status = "failed"
+                attachment.items_error = error
+        else:
+            # A label read before keeps its product, also on this receipt when read
+            # again, so the same line always groups the same way and a product
+            # named by hand stays named.
+            known = {
+                label: (product, by_user)
+                for label, product, by_user in self.session.execute(
+                    select(
+                        ReceiptItem.label,
+                        ReceiptItem.product,
+                        ReceiptItem.product_named_by_user,
+                    )
                     .where(
                         ReceiptItem.user_id == self.user_id,
                         ReceiptItem.label.in_({line.label for line in output.items}),
                     )
                     .order_by(ReceiptItem.id)
-                ).all()
-            )
-            if output is not None
-            else {}
-        )
-        attachment.items.clear()
-        if error is not None or output is None:
-            attachment.items_status = "failed"
-            attachment.items_error = error
-        else:
+                )
+            }
+            attachment.items.clear()
             attachment.items_status = "read"
             attachment.items_error = None
             for position, line in enumerate(output.items):
+                product, by_user = known.get(line.label, (line.product, False))
                 attachment.items.append(
                     ReceiptItem(
                         user_id=self.user_id,
                         position=position,
                         label=line.label,
-                        product=known.get(line.label, line.product),
+                        product=product,
+                        product_named_by_user=by_user,
                         kind=line.kind,
                         quantity=(
                             line.quantity.quantize(Decimal("0.001"))
@@ -268,15 +281,23 @@ class LLMAssistantService:
         Returns how many items took a new name.
         """
         rows = self.session.execute(
-            select(ReceiptItem.product, ReceiptItem.label, func.count())
+            select(
+                ReceiptItem.product,
+                ReceiptItem.label,
+                func.count(),
+                func.max(ReceiptItem.product_named_by_user),
+            )
             .where(ReceiptItem.user_id == self.user_id)
             .group_by(ReceiptItem.product, ReceiptItem.label)
             .order_by(ReceiptItem.product, func.count().desc())
         ).all()
         products: dict[str, dict[str, Any]] = {}
-        for product, label, count in rows:
-            entry = products.setdefault(product, {"items": 0, "labels": []})
+        for product, label, count, by_user in rows:
+            entry = products.setdefault(
+                product, {"items": 0, "labels": [], "named_by_owner": False}
+            )
             entry["items"] += count
+            entry["named_by_owner"] = entry["named_by_owner"] or bool(by_user)
             if len(entry["labels"]) < MERGE_SAMPLE_LABELS:
                 entry["labels"].append(label)
         if len(products) < 2:
@@ -301,6 +322,7 @@ class LLMAssistantService:
                 .where(
                     ReceiptItem.user_id == self.user_id,
                     ReceiptItem.product.in_(merge.names),
+                    ReceiptItem.product_named_by_user.is_(False),
                 )
                 .values(product=merge.into)
             )
@@ -1057,18 +1079,23 @@ def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> Non
                 session.rollback()
 
 
-def fail_interrupted_receipt_readings(session: Session) -> int:
-    """A reading still running at startup was cut off by the restart."""
-    result = session.execute(
-        update(ReceiptAttachment)
-        .where(ReceiptAttachment.items_status == "reading")
-        .values(
-            items_status="failed",
-            items_error="Reading stopped when the server restarted.",
-        )
-    )
-    session.commit()
-    return int(result.rowcount or 0)
+def retry_receipt_readings(bind: Engine | Connection, *, interrupted: bool) -> None:
+    """Reads again the receipts whose reading could not reach the model.
+
+    At startup, interrupted also takes the readings the restart cut off.
+    """
+    retried = ReceiptAttachment.items_error == RECEIPT_MODEL_UNREACHABLE
+    if interrupted:
+        retried = or_(retried, ReceiptAttachment.items_status == "reading")
+    with Session(bind) as session:
+        attachments = session.scalars(select(ReceiptAttachment).where(retried)).all()
+        for attachment in attachments:
+            attachment.items_status = "reading"
+            attachment.items_error = None
+        session.commit()
+        targets = [(attachment.user_id, attachment.id) for attachment in attachments]
+    for user_id, attachment_id in targets:
+        asyncio.run(read_receipt_in_background(bind, user_id, attachment_id))
 
 
 def _receipt_image(path: Path) -> bytes:

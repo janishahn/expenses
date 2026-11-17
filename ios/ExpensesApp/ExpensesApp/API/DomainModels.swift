@@ -1393,7 +1393,9 @@ struct ReceiptAttachment: Codable, Equatable, Identifiable {
 
 enum ReceiptItemsStatus: String, Codable {
     case reading
+    /// Read; with an error, reading again failed and the earlier items were kept.
     case read
+    case notReceipt = "not_receipt"
     case failed
 }
 
@@ -1413,6 +1415,8 @@ struct ReceiptItem: Codable, Equatable, Identifiable {
     let unit: String?
     let unitPriceCents: Int?
     let amountCents: Int
+    /// This printed line's price on the latest earlier receipt, when it was different.
+    let previousPriceCents: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1422,6 +1426,7 @@ struct ReceiptItem: Codable, Equatable, Identifiable {
         case unit
         case unitPriceCents = "unit_price_cents"
         case amountCents = "amount_cents"
+        case previousPriceCents = "previous_price_cents"
     }
 }
 

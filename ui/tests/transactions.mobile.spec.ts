@@ -451,7 +451,9 @@ test.describe("Transactions Page (mobile)", () => {
     // Later readings keep a renamed label's name, so the name stays findable as Bananen.
     const bananas = `Bananen ${Date.now()}`
     const banana = items.getByRole("listitem").filter({ hasText: "Bananen" })
-    await banana.getByRole("button", { name: "Edit product of BANANEN" }).tap()
+    const edit = banana.getByRole("button", { name: "Edit product of BANANEN" })
+    expect((await banana.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+    await edit.tap()
     await items.getByRole("textbox", { name: "product of BANANEN" }).fill(bananas)
     await page.keyboard.press("Enter")
     await expect(items.getByRole("listitem").filter({ hasText: bananas })).toContainText("0,532 kg")

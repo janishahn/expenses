@@ -9,8 +9,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 from expenses.ai.assistant import prune_chats
 from expenses.ai.service import (
     LLMAssistantService,
-    fail_interrupted_receipt_readings,
     merge_products_for_users_with_new_readings,
+    retry_receipt_readings,
 )
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
@@ -69,8 +69,14 @@ class SchedulerManager:
 
     def start(self) -> None:
         self._run_job("startup")
-        with session_scope() as session:
-            fail_interrupted_receipt_readings(session)
+        # Without a trigger, the job runs once as soon as the scheduler starts.
+        self.scheduler.add_job(
+            retry_receipt_readings,
+            args=[engine],
+            kwargs={"interrupted": True},
+            id="receipt_readings_resume",
+            replace_existing=True,
+        )
         self.scheduler.add_job(
             train_due_users,
             IntervalTrigger(hours=1),
@@ -109,6 +115,17 @@ class SchedulerManager:
             misfire_grace_time=3600,
         )
 
+        trigger = CronTrigger(hour=4, minute=25)
+        self.scheduler.add_job(
+            retry_receipt_readings,
+            trigger,
+            args=[engine],
+            kwargs={"interrupted": False},
+            id="receipt_readings_retry_daily",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+
         trigger = CronTrigger(hour=4, minute=30)
         self.scheduler.add_job(
             merge_products_for_users_with_new_readings,
@@ -137,6 +154,7 @@ class SchedulerManager:
             daily_trigger="03:15",
             llm_trace_prune_trigger="04:10",
             assistant_chat_prune_trigger="04:20",
+            receipt_reading_retry_trigger="04:25",
             receipt_product_merge_trigger="04:30",
             safety_net_hours=1,
         )

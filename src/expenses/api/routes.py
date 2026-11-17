@@ -33,9 +33,9 @@ from fastapi.responses import (
     FileResponse,
     StreamingResponse,
 )
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 from starlette.background import BackgroundTask
 
 from expenses.auth import (
@@ -94,6 +94,7 @@ from expenses.db.models import (
     Category,
     MobileAuthSession,
     RecurringRule,
+    ReceiptAttachment,
     ReceiptItem,
     Tag,
     Transaction,
@@ -1112,18 +1113,70 @@ def filters_from_request(request: Request) -> TransactionFilters:
     )
 
 
+def _euro_cents(cents: int | None, txn) -> int | None:
+    """Converts receipt cents at the transaction's rate, as the Assistant reads them."""
+    if cents is None or not txn.source_amount_cents:
+        return cents
+    # Halves round away from zero, as SQLite's round() does in the Assistant.
+    scaled = abs(cents) * txn.amount_cents * 2 + txn.source_amount_cents
+    whole = scaled // (txn.source_amount_cents * 2)
+    return whole if cents >= 0 else -whole
+
+
+def _item_price_cents(item) -> int | None:
+    """The price per unit, or the amount of a single item; None when it is neither."""
+    if item.unit_price_cents is not None:
+        return item.unit_price_cents
+    if item.quantity is None or item.quantity == 1:
+        return item.amount_cents
+    return None
+
+
+def _previous_prices(attachment) -> dict[str, int]:
+    """Each printed line's price, in euro, on the latest earlier receipt with it."""
+    txn = attachment.transaction
+    labels = {item.label for item in attachment.items if item.kind == "item"}
+    if not labels:
+        return {}
+    rows = (
+        object_session(attachment)
+        .execute(
+            select(ReceiptItem, Transaction)
+            .join(ReceiptAttachment, ReceiptItem.attachment_id == ReceiptAttachment.id)
+            .join(Transaction, ReceiptAttachment.transaction_id == Transaction.id)
+            .where(
+                ReceiptItem.user_id == attachment.user_id,
+                ReceiptItem.label.in_(labels),
+                ReceiptItem.kind == "item",
+                ReceiptAttachment.items_status == "read",
+                Transaction.deleted_at.is_(None),
+                or_(
+                    Transaction.date < txn.date,
+                    and_(Transaction.date == txn.date, Transaction.id < txn.id),
+                ),
+            )
+            .order_by(Transaction.date, Transaction.id, ReceiptItem.id)
+        )
+        .all()
+    )
+    prices: dict[str, int] = {}
+    for item, earlier in rows:
+        price = _euro_cents(_item_price_cents(item), earlier)
+        if price is not None:
+            prices[item.label] = price
+    return prices
+
+
 def _serialize_attachment(attachment) -> dict[str, object]:
     # Items are stored in the receipt's currency; a payment in another currency
-    # converts them at the transaction's own rate, as the Assistant reads them.
+    # converts them at the transaction's own rate.
     txn = attachment.transaction
+    previous = _previous_prices(attachment)
 
-    def euro(cents: int | None) -> int | None:
-        if cents is None or not txn.source_amount_cents:
-            return cents
-        # Halves round away from zero, as SQLite's round() does in the Assistant.
-        scaled = abs(cents) * txn.amount_cents * 2 + txn.source_amount_cents
-        whole = scaled // (txn.source_amount_cents * 2)
-        return whole if cents >= 0 else -whole
+    def previous_price(item) -> int | None:
+        price = _euro_cents(_item_price_cents(item), txn)
+        before = previous.get(item.label) if item.kind == "item" else None
+        return before if before is not None and before != price else None
 
     return {
         "id": attachment.id,
@@ -1143,8 +1196,9 @@ def _serialize_attachment(attachment) -> dict[str, object]:
                 "kind": item.kind,
                 "quantity": float(item.quantity) if item.quantity is not None else None,
                 "unit": item.unit,
-                "unit_price_cents": euro(item.unit_price_cents),
-                "amount_cents": euro(item.amount_cents),
+                "unit_price_cents": _euro_cents(item.unit_price_cents, txn),
+                "amount_cents": _euro_cents(item.amount_cents, txn),
+                "previous_price_cents": previous_price(item),
             }
             for item in attachment.items
         ],
@@ -4377,7 +4431,7 @@ def api_update_attachment_item(
     db.execute(
         update(ReceiptItem)
         .where(ReceiptItem.user_id == user_id, ReceiptItem.label == item.label)
-        .values(product=payload.product)
+        .values(product=payload.product, product_named_by_user=True)
     )
     db.commit()
     db.refresh(attachment)
