@@ -49,6 +49,7 @@ Visual baselines exist for macOS (`darwin`) and Linux. Regenerate the macOS file
 - New or changed web user stories update the coverage ledger and affected browser tests in the same change. Extend suitable existing specs; add a file only when repository conventions require it or no existing file fits.
 - Do not add a test that only makes sure that a removed feature is not in the application. Write such a test only when the application keeps a live route or code path that blocks the removed feature.
 - Each browser test must check the behavior that its title tells, and the check must occur in a standard run. Code that only writes optional audit artifacts is not coverage.
+- Synchronize browser tests on an observable UI state or a request or response. Lint flags `waitForTimeout` in browser tests and helpers. Use the Playwright clock when testing elapsed time.
 - An audit spec must not do a journey again when a feature spec owns that journey. An audit spec adds only checks that apply across features, for example theme, overflow, or accessibility.
 
 ## Browser matrix

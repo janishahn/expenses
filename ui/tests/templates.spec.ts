@@ -379,23 +379,25 @@ test.describe("Templates page", () => {
     const { request, csrfToken } = await loginAsIsolatedUser(page)
     try {
       const categoryId = await createCategory(request, csrfToken, "expense", "Key category")
-      await seedTemplate(request, csrfToken, categoryId, { name: "Key A" })
-      await seedTemplate(request, csrfToken, categoryId, { name: "Key B" })
+      const first = await seedTemplate(request, csrfToken, categoryId, { name: "Key A" })
+      const second = await seedTemplate(request, csrfToken, categoryId, { name: "Key B" })
       await page.goto("/templates")
 
       const grip = templateList(page).getByRole("button", { name: "Reorder Key B" })
       await expect(grip).toBeVisible()
       await grip.focus()
+      await page.keyboard.press("Space")
+      const overTemplate = (id: number) =>
+        page.getByRole("status").filter({ hasText: `over droppable area ${id}.` })
+      await expect(overTemplate(second.id)).toBeAttached()
+      await page.keyboard.press("ArrowUp")
+      await expect(overTemplate(first.id)).toBeAttached()
       const reordered = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === "/api/templates/reorder" &&
           response.request().method() === "POST" &&
           response.ok(),
       )
-      await page.keyboard.press("Space")
-      await page.waitForTimeout(250)
-      await page.keyboard.press("ArrowUp")
-      await page.waitForTimeout(250)
       await page.keyboard.press("Space")
       await reordered
 
