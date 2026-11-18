@@ -60,12 +60,19 @@ test.describe("Route loading skeleton", () => {
     })
 
     const loader = page.getByTestId("route-loading")
+    await page.clock.install({ time: new Date("2026-04-18T10:00:00Z") })
+    await page.clock.pauseAt(new Date("2026-04-18T10:01:00Z"))
     try {
       await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
+      await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible()
+      await page.clock.runFor(249)
+      await expect(loader).toHaveCount(0)
+      await page.clock.runFor(1)
       await expect(loader).toBeVisible()
       await expect(loader.getByRole("status")).toHaveText("Loading transactions…")
     } finally {
       releaseTransactions()
+      await page.clock.resume()
     }
 
     const row = page.getByRole("listitem", { name: title })
