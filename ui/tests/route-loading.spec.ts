@@ -50,16 +50,30 @@ test.describe("Route loading skeleton", () => {
       tags: ["route-loading"],
     })
 
+    let releaseTransactions!: () => void
+    const transactionsReady = new Promise<void>((resolve) => {
+      releaseTransactions = resolve
+    })
     await page.route(/\/api\/transactions/, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 800))
+      await transactionsReady
       await route.continue()
     })
 
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-
     const loader = page.getByTestId("route-loading")
-    await expect(loader).toBeVisible()
-    await expect(loader.getByRole("status")).toHaveText("Loading transactions…")
+    await page.clock.install({ time: new Date("2026-04-18T10:00:00Z") })
+    await page.clock.pauseAt(new Date("2026-04-18T10:01:00Z"))
+    try {
+      await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
+      await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible()
+      await page.clock.runFor(249)
+      await expect(loader).toHaveCount(0)
+      await page.clock.runFor(1)
+      await expect(loader).toBeVisible()
+      await expect(loader.getByRole("status")).toHaveText("Loading transactions…")
+    } finally {
+      releaseTransactions()
+      await page.clock.resume()
+    }
 
     const row = page.getByRole("listitem", { name: title })
     await expect(row).toBeVisible()

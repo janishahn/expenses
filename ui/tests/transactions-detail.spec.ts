@@ -276,13 +276,25 @@ test.describe("Transaction peek and full view", () => {
     const editor = peek.getByRole("textbox", { name: "Notes" })
     await editor.press("ControlOrMeta+ArrowRight")
     await editor.pressSequentially(" updated")
+    const saves: string[] = []
+    page.on("request", (outgoing) => {
+      if (outgoing.method() === "PUT" && new URL(outgoing.url()).pathname === `/api/transactions/${id}`) {
+        saves.push(outgoing.postDataJSON().description)
+      }
+    })
     await editor.press("Escape")
     await expect(editor).toHaveCount(0)
     await expect(peek.locator("strong")).toHaveText("Original note")
     await expect(peek).toBeVisible()
-    // A late blur must not save the discarded text.
-    await page.waitForTimeout(500)
     expect((await fetchTransaction(request, id)).description).toBe("**Original note**")
+
+    // Complete a second edit so a stray save from the first editor's blur is observable.
+    await peek.getByRole("button", { name: "Edit notes" }).click()
+    await expect(editor.locator("strong")).toHaveText("Original note")
+    await editor.fill("Kept note")
+    await peek.getByRole("heading", { name: "Notes" }).click()
+    await expect.poll(async () => (await fetchTransaction(request, id)).description).toBe("**Kept note**")
+    expect(saves).toEqual(["**Kept note**"])
   })
 
   test("adds notes to a transaction that has none", async ({ page, request }) => {

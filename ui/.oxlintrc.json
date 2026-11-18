@@ -275,7 +275,14 @@
         "tests/**/*.ts"
       ],
       "rules": {
-        "react/rules-of-hooks": "off"
+        "react/rules-of-hooks": "off",
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "waitForTimeout",
+            "message": "Wait for a visible state, request, or response. Use the Playwright clock when elapsed time is the behavior under test."
+          }
+        ]
       }
     },
     {
