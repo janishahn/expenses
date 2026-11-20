@@ -506,39 +506,47 @@ def _steps(draw):
     ]
 
 
-def _counted_totals(session, ids, revived=None):
-    """Allocated cents per side, counting an allocation as the rollups do.
+def _counted(session, ids, revived=None, changed=None):
+    """Each side's amount and counted allocations.
 
-    It counts when both sides are live, the expense is an expense, and the
-    reimbursement is reimbursement income. A revived side counts as live.
+    An allocation counts as the rollups count it: both sides are live, the
+    expense is an expense, and the reimbursement is reimbursement income.
+    A revived side counts as live, and a changed side, given as (id, role,
+    amount), counts with that role and amount.
     """
     session.expire_all()
-    txns = {
-        t.id: t
+    sides = {
+        t.id: (t.type.value, t.is_reimbursement, t.amount_cents, t.deleted_at is None)
         for t in session.scalars(select(Transaction).where(Transaction.id.in_(ids)))
     }
-
-    def live(txn):
-        return txn.deleted_at is None or txn.id == revived
-
+    if revived is not None:
+        sides[revived] = (*sides[revived][:3], True)
+    if changed is not None:
+        txn_id, role, amount = changed
+        sides[txn_id] = (*_ROLES[role], amount, sides[txn_id][3])
     totals = defaultdict(int)
     for row in session.scalars(
         select(ReimbursementAllocation).where(
             ReimbursementAllocation.expense_transaction_id.in_(ids)
         )
     ):
-        expense = txns[row.expense_transaction_id]
-        reimbursement = txns[row.reimbursement_transaction_id]
+        expense = sides[row.expense_transaction_id]
+        reimbursement = sides[row.reimbursement_transaction_id]
         if (
-            live(expense)
-            and live(reimbursement)
-            and expense.type == TransactionType.expense
-            and reimbursement.type == TransactionType.income
-            and reimbursement.is_reimbursement
+            expense[3]
+            and reimbursement[3]
+            and expense[0] == "expense"
+            and reimbursement[:2] == ("income", True)
         ):
-            totals[expense.id] += row.amount_cents
-            totals[reimbursement.id] += row.amount_cents
-    return txns, totals
+            totals[row.expense_transaction_id] += row.amount_cents
+            totals[row.reimbursement_transaction_id] += row.amount_cents
+    return {txn_id: side[2] for txn_id, side in sides.items()}, totals
+
+
+def _overruns(session, ids, revived=None, changed=None):
+    """Whether any side's counted allocations exceed its amount."""
+    amounts, totals = _counted(session, ids, revived, changed)
+    return any(total > amounts[txn_id] for txn_id, total in totals.items())
 
 
 # Restoring an expense after its reimbursement paid another one.
@@ -610,6 +618,7 @@ def test_allocations_never_exceed_either_side(
             db_session.execute(
                 select(
                     ReimbursementAllocation.id,
+                    ReimbursementAllocation.expense_transaction_id,
                     ReimbursementAllocation.reimbursement_transaction_id,
                     ReimbursementAllocation.amount_cents,
                 ).where(ReimbursementAllocation.expense_transaction_id.in_(ids))
@@ -675,23 +684,38 @@ def test_allocations_never_exceed_either_side(
                 if response.status_code != 200:
                     roles[i] = previous
         assert response.status_code < 500, (step, response.text)
+        assert not _overruns(db_session, ids), step
 
-        txns, totals = _counted_totals(db_session, ids)
-        for txn_id, total in totals.items():
-            assert total <= txns[txn_id].amount_cents, (step, txn_id, total)
-        if step[0] not in ("allocate", "unallocate"):
-            # Other edits keep allocations or are refused, except that a
-            # reimbursement turned into plain income gives its allocations up.
-            expected = before
-            if step[0] == "role" and (roles_before[step[1]], roles[step[1]]) == (
-                "reimbursement",
-                "income",
-            ):
-                expected = {row for row in before if row[1] != ids[step[1]]}
-            assert stored_allocations() == expected, step
-        if step[0] == "restore" and txns[ids[step[1]]].deleted_at is not None:
-            # A restore is refused only when the side would not fit.
-            txns, revived = _counted_totals(db_session, ids, revived=ids[step[1]])
-            assert any(
-                total > txns[txn_id].amount_cents for txn_id, total in revived.items()
-            ), (step, response.text)
+        if step[0] in ("allocate", "unallocate"):
+            continue
+        # Other edits keep allocations or are refused, except that a
+        # reimbursement turned into plain income gives its allocations up.
+        expected = before
+        if step[0] == "role" and (roles_before[step[1]], roles[step[1]]) == (
+            "reimbursement",
+            "income",
+        ):
+            expected = {row for row in before if row[2] != ids[step[1]]}
+        assert stored_allocations() == expected, step
+
+        # A refusal must have a reason: the step would push a side past its
+        # amount, change the type of a side with counted allocations, or edit
+        # a side in Trash.
+        index = step[1]
+        refused = response.status_code != 200
+        db_session.expire_all()
+        in_trash = db_session.get(Transaction, ids[index]).deleted_at is not None
+        match step:
+            case ("restore", _, _) if in_trash:
+                assert refused, (step, response.text)
+                assert _overruns(db_session, ids, revived=ids[index]), step
+            case ("amount", _, amount) if refused and not in_trash:
+                assert _overruns(
+                    db_session, ids, changed=(ids[index], roles[index], amount)
+                ), (step, response.text)
+            case ("role", _, role) if refused and not in_trash:
+                kinds = (_ROLES[roles[index]][0], _ROLES[role][0])
+                allocated = _counted(db_session, ids)[1][ids[index]]
+                assert (kinds[0] != kinds[1] and allocated) or _overruns(
+                    db_session, ids, changed=(ids[index], role, amounts[index])
+                ), (step, response.text)
