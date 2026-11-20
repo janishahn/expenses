@@ -247,3 +247,43 @@ def test_tag_merge_refuses_different_budget_settings(
         )
     tags = api_client.get("/api/tags/options").json()["tags"]
     assert {tag["name"] for tag in tags} == {"Work expense", "Work"}
+
+
+def test_transactions_take_existing_non_ascii_and_refuse_archived_tags(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    def create(tags: list[str]):
+        return api_client.post(
+            "/api/transactions",
+            headers=csrf_headers,
+            json={
+                "date": "2026-03-01",
+                "occurred_at": "2026-03-01T12:00:00",
+                "type": "expense",
+                "amount_cents": 290,
+                "title": "Ticket",
+                "tags": tags,
+            },
+        )
+
+    first = create(["ÖPNV"])
+    second = create(["ÖPNV"])
+    assert first.status_code == 200
+    assert second.status_code == 200, second.text
+    tags = api_client.get("/api/tags").json()["tags"]
+    assert [tag["name"] for tag in tags] == ["ÖPNV"]
+
+    api_client.post(f"/api/tags/{tags[0]['id']}/archive", headers=csrf_headers)
+    refused = create(["öpnv"])
+    assert refused.status_code == 400
+    assert "archived" in refused.json()["detail"]
+
+    bulk = api_client.post(
+        "/api/transactions/bulk/apply",
+        headers=csrf_headers,
+        json={
+            "selection": {"mode": "ids", "transaction_ids": [first.json()["id"]]},
+            "operation": {"tag_patch": {"mode": "add", "tags": ["ÖPNV"]}},
+        },
+    )
+    assert bulk.status_code == 400

@@ -251,6 +251,8 @@ class TransactionListItemOut(BaseModel):
     longitude: Optional[float] = None
     tags: list[TransactionTagOut] = Field(default_factory=list)
     has_attachments: bool = False
+    # Echo verbatim as expected_updated_at when saving.
+    updated_at: datetime
 
 
 class DurablePurchaseOut(BaseModel):
@@ -274,6 +276,8 @@ class TransactionDetailOut(BaseModel):
     net_amount_cents: int
     reimbursed_total_cents: int
     created_at: datetime
+    # Echo verbatim as expected_updated_at when saving.
+    updated_at: datetime
     category_id: Optional[int] = None
     category: Optional[CategorySummaryOut] = None
     title: str
@@ -285,6 +289,11 @@ class TransactionDetailOut(BaseModel):
     durable_purchase: Optional[DurablePurchaseOut] = None
     attachments: list[ReceiptAttachmentOut] = Field(default_factory=list)
     bank_row: Optional[TransactionBankRowOut] = None
+
+
+class TransactionSavedOut(BaseModel):
+    id: int
+    updated_at: datetime
 
 
 class TransactionFiltersOut(BaseModel):
@@ -1047,17 +1056,20 @@ class CategoryUpdateIn(BaseModel):
 class TransactionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    date: date
+    date: dt.date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     occurred_at: datetime
     type: TransactionType
     is_reimbursement: Optional[bool] = None
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     category_id: Optional[int] = None
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
     tags: list[str] = Field(default_factory=list)
+    # Update only: the updated_at the client loaded, echoed verbatim. A newer
+    # stored value means another save happened since, and the update is refused.
+    expected_updated_at: Optional[datetime] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1096,12 +1108,20 @@ class TransactionIn(BaseModel):
                 raise ValueError("Longitude must be between -180 and 180")
         return self
 
+    @model_validator(mode="after")
+    def validate_occurred_at(self):
+        if not MIN_LEDGER_DATE <= self.occurred_at.date() <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"occurred_at must fall between {MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+            )
+        return self
+
 
 class TransactionTemplateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     type: TransactionType
     category_id: int
-    default_amount_cents: Optional[int] = Field(default=None, ge=0)
+    default_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
     title: Optional[str] = Field(default=None, max_length=200)
     tags: list[str] = Field(default_factory=list)
 
@@ -1273,9 +1293,11 @@ class ForecastScenarioResponseOut(ForecastResponseOut):
 class IngestTransactionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     title: str = Field(..., min_length=1, max_length=200)
-    date: Optional[dt.date] = None
+    date: Optional[dt.date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
     category: Optional[str] = Field(default=None, max_length=100)
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
@@ -1460,8 +1482,16 @@ class CSVCommitResponseOut(BaseModel):
 
 class BalanceAnchorIn(BaseModel):
     as_of_at: datetime
-    balance_cents: int
+    balance_cents: int = Field(..., ge=-MAX_AMOUNT_CENTS, le=MAX_AMOUNT_CENTS)
     note: Optional[str] = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_as_of_at(self):
+        if not MIN_LEDGER_DATE <= self.as_of_at.date() <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"as_of_at must fall between {MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+            )
+        return self
 
 
 class BalanceAnchorOut(BaseModel):
@@ -1512,11 +1542,21 @@ class RuleIn(BaseModel):
     match_type: RuleMatchType
     match_value: str = Field(..., min_length=1, max_length=200)
     transaction_type: Optional[TransactionType] = None
-    min_amount_cents: Optional[int] = Field(default=None, ge=0)
-    max_amount_cents: Optional[int] = Field(default=None, ge=0)
+    min_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
+    max_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
     set_category_id: Optional[int] = None
     add_tags: list[str] = Field(default_factory=list)
     budget_exclude_tag_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def validate_amount_range(self):
+        if (
+            self.min_amount_cents is not None
+            and self.max_amount_cents is not None
+            and self.min_amount_cents > self.max_amount_cents
+        ):
+            raise ValueError("The minimum amount cannot be above the maximum amount")
+        return self
 
 
 class RuleTagOut(BaseModel):

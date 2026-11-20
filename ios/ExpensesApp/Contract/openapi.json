@@ -1593,6 +1593,8 @@
             "type": "string"
           },
           "balance_cents": {
+            "maximum": 1000000000000.0,
+            "minimum": -1000000000000.0,
             "title": "Balance Cents",
             "type": "integer"
           },
@@ -5843,6 +5845,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -8645,6 +8648,7 @@
           "max_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -8657,6 +8661,7 @@
           "min_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -9892,6 +9897,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -9902,6 +9912,7 @@
           "net_amount_cents",
           "reimbursed_total_cents",
           "created_at",
+          "updated_at",
           "title",
           "is_reimbursement"
         ],
@@ -9993,6 +10004,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -10023,6 +10035,18 @@
               }
             ],
             "title": "Description"
+          },
+          "expected_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Updated At"
           },
           "is_reimbursement": {
             "anyOf": [
@@ -10198,6 +10222,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -10208,7 +10237,8 @@
           "amount_cents",
           "net_amount_cents",
           "reimbursed_total_cents",
-          "is_reimbursement"
+          "is_reimbursement",
+          "updated_at"
         ],
         "title": "TransactionListItemOut",
         "type": "object"
@@ -10307,6 +10337,25 @@
           "mode"
         ],
         "title": "TransactionReimbursementsResponseOut",
+        "type": "object"
+      },
+      "TransactionSavedOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "updated_at"
+        ],
+        "title": "TransactionSavedOut",
         "type": "object"
       },
       "TransactionSuggestionOut": {
@@ -10409,6 +10458,7 @@
           "default_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -10754,6 +10804,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -10764,7 +10819,8 @@
           "amount_cents",
           "net_amount_cents",
           "reimbursed_total_cents",
-          "is_reimbursement"
+          "is_reimbursement",
+          "updated_at"
         ],
         "title": "UncategorizedTransactionItemOut",
         "type": "object"
@@ -16419,7 +16475,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdOut"
+                  "$ref": "#/components/schemas/TransactionSavedOut"
                 }
               }
             },

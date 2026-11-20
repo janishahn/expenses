@@ -98,6 +98,7 @@ from expenses.schemas import (
     TransactionIn,
     TransactionTemplateIn,
 )
+from expenses.schemas import MAX_AMOUNT_CENTS
 
 logger = get_logger("expenses.services")
 
@@ -179,15 +180,30 @@ class TagService:
         )
         return self.session.scalars(stmt).all()
 
+    # Case-insensitive match done in Python: SQLite's lower() folds ASCII only.
+    # Rows that differ only in case can exist, so the exact name wins, then an
+    # active tag, then the oldest.
+    def _named(self, clean_name: str, *, exclude_id: int | None = None) -> Tag | None:
+        lowered = clean_name.lower()
+        matches = [
+            tag
+            for tag in self.session.scalars(
+                select(Tag).where(Tag.user_id == self.user_id).order_by(Tag.id)
+            )
+            if tag.name.lower() == lowered and tag.id != exclude_id
+        ]
+        return min(
+            matches,
+            key=lambda tag: (tag.name != clean_name, tag.archived_at is not None),
+            default=None,
+        )
+
     def get_or_create(self, name: str) -> Tag:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
-        )
-        existing = self.session.scalar(stmt)
+        existing = self._named(clean_name)
         if existing:
             return existing
 
@@ -247,6 +263,24 @@ class TagService:
                     names, ensure_ascii=False, sort_keys=True, separators=(",", ":")
                 )
 
+    # Tags typed by the user. An archived tag is refused unless the transaction
+    # already carries it, so a merged-away name does not come back unnoticed.
+    def resolve_typed(
+        self, names: list[str], *, attached: list[Tag] | None = None
+    ) -> list[Tag]:
+        attached_ids = {tag.id for tag in attached or []}
+        tags: list[Tag] = []
+        for name in names:
+            tag = self.get_or_create(name)
+            if tag.archived_at is not None and tag.id not in attached_ids:
+                raise ValueError(
+                    f'The tag "{tag.name}" is archived. Restore it on the Tags '
+                    "page or use another tag."
+                )
+            if tag not in tags:
+                tags.append(tag)
+        return tags
+
     def create(
         self,
         name: str,
@@ -260,10 +294,7 @@ class TagService:
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
-        )
-        existing = self.session.scalar(stmt)
+        existing = self._named(clean_name)
         if existing:
             if existing.archived_at is not None:
                 raise ValueError(
@@ -313,12 +344,9 @@ class TagService:
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id,
-            func.lower(Tag.name) == clean_name.lower(),
-            Tag.id != tag_id,
-        )
-        if self.session.scalar(stmt):
+        # Names that differ only in case may already exist side by side; keeping
+        # a name unchanged must stay possible.
+        if clean_name != tag.name and self._named(clean_name, exclude_id=tag_id):
             raise ValueError("Tag with this name already exists")
 
         if clean_name != tag.name:
@@ -1602,6 +1630,10 @@ class DurablePurchaseService:
         return items
 
 
+class TransactionConflict(ValueError):
+    """The request conflicts with the stored state; the caller should reload."""
+
+
 class TransactionService:
     def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
         self.session = session
@@ -1663,15 +1695,7 @@ class TransactionService:
             longitude=data.longitude,
         )
         if data.tags:
-            tag_service = TagService(self.session, self.user_id)
-            tags: list[Tag] = []
-            tag_ids: set[int] = set()
-            for name in data.tags:
-                tag = tag_service.get_or_create(name)
-                if tag.id not in tag_ids:
-                    tags.append(tag)
-                    tag_ids.add(tag.id)
-            txn.tags = tags
+            txn.tags = TagService(self.session, self.user_id).resolve_typed(data.tags)
 
         self.session.add(txn)
         self.session.flush()
@@ -1776,6 +1800,13 @@ class TransactionService:
         source: str = "user",
     ) -> Transaction:
         txn = self.get(transaction_id, include_deleted=False)
+        if (
+            data.expected_updated_at is not None
+            and data.expected_updated_at != txn.updated_at
+        ):
+            raise TransactionConflict(
+                "This transaction was changed somewhere else. Check the current version and save again."
+            )
 
         old_date = txn.date
         old_type = txn.type
@@ -1792,32 +1823,15 @@ class TransactionService:
                 raise ValueError("Category type mismatch")
             category_id = data.category_id
 
+        reimbursements = ReimbursementService(self.session, self.user_id)
         if old_type == TransactionType.expense and data.type == TransactionType.income:
-            has_allocations_in = int(
-                self.session.execute(
-                    select(func.count(ReimbursementAllocation.id)).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.expense_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
-            if has_allocations_in:
+            if reimbursements.reimbursed_total_for_expense(txn.id):
                 raise ValueError(
                     "Cannot convert reimbursed expense to income; remove allocations first"
                 )
 
         if old_type == TransactionType.income and data.type == TransactionType.expense:
-            has_allocations_out = int(
-                self.session.execute(
-                    select(func.count(ReimbursementAllocation.id)).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
-            if has_allocations_out:
+            if reimbursements.allocated_total_for_reimbursement(txn.id):
                 raise ValueError(
                     "Cannot convert reimbursement income to expense; remove allocations first"
                 )
@@ -1857,15 +1871,12 @@ class TransactionService:
             )
 
         if data.tags is not None:
-            tag_service = TagService(self.session, self.user_id)
-            tags: list[Tag] = []
-            tag_ids: set[int] = set()
-            for name in data.tags:
-                tag = tag_service.get_or_create(name)
-                if tag.id not in tag_ids:
-                    tags.append(tag)
-                    tag_ids.add(tag.id)
-            txn.tags = tags
+            txn.tags = TagService(self.session, self.user_id).resolve_typed(
+                data.tags, attached=txn.tags
+            )
+        # Tag changes leave the transactions row alone, so stamp it here for the
+        # expected_updated_at check.
+        txn.updated_at = datetime.utcnow()
 
         self.session.flush()
         self.session.refresh(txn, ["category", "tags"])
@@ -1919,36 +1930,23 @@ class TransactionService:
             )
 
         if txn.type == TransactionType.expense:
-            reimbursed_total = int(
-                self.session.execute(
-                    select(
-                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                    ).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.expense_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
+            reimbursed_total = reimbursements.reimbursed_total_for_expense(txn.id)
             if txn.amount_cents < reimbursed_total:
                 raise ValueError("Expense amount cannot be less than reimbursed total")
 
         if txn.type == TransactionType.income and txn.is_reimbursement:
-            allocated_total = int(
-                self.session.execute(
-                    select(
-                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                    ).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
+            allocated_total = reimbursements.allocated_total_for_reimbursement(txn.id)
             if txn.amount_cents < allocated_total:
                 raise ValueError(
                     "Reimbursement amount cannot be less than allocated total"
                 )
+
+        # A type change can bring back allocations to a counterpart that was
+        # trashed or edited meanwhile; they must still fit on the other side.
+        if old_type != txn.type or old_is_reimbursement != txn.is_reimbursement:
+            overrun = reimbursements.allocation_overrun([txn.id])
+            if overrun:
+                raise ValueError(overrun)
 
         self.session.flush()
 
@@ -2080,7 +2078,19 @@ class TransactionService:
             raise ValueError("Transaction not found")
         if txn.deleted_at is None:
             return
+        self._require_allocations_fit([txn])
         self._set_deleted_at([txn], None, commit=commit)
+
+    # While a transaction is in Trash its allocations do not count, so the other
+    # side may have been allocated or edited since. Restoring must not push any
+    # transaction past its amount.
+    def _require_allocations_fit(self, transactions: list[Transaction]) -> None:
+        ids = [txn.id for txn in transactions]
+        overrun = ReimbursementService(self.session, self.user_id).allocation_overrun(
+            ids, restoring_ids=ids
+        )
+        if overrun:
+            raise TransactionConflict(f"Can't restore. {overrun}")
 
     # Moves transactions to the trash (a time) or restores them (None),
     # recomputing each affected month once.
@@ -2204,6 +2214,7 @@ class TransactionService:
             )
         )
         if trashed:
+            self._require_allocations_fit(trashed)
             self._set_deleted_at(trashed, None, commit=True)
         return len(trashed)
 
@@ -2531,6 +2542,83 @@ class ReimbursementService:
             or 0
         )
 
+    def allocation_overrun(
+        self, transaction_ids: list[int], *, restoring_ids: list[int] | None = None
+    ) -> str | None:
+        """Names the first transaction next to these whose allocations exceed it.
+
+        An allocation counts, as in the rollups, when both sides are live (or
+        about to be restored), the expense is an expense and the reimbursement
+        a reimbursement income.
+        """
+        restoring = restoring_ids or []
+        expense = aliased(Transaction)
+        reimbursement = aliased(Transaction)
+        reimbursement_id = ReimbursementAllocation.reimbursement_transaction_id
+        expense_id = ReimbursementAllocation.expense_transaction_id
+        counting = (
+            select(reimbursement_id, expense_id, ReimbursementAllocation.amount_cents)
+            .join(expense, expense_id == expense.id)
+            .join(reimbursement, reimbursement_id == reimbursement.id)
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                or_(expense.deleted_at.is_(None), expense.id.in_(restoring)),
+                expense.type == TransactionType.expense,
+                or_(
+                    reimbursement.deleted_at.is_(None),
+                    reimbursement.id.in_(restoring),
+                ),
+                reimbursement.type == TransactionType.income,
+                reimbursement.is_reimbursement.is_(True),
+            )
+        )
+        touched = self.session.execute(
+            counting.where(
+                or_(
+                    reimbursement_id.in_(transaction_ids),
+                    expense_id.in_(transaction_ids),
+                )
+            )
+        ).all()
+        reimbursement_ids = {row[0] for row in touched}
+        expense_ids = {row[1] for row in touched}
+        allocated = dict.fromkeys(reimbursement_ids, 0)
+        reimbursed = dict.fromkeys(expense_ids, 0)
+        for r_id, e_id, cents in self.session.execute(
+            counting.where(
+                or_(
+                    reimbursement_id.in_(reimbursement_ids),
+                    expense_id.in_(expense_ids),
+                )
+            )
+        ):
+            if r_id in allocated:
+                allocated[r_id] += cents
+            if e_id in reimbursed:
+                reimbursed[e_id] += cents
+
+        def eur(cents: int) -> str:
+            return f"{cents // 100},{cents % 100:02d} €"
+
+        for r_id in sorted(allocated):
+            txn = self.session.get(Transaction, r_id)
+            if allocated[r_id] > txn.amount_cents:
+                return (
+                    f'The reimbursement "{txn.title}" from {txn.date.isoformat()} '
+                    f"would have {eur(allocated[r_id])} allocated but is only "
+                    f"{eur(txn.amount_cents)}. Remove some of its allocations first."
+                )
+        for e_id in sorted(reimbursed):
+            txn = self.session.get(Transaction, e_id)
+            if reimbursed[e_id] > txn.amount_cents:
+                return (
+                    f'The expense "{txn.title}" from {txn.date.isoformat()} would '
+                    f"be reimbursed {eur(reimbursed[e_id])} but is only "
+                    f"{eur(txn.amount_cents)}. Remove some of its reimbursements "
+                    "or raise its amount first."
+                )
+        return None
+
     def reimbursed_totals_for_expenses(
         self, expense_transaction_ids: list[int]
     ) -> dict[int, int]:
@@ -2680,19 +2768,9 @@ class ReimbursementService:
         if allocated_other + amount_cents > reimbursement.amount_cents:
             raise ValueError("Allocation exceeds reimbursement amount")
 
-        reimbursed_other = int(
-            self.session.execute(
-                select(
-                    func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                ).where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ReimbursementAllocation.expense_transaction_id
-                    == expense_transaction_id,
-                    ReimbursementAllocation.reimbursement_transaction_id
-                    != reimbursement_transaction_id,
-                )
-            ).scalar_one()
-            or 0
+        # This reimbursement is live, so its own allocation is in the total.
+        reimbursed_other = self.reimbursed_total_for_expense(expense_transaction_id) - (
+            existing.amount_cents if existing else 0
         )
         if reimbursed_other + amount_cents > expense.amount_cents:
             raise ValueError("Allocation exceeds expense amount")
@@ -3156,6 +3234,12 @@ class IngestService:
             .replace(second=0, microsecond=0)
         )
         txn_date = data.date or now_local.date()
+        # Like the other paths that only know a date: noon on that day.
+        occurred_at = (
+            now_local
+            if txn_date == now_local.date()
+            else datetime.combine(txn_date, time(12, 0))
+        )
         latitude = data.latitude
         longitude = data.longitude
         location_status: Literal["not_provided", "stored", "ignored_partial"]
@@ -3183,25 +3267,28 @@ class IngestService:
         category_name_raw = (data.category or "").strip()
         if category_name_raw:
             input_lower = category_name_raw.lower()
-            exact = self.session.scalar(
-                select(Category).where(
+            # Matched in Python: SQLite's lower() folds ASCII only. An exact
+            # name, active or archived, wins over a fuzzy match.
+            all_categories = self.session.scalars(
+                select(Category)
+                .where(
                     Category.user_id == self.user_id,
                     Category.type == TransactionType.expense,
-                    Category.archived_at.is_(None),
-                    func.lower(Category.name) == input_lower,
                 )
+                .order_by(Category.archived_at.is_not(None), Category.id)
+            ).all()
+            exact = next(
+                (c for c in all_categories if c.name.lower() == input_lower), None
             )
-            if exact:
+            if exact and exact.archived_at is None:
                 category_id = exact.id
                 category_resolution = "exact"
+            elif exact:
+                CategoryService(self.session, self.user_id).restore(exact.id)
+                category_id = exact.id
+                category_resolution = "restored"
             else:
-                categories = self.session.scalars(
-                    select(Category).where(
-                        Category.user_id == self.user_id,
-                        Category.type == TransactionType.expense,
-                        Category.archived_at.is_(None),
-                    )
-                ).all()
+                categories = [c for c in all_categories if c.archived_at is None]
                 best_distance: Optional[int] = None
                 best: list[Category] = []
                 for category in categories:
@@ -3234,24 +3321,7 @@ class IngestService:
                         category_id = created.id
                         category_resolution = "created"
                     except ValueError as exc:
-                        existing = self.session.scalar(
-                            select(Category).where(
-                                Category.user_id == self.user_id,
-                                Category.type == TransactionType.expense,
-                                func.lower(Category.name) == input_lower,
-                            )
-                        )
-                        if existing:
-                            if existing.archived_at is not None:
-                                CategoryService(self.session, self.user_id).restore(
-                                    existing.id
-                                )
-                                category_resolution = "restored"
-                            else:
-                                category_resolution = "exact"
-                            category_id = existing.id
-                        else:
-                            raise IngestCategoryNotFound(str(exc)) from exc
+                        raise IngestCategoryNotFound(str(exc)) from exc
         else:
             category_id = None
 
@@ -3260,7 +3330,7 @@ class IngestService:
         )
         txn_in = TransactionIn(
             date=txn_date,
-            occurred_at=now_local,
+            occurred_at=occurred_at,
             type=TransactionType.expense,
             amount_cents=data.amount_cents,
             category_id=category_id,
@@ -7154,6 +7224,13 @@ class CSVService:
             if row.is_reimbursement and row.type != TransactionType.income:
                 errors.append(
                     f"Row {row.row_number}: IsReimbursement can only be set for income transactions"
+                )
+            if row.amount_cents > MAX_AMOUNT_CENTS:
+                errors.append(f"Row {row.row_number}: Amount is too large")
+            if not MIN_LEDGER_DATE <= row.date <= MAX_LEDGER_DATE:
+                errors.append(
+                    f"Row {row.row_number}: Date must fall between "
+                    f"{MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
                 )
             preview_rows.append(
                 {

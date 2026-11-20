@@ -33,6 +33,7 @@ from expenses.db.models import (
     TransactionType,
 )
 from expenses.schemas import BudgetOverrideIn, BudgetTemplateApplyFromIn, TransactionIn
+from expenses.schemas import MAX_AMOUNT_CENTS
 from expenses.services import (
     BudgetService,
     CategoryService,
@@ -494,7 +495,7 @@ def _month(value: str) -> tuple[int, int]:
 class NewTransaction(BaseModel):
     date: date
     kind: Literal["expense", "income"]
-    amount_cents: int = Field(gt=0)
+    amount_cents: int = Field(gt=0, le=MAX_AMOUNT_CENTS)
     title: str
     category_id: int | None = None
     tags: list[str] = Field(default_factory=list)
@@ -1962,7 +1963,10 @@ def _apply_restore(session: Session, user_id: int, plan: RestorePlan) -> dict[st
             raise ActionConflict(f"{row.title} changed since this was proposed.")
     service = TransactionService(session, user_id)
     for row in plan.rows:
-        service.restore(row.transaction_id, commit=False)
+        try:
+            service.restore(row.transaction_id, commit=False)
+        except ValueError as exc:
+            raise ActionConflict(str(exc)) from exc
     return {"restored": len(plan.rows)}
 
 
@@ -2081,6 +2085,8 @@ def _apply_edit(
             txn.auto_category_confidence = None
         if row.after.tags != row.before.tags:
             txn.tags = [tags.get_or_create(name) for name in row.after.tags]
+            # Tag links leave the row alone; stamp it for expected_updated_at.
+            txn.updated_at = datetime.utcnow()
         txn.title = row.after.title
         if row.notes is not None:
             txn.description = row.notes.after

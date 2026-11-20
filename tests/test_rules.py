@@ -399,6 +399,26 @@ def test_rule_applies_during_csv_import_when_category_is_uncategorized() -> None
         assert {tag.name for tag in txn.tags} == {"Streaming"}
 
 
+def test_csv_import_rejects_out_of_range_amounts_and_dates() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        CategoryService(session).create(
+            CategoryIn(name="Food", type=TransactionType.expense, order=0)
+        )
+        _, errors = CSVService(session).preview(
+            "Date,Type,IsReimbursement,Amount,Category,Title\n"
+            "2025-01-05,expense,0,100000000000000,Food,Huge\n"
+            "9999-12-05,expense,0,1.00,Food,Far\n"
+        )
+
+        assert errors == [
+            "Row 1: Amount is too large",
+            "Row 2: Date must fall between 1900-01-01 and 2199-12-31",
+        ]
+
+
 def test_rule_service_rejects_regex_over_configured_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -458,3 +478,23 @@ def test_csv_import_fails_when_regex_rules_exceed_the_import_budget(
             assert session.scalars(select(Transaction)).all() == []
     finally:
         get_settings.cache_clear()
+
+
+def test_rule_amount_bounds_are_validated(api_client, csrf_headers) -> None:
+    def create(**amounts):
+        return api_client.post(
+            "/api/rules",
+            headers=csrf_headers,
+            json={
+                "name": "Big",
+                "match_type": "contains",
+                "match_value": "shop",
+                **amounts,
+            },
+        )
+
+    inverted = create(min_amount_cents=5_000, max_amount_cents=1_000)
+    assert inverted.status_code == 422
+    assert "minimum amount cannot be above the maximum" in inverted.text
+    assert create(max_amount_cents=10**19).status_code == 422
+    assert create(min_amount_cents=1_000, max_amount_cents=1_000).status_code == 200

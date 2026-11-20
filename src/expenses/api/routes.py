@@ -215,6 +215,7 @@ from expenses.schemas import (
     TransactionIn,
     TransactionDetailOut,
     TransactionIdsIn,
+    TransactionSavedOut,
     TransactionsPurgedOut,
     TransactionsResponseOut,
     TransactionsRestoredOut,
@@ -247,6 +248,7 @@ from expenses.services import (
     ReportService,
     rebuild_monthly_rollups,
 )
+from expenses.services.main import TransactionConflict
 from expenses.services.bank_reconciliation import (
     BankReconciliationService,
     BankRowAlreadyResolvedError,
@@ -1426,6 +1428,7 @@ def _serialize_transaction_item(txn: Transaction) -> dict[str, object]:
         "longitude": float(txn.longitude) if txn.longitude is not None else None,
         "tags": [{"id": tag.id, "name": tag.name} for tag in txn.tags],
         "has_attachments": bool(txn.attachments),
+        "updated_at": txn.updated_at,
     }
 
 
@@ -4158,7 +4161,10 @@ def api_restore_deleted_transactions(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    restored = TransactionService(db, user_id=user_id).restore_many(data.ids)
+    try:
+        restored = TransactionService(db, user_id=user_id).restore_many(data.ids)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"restored": restored}
 
 
@@ -4182,6 +4188,8 @@ def api_restore_transaction(
     _require_csrf(request, db)
     try:
         TransactionService(db, user_id=user_id).restore(transaction_id)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -4242,6 +4250,7 @@ def api_get_transaction(
         "net_amount_cents": txn.net_amount_cents,
         "reimbursed_total_cents": txn.reimbursed_total_cents,
         "created_at": txn.created_at,
+        "updated_at": txn.updated_at,
         "bank_row": (
             {
                 "id": bank_row.id,
@@ -4794,7 +4803,9 @@ def api_delete_reimbursement_allocation(
     return {"status": "ok"}
 
 
-@router.put("/api/transactions/{transaction_id:int}", response_model=IdOut)
+@router.put(
+    "/api/transactions/{transaction_id:int}", response_model=TransactionSavedOut
+)
 def api_update_transaction(
     transaction_id: int,
     data: TransactionIn,
@@ -4805,9 +4816,11 @@ def api_update_transaction(
     _require_csrf(request, db)
     try:
         txn = TransactionService(db, user_id=user_id).update(transaction_id, data)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": txn.id}
+    return {"id": txn.id, "updated_at": txn.updated_at}
 
 
 @router.delete("/api/transactions/{transaction_id:int}")
@@ -5025,7 +5038,12 @@ def api_transactions_bulk_apply(
             "changes": counts,
         }
     if operation.lifecycle == "restore":
-        counts["restored"] = txn_service.restore_many([txn.id for txn in transactions])
+        try:
+            counts["restored"] = txn_service.restore_many(
+                [txn.id for txn in transactions]
+            )
+        except TransactionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),
@@ -5044,15 +5062,12 @@ def api_transactions_bulk_apply(
     tag_service = TagService(db, user_id=user_id)
     patch_tags = []
     if tag_patch and tag_patch.mode in {"add", "replace"}:
-        seen_tag_names: set[str] = set()
-        for raw_name in tag_patch.tags:
-            clean_name = raw_name.strip()
-            if not clean_name:
-                continue
-            if clean_name.lower() in seen_tag_names:
-                continue
-            seen_tag_names.add(clean_name.lower())
-            patch_tags.append(tag_service.get_or_create(clean_name))
+        try:
+            patch_tags = tag_service.resolve_typed(
+                [name for name in tag_patch.tags if name.strip()]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     patch_tag_name_set = (
         {tag.name.lower() for tag in patch_tags}
         if tag_patch and tag_patch.mode in {"add", "replace"}
@@ -5077,6 +5092,7 @@ def api_transactions_bulk_apply(
 
         if not tag_patch:
             continue
+        tag_ids_before = {tag.id for tag in txn.tags}
         existing_by_lower = {tag.name.lower(): tag for tag in txn.tags}
         if tag_patch.mode == "add":
             for patch_tag in patch_tags:
@@ -5098,6 +5114,10 @@ def api_transactions_bulk_apply(
             if txn.tags:
                 txn.tags = []
                 counts["tags_replaced"] += 1
+        # Tag links leave the transactions row alone; stamp it for
+        # expected_updated_at.
+        if {tag.id for tag in txn.tags} != tag_ids_before:
+            txn.updated_at = datetime.utcnow()
 
     db.commit()
     return {
@@ -5740,6 +5760,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
                 "title": txn.title,
                 "description": txn.description,
                 "tags": [{"id": tag.id, "name": tag.name} for tag in txn.tags],
+                "updated_at": txn.updated_at,
             }
             for txn in recent
         ],

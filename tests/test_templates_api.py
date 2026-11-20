@@ -158,3 +158,24 @@ def test_templates_and_pending_suggestions_follow_tag_changes(
     )
     # Without the deleted tag the suggestion has nothing left to do.
     assert (json.loads(deleted.add_tags_json), deleted.status) == ([], "stale")
+
+
+def test_template_amount_is_bounded(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    food_id = _create_category(api_client, csrf_headers, "Food", "expense")
+
+    def create(amount_cents: int):
+        return api_client.post(
+            "/api/templates",
+            headers=csrf_headers,
+            json={
+                "name": "Big",
+                "type": "expense",
+                "category_id": food_id,
+                "default_amount_cents": amount_cents,
+            },
+        )
+
+    assert create(10**19).status_code == 422
+    assert create(1_000_000_000_000).status_code == 200

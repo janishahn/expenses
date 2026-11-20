@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -225,3 +225,68 @@ def test_ingest_ignores_location_when_latitude_is_false() -> None:
         assert result.location_status == "ignored_partial"
         assert txn.latitude is None
         assert txn.longitude is None
+
+
+def test_ingest_with_a_date_stores_a_time_on_that_date() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        txn = (
+            IngestService(session)
+            .ingest_expense(
+                IngestTransactionIn(
+                    amount_cents=1299, title="Coffee", date=date(2025, 3, 20)
+                )
+            )
+            .transaction
+        )
+        assert txn.date == date(2025, 3, 20)
+        assert txn.occurred_at == datetime(2025, 3, 20, 12, 0)
+
+
+def test_ingest_matches_non_ascii_and_archived_category_names_exactly() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        categories = CategoryService(session)
+        doctors = categories.create(
+            CategoryIn(name="Ärzte", type=TransactionType.expense, order=0)
+        )
+        stay = categories.create(
+            CategoryIn(name="Übernachtung", type=TransactionType.expense, order=0)
+        )
+        categories.create(
+            CategoryIn(name="Food", type=TransactionType.expense, order=0)
+        )
+        food2 = categories.create(
+            CategoryIn(name="Food2", type=TransactionType.expense, order=0)
+        )
+        for category in (doctors, stay, food2):
+            categories.archive(category.id)
+
+        def ingest(name: str):
+            return (
+                IngestService(session)
+                .ingest_expense(
+                    IngestTransactionIn(
+                        amount_cents=100,
+                        title="Item",
+                        date=date(2025, 1, 2),
+                        category=name,
+                    )
+                )
+                .transaction
+            )
+
+        assert ingest("Ärzte").category_id == doctors.id
+        assert ingest("übernachtung").category_id == stay.id
+        assert ingest("food2").category_id == food2.id
+        names = session.scalars(
+            select(Category.name).where(
+                Category.type == TransactionType.expense,
+                Category.archived_at.is_(None),
+            )
+        ).all()
+        assert sorted(names) == ["Food", "Food2", "Ärzte", "Übernachtung"]

@@ -15,6 +15,7 @@ from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
 from expenses.ai.service import retry_receipt_readings
 from expenses.db.models import (
+    Category,
     LLMJob,
     ReceiptAttachment,
     ReceiptItem,
@@ -23,6 +24,7 @@ from expenses.db.models import (
 )
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.recurrence.engine import local_today
+from expenses.services.rollups import recompute_monthly_rollup_for_date
 from expenses.schemas import TransactionIn
 from expenses.services import (
     ReceiptAttachmentService,
@@ -1164,6 +1166,97 @@ def test_transaction_detail_includes_net_amount_and_created_at(
     assert detail["reimbursed_total_cents"] == listed["reimbursed_total_cents"] == 1_000
     assert datetime.fromisoformat(detail["created_at"])
     assert detail["bank_row"] is None
+
+
+def test_rollup_handles_a_stored_december_9999_transaction() -> None:
+    session = make_session()
+    category = Category(user_id=1, name="Food", type=TransactionType.expense)
+    session.add(category)
+    session.flush()
+    session.add(
+        Transaction(
+            user_id=1,
+            category_id=category.id,
+            date=date(9999, 12, 15),
+            occurred_at=datetime(9999, 12, 15, 12, 0),
+            type=TransactionType.expense,
+            amount_cents=100,
+            title="Far future",
+        )
+    )
+    session.flush()
+
+    recompute_monthly_rollup_for_date(session, 1, date(9999, 12, 15))
+
+
+def test_a_save_from_a_stale_copy_is_refused(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    on = local_today()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=1_000, title="Lunch", on=on
+    )
+    url = f"/api/transactions/{transaction_id}"
+    loaded = api_client.get(url).json()["updated_at"]
+    listed = next(
+        item["updated_at"]
+        for item in api_client.get("/api/transactions").json()["items"]
+        if item["id"] == transaction_id
+    )
+    assert listed == loaded
+
+    def save(amount_cents: int, tags: list[str], expected: str | None):
+        body = {
+            "date": on.isoformat(),
+            "occurred_at": f"{on.isoformat()}T12:00:00",
+            "type": "expense",
+            "amount_cents": amount_cents,
+            "title": "Lunch",
+            "tags": tags,
+        }
+        if expected is not None:
+            body["expected_updated_at"] = expected
+        return api_client.put(url, headers=csrf_headers, json=body)
+
+    first = save(1_200, [], loaded)
+    assert first.status_code == 200, first.text
+    assert first.json()["updated_at"] == api_client.get(url).json()["updated_at"]
+
+    stale = save(1_000, [], loaded)
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == (
+        "This transaction was changed somewhere else. Check the current version and save again."
+    )
+    assert api_client.get(url).json()["amount_cents"] == 1_200
+
+    # Only the tags change: the stamp still moves, so the older copy is refused.
+    tagged = save(1_200, ["work"], first.json()["updated_at"])
+    assert tagged.status_code == 200
+    assert save(1_200, [], first.json()["updated_at"]).status_code == 409
+    assert save(1_200, ["work"], tagged.json()["updated_at"]).status_code == 200
+    assert save(1_300, ["work"], None).status_code == 200
+
+
+def test_transaction_amounts_and_dates_are_bounded(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    def create(**overrides):
+        body = {
+            "date": "2026-03-01",
+            "occurred_at": "2026-03-01T12:00:00",
+            "type": "expense",
+            "amount_cents": 100,
+            "title": "Bounds",
+        }
+        return api_client.post(
+            "/api/transactions", headers=csrf_headers, json={**body, **overrides}
+        )
+
+    assert create(amount_cents=10**19).status_code == 422
+    assert create(amount_cents=1_000_000_000_001).status_code == 422
+    assert create(date="9999-12-01").status_code == 422
+    assert create(occurred_at="2200-01-01T12:00:00").status_code == 422
+    assert create(amount_cents=1_000_000_000_000).status_code == 200
 
 
 def test_default_periods_end_on_the_app_timezone_today(
