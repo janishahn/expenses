@@ -825,6 +825,10 @@ def test_allocations_never_exceed_either_side(
             removed,
         )
         assert stored_allocations() == expected, step
+        if step[0] == "unallocate":
+            # A stored allocation can always be removed.
+            stored = any(row[0] == removed for row in before)
+            assert (response.status_code == 200) == stored, (step, response.text)
         if step[0] in ("allocate", "unallocate"):
             continue
 
