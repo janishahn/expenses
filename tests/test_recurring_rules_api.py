@@ -356,6 +356,60 @@ def test_recurring_rule_start_move_to_another_month_keeps_the_nearest_occurrence
     assert rule["next_occurrence"] == expected
 
 
+@pytest.mark.parametrize(
+    ("today", "extra", "anchor", "old_next", "new_anchor", "expected"),
+    [
+        # Saturday 28 Feb was stored as Monday 2 Mar; February is still pending.
+        (
+            date(2026, 2, 25),
+            {"skip_weekends": True},
+            date(2026, 1, 28),
+            date(2026, 3, 2),
+            date(2026, 1, 27),
+            "2026-02-27",
+        ),
+        # February has no 31st, so the next payment is in March, not January.
+        (
+            date(2026, 1, 29),
+            {"month_day_policy": "skip"},
+            date(2025, 10, 28),
+            date(2026, 2, 28),
+            date(2025, 10, 31),
+            "2026-03-31",
+        ),
+    ],
+)
+def test_recurring_rule_start_move_follows_the_scheduled_billing_month(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch,
+    today: date,
+    extra: dict,
+    anchor: date,
+    old_next: date,
+    new_anchor: date,
+    expected: str,
+) -> None:
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: today)
+    category_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    payload = {**_rule_payload(category_id, anchor, old_next), **extra}
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "anchor_date": new_anchor.isoformat()},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == expected
+
+
 def test_recurring_rule_weekly_start_moves_next_occurrence_to_new_weekday(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

@@ -66,6 +66,7 @@ from expenses.infra.fx_rates import FxQuote, FxRateService
 from expenses.core.periods import Period, add_months, month_end, month_start
 from expenses.recurrence.engine import (
     RecurringEngine,
+    _unshifted_date,
     local_today,
     next_date_in_range,
 )
@@ -7102,20 +7103,31 @@ class RecurringRuleService:
         rule.next_occurrence = occurrence
 
     @staticmethod
-    def _nearest_on_schedule(rule: RecurringRule, old_next: date) -> date:
+    def _nearest_on_schedule(
+        rule: RecurringRule, old_next: date, old_scheduled: date
+    ) -> date:
         """The rule's scheduled date nearest old_next (the later one on a tie), so
         moving the schedule neither drops nor adds a posting. It lies in the past
         only when old_next already did. Month and year rules keep the pending
-        occurrence in old_next's calendar month when the schedule has one there."""
-        old_month = (old_next.year, old_next.month)
+        occurrence in its billing month (old_scheduled's, before "Skip weekends"
+        moved it) when the schedule has one there; a monthly rule without one
+        takes the first occurrence after it."""
+        old_month = (old_scheduled.year, old_scheduled.month)
         if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year):
+
+            def billing_month(occurrence: date) -> tuple[int, int]:
+                scheduled = _unshifted_date(rule, occurrence)
+                return (scheduled.year, scheduled.month)
+
             occurrence = rule.anchor_date
-            while (occurrence.year, occurrence.month) < old_month:
+            while billing_month(occurrence) < old_month:
                 following = next_date_in_range(rule, occurrence)
                 if following is None or following <= occurrence:
                     break
                 occurrence = following
-            if (occurrence.year, occurrence.month) == old_month:
+            if billing_month(occurrence) == old_month or (
+                rule.interval_unit == IntervalUnit.month and rule.interval_count == 1
+            ):
                 today = local_today()
                 while occurrence < today <= old_next:
                     following = next_date_in_range(rule, occurrence)
@@ -7284,6 +7296,8 @@ class RecurringRuleService:
                 raise ValueError("Category type mismatch")
         was_auto_post = rule.auto_post
         old_next = rule.next_occurrence
+        # Read under the old schedule, before the new anchor is set.
+        old_scheduled = _unshifted_date(rule, old_next)
         # A new start with the stored next occurrence: the client left it to us.
         moves_schedule = (
             data.anchor_date != rule.anchor_date and data.next_occurrence == old_next
@@ -7291,7 +7305,9 @@ class RecurringRuleService:
         for attr_name, value in data.model_dump().items():
             setattr(rule, attr_name, value)
         if moves_schedule:
-            rule.next_occurrence = self._nearest_on_schedule(rule, old_next)
+            rule.next_occurrence = self._nearest_on_schedule(
+                rule, old_next, old_scheduled
+            )
         # The anchor is the schedule's first occurrence, so a later start must not
         # leave an earlier next occurrence for catch-up to post.
         if rule.anchor_date > rule.next_occurrence:
