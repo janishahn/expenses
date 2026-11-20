@@ -22,11 +22,13 @@ from expenses.core.app_logging import (
     setup_logging,
     shutdown_logging,
 )
+from expenses.core.body_limit import BodySizeLimitMiddleware
 from expenses.core.config import get_settings
 from expenses.recurrence.scheduling import SchedulerManager
 
 app = FastAPI(title="Expense Tracker")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(BodySizeLimitMiddleware)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST_DIR = PROJECT_ROOT / "ui" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"

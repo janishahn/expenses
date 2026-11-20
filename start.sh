@@ -11,4 +11,4 @@ exec uv run --no-dev uvicorn expenses.app:app \
   --host 0.0.0.0 \
   --port "${EXPENSES_HTTP_PORT:-8000}" \
   --proxy-headers \
-  --forwarded-allow-ips 127.0.0.1
+  --forwarded-allow-ips "${EXPENSES_FORWARDED_ALLOW_IPS:-127.0.0.1}"

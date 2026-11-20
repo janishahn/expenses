@@ -129,6 +129,8 @@ def send_message(
         turn = service.new_turn(chat_id=data.chat_id, text=data.message)
     except AssistantNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # The stream opens its own sessions; this one would hold a connection until it ends.
+    db.close()
     return _stream(
         stream_turn(
             turn,
@@ -155,6 +157,8 @@ def retry(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AssistantConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # The stream opens its own sessions; this one would hold a connection until it ends.
+    db.close()
     return _stream(
         stream_turn(
             turn,
@@ -182,6 +186,8 @@ def decide(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AssistantConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # The stream opens its own sessions; this one would hold a connection until it ends.
+    db.close()
     return _stream(
         stream_turn(
             turn,

@@ -3086,6 +3086,7 @@ class ReceiptAttachmentService:
             replaced_files = [
                 self.path_for_storage_key(replaces.storage_key),
                 self.thumbnail_path_for(replaces),
+                *self._stale_thumbnails(replaces),
             ]
             self.session.delete(replaces)
         try:
@@ -3125,7 +3126,23 @@ class ReceiptAttachmentService:
         return attachment
 
     def thumbnail_path_for(self, attachment: ReceiptAttachment) -> Path:
-        return self._receipts_dir() / ".thumbnails" / f"{attachment.id}.webp"
+        # Ids can be reused after a delete; the file hash ties a thumbnail to its image.
+        name = f"{attachment.id}-{attachment.sha256_hex}.webp"
+        return self._receipts_dir() / ".thumbnails" / name
+
+    # Thumbnails of earlier attachments with this id: left by a write that
+    # raced a delete, or named by id alone before the hash was added.
+    def _stale_thumbnails(self, attachment: ReceiptAttachment) -> list[Path]:
+        current = self.thumbnail_path_for(attachment)
+        directory = current.parent
+        return [
+            path
+            for path in [
+                directory / f"{attachment.id}.webp",
+                *directory.glob(f"{attachment.id}-*.webp"),
+            ]
+            if path != current
+        ]
 
     def ensure_thumbnail(self, attachment: ReceiptAttachment) -> Optional[Path]:
         if attachment.mime_type not in self.THUMBNAILABLE_MIME_TYPES:
@@ -3133,6 +3150,8 @@ class ReceiptAttachmentService:
         thumb_path = self.thumbnail_path_for(attachment)
         if thumb_path.exists():
             return thumb_path
+        for stale in self._stale_thumbnails(attachment):
+            stale.unlink(missing_ok=True)
         source_path = self.path_for_storage_key(attachment.storage_key)
         if not source_path.exists():
             return None
@@ -3174,9 +3193,11 @@ class ReceiptAttachmentService:
         path = self.path_for_storage_key(attachment.storage_key)
         if path.exists():
             path.unlink()
-        thumb_path = self.thumbnail_path_for(attachment)
-        if thumb_path.exists():
-            thumb_path.unlink()
+        for thumb_path in [
+            self.thumbnail_path_for(attachment),
+            *self._stale_thumbnails(attachment),
+        ]:
+            thumb_path.unlink(missing_ok=True)
         self.session.delete(attachment)
         self.session.commit()
         log_event(
@@ -3201,9 +3222,11 @@ class ReceiptAttachmentService:
             path = self.path_for_storage_key(attachment.storage_key)
             if path.exists():
                 path.unlink()
-            thumb_path = self.thumbnail_path_for(attachment)
-            if thumb_path.exists():
-                thumb_path.unlink()
+            for thumb_path in [
+                self.thumbnail_path_for(attachment),
+                *self._stale_thumbnails(attachment),
+            ]:
+                thumb_path.unlink(missing_ok=True)
             self.session.delete(attachment)
         return len(attachments)
 

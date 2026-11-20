@@ -1078,9 +1078,26 @@ async def read_receipt_in_background(
     bind: Engine | Connection, user_id: int, attachment_id: int
 ) -> None:
     with Session(bind) as session:
-        await LLMAssistantService(session, user_id=user_id).read_receipt_items(
-            attachment_id
-        )
+        try:
+            await LLMAssistantService(session, user_id=user_id).read_receipt_items(
+                attachment_id
+            )
+        except Exception:
+            # Left reading, it would stop the other receipts at startup and be
+            # read, and billed, again on every restart.
+            session.rollback()
+            log_event(
+                logger,
+                logging.ERROR,
+                "receipt_items_read_crashed",
+                attachment_id=attachment_id,
+                exc_info=True,
+            )
+            attachment = session.get(ReceiptAttachment, attachment_id)
+            if attachment is not None and attachment.items_status == "reading":
+                attachment.items_status = "read" if attachment.items else "failed"
+                attachment.items_error = "The receipt could not be read."
+                session.commit()
 
 
 def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> None:

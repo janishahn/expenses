@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelMessagesTypeAdapter,
     TextPart,
     ToolReturnPart,
     UserPromptPart,
@@ -26,6 +27,7 @@ from expenses.ai.assistant import (
     ITEMS,
     AssistantConflictError,
     AssistantModel,
+    AssistantNotFoundError,
     AssistantService,
     stream_turn,
 )
@@ -403,6 +405,18 @@ def test_sql_query_refuses_writes_and_runaway_queries_then_deletes_its_copy(
             "where i < 150) select i from n"
         )
         assert (len(many["rows"]), many["more"]) == (100, True)
+        # Large cells stop the fetch early, and the model hears why.
+        wide = reader.sql_query(
+            sql="with recursive n(i) as (select 1 union all select i + 1 from n "
+            "where i < 150) select printf('%.*c', 90000, 'x') as a, "
+            "printf('%.*c', 90000, 'x') as b from n"
+        )
+        assert wide["more"] is True
+        assert len(wide["rows"]) < 10
+        assert "too large" in wide["message"]
+        assert reader.sql_query(
+            sql="select " + ", ".join(f"{i} as c{i}" for i in range(200))
+        )["status"] == ("invalid_sql")
 
         monkeypatch.setattr(assistant_tools, "SQL_SECONDS", 0.05)
         endless = reader.sql_query(
@@ -2123,3 +2137,184 @@ def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
         )
         with pytest.raises(ActionConflict):
             apply_action(session, created)
+
+
+@pytest.mark.anyio
+async def test_assistant_cards_with_reused_call_ids_apply_only_their_change() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        ids = _seed_trip(session)
+    lunch = {
+        "kind": "create_transactions",
+        "transactions": [
+            {
+                "date": "2026-06-21",
+                "kind": "expense",
+                "amount_cents": 1_250,
+                "title": "Lunch",
+                "category_id": ids["travel_id"],
+            }
+        ],
+    }
+
+    # Every proposal reuses one tool call id, as some local backends do.
+    async def stream(messages, info):
+        prompts = " ".join(
+            part.content
+            for part in messages[-1].parts
+            if isinstance(part, UserPromptPart)
+        )
+        if "Trash the hotel" in prompts:
+            change = {
+                "kind": "trash_transactions",
+                "transaction_ids": [ids["hotel_id"]],
+            }
+        elif "Add lunch" in prompts:
+            change = lunch
+        else:
+            change = {
+                "kind": "trash_transactions",
+                "transaction_ids": [ids["train_id"]],
+            }
+        yield _call("propose_change", change, "call-1")
+
+    events = await _collect(factory, stream, "Add lunch and trash the train")
+    chat_id = events[0]["chat_id"]
+    [add_card] = [item for item in _final_items(events) if item["kind"] == "approval"]
+    decided = await _decide(factory, stream, chat_id, add_card["id"], approve=True)
+    [train_card] = [
+        item
+        for item in _final_items(decided)
+        if item["kind"] == "approval" and item["id"] != add_card["id"]
+    ]
+
+    with factory() as session:
+        service = AssistantService(session, user_id=1)
+        [turn] = service.chat_out(chat_id).turns
+        # The applied card stays beside the next one, so the turn cannot run again.
+        assert [
+            (item.card.title, item.state)
+            for item in turn.items
+            if item.kind == "approval"
+        ] == [
+            ("Add 1 transaction", "applied"),
+            ("Move 1 transaction to Trash", "pending"),
+        ]
+        with pytest.raises(AssistantConflictError):
+            service.retry_turn(chat_id)
+
+    await _collect(factory, stream, "Trash the hotel", chat_id=chat_id)
+
+    # A view still showing the train card cannot approve the hotel proposal.
+    with factory() as session:
+        with pytest.raises(AssistantNotFoundError):
+            AssistantService(session, user_id=1).decide(
+                chat_id, train_card["id"], approve=True
+            )
+        assert not session.scalars(
+            select(Transaction).where(Transaction.deleted_at.is_not(None))
+        ).all()
+        assert (
+            len(
+                session.scalars(
+                    select(Transaction).where(Transaction.title == "Lunch")
+                ).all()
+            )
+            == 1
+        )
+
+
+@pytest.mark.anyio
+async def test_assistant_concurrent_approvals_keep_both_cards(tmp_path: Path) -> None:
+    factory = _session_factory(tmp_path / "chat.db")
+    with factory() as session:
+        ids = _seed_trip(session)
+
+    async def stream(messages, info):
+        if _tool_returns(messages):
+            yield "Done."
+            return
+        yield {
+            **_call(
+                "propose_change",
+                {"kind": "trash_transactions", "transaction_ids": [ids["hotel_id"]]},
+                "call-1",
+            ),
+            2: _call(
+                "propose_change",
+                {"kind": "trash_transactions", "transaction_ids": [ids["train_id"]]},
+                "call-2",
+            )[1],
+        }
+
+    events = await _collect(factory, stream, "Trash the hotel and the train")
+    chat_id = events[0]["chat_id"]
+    cards = [item for item in _final_items(events) if item["kind"] == "approval"]
+    assert len(cards) == 2
+
+    second_read_the_turn = threading.Event()
+    go_on = threading.Event()
+
+    class HeldService(AssistantService):
+        def _claim(self, action, status):
+            second_read_the_turn.set()
+            go_on.wait(5)
+            return super()._claim(action, status)
+
+    def decide_second() -> None:
+        with factory() as session:
+            HeldService(session, user_id=1).decide(
+                chat_id, cards[1]["id"], approve=True
+            )
+
+    def decide_first() -> None:
+        with factory() as session:
+            AssistantService(session, user_id=1).decide(
+                chat_id, cards[0]["id"], approve=True
+            )
+
+    second = threading.Thread(target=decide_second)
+    second.start()
+    assert second_read_the_turn.wait(5)
+    # The first approval arrives while the second one is applying.
+    first = threading.Thread(target=decide_first)
+    first.start()
+    first.join(1)
+    go_on.set()
+    second.join(10)
+    first.join(10)
+
+    with factory() as session:
+        turn = session.scalars(select(AssistantTurn)).one()
+        assert [
+            item.state
+            for item in ITEMS.validate_json(turn.items_json)
+            if item.kind == "approval"
+        ] == ["applied", "applied"]
+        assert sorted(
+            part.tool_call_id
+            for message in ModelMessagesTypeAdapter.validate_json(turn.messages_json)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ) == ["call-1", "call-2"]
+
+
+@pytest.mark.anyio
+async def test_assistant_turn_holds_no_connection_while_the_model_runs(
+    tmp_path: Path,
+) -> None:
+    factory = _session_factory(tmp_path / "chat.db")
+    engine = factory.kw["bind"]
+    checked_out: list[int] = []
+
+    async def stream(messages, info):
+        checked_out.append(engine.pool.checkedout())
+        if _tool_returns(messages):
+            yield "No budgets."
+            return
+        yield _call("get_budgets", {"year": 2026, "month": 6}, "call-1")
+
+    events = await _collect(factory, stream, "What are my budgets?")
+
+    assert events[-1] == {"type": "end", "status": "completed"}
+    assert checked_out == [0, 0]

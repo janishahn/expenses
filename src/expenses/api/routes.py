@@ -9,7 +9,6 @@ import shutil
 import tempfile
 import time
 import tomllib
-import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
@@ -445,21 +444,27 @@ def _require_csrf(request: Request, db: Session) -> None:
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
 
 
-def _set_admin_system_health_override_cookie(response: Response, profile: str) -> None:
+def _set_admin_system_health_override_cookie(
+    response: Response, request: Request, profile: str
+) -> None:
     response.set_cookie(
         key=ADMIN_SYSTEM_HEALTH_OVERRIDE_COOKIE,
         value=profile,
         httponly=True,
         samesite="lax",
+        secure=_request_is_https(request),
         path="/",
     )
 
 
-def _clear_admin_system_health_override_cookie(response: Response) -> None:
+def _clear_admin_system_health_override_cookie(
+    response: Response, request: Request
+) -> None:
     response.delete_cookie(
         key=ADMIN_SYSTEM_HEALTH_OVERRIDE_COOKIE,
         httponly=True,
         samesite="lax",
+        secure=_request_is_https(request),
         path="/",
     )
 
@@ -3149,7 +3154,7 @@ def api_set_admin_system_health_validation_override(
             status_code=400,
             detail="Invalid profile. Use healthy, warm, or critical.",
         )
-    _set_admin_system_health_override_cookie(response, profile)
+    _set_admin_system_health_override_cookie(response, request, profile)
     return {"profile": profile}
 
 
@@ -3161,7 +3166,7 @@ def api_clear_admin_system_health_validation_override(
 ):
     _require_elevated_admin_context(request, db)
     _require_csrf(request, db)
-    _clear_admin_system_health_override_cookie(response)
+    _clear_admin_system_health_override_cookie(response, request)
     return {"profile": None}
 
 
@@ -4521,25 +4526,19 @@ def api_download_attachment(
         raise HTTPException(status_code=404, detail="Attachment file not found")
 
     etag = f'"{attachment.sha256_hex}"'
-    cache_control = "private, max-age=86400"
+    cache_control = "private, no-cache"
     if request.headers.get("if-none-match") == etag:
         return Response(
             status_code=304,
             headers={"ETag": etag, "Cache-Control": cache_control},
         )
 
-    safe_name = attachment.original_filename.replace('"', "_")
-    encoded_name = urllib.parse.quote(attachment.original_filename)
     return FileResponse(
         path,
         media_type=attachment.mime_type,
-        headers={
-            "ETag": etag,
-            "Cache-Control": cache_control,
-            "Content-Disposition": (
-                f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{encoded_name}"
-            ),
-        },
+        filename=attachment.original_filename,
+        content_disposition_type="inline",
+        headers={"ETag": etag, "Cache-Control": cache_control},
     )
 
 
@@ -4562,7 +4561,7 @@ def api_attachment_thumbnail(
         raise HTTPException(status_code=404, detail="No thumbnail available")
 
     etag = f'"{attachment.sha256_hex}-thumbnail"'
-    cache_control = "private, max-age=86400"
+    cache_control = "private, no-cache"
     if request.headers.get("if-none-match") == etag:
         return Response(
             status_code=304,

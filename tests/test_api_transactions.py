@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.ai.service import retry_receipt_readings
+from expenses.ai.service import LLMAssistantService, retry_receipt_readings
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -810,7 +810,8 @@ def test_attachment_download_and_thumbnail_caching(
 
     download = api_client.get(f"/api/attachments/{attachment_id}/download")
     assert download.status_code == 200
-    assert "max-age" in download.headers["cache-control"]
+    # Revalidated on every use, so a cached copy is not readable after sign-out.
+    assert download.headers["cache-control"] == "private, no-cache"
     assert download.headers["content-disposition"].startswith("inline")
     etag = download.headers["etag"]
     assert etag
@@ -824,6 +825,7 @@ def test_attachment_download_and_thumbnail_caching(
     thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/webp"
+    assert thumbnail.headers["cache-control"] == "private, no-cache"
     thumb_etag = thumbnail.headers["etag"]
     assert thumb_etag != etag
 
@@ -832,6 +834,116 @@ def test_attachment_download_and_thumbnail_caching(
         headers={"If-None-Match": thumb_etag},
     )
     assert thumb_not_modified.status_code == 304
+
+
+def test_receipt_upload_accepts_its_advertised_limit_and_refuses_larger_bodies(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_RECEIPT_MAX_BYTES", "100000")
+    get_settings.cache_clear()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=450, title="Scanned receipt"
+    )
+
+    def upload(size: int) -> int:
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": ("scan.pdf", b"%" * size, "application/pdf")},
+            headers=csrf_headers,
+        )
+        return response.status_code
+
+    assert upload(100_000) == 200
+    assert upload(100_001) == 400
+    assert upload(300_000) == 413
+
+
+def test_attachment_download_keeps_a_non_latin_file_name(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _category(api_client, csrf_headers, "Receipt names")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=450,
+        title="Named receipt",
+        category_id=category_id,
+    )
+    upload_response = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("Квитанция €.png", _png(4), "image/png")},
+        headers=csrf_headers,
+    )
+    assert upload_response.status_code == 200
+    attachment_id = int(upload_response.json()["id"])
+
+    download = api_client.get(f"/api/attachments/{attachment_id}/download")
+
+    assert download.status_code == 200
+    assert download.headers["content-disposition"] == (
+        "inline; filename*=utf-8''"
+        "%D0%9A%D0%B2%D0%B8%D1%82%D0%B0%D0%BD%D1%86%D0%B8%D1%8F%20%E2%82%AC.png"
+    )
+
+
+def test_late_thumbnail_of_a_deleted_attachment_is_not_served_for_its_id(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from PIL import Image
+
+    def image(color: str) -> bytes:
+        out = BytesIO()
+        Image.new("RGB", (8, 8), color=color).save(out, format="PNG")
+        return out.getvalue()
+
+    category_id = _category(api_client, csrf_headers, "Reused receipts")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=500,
+        title="Reused receipt",
+        category_id=category_id,
+    )
+    first = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("red.png", image("red"), "image/png")},
+        headers=csrf_headers,
+    )
+    first_id = int(first.json()["id"])
+    service = ReceiptAttachmentService(db_session, user_id=1)
+    deleted = service.get(first_id)
+    late_thumbnail = service.thumbnail_path_for(deleted)
+    late_bytes = service.ensure_thumbnail(deleted).read_bytes()
+    assert (
+        api_client.delete(
+            f"/api/attachments/{first_id}", headers=csrf_headers
+        ).status_code
+        == 200
+    )
+    # A thumbnail request that started before the delete finishes after it.
+    late_thumbnail.write_bytes(late_bytes)
+    # Thumbnails written before the name carried the file hash.
+    legacy_thumbnail = late_thumbnail.with_name(f"{first_id}.webp")
+    legacy_thumbnail.write_bytes(late_bytes)
+
+    second = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("blue.png", image("blue"), "image/png")},
+        headers=csrf_headers,
+    )
+    assert int(second.json()["id"]) == first_id
+
+    thumbnail = api_client.get(f"/api/attachments/{first_id}/thumbnail")
+
+    assert thumbnail.status_code == 200
+    red, green, blue = (
+        Image.open(BytesIO(thumbnail.content)).convert("RGB").getpixel((4, 4))
+    )
+    assert blue > 200 and red < 50
+    assert not late_thumbnail.exists()
+    assert not legacy_thumbnail.exists()
 
 
 def test_attachment_thumbnail_follows_photo_orientation(
@@ -1118,6 +1230,53 @@ def test_receipt_images_are_read_into_items_after_upload(
     for name in ("rewe.png", "before.png"):
         assert attachments()[name]["items_status"] == "read"
         assert attachments()[name]["items_error"] is None
+
+
+def test_receipt_recovery_continues_past_a_reading_that_raises(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=618, title="Receipts"
+    )
+    ids = []
+    for name in ("first.png", "second.png", "third.png"):
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": (name, _png(4), "image/png")},
+            headers=csrf_headers,
+        )
+        ids.append(int(response.json()["id"]))
+    db_session.query(ReceiptAttachment).update({"items_status": "reading"})
+    db_session.commit()
+
+    calls: list[int] = []
+    read_items = LLMAssistantService.read_receipt_items
+
+    async def read_or_raise(self, attachment_id: int) -> None:
+        calls.append(attachment_id)
+        if attachment_id == ids[0]:
+            raise RuntimeError("Saving the items failed")
+        await read_items(self, attachment_id)
+
+    monkeypatch.setattr(LLMAssistantService, "read_receipt_items", read_or_raise)
+
+    retry_receipt_readings(db_session.get_bind(), interrupted=True)
+
+    assert calls == ids
+    db_session.expire_all()
+    statuses = {
+        attachment.id: attachment.items_status
+        for attachment in db_session.query(ReceiptAttachment)
+    }
+    assert "reading" not in statuses.values()
+    assert statuses[ids[0]] == "failed"
+
+    calls.clear()
+    retry_receipt_readings(db_session.get_bind(), interrupted=True)
+    assert ids[0] not in calls
 
 
 def test_transactions_list_total_counts_every_filtered_row(
