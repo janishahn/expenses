@@ -9,7 +9,7 @@ FAST_CHECKS = {
     ("ty", "check", "--baseline", "ty-baseline.json"),
     ("lint-imports",),
     ("ast-grep", "scan"),
-    (sys.executable, "-m", "pytest", "-n", "auto"),
+    (sys.executable, "-m", "pytest", "-n", "logical"),
     ("npm", "run", "lint"),
     ("npm", "run", "build"),
 }

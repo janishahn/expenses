@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,10 @@ from sqlalchemy.pool import StaticPool
 import expenses.app as app_main
 from expenses.core.config import get_settings
 from expenses.db.session import Base, _enable_sqlite_pragmas
+
+# Production-strength password hashing was a third of the suite's CPU time.
+os.environ["EXPENSES_ENV"] = "test"
+os.environ["EXPENSES_AUTH_PASSWORD_HASH_ITERATIONS"] = "1000"
 
 
 @pytest.fixture

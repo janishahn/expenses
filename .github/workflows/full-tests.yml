@@ -15,71 +15,61 @@ concurrency:
   group: full-tests-${{ github.ref }}
   cancel-in-progress: true
 
+# The Fast tests workflow already runs the fast gate on every pull request, so
+# this workflow only builds the web app and runs the browser suite.
 jobs:
   full-tests:
-    name: Full desktop, mobile, and cross-browser suite
+    name: Browser suite (shard ${{ matrix.shard }}/4)
+    if: ${{ !inputs.update_snapshots }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Set up the browser suite
+        uses: ./.github/actions/setup-browser-suite
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Install Python dependencies
-        run: uv sync --frozen --group dev
-
-      - name: Install UI dependencies
-        run: npm ci --prefix ui
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run browser suite shard
+        run: npx playwright test --shard=${{ matrix.shard }}/4
         working-directory: ui
-
-      - name: Run full test suite
-        if: ${{ !inputs.update_snapshots }}
-        run: uv run full-tests
-
-      - name: Build the web app
-        if: ${{ inputs.update_snapshots }}
-        run: npm run build --prefix ui
-
-      - name: Regenerate Linux visual baselines
-        if: ${{ inputs.update_snapshots }}
-        run: npx playwright test tests/visual.spec.ts tests/visual.mobile.spec.ts --project=desktop-chromium --project=mobile-webkit --update-snapshots=all
-        working-directory: ui
-
-      - name: Upload Linux visual baselines
-        if: ${{ inputs.update_snapshots }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-baselines-linux
-          path: ui/tests/*-snapshots/*-linux.png
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload Playwright diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-diagnostics
+          name: playwright-diagnostics-${{ matrix.shard }}
           path: |
             ui/playwright-report
             ui/test-results
+          retention-days: 7
+
+  update-snapshots:
+    name: Regenerate Linux visual baselines
+    if: ${{ inputs.update_snapshots }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the browser suite
+        uses: ./.github/actions/setup-browser-suite
+
+      - name: Regenerate Linux visual baselines
+        run: npx playwright test tests/visual.spec.ts tests/visual.mobile.spec.ts --project=desktop-chromium --project=mobile-webkit --update-snapshots=all
+        working-directory: ui
+
+      - name: Upload Linux visual baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines-linux
+          path: ui/tests/*-snapshots/*-linux.png
+          if-no-files-found: error
           retention-days: 7

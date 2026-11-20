@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The Full tests workflow no longer repeats the fast gate, which Fast tests already run on every pull request. It splits the Playwright suite across four parallel jobs and caches the browsers, so a run takes about a third of the time. Backend and browser tests hash passwords with 1000 iterations instead of 600 000, and `fast-tests` gives pytest one worker per logical CPU.
+
+### Fixed
+- On macOS, the Playwright backends can generate PDF reports again. The signed `uv` binary dropped the Homebrew library path that WeasyPrint needs, so the backends now start from the project's virtual environment.
+
 ## [0.9.1] - 2026-11-20
 
 ### Changed
