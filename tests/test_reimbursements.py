@@ -506,8 +506,30 @@ def _steps(draw):
     ]
 
 
-def _counted(session, ids, revived=None, changed=None):
-    """Each side's amount and counted allocations.
+def _type_locked(session, txn_id):
+    """Whether an allocation ties this side to a live counterpart in its role.
+
+    Such a side cannot change between expense and income.
+    """
+    session.expire_all()
+    txn = session.get(Transaction, txn_id)
+    for row in session.scalars(select(ReimbursementAllocation)):
+        if txn.type == TransactionType.expense and row.expense_transaction_id == txn.id:
+            other = session.get(Transaction, row.reimbursement_transaction_id)
+            if other.deleted_at is None and other.is_reimbursement:
+                return True
+        if (
+            txn.type == TransactionType.income
+            and row.reimbursement_transaction_id == txn.id
+        ):
+            other = session.get(Transaction, row.expense_transaction_id)
+            if other.deleted_at is None and other.type == TransactionType.expense:
+                return True
+    return False
+
+
+def _overruns(session, ids, revived=None, changed=None):
+    """Whether any side's counted allocations exceed its amount.
 
     An allocation counts as the rollups count it: both sides are live, the
     expense is an expense, and the reimbursement is reimbursement income.
@@ -540,13 +562,7 @@ def _counted(session, ids, revived=None, changed=None):
         ):
             totals[row.expense_transaction_id] += row.amount_cents
             totals[row.reimbursement_transaction_id] += row.amount_cents
-    return {txn_id: side[2] for txn_id, side in sides.items()}, totals
-
-
-def _overruns(session, ids, revived=None, changed=None):
-    """Whether any side's counted allocations exceed its amount."""
-    amounts, totals = _counted(session, ids, revived, changed)
-    return any(total > amounts[txn_id] for txn_id, total in totals.items())
+    return any(total > sides[txn_id][2] for txn_id, total in totals.items())
 
 
 # Restoring an expense after its reimbursement paid another one.
@@ -685,6 +701,13 @@ def test_allocations_never_exceed_either_side(
                     roles[i] = previous
         assert response.status_code < 500, (step, response.text)
         assert not _overruns(db_session, ids), step
+        db_session.expire_all()
+        for i in _SIDES:
+            txn = db_session.get(Transaction, ids[i])
+            assert (txn.type.value, txn.is_reimbursement, txn.amount_cents) == (
+                *_ROLES[roles[i]],
+                amounts[i],
+            ), (step, i)
 
         if step[0] in ("allocate", "unallocate"):
             continue
@@ -715,7 +738,7 @@ def test_allocations_never_exceed_either_side(
                 ), (step, response.text)
             case ("role", _, role) if refused and not in_trash:
                 kinds = (_ROLES[roles[index]][0], _ROLES[role][0])
-                allocated = _counted(db_session, ids)[1][ids[index]]
-                assert (kinds[0] != kinds[1] and allocated) or _overruns(
+                locked = _type_locked(db_session, ids[index])
+                assert (kinds[0] != kinds[1] and locked) or _overruns(
                     db_session, ids, changed=(ids[index], role, amounts[index])
                 ), (step, response.text)
