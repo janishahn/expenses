@@ -47,6 +47,7 @@ Expenses keeps a small test suite. A check that a static tool can make belongs i
 - Ruff adds rules for likely bugs, async code, string-built SQL, server-clock dates where `local_today()` or `local_now()` belongs, commented-out code, blanket suppressions, swallowed exceptions, stray prints, and unused arguments. A function may branch at most 25 ways; the few older functions above that carry `# noqa: C901` until they are split.
 - `lint-imports` keeps the backend layers `cli`, `app`, `api`, `services`, `db`, and `core` in that order: a module never imports from a layer above it.
 - Oxlint, TypeScript strict mode, and the local design rules check the web app. Oxlint runs with type information, so it also flags unhandled promises and switches that miss a case. It also checks keyboard access, import cycles, and branching; the same limit of 25 applies, and older components above it carry a disable comment.
+- Ruff and Oxlint reject skipped, expected-to-fail, and focused tests. Fix a failing test, or delete it when the policy below no longer keeps it.
 - Do not write a test that only repeats what these checks enforce, such as response shapes, argument wiring, or that a removed feature stays removed. Write a test for a removed feature only when the application keeps a live route or code path that blocks it.
 
 ### What a test protects

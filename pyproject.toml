@@ -93,6 +93,7 @@ extend-select = [
     "S608",
     "SIM",
     "T20",
+    "TID251",
     "TRY203",
     "TRY401",
 ]
@@ -104,6 +105,14 @@ ignore = ["B008", "B010", "SIM102"]
 [tool.ruff.lint.per-file-ignores]
 "src/expenses/cli/**" = ["T20"]
 "tests/**" = ["ARG", "ASYNC110", "DTZ005", "DTZ011", "S608"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pytest.skip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.xfail".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.importorskip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.skip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.skipif".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.xfail".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
 
 [tool.ruff.lint.mccabe]
 max-complexity = 25

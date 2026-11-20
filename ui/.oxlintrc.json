@@ -357,6 +357,18 @@
           {
             "property": "waitForTimeout",
             "message": "Wait for a visible state, request, or response. Use the Playwright clock when elapsed time is the behavior under test."
+          },
+          {
+            "property": "skip",
+            "message": "Fix the test or delete it under the TESTING.md budget; do not skip it."
+          },
+          {
+            "property": "fixme",
+            "message": "Fix the test or delete it under the TESTING.md budget; do not skip it."
+          },
+          {
+            "property": "only",
+            "message": "Run one test with a file or --grep filter instead."
           }
         ],
         "typescript/no-non-null-assertion": "off",
