@@ -8,6 +8,7 @@ import { TagIcon } from "@phosphor-icons/react/Tag"
 import { WalletIcon } from "@phosphor-icons/react/Wallet"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { formatDateRange, formatShortDate } from "../app/format"
 import type { TransactionsResponse } from "../app/api-types"
 import { Amount } from "../components/ui/Amount"
@@ -39,7 +40,7 @@ import {
 import { AutoAddPopover, TagMenuItems, TagMergeDialog, TagSettingsList } from "./TagSettings"
 
 type TagRow = TagRecord & { usage_count: number; expense_cents: number; income_cents: number }
-type TagsResponse = { period: { slug: string; start: string; end: string }; tags: TagRow[] }
+type TagsResponse = components["schemas"]["TagsResponseOut"]
 type SortField = "spent" | "usage" | "name" | "created"
 
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }

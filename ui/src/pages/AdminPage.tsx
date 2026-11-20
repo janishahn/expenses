@@ -8,6 +8,7 @@ import { ThermometerHotIcon } from "@phosphor-icons/react/ThermometerHot"
 import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { Navigate, useParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import type { AIUsagePeriod } from "../app/api-types"
 import { formatCount, formatShortDate, formatShortDateTime } from "../app/format"
 import AISettingsPanel from "../components/AISettingsPanel"
@@ -28,17 +29,7 @@ import { UsageChatPeek, UsageSection } from "./AIUsage"
 import { usageScopeTitle, useUsageScope } from "./ai-usage"
 import { ADMIN_SECTIONS, useSettingsGroups, type AdminSectionKey } from "./settings-nav"
 
-type AdminInfo = {
-  app_version: string
-  environment: string
-  db_path: string
-  db_size_mb: number
-  db_modified: string | null
-  log_path: string
-  log_size_mb: number
-  log_modified: string | null
-  log_retained_files: number
-}
+type AdminInfo = components["schemas"]["AdminInfoOut"]
 
 type SystemHealth = {
   cpu_temp_celsius: number | null

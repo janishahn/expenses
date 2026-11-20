@@ -16,7 +16,7 @@ function DynamicCategoryIcon({ iconKey }: { iconKey: string }) {
     let isActive = true
     import("./phosphorRuntime").then(
       ({ loadRuntimeCsrIcon }) => {
-        loadRuntimeCsrIcon(iconKey).then((result) => {
+        void loadRuntimeCsrIcon(iconKey).then((result) => {
           if (isActive) {
             setLoadedIcon({ iconKey, iconComponent: result })
           }
@@ -76,7 +76,7 @@ const categoryFallbackIcons = [
 function resolveCategoryIconKey(icon: string | null, label?: string | null): string {
   const normalizedLabel = label?.trim().toLowerCase() ?? ""
   const labelHash = Array.from(normalizedLabel).reduce(
-    (total, character) => total + character.codePointAt(0)!,
+    (total, character) => total + (character.codePointAt(0) ?? 0),
     0
   )
   const inferredIcon = normalizedLabel

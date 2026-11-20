@@ -1,4 +1,5 @@
 import type { CategorySummary } from "../app/api-types"
+import type { components } from "../app/api-schema"
 
 export type IntervalUnit = "day" | "week" | "month" | "year"
 export type MonthDayPolicy = "snap_to_end" | "skip" | "carry_forward"
@@ -64,21 +65,8 @@ export type OccurrencesResponse = {
 }
 
 // The body of POST and PUT /api/recurring.
-export type RulePayload = {
-  name: string | null
-  type: "income" | "expense"
-  currency_code: Currency
-  amount_cents: number
-  category_id: number
-  anchor_date: string
-  interval_unit: IntervalUnit
-  interval_count: number
-  next_occurrence: string
-  end_date: string | null
-  auto_post: boolean
-  skip_weekends: boolean
-  month_day_policy: MonthDayPolicy
-}
+// The body of PUT /api/recurring/{id}; a rule saved before names were required may stay unnamed.
+export type RulePayload = components["schemas"]["RecurringRuleUpdateIn"]
 
 export const MONTH_DAY_POLICIES: Array<{ value: MonthDayPolicy; label: string }> = [
   { value: "snap_to_end", label: "Post on last day" },

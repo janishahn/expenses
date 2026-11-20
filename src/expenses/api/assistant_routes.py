@@ -26,13 +26,13 @@ from expenses.ai.backends import build_model
 from expenses.ai.client import LLMDisabledError, model_settings
 from expenses.ai.features import resolve
 from expenses.api.ai_routes import no_store
-from expenses.auth.dependencies import _parse_bearer_token
 from expenses.api.routes import (
     _require_csrf,
     _require_current_user_id,
     get_db,
     require_ai_feature,
 )
+from expenses.auth.dependencies import _parse_bearer_token
 from expenses.db.session import SessionLocal
 
 router = APIRouter(

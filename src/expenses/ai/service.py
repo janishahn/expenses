@@ -5,12 +5,13 @@ import hashlib
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, case, func, or_, select, update
 from sqlalchemy.orm import Session, aliased, joinedload
@@ -34,8 +35,9 @@ from expenses.ai.schemas import (
     TransactionTriageOutput,
 )
 from expenses.ai.usage import apply_usage_metadata
-from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.core.app_logging import get_logger, log_event
+from expenses.core.config import get_settings
+from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -49,15 +51,14 @@ from expenses.db.models import (
     TransactionLLMSuggestion,
     TransactionType,
 )
-from expenses.core.config import get_settings
+from expenses.schemas import MAX_AMOUNT_CENTS, RuleIn, TransactionIn
 from expenses.services.main import (
     CategoryService,
     ReceiptAttachmentService,
     RuleService,
     TransactionService,
+    local_today,
 )
-from expenses.schemas import MAX_AMOUNT_CENTS, RuleIn, TransactionIn
-
 
 logger = get_logger("expenses.ai")
 
@@ -205,7 +206,7 @@ class LLMAssistantService:
             error = str(exc)
         except LLMOutputError:
             error = "The model's answer was not a readable list of items."
-        except Exception:
+        except Exception:  # noqa: BLE001
             # _run_llm has logged the cause.
             error = RECEIPT_MODEL_UNREACHABLE
         # The receipt may have been deleted, replaced, or read again during the
@@ -386,7 +387,7 @@ class LLMAssistantService:
     ) -> list[RuleSuggestionResult]:
         correction_clusters = self._correction_clusters(since=since)
         payload = {
-            "since": (since or (date.today() - timedelta(days=90))).isoformat(),
+            "since": (since or (local_today() - timedelta(days=90))).isoformat(),
             "categories": self._category_payload(),
             "tags": self._tag_payload(),
             "existing_rules": self._existing_rule_payload(),
@@ -876,8 +877,15 @@ class LLMAssistantService:
         ]
 
     def _correction_clusters(self, *, since: date | None) -> list[dict[str, Any]]:
-        since_dt = datetime.combine(
-            since or (date.today() - timedelta(days=90)), datetime.min.time()
+        # Events are stored in UTC; the window starts at local midnight.
+        since_dt = (
+            datetime.combine(
+                since or (local_today() - timedelta(days=90)),
+                datetime.min.time(),
+                tzinfo=ZoneInfo(get_settings().timezone),
+            )
+            .astimezone(UTC)
+            .replace(tzinfo=None)
         )
         events = self.session.scalars(
             select(TransactionClassificationEvent)
@@ -1093,7 +1101,7 @@ async def read_receipt_in_background(
             await LLMAssistantService(session, user_id=user_id).read_receipt_items(
                 attachment_id
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - one failed receipt must not stop the rest
             # Left reading, it would stop the other receipts at startup and be
             # read, and billed, again on every restart.
             session.rollback()
@@ -1162,7 +1170,7 @@ def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> Non
                 )
             except LLMDisabledError:
                 return
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # _run_llm has logged a failed call; the next run tries again.
                 session.rollback()
 

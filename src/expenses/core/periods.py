@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
 

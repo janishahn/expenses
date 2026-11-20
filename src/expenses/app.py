@@ -9,7 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from expenses.api import routes, ai_routes, assistant_routes
+from expenses.api import ai_routes, assistant_routes, routes
 from expenses.core.app_logging import (
     current_request_id,
     get_logger,
@@ -235,7 +235,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 @app.get("/", include_in_schema=False)
 @app.get("/{frontend_path:path}", include_in_schema=False)
 def frontend_entry(frontend_path: str = "") -> Response:
-    if frontend_path.startswith("api/") or frontend_path.startswith("assets/"):
+    if frontend_path.startswith(("api/", "assets/")):
         raise HTTPException(status_code=404)
     return _frontend_index_response()
 

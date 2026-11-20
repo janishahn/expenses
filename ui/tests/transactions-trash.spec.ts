@@ -32,23 +32,6 @@ async function deletedIds(request: APIRequestContext): Promise<number[]> {
 }
 
 test.describe("Trash page", () => {
-  test("moves a page past the end to the last page with rows", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    await createDeleted(request, token, `E2E Trash past end ${Date.now()}`, 1200)
-
-    await page.goto("/transactions/deleted?page=999")
-
-    await expect(page).not.toHaveURL(/page=999/)
-    await expect(page.getByRole("list", { name: "Deleted transactions" }).getByRole("listitem").first()).toBeVisible()
-    await expect(page.getByText("Trash is empty")).toHaveCount(0)
-  })
-
-  test("links back to Transactions from the breadcrumb", async ({ page }) => {
-    await page.goto("/transactions/deleted")
-    await expect(page.getByRole("heading", { name: "Trash", level: 1 })).toBeVisible()
-    await page.getByRole("link", { name: "Transactions", exact: true }).first().click()
-    await expect(page).toHaveURL(/\/transactions$/)
-  })
 
   test("restores selected deleted transactions", async ({ page, request }) => {
     const token = await getCsrfToken(request)

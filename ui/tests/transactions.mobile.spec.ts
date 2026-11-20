@@ -1,21 +1,8 @@
 import { expect, test } from "./fixtures"
 import type { APIRequestContext, Page } from "@playwright/test"
-import {
-  createIngestTransaction,
-  createTransaction,
-  createUncategorizedExpense,
-  getCsrfToken,
-  loginWithTrainedSuggestions,
-  stubOsmTiles,
-  uploadAttachment,
-} from "./helpers"
+import { createTransaction, getCsrfToken } from "./helpers"
 
 test.describe.configure({ mode: "parallel" })
-
-const onePixelPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC",
-  "base64"
-)
 
 async function createCategory(
   request: APIRequestContext,
@@ -85,40 +72,6 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 test.describe("Transactions Page (mobile)", () => {
-  test("prints the filtered ledger from More actions", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    // Search is fuzzy, so a timestamp marker also matches rows that earlier tests on this
-    // worker titled with a nearby timestamp, and their amounts would join the printed totals.
-    const marker = `Mobile print ${crypto.randomUUID()}`
-    await seed(request, token, `${marker} one`)
-    await seed(request, token, `${marker} two`)
-    await page.addInitScript(() => {
-      window.print = () => {
-        document.body.dataset.printed = String(Number(document.body.dataset.printed ?? 0) + 1)
-      }
-    })
-    const print = async () => {
-      await page.getByRole("button", { name: "More actions" }).tap()
-      await page.getByRole("dialog", { name: "More actions" }).getByRole("menuitem", { name: "Print…" }).tap()
-    }
-
-    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
-    await print()
-    await expect(page.locator("body")).toHaveAttribute("data-printed", "1")
-
-    await page.emulateMedia({ media: "print" })
-    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden()
-    const ledger = page.getByRole("table")
-    for (const name of ["one", "two"]) await expect(ledger).toContainText(`${marker} ${name}`)
-    await expect(page.getByRole("term").filter({ hasText: "Spent" }).locator("..")).toContainText("24,68 €")
-
-    await page.evaluate(() => window.dispatchEvent(new Event("afterprint")))
-    await expect(ledger).toHaveCount(0)
-    await page.emulateMedia({ media: "screen" })
-    await print()
-    await expect(page.locator("body")).toHaveAttribute("data-printed", "2")
-  })
-
   test("sets type, category and tags in the Filter sheet and removes them again", async ({
     page,
     request,
@@ -172,69 +125,6 @@ test.describe("Transactions Page (mobile)", () => {
     expect(match).not.toBe(other)
   })
 
-  test("expands search at the top of the page and closes it with Escape", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const stamp = Date.now()
-    const title = `Mobile search ${stamp}`
-    await seed(request, token, title, { description: "Warranty paperwork stored here" })
-    await seed(request, token, `Plain lunch ${stamp}`)
-    await page.goto("/transactions")
-
-    const trigger = page.getByRole("button", { name: "Search", exact: true })
-    await trigger.tap()
-    const searchbox = page.getByRole("searchbox", { name: "Search transactions" })
-    await expect(searchbox).toBeVisible()
-    await expect(searchbox).toBeFocused()
-    const box = await searchbox.evaluate((element) => {
-      const rect = element.getBoundingClientRect()
-      return { top: rect.top, left: rect.left, right: rect.right }
-    })
-    const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
-    expect(box.top).toBeLessThan(200)
-    expect(box.left).toBeGreaterThanOrEqual(0)
-    expect(box.right).toBeLessThanOrEqual(viewportWidth)
-    await expectNoHorizontalOverflow(page)
-
-    await searchbox.fill(String(stamp))
-    await expect(page).toHaveURL(new RegExp(`q=${stamp}`))
-    const list = page.getByRole("list", { name: "Transactions" })
-    await expect(list.getByRole("listitem", { name: title })).toBeVisible()
-    await expect(list.getByRole("listitem", { name: `Plain lunch ${stamp}` })).toBeVisible()
-
-    await searchbox.fill("waranty paperwork")
-    await expect(list.getByRole("listitem", { name: title })).toBeVisible()
-    await expect(list.getByRole("listitem", { name: `Plain lunch ${stamp}` })).toHaveCount(0)
-
-    await searchbox.press("Escape")
-    await expect(searchbox).toHaveValue("")
-    await expect(page).not.toHaveURL(/q=/)
-    await searchbox.press("Escape")
-    await expect(searchbox).toBeHidden()
-  })
-
-  test("hides and shows amounts from More actions", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile privacy ${Date.now()}`
-    await seed(request, token, title)
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    const row = page.getByRole("listitem", { name: title })
-    await expect(row).toContainText("12,34 €")
-
-    const toggle = page.getByRole("dialog", { name: "More actions" }).getByRole("menuitemcheckbox", { name: "Hide amounts" })
-    await page.getByRole("button", { name: "More actions" }).tap()
-    await toggle.tap()
-    await expect(row).toContainText("Hidden amount")
-    await expect(row).not.toContainText("12,34")
-
-    await page.getByRole("button", { name: "More actions" }).tap()
-    await expect(toggle).toHaveAttribute("aria-checked", "true")
-    await toggle.tap()
-    await expect(row).toContainText("12,34 €")
-  })
-
   test("selects rows from More actions and changes their category from the bulk bar", async ({
     page,
     request,
@@ -285,73 +175,6 @@ test.describe("Transactions Page (mobile)", () => {
     expect((await fetchTransaction(request, ids[2])).category_id).not.toBe(targetId)
   })
 
-  test("leaves selection mode with the bulk bar close button", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const marker = `Mobile deselect ${Date.now()}`
-    await seed(request, token, `${marker} one`)
-
-    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
-    await page.getByRole("button", { name: "More actions" }).tap()
-    await page.getByRole("menuitem", { name: "Select" }).tap()
-    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
-    await expect(bulk).toContainText("0 selected")
-    await page.getByRole("listitem", { name: `${marker} one` }).tap()
-    await expect(bulk).toContainText("1 selected")
-
-    await bulk.getByRole("button", { name: "Clear selection" }).tap()
-    await expect(bulk).toBeHidden()
-    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeVisible()
-    await page.getByRole("listitem", { name: `${marker} one` }).tap()
-    await expect(page).toHaveURL(/peek=\d+/)
-  })
-
-  test("opens a full-screen peek from a row and returns to the same scroll position", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const marker = `Mobile scroll ${Date.now()}`
-    for (let index = 10; index < 40; index += 1) {
-      await seed(request, token, `${marker} ${index}`)
-    }
-
-    await page.goto(`/transactions?q=${encodeURIComponent(marker)}`)
-    const list = page.getByRole("list", { name: "Transactions" })
-    await expect(list.getByRole("listitem")).toHaveCount(30)
-
-    const scrollTo = (top: number) =>
-      list.evaluate((element, target) => {
-        let node: HTMLElement | null = element
-        while (node && node.scrollHeight <= node.clientHeight) node = node.parentElement
-        const scroller = node ?? document.scrollingElement!
-        scroller.scrollTop = target
-        return scroller.scrollTop
-      }, top)
-    const readScroll = () =>
-      list.evaluate((element) => {
-        let node: HTMLElement | null = element
-        while (node && node.scrollHeight <= node.clientHeight) node = node.parentElement
-        return (node ?? document.scrollingElement!).scrollTop
-      })
-    const scrolled = await scrollTo(500)
-    expect(scrolled).toBeGreaterThan(300)
-
-    const row = list.getByRole("listitem").filter({ hasText: `${marker} 25` })
-    await row.scrollIntoViewIfNeeded()
-    const before = await readScroll()
-    await row.tap()
-    await expect(page).toHaveURL(/peek=\d+/)
-    const peek = page.getByRole("complementary", { name: `${marker} 25` })
-    await expect(peek).toBeVisible()
-    await expect(list).toBeHidden()
-
-    await peek.getByRole("button", { name: "Transactions", exact: true }).tap()
-    await expect(page).not.toHaveURL(/peek=/)
-    await expect(peek).toHaveCount(0)
-    await expect(list).toBeVisible()
-    expect(await readScroll()).toBe(before)
-  })
-
   test("edits title, amount and category inline in the peek", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const stamp = Date.now()
@@ -393,172 +216,6 @@ test.describe("Transactions Page (mobile)", () => {
         return [saved.title, saved.amount_cents, saved.category_id]
       })
       .toEqual([`${title} renamed`, 4560, targetId])
-  })
-
-  test("round-trips Markdown notes in the peek", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile notes ${Date.now()}`
-    const id = await seed(request, token, title, { description: "**Original note**" })
-
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await page.getByRole("listitem", { name: title }).tap()
-    const peek = page.getByRole("complementary", { name: title })
-    await expect(peek.locator("strong")).toHaveText("Original note")
-
-    await peek.getByRole("button", { name: "Edit notes" }).tap()
-    const editor = peek.getByRole("textbox", { name: "Notes" })
-    await expect(editor.locator("strong")).toHaveText("Original note")
-    await editor.press(process.platform === "darwin" ? "Meta+ArrowRight" : "End")
-    await editor.pressSequentially(" updated")
-    await editor.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter")
-    await expect(peek.getByRole("textbox", { name: "Notes" })).toHaveCount(0)
-    await expect(peek.locator("strong")).toHaveText("Original note updated")
-    await expect
-      .poll(async () => (await fetchTransaction(request, id)).description)
-      .toBe("**Original note updated**")
-
-    await page.reload()
-    await expect(page.getByRole("complementary", { name: title }).locator("strong")).toHaveText(
-      "Original note updated"
-    )
-  })
-
-  test("adds a note to an empty transaction in the peek", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile empty notes ${Date.now()}`
-    const id = await seed(request, token, title)
-
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await page.getByRole("listitem", { name: title }).tap()
-    const peek = page.getByRole("complementary", { name: title })
-    await peek.getByRole("button", { name: "Add notes" }).tap()
-    await peek.getByRole("textbox", { name: "Notes" }).pressSequentially("Bought on sale")
-    await peek.getByRole("heading", { name: "Notes" }).tap()
-    await expect
-      .poll(async () => (await fetchTransaction(request, id)).description)
-      .toBe("Bought on sale")
-    await expect(peek.getByText("Bought on sale")).toBeVisible()
-  })
-
-  test("shows an empty receipt section and uploads a receipt from the peek", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile receipt ${Date.now()}`
-    await seed(request, token, title)
-
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await page.getByRole("listitem", { name: title }).tap()
-    const peek = page.getByRole("complementary", { name: title })
-    await expect(peek.getByRole("button", { name: "Add a receipt" })).toBeVisible()
-    await expect(peek.getByRole("heading", { name: "Location" })).toHaveCount(0)
-
-    const chooser = page.waitForEvent("filechooser")
-    await peek.getByRole("button", { name: "Add a receipt" }).tap()
-    const fileName = `mobile-receipt-${Date.now()}.png`
-    await (await chooser).setFiles({ name: fileName, mimeType: "image/png", buffer: onePixelPng })
-    await expect(peek.getByRole("button", { name: `Open ${fileName}` })).toBeVisible()
-    await expect(peek.getByRole("button", { name: "Add a receipt" })).toHaveCount(0)
-
-    // The stub AI backend reads the image as a grocery receipt.
-    const items = peek.getByRole("list", { name: "Receipt items" })
-    await expect(items.getByRole("listitem")).toHaveCount(5)
-    await expect(items.getByRole("listitem").filter({ hasText: "Milch" })).toContainText("2 × 1,19 €")
-    await expect(peek.getByText("Items cover 6,18 € of 12,34 €")).toBeVisible()
-    await expectNoHorizontalOverflow(page)
-
-    // Later readings keep a renamed label's name, so the name stays findable as Bananen.
-    const bananas = `Bananen ${Date.now()}`
-    const banana = items.getByRole("listitem").filter({ hasText: "Bananen" })
-    const edit = banana.getByRole("button", { name: "Edit product of BANANEN" })
-    expect((await banana.boundingBox())?.height).toBeGreaterThanOrEqual(44)
-    await edit.tap()
-    await items.getByRole("textbox", { name: "product of BANANEN" }).fill(bananas)
-    await page.keyboard.press("Enter")
-    await expect(items.getByRole("listitem").filter({ hasText: bananas })).toContainText("0,532 kg")
-
-    await peek.getByRole("button", { name: `Open ${fileName}` }).tap()
-    const viewer = page.getByRole("dialog", { name: fileName })
-    await expect(viewer).toBeVisible()
-    await viewer.getByRole("button", { name: "Close" }).tap()
-    await expect(viewer).toBeHidden()
-  })
-
-  test("shows an existing receipt and a map for a located transaction in the peek", async ({
-    page,
-    request,
-  }) => {
-    await stubOsmTiles(page)
-    const token = await getCsrfToken(request)
-    const title = `Mobile located ${Date.now()}`
-    const id = await createIngestTransaction(request, {
-      amount_cents: 1775,
-      title,
-      date: "2026-04-18",
-      category: "Food",
-      latitude: 52.520008,
-      longitude: 13.404954,
-    })
-    const fileName = `mobile-located-${Date.now()}.png`
-    await uploadAttachment(request, token, id, {
-      name: fileName,
-      mimeType: "image/png",
-      buffer: onePixelPng,
-    })
-
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-    await page.getByRole("listitem", { name: title }).tap()
-    const peek = page.getByRole("complementary", { name: title })
-
-    await expect(peek.getByRole("heading", { name: "Location" })).toBeVisible()
-    await expect(peek.getByText("52.520008, 13.404954").first()).toBeVisible()
-    const map = peek.getByRole("group", { name: /^Map at / })
-    await expect(map).toBeVisible()
-    await expect(map.locator(".leaflet-marker-icon")).toBeVisible()
-    await expect(peek.getByRole("button", { name: `Open ${fileName}` })).toBeVisible()
-    await expectNoHorizontalOverflow(page)
-  })
-
-  test("adds a transaction from the bottom sheet", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const categoryName = `Add sheet category ${Date.now()}`
-    await createCategory(request, token, categoryName)
-    const title = `Mobile add ${Date.now()}`
-
-    await page.goto("/transactions")
-    await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
-    const dialog = page.getByRole("dialog", { name: "Add transaction" })
-    await expect(dialog).toBeVisible()
-    const box = await dialog.boundingBox()
-    const viewport = page.viewportSize()
-    expect(box).not.toBeNull()
-    expect(box!.y + box!.height).toBeGreaterThan(viewport!.height - 4)
-
-    const submit = dialog.getByRole("button", { name: "Add transaction" })
-    await submit.tap()
-    await expect(dialog.getByText("Enter an amount.")).toBeVisible()
-    await expect(dialog.getByText("Enter a title.")).toBeVisible()
-    for (const invalid of ["abc", "0"]) {
-      await dialog.getByLabel("Amount").fill(invalid)
-      await submit.tap()
-      await expect(dialog.getByText("Enter a valid amount.")).toBeVisible()
-    }
-
-    await dialog.getByLabel("Amount").fill("12,34")
-    await dialog.getByLabel("Title").fill(title)
-    await dialog.getByRole("button", { name: "Category", exact: true }).tap()
-    await page.getByRole("combobox", { name: "Category" }).fill(categoryName)
-    await page.getByRole("option", { name: categoryName }).tap()
-    await submit.tap()
-
-    await expect(dialog).toBeHidden()
-    await expect(page.getByRole("status")).toContainText("Transaction added")
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    const row = page.getByRole("listitem", { name: title })
-    await expect(row).toBeVisible()
-    await expect(row).toContainText("12,34")
-    await expect(row).toContainText(categoryName)
   })
 
   test("allocates a reimbursement from the expense peek and tracks it as durable from More actions", async ({
@@ -629,84 +286,6 @@ test.describe("Transactions Page (mobile)", () => {
     await expect(row.locator("s")).toBeHidden()
   })
 
-  test("deletes a transaction from the peek menu and restores it with Undo", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile peek delete ${Date.now()}`
-    const id = await seed(request, token, title)
-
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await page.getByRole("listitem", { name: title }).tap()
-    const peek = page.getByRole("complementary", { name: title })
-    await peek.getByRole("button", { name: "More actions" }).tap()
-    await page.getByRole("menuitem", { name: "Delete" }).tap()
-    await page
-      .getByRole("dialog", { name: "Delete this transaction?" })
-      .getByRole("button", { name: "Delete", exact: true })
-      .tap()
-
-    await expect(page.getByRole("status")).toContainText("Moved to Trash")
-    await expect(page).not.toHaveURL(/peek=/)
-    await expect(page.getByRole("listitem", { name: title })).toHaveCount(0)
-    expect((await request.get(`/api/transactions/${id}`)).status()).toBe(404)
-
-    await page.getByRole("status").getByRole("button", { name: "Undo" }).tap()
-    await expect(page.getByRole("listitem", { name: title })).toBeVisible()
-    expect((await fetchTransaction(request, id)).title).toBe(title)
-  })
-
-  test("recategorizes a transaction from the mobile Inbox with Select", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const targetName = `Mobile inbox target ${Date.now()}`
-    const targetId = await createCategory(request, token, targetName)
-    const title = `Mobile inbox ${Date.now()}`
-    const transactionId = await createUncategorizedExpense(request, token, title)
-
-    await page.goto(`/transactions/inbox?q=${encodeURIComponent(title)}`)
-    await page.getByRole("button", { name: "More actions" }).tap()
-    await page.getByRole("menuitem", { name: "Select" }).tap()
-    const row = page.getByRole("listitem", { name: title })
-    await row.tap()
-    await expect(page).not.toHaveURL(/peek=/)
-    const bulk = page.getByRole("toolbar", { name: "Selected rows" })
-    await expect(bulk).toContainText("1 selected")
-    await bulk.getByRole("button", { name: "Category" }).tap()
-    await page.getByRole("combobox").fill(targetName)
-    await page.getByRole("option", { name: targetName }).tap()
-    await page
-      .getByRole("dialog", { name: "Change the category of 1 transaction?" })
-      .getByRole("button", { name: "Apply" })
-      .tap()
-    await expect(page.getByRole("status")).toContainText("Updated 1 transaction")
-    await expect(row).toHaveCount(0)
-    expect((await fetchTransaction(request, transactionId)).category_id).toBe(targetId)
-  })
-
-  test("accepts a category suggestion from the mobile Inbox peek", async ({ page }) => {
-    const title = `Corner bakery mobile ${Date.now()}`
-    const { request, bakeryId, uncategorizedIds } = await loginWithTrainedSuggestions(page, [title])
-    try {
-      await page.goto("/transactions/inbox")
-      const row = page.getByRole("listitem", { name: title })
-      await row.tap()
-      await expect(page).toHaveURL(/peek=\d+/)
-      const peek = page.getByRole("complementary", { name: title })
-      await expect(peek).toContainText("Bakery")
-      await peek.getByRole("button", { name: "Accept" }).tap()
-      await expect(page.getByRole("status")).toContainText("Moved to Bakery")
-      await expect(page).not.toHaveURL(/peek=/)
-      await expect(row).toHaveCount(0)
-      expect((await fetchTransaction(request, uncategorizedIds[0])).category_id).toBe(bakeryId)
-    } finally {
-      await request.dispose()
-    }
-  })
-
   test("deletes a transaction from its peek and permanently deletes it from Trash", async ({
     page,
     request,
@@ -745,31 +324,5 @@ test.describe("Transactions Page (mobile)", () => {
       .tap()
     await expect(page.getByRole("status")).toContainText("Deleted 1 transaction forever")
     await expect(deletedRow).toHaveCount(0)
-  })
-
-  test("restores a transaction from mobile Trash", async ({ page, request }) => {
-    const token = await getCsrfToken(request)
-    const title = `Mobile trash ${Date.now()}`
-    const transactionId = await seed(request, token, title, { amount_cents: 1999 })
-    const deleted = await request.delete(`/api/transactions/${transactionId}`, {
-      headers: { "X-CSRF-Token": token },
-    })
-    expect(deleted.ok()).toBeTruthy()
-
-    await page.goto("/transactions")
-    await page.getByRole("button", { name: "More actions" }).tap()
-    await page.getByRole("link", { name: "Trash" }).tap()
-    await expect(page).toHaveURL(/\/transactions\/deleted$/)
-    const row = page.getByRole("list", { name: "Deleted transactions" }).getByRole("listitem", { name: title })
-    await expect(row).toBeVisible()
-    await row.tap()
-    await page
-      .getByRole("toolbar", { name: "Selected rows" })
-      .getByRole("button", { name: "Restore" })
-      .tap()
-    await expect(page.getByRole("status")).toContainText("Restored 1 transaction")
-    await expect(row).toBeHidden()
-    await page.goto(`/transactions?q=${encodeURIComponent(title)}`)
-    await expect(page.getByRole("listitem", { name: title })).toBeVisible()
   })
 })

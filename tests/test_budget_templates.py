@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from expenses.db.session import Base
 from expenses.db.models import BudgetFrequency, TransactionType
+from expenses.db.session import Base
 from expenses.schemas import (
     BudgetOverrideIn,
     BudgetTemplateApplyFromIn,

@@ -116,11 +116,10 @@ export function loadRuntimeCsrIcon(iconKey: string): Promise<PhosphorIcon | null
       cacheDynamicIcon(resolvedIconKey, null)
       return null
     }
-  )
-
-  inFlightLoads.set(resolvedIconKey, loadPromise)
-  loadPromise.finally(() => {
+  ).finally(() => {
     inFlightLoads.delete(resolvedIconKey)
   })
+
+  inFlightLoads.set(resolvedIconKey, loadPromise)
   return loadPromise
 }

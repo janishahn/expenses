@@ -19,7 +19,7 @@ function notFoundCalendar(now: Date) {
   const digitDays = new Set<number>()
   for (const [firstWeek, rows] of DIGITS) {
     rows.forEach((row, rowIndex) => {
-      ;[...row].forEach((bit, column) => {
+      ;row.split("").forEach((bit, column) => {
         if (bit === "1") digitDays.add((firstWeek + column) * 7 + rowIndex + 1)
       })
     })

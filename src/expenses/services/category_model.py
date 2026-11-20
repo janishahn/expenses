@@ -130,7 +130,7 @@ def fit_neighbors(rows: list[Example], classes: list[int]) -> CategoryModel:
         :MAX_TERMS
     ]
     term_frequency.clear()
-    document_frequency = Counter({term: 0 for term in vocabulary})
+    document_frequency = Counter(dict.fromkeys(vocabulary, 0))
     for row in rows:
         document_frequency.update(
             term for term in grams(row.title) if term in document_frequency

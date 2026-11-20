@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query"
 import type { ReceiptFile } from "../components/ui/receipt-file"
 import type { ReceiptAttachment, TransactionDetail, TransactionListItem } from "./api-types"
 import { formatCurrency } from "./format"
+import type { components } from "./api-schema"
 
 export type TransactionType = "expense" | "income"
 
@@ -68,7 +69,7 @@ export function transactionPayload(detail: TransactionDetail, changes: Transacti
     description: changes.description !== undefined ? changes.description : detail.description,
     is_reimbursement: type === "income" ? (changes.is_reimbursement ?? detail.is_reimbursement) : false,
     tags: changes.tags ?? detail.tags,
-  }
+  } satisfies components["schemas"]["TransactionIn"]
 }
 
 // The stored record as it reads after `changes` saved; the category object is resolved by the caller.
@@ -190,7 +191,13 @@ export function groupByDay(rows: TransactionListItem[]): Array<{ date: string; r
 // "reimbursed" marks an expense paid back in part or full; "reimbursement" marks the income that paid one back.
 export type Reimbursement = "reimbursed" | "reimbursement"
 
-export function reimbursementOf(row: TransactionListItem): Reimbursement | null {
+// The fields that decide how a transaction's amount shows.
+export type AmountRow = Pick<
+  TransactionListItem,
+  "type" | "amount_cents" | "net_amount_cents" | "reimbursed_total_cents" | "is_reimbursement"
+>
+
+export function reimbursementOf(row: AmountRow): Reimbursement | null {
   if (row.type === "expense") return row.reimbursed_total_cents > 0 ? "reimbursed" : null
   return row.is_reimbursement ? "reimbursement" : null
 }

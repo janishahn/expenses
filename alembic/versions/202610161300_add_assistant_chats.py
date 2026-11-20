@@ -1,7 +1,8 @@
 """Store Assistant chats and their turns on the server."""
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610161300"
 down_revision = "202610161200"

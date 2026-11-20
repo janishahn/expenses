@@ -3,8 +3,9 @@
 Items tracked before this revision have no end date and stay in use.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610281200"
 down_revision = "202610181500"

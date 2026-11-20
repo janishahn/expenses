@@ -1,10 +1,11 @@
 from datetime import date, datetime
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from expenses.db.session import Base
 from expenses.db.models import Tag, TransactionType
+from expenses.db.session import Base
 from expenses.schemas import CategoryIn, TransactionIn
 from expenses.services import CategoryService, TagService, TransactionService
 
@@ -116,19 +117,11 @@ def test_existing_non_ascii_tag_is_reused_in_any_case() -> None:
 
         assert tag_service.get_or_create("ÖPNV").id == tag.id
         assert tag_service.get_or_create("öpnv").id == tag.id
-        try:
+        with pytest.raises(ValueError, match="^Tag already exists$"):
             tag_service.create("öpnv")
-        except ValueError as exc:
-            assert str(exc) == "Tag already exists"
-        else:
-            raise AssertionError("duplicate tag was created")
         other = tag_service.create("Ärzte")
-        try:
+        with pytest.raises(ValueError, match="^Tag with this name already exists$"):
             tag_service.update(other.id, "öpnv", is_hidden_from_budget=False)
-        except ValueError as exc:
-            assert str(exc) == "Tag with this name already exists"
-        else:
-            raise AssertionError("tag was renamed onto an existing name")
 
 
 def test_typing_an_archived_tag_name_is_refused() -> None:
@@ -157,13 +150,9 @@ def test_typing_an_archived_tag_name_is_refused() -> None:
                 )
             )
 
-        try:
+        with pytest.raises(ValueError, match="archived") as refused:
             create(["holiday"])
-        except ValueError as exc:
-            assert "archived" in str(exc)
-            assert '"Holiday"' in str(exc)
-        else:
-            raise AssertionError("archived tag was attached")
+        assert '"Holiday"' in str(refused.value)
         session.rollback()
         assert [tag.name for tag in create(["Trips"]).tags] == ["Trips"]
 

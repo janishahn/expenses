@@ -1,8 +1,8 @@
-from datetime import date, datetime, timedelta
 import math
 import random
 import string
 import tracemalloc
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -24,9 +24,9 @@ from expenses.services import (
     IngestService,
     RuleService,
     TransactionService,
+    category_model,
 )
 from expenses.services import auto_categorization as categorization
-from expenses.services import category_model
 from expenses.services.category_model import MIN_HISTORY, Example, load_model, train
 
 
@@ -322,7 +322,8 @@ def test_insufficient_history_is_remembered_until_it_changes(history, previous_m
     categorization.train_user(session.get_bind(), 1)
     session.expire_all()
     fingerprint = preference.training_fingerprint
-    assert fingerprint is not None and fingerprint != previous_fingerprint
+    assert fingerprint is not None
+    assert fingerprint != previous_fingerprint
     assert preference.training_status == "insufficient_data"
     assert preference.model_json == artifact
     assert preference.trained_at == trained_at

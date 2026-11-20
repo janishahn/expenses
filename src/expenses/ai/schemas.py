@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from expenses.core.response_model import OutModel
+
 
 class TransactionTriageOutput(BaseModel):
     category_id: int | None = None
@@ -21,7 +23,7 @@ class TransactionTriageOutput(BaseModel):
         return self
 
 
-class RuleProposalOut(BaseModel):
+class RuleProposalOut(OutModel):
     name: str = Field(..., min_length=1, max_length=120)
     match_type: Literal["contains", "equals", "starts_with", "regex"]
     match_value: str = Field(..., min_length=1, max_length=200)
@@ -47,7 +49,7 @@ class RuleMiningOutput(BaseModel):
     proposals: list[RuleProposalOut] = Field(default_factory=list)
 
 
-class ReceiptLineOut(BaseModel):
+class ReceiptLineOut(OutModel):
     label: str = Field(..., min_length=1, max_length=200)
     product: str = Field(..., min_length=1, max_length=80)
     kind: Literal["item", "discount", "deposit"]
@@ -71,7 +73,7 @@ class ReceiptReadingOutput(BaseModel):
     items: list[ReceiptLineOut] = Field(default_factory=list, max_length=300)
 
 
-class ProductMergeOut(BaseModel):
+class ProductMergeOut(OutModel):
     names: list[str] = Field(..., min_length=1, max_length=50)
     into: str = Field(..., min_length=1, max_length=80)
 
@@ -91,7 +93,7 @@ class RuleSuggestionResult(RuleProposalOut):
     preview_matches_count: int
 
 
-class TransactionSuggestionOut(BaseModel):
+class TransactionSuggestionOut(OutModel):
     id: int
     transaction_id: int
     status: str
@@ -103,7 +105,7 @@ class TransactionSuggestionOut(BaseModel):
     reason: str
 
 
-class RuleSuggestionOut(BaseModel):
+class RuleSuggestionOut(OutModel):
     id: int
     status: str
     name: str

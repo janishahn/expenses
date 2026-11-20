@@ -1,7 +1,8 @@
 """Record how each bank statement row was resolved."""
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610131100"
 down_revision = "202610131000"

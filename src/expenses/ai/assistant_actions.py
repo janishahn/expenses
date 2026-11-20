@@ -19,6 +19,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from expenses.ai.assistant_tools import AssistantReader, _eur, _invalid
+from expenses.core.response_model import OutModel
 from expenses.db.models import (
     AssistantAction,
     BudgetFrequency,
@@ -78,13 +79,13 @@ class ActionConflict(Exception):
 # ───────── Cards ─────────
 
 
-class ApprovalCategory(BaseModel):
+class ApprovalCategory(OutModel):
     id: int
     name: str
     icon: str | None
 
 
-class ApprovalRow(BaseModel):
+class ApprovalRow(OutModel):
     title: str
     detail: str | None = None
     category: ApprovalCategory | None = None
@@ -95,7 +96,7 @@ class ApprovalRow(BaseModel):
     income: bool = False
 
 
-class ApprovalCard(BaseModel):
+class ApprovalCard(OutModel):
     title: str
     meta: str | None = None
     # The approve button, such as Add, and the state after it, such as Added.
@@ -497,7 +498,9 @@ def _month(value: str) -> tuple[int, int]:
     try:
         parsed = date.fromisoformat(f"{value}-01")
     except ValueError:
-        raise InvalidProposal("invalid_month", f"{value} is not a month like 2026-10.")
+        raise InvalidProposal(
+            "invalid_month", f"{value} is not a month like 2026-10."
+        ) from None
     if not MIN_LEDGER_DATE.year <= parsed.year <= MAX_LEDGER_DATE.year:
         raise InvalidProposal(
             "invalid_month",
@@ -1458,7 +1461,7 @@ def _restore_rows(
     return rows
 
 
-def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
+def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:  # noqa: C901
     session, user_id = reader.session, reader.user_id
     action = session.get(AssistantAction, action_id)
     if (
@@ -1477,7 +1480,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
         raise InvalidProposal(
             "outdated",
             "That change was made by an older version, so it can't be undone here.",
-        )
+        ) from None
     categories = _categories(session, user_id)
     meta: str | None = None
     match inverse:
@@ -2377,7 +2380,7 @@ def apply_action(session: Session, action: AssistantAction) -> dict[str, Any]:
     try:
         plan = PLAN.validate_json(action.plan_json)
     except ValidationError:
-        raise ActionConflict("This card is from an older version. Ask again.")
+        raise ActionConflict("This card is from an older version. Ask again.") from None
     inverse: InversePlan | None = None
     match plan:
         case CreatePlan():

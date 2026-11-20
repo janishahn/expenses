@@ -6,9 +6,9 @@ Create Date: 2025-12-14 17:00:00.000000
 
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "202512141700"
 down_revision = "add_kind_to_transactions"

@@ -3,6 +3,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/ArrowClockwise"
 import { WarningCircleIcon } from "@phosphor-icons/react/WarningCircle"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { useAuth } from "../app/auth"
 import type { AIFeature } from "../app/auth-context"
 import { Button } from "./ui/Button"
@@ -19,7 +20,7 @@ type BackendKind = "anthropic" | "openai" | "openrouter" | "openai-compatible"
 type Thinking = "auto" | "off" | "low" | "medium" | "high"
 type Choice = { enabled: boolean; backend: string; model: string; thinking: Thinking }
 type Feature = Choice & { id: AIFeature; name: string }
-type AISettings = { backends: Array<{ name: string; kind: BackendKind }>; features: Feature[] }
+type AISettings = components["schemas"]["AISettingsOut"]
 type Model = { id: string; name: string }
 
 const settingsKey = ["admin", "ai-settings"]

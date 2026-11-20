@@ -42,11 +42,15 @@ mock-db = "expenses.cli.mock_db:main"
 
 [dependency-groups]
 dev = [
+    "ast-grep-cli>=0.51.3",
     "httpx>=0.28.1",
+    "hypothesis>=6.140",
+    "import-linter>=2.17",
     "pip-audit>=2.10.1",
     "pytest>=9.0.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.1.0",
+    "ty==0.0.107",
 ]
 
 [build-system]
@@ -58,3 +62,82 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff.lint]
+extend-select = [
+    "ARG",
+    "ASYNC",
+    "B",
+    "BLE",
+    "C4",
+    "C901",
+    "DTZ005",
+    "DTZ011",
+    "ERA",
+    "FAST001",
+    "FAST003",
+    "I",
+    "PGH",
+    "PIE",
+    "PLE",
+    "PLR1711",
+    "PLR1714",
+    "PLR1730",
+    "PLR5501",
+    "PT",
+    "RET",
+    "RUF006",
+    "RUF012",
+    "RUF015",
+    "RUF100",
+    "S110",
+    "S112",
+    "S608",
+    "SIM",
+    "T20",
+    "TID251",
+    "TRY203",
+    "TRY401",
+]
+# FastAPI declares dependencies as calls in default arguments. Services set
+# hydrated attributes that the ORM models do not declare.
+# SIM102 would merge parallel guard branches into uneven conditions.
+ignore = ["B008", "B010", "SIM102"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/expenses/cli/**" = ["T20"]
+"tests/**" = ["ARG", "ASYNC110", "DTZ005", "DTZ011", "S608"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pytest.skip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.xfail".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.importorskip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.skip".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.skipif".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+"pytest.mark.xfail".msg = "Fix the test or delete it under the TESTING.md policy; do not skip it."
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.ty.environment]
+# Match CI so the baseline reads the same on every machine.
+python-version = "3.12"
+python-platform = "linux"
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.importlinter]
+root_package = "expenses"
+
+[[tool.importlinter.contracts]]
+name = "Backend layers"
+type = "layers"
+layers = [
+    "expenses.cli",
+    "expenses.app",
+    "expenses.api",
+    "expenses.services",
+    "expenses.db",
+    "expenses.core",
+]

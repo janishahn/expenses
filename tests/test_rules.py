@@ -1,17 +1,16 @@
 from datetime import date, datetime
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-import pytest
-
+from expenses.core.config import get_settings
 from expenses.db.models import RuleMatchType, Transaction, TransactionType
 from expenses.db.session import Base
-from expenses.core.config import get_settings
 from expenses.schemas import CategoryIn, RuleIn, TransactionIn
 from expenses.services import (
-    CSVService,
     CategoryService,
+    CSVService,
     RuleService,
     TagService,
     TransactionService,
@@ -428,17 +427,19 @@ def test_rule_service_rejects_regex_over_configured_limit(
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
 
-        with Session(engine) as session:
-            with pytest.raises(ValueError, match="Regex pattern is too long"):
-                RuleService(session).create(
-                    RuleIn(
-                        name="Unsafe regex",
-                        enabled=True,
-                        priority=10,
-                        match_type=RuleMatchType.regex,
-                        match_value="abcd",
-                    )
+        with (
+            Session(engine) as session,
+            pytest.raises(ValueError, match="Regex pattern is too long"),
+        ):
+            RuleService(session).create(
+                RuleIn(
+                    name="Unsafe regex",
+                    enabled=True,
+                    priority=10,
+                    match_type=RuleMatchType.regex,
+                    match_value="abcd",
                 )
+            )
     finally:
         get_settings.cache_clear()
 

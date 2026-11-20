@@ -3,6 +3,7 @@ import { apiFetch, getApiErrorMessage } from "../app/api"
 import { useQueuedSave } from "../app/queued-save"
 import { confirmDialog } from "../components/confirm"
 import { showToast } from "../components/ui/toast-store"
+import type { components } from "../app/api-schema"
 
 export type DateRange = { start: string; end: string }
 
@@ -36,7 +37,7 @@ function tagPayload(tag: TagRecord): TagPayload {
     is_hidden_from_budget: tag.is_hidden_from_budget,
     is_hidden_from_filters: tag.is_hidden_from_filters,
     auto_attach_period: tag.auto_attach_period,
-  }
+  } satisfies components["schemas"]["TagIn"]
 }
 
 // Tag changes reach every view that filters or totals by tags.

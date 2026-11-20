@@ -1,0 +1,23 @@
+id: cents-true-division
+language: python
+files:
+  - src/**/*.py
+severity: error
+message: Dividing cents with `/` gives a float that can lose or misround a cent.
+note: >-
+  Use `//` and `%` for whole cents. For a ratio, such as a share or a rate per
+  day, add `# ast-grep-ignore: cents-true-division` and say why.
+rule:
+  any:
+    - pattern: $LEFT / $RIGHT
+    - pattern: $LEFT /= $RIGHT
+constraints:
+  LEFT:
+    any:
+      - regex: _cents$
+      - kind: parenthesized_expression
+        has:
+          regex: _cents$
+          any:
+            - kind: identifier
+            - kind: attribute

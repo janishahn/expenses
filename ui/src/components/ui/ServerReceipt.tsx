@@ -51,8 +51,10 @@ export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
   }, [])
 
   useLayoutEffect(() => {
-    const paper = paperRef.current!
-    waitOffset.current = paper.offsetHeight - backRef.current!.offsetTop + 2
+    const paper = paperRef.current
+    const back = backRef.current
+    if (!paper || !back) return
+    waitOffset.current = paper.offsetHeight - back.offsetTop + 2
     paper.style.transform = `translateY(${waitOffset.current}px)`
     const feed = prefersReducedMotion()
       ? paper.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250 })
@@ -71,8 +73,8 @@ export function ServerReceipt({ onAnswered }: { onAnswered: () => void }) {
   }, [answeredAt, attempts, retry])
 
   useEffect(() => {
-    if (!answeredAt) return
-    const paper = paperRef.current!
+    const paper = paperRef.current
+    if (!answeredAt || !paper) return
     const reduced = prefersReducedMotion()
     const done = reduced ? "none" : TORN
     const print = reduced

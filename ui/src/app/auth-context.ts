@@ -1,10 +1,7 @@
 import { createContext, useContext } from "react"
+import type { components } from "./api-schema"
 
-export type AuthUser = {
-  id: number
-  username: string
-  is_admin: boolean
-}
+export type AuthUser = components["schemas"]["AuthUserOut"]
 
 export type AIFeature = "spending_chat" | "transaction_triage" | "rule_mining" | "receipt_items"
 

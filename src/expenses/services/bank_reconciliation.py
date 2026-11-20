@@ -25,7 +25,6 @@ from expenses.services.main import (
 )
 from expenses.services.rollups import recompute_monthly_rollup_for_date
 
-
 COMMERZBANK_CSV_SOURCE = "commerzbank_csv"
 MATCH_WINDOW_DAYS = 5
 

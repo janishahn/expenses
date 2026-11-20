@@ -31,7 +31,8 @@ type TagDetailResponse = {
   period: { slug: string; start: string; end: string }
   kpis: { income: number; expenses: number; balance: number }
   donut: { expense_breakdown: BreakdownItem[]; income_breakdown: BreakdownItem[] }
-  transactions: TransactionListItem[]
+  // The tag's latest transactions, without the attachment, location and version fields of the ledger.
+  transactions: Omit<TransactionListItem, "updated_at" | "has_attachments" | "latitude" | "longitude">[]
 }
 
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
@@ -84,7 +85,9 @@ function TagDetail({ data, period, onPeriodChange }: { data: TagDetailResponse; 
   const { tag, kpis, donut, transactions } = data
   const [merging, setMerging] = useState(false)
   const { view, errors, setError, save } = useTagSave(tag)
-  const { archive, restore, confirmDelete } = useTagLifecycle(tag, () => navigate("/tags", { replace: true }))
+  const { archive, restore, confirmDelete } = useTagLifecycle(tag, () => {
+    navigate("/tags", { replace: true })
+  })
   const tags = useQuery({
     queryKey: ["tags", "options"],
     queryFn: () => apiFetch<{ tags: TagRecord[] }>("/api/tags/options"),

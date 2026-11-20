@@ -26,6 +26,7 @@ import {
   parseAmountCents,
   type TransactionType,
 } from "./transactions"
+import type { components } from "./api-schema"
 
 type FieldErrors = { amount?: string; title?: string; form?: string }
 
@@ -73,6 +74,7 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
   )
 }
 
+// oxlint-disable-next-line complexity
 function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -178,7 +180,7 @@ function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () =>
           description: notes.trim() || null,
           is_reimbursement: type === "income" ? isReimbursement : false,
           tags,
-        }),
+        } satisfies components["schemas"]["TransactionIn"]),
       })
       createdId = created.id
     } catch (error) {

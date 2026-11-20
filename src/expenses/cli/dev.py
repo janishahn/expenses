@@ -533,7 +533,7 @@ def _launch_detached(args: argparse.Namespace, root_dir: Path) -> int:
     return 1
 
 
-def _run_dev_impl(
+def _run_dev_impl(  # noqa: C901
     args: argparse.Namespace,
     root_dir: Path,
     release_startup_lock: Callable[[], None],

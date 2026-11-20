@@ -13,6 +13,7 @@ import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { formatCount } from "../app/format"
 import { amountInput, dayLabel, parseAmountCents, shortDateLabel } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
@@ -59,16 +60,9 @@ type BudgetProgressRow = {
   days_remaining: number
 }
 
-type BudgetTemplateRow = {
-  id: number
-  frequency: string
-  category: { id: number; name: string; icon: string | null } | null
-  amount_cents: number
-  starts_on: string
-  ends_on: string | null
-}
+type BudgetTemplateRow = components["schemas"]["BudgetTemplateRowOut"]
 
-type BudgetCategory = { id: number; name: string; type: string; icon: string | null; archived_at: string | null }
+type BudgetCategory = components["schemas"]["BudgetCategoryOut"]
 
 type BudgetResponse = {
   month_value: string
@@ -96,7 +90,10 @@ type BurndownResponse = {
 
 type Frequency = "monthly" | "yearly"
 type Kind = "month" | "year"
-type BudgetRequest = { path: string; body: Record<string, unknown> }
+type BudgetRequest =
+  | { path: "/api/budgets/overrides"; body: components["schemas"]["BudgetOverrideIn"] }
+  | { path: "/api/budgets/templates"; body: components["schemas"]["BudgetTemplateIn"] }
+  | { path: "/api/budgets/templates/apply-from"; body: components["schemas"]["BudgetTemplateApplyFromIn"] }
 
 const MONTH_LONG = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
 const MONTH_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
@@ -244,10 +241,10 @@ function PaceChart({
           rows={[
             { key: "even", label: "Even pace", value: <Amount cents={lines.even[index]} decimals={false} />, color: "var(--ink-3)", mark: "dash" },
             ...(lines.actual[index] !== null
-              ? [{ key: "actual", label: "Actual", value: <Amount cents={lines.actual[index] as number} decimals={false} />, color: "var(--ink)", mark: "line" as const }]
+              ? [{ key: "actual", label: "Actual", value: <Amount cents={lines.actual[index]} decimals={false} />, color: "var(--ink)", mark: "line" as const }]
               : []),
             ...(lines.previous[index] != null
-              ? [{ key: "previous", label: "Previous month", value: <Amount cents={lines.previous[index] as number} decimals={false} />, color: "var(--ink-3)", mark: "line" as const }]
+              ? [{ key: "previous", label: "Previous month", value: <Amount cents={lines.previous[index]} decimals={false} />, color: "var(--ink-3)", mark: "line" as const }]
               : []),
           ]}
         />
@@ -300,9 +297,9 @@ function OverallPace({
               cells: [
                 String(day),
                 <Amount cents={lines.even[index]} />,
-                lines.actual[index] === null ? "–" : <Amount cents={lines.actual[index] as number} />,
+                lines.actual[index] === null ? "–" : <Amount cents={lines.actual[index]} />,
                 ...(lines.previous.length
-                  ? [lines.previous[index] === null ? "–" : <Amount cents={lines.previous[index] as number} />]
+                  ? [lines.previous[index] === null ? "–" : <Amount cents={lines.previous[index]} />]
                   : []),
               ],
             }))}
@@ -608,6 +605,7 @@ function LeftOrOver({ remaining }: { remaining: number }) {
   )
 }
 
+// oxlint-disable-next-line complexity
 function BudgetsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
@@ -767,6 +765,7 @@ function BudgetsPage() {
     )
   }
 
+  // oxlint-disable-next-line complexity
   const peek = (() => {
     if (!peekTarget) return null
     const { kind, row } = peekTarget

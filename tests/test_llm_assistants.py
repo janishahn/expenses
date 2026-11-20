@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from expenses.ai import backends
+from expenses.ai import service as ai_service
 from expenses.ai.client import LLMOutputError, PydanticAILLMRunner
 from expenses.ai.features import ResolvedFeature
 from expenses.ai.schemas import (
@@ -19,9 +20,8 @@ from expenses.ai.schemas import (
     RuleProposalOut,
     TransactionTriageOutput,
 )
-from expenses.core.config import AIBackend, get_settings
-from expenses.ai import service as ai_service
 from expenses.ai.service import LLMAssistantService
+from expenses.core.config import AIBackend, get_settings
 from expenses.db.models import (
     LLMJob,
     ReceiptAttachment,
@@ -91,7 +91,7 @@ def make_session() -> Session:
     return Session(engine)
 
 
-@pytest.fixture()
+@pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 

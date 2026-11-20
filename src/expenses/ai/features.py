@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from expenses.ai.client import LLMDisabledError
 from expenses.core.config import AIBackend, AIBackendKind, get_settings
+from expenses.core.response_model import OutModel
 from expenses.db.models import AIFeatureSetting
 
 Feature = Literal["spending_chat", "transaction_triage", "rule_mining", "receipt_items"]
@@ -34,27 +35,27 @@ class AISettingsUpdate(BaseModel):
     features: dict[Feature, FeatureSettings]
 
 
-class AIBackendOut(BaseModel):
+class AIBackendOut(OutModel):
     name: str
     kind: AIBackendKind
 
 
-class AIFeatureOut(FeatureSettings):
+class AIFeatureOut(FeatureSettings, OutModel):
     id: Feature
     name: str
 
 
-class AISettingsOut(BaseModel):
+class AISettingsOut(OutModel):
     backends: list[AIBackendOut]
     features: list[AIFeatureOut]
 
 
-class AIModelOut(BaseModel):
+class AIModelOut(OutModel):
     id: str
     name: str
 
 
-class AIModelCatalogOut(BaseModel):
+class AIModelCatalogOut(OutModel):
     models: list[AIModelOut]
 
 

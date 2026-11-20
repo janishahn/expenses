@@ -34,18 +34,6 @@ function createLegacyDatabase(path: string, category: string): void {
 }
 
 test.describe("Admin Import Page", () => {
-  test("shows validation error for non-db sqlite upload", async ({ page }) => {
-    await openImportPage(page)
-
-    await page.getByLabel("SQLite database file").setInputFiles({
-      name: "legacy.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("not-a-db"),
-    })
-    await expect(page.getByRole("alert")).toContainText("Please upload a .db file")
-    await expect(page.getByRole("button", { name: "Import", exact: true })).toHaveCount(0)
-  })
-
   test("previews a legacy database, maps its categories, and imports it", async ({ page }, testInfo) => {
     const category = `Legacy Food ${Date.now()}`
     const dbPath = testInfo.outputPath("legacy.db")

@@ -1,9 +1,10 @@
 import logging
-from logging.config import fileConfig
 import sys
+from logging.config import fileConfig
 from pathlib import Path
 
 from sqlalchemy import engine_from_config, pool
+
 from alembic import context
 
 # Add the project root to the path before importing project modules

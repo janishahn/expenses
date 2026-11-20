@@ -7,7 +7,8 @@ import { EyeSlashIcon } from "@phosphor-icons/react/EyeSlash"
 import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
-import type { CategorySummary, TransactionListItem } from "../app/api-types"
+import type { components } from "../app/api-schema"
+import type { CategorySummary } from "../app/api-types"
 import { formatCount } from "../app/format"
 import { setPrivacy, usePrivacy } from "../app/privacy"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -31,37 +32,7 @@ import { neighbourCategoryColors } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 
-type BreakdownItem = { category_id: number | null; name: string; amount_cents: number; percent: number }
-
-type DashboardResponse = {
-  period: { slug: string; start: string; end: string }
-  kpis: { income: number; expenses: number; balance: number }
-  deltas: { income: number; expenses: number; balance: number } | null
-  donut: {
-    has_any_transactions: boolean
-    expense_breakdown?: BreakdownItem[]
-    income_breakdown?: BreakdownItem[]
-  }
-  recent: TransactionListItem[]
-  categories: CategorySummary[]
-  tags: Array<{ id: number; name: string }>
-  budget_pace?: {
-    velocity_ratio: number
-    projected_cents: number
-    budget_cents: number
-    spent_cents: number
-    remaining_cents: number
-    daily_remaining_cents: number
-    days_remaining: number
-  } | null
-  category_budget_pulse?: Array<{
-    scope_category_id: number
-    scope_label: string
-    amount_cents: number
-    spent_cents: number
-    remaining_cents: number
-  }> | null
-}
+type DashboardResponse = components["schemas"]["DashboardResponseOut"]
 
 type BandMonth = {
   month: string
@@ -69,12 +40,7 @@ type BandMonth = {
   segments: Array<{ category_id: number | null; name: string; amount_cents: number }>
 }
 
-type ForecastMonth = {
-  month: string
-  end_balance_cents: number
-  end_balance_p10_cents?: number | null
-  end_balance_p90_cents?: number | null
-}
+type ForecastMonth = components["schemas"]["ForecastMonthOut"]
 
 type DurablePurchase = {
   id: number
@@ -136,6 +102,7 @@ function localIsoDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
+// oxlint-disable-next-line complexity
 function DashboardPage() {
   const navigate = useNavigate()
   const hidden = usePrivacy()
@@ -378,6 +345,7 @@ function DashboardPage() {
     total: <Amount cents={month.total_cents} />,
     segments: month.segments
       .filter((segment) => segment.amount_cents > 0)
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- bandLegend has every category in bandData.
       .map((segment) => ({ key: String(segment.category_id), value: segment.amount_cents, color: bandColor.get(String(segment.category_id))! })),
   }))
 
@@ -486,8 +454,8 @@ function DashboardPage() {
             key: String(index),
             cells: [
               label,
-              actualValues[index] === null ? "–" : <Amount cents={actualValues[index] as number} />,
-              index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index] as number} /> : "–",
+              actualValues[index] === null ? "–" : <Amount cents={actualValues[index]} />,
+              index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index]} /> : "–",
               index > todayIndex && rangeAvailable ? (
                 <>
                   <Amount cents={rangeLo[index] as number} /> to <Amount cents={rangeHi[index] as number} />
@@ -565,7 +533,7 @@ function DashboardPage() {
       table={
         <ChartTable
           label="Spending by category and month"
-          columns={["Month", ...bandLegend.map((entry) => String(entry.label)), "Total"]}
+          columns={["Month", ...bandOrder.map(([, entry]) => entry.label), "Total"]}
           rows={bandData.map((month) => ({
             key: month.month,
             cells: [

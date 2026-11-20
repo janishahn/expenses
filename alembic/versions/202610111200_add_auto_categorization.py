@@ -1,7 +1,8 @@
 """Add opt-in local categorization settings, model storage and provenance."""
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610111200"
 down_revision = "202610031200"

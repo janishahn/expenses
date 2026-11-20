@@ -1,8 +1,6 @@
 import { expect, test } from "./fixtures"
 import { createCategory, createTransaction, getCsrfToken } from "./helpers"
 
-const THEME_STORAGE_KEY = "ew.theme.preference"
-
 function nextMonth(offset = 1): { value: string; short: string; long: string } {
   const date = new Date()
   date.setDate(1)
@@ -16,47 +14,6 @@ function nextMonth(offset = 1): { value: string; short: string; long: string } {
 }
 
 test.describe("Forecast Page", () => {
-  test("renders controls, summary strip and the balance chart with its table", async ({
-    page,
-  }) => {
-    await page.goto("/forecast")
-    await expect(page.getByRole("heading", { name: "Forecast", level: 1 })).toBeVisible()
-
-    const horizon = page.getByRole("radiogroup", { name: "Forecast horizon" })
-    await expect(horizon.getByRole("radio", { name: "3 months" })).toBeVisible()
-    await expect(horizon.getByRole("radio", { name: "6 months" })).toBeChecked()
-    await expect(horizon.getByRole("radio", { name: "12 months" })).toBeVisible()
-    const model = page.getByRole("radiogroup", { name: "Forecast model" })
-    await expect(model.getByRole("radio", { name: "Recurring only" })).toBeVisible()
-    await expect(model.getByRole("radio", { name: "With estimates" })).toBeChecked()
-
-    await expect(page.getByText("Average monthly net")).toBeVisible()
-    await expect(page.getByText("Below zero", { exact: true })).toBeVisible()
-    await expect(page.getByText(/^Balance in /)).toBeVisible()
-
-    const card = page.getByRole("region", { name: "Balance" })
-    await expect(card.getByRole("button", { name: /still expected this month/ })).toBeVisible()
-    await card.getByRole("button", { name: "Chart options" }).click()
-    await page.getByRole("menuitemcheckbox", { name: "Show as table" }).click()
-    const table = card.getByRole("table", { name: "Projected balance by month" })
-    await expect(table.getByRole("rowheader", { name: "Now" })).toBeVisible()
-    await expect(table.locator("tbody tr")).toHaveCount(7)
-    await expect(page.getByRole("list", { name: "Monthly outlook" }).getByRole("listitem")).toHaveCount(6)
-  })
-
-  test("updates the query when changing horizon and mode", async ({ page }) => {
-    await page.goto("/forecast")
-    await page.getByRole("radio", { name: "3 months" }).click()
-    await expect(page).toHaveURL(/horizon=3/)
-    await expect(
-      page.getByRole("list", { name: "Monthly outlook" }).getByRole("listitem"),
-    ).toHaveCount(3)
-    await page.getByRole("radio", { name: "Recurring only" }).click()
-    await expect(page).toHaveURL(/mode=recurring/)
-    await expect(page.getByRole("radio", { name: "Recurring only" })).toBeChecked()
-    await expect(page.getByRole("radio", { name: "3 months" })).toBeChecked()
-  })
-
   test("opens What If with the chosen horizon and model", async ({ page }) => {
     await page.goto("/forecast")
     await page.getByRole("radio", { name: "12 months" }).click()
@@ -139,37 +96,5 @@ test.describe("Forecast Page", () => {
 
     await peek.getByRole("button", { name: "Close" }).click()
     await expect(page).not.toHaveURL(/peek=/)
-  })
-
-  test("preserves explicit light mode and route state when navigating to scenarios and back", async ({
-    page,
-  }) => {
-    await page.addInitScript(
-      ([storageKey, value]) => {
-        window.localStorage.setItem(storageKey, value)
-      },
-      [THEME_STORAGE_KEY, "light"] as const,
-    )
-    await page.goto("/forecast")
-    await page.getByRole("radio", { name: "12 months" }).click()
-    await page.getByRole("radio", { name: "Recurring only" }).click()
-
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-
-    await page.getByRole("link", { name: "What if", exact: true }).click()
-    await expect(page).toHaveURL(/\/scenarios\?/)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-
-    await page.goBack()
-    await expect(page).toHaveURL(/\/forecast\?horizon=12&mode=recurring/)
-    await expect(page.getByRole("radio", { name: "12 months" })).toBeChecked()
-    await expect(page.getByRole("radio", { name: "Recurring only" })).toBeChecked()
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
   })
 })

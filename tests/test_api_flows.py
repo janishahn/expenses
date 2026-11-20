@@ -3,8 +3,8 @@ from datetime import date, datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-import expenses.app as app_main
 import expenses.api.routes as routes_module
+import expenses.app as app_main
 from expenses.core.config import get_settings
 
 
@@ -434,6 +434,8 @@ def test_tags_rules_and_recurring_api_flows(
 
     response = api_client.delete(f"/api/recurring/{recurring_id}", headers=csrf_headers)
     assert response.status_code == 200
+    rules = api_client.get("/api/recurring").json()["rules"]
+    assert all(rule["id"] != recurring_id for rule in rules)
 
     response = api_client.delete(f"/api/tags/{tag_id}", headers=csrf_headers)
     assert response.status_code == 200
@@ -480,14 +482,25 @@ def test_budgets_admin_and_import_api_flows(
         for row in budget_rows
     )
 
+    def january_groceries_budgets():
+        response = api_client.get("/api/budgets?view=month&month=2025-01")
+        assert response.status_code == 200
+        return [
+            row["amount_cents"]
+            for row in response.json()["budgets"]
+            if row["scope_category_id"] == groceries_id
+        ]
+
     response = api_client.delete(
         f"/api/budgets/overrides/{override_id}", headers=csrf_headers
     )
     assert response.status_code == 200
+    assert january_groceries_budgets() == [10_000]
     response = api_client.delete(
         f"/api/budgets/templates/{template_id}", headers=csrf_headers
     )
     assert response.status_code == 200
+    assert january_groceries_budgets() == []
 
     txn_id = _create_transaction(
         api_client,
@@ -613,6 +626,10 @@ def test_budgets_admin_and_import_api_flows(
         f"/api/settings/balance-anchors/{anchor_id}", headers=csrf_headers
     )
     assert response.status_code == 200
+    assert all(
+        anchor["id"] != anchor_id
+        for anchor in api_client.get("/api/settings").json()["balance_anchors"]
+    )
 
     csv_content = (
         "Date,Type,IsReimbursement,Amount,Category,Title\n"

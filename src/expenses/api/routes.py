@@ -1,11 +1,11 @@
-import logging
-import json
 import hashlib
+import json
+import logging
 import os
 import re
 import secrets
-import sqlite3
 import shutil
+import sqlite3
 import tempfile
 import time
 import tomllib
@@ -38,6 +38,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, object_session
 from starlette.background import BackgroundTask
 
+from expenses.ai.client import LLMDisabledError
+from expenses.ai.features import FEATURE_NAMES, Feature, enabled_features
+from expenses.ai.schemas import (
+    RuleSuggestionOut,
+    TransactionSuggestionOut,
+)
+from expenses.ai.service import (
+    READABLE_RECEIPT_TYPES,
+    LLMAssistantService,
+    read_receipt_in_background,
+)
 from expenses.auth import (
     elevate_auth_session,
     elevate_mobile_auth_session,
@@ -57,22 +68,6 @@ from expenses.auth import (
     touch_user_ingest_token,
     verify_password,
 )
-from expenses.ai.client import LLMDisabledError
-from expenses.ai.features import FEATURE_NAMES, Feature, enabled_features
-from expenses.services.auto_categorization import (
-    settings_for,
-    suggestions_for,
-    train_user,
-)
-from expenses.ai.schemas import (
-    RuleSuggestionOut,
-    TransactionSuggestionOut,
-)
-from expenses.ai.service import (
-    READABLE_RECEIPT_TYPES,
-    LLMAssistantService,
-    read_receipt_in_background,
-)
 from expenses.core.app_logging import (
     build_log_query,
     environment_label,
@@ -84,19 +79,16 @@ from expenses.core.app_logging import (
 )
 from expenses.core.config import get_settings
 from expenses.core.csrf import generate_csrf_token, validate_csrf_token
+from expenses.core.periods import Period, previous_period, resolve_period
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
-from expenses.db.session import SessionLocal
-from expenses.exporters import PortableExportError, PortableExportService
-from expenses.importers.legacy_sqlite import LegacySQLiteImportService
-from expenses.services.csv_utils import iter_export_transactions
 from expenses.db.models import (
     AutoCategorizationPreference,
     BankStatementRow,
     Category,
     MobileAuthSession,
-    RecurringRule,
     ReceiptAttachment,
     ReceiptItem,
+    RecurringRule,
     Tag,
     Transaction,
     TransactionType,
@@ -104,13 +96,16 @@ from expenses.db.models import (
     UserIngestToken,
     transaction_tags,
 )
-from expenses.core.periods import Period, previous_period, resolve_period
-from expenses.recurrence.engine import calculate_next_date, local_today
+from expenses.db.session import SessionLocal
+from expenses.exporters import PortableExportError, PortableExportService
+from expenses.importers.legacy_sqlite import LegacySQLiteImportService
+from expenses.recurrence.engine import calculate_next_date, local_now, local_today
+from expenses.reports.pdf_renderer import render_report_html
 from expenses.schemas import (
-    AdminElevationOut,
-    AllocationIDOut,
-    BalanceAnchorIn,
+    MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     AdminElevationIn,
+    AdminElevationOut,
     AdminInfoOut,
     AdminLogsResponseOut,
     AdminPurgeDeletedIn,
@@ -119,7 +114,11 @@ from expenses.schemas import (
     AdminRebuildRollupsOut,
     AdminRecurringCatchUpOut,
     AdminSystemHealthOut,
+    AllocationIDOut,
     AuthCredentialsIn,
+    AutoCategorizationSettingsIn,
+    AutoCategorizationSettingsOut,
+    BalanceAnchorIn,
     BalanceHistoryResponseOut,
     BankAcceptSuggestionsIn,
     BankAcceptSuggestionsOut,
@@ -132,37 +131,40 @@ from expenses.schemas import (
     BankRowIgnoreIn,
     BankRowMatchIn,
     BankRowReopenIn,
-    BankRowsReopenIn,
     BankRowsPageOut,
+    BankRowsReopenIn,
     BankStatementImportResponseOut,
     BankStatementPreviewResponseOut,
     BankTransactionCreateIn,
-    BulkEditRequestIn,
-    BulkEditResponseOut,
+    BudgetBurndownResponseOut,
     BudgetOverrideIn,
     BudgetOverrideOut,
-    BudgetBurndownResponseOut,
+    BudgetsResponseOut,
     BudgetTemplateApplyFromIn,
     BudgetTemplateIn,
     BudgetTemplateMutationOut,
-    BudgetsResponseOut,
-    CategorySuggestionDismissIn,
+    BulkEditRequestIn,
+    BulkEditResponseOut,
+    CategoriesResponseOut,
+    CategoryIn,
     CategoryMergeIn,
     CategoryMergeResponseOut,
-    CategoryIn,
     CategoryOut,
-    CategoriesResponseOut,
+    CategorySuggestionDismissIn,
     CategoryUpdateIn,
+    CSVCommitResponseOut,
+    CSVPreviewResponseOut,
     DashboardResponseOut,
     DeletedTransactionsResponseOut,
     DigestResponseOut,
+    DurablePurchaseIn,
     DurablePurchasesResponseOut,
     ErrorDetailOut,
-    DurablePurchaseIn,
     ForecastResponseOut,
     ForecastScenarioIn,
     ForecastScenarioResponseOut,
     IdOut,
+    IngestTokenCreateResponseOut,
     IngestTransactionIn,
     IngestTransactionOut,
     InsightsBudgetHistoryResponseOut,
@@ -171,66 +173,59 @@ from expenses.schemas import (
     InsightsMonthGridResponseOut,
     InsightsRecurringSplitResponseOut,
     InsightsResponseOut,
-    CSVCommitResponseOut,
-    CSVPreviewResponseOut,
     LegacySqliteCommitIn,
     LegacySqliteCommitOut,
     LegacySqlitePreviewResponseOut,
     MobileAuthCredentialsIn,
     MobileAuthIdentityOut,
-    MobileSessionsResponseOut,
     MobileSessionOut,
+    MobileSessionsResponseOut,
     MobileStatusOut,
+    OpenReimbursementsResponseOut,
     PermanentDeleteTransactionOut,
+    ReceiptAttachmentOut,
+    ReceiptAttachmentsResponseOut,
+    ReceiptItemProductIn,
+    RecurringOccurrencesResponseOut,
     RecurringPreviewIn,
     RecurringPreviewOut,
+    RecurringResponseOut,
     RecurringRuleIn,
     RecurringRuleUpdateIn,
-    RecurringOccurrencesResponseOut,
-    RecurringResponseOut,
     RecurringToggleIn,
-    ReceiptAttachmentOut,
-    ReceiptItemProductIn,
-    ReceiptAttachmentsResponseOut,
     ReimbursementAllocationIn,
     ReimbursementExpenseSearchResponseOut,
-    OpenReimbursementsResponseOut,
-    TransactionReimbursementsResponseOut,
     ReportOptions,
-    MAX_LEDGER_DATE,
-    MIN_LEDGER_DATE,
     RuleIn,
     RulePreviewOut,
     RulesResponseOut,
     RuleToggleIn,
-    StatusOut,
     SettingsResponseOut,
-    AutoCategorizationSettingsIn,
-    AutoCategorizationSettingsOut,
-    IngestTokenCreateResponseOut,
-    TemplateReorderIn,
+    StatusOut,
     TagIn,
     TagMergeIn,
     TagMergeResponseOut,
     TagMutationOut,
     TagsResponseOut,
-    TransactionIn,
+    TemplateReorderIn,
+    TemplatesResponseOut,
     TransactionDetailOut,
     TransactionIdsIn,
+    TransactionIn,
+    TransactionReimbursementsResponseOut,
     TransactionSavedOut,
     TransactionsPurgedOut,
     TransactionsResponseOut,
     TransactionsRestoredOut,
-    TransactionTemplateOut,
-    TemplatesResponseOut,
     TransactionTemplateIn,
+    TransactionTemplateOut,
     UncategorizedTransactionsResponseOut,
 )
 from expenses.services import (
     BalanceAnchorService,
     BudgetService,
-    CSVService,
     CategoryService,
+    CSVService,
     DigestService,
     DurablePurchaseService,
     ForecastService,
@@ -240,24 +235,29 @@ from expenses.services import (
     InsightsService,
     MetricsService,
     ReceiptAttachmentService,
-    ReimbursementService,
     RecurringRuleService,
+    ReimbursementService,
+    ReportService,
     RuleService,
     TagService,
-    TransactionTemplateService,
     TransactionFilters,
     TransactionService,
-    ReportService,
+    TransactionTemplateService,
     rebuild_monthly_rollups,
 )
-from expenses.services.main import RecurringRuleNameRequired, TransactionConflict
+from expenses.services.auto_categorization import (
+    settings_for,
+    suggestions_for,
+    train_user,
+)
 from expenses.services.bank_reconciliation import (
     BankReconciliationService,
     BankRowAlreadyResolvedError,
     BankRowChangedError,
     BankRowNotFoundError,
 )
-from expenses.reports.pdf_renderer import render_report_html
+from expenses.services.csv_utils import iter_export_transactions
+from expenses.services.main import RecurringRuleNameRequired, TransactionConflict
 
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -883,7 +883,7 @@ def api_auth_me(
     return _serialize_auth_identity(request, db)
 
 
-@router.get("/api/mobile/status", response_model=MobileStatusOut)
+@router.get("/api/mobile/status")
 def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
     settings = get_settings()
     setup_required = _is_bootstrap_required(db)
@@ -899,7 +899,7 @@ def api_mobile_status(db: Session = Depends(get_db)) -> MobileStatusOut:
     )
 
 
-@router.post("/api/mobile/auth/setup", response_model=MobileAuthIdentityOut)
+@router.post("/api/mobile/auth/setup")
 def api_mobile_auth_setup(
     data: MobileAuthCredentialsIn,
     request: Request,
@@ -933,7 +933,7 @@ def api_mobile_auth_setup(
     return _serialize_issued_mobile_identity(user, issued)
 
 
-@router.post("/api/mobile/auth/signup", response_model=MobileAuthIdentityOut)
+@router.post("/api/mobile/auth/signup")
 def api_mobile_auth_signup(
     data: MobileAuthCredentialsIn,
     request: Request,
@@ -969,7 +969,7 @@ def api_mobile_auth_signup(
     return _serialize_issued_mobile_identity(user, issued)
 
 
-@router.post("/api/mobile/auth/login", response_model=MobileAuthIdentityOut)
+@router.post("/api/mobile/auth/login")
 def api_mobile_auth_login(
     data: MobileAuthCredentialsIn,
     request: Request,
@@ -1006,7 +1006,7 @@ def api_mobile_auth_logout(
     return {"authenticated": False}
 
 
-@router.get("/api/mobile/auth/me", response_model=MobileAuthIdentityOut)
+@router.get("/api/mobile/auth/me")
 def api_mobile_auth_me(
     request: Request,
     db: Session = Depends(get_db),
@@ -1348,7 +1348,7 @@ def _csv_export_response(
     log_event_name: str,
 ) -> StreamingResponse:
     conditions = [*conditions, Transaction.deleted_at.is_(None)]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = local_now().strftime("%Y%m%d_%H%M%S")
     filename = f"expenses_export_{timestamp}.csv"
     log_event(
         logger,
@@ -1930,14 +1930,14 @@ def api_tags(
         TransactionType.expense,
         period.start,
         period_end,
-        lambda txn: [transaction_tags.c.tag_id],
+        lambda _txn: [transaction_tags.c.tag_id],
         by_tag=True,
     )
     income_map = insights_service.grouped_amounts(
         TransactionType.income,
         period.start,
         period_end,
-        lambda txn: [transaction_tags.c.tag_id],
+        lambda _txn: [transaction_tags.c.tag_id],
         by_tag=True,
     )
     return {
@@ -2955,6 +2955,8 @@ async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
             since = date.fromisoformat(since_raw)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid since date") from exc
+        # An earlier date means all history; year 1 cannot convert to UTC.
+        since = max(since, MIN_LEDGER_DATE)
     try:
         await LLMAssistantService(db, user_id=user_id).mine_rule_suggestions(
             since=since
@@ -3202,7 +3204,7 @@ def api_admin_download_db(
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Database not found")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = local_now().strftime("%Y%m%d_%H%M%S")
     filename = f"expenses_backup_{timestamp}.db"
     log_event(
         logger,
@@ -3271,7 +3273,7 @@ def api_export_user_csv(request: Request, db: Session = Depends(get_db)):
 @router.get("/api/export/portable.zip", response_class=FileResponse)
 def api_export_user_portable_zip(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = local_now().strftime("%Y%m%d_%H%M%S")
     filename = f"expenses_portable_export_{timestamp}.zip"
     with tempfile.NamedTemporaryFile(
         prefix="expenses_portable_export_",
@@ -3432,7 +3434,7 @@ def api_delete_user_balance_anchor(
 @router.post("/api/admin/balance-anchors")
 @router.put("/api/admin/balance-anchors/{anchor_id}")
 @router.delete("/api/admin/balance-anchors/{anchor_id}")
-def api_admin_balance_anchors_removed(anchor_id: int | None = None):
+def api_admin_balance_anchors_removed(anchor_id: int | None = None):  # noqa: ARG001 - FastAPI matches the path parameter.
     raise HTTPException(
         status_code=404,
         detail="Admin balance anchors were removed. Use /api/settings/balance-anchors.",
@@ -5141,10 +5143,9 @@ def api_transactions_bulk_apply(
             if {tag.name.lower() for tag in txn.tags} != patch_tag_name_set:
                 txn.tags = patch_tags.copy()
                 counts["tags_replaced"] += 1
-        elif tag_patch.mode == "clear":
-            if txn.tags:
-                txn.tags = []
-                counts["tags_replaced"] += 1
+        elif tag_patch.mode == "clear" and txn.tags:
+            txn.tags = []
+            counts["tags_replaced"] += 1
         # Tag links leave the transactions row alone; stamp it for
         # expected_updated_at.
         if {tag.id for tag in txn.tags} != tag_ids_before:
@@ -5195,7 +5196,7 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
 
     categories = CategoryService(db, user_id=user_id).list_all()
     tags = TagService(db, user_id=user_id).list_filter_options(
-        tuple([*filters.included_tag_ids, *filters.excluded_tag_ids])
+        (*filters.included_tag_ids, *filters.excluded_tag_ids)
     )
     return {
         "items": [_serialize_transaction_item(txn) for txn in items],
@@ -5519,7 +5520,7 @@ def api_insights(
     }
 
     all_tags = TagService(db, user_id=user_id).list_filter_options(
-        tuple([*tag_ids, *filters.excluded_tag_ids])
+        (*tag_ids, *filters.excluded_tag_ids)
     )
 
     return {
@@ -5654,7 +5655,6 @@ def api_durable_purchases(request: Request, db: Session = Depends(get_db)):
 @router.get(
     "/api/dashboard",
     response_model=DashboardResponseOut,
-    response_model_exclude_none=True,
 )
 def api_dashboard(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
@@ -5665,7 +5665,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     txn_service = TransactionService(db, user_id=user_id)
     categories = CategoryService(db, user_id=user_id).list_all()
     tags = TagService(db, user_id=user_id).list_filter_options(
-        tuple([*filters.included_tag_ids, *filters.excluded_tag_ids])
+        (*filters.included_tag_ids, *filters.excluded_tag_ids)
     )
     has_any_transactions = txn_service.has_any()
     included_tag_ids = list(filters.included_tag_ids)
@@ -5838,12 +5838,12 @@ def _generate_report_pdf_bytes(
             detail="PDF export requires WeasyPrint system dependencies; install them for your OS and retry.",
         ) from exc
 
-    start_time = datetime.now()
+    start_time = time.perf_counter()
     report_service = ReportService(db, user_id=user_id)
     data = report_service.gather_data(options)
-    data["generated_at"] = datetime.now()
+    data["generated_at"] = local_now()
     data["app_version"] = APP_VERSION
-    gather_duration = (datetime.now() - start_time).total_seconds()
+    gather_duration = time.perf_counter() - start_time
     log_event(
         logger,
         logging.INFO,
@@ -5855,9 +5855,9 @@ def _generate_report_pdf_bytes(
     )
 
     html = render_report_html(data)
-    start_time = datetime.now()
+    start_time = time.perf_counter()
     pdf_bytes = HTML(string=html, base_url=base_url).write_pdf()
-    pdf_duration = (datetime.now() - start_time).total_seconds()
+    pdf_duration = time.perf_counter() - start_time
     log_event(
         logger,
         logging.INFO,

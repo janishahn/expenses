@@ -12,9 +12,9 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, event, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from expenses.ai.service import LLMAssistantService, retry_receipt_readings
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.ai.service import LLMAssistantService, retry_receipt_readings
 from expenses.db.models import (
     Category,
     LLMJob,
@@ -25,7 +25,6 @@ from expenses.db.models import (
 )
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.recurrence.engine import local_today
-from expenses.services.rollups import recompute_monthly_rollup_for_date
 from expenses.schemas import TransactionIn
 from expenses.services import (
     ReceiptAttachmentService,
@@ -34,6 +33,7 @@ from expenses.services import (
     TransactionService,
     auto_categorization,
 )
+from expenses.services.rollups import recompute_monthly_rollup_for_date
 
 
 def make_session():
@@ -951,7 +951,8 @@ def test_late_thumbnail_of_a_deleted_attachment_is_not_served_for_its_id(
     red, green, blue = (
         Image.open(BytesIO(thumbnail.content)).convert("RGB").getpixel((4, 4))
     )
-    assert blue > 200 and red < 50
+    assert blue > 200
+    assert red < 50
     assert not late_thumbnail.exists()
     assert not legacy_thumbnail.exists()
 

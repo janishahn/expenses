@@ -3,8 +3,9 @@
 Attachments uploaded before this revision stay unread until read on request.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202611161200"
 down_revision = "202610281200"

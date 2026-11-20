@@ -419,7 +419,7 @@ function Conversation({
           (chat) => {
             if (chatIdRef.current === id && !abortRef.current) setTurns(savedTurns(chat))
           },
-          () => undefined
+          () => {}
         )
       })
     },

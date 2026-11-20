@@ -82,6 +82,7 @@ export type LineSeries = {
 // part above or below the lo line, such as where income is above or below expenses.
 export type LineBand = { key: string; lo: Array<number | null>; hi: Array<number | null>; fill?: string; clip?: "above" | "below" }
 
+// oxlint-disable-next-line complexity
 export function LineChart({
   labels,
   series,

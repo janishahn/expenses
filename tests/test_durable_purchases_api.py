@@ -161,7 +161,7 @@ def test_durable_purchase_listing_excludes_income_after_type_change(
 
     response = api_client.get("/api/dashboard?period=all")
     assert response.status_code == 200
-    durable_items = response.json().get("durable_purchases", [])
+    durable_items = response.json()["durable_purchases"] or []
     assert durable_items == []
 
     response = api_client.get(f"/api/transactions/{expense_txn_id}")

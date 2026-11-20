@@ -3,6 +3,7 @@ import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight"
 import { ArrowUpRightIcon } from "@phosphor-icons/react/ArrowUpRight"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { components } from "../app/api-schema"
 import type { CategoriesResponse } from "../app/api-types"
 import { formatDateRange } from "../app/format"
 import { Amount } from "../components/ui/Amount"
@@ -17,60 +18,7 @@ import { WeekStepper } from "../components/ui/PeriodControl"
 import { MetricStrip, Sheet } from "../components/ui/Sheet"
 import { categoryColor, neighbourCategoryColors } from "../components/ui/tokens"
 
-type CategoryRef = { id: number; name: string; icon: string | null }
-
-type DigestCategory = {
-  category_id: number
-  name: string
-  icon: string | null
-  amount_cents: number
-  bar_percent: number
-  trailing_weekly_avg_cents: number
-  is_above_trailing_50: boolean
-}
-
-type DigestBudgetPulse = {
-  scope_category_id: number | null
-  scope_label: string
-  amount_cents: number
-  spent_cents: number
-  days_left: number
-  pace_state: "under" | "on" | "over"
-}
-
-type DigestUnusual = {
-  id: number
-  date: string
-  title: string
-  amount_cents: number
-  trailing_avg_cents: number
-  category: CategoryRef | null
-}
-
-type DigestRecurring = {
-  transaction_id: number
-  rule_id: number | null
-  rule_name: string
-  date: string
-  type: "expense" | "income"
-  amount_cents: number
-  category: CategoryRef | null
-}
-
-type DigestResponse = {
-  week_start: string
-  week_end: string
-  headline: {
-    total_spent_cents: number
-    vs_last_week_cents: number
-    vs_four_week_avg_cents: number
-    transaction_count: number
-  }
-  top_categories: DigestCategory[]
-  budget_pulse: DigestBudgetPulse[]
-  unusual_transactions: DigestUnusual[]
-  recurring_postings: DigestRecurring[]
-}
+type DigestResponse = components["schemas"]["DigestResponseOut"]
 
 const TOP_COLUMNS: Columns = {
   columns: "18px 96px minmax(0, 1fr) 84px 96px",

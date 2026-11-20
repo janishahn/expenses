@@ -20,6 +20,7 @@ import s from "./kit.module.css"
 
 // Receipts are provenance: a capped preview of one file, its name and size, and a strip
 // when there are several. Without files the section is one drop row.
+// oxlint-disable-next-line complexity
 export function ReceiptSection({
   files,
   onUpload,

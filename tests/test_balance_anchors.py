@@ -4,9 +4,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from expenses.db.session import Base
-from expenses.db.models import Category, TransactionType
 from expenses.core.periods import Period
+from expenses.db.models import Category, TransactionType
+from expenses.db.session import Base
 from expenses.schemas import BalanceAnchorIn, TransactionIn
 from expenses.services import (
     BalanceAnchorService,

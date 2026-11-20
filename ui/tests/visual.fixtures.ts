@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test"
 import { createCategory, createTransaction } from "./helpers"
 
-export const FIXED_NOW = new Date("2026-07-16T12:00:00Z")
+const FIXED_NOW = new Date("2026-07-16T12:00:00Z")
 export const THEMES = ["light", "dark"] as const
 export type Theme = (typeof THEMES)[number]
 
@@ -54,7 +54,7 @@ const CATEGORIES = [
 
 const INCOME = new Set(["Salary", "Freelance"])
 
-export const PEEK_TITLE = "Dinner at Trattoria"
+const PEEK_TITLE = "Dinner at Trattoria"
 
 // July 2026 is the month under test; June gives the ledger a second month.
 const LEDGER: Entry[] = [

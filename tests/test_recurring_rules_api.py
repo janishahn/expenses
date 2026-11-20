@@ -815,7 +815,8 @@ def test_unnamed_stored_rule_posts_and_its_transactions_stay_readable(
     export = api_client.get("/api/transactions/export.csv", params={"period": "all"})
     assert export.status_code == 200
     lines = [line for line in export.text.splitlines()[1:] if line]
-    assert lines and all(",Streaming,Streaming," in line for line in lines), lines
+    assert lines
+    assert all(",Streaming,Streaming," in line for line in lines), lines
 
 
 def test_unnamed_stored_rule_stays_editable_and_can_be_named(

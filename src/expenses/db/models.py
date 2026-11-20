@@ -9,7 +9,6 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
-    Enum as SAEnum,
     Float,
     ForeignKey,
     Index,
@@ -20,6 +19,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

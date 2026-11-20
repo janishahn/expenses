@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from expenses.ai.features import Feature
 from expenses.core.config import get_settings
+from expenses.core.response_model import OutModel
 from expenses.db.models import AssistantChat, LLMJob, User
 
 UsagePeriod = Literal["week", "month", "all"]
@@ -109,7 +110,7 @@ class AIUsageChat(BaseModel):
     cost_usd: str
 
 
-class AIUsageOut(BaseModel):
+class AIUsageOut(OutModel):
     period: UsagePeriod
     started_at: datetime | None
     bucket: UsageBucket

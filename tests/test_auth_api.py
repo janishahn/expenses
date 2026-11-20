@@ -9,7 +9,7 @@ from expenses.core.body_limit import BodySizeLimitMiddleware
 from expenses.core.config import get_settings
 
 
-@pytest.fixture()
+@pytest.fixture
 def api_client(anonymous_api_client: TestClient) -> TestClient:
     return anonymous_api_client
 

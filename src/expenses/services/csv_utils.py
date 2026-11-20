@@ -166,7 +166,7 @@ def iter_export_transactions(transactions: Iterable[Transaction]) -> Iterator[st
                 txn.date.isoformat(),
                 txn.type.value,
                 "1" if txn.is_reimbursement else "0",
-                f"{txn.amount_cents / 100:.2f}",
+                f"{txn.amount_cents // 100}.{txn.amount_cents % 100:02d}",
                 sanitize_csv_value(txn.category.name if txn.category else ""),
                 sanitize_csv_value(
                     txn.title

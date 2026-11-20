@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from alembic import command as alembic_command
 from alembic.config import Config
 
+from alembic import command as alembic_command
 from expenses.core.config import get_settings
 
 

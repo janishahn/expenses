@@ -2,7 +2,7 @@ import csv
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import StringIO
 from urllib.error import URLError
 from urllib.parse import urlencode

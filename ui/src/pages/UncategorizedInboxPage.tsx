@@ -43,6 +43,7 @@ import { TextField } from "../components/ui/TextField"
 import { showToast } from "../components/ui/toast-store"
 import { buildSearchParams } from "../lib/searchParams"
 import { TransactionPeek } from "./TransactionRecord"
+import type { components } from "../app/api-schema"
 
 type Suggestion = { category_id: number; confidence: number }
 
@@ -82,6 +83,7 @@ function countLabel(count: number): string {
   return `${count} transaction${count === 1 ? "" : "s"}`
 }
 
+// oxlint-disable-next-line complexity
 function UncategorizedInboxPage() {
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -188,7 +190,8 @@ function UncategorizedInboxPage() {
   listSearch.delete("peek")
   const listHref = `${location.pathname}${listSearch.toString() ? `?${listSearch.toString()}` : ""}`
 
-  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null = null) =>
+  // Undo passes the category it set, so a newer change elsewhere is left alone.
+  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null) =>
     apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
       method: "POST",
       body: JSON.stringify({
@@ -206,7 +209,7 @@ function UncategorizedInboxPage() {
   const categorize = async (row: InboxItem, category: CategorySummary) => {
     const previousId = row.category?.id
     try {
-      await applyCategory([row.id], category.id)
+      await applyCategory([row.id], category.id, null)
     } catch (failure) {
       showToast({ message: getApiErrorMessage(failure, "Unable to categorize the transaction.") })
       return
@@ -265,7 +268,7 @@ function UncategorizedInboxPage() {
     setSelection({ mode: "ids", ids: [] })
     setSelectMode(false)
   }
-  const bulkSelection = () => {
+  const bulkSelection = (): components["schemas"]["BulkSelectionIn"] | null => {
     if (selection.mode === "ids") return { mode: "ids", transaction_ids: selectedIds }
     if (!settled) return null
     return {
@@ -286,7 +289,10 @@ function UncategorizedInboxPage() {
   const bulkCategory = async (categoryId: number | null) => {
     const bulk = bulkSelection()
     if (categoryId === null || !bulk) return
-    const payload = { selection: bulk, operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" } }
+    const payload = {
+      selection: bulk,
+      operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" },
+    } satisfies components["schemas"]["BulkEditRequestIn"]
     setBulkPending(true)
     try {
       const preview = await apiFetch<BulkResponse>("/api/transactions/bulk/preview", {

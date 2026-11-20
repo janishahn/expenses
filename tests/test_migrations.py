@@ -3,9 +3,9 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from alembic import command
 from alembic.config import Config
 
+from alembic import command
 from expenses.core.config import get_settings
 
 

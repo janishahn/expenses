@@ -74,18 +74,21 @@ export function Notes({
       }
     >
       {editing ? (
+        // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Keys from the editor inside bubble up to this wrapper.
         <div className={clsx(s.notes, s.notesEditing)} onKeyDown={onKeyDown}>
           <Suspense fallback={<div className={s.md}>{draft}</div>}>
             <NotesEditor value={draft} label="Notes" onChange={edit} onBlur={() => void commit()} />
           </Suspense>
         </div>
       ) : value ? (
+        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Edit notes is the keyboard path.
         <div className={clsx(s.notes, s.md, s.notesText)} onClick={onTextClick}>
           <Markdown
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ node, ...props }) => {
                 void node
+                // oxlint-disable-next-line jsx-a11y/anchor-has-content -- Markdown passes the link text in props.
                 return <a {...props} target="_blank" rel="noreferrer" />
               },
             }}

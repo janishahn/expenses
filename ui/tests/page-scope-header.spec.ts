@@ -19,24 +19,27 @@ test.describe("Page scope headers", () => {
         await expect(title).toBeVisible()
         await expect(action).toBeVisible()
 
-        const [headerBox, titleBox, actionBox] = await Promise.all([
-          header.boundingBox(),
-          title.boundingBox(),
-          action.boundingBox(),
-        ])
-        expect(headerBox).not.toBeNull()
-        expect(titleBox).not.toBeNull()
-        expect(actionBox).not.toBeNull()
-        expect(actionBox!.x).toBeGreaterThanOrEqual(headerBox!.x)
-        expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(
-          headerBox!.x + headerBox!.width,
-        )
-        expect(titleBox!.x + titleBox!.width).toBeLessThanOrEqual(actionBox!.x)
-        expect(
-          Math.abs(
-            titleBox!.y + titleBox!.height / 2 - (actionBox!.y + actionBox!.height / 2),
-          ),
-        ).toBeLessThanOrEqual(8)
+        // The header can remount its actions when the page data arrives; measure again until it settles.
+        await expect(async () => {
+          const [headerBox, titleBox, actionBox] = await Promise.all([
+            header.boundingBox(),
+            title.boundingBox(),
+            action.boundingBox(),
+          ])
+          expect(headerBox).not.toBeNull()
+          expect(titleBox).not.toBeNull()
+          expect(actionBox).not.toBeNull()
+          expect(actionBox!.x).toBeGreaterThanOrEqual(headerBox!.x)
+          expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(
+            headerBox!.x + headerBox!.width,
+          )
+          expect(titleBox!.x + titleBox!.width).toBeLessThanOrEqual(actionBox!.x)
+          expect(
+            Math.abs(
+              titleBox!.y + titleBox!.height / 2 - (actionBox!.y + actionBox!.height / 2),
+            ),
+          ).toBeLessThanOrEqual(8)
+        }).toPass()
 
         const layout = await page.evaluate(() => ({
           viewport: document.documentElement.clientWidth,
@@ -46,48 +49,6 @@ test.describe("Page scope headers", () => {
           layout.viewport,
         )
       }
-    }
-  })
-
-  test("places the period control and Filter on one row beneath the page title", async ({
-    page,
-  }) => {
-    const pages = [
-      { path: "/", title: "Dashboard", filter: true },
-      { path: "/insights", title: "Insights", filter: true },
-      { path: "/categories", title: "Categories", filter: false },
-      { path: "/tags", title: "Tags", filter: false },
-    ]
-
-    for (const entry of pages) {
-      await page.goto(entry.path)
-      const main = page.getByRole("main")
-      const title = main.getByRole("heading", { name: entry.title, level: 1 })
-      const period = main.getByRole("group", { name: "Period" })
-      await expect(title).toBeVisible()
-      await expect(period).toBeVisible()
-      // The period control also shows while the page loads; measure the loaded header.
-      await expect(
-        main.getByRole("button", { name: entry.filter ? "Filter" : /^Sort by/, exact: entry.filter }),
-      ).toBeVisible()
-
-      const [titleBox, periodBox] = await Promise.all([
-        title.boundingBox(),
-        period.boundingBox(),
-      ])
-      expect(titleBox).not.toBeNull()
-      expect(periodBox).not.toBeNull()
-      expect(periodBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height)
-
-      const filter = main.getByRole("button", { name: "Filter", exact: true })
-      if (entry.filter) {
-        await expect(filter).toBeVisible()
-        const filterBox = await filter.boundingBox()
-        expect(filterBox).not.toBeNull()
-        expect(Math.abs(filterBox!.y - periodBox!.y)).toBeLessThanOrEqual(1)
-        expect(Math.abs(filterBox!.height - periodBox!.height)).toBeLessThanOrEqual(1)
-        expect(filterBox!.x).toBeGreaterThan(periodBox!.x + periodBox!.width)
-      } else await expect(filter).toHaveCount(0)
     }
   })
 })

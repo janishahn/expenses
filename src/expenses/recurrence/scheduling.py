@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import select
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import select
 
 from expenses.ai.assistant import prune_chats
 from expenses.ai.service import (
@@ -16,8 +16,8 @@ from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.db.models import LLMJob
 from expenses.db.session import engine, session_scope
-from expenses.services.auto_categorization import train_due_users
 from expenses.services import RecurringRuleService
+from expenses.services.auto_categorization import train_due_users
 
 logger = get_logger("expenses.scheduler")
 
@@ -71,7 +71,7 @@ class SchedulerManager:
         # A failed catch-up must not stop the app; the scheduled runs retry it.
         try:
             self._run_job("startup")
-        except Exception:
+        except Exception:  # noqa: BLE001 - the scheduled runs retry it
             log_event(
                 logger, logging.ERROR, "scheduler_startup_run_failed", exc_info=True
             )
