@@ -185,6 +185,11 @@ class TagService:
     # Rows that differ only in case can exist, so the exact name wins, then an
     # active tag, then the oldest.
     def _named(self, clean_name: str, *, exclude_id: int | None = None) -> Tag | None:
+        exact = self.session.scalar(
+            select(Tag).where(Tag.user_id == self.user_id, Tag.name == clean_name)
+        )
+        if exact is not None and exact.id != exclude_id:
+            return exact
         lowered = clean_name.lower()
         matches = [
             tag
@@ -212,6 +217,22 @@ class TagService:
         self.session.add(tag)
         self.session.flush()
         return tag
+
+    def _touch_tagged_transactions(self, tag_id: int) -> None:
+        """Moves the version of transactions whose echoed tag names change."""
+        self.session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.id.in_(
+                    select(transaction_tags.c.transaction_id).where(
+                        transaction_tags.c.tag_id == tag_id
+                    )
+                ),
+            )
+            .values(updated_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
 
     def _replace_in_tag_name_lists(self, old_name: str, new_name: str | None) -> None:
         """Renames a tag in templates and pending AI suggestions; None removes it."""
@@ -352,6 +373,7 @@ class TagService:
 
         if clean_name != tag.name:
             self._replace_in_tag_name_lists(tag.name, clean_name)
+            self._touch_tagged_transactions(tag.id)
         tag.name = clean_name
         tag.color = color
         tag.is_hidden_from_budget = is_hidden_from_budget
@@ -394,6 +416,7 @@ class TagService:
         if not tag or tag.user_id != self.user_id:
             raise ValueError("Tag not found")
 
+        self._touch_tagged_transactions(tag.id)
         self.session.execute(
             delete(transaction_tags).where(transaction_tags.c.tag_id == tag.id)
         )
@@ -557,6 +580,7 @@ class TagService:
             )
             inserted_links += 1
 
+        self._touch_tagged_transactions(source.id)
         self.session.execute(
             delete(transaction_tags).where(transaction_tags.c.tag_id == source.id)
         )
@@ -1964,9 +1988,12 @@ class TransactionService:
         metrics._invalidate_period_cache(Period("transaction", old_date, old_date))
         metrics._invalidate_period_cache(Period("transaction", data.date, data.date))
 
+        # Read before commit: a refresh afterwards can see a later save's version.
+        saved_updated_at = txn.updated_at
         self.session.commit()
         self.session.refresh(txn)
         txn._rule_result = rule_result
+        txn._saved_updated_at = saved_updated_at
         log_event(
             logger,
             logging.INFO,
@@ -3291,26 +3318,24 @@ class IngestService:
         category_name_raw = (data.category or "").strip()
         if category_name_raw:
             input_lower = category_name_raw.lower()
-            # Matched in Python: SQLite's lower() folds ASCII only. An exact
-            # name, active or archived, wins over a fuzzy match.
-            all_categories = self.session.scalars(
+            # Matched in Python: SQLite's lower() folds ASCII only. An active
+            # exact name wins, then a fuzzy active match, then an archived
+            # exact name.
+            expense_categories = (
                 select(Category)
                 .where(
                     Category.user_id == self.user_id,
                     Category.type == TransactionType.expense,
                 )
                 .order_by(Category.archived_at.is_not(None), Category.id)
-            ).all()
+            )
+            all_categories = self.session.scalars(expense_categories).all()
             exact = next(
                 (c for c in all_categories if c.name.lower() == input_lower), None
             )
             if exact and exact.archived_at is None:
                 category_id = exact.id
                 category_resolution = "exact"
-            elif exact:
-                CategoryService(self.session, self.user_id).restore(exact.id)
-                category_id = exact.id
-                category_resolution = "restored"
             else:
                 categories = [c for c in all_categories if c.archived_at is None]
                 best_distance: Optional[int] = None
@@ -3333,6 +3358,10 @@ class IngestService:
                     category_id = best[0].id
                     category_resolution = "fuzzy"
                     fuzzy_distance = best_distance
+                elif exact:
+                    CategoryService(self.session, self.user_id).restore(exact.id)
+                    category_id = exact.id
+                    category_resolution = "restored"
                 else:
                     try:
                         created = CategoryService(self.session, self.user_id).create(
@@ -3345,7 +3374,25 @@ class IngestService:
                         category_id = created.id
                         category_resolution = "created"
                     except ValueError as exc:
-                        raise IngestCategoryNotFound(str(exc)) from exc
+                        # Another request may have created the name meanwhile.
+                        existing = next(
+                            (
+                                c
+                                for c in self.session.scalars(expense_categories)
+                                if c.name.lower() == input_lower
+                            ),
+                            None,
+                        )
+                        if existing is None:
+                            raise IngestCategoryNotFound(str(exc)) from exc
+                        if existing.archived_at is not None:
+                            CategoryService(self.session, self.user_id).restore(
+                                existing.id
+                            )
+                            category_resolution = "restored"
+                        else:
+                            category_resolution = "exact"
+                        category_id = existing.id
         else:
             category_id = None
 
@@ -7058,7 +7105,24 @@ class RecurringRuleService:
     def _nearest_on_schedule(rule: RecurringRule, old_next: date) -> date:
         """The rule's scheduled date nearest old_next (the later one on a tie), so
         moving the schedule neither drops nor adds a posting. It lies in the past
-        only when old_next already did."""
+        only when old_next already did. Month and year rules keep the pending
+        occurrence in old_next's calendar month when the schedule has one there."""
+        old_month = (old_next.year, old_next.month)
+        if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year):
+            occurrence = rule.anchor_date
+            while (occurrence.year, occurrence.month) < old_month:
+                following = next_date_in_range(rule, occurrence)
+                if following is None or following <= occurrence:
+                    break
+                occurrence = following
+            if (occurrence.year, occurrence.month) == old_month:
+                today = local_today()
+                while occurrence < today <= old_next:
+                    following = next_date_in_range(rule, occurrence)
+                    if following is None or following <= occurrence:
+                        break
+                    occurrence = following
+                return occurrence
         before: Optional[date] = None
         after = rule.anchor_date
         while after < old_next:
@@ -8650,10 +8714,13 @@ class BudgetService:
         labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
         budgets: dict[Optional[int], dict[str, int]] = {}
         spent: dict[str, dict[Optional[int], int]] = {}
+        today = local_today()
         for label, month in zip(labels, months, strict=True):
             for row in self.effective_budgets_for_month(month.year, month.month):
                 budgets.setdefault(row.scope_category_id, {})[label] = row.amount_cents
-            spent[label] = self.spent_by_category_for_month(month.year, month.month)
+            spent[label] = self.spent_by_category_for_month(
+                month.year, month.month, through=today
+            )
 
         first_months: dict[Optional[int], str] = {}
         for category_id, starts_on in self.session.execute(
@@ -8738,9 +8805,12 @@ class BudgetService:
             )
         return effective
 
-    def spent_by_category_for_year(self, year: int) -> dict[Optional[int], int]:
+    def spent_by_category_for_year(
+        self, year: int, *, through: date
+    ) -> dict[Optional[int], int]:
+        """Spend in the year, counting only days up to `through`."""
         start = date(year, 1, 1)
-        end = date(year + 1, 1, 1) - date.resolution
+        end = min(date(year + 1, 1, 1) - date.resolution, through)
         gross_stmt = (
             select(
                 Transaction.category_id,

@@ -307,6 +307,10 @@ class TransactionSavedOut(BaseModel):
     updated_at: datetime
 
 
+class ErrorDetailOut(BaseModel):
+    detail: str
+
+
 class TransactionFiltersOut(BaseModel):
     type: Optional[str] = None
     category_id: Optional[int] = None
@@ -911,7 +915,7 @@ class AdminElevationIn(BaseModel):
 
 
 class BudgetOverrideIn(BaseModel):
-    year: int = Field(..., ge=1970, le=3000)
+    year: int = Field(..., ge=MIN_LEDGER_DATE.year, le=MAX_LEDGER_DATE.year)
     month: int = Field(..., ge=1, le=12)
     category_id: Optional[int] = None
     amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)

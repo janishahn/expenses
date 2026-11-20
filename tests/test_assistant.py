@@ -2026,6 +2026,24 @@ def test_assistant_approvals_refuse_a_category_archived_since_the_card() -> None
         ).all()
 
 
+def test_assistant_budget_proposals_stay_in_the_ledger_years() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        session.commit()
+        with pytest.raises(InvalidProposal):
+            propose_budgets(
+                _reader(session),
+                [
+                    BudgetRequest(
+                        category_id=None,
+                        month="2200-01",
+                        amount_cents=5_000,
+                        applies="month",
+                    )
+                ],
+            )
+
+
 def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))

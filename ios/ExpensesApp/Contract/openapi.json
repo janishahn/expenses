@@ -2883,8 +2883,8 @@
             "type": "integer"
           },
           "year": {
-            "maximum": 3000.0,
-            "minimum": 1970.0,
+            "maximum": 2199.0,
+            "minimum": 1900.0,
             "title": "Year",
             "type": "integer"
           }
@@ -5071,6 +5071,19 @@
           "items"
         ],
         "title": "DurablePurchasesResponseOut",
+        "type": "object"
+      },
+      "ErrorDetailOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorDetailOut",
         "type": "object"
       },
       "FeatureSettings": {
@@ -16582,6 +16595,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetailOut"
+                }
+              }
+            },
+            "description": "The transaction was changed since expected_updated_at"
           },
           "422": {
             "content": {

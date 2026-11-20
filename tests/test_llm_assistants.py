@@ -685,6 +685,72 @@ async def test_rule_mining_rejects_pending_suggestion() -> None:
 
 
 @pytest.mark.anyio
+async def test_rule_mining_skips_proposals_a_rule_cannot_hold() -> None:
+    with make_session() as session:
+        groceries = CategoryService(session).create(
+            CategoryIn(name="Groceries", type=TransactionType.expense, order=0)
+        )
+        uncategorized = CategoryService(session).get_or_create_uncategorized(
+            TransactionType.expense
+        )
+        for index in range(2):
+            txn = TransactionService(session).create(
+                TransactionIn(
+                    date=date(2026, 5, index + 1),
+                    occurred_at=datetime(2026, 5, index + 1, 12, 0),
+                    type=TransactionType.expense,
+                    amount_cents=1000 + index,
+                    category_id=uncategorized.id,
+                    title=f"LIDL STORE {index}",
+                    tags=[],
+                )
+            )
+            TransactionService(session).update(
+                txn.id,
+                TransactionIn(
+                    date=txn.date,
+                    occurred_at=txn.occurred_at,
+                    type=txn.type,
+                    amount_cents=txn.amount_cents,
+                    category_id=groceries.id,
+                    title=txn.title or "LIDL",
+                    tags=[],
+                ),
+            )
+
+        def proposal(match_value: str, low: int | None, high: int | None):
+            return RuleProposalOut(
+                name=match_value,
+                match_type="contains",
+                match_value=match_value,
+                transaction_type="expense",
+                min_amount_cents=low,
+                max_amount_cents=high,
+                set_category_id=groceries.id,
+                confidence=0.88,
+                reason="Repeated corrections.",
+                evidence_transaction_ids=[1, 2],
+            )
+
+        runner = FakeLLMRunner(
+            RuleMiningOutput(
+                proposals=[
+                    proposal("LIDL", 500, 5_000),
+                    proposal("ALDI", 5_000, 1_000),
+                    proposal("REWE", None, 1_000_000_000_001),
+                ]
+            )
+        )
+        service = LLMAssistantService(session, user_id=1, runner=runner)
+        suggestions = await service.mine_rule_suggestions(since=date(2026, 4, 25))
+
+        assert [suggestion.match_value for suggestion in suggestions] == ["LIDL"]
+        assert [row.match_value for row in service.pending_rule_suggestions()] == [
+            "LIDL"
+        ]
+
+
+@pytest.mark.anyio
 async def test_rule_mining_refreshes_duplicate_pending_suggestion() -> None:
     with make_session() as session:
         groceries = CategoryService(session).create(

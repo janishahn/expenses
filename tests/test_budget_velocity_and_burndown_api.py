@@ -536,6 +536,20 @@ def test_budget_endpoints_reject_malformed_query_values(
         assert response.json()["detail"] == detail
 
 
+def test_budget_overrides_use_the_years_budgets_can_be_read_for(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for year, status in ((2200, 422), (1950, 200)):
+        response = api_client.post(
+            "/api/budgets/overrides",
+            headers=csrf_headers,
+            json={"year": year, "month": 1, "category_id": None, "amount_cents": 100},
+        )
+        assert response.status_code == status, year
+    budgets = api_client.get("/api/budgets?month=1950-01").json()
+    assert [row["amount_cents"] for row in budgets["budgets"]] == [100]
+
+
 def test_budget_amounts_above_the_limit_are_rejected(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

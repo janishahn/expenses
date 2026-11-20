@@ -287,3 +287,61 @@ def test_transactions_take_existing_non_ascii_and_refuse_archived_tags(
         },
     )
     assert bulk.status_code == 400
+
+
+def test_renaming_deleting_or_merging_a_tag_moves_its_transactions_versions(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    target = api_client.post(
+        "/api/tags", headers=csrf_headers, json={"name": "Target"}
+    ).json()["id"]
+
+    def tagged(name: str) -> tuple[str, int]:
+        response = api_client.post(
+            "/api/transactions",
+            headers=csrf_headers,
+            json={
+                "date": "2026-03-01",
+                "occurred_at": "2026-03-01T12:00:00",
+                "type": "expense",
+                "amount_cents": 290,
+                "title": "Ticket",
+                "tags": [name],
+            },
+        )
+        assert response.status_code == 200
+        tag_id = next(
+            tag["id"]
+            for tag in api_client.get("/api/tags").json()["tags"]
+            if tag["name"] == name
+        )
+        return f"/api/transactions/{response.json()['id']}", tag_id
+
+    def version(url: str) -> str:
+        return api_client.get(url).json()["updated_at"]
+
+    renamed, tag_id = tagged("Business")
+    before = version(renamed)
+    response = api_client.put(
+        f"/api/tags/{tag_id}",
+        headers=csrf_headers,
+        json={"name": "Work", "is_hidden_from_budget": False},
+    )
+    assert response.status_code == 200
+    assert version(renamed) != before
+
+    deleted, tag_id = tagged("Gone")
+    before = version(deleted)
+    response = api_client.delete(f"/api/tags/{tag_id}", headers=csrf_headers)
+    assert response.status_code == 200
+    assert version(deleted) != before
+
+    merged, tag_id = tagged("Source")
+    before = version(merged)
+    response = api_client.post(
+        "/api/tags/merge",
+        headers=csrf_headers,
+        json={"source_tag_id": tag_id, "target_tag_id": target},
+    )
+    assert response.status_code == 200
+    assert version(merged) != before

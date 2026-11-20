@@ -257,7 +257,7 @@ def test_ingest_matches_non_ascii_and_archived_category_names_exactly() -> None:
         stay = categories.create(
             CategoryIn(name="Übernachtung", type=TransactionType.expense, order=0)
         )
-        categories.create(
+        food = categories.create(
             CategoryIn(name="Food", type=TransactionType.expense, order=0)
         )
         food2 = categories.create(
@@ -282,11 +282,44 @@ def test_ingest_matches_non_ascii_and_archived_category_names_exactly() -> None:
 
         assert ingest("Ärzte").category_id == doctors.id
         assert ingest("übernachtung").category_id == stay.id
-        assert ingest("food2").category_id == food2.id
+        # A merged-away name keeps going to the active category one edit away.
+        assert ingest("food2").category_id == food.id
         names = session.scalars(
             select(Category.name).where(
                 Category.type == TransactionType.expense,
                 Category.archived_at.is_(None),
             )
         ).all()
-        assert sorted(names) == ["Food", "Food2", "Ärzte", "Übernachtung"]
+        assert sorted(names) == ["Food", "Ärzte", "Übernachtung"]
+
+
+def test_ingest_uses_a_category_another_request_created_meanwhile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        create = CategoryService.create
+
+        def created_elsewhere_first(self, data: CategoryIn):
+            session.add(
+                Category(user_id=self.user_id, name="Travel", type=data.type, order=0)
+            )
+            session.commit()
+            return create(self, data)
+
+        monkeypatch.setattr(CategoryService, "create", created_elsewhere_first)
+        txn = (
+            IngestService(session)
+            .ingest_expense(
+                IngestTransactionIn(
+                    amount_cents=100,
+                    title="Train",
+                    date=date(2025, 1, 2),
+                    category="Travel",
+                )
+            )
+            .transaction
+        )
+        assert txn.category.name == "Travel"

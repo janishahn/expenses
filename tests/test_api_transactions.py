@@ -1,3 +1,4 @@
+import hashlib
 import json
 import runpy
 from datetime import date, datetime, timedelta
@@ -9,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, update
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
@@ -834,6 +835,15 @@ def test_attachment_download_and_thumbnail_caching(
         headers={"If-None-Match": thumb_etag},
     )
     assert thumb_not_modified.status_code == 304
+    # Copies cached under the earlier thumbnail scheme are sent again.
+    earlier_etag = f'"{hashlib.sha256(one_by_one_png).hexdigest()}-thumbnail"'
+    assert (
+        api_client.get(
+            f"/api/attachments/{attachment_id}/thumbnail",
+            headers={"If-None-Match": earlier_etag},
+        ).status_code
+        == 200
+    )
 
 
 def test_receipt_upload_accepts_its_advertised_limit_and_refuses_larger_bodies(
@@ -1279,6 +1289,44 @@ def test_receipt_recovery_continues_past_a_reading_that_raises(
     assert ids[0] not in calls
 
 
+def test_receipt_recovery_leaves_a_replacement_upload_with_the_same_id(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=618, title="Receipts"
+    )
+    response = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("first.png", _png(4), "image/png")},
+        headers=csrf_headers,
+    )
+    attachment_id = int(response.json()["id"])
+    db_session.query(ReceiptAttachment).update({"items_status": "reading"})
+    db_session.commit()
+    engine = db_session.get_bind()
+
+    # The reading fails after the receipt was deleted and its id given to a new upload.
+    async def replace_then_raise(self, attachment_id: int) -> None:
+        with engine.begin() as connection:
+            connection.execute(
+                update(ReceiptAttachment)
+                .where(ReceiptAttachment.id == attachment_id)
+                .values(storage_key="replacement.png", items_status="reading")
+            )
+        raise RuntimeError("Saving the items failed")
+
+    monkeypatch.setattr(LLMAssistantService, "read_receipt_items", replace_then_raise)
+
+    retry_receipt_readings(engine, interrupted=True)
+
+    db_session.expire_all()
+    replacement = db_session.get(ReceiptAttachment, attachment_id)
+    assert (replacement.items_status, replacement.items_error) == ("reading", None)
+
+
 def test_transactions_list_total_counts_every_filtered_row(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -1394,6 +1442,49 @@ def test_a_save_from_a_stale_copy_is_refused(
     assert save(1_200, [], first.json()["updated_at"]).status_code == 409
     assert save(1_200, ["work"], tagged.json()["updated_at"]).status_code == 200
     assert save(1_300, ["work"], None).status_code == 200
+
+
+def test_a_save_returns_its_own_version_when_another_save_follows(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    on = local_today()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=1_000, title="Lunch", on=on
+    )
+    other_version = datetime(2031, 1, 1)
+    engine = db_session.get_bind()
+    armed = [True]
+
+    # Another request saves right after this one commits.
+    def save_elsewhere(session) -> None:
+        if not armed[0]:
+            return
+        armed[0] = False
+        with engine.begin() as connection:
+            connection.execute(
+                update(Transaction)
+                .where(Transaction.id == transaction_id)
+                .values(updated_at=other_version)
+            )
+
+    event.listen(Session, "after_commit", save_elsewhere)
+    try:
+        response = api_client.put(
+            f"/api/transactions/{transaction_id}",
+            headers=csrf_headers,
+            json={
+                "date": on.isoformat(),
+                "occurred_at": f"{on.isoformat()}T12:00:00",
+                "type": "expense",
+                "amount_cents": 1_200,
+                "title": "Lunch",
+            },
+        )
+    finally:
+        event.remove(Session, "after_commit", save_elsewhere)
+    assert response.status_code == 200
+    assert not armed[0]
+    assert response.json()["updated_at"] != other_version.isoformat()
 
 
 def test_transaction_amounts_and_dates_are_bounded(

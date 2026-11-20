@@ -157,6 +157,7 @@ from expenses.schemas import (
     DeletedTransactionsResponseOut,
     DigestResponseOut,
     DurablePurchasesResponseOut,
+    ErrorDetailOut,
     DurablePurchaseIn,
     ForecastResponseOut,
     ForecastScenarioIn,
@@ -2322,7 +2323,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
     yearly_spent_map: dict[Optional[int], int] = {}
     if view in {"year", "workspace"}:
         yearly_budgets = svc.yearly_budgets_for_year(year_value)
-        yearly_spent_map = svc.spent_by_category_for_year(year_value)
+        yearly_spent_map = svc.spent_by_category_for_year(year_value, through=today)
 
     categories = CategoryService(db, user_id=user_id).list_all()
 
@@ -4583,7 +4584,8 @@ def api_attachment_thumbnail(
     if thumb_path is None:
         raise HTTPException(status_code=404, detail="No thumbnail available")
 
-    etag = f'"{attachment.sha256_hex}-thumbnail"'
+    # Named after the cached file, so copies from earlier cache layouts revalidate.
+    etag = f'"{thumb_path.stem}"'
     cache_control = "private, no-cache"
     if request.headers.get("if-none-match") == etag:
         return Response(
@@ -4826,7 +4828,14 @@ def api_delete_reimbursement_allocation(
 
 
 @router.put(
-    "/api/transactions/{transaction_id:int}", response_model=TransactionSavedOut
+    "/api/transactions/{transaction_id:int}",
+    response_model=TransactionSavedOut,
+    responses={
+        409: {
+            "model": ErrorDetailOut,
+            "description": "The transaction was changed since expected_updated_at",
+        }
+    },
 )
 def api_update_transaction(
     transaction_id: int,
@@ -4842,7 +4851,7 @@ def api_update_transaction(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": txn.id, "updated_at": txn.updated_at}
+    return {"id": txn.id, "updated_at": txn._saved_updated_at}
 
 
 @router.delete("/api/transactions/{transaction_id:int}")

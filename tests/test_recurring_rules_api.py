@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from expenses.infra.fx_rates import FxQuote
@@ -263,6 +264,96 @@ def test_recurring_rule_start_on_an_earlier_day_moves_next_occurrence_back(
     )
     # The 5th of the following month would skip a posting.
     assert next_occurrence == old_next.replace(day=5).isoformat()
+
+
+@pytest.mark.parametrize(
+    ("anchor", "old_next", "new_anchor", "expected"),
+    [
+        # March already posted on the 1st; the 28th of March would post it again.
+        (date(2026, 1, 1), date(2026, 4, 1), date(2026, 1, 28), "2026-04-28"),
+        (date(2026, 1, 15), date(2026, 4, 15), date(2026, 1, 14), "2026-04-14"),
+        # The 1st of March is already past, while the pending 28 March was not.
+        (date(2026, 1, 28), date(2026, 3, 28), date(2026, 1, 1), "2026-04-01"),
+    ],
+)
+def test_recurring_rule_start_move_keeps_the_pending_month(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch,
+    anchor: date,
+    old_next: date,
+    new_anchor: date,
+    expected: str,
+) -> None:
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: date(2026, 3, 10))
+    next_occurrence = _next_occurrence_after_start_change(
+        api_client,
+        csrf_headers,
+        anchor=anchor,
+        next_occurrence=old_next,
+        new_anchor=new_anchor,
+    )
+    assert next_occurrence == expected
+
+
+@pytest.mark.parametrize(
+    ("today", "unit", "count", "anchor", "old_next", "new_anchor", "expected"),
+    [
+        # Moved to December: no January occurrence, so the nearest one stays.
+        (
+            date(2026, 11, 20),
+            "year",
+            1,
+            date(2025, 1, 15),
+            date(2027, 1, 15),
+            date(2024, 12, 15),
+            "2026-12-15",
+        ),
+        (
+            date(2026, 3, 10),
+            "month",
+            2,
+            date(2026, 1, 1),
+            date(2026, 5, 1),
+            date(2026, 2, 28),
+            "2026-04-28",
+        ),
+    ],
+)
+def test_recurring_rule_start_move_to_another_month_keeps_the_nearest_occurrence(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch,
+    today: date,
+    unit: str,
+    count: int,
+    anchor: date,
+    old_next: date,
+    new_anchor: date,
+    expected: str,
+) -> None:
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: today)
+    category_id = _create_category(api_client, csrf_headers, "Insurance", "expense")
+    payload = {
+        **_rule_payload(category_id, anchor, old_next),
+        "interval_unit": unit,
+        "interval_count": count,
+    }
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "anchor_date": new_anchor.isoformat()},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == expected
 
 
 def test_recurring_rule_weekly_start_moves_next_occurrence_to_new_weekday(

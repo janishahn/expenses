@@ -35,6 +35,7 @@ from expenses.db.models import (
 from expenses.schemas import (
     MAX_AMOUNT_CENTS,
     MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     BudgetOverrideIn,
     BudgetTemplateApplyFromIn,
     TransactionIn,
@@ -889,6 +890,12 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
     rows: list[ApprovalRow] = []
     for budget in budgets:
         year, month = _month(budget.month)
+        if not MIN_LEDGER_DATE.year <= year <= MAX_LEDGER_DATE.year:
+            raise InvalidProposal(
+                "invalid_month",
+                f"Set budgets between {MIN_LEDGER_DATE.year} and "
+                f"{MAX_LEDGER_DATE.year}.",
+            )
         category = (
             _usable_category(categories, budget.category_id, TransactionType.expense)
             if budget.category_id is not None

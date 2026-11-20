@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, or_, select, update
+from sqlalchemy import Connection, Engine, case, func, or_, select, update
 from sqlalchemy.orm import Session, aliased, joinedload
 
 from expenses.ai.client import (
@@ -56,7 +56,7 @@ from expenses.services.main import (
     RuleService,
     TransactionService,
 )
-from expenses.schemas import RuleIn, TransactionIn
+from expenses.schemas import MAX_AMOUNT_CENTS, RuleIn, TransactionIn
 
 
 logger = get_logger("expenses.ai")
@@ -423,6 +423,12 @@ class LLMAssistantService:
                         update={"set_category_id": matched_cluster["to_category"]["id"]}
                     )
             if proposal.set_category_id is None and not proposal.add_tags:
+                continue
+            low, high = proposal.min_amount_cents, proposal.max_amount_cents
+            # RuleIn refuses these on accept.
+            if (low or 0) > MAX_AMOUNT_CENTS or (high or 0) > MAX_AMOUNT_CENTS:
+                continue
+            if low is not None and high is not None and low > high:
                 continue
             if proposal.set_category_id is not None:
                 category = self.session.get(Category, proposal.set_category_id)
@@ -1078,6 +1084,11 @@ async def read_receipt_in_background(
     bind: Engine | Connection, user_id: int, attachment_id: int
 ) -> None:
     with Session(bind) as session:
+        storage_key = session.scalar(
+            select(ReceiptAttachment.storage_key).where(
+                ReceiptAttachment.id == attachment_id
+            )
+        )
         try:
             await LLMAssistantService(session, user_id=user_id).read_receipt_items(
                 attachment_id
@@ -1093,11 +1104,24 @@ async def read_receipt_in_background(
                 attachment_id=attachment_id,
                 exc_info=True,
             )
-            attachment = session.get(ReceiptAttachment, attachment_id)
-            if attachment is not None and attachment.items_status == "reading":
-                attachment.items_status = "read" if attachment.items else "failed"
-                attachment.items_error = "The receipt could not be read."
-                session.commit()
+            # The id may belong to a new upload by now, so the stored file must match.
+            session.execute(
+                update(ReceiptAttachment)
+                .where(
+                    ReceiptAttachment.id == attachment_id,
+                    ReceiptAttachment.user_id == user_id,
+                    ReceiptAttachment.storage_key == storage_key,
+                    ReceiptAttachment.items_status == "reading",
+                )
+                .values(
+                    items_status=case(
+                        (ReceiptAttachment.items.any(), "read"), else_="failed"
+                    ),
+                    items_error="The receipt could not be read.",
+                )
+                .execution_options(synchronize_session=False)
+            )
+            session.commit()
 
 
 def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> None:
