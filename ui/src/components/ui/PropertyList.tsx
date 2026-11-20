@@ -141,8 +141,13 @@ export function InlineText({
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const submitting = useRef<string | null>(null)
-  // The text the last save refused. Leaving the field does not send it again; Enter does.
+  // The text the last save refused. Leaving the field sends it again only after the field
+  // was entered again or the text changed; Enter sends it.
   const refused = useRef<string | null>(null)
+  const type = (text: string) => {
+    refused.current = null
+    setDraft(text)
+  }
   const className = clsx(variant === "title" && s.pkTitle, variant === "amount" && s.pkAmt, variant === "plain" && s.notes)
 
   const commit = async (leaving = false) => {
@@ -169,6 +174,7 @@ export function InlineText({
     if (event.key === "Escape") {
       event.preventDefault()
       event.stopPropagation()
+      refused.current = null
       setDraft(null)
       onCancel?.()
     } else if (event.key === "Enter" && (!multiline || event.metaKey || event.ctrlKey)) {
@@ -196,6 +202,9 @@ export function InlineText({
     "aria-invalid": error ? true : undefined,
     value: draft ?? value,
     placeholder,
+    onFocus: () => {
+      refused.current = null
+    },
     onBlur: () => void commit(true),
     onKeyDown,
   }
@@ -206,14 +215,14 @@ export function InlineText({
           {...shared}
           rows={3}
           className={clsx(className, s.inlineInput)}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => type(event.target.value)}
         />
       ) : (
         <input
           {...shared}
           inputMode={inputMode}
           className={clsx(className, s.inlineInput)}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => type(event.target.value)}
         />
       )}
       {hint ? <span className={s.hintText}>{hint}</span> : null}

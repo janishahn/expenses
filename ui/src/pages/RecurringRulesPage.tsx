@@ -437,6 +437,9 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   )
 }
 
+// Counts the list reads that follow a save, across the peeks of all rules.
+let listReads = 0
+
 function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -452,11 +455,14 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
     toPayload: rulePayload,
     // The server moves the next occurrence when the start or automatic posting changes.
     reload: async () => {
-      // Its own request: a list fetch already running would return the rule as it was,
-      // and must not replace this answer when it arrives.
+      // Its own request: a list fetch already running would return the rule as it was.
+      // The newest of these reads fills the list; an older fetch must not replace it.
+      const turn = ++listReads
       const fresh = await apiFetch<RecurringResponse>("/api/recurring")
-      await queryClient.cancelQueries({ queryKey: ["recurring"], exact: true })
-      queryClient.setQueryData(["recurring"], fresh)
+      if (turn === listReads) {
+        await queryClient.cancelQueries({ queryKey: ["recurring"], exact: true })
+        queryClient.setQueryData(["recurring"], fresh)
+      }
       const saved = fresh.rules.find((entry) => entry.id === stored.id)
       if (!saved) throw new Error("Rule not found")
       return saved

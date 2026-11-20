@@ -257,6 +257,12 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).title).toBe(title)
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
 
+    // Leaving the field does not send the refused entry again.
+    await titleField.press("Tab")
+    await expect(titleField).not.toBeFocused()
+    expect((await fetchTransaction(request, id)).title).toBe(title)
+
+    await titleField.focus()
     await titleField.press("Enter")
     const renamed = page.getByRole("complementary", { name: `${title} stale` })
     await expect(renamed.getByRole("button", { name: "Edit Title" })).toBeVisible()
@@ -314,11 +320,9 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
     expect(puts).toBe(1)
 
-    // Leaving the field again does not send the refused amount; Enter does.
+    // Entered again and left, the field sends the kept amount.
     await amount.focus()
     await amount.press("Tab")
-    await amount.focus()
-    await amount.press("Enter")
     await expect.poll(async () => (await fetchTransaction(request, id)).amount_cents).toBe(1500)
     expect(puts).toBe(2)
   })
