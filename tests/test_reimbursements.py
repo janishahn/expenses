@@ -645,6 +645,31 @@ def _june_spending(session, ids):
     return total
 
 
+def _trash_or_restore(client, headers, txn_id, how):
+    """Moves a transaction to Trash, or restores it alone, from Trash, or in bulk."""
+    match how:
+        case "delete":
+            return client.delete(f"/api/transactions/{txn_id}", headers=headers)
+        case "one":
+            return client.post(f"/api/transactions/{txn_id}/restore", headers=headers)
+        case "many":
+            return client.post(
+                "/api/transactions/deleted/restore",
+                headers=headers,
+                json={"ids": [txn_id]},
+            )
+        case "bulk":
+            return client.post(
+                "/api/transactions/bulk/apply",
+                headers=headers,
+                json={
+                    "selection": {"mode": "ids", "transaction_ids": [txn_id]},
+                    "operation": {"lifecycle": "restore"},
+                },
+            )
+    raise ValueError(how)
+
+
 # Restoring an expense after its reimbursement paid another one.
 @example(
     amounts=[10_000, 10_000, 6_000, 6_000],
@@ -755,28 +780,9 @@ def test_allocations_never_exceed_either_side(
                     headers=csrf_headers,
                 )
             case ("delete", i):
-                response = api_client.delete(
-                    f"/api/transactions/{ids[i]}", headers=csrf_headers
-                )
-            case ("restore", i, "one"):
-                response = api_client.post(
-                    f"/api/transactions/{ids[i]}/restore", headers=csrf_headers
-                )
-            case ("restore", i, "many"):
-                response = api_client.post(
-                    "/api/transactions/deleted/restore",
-                    headers=csrf_headers,
-                    json={"ids": [ids[i]]},
-                )
-            case ("restore", i, "bulk"):
-                response = api_client.post(
-                    "/api/transactions/bulk/apply",
-                    headers=csrf_headers,
-                    json={
-                        "selection": {"mode": "ids", "transaction_ids": [ids[i]]},
-                        "operation": {"lifecycle": "restore"},
-                    },
-                )
+                response = _trash_or_restore(api_client, csrf_headers, ids[i], "delete")
+            case ("restore", i, how):
+                response = _trash_or_restore(api_client, csrf_headers, ids[i], how)
             case ("amount", i, amount):
                 previous = amounts[i]
                 amounts[i] = amount
@@ -839,12 +845,15 @@ def test_allocations_never_exceed_either_side(
 
         # A refusal must have a reason: the step would push a side past its
         # amount, change the type of a side with counted allocations, or edit
-        # a side in Trash. Changing such a side's type is always refused.
+        # a side in Trash. Changing such a side's type, or editing a side in
+        # Trash, is always refused.
         index = step[1]
         refused = response.status_code != 200
         db_session.expire_all()
         in_trash = db_session.get(Transaction, ids[index]).deleted_at is not None
         match step:
+            case ("amount" | "role", *_) if in_trash:
+                assert refused, step
             case ("restore", _, _) if in_trash:
                 assert refused, (step, response.text)
                 assert _overruns(db_session, ids, revived=ids[index]), step

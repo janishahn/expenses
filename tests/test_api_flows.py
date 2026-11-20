@@ -434,6 +434,8 @@ def test_tags_rules_and_recurring_api_flows(
 
     response = api_client.delete(f"/api/recurring/{recurring_id}", headers=csrf_headers)
     assert response.status_code == 200
+    rules = api_client.get("/api/recurring").json()["rules"]
+    assert all(rule["id"] != recurring_id for rule in rules)
 
     response = api_client.delete(f"/api/tags/{tag_id}", headers=csrf_headers)
     assert response.status_code == 200
