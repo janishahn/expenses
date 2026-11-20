@@ -203,6 +203,7 @@ function parseBounds(min: string, max: string): { min: number | null; max: numbe
   const maxCents = max.trim() ? parseAmountCents(max) : null
   if (min.trim() && minCents === null) return { error: "Invalid min amount." }
   if (max.trim() && maxCents === null) return { error: "Invalid max amount." }
+  if (minCents !== null && maxCents !== null && minCents > maxCents) return { error: "The min amount is above the max amount." }
   return { min: minCents, max: maxCents }
 }
 

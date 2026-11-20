@@ -54,13 +54,13 @@ export function occurredAtInput(detail: Pick<TransactionDetail, "occurred_at" | 
 }
 
 // The full PUT body: the stored values with `changes` applied. Coordinates are omitted,
-// which keeps them.
+// which keeps them. The booking date and time go back as stored unless the date was edited.
 export function transactionPayload(detail: TransactionDetail, changes: TransactionChanges) {
-  const occurredAt = changes.occurred_at ?? occurredAtInput(detail)
+  const edited = changes.occurred_at
   const type = changes.type ?? detail.type
   return {
-    date: occurredAt.slice(0, 10),
-    occurred_at: `${occurredAt.slice(0, 16)}:00`,
+    date: edited ? edited.slice(0, 10) : detail.date,
+    occurred_at: edited ? `${edited.slice(0, 16)}:00` : (detail.occurred_at ?? `${detail.date}T12:00:00`),
     type,
     amount_cents: changes.amount_cents ?? detail.amount_cents,
     category_id: changes.category_id !== undefined ? changes.category_id : detail.category_id,
@@ -171,15 +171,16 @@ export function rowTitle(row: TransactionListItem): string {
   return row.title || row.category?.name || "Untitled"
 }
 
-// Runs of consecutive rows that share a date, in list order.
+// Rows by booking date, in the order each date first appears. The list is ordered by time,
+// which can put a row away from others of its booking date.
 export function groupByDay(rows: TransactionListItem[]): Array<{ date: string; rows: TransactionListItem[] }> {
-  const days: Array<{ date: string; rows: TransactionListItem[] }> = []
+  const days = new Map<string, TransactionListItem[]>()
   for (const row of rows) {
-    const last = days[days.length - 1]
-    if (last && last.date === row.date) last.rows.push(row)
-    else days.push({ date: row.date, rows: [row] })
+    const day = days.get(row.date)
+    if (day) day.push(row)
+    else days.set(row.date, [row])
   }
-  return days
+  return [...days].map(([date, dayRows]) => ({ date, rows: dayRows }))
 }
 
 // "reimbursed" marks an expense paid back in part or full; "reimbursement" marks the income that paid one back.

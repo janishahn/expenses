@@ -196,6 +196,75 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).title).toBe(title)
   })
 
+  test("keeps the booking date and the exact time when another field changes", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const categoryId = await ensureCategory(request, token, "expense", "E2E Keep Date")
+    const title = `E2E Keep Date ${Date.now()}`
+    const id = await createTransaction(request, token, {
+      date: "2026-03-20",
+      occurred_at: "2026-04-18T10:05:37.250000",
+      type: "expense",
+      amount_cents: 1234,
+      category_id: categoryId,
+      title,
+      tags: [],
+    })
+    const before = await fetchTransaction(request, id)
+
+    await page.goto(peekUrl(title, id))
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: "Edit Title" }).click()
+    await peek.getByRole("textbox", { name: "Title" }).fill(`${title} renamed`)
+    await peek.getByRole("textbox", { name: "Title" }).press("Enter")
+    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} renamed`)
+    const after = await fetchTransaction(request, id)
+    expect(after.date).toBe("2026-03-20")
+    expect(after.occurred_at).toBe(before.occurred_at)
+  })
+
+  test("refuses a save over a newer version and saves the kept entry on retry", async ({ page, request }) => {
+    const { token, title, id } = await seedExpense(request, "Stale Save", { amount_cents: 1000 })
+    await page.goto(peekUrl(title, id))
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.getByRole("button", { name: "Edit Amount" })).toContainText("10,00")
+
+    // Another tab changes the amount after this one loaded the record.
+    const stored = await fetchTransaction(request, id)
+    const elsewhere = await request.put(`/api/transactions/${id}`, {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        date: stored.date,
+        occurred_at: stored.occurred_at,
+        type: stored.type,
+        amount_cents: 1200,
+        category_id: stored.category_id,
+        title: stored.title,
+        description: stored.description,
+        is_reimbursement: false,
+        tags: [],
+      },
+    })
+    expect(elsewhere.ok()).toBeTruthy()
+
+    await peek.getByRole("button", { name: "Edit Title" }).click()
+    const titleField = peek.getByRole("textbox", { name: "Title" })
+    await titleField.fill(`${title} stale`)
+    await titleField.press("Enter")
+    await expect(peek.getByRole("alert")).toBeVisible()
+    await expect(titleField).toHaveValue(`${title} stale`)
+    // The newer version loads under the kept entry.
+    await expect(peek.getByRole("button", { name: "Edit Amount" })).toContainText("12,00")
+    expect((await fetchTransaction(request, id)).title).toBe(title)
+    expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
+
+    await titleField.press("Enter")
+    const renamed = page.getByRole("complementary", { name: `${title} stale` })
+    await expect(renamed.getByRole("button", { name: "Edit Title" })).toBeVisible()
+    await expect(renamed.getByRole("alert")).toHaveCount(0)
+    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} stale`)
+    expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
+  })
+
   test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {
     const { token, title, id } = await seedExpense(request, "Queued Failure")
     const stamp = Date.now()
