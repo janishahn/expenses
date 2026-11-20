@@ -20,9 +20,13 @@ async function startBackend(): Promise<Backend> {
     ...process.env,
     EXPENSES_DATA_DIR: dataDir,
     EXPENSES_AUTH_SIGNUP_ENABLED: "true",
+    // Production-strength password hashing only slows logins down here.
+    EXPENSES_ENV: "test",
+    EXPENSES_AUTH_PASSWORD_HASH_ITERATIONS: "1000",
   }
   delete env.EXPENSES_DATABASE_URL
-  // WeasyPrint loads Pango from Homebrew on macOS; `uv run dev` sets the same path (src/expenses/cli/dev.py).
+  // WeasyPrint loads Pango from Homebrew on macOS. The server starts from the venv's
+  // Python because the signed `uv` binary drops DYLD_* variables before its child starts.
   if (process.platform === "darwin" && existsSync("/opt/homebrew/lib")) {
     env.DYLD_FALLBACK_LIBRARY_PATH = ["/opt/homebrew/lib", env.DYLD_FALLBACK_LIBRARY_PATH].filter(Boolean).join(":")
   }
@@ -49,7 +53,7 @@ async function startBackend(): Promise<Backend> {
     'print(f"EXPENSES_E2E_PORT={sock.getsockname()[1]}", flush=True)',
     'uvicorn.run("expenses.app:app", fd=sock.fileno(), access_log=False)',
   ].join("\n")
-  const child = spawn("uv", ["run", "python", "-c", serverScript], {
+  const child = spawn(join(repoRoot, ".venv", "bin", "python"), ["-c", serverScript], {
     cwd: repoRoot,
     // tests/e2e_ai_provider.py serves this backend and sets its base URL.
     env: { ...env, EXPENSES_AI_BACKENDS: "local", EXPENSES_AI_LOCAL_KIND: "openai-compatible" },
