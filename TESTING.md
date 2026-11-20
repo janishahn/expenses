@@ -58,9 +58,17 @@ Add or keep a test only when it protects one of these:
 - Access: authentication, admin elevation, and isolation between users.
 - Stored data: migrations, imports, exports, backups, and reconciliation.
 - Assistant changes: the Assistant changes data only through a card that the user approves.
-- A regression: a bug that reached `main` gets one test that fails without the fix.
 
 Prefer one test that checks a rule across many inputs to many tests that each check one example. Extend a suitable existing test or spec; add a file only when no existing file fits.
+
+### Bug fixes
+
+A bug fix does not add a test for its one case by default.
+
+- First make the class of bug impossible where a type, a lint rule, or a schema can do it.
+- If the bug breaks one of the rules above, extend the test that checks that rule so it would have failed. Add a test only when no test checks that rule yet.
+- Otherwise, document the intended behavior next to the code or in the relevant project document, and rely on review.
+- Delete a test when the code path it guarded no longer exists.
 
 ### Browser tests
 
