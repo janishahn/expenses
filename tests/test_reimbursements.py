@@ -604,7 +604,18 @@ def test_allocations_never_exceed_either_side(
         ids.append(response.json()["id"])
     allocations: list[int] = []
 
+    def stored_allocations():
+        db_session.expire_all()
+        return set(
+            db_session.execute(
+                select(
+                    ReimbursementAllocation.id, ReimbursementAllocation.amount_cents
+                ).where(ReimbursementAllocation.expense_transaction_id.in_(ids))
+            )
+        )
+
     for step in steps:
+        before = stored_allocations()
         match step:
             case ("allocate", r, e, amount):
                 response = api_client.post(
@@ -665,6 +676,9 @@ def test_allocations_never_exceed_either_side(
         txns, totals = _counted_totals(db_session, ids)
         for txn_id, total in totals.items():
             assert total <= txns[txn_id].amount_cents, (step, txn_id, total)
+        if step[0] == "restore":
+            # A restore either fits the stored allocations or is refused.
+            assert stored_allocations() == before, step
         if step[0] == "restore" and txns[ids[step[1]]].deleted_at is not None:
             # A restore is refused only when the side would not fit.
             txns, revived = _counted_totals(db_session, ids, revived=ids[step[1]])

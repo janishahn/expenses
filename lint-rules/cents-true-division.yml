@@ -11,4 +11,8 @@ rule:
   pattern: $LEFT / $RIGHT
 constraints:
   LEFT:
-    regex: _cents\)*$
+    any:
+      - regex: _cents$
+      - kind: parenthesized_expression
+        has:
+          regex: _cents$

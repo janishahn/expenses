@@ -4,8 +4,7 @@ import { MapPinIcon } from "@phosphor-icons/react/MapPin"
 import { PaperclipIcon } from "@phosphor-icons/react/Paperclip"
 import clsx from "clsx"
 import { useLocation } from "react-router-dom"
-import type { TransactionListItem } from "../../app/api-types"
-import { reimbursementOf, type Reimbursement } from "../../app/transactions"
+import { reimbursementOf, type AmountRow, type Reimbursement } from "../../app/transactions"
 import { Amount } from "./Amount"
 import { Checkbox } from "./Checkbox"
 import { TagChips } from "./TagChip"
@@ -274,7 +273,7 @@ export function AmountPrefix({ children }: { children: ReactNode }) {
 // struck charge before it except on mobile. Reimbursement income is faint, since its expense already
 // counts it. Lists with a markers column show the reimbursement mark here only on mobile, where
 // that column is hidden.
-export function TransactionAmount({ row, markerColumn = false }: { row: TransactionListItem; markerColumn?: boolean }) {
+export function TransactionAmount({ row, markerColumn = false }: { row: AmountRow; markerColumn?: boolean }) {
   const reimbursement = reimbursementOf(row)
   const mark = reimbursement ? (
     <ArrowsLeftRightIcon

@@ -190,7 +190,13 @@ export function groupByDay(rows: TransactionListItem[]): Array<{ date: string; r
 // "reimbursed" marks an expense paid back in part or full; "reimbursement" marks the income that paid one back.
 export type Reimbursement = "reimbursed" | "reimbursement"
 
-export function reimbursementOf(row: TransactionListItem): Reimbursement | null {
+// The fields that decide how a transaction's amount shows.
+export type AmountRow = Pick<
+  TransactionListItem,
+  "type" | "amount_cents" | "net_amount_cents" | "reimbursed_total_cents" | "is_reimbursement"
+>
+
+export function reimbursementOf(row: AmountRow): Reimbursement | null {
   if (row.type === "expense") return row.reimbursed_total_cents > 0 ? "reimbursed" : null
   return row.is_reimbursement ? "reimbursement" : null
 }

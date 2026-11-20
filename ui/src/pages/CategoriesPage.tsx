@@ -9,6 +9,7 @@ import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
 import type { CategoryListItem, TransactionsResponse } from "../app/api-types"
+import type { components } from "../app/api-schema"
 import { formatShortDate } from "../app/format"
 import { useQueuedSave } from "../app/queued-save"
 import { categoryIconName, DEFAULT_CATEGORY_ICON_KEY } from "../components/categoryIconsCatalog"
@@ -90,7 +91,7 @@ function AddCategoryDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
     mutationFn: (payload: CategoryPayload & { type: string }) =>
-      apiFetch<CategoryListItem>("/api/categories", { method: "POST", body: JSON.stringify(payload) }),
+      apiFetch<components["schemas"]["CategoryOut"]>("/api/categories", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
       invalidateCategories(queryClient)
       onClose()
