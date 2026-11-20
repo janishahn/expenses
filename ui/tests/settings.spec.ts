@@ -200,6 +200,10 @@ test.describe.serial("Settings and ordinary-user flows", () => {
     await expect(page.getByRole("status").filter({ hasText: "Could not copy the token. Copy it from the field." })).toBeVisible()
     await expect(issued).toBeFocused()
     await expect(issued).toHaveValue(first)
+    expect(await issued.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([
+      0,
+      first.length,
+    ])
 
     await page.getByRole("button", { name: "Rotate", exact: true }).click()
     await expect(page.getByRole("status").filter({ hasText: "Ingest token rotated." })).toBeVisible()
@@ -266,8 +270,8 @@ test.describe.serial("Settings and ordinary-user flows", () => {
     await row.click()
     const editDialog = page.getByRole("dialog", { name: "Edit snapshot" })
     await expect(editDialog.getByLabel("Balance")).toHaveValue("123,45")
-    // A thousands dot, an exponent, or a plus sign is refused, so the dialog stays open.
-    for (const invalid of ["1.234", "1e3", "+100"]) {
+    // A thousands dot, an exponent, a plus sign, or a euro sign between digits is refused, so the dialog stays open.
+    for (const invalid of ["1.234", "1e3", "+100", "12€50"]) {
       await editDialog.getByLabel("Balance").fill(invalid)
       await editDialog.getByRole("button", { name: "Save" }).click()
       await expect(editDialog.getByText("Enter a valid balance.")).toBeVisible()

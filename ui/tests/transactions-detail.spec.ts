@@ -265,6 +265,56 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
   })
 
+  test("sends an amount once when Enter is followed by Tab and the save is refused", async ({ page, request }) => {
+    const { token, title, id } = await seedExpense(request, "Enter Then Tab", { amount_cents: 1000 })
+    await page.goto(peekUrl(title, id))
+    const peek = page.getByRole("complementary", { name: title })
+    await expect(peek.getByRole("button", { name: "Edit Amount" })).toContainText("10,00")
+
+    const stored = await fetchTransaction(request, id)
+    const elsewhere = await request.put(`/api/transactions/${id}`, {
+      headers: { "X-CSRF-Token": token },
+      data: {
+        date: stored.date,
+        occurred_at: stored.occurred_at,
+        type: stored.type,
+        amount_cents: 1200,
+        category_id: stored.category_id,
+        title: stored.title,
+        description: stored.description,
+        is_reimbursement: false,
+        tags: [],
+      },
+    })
+    expect(elsewhere.ok()).toBeTruthy()
+
+    let puts = 0
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    await page.route(`**/api/transactions/${id}`, async (route) => {
+      if (route.request().method() !== "PUT") return route.continue()
+      puts += 1
+      await held
+      await route.continue()
+    })
+    // The newer version loads after the refused save.
+    const reloaded = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "GET",
+    )
+    await peek.getByRole("button", { name: "Edit Amount" }).click()
+    const amount = peek.getByRole("textbox", { name: "Amount" })
+    await amount.fill("15,00")
+    await amount.press("Enter")
+    await amount.press("Tab")
+    release()
+
+    await reloaded
+    await expect(peek.getByRole("alert")).toBeVisible()
+    await expect(amount).toHaveValue("15,00")
+    expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
+    expect(puts).toBe(1)
+  })
+
   test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {
     const { token, title, id } = await seedExpense(request, "Queued Failure")
     const stamp = Date.now()

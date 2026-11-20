@@ -1,4 +1,4 @@
-import { createContext, forwardRef, useContext, useId, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from "react"
+import { createContext, forwardRef, useContext, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from "react"
 import type { Icon } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import clsx from "clsx"
@@ -140,6 +140,7 @@ export function InlineText({
   onCancel?: () => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
+  const submitting = useRef<string | null>(null)
   const className = clsx(variant === "title" && s.pkTitle, variant === "amount" && s.pkAmt, variant === "plain" && s.notes)
 
   const commit = async () => {
@@ -148,8 +149,16 @@ export function InlineText({
       setDraft(null)
       return
     }
+    // Enter and the blur that follows it submit the same text once.
+    if (draft === submitting.current) return
     const submitted = draft
-    const result = await onSave(submitted)
+    submitting.current = submitted
+    let result: boolean | void
+    try {
+      result = await onSave(submitted)
+    } finally {
+      if (submitting.current === submitted) submitting.current = null
+    }
     // Text typed while the save ran stays open for its own save.
     if (result !== false) setDraft((current) => (current === submitted ? null : current))
   }

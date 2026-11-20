@@ -84,7 +84,11 @@ export function applyTransactionChanges(detail: TransactionDetail, changes: Tran
 
 // Accepts "12,34", "12.34", and "1 234,56"; null for anything else.
 export function parseAmountCents(raw: string): number | null {
-  const normalized = raw.replace(/[\s€]/g, "").replace(",", ".")
+  // The euro sign may lead or trail the amount, never split its digits.
+  const normalized = raw
+    .replace(/\s/g, "")
+    .replace(/^€|€$/g, "")
+    .replace(",", ".")
   if (!normalized || normalized === ".") return null
   // A third decimal, as in "12,345", is no cent amount to round.
   if (!/^\d*\.?\d{0,2}$/.test(normalized)) return null

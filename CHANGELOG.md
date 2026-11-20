@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The admin system-health test-profile cookie is marked `Secure` over HTTPS.
 - Web: editing a transaction's title, category, or notes no longer moves its booking date or drops the seconds of its time. The ledger shows one band per booking date.
 - Web: bulk actions in Uncategorized and Transactions change only the selected rows that are still listed.
-- Web: balance snapshots and What-If amounts reject "1.234" instead of reading it as 1,23 €, and a snapshot accepts a negative balance as the app shows it, "− 120,50 €". What-If shows and changes dollar rules in dollars.
+- Web: balance snapshots and What-If amounts reject "1.234" instead of reading it as 1,23 €, and a snapshot accepts a negative balance as the app shows it, "− 120,50 €". An amount with the euro sign between its digits, such as "12€50", is rejected instead of read as 1 250,00 €. What-If shows and changes dollar rules in dollars.
 - Web: copying the ingest token reports when copying failed and selects the token. An overspent budget no longer shows a negative daily allowance.
 - iOS: editing a transaction's title, category, or notes no longer moves its date or time, also when the app started without reaching the server. A changed date is saved in the server's time zone, and the date can be changed once that zone is known; while the server can't be reached, the date says so.
 - iOS: a device set to a Buddhist, Japanese, Hebrew, or Islamic calendar no longer sends wrong dates or months.

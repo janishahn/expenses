@@ -406,6 +406,43 @@ test.describe("Recurring page", () => {
       .toBe(`${monday} true`)
   })
 
+  test("keeps the moved next occurrence when the reload after the start's save fails", async ({ page, request }) => {
+    const { id, name, monday } = await seedThursdayRule(request)
+    await page.goto(`/recurring?peek=${id}`)
+    // The start's save is held, so the next edit queues behind it.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let stored = false
+    await page.route(
+      `**/api/recurring/${id}`,
+      async (route) => {
+        await held
+        const response = await route.fetch()
+        stored = true
+        await route.fulfill({ response })
+      },
+      { times: 1 },
+    )
+    // Only the list read that follows the stored start fails, with its one retry.
+    let failures = 0
+    await page.route("**/api/recurring", async (route) => {
+      if (route.request().method() !== "GET" || !stored || failures === 2) return route.continue()
+      failures += 1
+      await route.fulfill({ status: 503, json: { detail: "Unavailable" } })
+    })
+    const peek = await changeStartToMonday(page, name)
+    await peek.getByRole("switch", { name: "Skip weekends" }).click()
+    release()
+
+    await expect.poll(() => failures).toBe(2)
+    await expect
+      .poll(async () => {
+        const rule = await fetchRule(request, id)
+        return `${rule.next_occurrence} ${rule.skip_weekends}`
+      })
+      .toBe(`${monday} true`)
+  })
+
   test("changes type, category, schedule, end date and currency from the peek properties", async ({
     page,
     request,
