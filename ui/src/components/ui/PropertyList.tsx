@@ -141,16 +141,18 @@ export function InlineText({
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const submitting = useRef<string | null>(null)
+  // The text the last save refused. Leaving the field does not send it again; Enter does.
+  const refused = useRef<string | null>(null)
   const className = clsx(variant === "title" && s.pkTitle, variant === "amount" && s.pkAmt, variant === "plain" && s.notes)
 
-  const commit = async () => {
+  const commit = async (leaving = false) => {
     if (draft === null) return
     if (draft === value) {
       setDraft(null)
       return
     }
     // Enter and the blur that follows it submit the same text once.
-    if (draft === submitting.current) return
+    if (draft === submitting.current || (leaving && draft === refused.current)) return
     const submitted = draft
     submitting.current = submitted
     let result: boolean | void
@@ -159,6 +161,7 @@ export function InlineText({
     } finally {
       if (submitting.current === submitted) submitting.current = null
     }
+    refused.current = result === false ? submitted : null
     // Text typed while the save ran stays open for its own save.
     if (result !== false) setDraft((current) => (current === submitted ? null : current))
   }
@@ -193,7 +196,7 @@ export function InlineText({
     "aria-invalid": error ? true : undefined,
     value: draft ?? value,
     placeholder,
-    onBlur: () => void commit(),
+    onBlur: () => void commit(true),
     onKeyDown,
   }
   return (

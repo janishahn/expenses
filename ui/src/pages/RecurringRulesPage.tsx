@@ -452,13 +452,11 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
     toPayload: rulePayload,
     // The server moves the next occurrence when the start or automatic posting changes.
     reload: async () => {
-      // A list fetch started before the save would return the rule as it was.
+      // Its own request: a list fetch already running would return the rule as it was,
+      // and must not replace this answer when it arrives.
+      const fresh = await apiFetch<RecurringResponse>("/api/recurring")
       await queryClient.cancelQueries({ queryKey: ["recurring"], exact: true })
-      const fresh = await queryClient.fetchQuery({
-        queryKey: ["recurring"],
-        queryFn: () => apiFetch<RecurringResponse>("/api/recurring"),
-        staleTime: 0,
-      })
+      queryClient.setQueryData(["recurring"], fresh)
       const saved = fresh.rules.find((entry) => entry.id === stored.id)
       if (!saved) throw new Error("Rule not found")
       return saved

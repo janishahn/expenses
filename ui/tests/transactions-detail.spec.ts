@@ -313,6 +313,14 @@ test.describe("Transaction peek and full view", () => {
     await expect(amount).toHaveValue("15,00")
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
     expect(puts).toBe(1)
+
+    // Leaving the field again does not send the refused amount; Enter does.
+    await amount.focus()
+    await amount.press("Tab")
+    await amount.focus()
+    await amount.press("Enter")
+    await expect.poll(async () => (await fetchTransaction(request, id)).amount_cents).toBe(1500)
+    expect(puts).toBe(2)
   })
 
   test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {

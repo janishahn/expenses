@@ -423,10 +423,10 @@ test.describe("Recurring page", () => {
       },
       { times: 1 },
     )
-    // Only the list read that follows the stored start fails, with its one retry.
+    // Only the list read that follows the stored start fails.
     let failures = 0
     await page.route("**/api/recurring", async (route) => {
-      if (route.request().method() !== "GET" || !stored || failures === 2) return route.continue()
+      if (route.request().method() !== "GET" || !stored || failures === 1) return route.continue()
       failures += 1
       await route.fulfill({ status: 503, json: { detail: "Unavailable" } })
     })
@@ -434,7 +434,7 @@ test.describe("Recurring page", () => {
     await peek.getByRole("switch", { name: "Skip weekends" }).click()
     release()
 
-    await expect.poll(() => failures).toBe(2)
+    await expect.poll(() => failures).toBe(1)
     await expect
       .poll(async () => {
         const rule = await fetchRule(request, id)
