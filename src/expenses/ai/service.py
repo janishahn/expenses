@@ -5,12 +5,13 @@ import hashlib
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, case, func, or_, select, update
 from sqlalchemy.orm import Session, aliased, joinedload
@@ -876,8 +877,15 @@ class LLMAssistantService:
         ]
 
     def _correction_clusters(self, *, since: date | None) -> list[dict[str, Any]]:
-        since_dt = datetime.combine(
-            since or (local_today() - timedelta(days=90)), datetime.min.time()
+        # Events are stored in UTC; the window starts at local midnight.
+        since_dt = (
+            datetime.combine(
+                since or (local_today() - timedelta(days=90)),
+                datetime.min.time(),
+                tzinfo=ZoneInfo(get_settings().timezone),
+            )
+            .astimezone(UTC)
+            .replace(tzinfo=None)
         )
         events = self.session.scalars(
             select(TransactionClassificationEvent)

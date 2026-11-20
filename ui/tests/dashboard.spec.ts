@@ -108,6 +108,15 @@ test.describe("Dashboard Page", () => {
     await expect(metric(page, "Spent")).toContainText("vs previous")
     await expect(metric(page, "Balance")).toContainText(eur("1.380,00 €"))
     await expect(metric(page, "Balance")).toContainText("as of today")
+
+    const recent = page.getByRole("region", { name: "Recent" })
+    await page.getByRole("button", { name: "Hide amounts" }).click()
+    await expect(metric(page, "Spent")).toContainText("Hidden amount")
+    await expect(recent.getByRole("listitem", { name: "Groceries" })).toContainText("Hidden amount")
+    await page.reload()
+    await expect(metric(page, "Spent")).toContainText("Hidden amount")
+    await page.getByRole("button", { name: "Show amounts" }).click()
+    await expect(metric(page, "Spent")).toContainText("120,00 €")
   })
 
   test("opens the transaction ledger for a spending band segment and returns with the breadcrumb", async ({

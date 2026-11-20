@@ -79,6 +79,46 @@ test.describe("Budgets Page", () => {
     await expect(row).not.toContainText("adjusted")
   })
 
+  test("applies a peek edit to only the selected month by default", async ({
+    page,
+    request,
+  }) => {
+    const token = await getCsrfToken(request)
+    const categoryName = `E2E Month Adjustment ${Date.now()}`
+    const categoryId = await createCategory(request, token, "expense", categoryName)
+    await createTemplate(request, token, {
+      frequency: "monthly",
+      category_id: categoryId,
+      amount_cents: 30_000,
+      starts_on: `${localMonth()}-01`,
+    })
+
+    await page.goto("/budgets")
+    await page.getByRole("listitem", { name: categoryName }).click()
+    const peek = page.getByRole("complementary", { name: categoryName })
+    await expect(peek).toContainText(/300,00\s?€/)
+    await peek.getByRole("button", { name: /^Amount/ }).click()
+    const editor = page.getByRole("dialog", { name: "Edit amount" })
+    await expect(
+      editor.getByRole("radio", { name: `Only ${monthName(localMonth())}` }),
+    ).toBeChecked()
+    await editor.getByRole("textbox", { name: "Amount" }).fill("450.00")
+    await editor.getByRole("button", { name: "Save" }).click()
+
+    await expect(peek.getByRole("button", { name: /^Amount/ })).toContainText(
+      /450,00\s?€.*usually 300,00\s?€/,
+    )
+    await expect(peek.getByText("Every month")).toBeVisible()
+    const row = page.getByRole("listitem", { name: categoryName })
+    await expect(row).toContainText("adjusted")
+    await expect(row).toContainText(/450\s?€/)
+
+    await page.getByRole("button", { name: "Next month" }).click()
+    const nextRow = page.getByRole("listitem", { name: categoryName })
+    await expect(nextRow).toContainText(/300\s?€/)
+    await expect(nextRow).not.toContainText("adjusted")
+  })
+
   test("shows yearly budgets and creates annual budgets in place", async ({
     page,
     request,

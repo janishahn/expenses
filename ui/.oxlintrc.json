@@ -363,6 +363,10 @@
             "message": "Fix the test or delete it under the TESTING.md budget; do not skip it."
           },
           {
+            "property": "fail",
+            "message": "Fix the test or delete it under the TESTING.md budget; do not mark it as an expected failure."
+          },
+          {
             "property": "fixme",
             "message": "Fix the test or delete it under the TESTING.md budget; do not skip it."
           },

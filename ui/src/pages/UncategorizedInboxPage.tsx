@@ -189,7 +189,8 @@ function UncategorizedInboxPage() {
   listSearch.delete("peek")
   const listHref = `${location.pathname}${listSearch.toString() ? `?${listSearch.toString()}` : ""}`
 
-  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null = null) =>
+  // Undo passes the category it set, so a newer change elsewhere is left alone.
+  const applyCategory = (ids: number[], categoryId: number, expectedCategoryId: number | null) =>
     apiFetch<BulkResponse>("/api/transactions/bulk/apply", {
       method: "POST",
       body: JSON.stringify({
@@ -207,7 +208,7 @@ function UncategorizedInboxPage() {
   const categorize = async (row: InboxItem, category: CategorySummary) => {
     const previousId = row.category?.id
     try {
-      await applyCategory([row.id], category.id)
+      await applyCategory([row.id], category.id, null)
     } catch (failure) {
       showToast({ message: getApiErrorMessage(failure, "Unable to categorize the transaction.") })
       return
