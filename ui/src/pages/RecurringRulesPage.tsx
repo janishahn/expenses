@@ -12,6 +12,7 @@ import { ShapesIcon } from "@phosphor-icons/react/Shapes"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { useQueuedSave } from "../app/queued-save"
 import { amountInput, parseAmountCents } from "../app/transactions"
 import { CategoryPicker } from "../components/CategoryPicker"
@@ -281,7 +282,8 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   const category = categories.find((entry) => entry.id === categoryId)
 
   const create = useMutation({
-    mutationFn: (payload: RulePayload) => apiFetch("/api/recurring", { method: "POST", body: JSON.stringify(payload) }),
+    mutationFn: (payload: components["schemas"]["RecurringRuleIn"]) =>
+      apiFetch("/api/recurring", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["recurring"] })
       onClose()

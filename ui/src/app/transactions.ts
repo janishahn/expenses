@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query"
 import type { ReceiptFile } from "../components/ui/receipt-file"
 import type { ReceiptAttachment, TransactionDetail, TransactionListItem } from "./api-types"
 import { formatCurrency } from "./format"
+import type { components } from "./api-schema"
 
 export type TransactionType = "expense" | "income"
 
@@ -68,7 +69,7 @@ export function transactionPayload(detail: TransactionDetail, changes: Transacti
     description: changes.description !== undefined ? changes.description : detail.description,
     is_reimbursement: type === "income" ? (changes.is_reimbursement ?? detail.is_reimbursement) : false,
     tags: changes.tags ?? detail.tags,
-  }
+  } satisfies components["schemas"]["TransactionIn"]
 }
 
 // The stored record as it reads after `changes` saved; the category object is resolved by the caller.

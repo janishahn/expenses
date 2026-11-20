@@ -18,10 +18,11 @@ import {
 import { confirmDialog } from "../components/confirm"
 import type { ReceiptFile } from "../components/ui/receipt-file"
 import { showToast } from "../components/ui/toast-store"
+import type { components } from "../app/api-schema"
 
 export type RecordField = "title" | "amount" | "type" | "date" | "category" | "tags" | "notes" | "reimbursement" | "durable"
 
-export type DurableInput = { expected_lifespan_days: number; acquired_on: string; ended_on: string | null }
+export type DurableInput = components["schemas"]["DurablePurchaseIn"]
 
 // Pickers show their entered value while it saves and after it fails. Text editors keep
 // their own draft instead, so the stored value stays what the draft is compared with.

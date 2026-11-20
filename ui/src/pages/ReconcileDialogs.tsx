@@ -31,14 +31,9 @@ import { Property, PropertyList } from "../components/ui/PropertyList"
 import { RECEIPT_ACCEPT } from "../components/ui/receipt-file"
 import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
 import { bankRowTitle } from "./bank-row"
+import type { components } from "../app/api-schema"
 
-export type CreateFromRowPayload = {
-  date: string
-  category_id: number | null
-  title: string
-  description: string | null
-  tag_ids: number[]
-}
+export type CreateFromRowPayload = components["schemas"]["BankTransactionCreateIn"]
 
 function DayChip({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)

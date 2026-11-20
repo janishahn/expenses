@@ -43,6 +43,7 @@ import { TextField } from "../components/ui/TextField"
 import { showToast } from "../components/ui/toast-store"
 import { buildSearchParams } from "../lib/searchParams"
 import { TransactionPeek } from "./TransactionRecord"
+import type { components } from "../app/api-schema"
 
 type Suggestion = { category_id: number; confidence: number }
 
@@ -267,7 +268,7 @@ function UncategorizedInboxPage() {
     setSelection({ mode: "ids", ids: [] })
     setSelectMode(false)
   }
-  const bulkSelection = () => {
+  const bulkSelection = (): components["schemas"]["BulkSelectionIn"] | null => {
     if (selection.mode === "ids") return { mode: "ids", transaction_ids: selectedIds }
     if (!settled) return null
     return {
@@ -288,7 +289,10 @@ function UncategorizedInboxPage() {
   const bulkCategory = async (categoryId: number | null) => {
     const bulk = bulkSelection()
     if (categoryId === null || !bulk) return
-    const payload = { selection: bulk, operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" } }
+    const payload = {
+      selection: bulk,
+      operation: { set_category_id: categoryId, tag_patch: null, lifecycle: "none" },
+    } satisfies components["schemas"]["BulkEditRequestIn"]
     setBulkPending(true)
     try {
       const preview = await apiFetch<BulkResponse>("/api/transactions/bulk/preview", {

@@ -90,7 +90,10 @@ type BurndownResponse = {
 
 type Frequency = "monthly" | "yearly"
 type Kind = "month" | "year"
-type BudgetRequest = { path: string; body: Record<string, unknown> }
+type BudgetRequest =
+  | { path: "/api/budgets/overrides"; body: components["schemas"]["BudgetOverrideIn"] }
+  | { path: "/api/budgets/templates"; body: components["schemas"]["BudgetTemplateIn"] }
+  | { path: "/api/budgets/templates/apply-from"; body: components["schemas"]["BudgetTemplateApplyFromIn"] }
 
 const MONTH_LONG = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
 const MONTH_SHORT = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })

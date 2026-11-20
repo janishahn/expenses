@@ -42,7 +42,7 @@ type CategoriesPageResponse = {
 }
 type CategoryField = "name" | "icon" | "order"
 // The body of PUT /api/categories/{id}; the type is fixed once created.
-type CategoryPayload = { name: string; icon: string; order: number }
+type CategoryPayload = components["schemas"]["CategoryUpdateIn"]
 type SortField = "usage" | "name"
 
 const DEFAULT_PERIOD: PeriodSelection = { slug: "all" }
@@ -90,7 +90,7 @@ function AddCategoryDialog({ onClose }: { onClose: () => void }) {
   const [order, setOrder] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
-    mutationFn: (payload: CategoryPayload & { type: string }) =>
+    mutationFn: (payload: components["schemas"]["CategoryIn"]) =>
       apiFetch<components["schemas"]["CategoryOut"]>("/api/categories", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
       invalidateCategories(queryClient)

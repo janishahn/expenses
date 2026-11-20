@@ -73,19 +73,7 @@ type RulesResponse = {
 }
 
 // The body of POST /api/rules, PUT /api/rules/{id}, and POST /api/rules/preview.
-type RulePayload = {
-  name: string
-  enabled: boolean
-  priority: number
-  match_type: MatchType
-  match_value: string
-  transaction_type: "income" | "expense" | null
-  min_amount_cents: number | null
-  max_amount_cents: number | null
-  set_category_id: number | null
-  add_tags: string[]
-  budget_exclude_tag_id: number | null
-}
+type RulePayload = components["schemas"]["RuleIn"]
 
 type RulePreview = components["schemas"]["RulePreviewOut"]
 
@@ -172,7 +160,7 @@ function amountCondition(min: number | null, max: number | null): ReactNode {
 
 // `Title contains "amazon" · at most 30,00 € · expenses`
 function whenText(rule: RulePayload): ReactNode {
-  const amount = amountCondition(rule.min_amount_cents, rule.max_amount_cents)
+  const amount = amountCondition(rule.min_amount_cents ?? null, rule.max_amount_cents ?? null)
   return (
     <>
       Title {titleCondition(rule.match_type, rule.match_value)}

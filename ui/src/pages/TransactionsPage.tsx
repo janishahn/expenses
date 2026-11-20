@@ -60,6 +60,7 @@ import { showToast } from "../components/ui/toast-store"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 import { TransactionPeek } from "./TransactionRecord"
+import type { components } from "../app/api-schema"
 
 type TypeFilter = "income" | "expense"
 
@@ -341,7 +342,7 @@ function TransactionsPage() {
     setSelectMode(false)
   }
 
-  const bulkPayload = (operation: BulkOperation) => {
+  const bulkPayload = (operation: BulkOperation): components["schemas"]["BulkEditRequestIn"] | null => {
     if (selection.mode === "ids") {
       return { selection: { mode: "ids", transaction_ids: selectedIds }, operation }
     }

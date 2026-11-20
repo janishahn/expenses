@@ -4721,8 +4721,7 @@
             "title": "Title"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           }
         },
         "required": [
@@ -8354,8 +8353,7 @@
             "title": "Skip Weekends"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           }
         },
         "required": [
@@ -10206,8 +10204,7 @@
             "type": "string"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           },
           "updated_at": {
             "format": "date-time",
@@ -10549,8 +10546,7 @@
             "title": "Title"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           },
           "updated_at": {
             "format": "date-time",
@@ -10910,8 +10906,7 @@
             "title": "Title"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           }
         },
         "required": [
@@ -11152,8 +11147,7 @@
             "title": "Title"
           },
           "type": {
-            "title": "Type",
-            "type": "string"
+            "$ref": "#/components/schemas/TransactionType"
           },
           "updated_at": {
             "format": "date-time",

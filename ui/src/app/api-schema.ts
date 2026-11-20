@@ -4016,8 +4016,7 @@ export interface components {
             id: number;
             /** Title */
             title: string | null;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
         };
         /** DeletedTransactionsResponseOut */
         DeletedTransactionsResponseOut: {
@@ -5261,8 +5260,7 @@ export interface components {
             next_occurrence: string;
             /** Skip Weekends */
             skip_weekends: boolean | null;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
         };
         /** RecurringRuleUpdateIn */
         RecurringRuleUpdateIn: {
@@ -5906,8 +5904,7 @@ export interface components {
             tags: string[];
             /** Title */
             title: string;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
             /**
              * Updated At
              * Format: date-time
@@ -6004,8 +6001,7 @@ export interface components {
             tags: components["schemas"]["TransactionTagOut"][];
             /** Title */
             title: string | null;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
             /**
              * Updated At
              * Format: date-time
@@ -6100,8 +6096,7 @@ export interface components {
             tags: string[];
             /** Title */
             title: string | null;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
         };
         /**
          * TransactionType
@@ -6183,8 +6178,7 @@ export interface components {
             tags: components["schemas"]["TransactionTagOut"][];
             /** Title */
             title: string | null;
-            /** Type */
-            type: string;
+            type: components["schemas"]["TransactionType"];
             /**
              * Updated At
              * Format: date-time

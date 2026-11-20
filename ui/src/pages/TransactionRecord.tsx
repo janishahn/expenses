@@ -52,6 +52,7 @@ import { Switch } from "../components/ui/Switch"
 import { TagChip } from "../components/ui/TagChip"
 import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
 import { useTransactionRecord, type DurableInput, type TransactionRecordState } from "./transaction-record"
+import type { components } from "../app/api-schema"
 
 type LinkTo = (transactionId: number) => string
 
@@ -714,7 +715,7 @@ function AllocateForm({
     try {
       await apiFetch(`/api/reimbursements/${reimbursementId}/allocations`, {
         method: "POST",
-        body: JSON.stringify({ expense_transaction_id: expenseId, amount_cents: cents }),
+        body: JSON.stringify({ expense_transaction_id: expenseId, amount_cents: cents } satisfies components["schemas"]["ReimbursementAllocationIn"]),
       })
     } catch (failure) {
       setError(getApiErrorMessage(failure, "Unable to save allocation."))

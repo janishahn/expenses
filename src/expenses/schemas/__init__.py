@@ -234,7 +234,7 @@ class TagsResponseOut(OutModel):
 class TransactionTemplateOut(OutModel):
     id: int
     name: str
-    type: str
+    type: TransactionType
     category_id: int
     category: Optional[CategorySummaryOut]
     default_amount_cents: Optional[int] = None
@@ -251,7 +251,7 @@ class TransactionListItemOut(OutModel):
     id: int
     date: date
     occurred_at: datetime
-    type: str
+    type: TransactionType
     amount_cents: int
     net_amount_cents: int
     reimbursed_total_cents: int
@@ -283,7 +283,7 @@ class TransactionDetailOut(OutModel):
     id: int
     date: date
     occurred_at: Optional[datetime] = None
-    type: str
+    type: TransactionType
     amount_cents: int
     net_amount_cents: int
     reimbursed_total_cents: int
@@ -336,7 +336,7 @@ class TransactionsResponseOut(OutModel):
 class DeletedTransactionOut(OutModel):
     id: int
     date: date
-    type: str
+    type: TransactionType
     amount_cents: int
     category: Optional[CategorySummaryOut] = None
     title: Optional[str] = None
@@ -1447,7 +1447,7 @@ class RecurringStatsOut(OutModel):
 class RecurringRuleOut(OutModel):
     id: int
     name: Optional[str] = None
-    type: str
+    type: TransactionType
     currency_code: str
     amount_cents: int
     monthly_equivalent_cents: Optional[int] = None

@@ -32,18 +32,12 @@ import { Sheet } from "../components/ui/Sheet"
 import { TagChip, TagChips } from "../components/ui/TagChip"
 import { FieldError } from "../components/ui/TextField"
 import { buildSearchParams } from "../lib/searchParams"
+import type { components } from "../app/api-schema"
 
 type TemplateType = "expense" | "income"
 type TemplateField = "name" | "type" | "category" | "amount" | "title" | "tags"
 // The body of POST /api/templates and PUT /api/templates/{id}.
-type TemplatePayload = {
-  name: string
-  type: string
-  category_id: number
-  default_amount_cents: number | null
-  title: string | null
-  tags: string[]
-}
+type TemplatePayload = components["schemas"]["TransactionTemplateIn"]
 
 const TEMPLATE_COLUMNS: Columns = {
   columns: "16px 18px minmax(0, 140px) minmax(0, 1fr) minmax(0, 180px) 100px",
