@@ -578,6 +578,26 @@ def _overruns(session, ids, revived=None, changed=None, added=None):
     return any(total > sides[txn_id][2] for txn_id, total in totals.items())
 
 
+def _expected_rows(step, response, before, ids, role_change, removed):
+    """The stored allocations after a step, as (id, expense, reimbursement, amount).
+
+    Allocating sets the pair's amount and unallocating removes the row. Other
+    edits keep allocations or are refused, except that a reimbursement turned
+    into plain income gives its allocations up.
+    """
+    if response.status_code != 200:
+        return before
+    match step:
+        case ("allocate", r, e, amount):
+            kept = {row for row in before if row[1:3] != (ids[e], ids[r])}
+            return kept | {(response.json()["allocation_id"], ids[e], ids[r], amount)}
+        case ("unallocate", _):
+            return {row for row in before if row[0] != removed}
+        case ("role", i, _) if role_change == ("reimbursement", "income"):
+            return {row for row in before if row[2] != ids[i]}
+    return before
+
+
 # Restoring an expense after its reimbursement paid another one.
 @example(
     amounts=[10_000, 10_000, 6_000],
@@ -656,6 +676,7 @@ def test_allocations_never_exceed_either_side(
 
     for step in steps:
         before = stored_allocations()
+        removed = None
         roles_before = list(roles)
         match step:
             case ("allocate", r, e, amount):
@@ -669,8 +690,9 @@ def test_allocations_never_exceed_either_side(
             case ("unallocate", n):
                 if not allocations:
                     continue
+                removed = allocations[n % len(allocations)]
                 response = api_client.delete(
-                    f"/api/reimbursements/allocations/{allocations[n % len(allocations)]}",
+                    f"/api/reimbursements/allocations/{removed}",
                     headers=csrf_headers,
                 )
             case ("delete", i):
@@ -733,17 +755,17 @@ def test_allocations_never_exceed_either_side(
                     or (roles[r], roles[e]) != ("reimbursement", "expense")
                     or _overruns(db_session, ids, added=(ids[r], ids[e], amount))
                 ), (step, response.text)
+        expected = _expected_rows(
+            step,
+            response,
+            before,
+            ids,
+            (roles_before[step[1]], roles[step[1]]) if step[0] == "role" else None,
+            removed,
+        )
+        assert stored_allocations() == expected, step
         if step[0] in ("allocate", "unallocate"):
             continue
-        # Other edits keep allocations or are refused, except that a
-        # reimbursement turned into plain income gives its allocations up.
-        expected = before
-        if step[0] == "role" and (roles_before[step[1]], roles[step[1]]) == (
-            "reimbursement",
-            "income",
-        ):
-            expected = {row for row in before if row[2] != ids[step[1]]}
-        assert stored_allocations() == expected, step
 
         # A refusal must have a reason: the step would push a side past its
         # amount, change the type of a side with counted allocations, or edit
