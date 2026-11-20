@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - iOS: a device set to a Buddhist, Japanese, Hebrew, or Islamic calendar no longer sends wrong dates or months.
 - iOS: adding a rule, category, tag, template, balance snapshot, or receipt no longer reports a failure, which invited a duplicate, when only the refresh afterwards failed.
 - iOS: an overspent budget no longer shows a negative daily allowance.
+- iOS: a long message under a field shows in full instead of being cut to one line.
 
 ## [0.9.0] - 2026-11-17
 

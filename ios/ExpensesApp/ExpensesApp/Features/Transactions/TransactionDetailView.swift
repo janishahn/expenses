@@ -294,6 +294,7 @@ struct TransactionDetailView: View {
                     Text("Couldn't reach the server, so the date can't be changed yet. Pull down to try again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .fieldError(saves.errors[.date])
