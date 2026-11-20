@@ -494,6 +494,93 @@ async def test_rule_mining_uses_confirmed_events_and_stores_previewed_proposals(
 
 
 @pytest.mark.anyio
+async def test_rule_mining_skips_trash_and_archived_categories() -> None:
+    with make_session() as session:
+        categories = CategoryService(session)
+        coffee, dining, shoes, groceries = (
+            categories.create(
+                CategoryIn(name=name, type=TransactionType.expense, order=0)
+            )
+            for name in ["Coffee", "Dining", "Shoes", "Groceries"]
+        )
+        uncategorized = categories.get_or_create_uncategorized(TransactionType.expense)
+        corrected: dict[str, list[int]] = {}
+        for merchant, category in (
+            ("STARBUCKS", coffee),
+            ("ZALANDO", shoes),
+            ("LIDL", groceries),
+        ):
+            for index in range(2):
+                txn = TransactionService(session).create(
+                    TransactionIn(
+                        date=date(2026, 5, index + 1),
+                        occurred_at=datetime(2026, 5, index + 1, 12, 0),
+                        type=TransactionType.expense,
+                        amount_cents=1000 + index,
+                        category_id=uncategorized.id,
+                        title=f"{merchant} {index}",
+                        tags=[],
+                    )
+                )
+                TransactionService(session).update(
+                    txn.id,
+                    TransactionIn(
+                        date=txn.date,
+                        occurred_at=txn.occurred_at,
+                        type=txn.type,
+                        amount_cents=txn.amount_cents,
+                        category_id=category.id,
+                        title=txn.title or "",
+                        tags=[],
+                    ),
+                )
+                corrected.setdefault(merchant, []).append(txn.id)
+        for txn_id in corrected["ZALANDO"]:
+            TransactionService(session).soft_delete(txn_id)
+        categories.merge(coffee.id, dining.id)
+
+        runner = FakeLLMRunner(
+            RuleMiningOutput(
+                proposals=[
+                    RuleProposalOut(
+                        name="Starbucks coffee",
+                        match_type="contains",
+                        match_value="STARBUCKS",
+                        transaction_type="expense",
+                        set_category_id=coffee.id,
+                        add_tags=[],
+                        confidence=0.9,
+                        reason="Earlier corrections.",
+                        evidence_transaction_ids=corrected["STARBUCKS"],
+                    )
+                ]
+            )
+        )
+        proposals = await LLMAssistantService(
+            session, user_id=1, runner=runner
+        ).mine_rule_suggestions()
+
+        clusters = runner.calls[0]["payload"]["correction_clusters"]
+        assert [cluster["merchant_token"] for cluster in clusters] == ["LIDL"]
+        assert proposals == []
+        assert session.scalar(select(RuleLLMSuggestion)) is None
+
+        archived = RuleLLMSuggestion(
+            user_id=1,
+            name="Lidl",
+            match_type="contains",
+            match_value="LIDL",
+            set_category_id=groceries.id,
+            reason="Earlier corrections.",
+        )
+        session.add(archived)
+        session.commit()
+        categories.archive(groceries.id)
+        with pytest.raises(ValueError, match="Groceries is archived"):
+            LLMAssistantService(session, user_id=1).accept_rule_suggestion(archived.id)
+
+
+@pytest.mark.anyio
 async def test_rule_mining_output_failure_returns_empty_list() -> None:
     with make_session() as session:
         groceries = CategoryService(session).create(

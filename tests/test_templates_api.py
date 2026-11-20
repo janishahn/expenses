@@ -1,4 +1,8 @@
+import json
+
 from fastapi.testclient import TestClient
+
+from expenses.db.models import RuleLLMSuggestion
 
 
 def _create_category(
@@ -90,3 +94,67 @@ def test_templates_crud_and_reorder(
     templates = response.json()["templates"]
     assert len(templates) == 1
     assert templates[0]["id"] == coffee_id
+
+
+def test_templates_and_pending_suggestions_follow_tag_changes(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    food_id = _create_category(api_client, csrf_headers, "Food", "expense")
+    tag_ids = {
+        name: api_client.post(
+            "/api/tags", headers=csrf_headers, json={"name": name}
+        ).json()["id"]
+        for name in ["Vacation", "Oldtag", "Src", "Dst"]
+    }
+    response = api_client.post(
+        "/api/templates",
+        headers=csrf_headers,
+        json={
+            "name": "Trip lunch",
+            "type": "expense",
+            "category_id": food_id,
+            "default_amount_cents": 1_200,
+            "title": "Lunch",
+            "tags": ["Vacation", "Oldtag", "Src", "Dst"],
+        },
+    )
+    assert response.status_code == 200
+    suggestions = [
+        RuleLLMSuggestion(
+            user_id=1,
+            name=name,
+            match_type="contains",
+            match_value=name,
+            add_tags_json=json.dumps([name]),
+            reason="Corrections",
+        )
+        for name in ["Vacation", "Oldtag"]
+    ]
+    db_session.add_all(suggestions)
+    db_session.commit()
+
+    response = api_client.put(
+        f"/api/tags/{tag_ids['Vacation']}",
+        headers=csrf_headers,
+        json={"name": "Holidays"},
+    )
+    assert response.status_code == 200
+    response = api_client.delete(f"/api/tags/{tag_ids['Oldtag']}", headers=csrf_headers)
+    assert response.status_code == 200
+    response = api_client.post(
+        "/api/tags/merge",
+        headers=csrf_headers,
+        json={"source_tag_id": tag_ids["Src"], "target_tag_id": tag_ids["Dst"]},
+    )
+    assert response.status_code == 200
+
+    templates = api_client.get("/api/templates").json()["templates"]
+    assert templates[0]["tags"] == ["Holidays", "Dst"]
+    db_session.expire_all()
+    renamed, deleted = (db_session.get(RuleLLMSuggestion, s.id) for s in suggestions)
+    assert (json.loads(renamed.add_tags_json), renamed.status) == (
+        ["Holidays"],
+        "pending",
+    )
+    # Without the deleted tag the suggestion has nothing left to do.
+    assert (json.loads(deleted.add_tags_json), deleted.status) == ([], "stale")

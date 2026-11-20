@@ -1783,7 +1783,8 @@ def api_archive_category(
     try:
         CategoryService(db, user_id=user_id).archive(category_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        status_code = 404 if str(exc) == "Category not found" else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"status": "ok"}
 
 

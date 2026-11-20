@@ -219,3 +219,31 @@ def test_tag_options_list_names_without_totals(
     assert [(tag["id"], tag["name"]) for tag in active] == [(kept.json()["id"], "Trip")]
     assert "usage_count" not in active[0]
     assert {tag["name"] for tag in everything} == {"Trip", "Old"}
+
+
+def test_tag_merge_refuses_different_budget_settings(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    excluded = api_client.post(
+        "/api/tags",
+        headers=csrf_headers,
+        json={"name": "Work expense", "is_hidden_from_budget": True},
+    ).json()["id"]
+    counted = api_client.post(
+        "/api/tags", headers=csrf_headers, json={"name": "Work"}
+    ).json()["id"]
+
+    for path in ("/api/tags/merge/preview", "/api/tags/merge"):
+        response = api_client.post(
+            path,
+            headers=csrf_headers,
+            json={"source_tag_id": excluded, "target_tag_id": counted},
+        )
+        assert (response.status_code, response.json()["detail"]) == (
+            400,
+            "Cannot merge tags with different budget settings: Work expense is "
+            "excluded from budgets and Work is not. Change Exclude from budgets on "
+            "one of them first.",
+        )
+    tags = api_client.get("/api/tags/options").json()["tags"]
+    assert {tag["name"] for tag in tags} == {"Work expense", "Work"}

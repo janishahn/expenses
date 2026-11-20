@@ -1900,6 +1900,10 @@ def _apply_create(
     service = TransactionService(session, user_id)
     created: list[Transaction] = []
     for row in plan.transactions:
+        if row.category_id is not None:
+            category = session.get(Category, row.category_id)
+            if category is None or category.archived_at is not None:
+                raise ActionConflict(f"{row.title} can't go in that category anymore.")
         try:
             created.append(
                 service.create(

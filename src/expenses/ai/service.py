@@ -424,6 +424,10 @@ class LLMAssistantService:
                     )
             if proposal.set_category_id is None and not proposal.add_tags:
                 continue
+            if proposal.set_category_id is not None:
+                category = self.session.get(Category, proposal.set_category_id)
+                if category is not None and category.archived_at is not None:
+                    continue
             stored = self._store_rule_suggestion(proposal, job_id=job_id)
             suggestions.append(
                 RuleSuggestionResult(
@@ -533,6 +537,14 @@ class LLMAssistantService:
         )
         if suggestion is None:
             raise ValueError("Suggestion not found")
+        if (
+            suggestion.set_category is not None
+            and suggestion.set_category.archived_at is not None
+        ):
+            raise ValueError(
+                f"{suggestion.set_category.name} is archived. Restore it or reject "
+                "this suggestion."
+            )
         rule = RuleService(self.session, self.user_id).create(
             RuleIn(
                 name=suggestion.name,
@@ -867,6 +879,7 @@ class LLMAssistantService:
             .options(joinedload(TransactionClassificationEvent.transaction))
             .where(
                 TransactionClassificationEvent.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
                 TransactionClassificationEvent.event_type == "updated",
                 TransactionClassificationEvent.before_category_id.is_not(None),
                 TransactionClassificationEvent.after_category_id.is_not(None),
@@ -897,7 +910,7 @@ class LLMAssistantService:
             if len(rows) < 2:
                 continue
             category = categories.get(category_id)
-            if category is None:
+            if category is None or category.archived_at is not None:
                 continue
             txns = [row.transaction for row in rows if row.transaction is not None]
             payload.append(

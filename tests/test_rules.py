@@ -167,6 +167,45 @@ def test_rule_does_not_override_non_uncategorized_category() -> None:
         assert "Streaming" in tag_names
 
 
+def test_rule_skips_archived_category_and_lets_the_next_rule_apply() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        categories = CategoryService(session)
+        old = categories.create(
+            CategoryIn(name="Coffee", type=TransactionType.expense, order=0)
+        )
+        dining = categories.create(
+            CategoryIn(name="Dining", type=TransactionType.expense, order=0)
+        )
+        for priority, category in ((10, old), (20, dining)):
+            RuleService(session).create(
+                RuleIn(
+                    name=f"Coffee to {category.name}",
+                    priority=priority,
+                    match_type=RuleMatchType.contains,
+                    match_value="coffee",
+                    set_category_id=category.id,
+                )
+            )
+        categories.archive(old.id)
+
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2025, 1, 5),
+                occurred_at=datetime(2025, 1, 5, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=300,
+                category_id=None,
+                title="Coffee shop",
+                tags=[],
+            )
+        )
+
+        assert txn.category_id == dining.id
+
+
 def test_deleting_tag_removes_rule_add_tags_reference() -> None:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

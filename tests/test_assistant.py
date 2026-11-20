@@ -60,6 +60,7 @@ from expenses.db.models import (
     AssistantChat,
     AssistantTurn,
     BudgetFrequency,
+    BudgetOverride,
     Category,
     IntervalUnit,
     LLMJob,
@@ -1928,6 +1929,46 @@ def test_assistant_undo_leaves_expenses_in_trash_as_they_are() -> None:
                 ReimbursementAllocation.reimbursement_transaction_id == ids["refund_id"]
             )
         ).all() == [ids["train_id"]]
+
+
+def test_assistant_approvals_refuse_a_category_archived_since_the_card() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_trip(session)
+        reader = _reader(session)
+        create = propose_create(
+            reader,
+            [
+                NewTransaction(
+                    date=date(2026, 6, 21),
+                    kind="expense",
+                    amount_cents=1_250,
+                    title="Taxi",
+                    category_id=ids["travel_id"],
+                )
+            ],
+        )
+        budget = propose_budgets(
+            reader,
+            [
+                BudgetRequest(
+                    category_id=ids["travel_id"],
+                    month="2026-06",
+                    amount_cents=5_000,
+                    applies="month",
+                )
+            ],
+        )
+        CategoryService(session, user_id=1).archive(ids["travel_id"])
+
+        for proposal in (create, budget):
+            with pytest.raises(ActionConflict):
+                _apply_proposal(session, proposal)
+            session.rollback()
+        assert session.scalar(select(func.count(BudgetOverride.id))) == 0
+        assert not session.scalars(
+            select(Transaction).where(Transaction.title == "Taxi")
+        ).all()
 
 
 def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:

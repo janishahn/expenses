@@ -51,9 +51,11 @@ from expenses.db.models import (
     ReimbursementAllocation,
     RecurringRule,
     Rule,
+    RuleLLMSuggestion,
     RuleMatchType,
     Tag,
     TransactionTemplate,
+    TransactionLLMSuggestion,
     TransactionClassificationEvent,
     transaction_tags,
     Transaction,
@@ -191,6 +193,57 @@ class TagService:
         self.session.flush()
         return tag
 
+    def _replace_in_tag_name_lists(self, old_name: str, new_name: str | None) -> None:
+        """Renames a tag in templates and pending AI suggestions; None removes it."""
+        old_lower = old_name.lower()
+
+        def replaced(raw: str) -> list[str] | None:
+            names = [str(name).strip() for name in json.loads(raw or "[]")]
+            if old_lower not in {name.lower() for name in names}:
+                return None
+            out: list[str] = []
+            for name in names:
+                if name.lower() == old_lower:
+                    if new_name is None:
+                        continue
+                    name = new_name
+                if name and name.lower() not in {kept.lower() for kept in out}:
+                    out.append(name)
+            return out
+
+        for template in self.session.scalars(
+            select(TransactionTemplate).where(
+                TransactionTemplate.user_id == self.user_id
+            )
+        ):
+            names = replaced(template.tags_json)
+            if names is not None:
+                template.tags_json = json.dumps(names)
+        for suggestion in self.session.scalars(
+            select(RuleLLMSuggestion).where(
+                RuleLLMSuggestion.user_id == self.user_id,
+                RuleLLMSuggestion.status == "pending",
+            )
+        ):
+            names = replaced(suggestion.add_tags_json)
+            if names is not None:
+                suggestion.add_tags_json = json.dumps(
+                    names, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                if not names and suggestion.set_category_id is None:
+                    suggestion.status = "stale"
+        for suggestion in self.session.scalars(
+            select(TransactionLLMSuggestion).where(
+                TransactionLLMSuggestion.user_id == self.user_id,
+                TransactionLLMSuggestion.status == "pending",
+            )
+        ):
+            names = replaced(suggestion.tags_json)
+            if names is not None:
+                suggestion.tags_json = json.dumps(
+                    names, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+
     def create(
         self,
         name: str,
@@ -265,6 +318,8 @@ class TagService:
         if self.session.scalar(stmt):
             raise ValueError("Tag with this name already exists")
 
+        if clean_name != tag.name:
+            self._replace_in_tag_name_lists(tag.name, clean_name)
         tag.name = clean_name
         tag.color = color
         tag.is_hidden_from_budget = is_hidden_from_budget
@@ -349,6 +404,7 @@ class TagService:
             if changed:
                 rule.add_tags_json = json.dumps(next_tags)
                 rules_add_tags_updated += 1
+        self._replace_in_tag_name_lists(tag.name, None)
         tag_name = tag.name
         self.session.delete(tag)
         self.session.commit()
@@ -372,6 +428,15 @@ class TagService:
             raise ValueError("Source and target tags must differ")
         if target.archived_at is not None:
             raise ValueError("Target tag is archived")
+        if source.is_hidden_from_budget != target.is_hidden_from_budget:
+            excluded, counted = (
+                (source, target) if source.is_hidden_from_budget else (target, source)
+            )
+            raise ValueError(
+                f"Cannot merge tags with different budget settings: {excluded.name} "
+                f"is excluded from budgets and {counted.name} is not. "
+                "Change Exclude from budgets on one of them first."
+            )
         source_period = (
             source.auto_attach_start_date,
             source.auto_attach_end_date,
@@ -513,6 +578,7 @@ class TagService:
             if changed:
                 rule.add_tags_json = json.dumps(next_tags)
                 rules_add_tags_updated += 1
+        self._replace_in_tag_name_lists(source.name, target.name)
 
         if (
             source.auto_attach_start_date is not None
@@ -744,7 +810,12 @@ class RuleService:
 
             if can_change_category and rule.set_category_id and not category_set:
                 cat = rule.set_category
-                if cat and cat.user_id == self.user_id and cat.type == txn.type:
+                if (
+                    cat
+                    and cat.user_id == self.user_id
+                    and cat.type == txn.type
+                    and cat.archived_at is None
+                ):
                     if txn.category_id != cat.id:
                         txn.category_id = cat.id
                         applied += 1
@@ -876,6 +947,15 @@ class CategoryService:
         if not category or category.user_id != self.user_id:
             raise ValueError("Category not found")
         name = data.name.strip()
+        uncategorized = self.UNCATEGORIZED_NAME.lower()
+        if category.name.lower() == uncategorized and name.lower() != uncategorized:
+            raise ValueError(
+                "Uncategorized can't be renamed; transactions without a category use it"
+            )
+        if category.name.lower() != uncategorized and name.lower() == uncategorized:
+            raise ValueError(
+                "Uncategorized is reserved for transactions without a category"
+            )
         existing = self.session.scalar(
             select(Category).where(
                 Category.user_id == self.user_id,
@@ -906,6 +986,10 @@ class CategoryService:
         category = self.session.get(Category, category_id)
         if not category or category.user_id != self.user_id:
             raise ValueError("Category not found")
+        if category.name.lower() == self.UNCATEGORIZED_NAME.lower():
+            raise ValueError(
+                "Uncategorized can't be archived; transactions without a category use it"
+            )
         category.archived_at = datetime.utcnow()
         self.session.commit()
         log_event(
@@ -947,6 +1031,11 @@ class CategoryService:
             raise ValueError("Category type mismatch")
         if target.archived_at is not None:
             raise ValueError("Target category is archived")
+        if source.name.lower() == self.UNCATEGORIZED_NAME.lower():
+            raise ValueError(
+                "Uncategorized can't be merged into another category; "
+                "transactions without a category use it"
+            )
 
         transactions_count = int(
             self.session.execute(
@@ -993,12 +1082,22 @@ class CategoryService:
             ).scalar_one()
             or 0
         )
+        template_count = int(
+            self.session.execute(
+                select(func.count(TransactionTemplate.id)).where(
+                    TransactionTemplate.user_id == self.user_id,
+                    TransactionTemplate.category_id == source.id,
+                )
+            ).scalar_one()
+            or 0
+        )
         return {
             "transactions": transactions_count,
             "recurring_rules": recurring_rules_count,
             "rules_set_category": rule_set_category_count,
             "budget_templates": budget_template_count,
             "budget_overrides": budget_override_count,
+            "templates": template_count,
         }
 
     def merge(self, source_category_id: int, target_category_id: int) -> dict[str, int]:
@@ -1007,58 +1106,90 @@ class CategoryService:
         target = self.session.get(Category, target_category_id)
         if source is None or target is None:
             raise ValueError("Source or target category not found")
-        source_template_scopes = {
-            (row.frequency, row.starts_on)
-            for row in self.session.execute(
-                select(BudgetTemplate.frequency, BudgetTemplate.starts_on).where(
+        # A category has one budget per period, so merging two that both budget a
+        # period would drop one of the amounts. Refuse and name the budgets instead.
+        templates = {
+            category.id: self.session.scalars(
+                select(BudgetTemplate)
+                .where(
                     BudgetTemplate.user_id == self.user_id,
-                    BudgetTemplate.category_id == source.id,
+                    BudgetTemplate.category_id == category.id,
                 )
-            )
+                .order_by(BudgetTemplate.starts_on)
+            ).all()
+            for category in (source, target)
         }
-        target_template_scopes = {
-            (row.frequency, row.starts_on)
-            for row in self.session.execute(
-                select(BudgetTemplate.frequency, BudgetTemplate.starts_on).where(
-                    BudgetTemplate.user_id == self.user_id,
-                    BudgetTemplate.category_id == target.id,
+        overrides = {
+            category.id: self.session.scalars(
+                select(BudgetOverride)
+                .where(
+                    BudgetOverride.user_id == self.user_id,
+                    BudgetOverride.category_id == category.id,
                 )
-            )
+                .order_by(BudgetOverride.year, BudgetOverride.month)
+            ).all()
+            for category in (source, target)
         }
-        template_conflicts = source_template_scopes & target_template_scopes
 
-        source_override_scopes = {
-            (row.year, row.month)
-            for row in self.session.execute(
-                select(BudgetOverride.year, BudgetOverride.month).where(
-                    BudgetOverride.user_id == self.user_id,
-                    BudgetOverride.category_id == source.id,
-                )
+        def template_label(category: Category, template: BudgetTemplate) -> str:
+            return (
+                f"{category.name} {template.frequency.value} budget from "
+                f"{template.starts_on.isoformat()}"
             )
-        }
-        target_override_scopes = {
-            (row.year, row.month)
-            for row in self.session.execute(
-                select(BudgetOverride.year, BudgetOverride.month).where(
-                    BudgetOverride.user_id == self.user_id,
-                    BudgetOverride.category_id == target.id,
-                )
-            )
-        }
-        override_conflicts = source_override_scopes & target_override_scopes
-        if template_conflicts or override_conflicts:
-            conflict_parts: list[str] = []
-            if template_conflicts:
-                conflict_parts.append(
-                    f"{len(template_conflicts)} budget template scope conflict(s)"
-                )
-            if override_conflicts:
-                conflict_parts.append(
-                    f"{len(override_conflicts)} budget override scope conflict(s)"
-                )
+
+        def override_label(category: Category, override: BudgetOverride) -> str:
+            return f"{category.name} budget for {override.year}-{override.month:02d}"
+
+        conflicts: list[str] = []
+        for source_template in templates[source.id]:
+            for target_template in templates[target.id]:
+                if source_template.frequency == target_template.frequency and (
+                    source_template.starts_on == target_template.starts_on
+                    or (
+                        source_template.starts_on
+                        <= (target_template.ends_on or date.max)
+                        and target_template.starts_on
+                        <= (source_template.ends_on or date.max)
+                    )
+                ):
+                    conflicts.append(
+                        f"{template_label(source, source_template)} and "
+                        f"{template_label(target, target_template)}"
+                    )
+        for source_override in overrides[source.id]:
+            for target_override in overrides[target.id]:
+                if (source_override.year, source_override.month) == (
+                    target_override.year,
+                    target_override.month,
+                ):
+                    conflicts.append(
+                        f"{override_label(source, source_override)} and "
+                        f"{override_label(target, target_override)}"
+                    )
+        for override_category, override_rows, template_category in (
+            (source, overrides[source.id], target),
+            (target, overrides[target.id], source),
+        ):
+            for override in override_rows:
+                month_first = date(override.year, override.month, 1)
+                for template in templates[template_category.id]:
+                    if (
+                        template.frequency == BudgetFrequency.monthly
+                        and template.starts_on <= month_first
+                        and (
+                            template.ends_on is None or template.ends_on >= month_first
+                        )
+                    ):
+                        conflicts.append(
+                            f"{override_label(override_category, override)} and "
+                            f"{template_label(template_category, template)}"
+                        )
+        if conflicts:
+            more = f" and {len(conflicts) - 3} more" if len(conflicts) > 3 else ""
             raise ValueError(
-                "Cannot merge categories with overlapping budget scopes: "
-                + ", ".join(conflict_parts)
+                f"Cannot merge: {source.name} and {target.name} both have a budget "
+                f"for the same period ({'; '.join(conflicts[:3])}{more}). "
+                "End or delete one of these budgets first."
             )
 
         updated_transactions = int(
@@ -1125,6 +1256,35 @@ class CategoryService:
             ).rowcount
             or 0
         )
+        updated_templates = int(
+            self.session.execute(
+                update(TransactionTemplate)
+                .where(
+                    TransactionTemplate.user_id == self.user_id,
+                    TransactionTemplate.category_id == source.id,
+                )
+                .values(category_id=target.id)
+            ).rowcount
+            or 0
+        )
+        self.session.execute(
+            update(RuleLLMSuggestion)
+            .where(
+                RuleLLMSuggestion.user_id == self.user_id,
+                RuleLLMSuggestion.status == "pending",
+                RuleLLMSuggestion.set_category_id == source.id,
+            )
+            .values(set_category_id=target.id)
+        )
+        self.session.execute(
+            update(TransactionLLMSuggestion)
+            .where(
+                TransactionLLMSuggestion.user_id == self.user_id,
+                TransactionLLMSuggestion.status == "pending",
+                TransactionLLMSuggestion.category_id == source.id,
+            )
+            .values(category_id=target.id)
+        )
 
         source.archived_at = datetime.now(UTC)
         self.session.commit()
@@ -1134,6 +1294,7 @@ class CategoryService:
             "rules_set_category": updated_rules,
             "budget_templates": updated_budget_templates,
             "budget_overrides": updated_budget_overrides,
+            "templates": updated_templates,
             "preview_transactions": preview["transactions"],
         }
 
@@ -7574,6 +7735,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         stmt = select(BudgetTemplate).where(
             BudgetTemplate.user_id == self.user_id,
@@ -7640,6 +7805,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         category_filter = (
             BudgetTemplate.category_id.is_(None)
@@ -7755,6 +7924,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         stmt = select(BudgetOverride).where(
             BudgetOverride.user_id == self.user_id,
