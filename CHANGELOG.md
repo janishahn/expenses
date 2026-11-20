@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-20
+
 ### Changed
 - `uv run fast-tests` also type-checks the backend with ty and checks the backend import layers with import-linter, both new development dependencies. ty fails only on errors that are not in `ty-baseline.json`. Ruff and oxlint add rules for likely bugs, server-clock dates, unhandled promises, keyboard access, import cycles, deep branching, and common leftovers such as commented-out code and stray prints. Lint also rejects skipped and focused tests in pytest and Playwright. Oxlint now runs with type information through the new `oxlint-tsgolint` development dependency. `TESTING.md` replaces the browser coverage ledger with a budget of 120 Playwright test definitions, and the suite is cut to that budget. Browser tests now keep one journey per product surface plus checks that only a browser can make; the deleted cases are left to backend tests and the static checks. `fast-tests` also runs project rules from `lint-rules/` through ast-grep, a new development dependency; the first one rejects dividing cents with `/`. Backend tests add Hypothesis property tests, a new development dependency, for recurring schedules, reimbursement allocations, and CSV export and import; they replace single-case tests of the same rules.
 - The OpenAPI contract lists response fields that have defaults as required, since responses always send them, and `GET /api/dashboard` sends `null` for an empty field instead of leaving it out. The `type` of transactions, templates, and recurring rules is listed as `income` or `expense`. The web app's API response and request types are generated from the contract with `openapi-typescript`, a new development dependency: `npm run gen:api` in `ui/` regenerates them after `uv run export-openapi`, and `npm run lint` fails when they are out of date.
@@ -713,7 +715,8 @@ Initial public source-available release.
 - Optional, disabled-by-default LLM assistance through an OpenAI-compatible endpoint.
 - Docker and bare-metal deployment paths, with a recommended Tailscale tailnet serving model.
 
-[Unreleased]: https://github.com/janishahn/expenses/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/janishahn/expenses/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/janishahn/expenses/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/janishahn/expenses/compare/v0.8.12...v0.9.0
 [0.8.12]: https://github.com/janishahn/expenses/compare/v0.8.11...v0.8.12
 [0.8.11]: https://github.com/janishahn/expenses/compare/v0.8.10...v0.8.11
