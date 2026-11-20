@@ -59,7 +59,7 @@ Add or keep a test only when it protects one of these:
 - Stored data: migrations, imports, exports, backups, and reconciliation.
 - Assistant changes: the Assistant changes data only through a card that the user approves.
 
-Prefer one test that checks a rule across many inputs to many tests that each check one example. Extend a suitable existing test or spec; add a file only when no existing file fits.
+Prefer one test that checks a rule across many inputs to many tests that each check one example. In backend tests, write such a rule as a Hypothesis property, and pin a known failure with `@example` so it runs every time. Extend a suitable existing test or spec; add a file only when no existing file fits.
 
 ### Bug fixes
 

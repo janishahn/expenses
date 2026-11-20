@@ -1,6 +1,8 @@
 from calendar import monthrange
 from datetime import date, timedelta
 
+from hypothesis import example, given
+from hypothesis import strategies as st
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -16,43 +18,6 @@ from expenses.db.models import (
 )
 from expenses.db.session import Base
 from expenses.recurrence.engine import RecurringEngine, calculate_next_date
-
-
-def _rule(policy: MonthDayPolicy, skip_weekends: bool = False) -> RecurringRule:
-    return RecurringRule(
-        id=1,
-        user_id=1,
-        name="Test",
-        type=TransactionType.expense,
-        currency_code=CurrencyCode.eur,
-        amount_cents=1000,
-        category_id=1,
-        anchor_date=date(2024, 1, 31),
-        interval_unit=IntervalUnit.month,
-        interval_count=1,
-        next_occurrence=date(2024, 1, 31),
-        end_date=None,
-        auto_post=True,
-        skip_weekends=skip_weekends,
-        month_day_policy=policy,
-    )
-
-
-def test_calculate_next_date_snap_to_end():
-    rule = _rule(MonthDayPolicy.snap_to_end)
-    assert calculate_next_date(rule, date(2024, 1, 31)) == date(2024, 2, 29)
-
-
-def test_calculate_next_date_skip_policy():
-    rule = _rule(MonthDayPolicy.skip)
-    assert calculate_next_date(rule, date(2024, 1, 31)) == date(2024, 3, 31)
-
-
-def test_calculate_next_date_weekend_shift():
-    rule = _rule(MonthDayPolicy.snap_to_end, skip_weekends=True)
-    # Skip weekends ensures we nudge forward if result lands on Saturday/Sunday.
-    next_date = calculate_next_date(rule, date(2024, 3, 29))
-    assert next_date == date(2024, 4, 30)
 
 
 def test_recurring_engine_idempotent_posts():
@@ -438,42 +403,6 @@ def _expected_nominal(
     return out
 
 
-def test_weekend_shift_across_month_end_keeps_every_period():
-    cases = [
-        (anchor, policy, months_step)
-        for anchor in (
-            date(2025, 10, 30),
-            date(2025, 12, 31),
-            date(2024, 1, 31),
-            date(2025, 5, 29),
-            date(2025, 2, 28),
-        )
-        for policy in (MonthDayPolicy.snap_to_end, MonthDayPolicy.skip)
-        for months_step in (1, 2, 3)
-    ]
-    cases += [
-        (date(2022, 12, 31), MonthDayPolicy.snap_to_end, 12),
-        (date(2024, 2, 29), MonthDayPolicy.snap_to_end, 12),
-        (date(2024, 2, 29), MonthDayPolicy.skip, 12),
-    ]
-    for anchor, policy, months_step in cases:
-        if months_step == 12:
-            rule = _schedule_rule(anchor, unit=IntervalUnit.year, policy=policy)
-        else:
-            rule = _schedule_rule(anchor, count=months_step, policy=policy)
-        expected = _expected_nominal(anchor, months_step, 26, policy)
-        # The first occurrence posts as stored; later ones move off weekends.
-        walked = _walk(rule, anchor, 25)
-        assert walked == [anchor] + [_moved_to_monday(day) for day in expected[1:]], (
-            anchor,
-            policy,
-            months_step,
-        )
-    # The cases include Saturday and Sunday month ends.
-    assert date(2025, 11, 30).weekday() == 6
-    assert date(2026, 2, 28).weekday() == 5
-
-
 def _expected_carry_forward(anchor: date, count: int) -> list[date]:
     """Nominal "use previous month's day" dates: a day cut to a month end stays cut."""
     out: list[date] = []
@@ -485,20 +414,6 @@ def _expected_carry_forward(anchor: date, count: int) -> list[date]:
         out.append(date(year, month + 1, day))
         index += 1
     return out
-
-
-def test_weekend_shift_carry_forward_posts_once_per_month():
-    for anchor in (
-        date(2024, 1, 29),
-        date(2024, 1, 30),
-        date(2024, 1, 31),
-        date(2025, 3, 31),
-        date(2025, 6, 30),
-    ):
-        rule = _schedule_rule(anchor, policy=MonthDayPolicy.carry_forward)
-        expected = _expected_carry_forward(anchor, 31)
-        walked = _walk(rule, anchor, 30)
-        assert walked == [anchor] + [_moved_to_monday(d) for d in expected[1:]], anchor
 
 
 def test_weekend_shift_carry_forward_keeps_a_scheduled_monday():
@@ -570,32 +485,6 @@ def test_catch_up_with_weekend_shift_posts_each_month():
         )
     expected = _expected_nominal(date(2024, 1, 31), 1, 25, MonthDayPolicy.snap_to_end)
     assert posted == [date(2024, 1, 31)] + [_moved_to_monday(d) for d in expected[1:]]
-
-
-def test_skip_policy_skips_whole_intervals():
-    leap = _schedule_rule(
-        date(2024, 2, 29),
-        unit=IntervalUnit.year,
-        policy=MonthDayPolicy.skip,
-        skip_weekends=False,
-    )
-    assert _walk(leap, leap.anchor_date, 3) == [
-        date(2024, 2, 29),
-        date(2028, 2, 29),
-        date(2032, 2, 29),
-        date(2036, 2, 29),
-    ]
-    every_two = _schedule_rule(
-        date(2025, 1, 31), count=2, policy=MonthDayPolicy.skip, skip_weekends=False
-    )
-    assert _walk(every_two, every_two.anchor_date, 5) == [
-        date(2025, 1, 31),
-        date(2025, 3, 31),
-        date(2025, 5, 31),
-        date(2025, 7, 31),
-        date(2026, 1, 31),
-        date(2026, 3, 31),
-    ]
 
 
 def test_skip_policy_in_a_month_without_the_day_uses_its_last_day():
@@ -776,3 +665,59 @@ def test_app_starts_when_startup_catch_up_fails(monkeypatch, tmp_path):
     _start_app_with_rules(monkeypatch, tmp_path, []).close()
     # The scheduler still registered the regular runs that retry the catch-up.
     assert app_main.scheduler_manager.scheduler.get_job("recurring_hourly_safety")
+
+
+@st.composite
+def _anchors(draw) -> date:
+    year = draw(st.integers(2000, 2090))
+    month = draw(st.integers(1, 12))
+    # Half the anchors fall on days 29 to 31, where the policies differ.
+    day = draw(st.one_of(st.integers(1, 28), st.integers(29, 31)))
+    return date(year, month, min(day, monthrange(year, month)[1]))
+
+
+_schedules = st.one_of(
+    st.tuples(
+        st.just(IntervalUnit.month),
+        st.integers(1, 4),
+        st.sampled_from([MonthDayPolicy.snap_to_end, MonthDayPolicy.skip]),
+    ),
+    st.tuples(
+        st.just(IntervalUnit.month),
+        st.just(1),
+        st.just(MonthDayPolicy.carry_forward),
+    ),
+    st.tuples(
+        st.just(IntervalUnit.year),
+        st.just(1),
+        st.sampled_from([MonthDayPolicy.snap_to_end, MonthDayPolicy.skip]),
+    ),
+)
+
+
+# A yearly rule on 29 February skips to the next leap year.
+@example(
+    anchor=date(2024, 2, 29),
+    schedule=(IntervalUnit.year, 1, MonthDayPolicy.skip),
+    skip_weekends=False,
+)
+@given(anchor=_anchors(), schedule=_schedules, skip_weekends=st.booleans())
+def test_monthly_and_yearly_rules_post_once_per_scheduled_period(
+    anchor: date,
+    schedule: tuple[IntervalUnit, int, MonthDayPolicy],
+    skip_weekends: bool,
+) -> None:
+    unit, count, policy = schedule
+    rule = _schedule_rule(
+        anchor, unit=unit, count=count, policy=policy, skip_weekends=skip_weekends
+    )
+    if policy == MonthDayPolicy.carry_forward:
+        expected = _expected_carry_forward(anchor, 30)
+    else:
+        months_step = 12 if unit == IntervalUnit.year else count
+        expected = _expected_nominal(anchor, months_step, 30, policy)
+    if skip_weekends:
+        # The first date posts as stored; later ones move off weekends.
+        expected = [anchor] + [_moved_to_monday(day) for day in expected[1:]]
+
+    assert _walk(rule, anchor, 29) == expected
