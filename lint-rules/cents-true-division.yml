@@ -11,4 +11,4 @@ rule:
   pattern: $LEFT / $RIGHT
 constraints:
   LEFT:
-    regex: _cents$
+    regex: _cents\)*$

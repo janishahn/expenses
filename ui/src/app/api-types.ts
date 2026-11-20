@@ -7,14 +7,18 @@ type Schemas = components["schemas"]
 
 export type CategorySummary = Schemas["CategorySummaryOut"]
 export type CategoryListItem = Schemas["CategoryListItemOut"]
-export type CategoriesResponse = Schemas["CategoriesResponseOut"]
+// `/api/categories/options` and `/api/tags/options`, which the schema leaves out: every
+// category or tag without the period totals and usage counts of the list endpoints.
+export type CategoriesResponse = {
+  categories: Pick<CategoryListItem, "id" | "name" | "type" | "icon" | "order" | "archived_at">[]
+}
 
 export type TemplatesResponse = Schemas["TemplatesResponseOut"]
 export type TemplateRow = TemplatesResponse["templates"][number]
 
 export type TransactionTag = Schemas["TransactionTagOut"]
-export type TagsResponse = Schemas["TagsResponseOut"]
-export type TagOption = TagsResponse["tags"][number]
+export type TagOption = Omit<Schemas["TagOut"], "expense_cents" | "income_cents" | "usage_count">
+export type TagsResponse = { tags: TagOption[] }
 
 export type TransactionListItem = Schemas["TransactionListItemOut"]
 export type TransactionsResponse = Schemas["TransactionsResponseOut"]

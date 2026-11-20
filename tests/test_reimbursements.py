@@ -506,17 +506,21 @@ def _steps(draw):
     ]
 
 
-def _counted_totals(session, ids):
+def _counted_totals(session, ids, revived=None):
     """Allocated cents per side, counting an allocation as the rollups do.
 
     It counts when both sides are live, the expense is an expense, and the
-    reimbursement is reimbursement income.
+    reimbursement is reimbursement income. A revived side counts as live.
     """
     session.expire_all()
     txns = {
         t.id: t
         for t in session.scalars(select(Transaction).where(Transaction.id.in_(ids)))
     }
+
+    def live(txn):
+        return txn.deleted_at is None or txn.id == revived
+
     totals = defaultdict(int)
     for row in session.scalars(
         select(ReimbursementAllocation).where(
@@ -526,8 +530,8 @@ def _counted_totals(session, ids):
         expense = txns[row.expense_transaction_id]
         reimbursement = txns[row.reimbursement_transaction_id]
         if (
-            expense.deleted_at is None
-            and reimbursement.deleted_at is None
+            live(expense)
+            and live(reimbursement)
             and expense.type == TransactionType.expense
             and reimbursement.type == TransactionType.income
             and reimbursement.is_reimbursement
@@ -661,3 +665,9 @@ def test_allocations_never_exceed_either_side(
         txns, totals = _counted_totals(db_session, ids)
         for txn_id, total in totals.items():
             assert total <= txns[txn_id].amount_cents, (step, txn_id, total)
+        if step[0] == "restore" and txns[ids[step[1]]].deleted_at is not None:
+            # A restore is refused only when the side would not fit.
+            txns, revived = _counted_totals(db_session, ids, revived=ids[step[1]])
+            assert any(
+                total > txns[txn_id].amount_cents for txn_id, total in revived.items()
+            ), (step, response.text)

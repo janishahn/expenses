@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from expenses.db.models import Category, Transaction, TransactionType
@@ -33,6 +33,20 @@ name = plain.map(str.strip).filter(bool)
         ),
         max_size=5,
     )
+)
+# Whitespace in a note is kept, such as Markdown indentation and a hard break.
+@example(
+    rows=[
+        (
+            date(2026, 3, 8),
+            TransactionType.expense,
+            False,
+            1_250,
+            "Groceries",
+            "Coffee",
+            "  code block\n\nline with hard break  ",
+        )
+    ]
 )
 def test_exported_transactions_import_unchanged(rows) -> None:
     transactions = [
