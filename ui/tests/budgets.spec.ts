@@ -79,7 +79,7 @@ test.describe("Budgets Page", () => {
     await expect(row).not.toContainText("adjusted")
   })
 
-  test("applies a peek edit to only the selected month by default", async ({
+  test("applies a peek edit to only the selected month by default, or to later months on request", async ({
     page,
     request,
   }) => {
@@ -117,6 +117,17 @@ test.describe("Budgets Page", () => {
     const nextRow = page.getByRole("listitem", { name: categoryName })
     await expect(nextRow).toContainText(/300\s?€/)
     await expect(nextRow).not.toContainText("adjusted")
+
+    await nextRow.click()
+    await peek.getByRole("button", { name: /^Amount/ }).click()
+    await editor.getByRole("radio", { name: `${monthName(localMonth(1))} and later` }).check()
+    await editor.getByRole("textbox", { name: "Amount" }).fill("260.00")
+    await editor.getByRole("button", { name: "Save" }).click()
+    await expect(nextRow).toContainText(/260\s?€/)
+    await page.getByRole("button", { name: "Next month" }).click()
+    const laterRow = page.getByRole("listitem", { name: categoryName })
+    await expect(laterRow).toContainText(/260\s?€/)
+    await expect(laterRow).not.toContainText("adjusted")
   })
 
   test("shows yearly budgets and creates annual budgets in place", async ({
