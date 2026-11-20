@@ -3491,6 +3491,10 @@ def api_admin_recurring_catch_up(request: Request, db: Session = Depends(get_db)
             select(func.count(RecurringRule.id)).where(
                 RecurringRule.auto_post.is_(True),
                 RecurringRule.next_occurrence <= local_today(),
+                or_(
+                    RecurringRule.end_date.is_(None),
+                    RecurringRule.next_occurrence <= RecurringRule.end_date,
+                ),
             )
         )
         or 0
@@ -4276,7 +4280,8 @@ def api_get_transaction(
             if txn.category
             else None
         ),
-        "title": txn.title,
+        # Postings of rules saved without a name were stored without a title.
+        "title": txn.title if (txn.title or "").strip() else txn.category.name,
         "description": txn.description,
         "latitude": float(txn.latitude) if txn.latitude is not None else None,
         "longitude": float(txn.longitude) if txn.longitude is not None else None,

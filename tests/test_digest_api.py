@@ -299,3 +299,50 @@ def test_digest_recurring_postings_report_their_type(
     assert [(row["transaction_id"], row["type"]) for row in postings] == [
         (posted, "income")
     ]
+
+
+def test_digest_lists_postings_of_a_rule_stored_without_a_name(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from expenses.db.models import RecurringRule
+
+    category_id = _create_category(api_client, csrf_headers, "Streaming", "expense")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Video",
+            "type": "expense",
+            "amount_cents": 999,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    posted = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=999,
+        title="Video",
+        category_id=category_id,
+    )
+    # Rules and their postings saved before a name was required.
+    db_session.execute(
+        update(RecurringRule).where(RecurringRule.id == rule["id"]).values(name=None)
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == posted)
+        .values(origin_rule_id=rule["id"], title=None)
+    )
+    db_session.commit()
+
+    response = api_client.get("/api/digest")
+    assert response.status_code == 200
+    postings = response.json()["recurring_postings"]
+    assert [(row["transaction_id"], row["rule_name"]) for row in postings] == [
+        (posted, "Streaming")
+    ]

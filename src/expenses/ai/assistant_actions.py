@@ -32,8 +32,13 @@ from expenses.db.models import (
     Transaction,
     TransactionType,
 )
-from expenses.schemas import BudgetOverrideIn, BudgetTemplateApplyFromIn, TransactionIn
-from expenses.schemas import MAX_AMOUNT_CENTS
+from expenses.schemas import (
+    MAX_AMOUNT_CENTS,
+    MAX_LEDGER_DATE,
+    BudgetOverrideIn,
+    BudgetTemplateApplyFromIn,
+    TransactionIn,
+)
 from expenses.services import (
     BudgetService,
     CategoryService,
@@ -1346,6 +1351,10 @@ def propose_end_recurring(
             raise InvalidProposal(
                 "invalid_date",
                 f"{name} starts on {rule.anchor_date}; end it on or after that date.",
+            )
+        if end_date > MAX_LEDGER_DATE:
+            raise InvalidProposal(
+                "invalid_date", f"End it on or before {MAX_LEDGER_DATE}."
             )
         if rule.end_date == end_date:
             raise InvalidProposal("no_change", f"{name} already ends on {end_date}.")

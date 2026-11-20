@@ -876,3 +876,202 @@ def test_forecast_range_needs_six_out_of_sample_months(
     else:
         assert final["end_balance_p10_cents"] is None
         assert final["end_balance_p90_cents"] is None
+
+
+def test_forecast_keeps_manual_spend_in_months_a_quarterly_rule_skips(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    fixed_today = date(2026, 7, 15)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
+    insurance_id = _create_category(api_client, csrf_headers, "Insurance", "expense")
+    response = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Quarterly insurance",
+            "type": "expense",
+            "amount_cents": 30_000,
+            "category_id": insurance_id,
+            "anchor_date": "2026-01-01",
+            "interval_unit": "month",
+            "interval_count": 3,
+            "next_occurrence": "2026-10-01",
+            "auto_post": True,
+        },
+    )
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    for offset in range(1, 7):
+        month = _add_months(fixed_today.replace(day=1), -offset)
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=month.replace(day=12),
+            txn_type="expense",
+            amount_cents=10_000,
+            category_id=insurance_id,
+            title=f"Top-up {offset}",
+        )
+    for posted in (date(2026, 1, 1), date(2026, 4, 1), date(2026, 7, 1)):
+        db_session.add(
+            Transaction(
+                user_id=1,
+                date=posted,
+                occurred_at=datetime.combine(posted, datetime.min.time()),
+                type=TransactionType.expense,
+                amount_cents=30_000,
+                category_id=insurance_id,
+                title="Quarterly insurance",
+                origin_rule_id=rule_id,
+                occurrence_date=posted,
+            )
+        )
+    db_session.commit()
+
+    response = api_client.get("/api/forecast?horizon=3&mode=full")
+    assert response.status_code == 200
+    assert response.json()["months"][0]["breakdown"]["variable_estimates"] == [
+        {
+            "category_id": insurance_id,
+            "name": "Insurance",
+            "icon": None,
+            "amount_cents": 10_000,
+        }
+    ]
+
+
+def test_forecast_scenario_applies_each_change_to_a_rule_from_its_month(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date.today()
+    next_month = _add_months(today.replace(day=1), 1)
+    later = _add_months(today.replace(day=1), 3)
+    bills_id = _create_category(api_client, csrf_headers, "Bills", "expense")
+    rule_id = _create_recurring_rule(
+        api_client,
+        csrf_headers,
+        name="Bill",
+        txn_type="expense",
+        category_id=bills_id,
+        amount_cents=10_000,
+        next_occurrence=next_month,
+    )
+    changes = [
+        {
+            "type": "modify_rule",
+            "rule_id": rule_id,
+            "new_amount_cents": 12_000,
+            "effective_month": next_month.isoformat()[:7],
+        },
+        {
+            "type": "modify_rule",
+            "rule_id": rule_id,
+            "new_amount_cents": 15_000,
+            "effective_month": later.isoformat()[:7],
+        },
+    ]
+    for ordered in (changes, changes[::-1]):
+        response = api_client.post(
+            "/api/forecast/scenario?mode=recurring",
+            headers=csrf_headers,
+            json={"horizon": 6, "modifications": ordered},
+        )
+        assert response.status_code == 200
+        amounts = [
+            month["breakdown"]["recurring_rules"][0]["amount_cents"]
+            for month in response.json()["months"]
+        ]
+        assert amounts == [12_000, 12_000, 15_000, 15_000, 15_000, 15_000]
+
+
+def test_forecast_scenario_limits_the_number_of_changes(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    one_time = {
+        "type": "one_time",
+        "name": "Trip",
+        "tx_type": "expense",
+        "amount_cents": 100,
+        "month": "2030-01",
+    }
+    response = api_client.post(
+        "/api/forecast/scenario?mode=recurring",
+        headers=csrf_headers,
+        json={"horizon": 3, "modifications": [one_time] * 51},
+    )
+    assert response.status_code == 422
+    response = api_client.post(
+        "/api/forecast/scenario?mode=recurring",
+        headers=csrf_headers,
+        json={"horizon": 3, "modifications": [one_time] * 50},
+    )
+    assert response.status_code == 200
+
+
+def test_forecast_survives_stored_rule_with_huge_interval(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from expenses.db.models import (
+        CurrencyCode,
+        IntervalUnit,
+        MonthDayPolicy,
+        RecurringRule,
+    )
+
+    today = date.today()
+    category_id = _create_category(api_client, csrf_headers, "Subs", "expense")
+    for unit, count in (
+        (IntervalUnit.month, 120000),
+        (IntervalUnit.year, 10000),
+        (IntervalUnit.day, 5000000),
+    ):
+        db_session.add(
+            RecurringRule(
+                user_id=1,
+                name=f"Huge {unit.value}",
+                type=TransactionType.expense,
+                currency_code=CurrencyCode.eur,
+                amount_cents=1000,
+                category_id=category_id,
+                anchor_date=_add_months(today.replace(day=1), -2),
+                interval_unit=unit,
+                interval_count=count,
+                next_occurrence=_add_months(today.replace(day=1), 1),
+                auto_post=True,
+                skip_weekends=False,
+                month_day_policy=MonthDayPolicy.snap_to_end,
+            )
+        )
+    db_session.commit()
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=_add_months(today.replace(day=1), -1),
+        txn_type="expense",
+        amount_cents=500,
+        category_id=category_id,
+        title="Manual",
+    )
+
+    response = api_client.get("/api/forecast?horizon=12&mode=full")
+    assert response.status_code == 200
+    first = response.json()["months"][0]["breakdown"]["recurring_rules"]
+    assert len(first) == 3
+    assert api_client.get("/api/recurring").status_code == 200
+    response = api_client.post(
+        "/api/forecast/scenario?mode=full",
+        headers=csrf_headers,
+        json={
+            "horizon": 6,
+            "modifications": [
+                {
+                    "type": "add_rule",
+                    "name": "Gym",
+                    "tx_type": "expense",
+                    "amount_cents": 100,
+                    "interval": "monthly",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200

@@ -66,8 +66,8 @@ from expenses.infra.fx_rates import FxQuote, FxRateService
 from expenses.core.periods import Period, add_months, month_end, month_start
 from expenses.recurrence.engine import (
     RecurringEngine,
-    calculate_next_date,
     local_today,
+    next_date_in_range,
 )
 from expenses.services.csv_utils import export_transactions, parse_csv
 from expenses.services.rollups import (
@@ -5824,12 +5824,14 @@ class ForecastService:
                     )
                 )
             interval_count = int(rule.interval_count)
-            if rule.interval_unit == IntervalUnit.day:
+            # Rules that occur at least monthly use their monthly average; longer
+            # intervals subtract only in the months they actually occur.
+            if rule.interval_unit == IntervalUnit.day and interval_count <= 31:
                 monthly = int(amount * 30.44 / interval_count)
-            elif rule.interval_unit == IntervalUnit.week:
+            elif rule.interval_unit == IntervalUnit.week and interval_count <= 4:
                 monthly = int(amount * 4.35 / interval_count)
-            elif rule.interval_unit == IntervalUnit.month:
-                monthly = int(amount / interval_count)
+            elif rule.interval_unit == IntervalUnit.month and interval_count == 1:
+                monthly = amount
             else:
                 occurrence = rule.anchor_date
                 amounts_by_month: dict[date, int] = {}
@@ -5841,8 +5843,8 @@ class ForecastService:
                         amounts_by_month[bucket] = (
                             amounts_by_month.get(bucket, 0) + amount
                         )
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
                 key = (rule.type, int(rule.category_id))
@@ -6137,7 +6139,7 @@ class ForecastService:
         variable_income_estimates: dict[int, "ForecastService.VariableEstimate"],
         variable_model: "ForecastService.VariableModel",
         prediction_paths: list[list[int]],
-        modified_rule_amounts: dict[int, tuple[int, date]] | None = None,
+        modified_rule_amounts: dict[int, list[tuple[date, int]]] | None = None,
         one_time_events: dict[date, list["ForecastService.OneTimeEvent"]] | None = None,
         summary_only: bool = False,
     ) -> dict[str, object]:
@@ -6159,8 +6161,8 @@ class ForecastService:
                         break
                     if occurrence > today:
                         fx_dates.add(occurrence)
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
             if fx_dates:
@@ -6190,13 +6192,11 @@ class ForecastService:
                         break
                     if occurrence > today:
                         amount = int(rule.amount_cents)
-                        if (
-                            rule.source_rule_id is not None
-                            and rule.source_rule_id in modified_rule_amounts
-                            and occurrence
-                            >= modified_rule_amounts[rule.source_rule_id][1]
+                        for effective_month, new_amount in modified_rule_amounts.get(
+                            rule.source_rule_id, []
                         ):
-                            amount = int(modified_rule_amounts[rule.source_rule_id][0])
+                            if occurrence >= effective_month:
+                                amount = new_amount
                         if rule.currency_code == CurrencyCode.usd:
                             amount = int(
                                 (Decimal(amount) * fx_quotes[occurrence].rate).quantize(
@@ -6219,8 +6219,8 @@ class ForecastService:
                             current_income += amount
                         else:
                             current_expenses += amount
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
                 rule.next_occurrence = occurrence
@@ -6296,13 +6296,11 @@ class ForecastService:
                         break
                     if occurrence >= month_bucket:
                         amount = int(rule.amount_cents)
-                        if (
-                            rule.source_rule_id is not None
-                            and rule.source_rule_id in modified_rule_amounts
-                            and occurrence
-                            >= modified_rule_amounts[rule.source_rule_id][1]
+                        for effective_month, new_amount in modified_rule_amounts.get(
+                            rule.source_rule_id, []
                         ):
-                            amount = int(modified_rule_amounts[rule.source_rule_id][0])
+                            if occurrence >= effective_month:
+                                amount = new_amount
                         if rule.currency_code == CurrencyCode.usd:
                             amount = int(
                                 (Decimal(amount) * fx_quotes[occurrence].rate).quantize(
@@ -6327,8 +6325,8 @@ class ForecastService:
                         else:
                             expenses += amount
 
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
 
@@ -6557,7 +6555,7 @@ class ForecastService:
     ) -> tuple[
         list["ForecastService.ProjectionRule"],
         dict[int, "ForecastService.VariableEstimate"],
-        dict[int, tuple[int, date]],
+        dict[int, list[tuple[date, int]]],
         dict[date, list["ForecastService.OneTimeEvent"]],
         list[str],
     ]:
@@ -6577,7 +6575,7 @@ class ForecastService:
             for category_id, row in variable_estimates.items()
         }
         removed_rule_ids: set[int] = set()
-        modified_rule_amounts: dict[int, tuple[int, date]] = {}
+        modified_rule_amounts: dict[int, list[tuple[date, int]]] = {}
         one_time_events: dict[date, list[ForecastService.OneTimeEvent]] = {}
         labels: list[str] = []
 
@@ -6622,11 +6620,13 @@ class ForecastService:
             if isinstance(modification, ScenarioModifyRuleIn):
                 if modification.rule_id not in rule_lookup:
                     raise ValueError("Rule not found")
-                modified_rule_amounts[int(modification.rule_id)] = (
-                    int(modification.new_amount_cents),
-                    self._parse_year_month(
-                        modification.effective_month, "effective_month"
-                    ),
+                modified_rule_amounts.setdefault(int(modification.rule_id), []).append(
+                    (
+                        self._parse_year_month(
+                            modification.effective_month, "effective_month"
+                        ),
+                        int(modification.new_amount_cents),
+                    )
                 )
                 continue
 
@@ -6658,6 +6658,10 @@ class ForecastService:
             if rule.source_rule_id is None
             or rule.source_rule_id not in removed_rule_ids
         ]
+        # Each change holds from its month until a later one; in the same month
+        # the one listed last wins (the sort keeps list order for ties).
+        for changes in modified_rule_amounts.values():
+            changes.sort(key=lambda change: change[0])
 
         return (
             rules,
@@ -7027,10 +7031,28 @@ class RecurringRuleService:
             return int(amount_cents / (12 * interval_count))
         return amount_cents
 
+    @staticmethod
+    def has_ended(rule: RecurringRule, today: date) -> bool:
+        # Manual rules never advance next_occurrence, so the end date alone counts too.
+        return rule.end_date is not None and (
+            rule.end_date < today or rule.next_occurrence > rule.end_date
+        )
+
+    def _advance_to(self, rule: RecurringRule, today: date) -> None:
+        """Moves next_occurrence to the first scheduled date on or after today."""
+        occurrence = rule.next_occurrence
+        while occurrence < today:
+            next_occurrence = next_date_in_range(rule, occurrence)
+            if next_occurrence is None or next_occurrence <= occurrence:
+                break
+            occurrence = next_occurrence
+        rule.next_occurrence = occurrence
+
     def overview(
         self,
     ) -> tuple[list["RecurringRuleService.OverviewRule"], dict[str, object]]:
         rules = self.list_all()
+        today = local_today()
         total_income = 0
         total_expenses = 0
         income_by_category: dict[str, int] = {}
@@ -7067,6 +7089,8 @@ class RecurringRuleService:
                     monthly_equivalent_cents=monthly,
                 )
             )
+            if self.has_ended(rule, today):
+                continue
             category_name = rule.category.name if rule.category else "Uncategorized"
 
             if rule.type == TransactionType.income:
@@ -7164,12 +7188,16 @@ class RecurringRuleService:
                 raise ValueError("Category not found")
             if category.type != data.type:
                 raise ValueError("Category type mismatch")
+        was_auto_post = rule.auto_post
         for attr_name, value in data.model_dump().items():
             setattr(rule, attr_name, value)
         # The anchor is the schedule's first occurrence, so a later start must not
         # leave an earlier next occurrence for catch-up to post.
         if rule.anchor_date > rule.next_occurrence:
             rule.next_occurrence = rule.anchor_date
+        # Payments made while the rule was manual were recorded by hand.
+        if rule.auto_post and not was_auto_post:
+            self._advance_to(rule, local_today())
         self.session.commit()
         self.session.refresh(rule)
         log_event(
@@ -7187,6 +7215,9 @@ class RecurringRuleService:
         rule = self.session.get(RecurringRule, rule_id)
         if not rule or rule.user_id != self.user_id:
             raise ValueError("Rule not found")
+        # Payments made while the rule was manual were recorded by hand.
+        if auto_post and not rule.auto_post:
+            self._advance_to(rule, local_today())
         rule.auto_post = auto_post
         self.session.commit()
         log_event(
@@ -7825,8 +7856,13 @@ class ReportService:
         if "recurring_upcoming" in options.sections:
             end_date = options.end + timedelta(days=30)
             upcoming_rules = []
+            today = local_today()
             for rule in self.rule_service.list_all():
-                if rule.auto_post and rule.next_occurrence <= end_date:
+                if (
+                    rule.auto_post
+                    and rule.next_occurrence <= end_date
+                    and not self.rule_service.has_ended(rule, today)
+                ):
                     upcoming_rules.append(rule)
             data["recurring_upcoming"] = upcoming_rules
 
@@ -8891,7 +8927,11 @@ class DigestService:
                 {
                     "transaction_id": txn.id,
                     "rule_id": txn.origin_rule_id,
-                    "rule_name": txn.origin_rule.name if txn.origin_rule else "",
+                    "rule_name": (
+                        txn.origin_rule.name or txn.origin_rule.category.name
+                        if txn.origin_rule
+                        else ""
+                    ),
                     "date": txn.date.isoformat(),
                     "type": txn.type.value,
                     "amount_cents": amount,

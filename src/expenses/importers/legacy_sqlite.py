@@ -17,6 +17,12 @@ from expenses.db.models import (
     TransactionType,
 )
 from expenses.recurrence.engine import calculate_next_date
+from expenses.schemas import (
+    MAX_AMOUNT_CENTS,
+    MAX_LEDGER_DATE,
+    MAX_RECURRING_INTERVAL_COUNT,
+    MIN_LEDGER_DATE,
+)
 from expenses.services import rebuild_monthly_rollups, get_current_user_id
 
 
@@ -128,6 +134,23 @@ def _parse_amount_cents(amount_text: str) -> int:
     if cents < 0:
         raise ValueError("Legacy amount must be non-negative")
     return cents
+
+
+def _check_legacy_rule(
+    description: str, amount_cents: int, start: date, interval: int
+) -> None:
+    if not 1 <= interval <= MAX_RECURRING_INTERVAL_COUNT:
+        raise ValueError(
+            f"Recurring '{description}': interval must be between 1 and "
+            f"{MAX_RECURRING_INTERVAL_COUNT}"
+        )
+    if amount_cents > MAX_AMOUNT_CENTS:
+        raise ValueError(f"Recurring '{description}': amount is too large")
+    if not MIN_LEDGER_DATE <= start <= MAX_LEDGER_DATE:
+        raise ValueError(
+            f"Recurring '{description}': start date must be between "
+            f"{MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+        )
 
 
 def _interval_unit_from_legacy(recurrence_type: str) -> Optional[IntervalUnit]:
@@ -242,6 +265,12 @@ class LegacySQLiteImportService:
                     date.fromisoformat(str(rr["last_processed_date"]))
                     if rr["last_processed_date"]
                     else None
+                )
+                _check_legacy_rule(
+                    str(rr["description"]),
+                    amount_cents,
+                    start,
+                    int(rr["interval"] or 1),
                 )
                 computed_next = None
                 if unit and last:
@@ -382,6 +411,9 @@ class LegacySQLiteImportService:
                         date.fromisoformat(str(rr["last_processed_date"]))
                         if rr["last_processed_date"]
                         else None
+                    )
+                    _check_legacy_rule(
+                        rule_name, amount_cents, start, int(rr["interval"] or 1)
                     )
 
                     existing_rule = self.session.scalar(

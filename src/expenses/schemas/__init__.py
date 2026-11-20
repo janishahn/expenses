@@ -123,10 +123,14 @@ class MobileStatusOut(BaseModel):
     ai_features: list[str]
 
 
+# Keeps a recurring schedule's steps far inside what `date` can hold.
+MAX_RECURRING_INTERVAL_COUNT = 1000
+
+
 class RecurringPreviewIn(BaseModel):
     start_date: date
     interval_unit: IntervalUnit = IntervalUnit.month
-    interval_count: int = Field(default=1, ge=1)
+    interval_count: int = Field(default=1, ge=1, le=MAX_RECURRING_INTERVAL_COUNT)
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
     skip_weekends: bool = False
     # A saved rule's anchor, when previewing from its next occurrence rather than its start.
@@ -1153,14 +1157,14 @@ class ScenarioAddRuleIn(BaseModel):
     type: Literal["add_rule"]
     name: str = Field(..., min_length=1, max_length=120)
     tx_type: TransactionType
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     interval: Literal["monthly", "yearly", "weekly"]
 
 
 class ScenarioModifyRuleIn(BaseModel):
     type: Literal["modify_rule"]
     rule_id: int
-    new_amount_cents: int = Field(..., ge=0)
+    new_amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     effective_month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
@@ -1168,14 +1172,14 @@ class ScenarioOneTimeIn(BaseModel):
     type: Literal["one_time"]
     name: str = Field(..., min_length=1, max_length=120)
     tx_type: TransactionType
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
 class ScenarioAdjustCategoryIn(BaseModel):
     type: Literal["adjust_category"]
     category_id: int
-    new_monthly_cents: int = Field(..., ge=0)
+    new_monthly_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
 
 
 ScenarioModificationIn = Annotated[
@@ -1190,7 +1194,10 @@ ScenarioModificationIn = Annotated[
 
 class ForecastScenarioIn(BaseModel):
     horizon: Literal[3, 6, 12] = 12
-    modifications: list[ScenarioModificationIn] = Field(default_factory=list)
+    # Each distinct change costs one projection for its own impact.
+    modifications: list[ScenarioModificationIn] = Field(
+        default_factory=list, max_length=50
+    )
 
 
 class ForecastRecurringRuleOut(BaseModel):
@@ -1362,19 +1369,26 @@ class TagIn(BaseModel):
 
 
 class RecurringRuleIn(BaseModel):
-    name: Optional[str] = None
+    name: str = Field(..., max_length=120)
     type: TransactionType
     currency_code: CurrencyCode = CurrencyCode.eur
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     category_id: int
-    anchor_date: date
+    anchor_date: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     interval_unit: IntervalUnit
-    interval_count: int = Field(..., gt=0)
-    next_occurrence: date
-    end_date: Optional[date] = None
+    interval_count: int = Field(..., gt=0, le=MAX_RECURRING_INTERVAL_COUNT)
+    next_occurrence: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    end_date: Optional[date] = Field(None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     auto_post: bool = True
     skip_weekends: bool = False
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
+
+    @model_validator(mode="after")
+    def normalize_name(self):
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Name cannot be blank")
+        return self
 
 
 class RecurringRuleCategoryOut(BaseModel):

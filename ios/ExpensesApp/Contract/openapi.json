@@ -2860,6 +2860,7 @@
       "BudgetOverrideIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -3031,6 +3032,7 @@
       "BudgetTemplateApplyFromIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -3066,6 +3068,7 @@
       "BudgetTemplateIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -5012,6 +5015,7 @@
           },
           "expected_lifespan_days": {
             "exclusiveMinimum": 0.0,
+            "maximum": 36500.0,
             "title": "Expected Lifespan Days",
             "type": "integer"
           }
@@ -5542,6 +5546,7 @@
                 }
               ]
             },
+            "maxItems": 50,
             "title": "Modifications",
             "type": "array"
           }
@@ -7823,6 +7828,7 @@
         "properties": {
           "interval_count": {
             "default": 1,
+            "maximum": 1000.0,
             "minimum": 1.0,
             "title": "Interval Count",
             "type": "integer"
@@ -7986,6 +7992,7 @@
       "RecurringRuleIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -8022,6 +8029,7 @@
           },
           "interval_count": {
             "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
             "title": "Interval Count",
             "type": "integer"
           },
@@ -8033,15 +8041,9 @@
             "default": "snap_to_end"
           },
           "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "maxLength": 120,
+            "title": "Name",
+            "type": "string"
           },
           "next_occurrence": {
             "format": "date",
@@ -8058,6 +8060,7 @@
           }
         },
         "required": [
+          "name",
           "type",
           "amount_cents",
           "category_id",
@@ -8534,6 +8537,7 @@
           "notes": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -9104,6 +9108,7 @@
       "ScenarioAddRuleIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -9149,6 +9154,7 @@
             "type": "integer"
           },
           "new_monthly_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "New Monthly Cents",
             "type": "integer"
@@ -9175,6 +9181,7 @@
             "type": "string"
           },
           "new_amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "New Amount Cents",
             "type": "integer"
@@ -9201,6 +9208,7 @@
       "ScenarioOneTimeIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
