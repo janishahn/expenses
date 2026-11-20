@@ -404,8 +404,9 @@ function ReconciliationPage() {
   // It also passes the amount a match replaced, which the server restores unless it was edited since.
   const reopen = (
     rowId: number,
-    reversing?: { resolution: BankRowResolution; transactionId?: number; restoreAmountCents?: number },
-    trashCreatedTransaction = false
+    reversing: { resolution: BankRowResolution; transactionId?: number; restoreAmountCents?: number } | undefined,
+    // Every caller states this, so undoing "Create and match" cannot leave the new transaction behind.
+    trashCreatedTransaction: boolean
   ) =>
     post(`${rowId}/reopen`, {
       trash_created_transaction: trashCreatedTransaction,
@@ -480,7 +481,7 @@ function ReconciliationPage() {
           matchedId = (await post(`${row.id}/accept-suggestion`)).transaction_id ?? undefined
         },
         message: `Matched with ${candidate ? candidateTitle(candidate) : bankRowTitle(row)}.`,
-        undo: () => reopen(row.id, { resolution: "matched", transactionId: matchedId }),
+        undo: () => reopen(row.id, { resolution: "matched", transactionId: matchedId }, false),
       })
     )
   }
@@ -550,7 +551,7 @@ function ReconciliationPage() {
         },
         message: `Matched with ${candidateTitle(transaction)}.`,
         undo: () =>
-          reopen(row.id, { resolution: "matched", transactionId: transaction.id, restoreAmountCents: replacedAmount }),
+          reopen(row.id, { resolution: "matched", transactionId: transaction.id, restoreAmountCents: replacedAmount }, false),
         transactions: setAmount,
       })
     )
@@ -560,7 +561,7 @@ function ReconciliationPage() {
       row,
       run: () => post(`${row.id}/ignore`, { reason }).then(() => {}),
       message: reason ? `Ignored · ${reason}.` : "Ignored.",
-      undo: () => reopen(row.id, { resolution: "ignored" }),
+      undo: () => reopen(row.id, { resolution: "ignored" }, false),
     })
   // Undoing a create moves the new transaction to Trash.
   const createFromRow = async (row: BankStatementRow, payload: CreateFromRowPayload, receipt: File | null) => {
