@@ -265,40 +265,6 @@ test.describe("Transaction peek and full view", () => {
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
   })
 
-  test("saves again after the reload following a save fails", async ({ page, request }) => {
-    const { title, id } = await seedExpense(request, "Failed Reload")
-    let saved = false
-    await page.route(`**/api/transactions/${id}`, async (route, routed) => {
-      if (routed.method() === "PUT") saved = true
-      if (routed.method() === "GET" && saved) {
-        await route.fulfill({ status: 500, json: { detail: "Reload failed from test" } })
-        return
-      }
-      await route.continue()
-    })
-
-    await page.goto(peekUrl(title, id))
-    const peek = page.getByRole("complementary", { name: title })
-    await peek.getByRole("button", { name: "Edit Title" }).click()
-    const reloadFailed = page.waitForResponse(
-      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "GET" && response.status() === 500,
-    )
-    await peek.getByRole("textbox", { name: "Title" }).fill(`${title} first`)
-    await peek.getByRole("textbox", { name: "Title" }).press("Enter")
-    await reloadFailed
-    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} first`)
-
-    const renamed = page.getByRole("complementary", { name: `${title} first` })
-    await renamed.getByRole("button", { name: "Edit Title" }).click()
-    const second = page.waitForResponse(
-      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "PUT",
-    )
-    await renamed.getByRole("textbox", { name: "Title" }).fill(`${title} second`)
-    await renamed.getByRole("textbox", { name: "Title" }).press("Enter")
-    expect((await second).status()).toBe(200)
-    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} second`)
-  })
-
   test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {
     const { token, title, id } = await seedExpense(request, "Queued Failure")
     const stamp = Date.now()

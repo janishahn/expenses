@@ -76,9 +76,8 @@ export function useTransactionRecord(id: number) {
     const run = async () => {
       const current = queryClient.getQueryData<TransactionDetail>(key)
       if (!current) return false
-      let saved: Pick<TransactionDetail, "updated_at">
       try {
-        saved = await apiFetch<Pick<TransactionDetail, "updated_at">>(`/api/transactions/${id}`, {
+        await apiFetch(`/api/transactions/${id}`, {
           method: "PUT",
           // The server refuses the save when the record changed since this version loaded.
           body: JSON.stringify({ ...transactionPayload(current, changes), expected_updated_at: current.updated_at }),
@@ -89,8 +88,7 @@ export function useTransactionRecord(id: number) {
         if (isApiErrorStatus(error, 409)) await queryClient.refetchQueries({ queryKey: key, exact: true })
         return false
       }
-      // The next save sends this version even when the reload below fails.
-      queryClient.setQueryData(key, { ...applyTransactionChanges(current, changes), updated_at: saved.updated_at })
+      queryClient.setQueryData(key, applyTransactionChanges(current, changes))
       // Saves run in order, so this one supersedes an earlier failure of the field.
       setError(field, null)
       // A newer value entered while this one saved stays shown.
