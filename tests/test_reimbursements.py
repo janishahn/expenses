@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from expenses.core.periods import Period
 from expenses.db.models import (
     Category,
+    MonthlyRollup,
     ReimbursementAllocation,
     Transaction,
     TransactionType,
@@ -598,6 +599,52 @@ def _expected_rows(step, response, before, ids, role_change, removed):
     return before
 
 
+def _june_rollup(session):
+    session.expire_all()
+    rollup = session.scalar(
+        select(MonthlyRollup.expense_cents).where(
+            MonthlyRollup.year == 2025, MonthlyRollup.month == 6
+        )
+    )
+    return rollup or 0
+
+
+def _june_spending(session, ids):
+    """These transactions' June 2025 spending, recomputed from the stored rows.
+
+    Live expenses count less what live reimbursements allocated to them.
+    """
+    session.expire_all()
+    txns = {
+        t.id: t
+        for t in session.scalars(select(Transaction).where(Transaction.id.in_(ids)))
+    }
+
+    def counts(txn, kind, reimbursement):
+        return (
+            txn.deleted_at is None
+            and txn.type.value == kind
+            and txn.is_reimbursement == reimbursement
+            and date(2025, 6, 1) <= txn.date <= date(2025, 6, 30)
+        )
+
+    total = sum(t.amount_cents for t in txns.values() if counts(t, "expense", False))
+    for row in session.scalars(
+        select(ReimbursementAllocation).where(
+            ReimbursementAllocation.expense_transaction_id.in_(ids)
+        )
+    ):
+        expense = txns[row.expense_transaction_id]
+        reimbursement = txns[row.reimbursement_transaction_id]
+        if counts(expense, "expense", False) and (
+            reimbursement.deleted_at is None
+            and reimbursement.type == TransactionType.income
+            and reimbursement.is_reimbursement
+        ):
+            total -= row.amount_cents
+    return total
+
+
 # Restoring an expense after its reimbursement paid another one.
 @example(
     amounts=[10_000, 10_000, 6_000],
@@ -652,6 +699,7 @@ def test_allocations_never_exceed_either_side(
             "title": f"Side {index}",
         }
 
+    earlier = _june_rollup(db_session)
     ids = []
     for index in _SIDES:
         response = api_client.post(
@@ -736,6 +784,8 @@ def test_allocations_never_exceed_either_side(
                     roles[i] = previous
         assert response.status_code < 500, (step, response.text)
         assert not _overruns(db_session, ids), step
+        # Earlier examples' transactions stay as they were.
+        assert _june_rollup(db_session) == earlier + _june_spending(db_session, ids)
         db_session.expire_all()
         for i in _SIDES:
             txn = db_session.get(Transaction, ids[i])
