@@ -2955,6 +2955,8 @@ async def api_ai_mine_rules(request: Request, db: Session = Depends(get_db)):
             since = date.fromisoformat(since_raw)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid since date") from exc
+        # An earlier date means all history; year 1 cannot convert to UTC.
+        since = max(since, MIN_LEDGER_DATE)
     try:
         await LLMAssistantService(db, user_id=user_id).mine_rule_suggestions(
             since=since

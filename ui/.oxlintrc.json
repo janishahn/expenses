@@ -19,6 +19,21 @@
     "prototypes"
   ],
   "rules": {
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "parseFloat",
+        "message": "Read amounts with parseAmountCents; a float drops or misreads cents."
+      }
+    ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "Number",
+        "property": "parseFloat",
+        "message": "Read amounts with parseAmountCents; a float drops or misreads cents."
+      }
+    ],
     "typescript/ban-ts-comment": "error",
     "typescript/no-array-constructor": "error",
     "typescript/no-duplicate-enum-values": "error",
@@ -352,6 +367,7 @@
       ],
       "rules": {
         "react/rules-of-hooks": "off",
+        "no-restricted-globals": "off",
         "no-restricted-properties": [
           "error",
           {
