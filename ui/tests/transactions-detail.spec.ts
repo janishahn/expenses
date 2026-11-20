@@ -287,7 +287,7 @@ test.describe("Transaction peek and full view", () => {
         amount_cents: 1200,
         category_id: stored.category_id,
         title: stored.title,
-        description: stored.description,
+        description: "Changed elsewhere",
         is_reimbursement: false,
         tags: [],
       },
@@ -303,10 +303,6 @@ test.describe("Transaction peek and full view", () => {
       await held
       await route.continue()
     })
-    // The newer version loads after the refused save.
-    const reloaded = page.waitForResponse(
-      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "GET",
-    )
     await peek.getByRole("button", { name: "Edit Amount" }).click()
     const amount = peek.getByRole("textbox", { name: "Amount" })
     await amount.fill("15,00")
@@ -314,7 +310,8 @@ test.describe("Transaction peek and full view", () => {
     await amount.press("Tab")
     release()
 
-    await reloaded
+    // The refused save is over once the newer version shows.
+    await expect(peek.getByText("Changed elsewhere")).toBeVisible()
     await expect(peek.getByRole("alert")).toBeVisible()
     await expect(amount).toHaveValue("15,00")
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
