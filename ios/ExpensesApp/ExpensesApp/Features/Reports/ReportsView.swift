@@ -65,9 +65,9 @@ struct ReportsView: View {
         let at: Date
     }
 
-    @State private var start = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
-    @State private var end = Calendar.current.dateInterval(of: .month, for: .now)
-        .flatMap { Calendar.current.date(byAdding: .day, value: -1, to: $0.end) } ?? .now
+    @State private var start = Calendar.gregorianDays.dateInterval(of: .month, for: .now)?.start ?? .now
+    @State private var end = Calendar.gregorianDays.dateInterval(of: .month, for: .now)
+        .flatMap { Calendar.gregorianDays.date(byAdding: .day, value: -1, to: $0.end) } ?? .now
     @State private var sections: Set<ReportSection> = [.summary, .categoryBreakdown, .transactions]
     @State private var type: TransactionKind?
     @State private var sort = Sort.newest

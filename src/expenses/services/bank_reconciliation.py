@@ -3,9 +3,8 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal, InvalidOperation
-from io import StringIO
-from typing import Literal
+from itertools import chain
+from typing import Iterator, Literal
 
 from rapidfuzz import fuzz
 from sqlalchemy import ColumnElement, and_, func, or_, select
@@ -18,6 +17,7 @@ from expenses.schemas import (
     BankTransactionCreateIn,
     TransactionIn,
 )
+from expenses.services.csv_utils import unsigned_amount_cents
 from expenses.services.main import (
     MetricsService,
     ReimbursementService,
@@ -148,19 +148,18 @@ def _parse_amount(value: str) -> int:
     clean = _clean_cell(value)
     if not clean:
         raise ValueError("Missing amount")
-    negative = clean.startswith("-") or clean.endswith(" S")
     clean = clean.replace("EUR", "").replace("€", "").replace(" ", "")
-    clean = clean.removeprefix("+").removeprefix("-")
+    negative = clean.startswith("-") or clean.endswith("S")
+    if clean[:1] in {"+", "-"}:
+        clean = clean[1:]
     clean = clean.removesuffix("S").removesuffix("H")
-    if "," in clean and "." in clean:
-        clean = clean.replace(".", "").replace(",", ".")
-    elif "," in clean:
-        clean = clean.replace(",", ".")
-    try:
-        cents = int((Decimal(clean) * 100).quantize(Decimal("1")))
-    except InvalidOperation as exc:
-        raise ValueError("Invalid amount") from exc
-    return -abs(cents) if negative else cents
+    cents = unsigned_amount_cents(clean)
+    return -cents if negative else cents
+
+
+def _describe(booking_text: str | None, payee: str | None, purpose: str | None) -> str:
+    parts = [part for part in (booking_text, payee, purpose) if part]
+    return " · ".join(dict.fromkeys(parts)) or "Bank transaction"
 
 
 def _hash_row(
@@ -185,41 +184,62 @@ def _hash_row(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _read_csv_rows(content: bytes) -> tuple[list[list[str]], str]:
+# The line breaks of str.splitlines(), so rows split exactly as they always have.
+_LINE = re.compile(r"[^\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]+")
+
+
+def _read_csv_rows(content: bytes) -> Iterator[list[str]]:
     text = _decode_csv(content)
-    lines = [line for line in text.splitlines() if line.strip()]
-    if not lines:
-        return [], ";"
+    lines = (
+        match.group() + "\n" for match in _LINE.finditer(text) if match.group().strip()
+    )
+    first_line = next(lines, None)
+    if first_line is None:
+        return iter([])
     delimiter = ";"
-    if lines[0].lower().startswith("sep=") and len(lines[0]) >= 5:
-        delimiter = lines[0][-1]
-        lines = lines[1:]
-    elif lines[0].count(",") > lines[0].count(";"):
+    if first_line.lower().startswith("sep=") and len(first_line) >= 6:
+        delimiter = first_line[-2]
+        first_line = next(lines, None)
+        if first_line is None:
+            return iter([])
+    elif first_line.count(",") > first_line.count(";"):
         delimiter = ","
-    return list(csv.reader(StringIO("\n".join(lines)), delimiter=delimiter)), delimiter
+    return csv.reader(chain([first_line], lines), delimiter=delimiter)
 
 
 def parse_commerzbank_csv(
     content: bytes, *, account_label: str, max_rows: int | None = None
 ) -> tuple[list[ParsedBankStatementRow], list[str]]:
-    csv_rows, _delimiter = _read_csv_rows(content)
-    if not csv_rows:
+    csv_rows = _read_csv_rows(content)
+    header_cells = next(csv_rows, None)
+    if header_cells is None:
         return [], ["CSV file is empty"]
 
-    headers = [_clean_cell(value) for value in csv_rows[0]]
-    normalized_headers = {_normalize_header(header) for header in headers}
+    headers = [_clean_cell(value) for value in header_cells]
+    normalized_headers = [_normalize_header(header) for header in headers]
     use_header_mapping = bool(
-        normalized_headers & BOOKING_DATE_HEADERS
-        and normalized_headers & AMOUNT_HEADERS
+        set(normalized_headers) & BOOKING_DATE_HEADERS
+        and set(normalized_headers) & AMOUNT_HEADERS
+    )
+    # Booking text is read from the first booking-text column. When that is
+    # Umsatzart and a row has no payee or purpose of its own, a later
+    # Buchungstext column holds them. The import hash keeps the description
+    # without it, so statements imported before match their rows again.
+    booking_text_columns = [
+        header for header in normalized_headers if header in BOOKING_TEXT_HEADERS
+    ]
+    keeps_buchungstext = (
+        booking_text_columns[:1] == ["umsatzart"]
+        and "buchungstext" in booking_text_columns
     )
 
     parsed_rows: list[ParsedBankStatementRow] = []
     errors: list[str] = []
-    data_rows = csv_rows[1:]
-    if max_rows is not None and len(data_rows) > max_rows:
-        data_rows = data_rows[:max_rows]
-        errors.append(f"CSV row limit exceeded (max {max_rows})")
-    for index, raw_cells in enumerate(data_rows, start=2):
+    hash_occurrences: dict[str, int] = {}
+    for index, raw_cells in enumerate(csv_rows, start=2):
+        if max_rows is not None and index - 1 > max_rows:
+            errors.append(f"CSV row limit exceeded (max {max_rows})")
+            break
         if not any(_clean_cell(cell) for cell in raw_cells):
             continue
         row = dict(zip(headers, raw_cells, strict=False))
@@ -233,6 +253,11 @@ def parse_commerzbank_csv(
                 booking_text = _pick(row, BOOKING_TEXT_HEADERS) or None
                 purpose = _pick(row, PURPOSE_HEADERS) or None
                 account = _pick(row, ACCOUNT_HEADERS)
+                hash_purpose = purpose
+                if keeps_buchungstext and not payee and not purpose:
+                    buchungstext = _pick(row, {"buchungstext"})
+                    if buchungstext != booking_text:
+                        purpose = buchungstext or None
             elif len(raw_cells) >= 5:
                 booking_date = _parse_date(raw_cells[0])
                 value_date_raw = raw_cells[1] if len(raw_cells) > 1 else ""
@@ -245,18 +270,14 @@ def parse_commerzbank_csv(
                 purpose = (
                     _clean_cell(raw_cells[6]) or None if len(raw_cells) > 6 else None
                 )
+                hash_purpose = purpose
                 account = ""
             else:
                 raise ValueError("Missing required Commerzbank columns")
             value_date = (
                 _parse_date(value_date_raw) if _clean_cell(value_date_raw) else None
             )
-            description_parts = [
-                part for part in (booking_text, payee, purpose) if part
-            ]
-            raw_description = " · ".join(dict.fromkeys(description_parts))
-            if not raw_description:
-                raw_description = "Bank transaction"
+            raw_description = _describe(booking_text, payee, purpose)
             row_account_label = _clean_cell(account) or account_label
             import_hash = _hash_row(
                 account_label=row_account_label,
@@ -264,8 +285,16 @@ def parse_commerzbank_csv(
                 value_date=value_date,
                 amount_cents=amount_cents,
                 currency=currency,
-                raw_description=raw_description,
+                raw_description=_describe(booking_text, payee, hash_purpose),
             )
+            # Identical bookings in one file are separate payments; the first
+            # keeps the plain hash, so files imported before still match.
+            occurrence = hash_occurrences.get(import_hash, 0) + 1
+            hash_occurrences[import_hash] = occurrence
+            if occurrence > 1:
+                import_hash = hashlib.sha256(
+                    f"{import_hash}|{occurrence}".encode()
+                ).hexdigest()
             parsed_rows.append(
                 ParsedBankStatementRow(
                     booking_date=booking_date,
@@ -706,6 +735,12 @@ class BankReconciliationService:
     ) -> int:
         row = self._get_row(row_id)
         self._require_unresolved(row)
+        # Transaction amounts are euros; other statement currencies would need FX.
+        if row.currency != "EUR":
+            raise ValueError(
+                f"Only a EUR bank row can create a transaction; add this "
+                f"{row.currency} payment as a transaction yourself, then match it"
+            )
         title = (
             data.title
             if data is not None

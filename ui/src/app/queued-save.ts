@@ -13,6 +13,7 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
   source,
   toPayload,
   onSaved,
+  reload,
   draftFields = [],
 }: {
   url: string
@@ -20,14 +21,20 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
   source: Source
   toPayload: (source: Source) => Payload
   onSaved: () => void
+  // The record as stored after a save, for records whose server derives fields from the
+  // saved ones. Later queued saves build on it instead of the body that was sent.
+  reload?: () => Promise<Source>
   draftFields?: readonly Field[]
 }) {
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
   const [entered, setEntered] = useState<ReadonlyMap<Field, Entered<Payload>>>(new Map())
   const known = useRef<Payload>(toPayload(source))
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  // A failed reload leaves `known` without the fields the server derived.
+  const stale = useRef(false)
   useEffect(() => {
     known.current = toPayload(source)
+    stale.current = false
   }, [source, toPayload])
   // A reload shows the saved values itself.
   const [loaded, setLoaded] = useState(source)
@@ -46,6 +53,15 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
     if (shown) setEntered((current) => new Map(current).set(field, { changes, saved: false }))
     setError(field, null)
     const run = queue.current.then(async () => {
+      if (reload && stale.current) {
+        try {
+          known.current = toPayload(await reload())
+          stale.current = false
+        } catch (failure) {
+          setError(field, getApiErrorMessage(failure, "Unable to save the change."))
+          return false
+        }
+      }
       const payload = { ...known.current, ...changes }
       try {
         await apiFetch(url, { method: "PUT", body: JSON.stringify(payload) })
@@ -54,6 +70,14 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
         return false
       }
       known.current = payload
+      if (reload) {
+        try {
+          known.current = toPayload(await reload())
+          stale.current = false
+        } catch {
+          stale.current = true
+        }
+      }
       // Saves run in order, so this one supersedes an earlier failure of the field.
       setError(field, null)
       if (shown) {

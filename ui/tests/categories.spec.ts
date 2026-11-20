@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "./fixtures"
-import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, createUncategorizedExpense, getCsrfToken } from "./helpers"
 
 type StoredCategory = {
   id: number
@@ -220,6 +220,20 @@ test.describe("Categories Page", () => {
     expect(await fetchCategory(request, categoryName)).toBeUndefined()
   })
 
+  test("keeps Uncategorized's name and offers no archive or merge for it", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    await createUncategorizedExpense(request, token, `E2E Fixed Uncategorized ${Date.now()}`)
+    const uncategorized = await fetchCategory(request, "Uncategorized")
+    expect(uncategorized).toBeDefined()
+
+    await page.goto(`/categories?peek=${uncategorized!.id}`)
+    const peek = page.getByRole("complementary", { name: "Uncategorized" })
+    await expect(peek.getByRole("heading", { name: "Uncategorized", level: 2 })).toBeVisible()
+    await expect(peek.getByRole("button", { name: /^Icon/ })).toBeVisible()
+    await expect(peek.getByRole("button", { name: "Edit Name" })).toHaveCount(0)
+    await expect(peek.getByRole("button", { name: "More actions" })).toHaveCount(0)
+  })
+
   test("shows a category's uses, total and recent transactions in its peek", async ({
     page,
     request,
@@ -384,7 +398,7 @@ test.describe("Categories Page", () => {
     await expect(dialog).toContainText("1 plan, 0 adjustments")
 
     await dialog.getByRole("button", { name: "Merge", exact: true }).click()
-    await expect(dialog.getByRole("alert")).toContainText(/overlapping budget scopes/i)
+    await expect(dialog.getByRole("alert")).toContainText(/both have a budget for the same period/i)
     expect((await fetchCategory(request, sourceName))?.archived_at).toBeNull()
   })
 })

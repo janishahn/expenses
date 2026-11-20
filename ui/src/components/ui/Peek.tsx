@@ -155,7 +155,7 @@ export function PeekSection({
 }
 
 // The name and headline figure of a record that is not renamed in place, such as a budget:
-// its glyph and name, then the figure with its limit ("249,00 € of 250,00 €").
+// its glyph and name, then any figure with its limit ("249,00 € of 250,00 €").
 export function PeekHeadline({
   glyph,
   title,
@@ -165,7 +165,7 @@ export function PeekHeadline({
   glyph?: ReactNode
   // Left out when an InlineText above edits the title.
   title?: ReactNode
-  figure: ReactNode
+  figure?: ReactNode
   detail?: ReactNode
 }) {
   return (
@@ -176,10 +176,12 @@ export function PeekHeadline({
           {title}
         </h2>
       ) : null}
-      <div className={s.pkAmt}>
-        {figure}
-        {detail != null ? <span className={s.pkAmtDetail}> {detail}</span> : null}
-      </div>
+      {figure != null ? (
+        <div className={s.pkAmt}>
+          {figure}
+          {detail != null ? <span className={s.pkAmtDetail}> {detail}</span> : null}
+        </div>
+      ) : null}
     </>
   )
 }

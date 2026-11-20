@@ -181,7 +181,29 @@ test.describe.serial("Settings and ordinary-user flows", () => {
     expect(first.length).toBeGreaterThan(6)
     await expect(label).toContainText(`Token ending in ${first.slice(-6)}`)
     await expect(page.getByText("not used yet")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Copy token" })).toBeVisible()
+    // The clipboard is stubbed, so both outcomes are deterministic.
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: () => Promise.resolve() },
+      })
+    })
+    await page.getByRole("button", { name: "Copy token" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Token copied." })).toBeVisible()
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: () => Promise.reject(new Error("denied")) },
+      })
+    })
+    await page.getByRole("button", { name: "Copy token" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Could not copy the token. Copy it from the field." })).toBeVisible()
+    await expect(issued).toBeFocused()
+    await expect(issued).toHaveValue(first)
+    expect(await issued.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([
+      0,
+      first.length,
+    ])
 
     await page.getByRole("button", { name: "Rotate", exact: true }).click()
     await expect(page.getByRole("status").filter({ hasText: "Ingest token rotated." })).toBeVisible()
@@ -248,12 +270,19 @@ test.describe.serial("Settings and ordinary-user flows", () => {
     await row.click()
     const editDialog = page.getByRole("dialog", { name: "Edit snapshot" })
     await expect(editDialog.getByLabel("Balance")).toHaveValue("123,45")
-    await editDialog.getByLabel("Balance").fill("200")
+    // A thousands dot, an exponent, a plus sign, or a euro sign between digits is refused, so the dialog stays open.
+    for (const invalid of ["1.234", "1e3", "+100", "12€50"]) {
+      await editDialog.getByLabel("Balance").fill(invalid)
+      await editDialog.getByRole("button", { name: "Save" }).click()
+      await expect(editDialog.getByText("Enter a valid balance.")).toBeVisible()
+    }
+    // A negative balance as the app itself shows it.
+    await editDialog.getByLabel("Balance").fill("− 120,50 €")
     await editDialog.getByLabel("Note").fill(`Updated snapshot ${unique}`)
     await editDialog.getByRole("button", { name: "Save" }).click()
     await expect(editDialog).toBeHidden()
     await expect(row).toContainText(`Updated snapshot ${unique}`)
-    await expect(row).toContainText("200,00 €")
+    await expect(row).toContainText("− 120,50 €")
 
     await row.hover()
     await row.getByRole("button", { name: "Delete snapshot 1 Mar 2026, 09:00" }).click()

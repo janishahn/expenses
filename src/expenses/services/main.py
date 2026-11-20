@@ -32,6 +32,7 @@ from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.services.auto_categorization import apply_prediction
 from expenses.core.safe_regex import (
+    RegexBudget,
     RegexRejected,
     safe_regex_search,
     validate_regex,
@@ -51,9 +52,11 @@ from expenses.db.models import (
     ReimbursementAllocation,
     RecurringRule,
     Rule,
+    RuleLLMSuggestion,
     RuleMatchType,
     Tag,
     TransactionTemplate,
+    TransactionLLMSuggestion,
     TransactionClassificationEvent,
     transaction_tags,
     Transaction,
@@ -63,8 +66,9 @@ from expenses.infra.fx_rates import FxQuote, FxRateService
 from expenses.core.periods import Period, add_months, month_end, month_start
 from expenses.recurrence.engine import (
     RecurringEngine,
-    calculate_next_date,
+    _unshifted_date,
     local_today,
+    next_date_in_range,
 )
 from expenses.services.csv_utils import export_transactions, parse_csv
 from expenses.services.rollups import (
@@ -81,7 +85,10 @@ from expenses.schemas import (
     DurablePurchaseIn,
     ForecastScenarioIn,
     IngestTransactionIn,
+    MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     RecurringRuleIn,
+    RecurringRuleUpdateIn,
     ReportOptions,
     RuleIn,
     ScenarioAddRuleIn,
@@ -93,6 +100,7 @@ from expenses.schemas import (
     TransactionIn,
     TransactionTemplateIn,
 )
+from expenses.schemas import MAX_AMOUNT_CENTS
 
 logger = get_logger("expenses.services")
 
@@ -174,15 +182,35 @@ class TagService:
         )
         return self.session.scalars(stmt).all()
 
+    # Case-insensitive match done in Python: SQLite's lower() folds ASCII only.
+    # Rows that differ only in case can exist, so the exact name wins, then an
+    # active tag, then the oldest.
+    def _named(self, clean_name: str, *, exclude_id: int | None = None) -> Tag | None:
+        exact = self.session.scalar(
+            select(Tag).where(Tag.user_id == self.user_id, Tag.name == clean_name)
+        )
+        if exact is not None and exact.id != exclude_id:
+            return exact
+        lowered = clean_name.lower()
+        matches = [
+            tag
+            for tag in self.session.scalars(
+                select(Tag).where(Tag.user_id == self.user_id).order_by(Tag.id)
+            )
+            if tag.name.lower() == lowered and tag.id != exclude_id
+        ]
+        return min(
+            matches,
+            key=lambda tag: (tag.name != clean_name, tag.archived_at is not None),
+            default=None,
+        )
+
     def get_or_create(self, name: str) -> Tag:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
-        )
-        existing = self.session.scalar(stmt)
+        existing = self._named(clean_name)
         if existing:
             return existing
 
@@ -190,6 +218,91 @@ class TagService:
         self.session.add(tag)
         self.session.flush()
         return tag
+
+    def _touch_tagged_transactions(self, tag_id: int) -> None:
+        """Moves the version of transactions whose echoed tag names change."""
+        self.session.execute(
+            update(Transaction)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.id.in_(
+                    select(transaction_tags.c.transaction_id).where(
+                        transaction_tags.c.tag_id == tag_id
+                    )
+                ),
+            )
+            .values(updated_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+
+    def _replace_in_tag_name_lists(self, old_name: str, new_name: str | None) -> None:
+        """Renames a tag in templates and pending AI suggestions; None removes it."""
+        old_lower = old_name.lower()
+
+        def replaced(raw: str) -> list[str] | None:
+            names = [str(name).strip() for name in json.loads(raw or "[]")]
+            if old_lower not in {name.lower() for name in names}:
+                return None
+            out: list[str] = []
+            for name in names:
+                if name.lower() == old_lower:
+                    if new_name is None:
+                        continue
+                    name = new_name
+                if name and name.lower() not in {kept.lower() for kept in out}:
+                    out.append(name)
+            return out
+
+        for template in self.session.scalars(
+            select(TransactionTemplate).where(
+                TransactionTemplate.user_id == self.user_id
+            )
+        ):
+            names = replaced(template.tags_json)
+            if names is not None:
+                template.tags_json = json.dumps(names)
+        for suggestion in self.session.scalars(
+            select(RuleLLMSuggestion).where(
+                RuleLLMSuggestion.user_id == self.user_id,
+                RuleLLMSuggestion.status == "pending",
+            )
+        ):
+            names = replaced(suggestion.add_tags_json)
+            if names is not None:
+                suggestion.add_tags_json = json.dumps(
+                    names, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                if not names and suggestion.set_category_id is None:
+                    suggestion.status = "stale"
+        for suggestion in self.session.scalars(
+            select(TransactionLLMSuggestion).where(
+                TransactionLLMSuggestion.user_id == self.user_id,
+                TransactionLLMSuggestion.status == "pending",
+            )
+        ):
+            names = replaced(suggestion.tags_json)
+            if names is not None:
+                suggestion.tags_json = json.dumps(
+                    names, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+
+    # Tags typed by the user. An archived tag is refused unless the transaction
+    # already carries it, so a merged-away name does not come back unnoticed.
+    def resolve_typed(
+        self, names: list[str], *, attached: list[Tag] | None = None
+    ) -> list[Tag]:
+        attached_ids = {tag.id for tag in attached or []}
+        tags: list[Tag] = []
+        for name in names:
+            tag = self.get_or_create(name)
+            if tag.archived_at is not None and tag.id not in attached_ids:
+                raise ValueError(
+                    f'The tag "{tag.name}" is archived. Restore it on the Tags '
+                    "page or use another tag."
+                )
+            if tag not in tags:
+                tags.append(tag)
+        return tags
 
     def create(
         self,
@@ -204,10 +317,7 @@ class TagService:
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
-        )
-        existing = self.session.scalar(stmt)
+        existing = self._named(clean_name)
         if existing:
             if existing.archived_at is not None:
                 raise ValueError(
@@ -257,14 +367,14 @@ class TagService:
         if not clean_name:
             raise ValueError("Tag name cannot be empty")
 
-        stmt = select(Tag).where(
-            Tag.user_id == self.user_id,
-            func.lower(Tag.name) == clean_name.lower(),
-            Tag.id != tag_id,
-        )
-        if self.session.scalar(stmt):
+        # Names that differ only in case may already exist side by side; keeping
+        # a name unchanged must stay possible.
+        if clean_name != tag.name and self._named(clean_name, exclude_id=tag_id):
             raise ValueError("Tag with this name already exists")
 
+        if clean_name != tag.name:
+            self._replace_in_tag_name_lists(tag.name, clean_name)
+            self._touch_tagged_transactions(tag.id)
         tag.name = clean_name
         tag.color = color
         tag.is_hidden_from_budget = is_hidden_from_budget
@@ -307,6 +417,7 @@ class TagService:
         if not tag or tag.user_id != self.user_id:
             raise ValueError("Tag not found")
 
+        self._touch_tagged_transactions(tag.id)
         self.session.execute(
             delete(transaction_tags).where(transaction_tags.c.tag_id == tag.id)
         )
@@ -349,6 +460,7 @@ class TagService:
             if changed:
                 rule.add_tags_json = json.dumps(next_tags)
                 rules_add_tags_updated += 1
+        self._replace_in_tag_name_lists(tag.name, None)
         tag_name = tag.name
         self.session.delete(tag)
         self.session.commit()
@@ -372,6 +484,15 @@ class TagService:
             raise ValueError("Source and target tags must differ")
         if target.archived_at is not None:
             raise ValueError("Target tag is archived")
+        if source.is_hidden_from_budget != target.is_hidden_from_budget:
+            excluded, counted = (
+                (source, target) if source.is_hidden_from_budget else (target, source)
+            )
+            raise ValueError(
+                f"Cannot merge tags with different budget settings: {excluded.name} "
+                f"is excluded from budgets and {counted.name} is not. "
+                "Change Exclude from budgets on one of them first."
+            )
         source_period = (
             source.auto_attach_start_date,
             source.auto_attach_end_date,
@@ -460,6 +581,7 @@ class TagService:
             )
             inserted_links += 1
 
+        self._touch_tagged_transactions(source.id)
         self.session.execute(
             delete(transaction_tags).where(transaction_tags.c.tag_id == source.id)
         )
@@ -513,6 +635,7 @@ class TagService:
             if changed:
                 rule.add_tags_json = json.dumps(next_tags)
                 rules_add_tags_updated += 1
+        self._replace_in_tag_name_lists(source.name, target.name)
 
         if (
             source.auto_attach_start_date is not None
@@ -664,7 +787,9 @@ class RuleService:
         self.session.commit()
         log_event(logger, logging.INFO, "rule_deleted", rule_id=rule_id, name=rule_name)
 
-    def apply_rules(self, txn: Transaction) -> dict[str, object]:
+    def apply_rules(
+        self, txn: Transaction, *, regex_budget: RegexBudget | None = None
+    ) -> dict[str, object]:
         """
         Apply enabled rules to a transaction (category + tags).
         Returns a lightweight summary for UI/debugging.
@@ -730,7 +855,7 @@ class RuleService:
                 return title_lower.startswith(needle.lower())
             if rule.match_type == RuleMatchType.regex:
                 try:
-                    return safe_regex_search(needle, title)
+                    return safe_regex_search(needle, title, budget=regex_budget)
                 except RegexRejected:
                     return False
             return False
@@ -744,7 +869,12 @@ class RuleService:
 
             if can_change_category and rule.set_category_id and not category_set:
                 cat = rule.set_category
-                if cat and cat.user_id == self.user_id and cat.type == txn.type:
+                if (
+                    cat
+                    and cat.user_id == self.user_id
+                    and cat.type == txn.type
+                    and cat.archived_at is None
+                ):
                     if txn.category_id != cat.id:
                         txn.category_id = cat.id
                         applied += 1
@@ -876,6 +1006,15 @@ class CategoryService:
         if not category or category.user_id != self.user_id:
             raise ValueError("Category not found")
         name = data.name.strip()
+        uncategorized = self.UNCATEGORIZED_NAME.lower()
+        if category.name.lower() == uncategorized and name.lower() != uncategorized:
+            raise ValueError(
+                "Uncategorized can't be renamed; transactions without a category use it"
+            )
+        if category.name.lower() != uncategorized and name.lower() == uncategorized:
+            raise ValueError(
+                "Uncategorized is reserved for transactions without a category"
+            )
         existing = self.session.scalar(
             select(Category).where(
                 Category.user_id == self.user_id,
@@ -906,6 +1045,10 @@ class CategoryService:
         category = self.session.get(Category, category_id)
         if not category or category.user_id != self.user_id:
             raise ValueError("Category not found")
+        if category.name.lower() == self.UNCATEGORIZED_NAME.lower():
+            raise ValueError(
+                "Uncategorized can't be archived; transactions without a category use it"
+            )
         category.archived_at = datetime.utcnow()
         self.session.commit()
         log_event(
@@ -947,6 +1090,11 @@ class CategoryService:
             raise ValueError("Category type mismatch")
         if target.archived_at is not None:
             raise ValueError("Target category is archived")
+        if source.name.lower() == self.UNCATEGORIZED_NAME.lower():
+            raise ValueError(
+                "Uncategorized can't be merged into another category; "
+                "transactions without a category use it"
+            )
 
         transactions_count = int(
             self.session.execute(
@@ -993,12 +1141,22 @@ class CategoryService:
             ).scalar_one()
             or 0
         )
+        template_count = int(
+            self.session.execute(
+                select(func.count(TransactionTemplate.id)).where(
+                    TransactionTemplate.user_id == self.user_id,
+                    TransactionTemplate.category_id == source.id,
+                )
+            ).scalar_one()
+            or 0
+        )
         return {
             "transactions": transactions_count,
             "recurring_rules": recurring_rules_count,
             "rules_set_category": rule_set_category_count,
             "budget_templates": budget_template_count,
             "budget_overrides": budget_override_count,
+            "templates": template_count,
         }
 
     def merge(self, source_category_id: int, target_category_id: int) -> dict[str, int]:
@@ -1007,58 +1165,90 @@ class CategoryService:
         target = self.session.get(Category, target_category_id)
         if source is None or target is None:
             raise ValueError("Source or target category not found")
-        source_template_scopes = {
-            (row.frequency, row.starts_on)
-            for row in self.session.execute(
-                select(BudgetTemplate.frequency, BudgetTemplate.starts_on).where(
+        # A category has one budget per period, so merging two that both budget a
+        # period would drop one of the amounts. Refuse and name the budgets instead.
+        templates = {
+            category.id: self.session.scalars(
+                select(BudgetTemplate)
+                .where(
                     BudgetTemplate.user_id == self.user_id,
-                    BudgetTemplate.category_id == source.id,
+                    BudgetTemplate.category_id == category.id,
                 )
-            )
+                .order_by(BudgetTemplate.starts_on)
+            ).all()
+            for category in (source, target)
         }
-        target_template_scopes = {
-            (row.frequency, row.starts_on)
-            for row in self.session.execute(
-                select(BudgetTemplate.frequency, BudgetTemplate.starts_on).where(
-                    BudgetTemplate.user_id == self.user_id,
-                    BudgetTemplate.category_id == target.id,
+        overrides = {
+            category.id: self.session.scalars(
+                select(BudgetOverride)
+                .where(
+                    BudgetOverride.user_id == self.user_id,
+                    BudgetOverride.category_id == category.id,
                 )
-            )
+                .order_by(BudgetOverride.year, BudgetOverride.month)
+            ).all()
+            for category in (source, target)
         }
-        template_conflicts = source_template_scopes & target_template_scopes
 
-        source_override_scopes = {
-            (row.year, row.month)
-            for row in self.session.execute(
-                select(BudgetOverride.year, BudgetOverride.month).where(
-                    BudgetOverride.user_id == self.user_id,
-                    BudgetOverride.category_id == source.id,
-                )
+        def template_label(category: Category, template: BudgetTemplate) -> str:
+            return (
+                f"{category.name} {template.frequency.value} budget from "
+                f"{template.starts_on.isoformat()}"
             )
-        }
-        target_override_scopes = {
-            (row.year, row.month)
-            for row in self.session.execute(
-                select(BudgetOverride.year, BudgetOverride.month).where(
-                    BudgetOverride.user_id == self.user_id,
-                    BudgetOverride.category_id == target.id,
-                )
-            )
-        }
-        override_conflicts = source_override_scopes & target_override_scopes
-        if template_conflicts or override_conflicts:
-            conflict_parts: list[str] = []
-            if template_conflicts:
-                conflict_parts.append(
-                    f"{len(template_conflicts)} budget template scope conflict(s)"
-                )
-            if override_conflicts:
-                conflict_parts.append(
-                    f"{len(override_conflicts)} budget override scope conflict(s)"
-                )
+
+        def override_label(category: Category, override: BudgetOverride) -> str:
+            return f"{category.name} budget for {override.year}-{override.month:02d}"
+
+        conflicts: list[str] = []
+        for source_template in templates[source.id]:
+            for target_template in templates[target.id]:
+                if source_template.frequency == target_template.frequency and (
+                    source_template.starts_on == target_template.starts_on
+                    or (
+                        source_template.starts_on
+                        <= (target_template.ends_on or date.max)
+                        and target_template.starts_on
+                        <= (source_template.ends_on or date.max)
+                    )
+                ):
+                    conflicts.append(
+                        f"{template_label(source, source_template)} and "
+                        f"{template_label(target, target_template)}"
+                    )
+        for source_override in overrides[source.id]:
+            for target_override in overrides[target.id]:
+                if (source_override.year, source_override.month) == (
+                    target_override.year,
+                    target_override.month,
+                ):
+                    conflicts.append(
+                        f"{override_label(source, source_override)} and "
+                        f"{override_label(target, target_override)}"
+                    )
+        for override_category, override_rows, template_category in (
+            (source, overrides[source.id], target),
+            (target, overrides[target.id], source),
+        ):
+            for override in override_rows:
+                month_first = date(override.year, override.month, 1)
+                for template in templates[template_category.id]:
+                    if (
+                        template.frequency == BudgetFrequency.monthly
+                        and template.starts_on <= month_first
+                        and (
+                            template.ends_on is None or template.ends_on >= month_first
+                        )
+                    ):
+                        conflicts.append(
+                            f"{override_label(override_category, override)} and "
+                            f"{template_label(template_category, template)}"
+                        )
+        if conflicts:
+            more = f" and {len(conflicts) - 3} more" if len(conflicts) > 3 else ""
             raise ValueError(
-                "Cannot merge categories with overlapping budget scopes: "
-                + ", ".join(conflict_parts)
+                f"Cannot merge: {source.name} and {target.name} both have a budget "
+                f"for the same period ({'; '.join(conflicts[:3])}{more}). "
+                "End or delete one of these budgets first."
             )
 
         updated_transactions = int(
@@ -1125,6 +1315,35 @@ class CategoryService:
             ).rowcount
             or 0
         )
+        updated_templates = int(
+            self.session.execute(
+                update(TransactionTemplate)
+                .where(
+                    TransactionTemplate.user_id == self.user_id,
+                    TransactionTemplate.category_id == source.id,
+                )
+                .values(category_id=target.id)
+            ).rowcount
+            or 0
+        )
+        self.session.execute(
+            update(RuleLLMSuggestion)
+            .where(
+                RuleLLMSuggestion.user_id == self.user_id,
+                RuleLLMSuggestion.status == "pending",
+                RuleLLMSuggestion.set_category_id == source.id,
+            )
+            .values(set_category_id=target.id)
+        )
+        self.session.execute(
+            update(TransactionLLMSuggestion)
+            .where(
+                TransactionLLMSuggestion.user_id == self.user_id,
+                TransactionLLMSuggestion.status == "pending",
+                TransactionLLMSuggestion.category_id == source.id,
+            )
+            .values(category_id=target.id)
+        )
 
         source.archived_at = datetime.now(UTC)
         self.session.commit()
@@ -1134,6 +1353,7 @@ class CategoryService:
             "rules_set_category": updated_rules,
             "budget_templates": updated_budget_templates,
             "budget_overrides": updated_budget_overrides,
+            "templates": updated_templates,
             "preview_transactions": preview["transactions"],
         }
 
@@ -1296,6 +1516,11 @@ class DurablePurchaseService:
         if transaction.type != TransactionType.expense:
             raise ValueError("Durable tracking requires an expense transaction")
         acquired_on = data.acquired_on or transaction.date
+        if not MIN_LEDGER_DATE <= acquired_on <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"The acquired date must be between {MIN_LEDGER_DATE.isoformat()} "
+                f"and {MAX_LEDGER_DATE.isoformat()}"
+            )
         if data.ended_on is not None and data.ended_on < acquired_on:
             raise ValueError("End date must be on or after the acquired date")
 
@@ -1386,7 +1611,10 @@ class DurablePurchaseService:
                 100.0 if ended else min(100.0, days_owned / lifespan_days * 100)
             )
             fully_amortized = ended or days_owned >= lifespan_days
-            paid_for_itself_on = row.acquired_on + timedelta(days=lifespan_days)
+            # Stored rows can have lifespans that reach past the last date.
+            paid_for_itself_on = row.acquired_on + timedelta(
+                days=min(lifespan_days, (date.max - row.acquired_on).days)
+            )
             items.append(
                 {
                     "id": row.id,
@@ -1426,6 +1654,10 @@ class DurablePurchaseService:
             reverse=True,
         )
         return items
+
+
+class TransactionConflict(ValueError):
+    """The request conflicts with the stored state; the caller should reload."""
 
 
 class TransactionService:
@@ -1489,15 +1721,7 @@ class TransactionService:
             longitude=data.longitude,
         )
         if data.tags:
-            tag_service = TagService(self.session, self.user_id)
-            tags: list[Tag] = []
-            tag_ids: set[int] = set()
-            for name in data.tags:
-                tag = tag_service.get_or_create(name)
-                if tag.id not in tag_ids:
-                    tags.append(tag)
-                    tag_ids.add(tag.id)
-            txn.tags = tags
+            txn.tags = TagService(self.session, self.user_id).resolve_typed(data.tags)
 
         self.session.add(txn)
         self.session.flush()
@@ -1602,6 +1826,13 @@ class TransactionService:
         source: str = "user",
     ) -> Transaction:
         txn = self.get(transaction_id, include_deleted=False)
+        if (
+            data.expected_updated_at is not None
+            and data.expected_updated_at != txn.updated_at
+        ):
+            raise TransactionConflict(
+                "This transaction was changed somewhere else. Check the current version and save again."
+            )
 
         old_date = txn.date
         old_type = txn.type
@@ -1618,32 +1849,15 @@ class TransactionService:
                 raise ValueError("Category type mismatch")
             category_id = data.category_id
 
+        reimbursements = ReimbursementService(self.session, self.user_id)
         if old_type == TransactionType.expense and data.type == TransactionType.income:
-            has_allocations_in = int(
-                self.session.execute(
-                    select(func.count(ReimbursementAllocation.id)).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.expense_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
-            if has_allocations_in:
+            if reimbursements.reimbursed_total_for_expense(txn.id):
                 raise ValueError(
                     "Cannot convert reimbursed expense to income; remove allocations first"
                 )
 
         if old_type == TransactionType.income and data.type == TransactionType.expense:
-            has_allocations_out = int(
-                self.session.execute(
-                    select(func.count(ReimbursementAllocation.id)).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
-            if has_allocations_out:
+            if reimbursements.allocated_total_for_reimbursement(txn.id):
                 raise ValueError(
                     "Cannot convert reimbursement income to expense; remove allocations first"
                 )
@@ -1683,15 +1897,12 @@ class TransactionService:
             )
 
         if data.tags is not None:
-            tag_service = TagService(self.session, self.user_id)
-            tags: list[Tag] = []
-            tag_ids: set[int] = set()
-            for name in data.tags:
-                tag = tag_service.get_or_create(name)
-                if tag.id not in tag_ids:
-                    tags.append(tag)
-                    tag_ids.add(tag.id)
-            txn.tags = tags
+            txn.tags = TagService(self.session, self.user_id).resolve_typed(
+                data.tags, attached=txn.tags
+            )
+        # Tag changes leave the transactions row alone, so stamp it here for the
+        # expected_updated_at check.
+        txn.updated_at = datetime.utcnow()
 
         self.session.flush()
         self.session.refresh(txn, ["category", "tags"])
@@ -1745,36 +1956,23 @@ class TransactionService:
             )
 
         if txn.type == TransactionType.expense:
-            reimbursed_total = int(
-                self.session.execute(
-                    select(
-                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                    ).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.expense_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
+            reimbursed_total = reimbursements.reimbursed_total_for_expense(txn.id)
             if txn.amount_cents < reimbursed_total:
                 raise ValueError("Expense amount cannot be less than reimbursed total")
 
         if txn.type == TransactionType.income and txn.is_reimbursement:
-            allocated_total = int(
-                self.session.execute(
-                    select(
-                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                    ).where(
-                        ReimbursementAllocation.user_id == self.user_id,
-                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
-                    )
-                ).scalar_one()
-                or 0
-            )
+            allocated_total = reimbursements.allocated_total_for_reimbursement(txn.id)
             if txn.amount_cents < allocated_total:
                 raise ValueError(
                     "Reimbursement amount cannot be less than allocated total"
                 )
+
+        # A type change can bring back allocations to a counterpart that was
+        # trashed or edited meanwhile; they must still fit on the other side.
+        if old_type != txn.type or old_is_reimbursement != txn.is_reimbursement:
+            overrun = reimbursements.allocation_overrun([txn.id])
+            if overrun:
+                raise ValueError(overrun)
 
         self.session.flush()
 
@@ -1791,9 +1989,12 @@ class TransactionService:
         metrics._invalidate_period_cache(Period("transaction", old_date, old_date))
         metrics._invalidate_period_cache(Period("transaction", data.date, data.date))
 
+        # Read before commit: a refresh afterwards can see a later save's version.
+        saved_updated_at = txn.updated_at
         self.session.commit()
         self.session.refresh(txn)
         txn._rule_result = rule_result
+        txn._saved_updated_at = saved_updated_at
         log_event(
             logger,
             logging.INFO,
@@ -1906,7 +2107,19 @@ class TransactionService:
             raise ValueError("Transaction not found")
         if txn.deleted_at is None:
             return
+        self._require_allocations_fit([txn])
         self._set_deleted_at([txn], None, commit=commit)
+
+    # While a transaction is in Trash its allocations do not count, so the other
+    # side may have been allocated or edited since. Restoring must not push any
+    # transaction past its amount.
+    def _require_allocations_fit(self, transactions: list[Transaction]) -> None:
+        ids = [txn.id for txn in transactions]
+        overrun = ReimbursementService(self.session, self.user_id).allocation_overrun(
+            ids, restoring_ids=ids
+        )
+        if overrun:
+            raise TransactionConflict(f"Can't restore. {overrun}")
 
     # Moves transactions to the trash (a time) or restores them (None),
     # recomputing each affected month once.
@@ -2030,6 +2243,7 @@ class TransactionService:
             )
         )
         if trashed:
+            self._require_allocations_fit(trashed)
             self._set_deleted_at(trashed, None, commit=True)
         return len(trashed)
 
@@ -2357,6 +2571,83 @@ class ReimbursementService:
             or 0
         )
 
+    def allocation_overrun(
+        self, transaction_ids: list[int], *, restoring_ids: list[int] | None = None
+    ) -> str | None:
+        """Names the first transaction next to these whose allocations exceed it.
+
+        An allocation counts, as in the rollups, when both sides are live (or
+        about to be restored), the expense is an expense and the reimbursement
+        a reimbursement income.
+        """
+        restoring = restoring_ids or []
+        expense = aliased(Transaction)
+        reimbursement = aliased(Transaction)
+        reimbursement_id = ReimbursementAllocation.reimbursement_transaction_id
+        expense_id = ReimbursementAllocation.expense_transaction_id
+        counting = (
+            select(reimbursement_id, expense_id, ReimbursementAllocation.amount_cents)
+            .join(expense, expense_id == expense.id)
+            .join(reimbursement, reimbursement_id == reimbursement.id)
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                or_(expense.deleted_at.is_(None), expense.id.in_(restoring)),
+                expense.type == TransactionType.expense,
+                or_(
+                    reimbursement.deleted_at.is_(None),
+                    reimbursement.id.in_(restoring),
+                ),
+                reimbursement.type == TransactionType.income,
+                reimbursement.is_reimbursement.is_(True),
+            )
+        )
+        touched = self.session.execute(
+            counting.where(
+                or_(
+                    reimbursement_id.in_(transaction_ids),
+                    expense_id.in_(transaction_ids),
+                )
+            )
+        ).all()
+        reimbursement_ids = {row[0] for row in touched}
+        expense_ids = {row[1] for row in touched}
+        allocated = dict.fromkeys(reimbursement_ids, 0)
+        reimbursed = dict.fromkeys(expense_ids, 0)
+        for r_id, e_id, cents in self.session.execute(
+            counting.where(
+                or_(
+                    reimbursement_id.in_(reimbursement_ids),
+                    expense_id.in_(expense_ids),
+                )
+            )
+        ):
+            if r_id in allocated:
+                allocated[r_id] += cents
+            if e_id in reimbursed:
+                reimbursed[e_id] += cents
+
+        def eur(cents: int) -> str:
+            return f"{cents // 100},{cents % 100:02d} €"
+
+        for r_id in sorted(allocated):
+            txn = self.session.get(Transaction, r_id)
+            if allocated[r_id] > txn.amount_cents:
+                return (
+                    f'The reimbursement "{txn.title}" from {txn.date.isoformat()} '
+                    f"would have {eur(allocated[r_id])} allocated but is only "
+                    f"{eur(txn.amount_cents)}. Remove some of its allocations first."
+                )
+        for e_id in sorted(reimbursed):
+            txn = self.session.get(Transaction, e_id)
+            if reimbursed[e_id] > txn.amount_cents:
+                return (
+                    f'The expense "{txn.title}" from {txn.date.isoformat()} would '
+                    f"be reimbursed {eur(reimbursed[e_id])} but is only "
+                    f"{eur(txn.amount_cents)}. Remove some of its reimbursements "
+                    "or raise its amount first."
+                )
+        return None
+
     def reimbursed_totals_for_expenses(
         self, expense_transaction_ids: list[int]
     ) -> dict[int, int]:
@@ -2506,19 +2797,9 @@ class ReimbursementService:
         if allocated_other + amount_cents > reimbursement.amount_cents:
             raise ValueError("Allocation exceeds reimbursement amount")
 
-        reimbursed_other = int(
-            self.session.execute(
-                select(
-                    func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
-                ).where(
-                    ReimbursementAllocation.user_id == self.user_id,
-                    ReimbursementAllocation.expense_transaction_id
-                    == expense_transaction_id,
-                    ReimbursementAllocation.reimbursement_transaction_id
-                    != reimbursement_transaction_id,
-                )
-            ).scalar_one()
-            or 0
+        # This reimbursement is live, so its own allocation is in the total.
+        reimbursed_other = self.reimbursed_total_for_expense(expense_transaction_id) - (
+            existing.amount_cents if existing else 0
         )
         if reimbursed_other + amount_cents > expense.amount_cents:
             raise ValueError("Allocation exceeds expense amount")
@@ -2834,6 +3115,7 @@ class ReceiptAttachmentService:
             replaced_files = [
                 self.path_for_storage_key(replaces.storage_key),
                 self.thumbnail_path_for(replaces),
+                *self._stale_thumbnails(replaces),
             ]
             self.session.delete(replaces)
         try:
@@ -2873,7 +3155,23 @@ class ReceiptAttachmentService:
         return attachment
 
     def thumbnail_path_for(self, attachment: ReceiptAttachment) -> Path:
-        return self._receipts_dir() / ".thumbnails" / f"{attachment.id}.webp"
+        # Ids can be reused after a delete; the file hash ties a thumbnail to its image.
+        name = f"{attachment.id}-{attachment.sha256_hex}.webp"
+        return self._receipts_dir() / ".thumbnails" / name
+
+    # Thumbnails of earlier attachments with this id: left by a write that
+    # raced a delete, or named by id alone before the hash was added.
+    def _stale_thumbnails(self, attachment: ReceiptAttachment) -> list[Path]:
+        current = self.thumbnail_path_for(attachment)
+        directory = current.parent
+        return [
+            path
+            for path in [
+                directory / f"{attachment.id}.webp",
+                *directory.glob(f"{attachment.id}-*.webp"),
+            ]
+            if path != current
+        ]
 
     def ensure_thumbnail(self, attachment: ReceiptAttachment) -> Optional[Path]:
         if attachment.mime_type not in self.THUMBNAILABLE_MIME_TYPES:
@@ -2881,6 +3179,8 @@ class ReceiptAttachmentService:
         thumb_path = self.thumbnail_path_for(attachment)
         if thumb_path.exists():
             return thumb_path
+        for stale in self._stale_thumbnails(attachment):
+            stale.unlink(missing_ok=True)
         source_path = self.path_for_storage_key(attachment.storage_key)
         if not source_path.exists():
             return None
@@ -2922,9 +3222,11 @@ class ReceiptAttachmentService:
         path = self.path_for_storage_key(attachment.storage_key)
         if path.exists():
             path.unlink()
-        thumb_path = self.thumbnail_path_for(attachment)
-        if thumb_path.exists():
-            thumb_path.unlink()
+        for thumb_path in [
+            self.thumbnail_path_for(attachment),
+            *self._stale_thumbnails(attachment),
+        ]:
+            thumb_path.unlink(missing_ok=True)
         self.session.delete(attachment)
         self.session.commit()
         log_event(
@@ -2949,10 +3251,13 @@ class ReceiptAttachmentService:
             path = self.path_for_storage_key(attachment.storage_key)
             if path.exists():
                 path.unlink()
-            thumb_path = self.thumbnail_path_for(attachment)
-            if thumb_path.exists():
-                thumb_path.unlink()
             self.session.delete(attachment)
+        # One directory pass for the batch: "<id>.webp" and "<id>-<hash>.webp".
+        purged_ids = {str(attachment.id) for attachment in attachments}
+        if purged_ids:
+            for thumb_path in (self._receipts_dir() / ".thumbnails").glob("*.webp"):
+                if thumb_path.stem.split("-", 1)[0] in purged_ids:
+                    thumb_path.unlink(missing_ok=True)
         return len(attachments)
 
 
@@ -2982,6 +3287,12 @@ class IngestService:
             .replace(second=0, microsecond=0)
         )
         txn_date = data.date or now_local.date()
+        # Like the other paths that only know a date: noon on that day.
+        occurred_at = (
+            now_local
+            if txn_date == now_local.date()
+            else datetime.combine(txn_date, time(12, 0))
+        )
         latitude = data.latitude
         longitude = data.longitude
         location_status: Literal["not_provided", "stored", "ignored_partial"]
@@ -3009,25 +3320,34 @@ class IngestService:
         category_name_raw = (data.category or "").strip()
         if category_name_raw:
             input_lower = category_name_raw.lower()
-            exact = self.session.scalar(
-                select(Category).where(
+            # Matched in Python: SQLite's lower() folds ASCII only, so names
+            # differing only in non-ASCII case can both exist. An active name
+            # spelled exactly wins, then an active exact name in any case, then
+            # a fuzzy active match, then an archived exact name.
+            expense_categories = (
+                select(Category)
+                .where(
                     Category.user_id == self.user_id,
                     Category.type == TransactionType.expense,
-                    Category.archived_at.is_(None),
-                    func.lower(Category.name) == input_lower,
                 )
+                .order_by(Category.archived_at.is_not(None), Category.id)
             )
-            if exact:
+            all_categories = self.session.scalars(expense_categories).all()
+            exact = next(
+                (
+                    c
+                    for c in all_categories
+                    if c.name == category_name_raw and c.archived_at is None
+                ),
+                None,
+            ) or next(
+                (c for c in all_categories if c.name.lower() == input_lower), None
+            )
+            if exact and exact.archived_at is None:
                 category_id = exact.id
                 category_resolution = "exact"
             else:
-                categories = self.session.scalars(
-                    select(Category).where(
-                        Category.user_id == self.user_id,
-                        Category.type == TransactionType.expense,
-                        Category.archived_at.is_(None),
-                    )
-                ).all()
+                categories = [c for c in all_categories if c.archived_at is None]
                 best_distance: Optional[int] = None
                 best: list[Category] = []
                 for category in categories:
@@ -3048,6 +3368,10 @@ class IngestService:
                     category_id = best[0].id
                     category_resolution = "fuzzy"
                     fuzzy_distance = best_distance
+                elif exact:
+                    CategoryService(self.session, self.user_id).restore(exact.id)
+                    category_id = exact.id
+                    category_resolution = "restored"
                 else:
                     try:
                         created = CategoryService(self.session, self.user_id).create(
@@ -3060,24 +3384,25 @@ class IngestService:
                         category_id = created.id
                         category_resolution = "created"
                     except ValueError as exc:
-                        existing = self.session.scalar(
-                            select(Category).where(
-                                Category.user_id == self.user_id,
-                                Category.type == TransactionType.expense,
-                                func.lower(Category.name) == input_lower,
-                            )
+                        # Another request may have created the name meanwhile.
+                        existing = next(
+                            (
+                                c
+                                for c in self.session.scalars(expense_categories)
+                                if c.name.lower() == input_lower
+                            ),
+                            None,
                         )
-                        if existing:
-                            if existing.archived_at is not None:
-                                CategoryService(self.session, self.user_id).restore(
-                                    existing.id
-                                )
-                                category_resolution = "restored"
-                            else:
-                                category_resolution = "exact"
-                            category_id = existing.id
-                        else:
+                        if existing is None:
                             raise IngestCategoryNotFound(str(exc)) from exc
+                        if existing.archived_at is not None:
+                            CategoryService(self.session, self.user_id).restore(
+                                existing.id
+                            )
+                            category_resolution = "restored"
+                        else:
+                            category_resolution = "exact"
+                        category_id = existing.id
         else:
             category_id = None
 
@@ -3086,7 +3411,7 @@ class IngestService:
         )
         txn_in = TransactionIn(
             date=txn_date,
-            occurred_at=now_local,
+            occurred_at=occurred_at,
             type=TransactionType.expense,
             amount_cents=data.amount_cents,
             category_id=category_id,
@@ -4042,7 +4367,9 @@ class InsightsService:
         for durable in durables:
             amount = int(durable.transaction.net_amount_cents)
             lifespan = int(durable.expected_lifespan_days)
-            last = durable.acquired_on + timedelta(days=lifespan - 1)
+            last = durable.acquired_on + timedelta(
+                days=min(lifespan - 1, (date.max - durable.acquired_on).days)
+            )
             if durable.ended_on is not None:
                 last = min(last, durable.ended_on)
             day = max(start, durable.acquired_on)
@@ -5555,12 +5882,14 @@ class ForecastService:
                     )
                 )
             interval_count = int(rule.interval_count)
-            if rule.interval_unit == IntervalUnit.day:
+            # Rules that occur at least monthly use their monthly average; longer
+            # intervals subtract only in the months they actually occur.
+            if rule.interval_unit == IntervalUnit.day and interval_count <= 31:
                 monthly = int(amount * 30.44 / interval_count)
-            elif rule.interval_unit == IntervalUnit.week:
+            elif rule.interval_unit == IntervalUnit.week and interval_count <= 4:
                 monthly = int(amount * 4.35 / interval_count)
-            elif rule.interval_unit == IntervalUnit.month:
-                monthly = int(amount / interval_count)
+            elif rule.interval_unit == IntervalUnit.month and interval_count == 1:
+                monthly = amount
             else:
                 occurrence = rule.anchor_date
                 amounts_by_month: dict[date, int] = {}
@@ -5572,8 +5901,8 @@ class ForecastService:
                         amounts_by_month[bucket] = (
                             amounts_by_month.get(bucket, 0) + amount
                         )
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
                 key = (rule.type, int(rule.category_id))
@@ -5868,7 +6197,7 @@ class ForecastService:
         variable_income_estimates: dict[int, "ForecastService.VariableEstimate"],
         variable_model: "ForecastService.VariableModel",
         prediction_paths: list[list[int]],
-        modified_rule_amounts: dict[int, tuple[int, date]] | None = None,
+        modified_rule_amounts: dict[int, list[tuple[date, int]]] | None = None,
         one_time_events: dict[date, list["ForecastService.OneTimeEvent"]] | None = None,
         summary_only: bool = False,
     ) -> dict[str, object]:
@@ -5890,8 +6219,8 @@ class ForecastService:
                         break
                     if occurrence > today:
                         fx_dates.add(occurrence)
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
             if fx_dates:
@@ -5921,13 +6250,11 @@ class ForecastService:
                         break
                     if occurrence > today:
                         amount = int(rule.amount_cents)
-                        if (
-                            rule.source_rule_id is not None
-                            and rule.source_rule_id in modified_rule_amounts
-                            and occurrence
-                            >= modified_rule_amounts[rule.source_rule_id][1]
+                        for effective_month, new_amount in modified_rule_amounts.get(
+                            rule.source_rule_id, []
                         ):
-                            amount = int(modified_rule_amounts[rule.source_rule_id][0])
+                            if occurrence >= effective_month:
+                                amount = new_amount
                         if rule.currency_code == CurrencyCode.usd:
                             amount = int(
                                 (Decimal(amount) * fx_quotes[occurrence].rate).quantize(
@@ -5950,8 +6277,8 @@ class ForecastService:
                             current_income += amount
                         else:
                             current_expenses += amount
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
                 rule.next_occurrence = occurrence
@@ -6027,13 +6354,11 @@ class ForecastService:
                         break
                     if occurrence >= month_bucket:
                         amount = int(rule.amount_cents)
-                        if (
-                            rule.source_rule_id is not None
-                            and rule.source_rule_id in modified_rule_amounts
-                            and occurrence
-                            >= modified_rule_amounts[rule.source_rule_id][1]
+                        for effective_month, new_amount in modified_rule_amounts.get(
+                            rule.source_rule_id, []
                         ):
-                            amount = int(modified_rule_amounts[rule.source_rule_id][0])
+                            if occurrence >= effective_month:
+                                amount = new_amount
                         if rule.currency_code == CurrencyCode.usd:
                             amount = int(
                                 (Decimal(amount) * fx_quotes[occurrence].rate).quantize(
@@ -6058,8 +6383,8 @@ class ForecastService:
                         else:
                             expenses += amount
 
-                    next_occurrence = calculate_next_date(rule, occurrence)
-                    if next_occurrence <= occurrence:
+                    next_occurrence = next_date_in_range(rule, occurrence)
+                    if next_occurrence is None or next_occurrence <= occurrence:
                         break
                     occurrence = next_occurrence
 
@@ -6288,7 +6613,7 @@ class ForecastService:
     ) -> tuple[
         list["ForecastService.ProjectionRule"],
         dict[int, "ForecastService.VariableEstimate"],
-        dict[int, tuple[int, date]],
+        dict[int, list[tuple[date, int]]],
         dict[date, list["ForecastService.OneTimeEvent"]],
         list[str],
     ]:
@@ -6308,7 +6633,7 @@ class ForecastService:
             for category_id, row in variable_estimates.items()
         }
         removed_rule_ids: set[int] = set()
-        modified_rule_amounts: dict[int, tuple[int, date]] = {}
+        modified_rule_amounts: dict[int, list[tuple[date, int]]] = {}
         one_time_events: dict[date, list[ForecastService.OneTimeEvent]] = {}
         labels: list[str] = []
 
@@ -6353,11 +6678,13 @@ class ForecastService:
             if isinstance(modification, ScenarioModifyRuleIn):
                 if modification.rule_id not in rule_lookup:
                     raise ValueError("Rule not found")
-                modified_rule_amounts[int(modification.rule_id)] = (
-                    int(modification.new_amount_cents),
-                    self._parse_year_month(
-                        modification.effective_month, "effective_month"
-                    ),
+                modified_rule_amounts.setdefault(int(modification.rule_id), []).append(
+                    (
+                        self._parse_year_month(
+                            modification.effective_month, "effective_month"
+                        ),
+                        int(modification.new_amount_cents),
+                    )
                 )
                 continue
 
@@ -6389,6 +6716,10 @@ class ForecastService:
             if rule.source_rule_id is None
             or rule.source_rule_id not in removed_rule_ids
         ]
+        # Each change holds from its month until a later one; in the same month
+        # the one listed last wins (the sort keeps list order for ties).
+        for changes in modified_rule_amounts.values():
+            changes.sort(key=lambda change: change[0])
 
         return (
             rules,
@@ -6720,11 +7051,16 @@ class ForecastService:
         }
 
 
+class RecurringRuleNameRequired(ValueError):
+    """A named rule cannot lose its name."""
+
+
 class RecurringRuleService:
     @dataclass
     class OverviewRule:
         rule: RecurringRule
         monthly_equivalent_cents: int
+        ended: bool
 
     def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
         self.session = session
@@ -6758,10 +7094,76 @@ class RecurringRuleService:
             return int(amount_cents / (12 * interval_count))
         return amount_cents
 
+    @staticmethod
+    def has_ended(rule: RecurringRule, today: date) -> bool:
+        # Manual rules never advance next_occurrence, so the end date alone counts too.
+        return rule.end_date is not None and (
+            rule.end_date < today or rule.next_occurrence > rule.end_date
+        )
+
+    def _advance_to(self, rule: RecurringRule, today: date) -> None:
+        """Moves next_occurrence to the first scheduled date on or after today."""
+        occurrence = rule.next_occurrence
+        while occurrence < today:
+            next_occurrence = next_date_in_range(rule, occurrence)
+            if next_occurrence is None or next_occurrence <= occurrence:
+                break
+            occurrence = next_occurrence
+        rule.next_occurrence = occurrence
+
+    @staticmethod
+    def _nearest_on_schedule(
+        rule: RecurringRule, old_next: date, old_scheduled: date
+    ) -> date:
+        """The rule's scheduled date nearest old_next (the later one on a tie), so
+        moving the schedule neither drops nor adds a posting. It lies in the past
+        only when old_next already did. Month and year rules keep the pending
+        occurrence in its billing month (old_scheduled's, before "Skip weekends"
+        moved it) when the schedule has one there; a monthly rule without one
+        takes the first occurrence after it."""
+        old_month = (old_scheduled.year, old_scheduled.month)
+        if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year):
+
+            def billing_month(occurrence: date) -> tuple[int, int]:
+                scheduled = _unshifted_date(rule, occurrence)
+                return (scheduled.year, scheduled.month)
+
+            occurrence = rule.anchor_date
+            while billing_month(occurrence) < old_month:
+                following = next_date_in_range(rule, occurrence)
+                if following is None or following <= occurrence:
+                    break
+                occurrence = following
+            if billing_month(occurrence) == old_month or (
+                rule.interval_unit == IntervalUnit.month and rule.interval_count == 1
+            ):
+                today = local_today()
+                while occurrence < today <= old_next:
+                    following = next_date_in_range(rule, occurrence)
+                    if following is None or following <= occurrence:
+                        break
+                    occurrence = following
+                return occurrence
+        before: Optional[date] = None
+        after = rule.anchor_date
+        while after < old_next:
+            following = next_date_in_range(rule, after)
+            if following is None or following <= after:
+                break
+            before, after = after, following
+        if (
+            before is not None
+            and (before >= local_today() or old_next < local_today())
+            and old_next - before < after - old_next
+        ):
+            return before
+        return after
+
     def overview(
         self,
     ) -> tuple[list["RecurringRuleService.OverviewRule"], dict[str, object]]:
         rules = self.list_all()
+        today = local_today()
         total_income = 0
         total_expenses = 0
         income_by_category: dict[str, int] = {}
@@ -6792,12 +7194,16 @@ class RecurringRuleService:
             monthly = self._monthly_equivalent_amount(
                 amount, rule.interval_unit, rule.interval_count
             )
+            ended = self.has_ended(rule, today)
             overview_rules.append(
                 RecurringRuleService.OverviewRule(
                     rule=rule,
                     monthly_equivalent_cents=monthly,
+                    ended=ended,
                 )
             )
+            if ended:
+                continue
             category_name = rule.category.name if rule.category else "Uncategorized"
 
             if rule.type == TransactionType.income:
@@ -6885,22 +7291,44 @@ class RecurringRuleService:
         )
         return rule
 
-    def update(self, rule_id: int, data: RecurringRuleIn) -> RecurringRule:
+    def update(self, rule_id: int, data: RecurringRuleUpdateIn) -> RecurringRule:
         rule = self.session.get(RecurringRule, rule_id)
         if not rule or rule.user_id != self.user_id:
             raise ValueError("Rule not found")
+        if data.name is None and (rule.name or "").strip():
+            raise RecurringRuleNameRequired("Name cannot be blank")
         if data.category_id != rule.category_id:
             category = self.session.get(Category, data.category_id)
             if not category or category.user_id != self.user_id:
                 raise ValueError("Category not found")
             if category.type != data.type:
                 raise ValueError("Category type mismatch")
+        was_auto_post = rule.auto_post
+        old_next = rule.next_occurrence
+        # Read under the old schedule, before the new anchor is set. A day or
+        # week rule's Monday is its own day.
+        old_scheduled = (
+            _unshifted_date(rule, old_next)
+            if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year)
+            else old_next
+        )
+        # A new start with the stored next occurrence: the client left it to us.
+        moves_schedule = (
+            data.anchor_date != rule.anchor_date and data.next_occurrence == old_next
+        )
         for attr_name, value in data.model_dump().items():
             setattr(rule, attr_name, value)
+        if moves_schedule:
+            rule.next_occurrence = self._nearest_on_schedule(
+                rule, old_next, old_scheduled
+            )
         # The anchor is the schedule's first occurrence, so a later start must not
         # leave an earlier next occurrence for catch-up to post.
         if rule.anchor_date > rule.next_occurrence:
             rule.next_occurrence = rule.anchor_date
+        # Payments made while the rule was manual were recorded by hand.
+        if rule.auto_post and not was_auto_post:
+            self._advance_to(rule, local_today())
         self.session.commit()
         self.session.refresh(rule)
         log_event(
@@ -6918,6 +7346,9 @@ class RecurringRuleService:
         rule = self.session.get(RecurringRule, rule_id)
         if not rule or rule.user_id != self.user_id:
             raise ValueError("Rule not found")
+        # Payments made while the rule was manual were recorded by hand.
+        if auto_post and not rule.auto_post:
+            self._advance_to(rule, local_today())
         rule.auto_post = auto_post
         self.session.commit()
         log_event(
@@ -6979,6 +7410,13 @@ class CSVService:
                 errors.append(
                     f"Row {row.row_number}: IsReimbursement can only be set for income transactions"
                 )
+            if row.amount_cents > MAX_AMOUNT_CENTS:
+                errors.append(f"Row {row.row_number}: Amount is too large")
+            if not MIN_LEDGER_DATE <= row.date <= MAX_LEDGER_DATE:
+                errors.append(
+                    f"Row {row.row_number}: Date must fall between "
+                    f"{MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+                )
             preview_rows.append(
                 {
                     "date": row.date,
@@ -6999,6 +7437,8 @@ class CSVService:
             raise ValueError("; ".join(errors))
         dates = set()
         rule_service = RuleService(self.session, self.user_id)
+        # Bounds the whole import, which holds the database write lock meanwhile.
+        regex_budget = RegexBudget(get_settings().rule_regex_timeout_seconds * 60)
         months: set[tuple[int, int]] = set()
         for row in preview_rows:
             txn_type = TransactionType(row["type"])
@@ -7016,7 +7456,7 @@ class CSVService:
                 description=row["description"],
             )
             self.session.add(txn)
-            rule_service.apply_rules(txn)
+            rule_service.apply_rules(txn, regex_budget=regex_budget)
             dates.add(row["date"])
             months.add((row["date"].year, row["date"].month))
         self.session.flush()
@@ -7186,12 +7626,14 @@ class ReportService:
                 if options.transaction_type is not None
                 else TransactionType.expense
             )
+            # Every category, so the rows add up to the total and to 100 %.
             breakdown = self.metrics_service.category_breakdown(
                 period,
                 breakdown_type,
                 category_ids=options.category_ids,
                 tag_ids=options.tag_ids,
                 excluded_tag_ids=options.excluded_tag_ids,
+                limit=None,
             )
             data["category_breakdown"] = breakdown
 
@@ -7404,12 +7846,17 @@ class ReportService:
                     ).all()
                     next_anchor_idx = 0
                 else:
+                    # Reimbursement income is left out, as in the rows below:
+                    # it is already netted from the expenses it covers.
                     opening_stmt = select(
                         func.coalesce(
                             func.sum(
                                 case(
                                     (
-                                        Transaction.type == TransactionType.income,
+                                        and_(
+                                            Transaction.type == TransactionType.income,
+                                            Transaction.is_reimbursement.is_(False),
+                                        ),
                                         Transaction.amount_cents,
                                     ),
                                     else_=0,
@@ -7502,6 +7949,7 @@ class ReportService:
                 data["opening_balance_cents"] = opening_balance
 
                 running = opening_balance
+                anchor_at: datetime | None = None
                 for txn in transactions:
                     if use_account_balance:
                         while (
@@ -7509,11 +7957,14 @@ class ReportService:
                             and anchors[next_anchor_idx].as_of_at <= txn.occurred_at
                         ):
                             running = int(anchors[next_anchor_idx].balance_cents)
+                            anchor_at = anchors[next_anchor_idx].as_of_at
                             next_anchor_idx += 1
-                    if txn.type == TransactionType.income:
-                        running += txn.report_amount_cents
-                    else:
-                        running -= txn.report_amount_cents
+                    # A snapshot already includes transactions at its own time.
+                    if txn.occurred_at != anchor_at:
+                        if txn.type == TransactionType.income:
+                            running += txn.report_amount_cents
+                        else:
+                            running -= txn.report_amount_cents
                     setattr(txn, "running_balance_cents", running)
             data["recent_transactions"] = transactions
             if options.include_category_subtotals and transactions:
@@ -7536,8 +7987,13 @@ class ReportService:
         if "recurring_upcoming" in options.sections:
             end_date = options.end + timedelta(days=30)
             upcoming_rules = []
+            today = local_today()
             for rule in self.rule_service.list_all():
-                if rule.auto_post and rule.next_occurrence <= end_date:
+                if (
+                    rule.auto_post
+                    and rule.next_occurrence <= end_date
+                    and not self.rule_service.has_ended(rule, today)
+                ):
                     upcoming_rules.append(rule)
             data["recurring_upcoming"] = upcoming_rules
 
@@ -7574,6 +8030,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         stmt = select(BudgetTemplate).where(
             BudgetTemplate.user_id == self.user_id,
@@ -7640,6 +8100,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         category_filter = (
             BudgetTemplate.category_id.is_(None)
@@ -7755,6 +8219,10 @@ class BudgetService:
                 raise ValueError("Category not found")
             if category.type != TransactionType.expense:
                 raise ValueError("Budgets can only be set for expense categories")
+            if category.archived_at is not None:
+                raise ValueError(
+                    f"{category.name} is archived. Restore it to change its budget."
+                )
 
         stmt = select(BudgetOverride).where(
             BudgetOverride.user_id == self.user_id,
@@ -7905,10 +8373,13 @@ class BudgetService:
         return effective
 
     def spent_by_category_for_month(
-        self, year: int, month: int
+        self, year: int, month: int, *, through: Optional[date] = None
     ) -> dict[Optional[int], int]:
+        """Spend in the month, counting only days up to `through` when given."""
         start = month_start(year, month)
         end = month_end(year, month)
+        if through is not None:
+            end = min(end, through)
         gross_stmt = (
             select(
                 Transaction.category_id,
@@ -7976,10 +8447,15 @@ class BudgetService:
     def progress_for_month(
         self, year: int, month: int, *, as_of: Optional[date] = None
     ) -> dict[Optional[int], dict[str, int]]:
+        as_of_date = as_of or local_today()
         effective = self.effective_budgets_for_month(year, month)
-        spent_by_scope = self.spent_by_category_for_month(year, month)
+        # Spend is counted to the same day as the pace, so a past week or a
+        # future-dated expense does not count as spent before its date.
+        spent_by_scope = self.spent_by_category_for_month(
+            year, month, through=as_of_date
+        )
         return self._derive_progress(
-            effective, spent_by_scope, year, month, as_of=as_of
+            effective, spent_by_scope, year, month, as_of=as_of_date
         )
 
     def _derive_progress(
@@ -8177,7 +8653,9 @@ class BudgetService:
         if overall is None:
             return {}
 
-        spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
+        spent_by_scope = self.spent_by_category_for_month(
+            current.year, current.month, through=current
+        )
         overall_progress = self._derive_progress(
             effective, spent_by_scope, current.year, current.month, as_of=current
         ).get(None)
@@ -8215,7 +8693,9 @@ class BudgetService:
     ) -> dict[str, object]:
         current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
-        spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
+        spent_by_scope = self.spent_by_category_for_month(
+            current.year, current.month, through=current
+        )
         progress = self._derive_progress(
             effective, spent_by_scope, current.year, current.month, as_of=current
         )
@@ -8264,10 +8744,13 @@ class BudgetService:
         labels = [f"{month.year:04d}-{month.month:02d}" for month in months]
         budgets: dict[Optional[int], dict[str, int]] = {}
         spent: dict[str, dict[Optional[int], int]] = {}
+        today = local_today()
         for label, month in zip(labels, months, strict=True):
             for row in self.effective_budgets_for_month(month.year, month.month):
                 budgets.setdefault(row.scope_category_id, {})[label] = row.amount_cents
-            spent[label] = self.spent_by_category_for_month(month.year, month.month)
+            spent[label] = self.spent_by_category_for_month(
+                month.year, month.month, through=today
+            )
 
         first_months: dict[Optional[int], str] = {}
         for category_id, starts_on in self.session.execute(
@@ -8352,9 +8835,12 @@ class BudgetService:
             )
         return effective
 
-    def spent_by_category_for_year(self, year: int) -> dict[Optional[int], int]:
+    def spent_by_category_for_year(
+        self, year: int, *, through: date
+    ) -> dict[Optional[int], int]:
+        """Spend in the year, counting only days up to `through`."""
         start = date(year, 1, 1)
-        end = date(year + 1, 1, 1) - date.resolution
+        end = min(date(year + 1, 1, 1) - date.resolution, through)
         gross_stmt = (
             select(
                 Transaction.category_id,
@@ -8578,7 +9064,11 @@ class DigestService:
                 {
                     "transaction_id": txn.id,
                     "rule_id": txn.origin_rule_id,
-                    "rule_name": txn.origin_rule.name if txn.origin_rule else "",
+                    "rule_name": (
+                        txn.origin_rule.name or txn.origin_rule.category.name
+                        if txn.origin_rule
+                        else ""
+                    ),
                     "date": txn.date.isoformat(),
                     "type": txn.type.value,
                     "amount_cents": amount,
@@ -8609,7 +9099,10 @@ class DigestService:
             if progress is None:
                 continue
             velocity_ratio = float(progress["velocity_ratio"])
-            if velocity_ratio > 1.1:
+            spent_cents = int(progress["spent_cents"])
+            # A zero budget has no pace to compare against; any spend is over it.
+            zero_budget_spent = budget.amount_cents == 0 and spent_cents > 0
+            if velocity_ratio > 1.1 or zero_budget_spent:
                 pace_state = "over"
             elif velocity_ratio < 0.9:
                 pace_state = "under"
@@ -8620,11 +9113,11 @@ class DigestService:
                     "scope_category_id": budget.scope_category_id,
                     "scope_label": budget.scope_label,
                     "amount_cents": budget.amount_cents,
-                    "spent_cents": int(progress["spent_cents"]),
+                    "spent_cents": spent_cents,
                     "used_percent": (
-                        (int(progress["spent_cents"]) / budget.amount_cents) * 100
+                        (spent_cents / budget.amount_cents) * 100
                         if budget.amount_cents > 0
-                        else 0.0
+                        else (100.0 if zero_budget_spent else 0.0)
                     ),
                     "days_left": int(progress["days_remaining"]),
                     "velocity_ratio": velocity_ratio,

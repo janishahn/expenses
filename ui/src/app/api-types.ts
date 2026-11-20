@@ -151,6 +151,7 @@ export type TransactionDetail = {
   net_amount_cents: number
   reimbursed_total_cents: number
   created_at: string
+  updated_at: string
   category_id: number | null
   category: CategorySummary | null
   title: string

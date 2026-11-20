@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { test, expect } from "./fixtures"
-import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, getCsrfToken, loginAsIsolatedUser } from "./helpers"
 
 const monthFormat = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" })
 
@@ -402,6 +402,33 @@ test.describe("Budgets Page", () => {
     await expect(page.getByText(/Over pace|On pace|On track/)).toHaveCount(0)
   })
 
+  test("shows spending against a zero overall budget as over pace", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const categoryId = await createCategory(isolated.request, isolated.csrfToken, "expense", "Dining out")
+    const response = await isolated.request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { frequency: "monthly", category_id: null, amount_cents: 0, starts_on: `${localMonth()}-01`, ends_on: null },
+    })
+    expect(response.ok()).toBeTruthy()
+    const today = localDate()
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: categoryId,
+      title: "Dinner",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/budgets")
+    const projected = page.getByText("Projected", { exact: true }).first().locator("..")
+    await expect(projected).toContainText("Over pace")
+    await expect(projected).not.toContainText("×")
+  })
+
   test("lists ended and future budgets on request", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const categoryName = `E2E Ended Budget ${Date.now()}`
@@ -470,6 +497,8 @@ test.describe("Budgets Page", () => {
     const peek = page.getByRole("complementary", { name: categoryName })
     await expect(peek).toContainText(/500,00\s?€\s*of 400,00\s?€/)
     await expect(peek.getByText("Projected", { exact: true })).toBeVisible()
+    // Over budget, there is no daily allowance left.
+    await expect(peek.getByText("Allowance")).toHaveCount(0)
     await expect(peek.getByRole("heading", { name: "Pace" })).toBeVisible()
     await expect(peek.getByRole("heading", { name: "Top spending days" })).toBeVisible()
     await expect(peek.getByRole("list", { name: "Top spending days" })).toContainText(title)

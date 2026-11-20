@@ -665,6 +665,57 @@ def test_budgets_admin_and_import_api_flows(
     assert "Please upload a .db file" in response.text
 
 
+def test_csv_import_reads_bom_and_reports_unclear_amounts_per_row(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    _create_category(api_client, csrf_headers, "Groceries", "expense")
+    today = date.today().isoformat()
+    csv_content = (
+        "\ufeffDate,Type,IsReimbursement,Amount,Category,Title\n"
+        f'{today},expense,0,"1.234,56",Groceries,German\n'
+        f'{today},expense,0,"1,234.56",Groceries,English\n'
+        f"{today},expense,0,,Groceries,Blank\n"
+        f"{today},expense,0,Infinity,Groceries,Infinite\n"
+        f"{today},expense,0,1e30,Groceries,Huge\n"
+        f'{today},expense,0,"1,000",Groceries,Thousand\n'
+        f"{today},expense,0,99999999999.00,Groceries,Too large\n"
+        f"{today},expense,0,12.,Groceries,Trailing dot\n"
+        f'{today},expense,0,"12,",Groceries,Trailing comma\n'
+        f"{today},expense,0,+-12.00,Groceries,Two signs\n"
+        f"{today},expense,0,.,Groceries,Separator only\n"
+    ).encode("utf-8")
+
+    response = api_client.post(
+        "/api/import/csv/preview",
+        headers=csrf_headers,
+        files={"file": ("import.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert [(row["title"], row["amount_cents"]) for row in response.json()["rows"]] == [
+        ("German", 123_456),
+        ("English", 123_456),
+        ("Trailing dot", 1_200),
+        ("Trailing comma", 1_200),
+    ]
+    assert response.json()["errors"] == [
+        "Row 3: Amount is required",
+        "Row 4: Invalid amount",
+        "Row 5: Invalid amount",
+        "Row 6: Ambiguous amount '1,000': write it with decimals, such as 1000,00",
+        "Row 7: Amount is too large",
+        "Row 10: Invalid amount",
+        "Row 11: Invalid amount",
+    ]
+
+    response = api_client.post(
+        "/api/import/csv/commit",
+        headers=csrf_headers,
+        files={"file": ("import.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 400
+
+
 def test_csv_import_rejects_oversized_upload(
     api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
 ) -> None:

@@ -383,6 +383,33 @@ test.describe("Dashboard Page (mobile)", () => {
     await expect(page).toHaveURL(/\/budgets/)
   })
 
+  test("shows spending against a zero overall budget as over budget", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const today = localToday()
+    const dining = await createCategory(isolated.request, isolated.csrfToken, "expense", "Dining out")
+    const response = await isolated.request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { frequency: "monthly", category_id: null, amount_cents: 0, starts_on: `${monthKey(0)}-01`, ends_on: null },
+    })
+    expect(response.ok()).toBeTruthy()
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: dining,
+      title: "Dinner",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/?period=this_month")
+    const overall = page.getByRole("group", { name: "Overall budget" })
+    await expect(overall).toContainText(eur("120 € of 0 €"))
+    await expect(overall).toContainText(eur("120 € over"))
+  })
+
   test("lists durable purchases with their days owned, shows ended ones on request, and opens one", async ({ page }) => {
     await page.goto("/")
     const isolated = await loginAsIsolatedUser(page)

@@ -1593,6 +1593,8 @@
             "type": "string"
           },
           "balance_cents": {
+            "maximum": 1000000000000.0,
+            "minimum": -1000000000000.0,
             "title": "Balance Cents",
             "type": "integer"
           },
@@ -2858,6 +2860,7 @@
       "BudgetOverrideIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -2880,8 +2883,8 @@
             "type": "integer"
           },
           "year": {
-            "maximum": 3000.0,
-            "minimum": 1970.0,
+            "maximum": 2199.0,
+            "minimum": 1900.0,
             "title": "Year",
             "type": "integer"
           }
@@ -3029,6 +3032,7 @@
       "BudgetTemplateApplyFromIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -3064,6 +3068,7 @@
       "BudgetTemplateIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -5010,6 +5015,7 @@
           },
           "expected_lifespan_days": {
             "exclusiveMinimum": 0.0,
+            "maximum": 36500.0,
             "title": "Expected Lifespan Days",
             "type": "integer"
           }
@@ -5065,6 +5071,19 @@
           "items"
         ],
         "title": "DurablePurchasesResponseOut",
+        "type": "object"
+      },
+      "ErrorDetailOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorDetailOut",
         "type": "object"
       },
       "FeatureSettings": {
@@ -5540,6 +5559,7 @@
                 }
               ]
             },
+            "maxItems": 50,
             "title": "Modifications",
             "type": "array"
           }
@@ -5843,6 +5863,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -7820,6 +7841,7 @@
         "properties": {
           "interval_count": {
             "default": 1,
+            "maximum": 1000.0,
             "minimum": 1.0,
             "title": "Interval Count",
             "type": "integer"
@@ -7983,6 +8005,7 @@
       "RecurringRuleIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -8019,6 +8042,7 @@
           },
           "interval_count": {
             "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
             "title": "Interval Count",
             "type": "integer"
           },
@@ -8030,15 +8054,9 @@
             "default": "snap_to_end"
           },
           "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "maxLength": 120,
+            "title": "Name",
+            "type": "string"
           },
           "next_occurrence": {
             "format": "date",
@@ -8055,6 +8073,7 @@
           }
         },
         "required": [
+          "name",
           "type",
           "amount_cents",
           "category_id",
@@ -8117,6 +8136,10 @@
               }
             ],
             "title": "End Date"
+          },
+          "ended": {
+            "title": "Ended",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
@@ -8193,9 +8216,99 @@
           "interval_unit",
           "interval_count",
           "next_occurrence",
-          "auto_post"
+          "auto_post",
+          "ended"
         ],
         "title": "RecurringRuleOut",
+        "type": "object"
+      },
+      "RecurringRuleUpdateIn": {
+        "properties": {
+          "amount_cents": {
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "anchor_date": {
+            "format": "date",
+            "title": "Anchor Date",
+            "type": "string"
+          },
+          "auto_post": {
+            "default": true,
+            "title": "Auto Post",
+            "type": "boolean"
+          },
+          "category_id": {
+            "title": "Category Id",
+            "type": "integer"
+          },
+          "currency_code": {
+            "$ref": "#/components/schemas/CurrencyCode",
+            "default": "EUR"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "interval_count": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
+            "title": "Interval Count",
+            "type": "integer"
+          },
+          "interval_unit": {
+            "$ref": "#/components/schemas/IntervalUnit"
+          },
+          "month_day_policy": {
+            "$ref": "#/components/schemas/MonthDayPolicy",
+            "default": "snap_to_end"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "next_occurrence": {
+            "format": "date",
+            "title": "Next Occurrence",
+            "type": "string"
+          },
+          "skip_weekends": {
+            "default": false,
+            "title": "Skip Weekends",
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TransactionType"
+          }
+        },
+        "required": [
+          "type",
+          "amount_cents",
+          "category_id",
+          "anchor_date",
+          "interval_unit",
+          "interval_count",
+          "next_occurrence"
+        ],
+        "title": "RecurringRuleUpdateIn",
         "type": "object"
       },
       "RecurringStatsOut": {
@@ -8531,6 +8644,7 @@
           "notes": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -8645,6 +8759,7 @@
           "max_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -8657,6 +8772,7 @@
           "min_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -9099,6 +9215,7 @@
       "ScenarioAddRuleIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -9144,6 +9261,7 @@
             "type": "integer"
           },
           "new_monthly_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "New Monthly Cents",
             "type": "integer"
@@ -9170,6 +9288,7 @@
             "type": "string"
           },
           "new_amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "New Amount Cents",
             "type": "integer"
@@ -9196,6 +9315,7 @@
       "ScenarioOneTimeIn": {
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -9892,6 +10012,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -9902,6 +10027,7 @@
           "net_amount_cents",
           "reimbursed_total_cents",
           "created_at",
+          "updated_at",
           "title",
           "is_reimbursement"
         ],
@@ -9993,6 +10119,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_cents": {
+            "maximum": 1000000000000.0,
             "minimum": 0.0,
             "title": "Amount Cents",
             "type": "integer"
@@ -10023,6 +10150,18 @@
               }
             ],
             "title": "Description"
+          },
+          "expected_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Updated At"
           },
           "is_reimbursement": {
             "anyOf": [
@@ -10198,6 +10337,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -10208,7 +10352,8 @@
           "amount_cents",
           "net_amount_cents",
           "reimbursed_total_cents",
-          "is_reimbursement"
+          "is_reimbursement",
+          "updated_at"
         ],
         "title": "TransactionListItemOut",
         "type": "object"
@@ -10307,6 +10452,25 @@
           "mode"
         ],
         "title": "TransactionReimbursementsResponseOut",
+        "type": "object"
+      },
+      "TransactionSavedOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "updated_at"
+        ],
+        "title": "TransactionSavedOut",
         "type": "object"
       },
       "TransactionSuggestionOut": {
@@ -10409,6 +10573,7 @@
           "default_amount_cents": {
             "anyOf": [
               {
+                "maximum": 1000000000000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -10754,6 +10919,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -10764,7 +10934,8 @@
           "amount_cents",
           "net_amount_cents",
           "reimbursed_total_cents",
-          "is_reimbursement"
+          "is_reimbursement",
+          "updated_at"
         ],
         "title": "UncategorizedTransactionItemOut",
         "type": "object"
@@ -14762,7 +14933,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RecurringRuleIn"
+                "$ref": "#/components/schemas/RecurringRuleUpdateIn"
               }
             }
           },
@@ -16419,11 +16590,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdOut"
+                  "$ref": "#/components/schemas/TransactionSavedOut"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetailOut"
+                }
+              }
+            },
+            "description": "The transaction was changed since expected_updated_at"
           },
           "422": {
             "content": {

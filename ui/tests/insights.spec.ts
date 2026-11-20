@@ -296,6 +296,39 @@ test.describe("Insights Page", () => {
     await expect(page).toHaveURL(/\/budgets$/)
   })
 
+  test("reads spending against a zero budget as over budget", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const categoryName = `E2E Zero budget ${Date.now()}`
+    const categoryId = await createCategory(isolated.request, isolated.csrfToken, "expense", categoryName)
+    const now = new Date()
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    const template = await isolated.request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { frequency: "monthly", category_id: categoryId, amount_cents: 0, starts_on: `${month}-01` },
+    })
+    expect(template.ok()).toBeTruthy()
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: `${month}-${String(now.getDate()).padStart(2, "0")}`,
+      occurred_at: now.toISOString(),
+      type: "expense",
+      amount_cents: 5_000,
+      category_id: categoryId,
+      title: "Zero budget spend",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/insights")
+    const card = page.getByRole("region", { name: "Budget history" })
+    // The current month is the last cell of the row.
+    await card.locator('[class*="_hmRow_"]').filter({ hasText: categoryName }).locator('[class*="_bc_"]').last().hover()
+    const tooltip = page.locator('[class*="_chartTip_"]')
+    await expect(tooltip).toContainText("Over budget")
+    await expect(tooltip).toContainText(/50\s?€ of 0\s?€/)
+    await expect(tooltip).not.toContainText("%")
+  })
+
   test("spreads durables over the days of their life and keeps Spent on the purchase", async ({ page }) => {
     await page.goto("/")
     const isolated = await loginAsIsolatedUser(page)

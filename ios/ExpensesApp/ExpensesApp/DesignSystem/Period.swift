@@ -65,7 +65,7 @@ enum PeriodSelection: Hashable {
             return .lastMonth
         default:
             let start = monthStart(offset: offset)
-            let end = Calendar.current.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
+            let end = Calendar.gregorianDays.date(byAdding: DateComponents(month: 1, day: -1), to: start)!
             return .custom(start: start, end: end)
         }
     }
@@ -80,7 +80,7 @@ enum PeriodSelection: Hashable {
         case .all:
             return nil
         case let .custom(start, end):
-            let calendar = Calendar.current
+            let calendar = Calendar.gregorianDays
             let month = calendar.dateInterval(of: .month, for: start)!
             let lastDay = calendar.date(byAdding: .day, value: -1, to: month.end)!
             guard calendar.isDate(start, inSameDayAs: month.start), calendar.isDate(end, inSameDayAs: lastDay) else {
@@ -91,9 +91,19 @@ enum PeriodSelection: Hashable {
     }
 
     private static func monthStart(offset: Int) -> Date {
-        let calendar = Calendar.current
+        let calendar = Calendar.gregorianDays
         let current = calendar.dateInterval(of: .month, for: .now)!.start
         return calendar.date(byAdding: .month, value: offset, to: current)!
+    }
+}
+
+extension Calendar {
+    /// Gregorian days and months in the device's zone. The API counts in them whatever
+    /// calendar the device is set to, so dates and months for it come from this one.
+    static var gregorianDays: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = .current
+        return calendar
     }
 }
 
@@ -103,7 +113,7 @@ struct CalendarMonth: Hashable, Comparable {
     let month: Int
 
     static var current: CalendarMonth {
-        let parts = Calendar.current.dateComponents([.year, .month], from: .now)
+        let parts = Calendar.gregorianDays.dateComponents([.year, .month], from: .now)
         return CalendarMonth(year: parts.year!, month: parts.month!)
     }
 
@@ -147,7 +157,7 @@ struct CalendarMonth: Hashable, Comparable {
         if self < current {
             return days
         }
-        return self > current ? 0 : Calendar.current.component(.day, from: .now)
+        return self > current ? 0 : Calendar.gregorianDays.component(.day, from: .now)
     }
 
     /// The share of the month that has passed, while it is under way.
@@ -239,7 +249,7 @@ private struct PeriodRangeSheet: View {
 
     init(period: Binding<PeriodSelection>) {
         _period = period
-        let calendar = Calendar.current
+        let calendar = Calendar.gregorianDays
         let month = calendar.dateInterval(of: .month, for: .now)!
         if case let .custom(start, end) = period.wrappedValue {
             _start = State(initialValue: start)
@@ -266,7 +276,7 @@ private struct PeriodRangeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", role: .confirm) {
-                        let calendar = Calendar.current
+                        let calendar = Calendar.gregorianDays
                         period = .custom(start: calendar.startOfDay(for: start), end: calendar.startOfDay(for: max(start, end)))
                         dismiss()
                     }

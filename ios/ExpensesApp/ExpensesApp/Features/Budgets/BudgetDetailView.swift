@@ -168,7 +168,8 @@ struct BudgetDetailView: View {
                         .foregroundStyle(Double(progress.projectedTotalCents) > Double(budget.amountCents) * 1.1 ? ExpensesTheme.expense(for: scheme) : .primary)
                 }
             }
-            if let progress, progress.daysRemaining > 0 {
+            // Over budget there is nothing left to spread over the days, as on the web.
+            if let progress, progress.daysRemaining > 0, progress.remainingCents > 0 {
                 LabeledContent("Allowance") {
                     HStack(spacing: 4) {
                         AmountText(progress.dailyRemainingCents)

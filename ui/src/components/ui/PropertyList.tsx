@@ -1,4 +1,4 @@
-import { createContext, forwardRef, useContext, useId, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from "react"
+import { createContext, forwardRef, useContext, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from "react"
 import type { Icon } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import clsx from "clsx"
@@ -140,16 +140,33 @@ export function InlineText({
   onCancel?: () => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
+  const submitting = useRef<string | null>(null)
+  // The text the last save refused. Leaving the field sends it again only after the field
+  // was entered again or the text changed; Enter sends it.
+  const refused = useRef<string | null>(null)
+  const type = (text: string) => {
+    refused.current = null
+    setDraft(text)
+  }
   const className = clsx(variant === "title" && s.pkTitle, variant === "amount" && s.pkAmt, variant === "plain" && s.notes)
 
-  const commit = async () => {
+  const commit = async (leaving = false) => {
     if (draft === null) return
     if (draft === value) {
       setDraft(null)
       return
     }
+    // Enter and the blur that follows it submit the same text once.
+    if (draft === submitting.current || (leaving && draft === refused.current)) return
     const submitted = draft
-    const result = await onSave(submitted)
+    submitting.current = submitted
+    let result: boolean | void
+    try {
+      result = await onSave(submitted)
+    } finally {
+      if (submitting.current === submitted) submitting.current = null
+    }
+    refused.current = result === false ? submitted : null
     // Text typed while the save ran stays open for its own save.
     if (result !== false) setDraft((current) => (current === submitted ? null : current))
   }
@@ -157,6 +174,7 @@ export function InlineText({
     if (event.key === "Escape") {
       event.preventDefault()
       event.stopPropagation()
+      refused.current = null
       setDraft(null)
       onCancel?.()
     } else if (event.key === "Enter" && (!multiline || event.metaKey || event.ctrlKey)) {
@@ -184,7 +202,10 @@ export function InlineText({
     "aria-invalid": error ? true : undefined,
     value: draft ?? value,
     placeholder,
-    onBlur: () => void commit(),
+    onFocus: () => {
+      refused.current = null
+    },
+    onBlur: () => void commit(true),
     onKeyDown,
   }
   return (
@@ -194,14 +215,14 @@ export function InlineText({
           {...shared}
           rows={3}
           className={clsx(className, s.inlineInput)}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => type(event.target.value)}
         />
       ) : (
         <input
           {...shared}
           inputMode={inputMode}
           className={clsx(className, s.inlineInput)}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => type(event.target.value)}
         />
       )}
       {hint ? <span className={s.hintText}>{hint}</span> : null}

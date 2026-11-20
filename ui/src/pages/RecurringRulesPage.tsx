@@ -293,10 +293,11 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
     setError(null)
     const cents = parseAmountCents(amount)
     if (cents === null) return setError("Enter a valid amount.")
+    if (!name.trim()) return setError("Enter a name.")
     if (!start) return setError("Select a start date.")
     if (categoryId === null) return setError("Select a category.")
     create.mutate({
-      name: name.trim() || null,
+      name: name.trim(),
       type,
       currency_code: currency,
       amount_cents: cents,
@@ -436,6 +437,9 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   )
 }
 
+// Counts the list reads that follow a save, across the peeks of all rules.
+let listReads = 0
+
 function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -449,7 +453,21 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
     url: `/api/recurring/${stored.id}`,
     source: stored,
     toPayload: rulePayload,
-    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring"] }),
+    // The server moves the next occurrence when the start or automatic posting changes.
+    reload: async () => {
+      // Its own request: a list fetch already running would return the rule as it was.
+      // The newest of these reads fills the list; an older fetch must not replace it.
+      const turn = ++listReads
+      const fresh = await apiFetch<RecurringResponse>("/api/recurring")
+      if (turn === listReads) {
+        await queryClient.cancelQueries({ queryKey: ["recurring"], exact: true })
+        queryClient.setQueryData(["recurring"], fresh)
+      }
+      const saved = fresh.rules.find((entry) => entry.id === stored.id)
+      if (!saved) throw new Error("Rule not found")
+      return saved
+    },
+    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring", stored.id] }),
     draftFields: ["name", "amount"],
   })
   const label = ruleLabel(rule)
@@ -502,7 +520,13 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
         placeholder={rule.category?.name ?? "Untitled"}
         error={errors.name}
         onCancel={() => setError("name", null)}
-        onSave={(next) => save("name", { name: next.trim() || null })}
+        onSave={(next) => {
+          if (!next.trim()) {
+            setError("name", "Enter a name.")
+            return false
+          }
+          return save("name", { name: next.trim() })
+        }}
       />
       <InlineText
         variant="amount"
@@ -582,7 +606,9 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
             label="Starts"
             value={rule.anchor_date}
             submitLabel="Save"
-            onSave={(next) => void save("starts", { anchor_date: next })}
+            onSave={(next) =>
+              void save("starts", { anchor_date: next })
+            }
             trigger={<PropertyButton>{fullDate(rule.anchor_date)}</PropertyButton>}
           />
         </Property>
@@ -729,8 +755,10 @@ function RecurringRulesPage() {
   )
 
   const byCost = expenses.slice().sort((a, b) => b.monthly_equivalent_cents - a.monthly_equivalent_cents)
+  // Ended rules cost nothing more, as in the server's totals.
+  const activeExpenses = byCost.filter((rule) => !rule.ended)
   const mix = Array.from(
-    byCost
+    activeExpenses
       .reduce((groups, rule) => {
         const entry = groups.get(rule.category_id) ?? { rule, perYear: 0 }
         entry.perYear += rule.monthly_equivalent_cents * 12
@@ -799,14 +827,14 @@ function RecurringRulesPage() {
     </>
   ) : null
 
-  const audit = expenses.length ? (
+  const audit = activeExpenses.length ? (
     <>
       <MetricStrip
         metrics={[
           {
             label: "Per month",
             value: <Amount cents={stats.total_monthly_expenses} />,
-            detail: `${expenses.length} expense ${expenses.length === 1 ? "rule" : "rules"}`,
+            detail: `${activeExpenses.length} expense ${activeExpenses.length === 1 ? "rule" : "rules"}`,
           },
           { label: "Per year", value: <Amount cents={annualTotal} /> },
           { label: "Over 5 years", value: <Amount cents={stats.total_monthly_expenses * 60} decimals={false} /> },
@@ -856,7 +884,7 @@ function RecurringRulesPage() {
             5 years
           </Cell>
         </ListHead>
-        {byCost.map((rule) => (
+        {activeExpenses.map((rule) => (
           <Row
             key={rule.id}
             {...AUDIT_COLUMNS}

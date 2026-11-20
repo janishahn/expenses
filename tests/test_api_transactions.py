@@ -1,3 +1,4 @@
+import hashlib
 import json
 import runpy
 from datetime import date, datetime, timedelta
@@ -9,12 +10,13 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, update
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.ai.service import retry_receipt_readings
+from expenses.ai.service import LLMAssistantService, retry_receipt_readings
 from expenses.db.models import (
+    Category,
     LLMJob,
     ReceiptAttachment,
     ReceiptItem,
@@ -23,6 +25,7 @@ from expenses.db.models import (
 )
 from expenses.db.session import Base, _enable_sqlite_pragmas, _fuzzy_text_match
 from expenses.recurrence.engine import local_today
+from expenses.services.rollups import recompute_monthly_rollup_for_date
 from expenses.schemas import TransactionIn
 from expenses.services import (
     ReceiptAttachmentService,
@@ -808,7 +811,8 @@ def test_attachment_download_and_thumbnail_caching(
 
     download = api_client.get(f"/api/attachments/{attachment_id}/download")
     assert download.status_code == 200
-    assert "max-age" in download.headers["cache-control"]
+    # Revalidated on every use, so a cached copy is not readable after sign-out.
+    assert download.headers["cache-control"] == "private, no-cache"
     assert download.headers["content-disposition"].startswith("inline")
     etag = download.headers["etag"]
     assert etag
@@ -822,6 +826,7 @@ def test_attachment_download_and_thumbnail_caching(
     thumbnail = api_client.get(f"/api/attachments/{attachment_id}/thumbnail")
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/webp"
+    assert thumbnail.headers["cache-control"] == "private, no-cache"
     thumb_etag = thumbnail.headers["etag"]
     assert thumb_etag != etag
 
@@ -830,6 +835,165 @@ def test_attachment_download_and_thumbnail_caching(
         headers={"If-None-Match": thumb_etag},
     )
     assert thumb_not_modified.status_code == 304
+    # Copies cached under the earlier thumbnail scheme are sent again.
+    earlier_etag = f'"{hashlib.sha256(one_by_one_png).hexdigest()}-thumbnail"'
+    assert (
+        api_client.get(
+            f"/api/attachments/{attachment_id}/thumbnail",
+            headers={"If-None-Match": earlier_etag},
+        ).status_code
+        == 200
+    )
+
+
+def test_receipt_upload_accepts_its_advertised_limit_and_refuses_larger_bodies(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_RECEIPT_MAX_BYTES", "100000")
+    get_settings.cache_clear()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=450, title="Scanned receipt"
+    )
+
+    def upload(size: int) -> int:
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": ("scan.pdf", b"%" * size, "application/pdf")},
+            headers=csrf_headers,
+        )
+        return response.status_code
+
+    assert upload(100_000) == 200
+    assert upload(100_001) == 400
+    assert upload(300_000) == 413
+
+
+def test_attachment_download_keeps_a_non_latin_file_name(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _category(api_client, csrf_headers, "Receipt names")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=450,
+        title="Named receipt",
+        category_id=category_id,
+    )
+    upload_response = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("Квитанция €.png", _png(4), "image/png")},
+        headers=csrf_headers,
+    )
+    assert upload_response.status_code == 200
+    attachment_id = int(upload_response.json()["id"])
+
+    download = api_client.get(f"/api/attachments/{attachment_id}/download")
+
+    assert download.status_code == 200
+    assert download.headers["content-disposition"] == (
+        "inline; filename*=utf-8''"
+        "%D0%9A%D0%B2%D0%B8%D1%82%D0%B0%D0%BD%D1%86%D0%B8%D1%8F%20%E2%82%AC.png"
+    )
+
+
+def test_late_thumbnail_of_a_deleted_attachment_is_not_served_for_its_id(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from PIL import Image
+
+    def image(color: str) -> bytes:
+        out = BytesIO()
+        Image.new("RGB", (8, 8), color=color).save(out, format="PNG")
+        return out.getvalue()
+
+    category_id = _category(api_client, csrf_headers, "Reused receipts")
+    transaction_id = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=500,
+        title="Reused receipt",
+        category_id=category_id,
+    )
+    first = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("red.png", image("red"), "image/png")},
+        headers=csrf_headers,
+    )
+    first_id = int(first.json()["id"])
+    service = ReceiptAttachmentService(db_session, user_id=1)
+    deleted = service.get(first_id)
+    late_thumbnail = service.thumbnail_path_for(deleted)
+    late_bytes = service.ensure_thumbnail(deleted).read_bytes()
+    assert (
+        api_client.delete(
+            f"/api/attachments/{first_id}", headers=csrf_headers
+        ).status_code
+        == 200
+    )
+    # A thumbnail request that started before the delete finishes after it.
+    late_thumbnail.write_bytes(late_bytes)
+    # Thumbnails written before the name carried the file hash.
+    legacy_thumbnail = late_thumbnail.with_name(f"{first_id}.webp")
+    legacy_thumbnail.write_bytes(late_bytes)
+
+    second = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("blue.png", image("blue"), "image/png")},
+        headers=csrf_headers,
+    )
+    assert int(second.json()["id"]) == first_id
+
+    thumbnail = api_client.get(f"/api/attachments/{first_id}/thumbnail")
+
+    assert thumbnail.status_code == 200
+    red, green, blue = (
+        Image.open(BytesIO(thumbnail.content)).convert("RGB").getpixel((4, 4))
+    )
+    assert blue > 200 and red < 50
+    assert not late_thumbnail.exists()
+    assert not legacy_thumbnail.exists()
+
+
+def test_purging_transactions_removes_their_attachment_thumbnails(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    def upload(transaction_id: int) -> int:
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": ("receipt.png", _png(8), "image/png")},
+            headers=csrf_headers,
+        )
+        return int(response.json()["id"])
+
+    purged_txn = _transaction(api_client, csrf_headers, amount_cents=500, title="Gone")
+    kept_txn = _transaction(api_client, csrf_headers, amount_cents=500, title="Kept")
+    service = ReceiptAttachmentService(db_session, user_id=1)
+    purged = service.get(upload(purged_txn))
+    kept = service.get(upload(kept_txn))
+    current = service.ensure_thumbnail(purged)
+    kept_thumbnail = service.ensure_thumbnail(kept)
+    legacy = current.with_name(f"{purged.id}.webp")
+    stale = current.with_name(f"{purged.id}-otherhash.webp")
+    # Another attachment's id that starts with the purged id's digits.
+    longer_id = current.with_name(f"{purged.id}2-otherhash.webp")
+    for path in (legacy, stale, longer_id):
+        path.write_bytes(b"thumbnail")
+
+    api_client.delete(f"/api/transactions/{purged_txn}", headers=csrf_headers)
+    purged_response = api_client.post(
+        "/api/transactions/deleted/purge",
+        headers=csrf_headers,
+        json={"ids": [purged_txn]},
+    )
+
+    assert purged_response.json() == {"deleted": 1}
+    assert not current.exists()
+    assert not legacy.exists()
+    assert not stale.exists()
+    assert kept_thumbnail.exists()
+    assert longer_id.exists()
 
 
 def test_attachment_thumbnail_follows_photo_orientation(
@@ -1118,6 +1282,91 @@ def test_receipt_images_are_read_into_items_after_upload(
         assert attachments()[name]["items_error"] is None
 
 
+def test_receipt_recovery_continues_past_a_reading_that_raises(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=618, title="Receipts"
+    )
+    ids = []
+    for name in ("first.png", "second.png", "third.png"):
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": (name, _png(4), "image/png")},
+            headers=csrf_headers,
+        )
+        ids.append(int(response.json()["id"]))
+    db_session.query(ReceiptAttachment).update({"items_status": "reading"})
+    db_session.commit()
+
+    calls: list[int] = []
+    read_items = LLMAssistantService.read_receipt_items
+
+    async def read_or_raise(self, attachment_id: int) -> None:
+        calls.append(attachment_id)
+        if attachment_id == ids[0]:
+            raise RuntimeError("Saving the items failed")
+        await read_items(self, attachment_id)
+
+    monkeypatch.setattr(LLMAssistantService, "read_receipt_items", read_or_raise)
+
+    retry_receipt_readings(db_session.get_bind(), interrupted=True)
+
+    assert calls == ids
+    db_session.expire_all()
+    statuses = {
+        attachment.id: attachment.items_status
+        for attachment in db_session.query(ReceiptAttachment)
+    }
+    assert "reading" not in statuses.values()
+    assert statuses[ids[0]] == "failed"
+
+    calls.clear()
+    retry_receipt_readings(db_session.get_bind(), interrupted=True)
+    assert ids[0] not in calls
+
+
+def test_receipt_recovery_leaves_a_replacement_upload_with_the_same_id(
+    api_client: TestClient,
+    csrf_headers: dict[str, str],
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=618, title="Receipts"
+    )
+    response = api_client.post(
+        f"/api/transactions/{transaction_id}/attachments",
+        files={"file": ("first.png", _png(4), "image/png")},
+        headers=csrf_headers,
+    )
+    attachment_id = int(response.json()["id"])
+    db_session.query(ReceiptAttachment).update({"items_status": "reading"})
+    db_session.commit()
+    engine = db_session.get_bind()
+
+    # The reading fails after the receipt was deleted and its id given to a new upload.
+    async def replace_then_raise(self, attachment_id: int) -> None:
+        with engine.begin() as connection:
+            connection.execute(
+                update(ReceiptAttachment)
+                .where(ReceiptAttachment.id == attachment_id)
+                .values(storage_key="replacement.png", items_status="reading")
+            )
+        raise RuntimeError("Saving the items failed")
+
+    monkeypatch.setattr(LLMAssistantService, "read_receipt_items", replace_then_raise)
+
+    retry_receipt_readings(engine, interrupted=True)
+
+    db_session.expire_all()
+    replacement = db_session.get(ReceiptAttachment, attachment_id)
+    assert (replacement.items_status, replacement.items_error) == ("reading", None)
+
+
 def test_transactions_list_total_counts_every_filtered_row(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -1164,6 +1413,140 @@ def test_transaction_detail_includes_net_amount_and_created_at(
     assert detail["reimbursed_total_cents"] == listed["reimbursed_total_cents"] == 1_000
     assert datetime.fromisoformat(detail["created_at"])
     assert detail["bank_row"] is None
+
+
+def test_rollup_handles_a_stored_december_9999_transaction() -> None:
+    session = make_session()
+    category = Category(user_id=1, name="Food", type=TransactionType.expense)
+    session.add(category)
+    session.flush()
+    session.add(
+        Transaction(
+            user_id=1,
+            category_id=category.id,
+            date=date(9999, 12, 15),
+            occurred_at=datetime(9999, 12, 15, 12, 0),
+            type=TransactionType.expense,
+            amount_cents=100,
+            title="Far future",
+        )
+    )
+    session.flush()
+
+    recompute_monthly_rollup_for_date(session, 1, date(9999, 12, 15))
+
+
+def test_a_save_from_a_stale_copy_is_refused(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    on = local_today()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=1_000, title="Lunch", on=on
+    )
+    url = f"/api/transactions/{transaction_id}"
+    loaded = api_client.get(url).json()["updated_at"]
+    listed = next(
+        item["updated_at"]
+        for item in api_client.get("/api/transactions").json()["items"]
+        if item["id"] == transaction_id
+    )
+    assert listed == loaded
+
+    def save(amount_cents: int, tags: list[str], expected: str | None):
+        body = {
+            "date": on.isoformat(),
+            "occurred_at": f"{on.isoformat()}T12:00:00",
+            "type": "expense",
+            "amount_cents": amount_cents,
+            "title": "Lunch",
+            "tags": tags,
+        }
+        if expected is not None:
+            body["expected_updated_at"] = expected
+        return api_client.put(url, headers=csrf_headers, json=body)
+
+    first = save(1_200, [], loaded)
+    assert first.status_code == 200, first.text
+    assert first.json()["updated_at"] == api_client.get(url).json()["updated_at"]
+
+    stale = save(1_000, [], loaded)
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == (
+        "This transaction was changed somewhere else. Check the current version and save again."
+    )
+    assert api_client.get(url).json()["amount_cents"] == 1_200
+
+    # Only the tags change: the stamp still moves, so the older copy is refused.
+    tagged = save(1_200, ["work"], first.json()["updated_at"])
+    assert tagged.status_code == 200
+    assert save(1_200, [], first.json()["updated_at"]).status_code == 409
+    assert save(1_200, ["work"], tagged.json()["updated_at"]).status_code == 200
+    assert save(1_300, ["work"], None).status_code == 200
+
+
+def test_a_save_returns_its_own_version_when_another_save_follows(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    on = local_today()
+    transaction_id = _transaction(
+        api_client, csrf_headers, amount_cents=1_000, title="Lunch", on=on
+    )
+    other_version = datetime(2031, 1, 1)
+    engine = db_session.get_bind()
+    armed = [True]
+
+    # Another request saves right after this one commits.
+    def save_elsewhere(session) -> None:
+        if not armed[0]:
+            return
+        armed[0] = False
+        with engine.begin() as connection:
+            connection.execute(
+                update(Transaction)
+                .where(Transaction.id == transaction_id)
+                .values(updated_at=other_version)
+            )
+
+    event.listen(Session, "after_commit", save_elsewhere)
+    try:
+        response = api_client.put(
+            f"/api/transactions/{transaction_id}",
+            headers=csrf_headers,
+            json={
+                "date": on.isoformat(),
+                "occurred_at": f"{on.isoformat()}T12:00:00",
+                "type": "expense",
+                "amount_cents": 1_200,
+                "title": "Lunch",
+            },
+        )
+    finally:
+        event.remove(Session, "after_commit", save_elsewhere)
+    assert response.status_code == 200
+    assert not armed[0]
+    assert response.json()["updated_at"] != other_version.isoformat()
+
+
+def test_transaction_amounts_and_dates_are_bounded(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    def create(**overrides):
+        body = {
+            "date": "2026-03-01",
+            "occurred_at": "2026-03-01T12:00:00",
+            "type": "expense",
+            "amount_cents": 100,
+            "title": "Bounds",
+        }
+        return api_client.post(
+            "/api/transactions", headers=csrf_headers, json={**body, **overrides}
+        )
+
+    assert create(amount_cents=10**19).status_code == 422
+    assert create(amount_cents=1_000_000_000_001).status_code == 422
+    assert create(date="9999-12-01").status_code == 422
+    assert create(occurred_at="2200-01-01T12:00:00").status_code == 422
+    assert create(amount_cents=1_000_000_000_000).status_code == 200
 
 
 def test_default_periods_end_on_the_app_timezone_today(

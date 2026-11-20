@@ -115,6 +115,23 @@ test.describe("Rules Page", () => {
     await expect(dialog.getByRole("alert")).toHaveText("Enter a match value.")
   })
 
+  test("refuses an amount range whose minimum is above its maximum", async ({ page }) => {
+    await page.goto("/rules")
+    await page.getByRole("button", { name: "Add rule" }).first().click()
+    const dialog = page.getByRole("dialog", { name: "Add rule" })
+    await dialog.getByRole("button", { name: "Amount condition" }).click()
+    const amountPopover = page.getByRole("dialog", { name: "Amount" })
+    await amountPopover.getByRole("textbox", { name: "At least" }).fill("50")
+    await amountPopover.getByRole("textbox", { name: "At most" }).fill("10")
+    await amountPopover.getByRole("button", { name: "Done" }).click()
+    await expect(amountPopover.getByRole("alert")).toHaveText("The min amount is above the max amount.")
+
+    await amountPopover.getByRole("textbox", { name: "At most" }).fill("50")
+    await amountPopover.getByRole("button", { name: "Done" }).click()
+    await expect(amountPopover).toBeHidden()
+    await expect(dialog.getByRole("button", { name: "Amount condition", exact: true })).toContainText("50,00")
+  })
+
   test("creates a rule with a preview and applies it to new transactions", async ({
     page,
     request,

@@ -1,6 +1,11 @@
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException
+from starlette.requests import Request
 
+from expenses.core.body_limit import BodySizeLimitMiddleware
 from expenses.core.config import get_settings
 
 
@@ -393,6 +398,62 @@ def test_auth_cookie_only_trusts_forwarded_proto_from_trusted_proxy(
 
     assert setup.status_code == 200
     assert ("Secure" in setup.headers.get("set-cookie", "")) is expect_secure
+
+
+def test_oversized_bodies_are_refused_before_they_are_read(
+    api_client: TestClient,
+) -> None:
+    read_chunks: list[int] = []
+
+    def body(chunks: int):
+        for index in range(chunks):
+            read_chunks.append(index)
+            yield b"x" * (256 * 1024)
+
+    declared = api_client.post(
+        "/api/auth/login",
+        content=body(8),
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(8 * 256 * 1024),
+        },
+    )
+    assert declared.status_code == 413
+    assert declared.json() == {"detail": "Request body is too large"}
+    assert read_chunks == []
+
+    # Without a Content-Length the body is counted as it arrives.
+    chunked = api_client.post(
+        "/api/auth/login",
+        content=body(8),
+        headers={"Content-Type": "application/json"},
+    )
+    assert chunked.status_code == 413
+    assert chunked.json() == {"detail": "Request body is too large"}
+
+    small = api_client.post("/api/auth/login", json=_credentials("admin", "pw"))
+    assert small.status_code == 409
+
+
+def test_body_cap_counts_a_body_sent_in_several_parts() -> None:
+    parts = [
+        {"type": "http.request", "body": b"x" * (600 * 1024), "more_body": True},
+        {"type": "http.request", "body": b"x" * (600 * 1024), "more_body": False},
+    ]
+    received: list[int] = []
+
+    async def receive():
+        received.append(len(parts[len(received)]["body"]))
+        return parts[len(received) - 1]
+
+    async def app(scope, receive, send):
+        await Request(scope, receive).body()
+
+    scope = {"type": "http", "method": "POST", "path": "/api/ingest", "headers": []}
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(BodySizeLimitMiddleware(app)(scope, receive, None))
+    assert caught.value.status_code == 413
+    assert received == [600 * 1024, 600 * 1024]
 
 
 def test_setup_and_signup_require_minimum_password_length(

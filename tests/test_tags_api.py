@@ -219,3 +219,129 @@ def test_tag_options_list_names_without_totals(
     assert [(tag["id"], tag["name"]) for tag in active] == [(kept.json()["id"], "Trip")]
     assert "usage_count" not in active[0]
     assert {tag["name"] for tag in everything} == {"Trip", "Old"}
+
+
+def test_tag_merge_refuses_different_budget_settings(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    excluded = api_client.post(
+        "/api/tags",
+        headers=csrf_headers,
+        json={"name": "Work expense", "is_hidden_from_budget": True},
+    ).json()["id"]
+    counted = api_client.post(
+        "/api/tags", headers=csrf_headers, json={"name": "Work"}
+    ).json()["id"]
+
+    for path in ("/api/tags/merge/preview", "/api/tags/merge"):
+        response = api_client.post(
+            path,
+            headers=csrf_headers,
+            json={"source_tag_id": excluded, "target_tag_id": counted},
+        )
+        assert (response.status_code, response.json()["detail"]) == (
+            400,
+            "Cannot merge tags with different budget settings: Work expense is "
+            "excluded from budgets and Work is not. Change Exclude from budgets on "
+            "one of them first.",
+        )
+    tags = api_client.get("/api/tags/options").json()["tags"]
+    assert {tag["name"] for tag in tags} == {"Work expense", "Work"}
+
+
+def test_transactions_take_existing_non_ascii_and_refuse_archived_tags(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    def create(tags: list[str]):
+        return api_client.post(
+            "/api/transactions",
+            headers=csrf_headers,
+            json={
+                "date": "2026-03-01",
+                "occurred_at": "2026-03-01T12:00:00",
+                "type": "expense",
+                "amount_cents": 290,
+                "title": "Ticket",
+                "tags": tags,
+            },
+        )
+
+    first = create(["ÖPNV"])
+    second = create(["ÖPNV"])
+    assert first.status_code == 200
+    assert second.status_code == 200, second.text
+    tags = api_client.get("/api/tags").json()["tags"]
+    assert [tag["name"] for tag in tags] == ["ÖPNV"]
+
+    api_client.post(f"/api/tags/{tags[0]['id']}/archive", headers=csrf_headers)
+    refused = create(["öpnv"])
+    assert refused.status_code == 400
+    assert "archived" in refused.json()["detail"]
+
+    bulk = api_client.post(
+        "/api/transactions/bulk/apply",
+        headers=csrf_headers,
+        json={
+            "selection": {"mode": "ids", "transaction_ids": [first.json()["id"]]},
+            "operation": {"tag_patch": {"mode": "add", "tags": ["ÖPNV"]}},
+        },
+    )
+    assert bulk.status_code == 400
+
+
+def test_renaming_deleting_or_merging_a_tag_moves_its_transactions_versions(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    target = api_client.post(
+        "/api/tags", headers=csrf_headers, json={"name": "Target"}
+    ).json()["id"]
+
+    def tagged(name: str) -> tuple[str, int]:
+        response = api_client.post(
+            "/api/transactions",
+            headers=csrf_headers,
+            json={
+                "date": "2026-03-01",
+                "occurred_at": "2026-03-01T12:00:00",
+                "type": "expense",
+                "amount_cents": 290,
+                "title": "Ticket",
+                "tags": [name],
+            },
+        )
+        assert response.status_code == 200
+        tag_id = next(
+            tag["id"]
+            for tag in api_client.get("/api/tags").json()["tags"]
+            if tag["name"] == name
+        )
+        return f"/api/transactions/{response.json()['id']}", tag_id
+
+    def version(url: str) -> str:
+        return api_client.get(url).json()["updated_at"]
+
+    renamed, tag_id = tagged("Business")
+    before = version(renamed)
+    response = api_client.put(
+        f"/api/tags/{tag_id}",
+        headers=csrf_headers,
+        json={"name": "Work", "is_hidden_from_budget": False},
+    )
+    assert response.status_code == 200
+    assert version(renamed) != before
+
+    deleted, tag_id = tagged("Gone")
+    before = version(deleted)
+    response = api_client.delete(f"/api/tags/{tag_id}", headers=csrf_headers)
+    assert response.status_code == 200
+    assert version(deleted) != before
+
+    merged, tag_id = tagged("Source")
+    before = version(merged)
+    response = api_client.post(
+        "/api/tags/merge",
+        headers=csrf_headers,
+        json={"source_tag_id": tag_id, "target_tag_id": target},
+    )
+    assert response.status_code == 200
+    assert version(merged) != before

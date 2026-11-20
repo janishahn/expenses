@@ -1047,7 +1047,7 @@ struct ExpensesAPIClient {
         try await request(path: "/api/transactions", method: "POST", bearerToken: token, body: body)
     }
 
-    func updateTransaction(id: Int, body: TransactionMutationRequest, token: String) async throws -> IDResponse {
+    func updateTransaction(id: Int, body: TransactionMutationRequest, token: String) async throws -> TransactionSavedResponse {
         try await request(path: "/api/transactions/\(id)", method: "PUT", bearerToken: token, body: body)
     }
 
@@ -1474,6 +1474,7 @@ private enum BackendDateParser {
 
     private static func formatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = format

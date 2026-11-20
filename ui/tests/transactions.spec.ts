@@ -222,6 +222,38 @@ test.describe("Transactions Page", () => {
     await expect(list.getByText(/^Tue 10 Mar/).locator("..")).toContainText("− 15,00 €")
   })
 
+  test("keeps one band per booking date when a row's time falls on another day", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const expenseId = await ensureCategory(request, token, "expense", "E2E Bands")
+    // Letters only: fuzzy search would join two markers that share a timestamp's digits.
+    const marker = `daybands${Math.random().toString(36).slice(2).replace(/[0-9]/g, "")}`
+    const day = new Date()
+    const localToday = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`
+    const add = (title: string, date: string, occurredAt: string, cents: number) =>
+      createTransaction(request, token, {
+        date,
+        occurred_at: occurredAt,
+        type: "expense",
+        amount_cents: cents,
+        category_id: expenseId,
+        title: `${marker} ${title}`,
+        tags: [],
+      })
+    await add("late", localToday, `${localToday}T13:00:00`, 100)
+    // Booked on 11 March, but its time today sorts it between today's rows.
+    await add("backdated", "2026-03-11", `${localToday}T12:30:00`, 1000)
+    await add("early", localToday, `${localToday}T12:00:00`, 300)
+    await add("march", "2026-03-11", "2026-03-11T09:00:00", 500)
+
+    await page.goto(`/transactions?q=${marker}`)
+    const list = page.getByRole("list", { name: "Transactions" })
+    await expect(list.getByRole("listitem")).toHaveCount(4)
+    await expect(list.getByText(/^Today$/)).toHaveCount(1)
+    await expect(list.getByText(/^Today$/).locator("..")).toContainText("− 4,00 €")
+    await expect(list.getByText(/^Wed 11 Mar/)).toHaveCount(1)
+    await expect(list.getByText(/^Wed 11 Mar/).locator("..")).toContainText("− 15,00 €")
+  })
+
   test("fuzzy-searches transaction descriptions and closes the search with Esc", async ({
     page,
     request,
@@ -457,6 +489,38 @@ test.describe("Transactions Page", () => {
     for (const id of ids) {
       expect((await request.get(`/api/transactions/${id}`)).status()).toBe(404)
     }
+  })
+
+  test("bulk actions skip a selected row that left the filtered list", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const sourceId = await createCategory(request, token, "expense", `E2E Left Source ${stamp}`)
+    const otherName = `E2E Left Other ${stamp}`
+    const otherId = await createCategory(request, token, "expense", otherName)
+    const marker = `filteredleft${stamp}q`
+    const movedId = await createExpense(request, token, sourceId, `${marker} moved`)
+    const keptId = await createExpense(request, token, sourceId, `${marker} kept`)
+
+    await page.goto(`/transactions?category=${sourceId}&q=${marker}`)
+    await selectRow(page, `${marker} moved`)
+    await selectRow(page, `${marker} kept`)
+    const bar = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bar).toContainText("2 selected")
+
+    // Moving a row to another category in its peek takes it out of this filtered list.
+    const moved = page.getByRole("listitem", { name: `${marker} moved` })
+    await moved.click()
+    const peek = page.getByRole("complementary", { name: `${marker} moved` })
+    await peek.getByRole("button", { name: /^Category / }).click()
+    await page.getByRole("option", { name: otherName }).click()
+    await expect(moved).toHaveCount(0)
+    await expect(bar).toContainText("1 selected")
+
+    await bar.getByRole("button", { name: "Delete" }).click()
+    await page.getByRole("dialog", { name: "Delete 1 transaction?" }).getByRole("button", { name: "Delete" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Moved 1 transaction to Trash" })).toBeVisible()
+    expect((await request.get(`/api/transactions/${keptId}`)).status()).toBe(404)
+    expect((await fetchTransaction(request, movedId)).category_id).toBe(otherId)
   })
 
   test("disables Select all matching until the refreshed list settles", async ({
@@ -984,6 +1048,44 @@ test.describe("Transactions Page", () => {
 
     await sidebar.getByRole("link", { name: "Dashboard", exact: true }).click()
     await expect.poll(() => forecastRequests).toBeGreaterThanOrEqual(2)
+  })
+
+  test("bulk actions skip a selected row that left the inbox", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    const stamp = Date.now()
+    const pillName = `E2E Left Pill ${stamp}`
+    const pillId = await createCategory(request, token, "expense", pillName)
+    const bulkName = `E2E Left Bulk ${stamp}`
+    const bulkId = await createCategory(request, token, "expense", bulkName)
+    const marker = `inboxleft${stamp}q`
+    const leftId = await createUncategorizedExpense(request, token, `${marker} filed`)
+    const keptId = await createUncategorizedExpense(request, token, `${marker} kept`)
+
+    await page.goto(`/transactions/inbox?q=${marker}`)
+    for (const name of ["filed", "kept"]) {
+      await page.getByRole("listitem", { name: `${marker} ${name}` }).hover()
+      await page.getByRole("checkbox", { name: `Select ${marker} ${name}` }).check()
+    }
+    const bar = page.getByRole("toolbar", { name: "Selected rows" })
+    await expect(bar).toContainText("2 selected")
+
+    const filed = page.getByRole("listitem", { name: `${marker} filed` })
+    await filed.getByRole("button", { name: "Category" }).click()
+    await page.getByRole("combobox").fill(pillName)
+    await page.getByRole("option", { name: pillName }).click()
+    await expect(filed).toHaveCount(0)
+    await expect(bar).toContainText("1 selected")
+
+    await bar.getByRole("button", { name: "Category" }).click()
+    await page.getByRole("combobox").fill(bulkName)
+    await page.getByRole("option", { name: bulkName }).click()
+    await page
+      .getByRole("dialog", { name: "Change the category of 1 transaction?" })
+      .getByRole("button", { name: "Apply" })
+      .click()
+    await expect(page.getByRole("status")).toContainText("Updated 1 transaction")
+    expect((await fetchTransaction(request, leftId)).category_id).toBe(pillId)
+    expect((await fetchTransaction(request, keptId)).category_id).toBe(bulkId)
   })
 
   test("accepts and rejects local category suggestions", async ({ page }) => {

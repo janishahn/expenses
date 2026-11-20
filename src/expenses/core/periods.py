@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 
@@ -24,6 +24,27 @@ def add_months(base: date, count: int) -> date:
     year = month_index // 12
     month = (month_index % 12) + 1
     return date(year, month, 1)
+
+
+def previous_period(period: Period) -> Period:
+    """The comparison window just before `period`.
+
+    A run of whole calendar months compares with the same number of whole
+    months before it; any other range with the same number of days before it.
+    """
+    prev_end = period.start - timedelta(days=1)
+    if period.start.day == 1 and period.end == month_end(
+        period.end.year, period.end.month
+    ):
+        months = (
+            (period.end.year - period.start.year) * 12
+            + period.end.month
+            - period.start.month
+            + 1
+        )
+        return Period("prev", add_months(period.start, -months), prev_end)
+    days = (period.end - period.start).days + 1
+    return Period("prev", prev_end - timedelta(days=days - 1), prev_end)
 
 
 def resolve_period(

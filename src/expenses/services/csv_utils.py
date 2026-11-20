@@ -1,12 +1,11 @@
 import csv
 import re
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from io import StringIO
-from typing import Sequence
+from typing import Iterable, Iterator, Sequence
 
 from expenses.db.models import Transaction, TransactionType
-from expenses.schemas import CSVRow
+from expenses.schemas import MAX_AMOUNT_CENTS, CSVRow
 
 
 def sanitize_csv_value(value: str) -> str:
@@ -47,17 +46,50 @@ def parse_date(value: str):
         return datetime.strptime(value, "%d.%m.%Y").date()
 
 
+# Decimals past the cents may only be trailing zeros, as in 1234,5600.
+_PLAIN_AMOUNT = re.compile(r"([0-9]+)(?:[.,](?:([0-9]{1,2})0*)?)?")
+_GERMAN_GROUPED_AMOUNT = re.compile(
+    r"([0-9]{1,3}(?:\.[0-9]{3})+)(?:,(?:([0-9]{1,2})0*)?)?"
+)
+_ENGLISH_GROUPED_AMOUNT = re.compile(
+    r"([0-9]{1,3}(?:,[0-9]{3})+)(?:\.(?:([0-9]{1,2})0*)?)?"
+)
+# One separator before exactly three digits reads as 1000 or as 1.000.
+_AMBIGUOUS_AMOUNT = re.compile(r"[0-9]{1,3}[.,][0-9]{3}")
+
+
+def unsigned_amount_cents(value: str) -> int:
+    """Read an unsigned amount such as 12,50, 1.234,56 or 1,234.56 as cents."""
+    if value[:1] in {".", ","} and value[1:2].isdigit():
+        value = "0" + value
+    if _AMBIGUOUS_AMOUNT.fullmatch(value):
+        raise ValueError(
+            f"Ambiguous amount '{value}': write it with decimals, such as 1000,00"
+        )
+    for pattern in (_PLAIN_AMOUNT, _GERMAN_GROUPED_AMOUNT, _ENGLISH_GROUPED_AMOUNT):
+        match = pattern.fullmatch(value)
+        if match is None:
+            continue
+        whole = match.group(1).replace(".", "").replace(",", "")
+        if len(whole) > 18:
+            raise ValueError("Amount is too large")
+        cents = int(whole) * 100 + int((match.group(2) or "0").ljust(2, "0"))
+        if cents > MAX_AMOUNT_CENTS:
+            raise ValueError("Amount is too large")
+        return cents
+    raise ValueError("Invalid amount")
+
+
 def parse_amount(value: str, *, allow_negative: bool = False) -> int:
     clean = value.strip().replace("€", "").replace("$", "").replace(" ", "")
-    clean = clean.replace(",", ".")
-    if clean.count(".") > 1:
-        parts = clean.split(".")
-        clean = "".join(parts[:-1]) + "." + parts[-1]
-    try:
-        amount = Decimal(clean)
-    except InvalidOperation as exc:
-        raise ValueError("Invalid amount") from exc
-    cents = int((amount * 100).quantize(Decimal("1")))
+    if not clean:
+        raise ValueError("Amount is required")
+    negative = clean.startswith("-")
+    if clean[:1] in {"+", "-"}:
+        clean = clean[1:]
+    cents = unsigned_amount_cents(clean)
+    if negative:
+        cents = -cents
     if cents < 0 and not allow_negative:
         raise ValueError("Amount must be positive")
     return cents
@@ -85,7 +117,7 @@ def parse_csv(
                 "y",
                 "on",
             }
-            amount_value = parse_amount(raw.get("Amount") or "0")
+            amount_value = parse_amount(raw.get("Amount") or "")
             category = (raw.get("Category") or "").strip()
             title = (raw.get("Title") or "").strip()
             if not title:
@@ -110,6 +142,11 @@ def parse_csv(
 
 
 def export_transactions(transactions: Sequence[Transaction]) -> str:
+    return "".join(iter_export_transactions(transactions))
+
+
+def iter_export_transactions(transactions: Iterable[Transaction]) -> Iterator[str]:
+    """Yield the export CSV in chunks so a large ledger never sits in memory."""
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -123,7 +160,7 @@ def export_transactions(transactions: Sequence[Transaction]) -> str:
             "Description",
         ]
     )
-    for txn in transactions:
+    for index, txn in enumerate(transactions, start=1):
         writer.writerow(
             [
                 txn.date.isoformat(),
@@ -131,8 +168,16 @@ def export_transactions(transactions: Sequence[Transaction]) -> str:
                 "1" if txn.is_reimbursement else "0",
                 f"{txn.amount_cents / 100:.2f}",
                 sanitize_csv_value(txn.category.name if txn.category else ""),
-                sanitize_csv_value(txn.title or ""),
+                sanitize_csv_value(
+                    txn.title
+                    if (txn.title or "").strip()
+                    else (txn.category.name if txn.category else "")
+                ),
                 sanitize_csv_value(txn.description or ""),
             ]
         )
-    return output.getvalue()
+        if index % 500 == 0:
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate()
+    yield output.getvalue()

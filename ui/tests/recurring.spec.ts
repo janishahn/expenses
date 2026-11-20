@@ -14,12 +14,19 @@ type StoredRule = {
   category_id: number
   interval_unit: string
   interval_count: number
+  next_occurrence: string
   end_date: string | null
   auto_post: boolean
   skip_weekends: boolean
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
+// A date as the peek's Upcoming chips show it: "13 Nov" this year, "13 Nov 2027" otherwise.
+const chipDate = (iso: string) => {
+  const date = new Date(`${iso}T00:00:00Z`)
+  const label = `${date.getUTCDate()} ${date.toLocaleString("en-US", { month: "short", timeZone: "UTC" })}`
+  return date.getUTCFullYear() === new Date().getFullYear() ? label : `${label} ${date.getUTCFullYear()}`
+}
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
@@ -127,6 +134,14 @@ test.describe("Recurring page", () => {
       const incomeId = await createCategory(request, csrfToken, "income", "Stats income")
       await seedRule(request, csrfToken, expenseId, { name: "Gym", amount_cents: 2000 })
       await seedRule(request, csrfToken, expenseId, { name: "Phone", amount_cents: 1000 })
+      const endedId = await createCategory(request, csrfToken, "expense", "Stats ended")
+      await seedRule(request, csrfToken, endedId, {
+        name: "Closed club",
+        amount_cents: 5000,
+        anchor_date: "2025-01-15",
+        next_occurrence: "2025-01-15",
+        end_date: "2025-06-30",
+      })
       await seedRule(request, csrfToken, incomeId, {
         name: "Salary",
         type: "income",
@@ -152,6 +167,7 @@ test.describe("Recurring page", () => {
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/20,00\s*€/)
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/240\s*€/)
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/1\s200\s*€/)
+      await expect(audit.getByRole("listitem", { name: "Closed club" })).toHaveCount(0)
 
       await page
         .getByRole("region", { name: "Annual mix" })
@@ -162,6 +178,29 @@ test.describe("Recurring page", () => {
       await expect(table).toContainText("Stats expense")
       await expect(table).toContainText(/360,00\s*€/)
       await expect(table).toContainText("100 %")
+      // An ended rule costs nothing more, so it stays out of the mix.
+      await expect(table).not.toContainText("Stats ended")
+    } finally {
+      await request.dispose()
+    }
+  })
+
+  test("shows no Audit costs when every expense rule has ended", async ({ page }) => {
+    await page.goto("/recurring")
+    const { request, csrfToken } = await loginAsIsolatedUser(page)
+    try {
+      const endedId = await createCategory(request, csrfToken, "expense", "Audit ended only")
+      await seedRule(request, csrfToken, endedId, {
+        name: "Closed gym",
+        amount_cents: 5000,
+        anchor_date: "2025-01-15",
+        next_occurrence: "2025-01-15",
+        end_date: "2025-06-30",
+      })
+
+      await page.goto("/recurring?view=audit")
+      await expect(page.getByText("No recurring expenses.")).toBeVisible()
+      await expect(page.getByRole("list", { name: "True cost" })).toHaveCount(0)
     } finally {
       await request.dispose()
     }
@@ -232,7 +271,7 @@ test.describe("Recurring page", () => {
     await expect(weekends).toHaveAttribute("aria-pressed", "true")
   })
 
-  test("validates the amount before adding a rule", async ({ page }) => {
+  test("validates the amount and name before adding a rule", async ({ page }) => {
     await page.goto("/recurring")
     await addRule(page).click()
     const dialog = page.getByRole("dialog", { name: "Add rule" })
@@ -240,6 +279,12 @@ test.describe("Recurring page", () => {
     await dialog.getByRole("textbox", { name: "Amount" }).fill("abc")
     await dialog.getByRole("button", { name: "Add rule" }).click()
     await expect(dialog.getByRole("alert")).toHaveText("Enter a valid amount.")
+    await expect(dialog).toBeVisible()
+
+    await dialog.getByRole("textbox", { name: "Amount" }).fill("12")
+    await dialog.getByRole("textbox", { name: "Name" }).fill("   ")
+    await dialog.getByRole("button", { name: "Add rule" }).click()
+    await expect(dialog.getByRole("alert")).toHaveText("Enter a name.")
     await expect(dialog).toBeVisible()
 
     await dialog.getByRole("button", { name: "Cancel" }).click()
@@ -282,6 +327,120 @@ test.describe("Recurring page", () => {
     await peek.getByRole("textbox", { name: "Name" }).press("Escape")
     await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
     expect((await fetchRule(request, id)).name).toBe(renamed)
+
+    await peek.getByRole("button", { name: "Edit Name" }).click()
+    await peek.getByRole("textbox", { name: "Name" }).fill("")
+    await peek.getByRole("textbox", { name: "Name" }).press("Enter")
+    await expect(peek.getByText("Enter a name.")).toBeVisible()
+    await peek.getByRole("textbox", { name: "Name" }).press("Escape")
+    await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
+    expect((await fetchRule(request, id)).name).toBe(renamed)
+  })
+
+  // A weekly rule from Thursday 1 Jan 2026 whose next posting is a Thursday at least four days ahead.
+  async function seedThursdayRule(request: APIRequestContext) {
+    const { token, categoryId } = await seedExpenseCategory(request, "Start")
+    const next = new Date(Date.now() + 4 * 86_400_000)
+    while (next.getUTCDay() !== 4) next.setUTCDate(next.getUTCDate() + 1)
+    const nextIso = next.toISOString().slice(0, 10)
+    const { id, name } = await seedRule(request, token, categoryId, {
+      anchor_date: "2026-01-01",
+      next_occurrence: nextIso,
+      interval_unit: "week",
+    })
+    const monday = new Date(next.getTime() - 3 * 86_400_000).toISOString().slice(0, 10)
+    return { id, name, next: nextIso, monday }
+  }
+
+  async function changeStartToMonday(page: Page, name: string) {
+    const peek = page.getByRole("complementary", { name })
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Thursday" })).toBeVisible()
+    await peek.getByRole("button", { name: "Starts 1 Jan 2026" }).click()
+    await page.getByRole("textbox", { name: "Starts" }).fill("2025-12-29")
+    await page.getByRole("button", { name: "Save" }).click()
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Monday" })).toBeVisible()
+    return peek
+  }
+
+  test("moves the next occurrence onto the new schedule when the start changes", async ({
+    page,
+    request,
+  }) => {
+    const { id, name, next, monday } = await seedThursdayRule(request)
+    await page.goto(`/recurring?peek=${id}`)
+    const peek = await changeStartToMonday(page, name)
+
+    // The coming posting moves to the nearest Monday instead of staying on Thursday.
+    await expect.poll(async () => (await fetchRule(request, id)).next_occurrence).toBe(monday)
+    const upcoming = peek.locator("section").filter({ hasText: "Upcoming" })
+    await expect(upcoming).toContainText(chipDate(monday))
+    await expect(upcoming).not.toContainText(chipDate(next))
+  })
+
+  test("keeps the moved next occurrence when another edit follows before the start is saved", async ({
+    page,
+    request,
+  }) => {
+    const { id, name, monday } = await seedThursdayRule(request)
+    await page.goto(`/recurring?peek=${id}`)
+    // The start's save is held, so the next edit queues behind it as on a slow connection.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    await page.route(
+      `**/api/recurring/${id}`,
+      async (route) => {
+        await held
+        await route.continue()
+      },
+      { times: 1 },
+    )
+    const peek = await changeStartToMonday(page, name)
+    await peek.getByRole("switch", { name: "Skip weekends" }).click()
+    release()
+
+    await expect
+      .poll(async () => {
+        const rule = await fetchRule(request, id)
+        return `${rule.next_occurrence} ${rule.skip_weekends}`
+      })
+      .toBe(`${monday} true`)
+  })
+
+  test("keeps the moved next occurrence when the reload after the start's save fails", async ({ page, request }) => {
+    const { id, name, monday } = await seedThursdayRule(request)
+    await page.goto(`/recurring?peek=${id}`)
+    // The start's save is held, so the next edit queues behind it.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let stored = false
+    await page.route(
+      `**/api/recurring/${id}`,
+      async (route) => {
+        await held
+        const response = await route.fetch()
+        stored = true
+        await route.fulfill({ response })
+      },
+      { times: 1 },
+    )
+    // Only the list read that follows the stored start fails.
+    let failures = 0
+    await page.route("**/api/recurring", async (route) => {
+      if (route.request().method() !== "GET" || !stored || failures === 1) return route.continue()
+      failures += 1
+      await route.fulfill({ status: 503, json: { detail: "Unavailable" } })
+    })
+    const peek = await changeStartToMonday(page, name)
+    await peek.getByRole("switch", { name: "Skip weekends" }).click()
+    release()
+
+    await expect.poll(() => failures).toBe(1)
+    await expect
+      .poll(async () => {
+        const rule = await fetchRule(request, id)
+        return `${rule.next_occurrence} ${rule.skip_weekends}`
+      })
+      .toBe(`${monday} true`)
   })
 
   test("changes type, category, schedule, end date and currency from the peek properties", async ({

@@ -167,6 +167,45 @@ def test_rule_does_not_override_non_uncategorized_category() -> None:
         assert "Streaming" in tag_names
 
 
+def test_rule_skips_archived_category_and_lets_the_next_rule_apply() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        categories = CategoryService(session)
+        old = categories.create(
+            CategoryIn(name="Coffee", type=TransactionType.expense, order=0)
+        )
+        dining = categories.create(
+            CategoryIn(name="Dining", type=TransactionType.expense, order=0)
+        )
+        for priority, category in ((10, old), (20, dining)):
+            RuleService(session).create(
+                RuleIn(
+                    name=f"Coffee to {category.name}",
+                    priority=priority,
+                    match_type=RuleMatchType.contains,
+                    match_value="coffee",
+                    set_category_id=category.id,
+                )
+            )
+        categories.archive(old.id)
+
+        txn = TransactionService(session).create(
+            TransactionIn(
+                date=date(2025, 1, 5),
+                occurred_at=datetime(2025, 1, 5, 12, 0),
+                type=TransactionType.expense,
+                amount_cents=300,
+                category_id=None,
+                title="Coffee shop",
+                tags=[],
+            )
+        )
+
+        assert txn.category_id == dining.id
+
+
 def test_deleting_tag_removes_rule_add_tags_reference() -> None:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -360,6 +399,26 @@ def test_rule_applies_during_csv_import_when_category_is_uncategorized() -> None
         assert {tag.name for tag in txn.tags} == {"Streaming"}
 
 
+def test_csv_import_rejects_out_of_range_amounts_and_dates() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        CategoryService(session).create(
+            CategoryIn(name="Food", type=TransactionType.expense, order=0)
+        )
+        _, errors = CSVService(session).preview(
+            "Date,Type,IsReimbursement,Amount,Category,Title\n"
+            "2025-01-05,expense,0,100000000000000,Food,Huge\n"
+            "9999-12-05,expense,0,1.00,Food,Far\n"
+        )
+
+        assert errors == [
+            "Row 1: Amount is too large",
+            "Row 2: Date must fall between 1900-01-01 and 2199-12-31",
+        ]
+
+
 def test_rule_service_rejects_regex_over_configured_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -382,3 +441,60 @@ def test_rule_service_rejects_regex_over_configured_limit(
                 )
     finally:
         get_settings.cache_clear()
+
+
+def test_csv_import_fails_when_regex_rules_exceed_the_import_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_RULE_REGEX_TIMEOUT_SECONDS", "0.01")
+    get_settings.cache_clear()
+    try:
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            CategoryService(session).create(
+                CategoryIn(name="Uncategorized", type=TransactionType.expense, order=0)
+            )
+            RuleService(session).create(
+                RuleIn(
+                    name="Slow regex",
+                    enabled=True,
+                    priority=10,
+                    match_type=RuleMatchType.regex,
+                    match_value="(a|aa)+$",
+                    add_tags=["Slow"],
+                )
+            )
+            title = "a" * 40 + "b"
+            content = "Date,Type,IsReimbursement,Amount,Category,Title\n" + (
+                f"2025-01-05,expense,0,1.00,Uncategorized,{title}\n" * 200
+            )
+
+            with pytest.raises(ValueError, match="Regex rules took too long"):
+                CSVService(session).commit(content)
+            session.rollback()
+
+            assert session.scalars(select(Transaction)).all() == []
+    finally:
+        get_settings.cache_clear()
+
+
+def test_rule_amount_bounds_are_validated(api_client, csrf_headers) -> None:
+    def create(**amounts):
+        return api_client.post(
+            "/api/rules",
+            headers=csrf_headers,
+            json={
+                "name": "Big",
+                "match_type": "contains",
+                "match_value": "shop",
+                **amounts,
+            },
+        )
+
+    inverted = create(min_amount_cents=5_000, max_amount_cents=1_000)
+    assert inverted.status_code == 422
+    assert "minimum amount cannot be above the maximum" in inverted.text
+    assert create(max_amount_cents=10**19).status_code == 422
+    assert create(min_amount_cents=1_000, max_amount_cents=1_000).status_code == 200

@@ -69,8 +69,8 @@ export function formatAmount(cents: number, kind: AmountKind = "balance", decima
 }
 
 // For tooltips, table cells and accessible names: masked while privacy mode is on.
-export function formatAmountPrivate(cents: number, kind: AmountKind = "balance", decimals = true): string {
-  return isPrivacyOn() ? "•••• €" : formatAmount(cents, kind, decimals)
+export function formatAmountPrivate(cents: number, kind: AmountKind = "balance", decimals = true, symbol = "€"): string {
+  return isPrivacyOn() ? `•••• ${symbol}` : formatAmount(cents, kind, decimals, symbol)
 }
 
 // en-US, because en-GB writes September as "Sept".

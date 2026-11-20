@@ -25,7 +25,7 @@ import { useIsDesktop } from "../components/ui/layout-state"
 import { AmountCell, Cell, List, Row, TransactionAmount, type Columns } from "../components/ui/LedgerRow"
 import { MenuItem } from "../components/ui/Menu"
 import { ErrorBody, LoadingBody, Panel, ViewRow } from "../components/ui/Panel"
-import { Peek, PeekLayout, PeekSection } from "../components/ui/Peek"
+import { Peek, PeekHeadline, PeekLayout, PeekSection } from "../components/ui/Peek"
 import { PeriodControl } from "../components/ui/PeriodControl"
 import { DEFAULT_PERIOD_PRESETS, periodFromSearch, periodLabel, writePeriodToSearch, type PeriodSelection } from "../components/ui/period"
 import { Pill } from "../components/ui/Pill"
@@ -224,6 +224,8 @@ function CategoryPeek({
     onError: (failure) => showToast({ message: getApiErrorMessage(failure, "Unable to archive the category.") }),
   })
   const archived = Boolean(category.archived_at)
+  // The app files transactions without a category under this one, found by its name.
+  const fixed = category.name.toLowerCase() === "uncategorized"
   const sum = category.type === "income" ? category.income_cents : category.expense_cents
   const recentItems = recent.data?.items ?? []
   const fromParams = new URLSearchParams(ledgerParams)
@@ -239,7 +241,7 @@ function CategoryPeek({
           <MenuItem icon={ArrowCounterClockwiseIcon} onSelect={() => restore.mutate()}>
             Restore
           </MenuItem>
-        ) : (
+        ) : fixed ? undefined : (
           <>
             <MenuItem icon={GitMergeIcon} onSelect={() => setMerging(true)}>
               Merge into…
@@ -251,20 +253,24 @@ function CategoryPeek({
         )
       }
     >
-      <InlineText
-        variant="title"
-        label="Name"
-        value={category.name}
-        error={errors.name}
-        onCancel={() => setError("name", null)}
-        onSave={(next) => {
-          if (!next.trim()) {
-            setError("name", "Enter a category name.")
-            return false
-          }
-          return save("name", { name: next.trim() })
-        }}
-      />
+      {fixed ? (
+        <PeekHeadline title={category.name} />
+      ) : (
+        <InlineText
+          variant="title"
+          label="Name"
+          value={category.name}
+          error={errors.name}
+          onCancel={() => setError("name", null)}
+          onSave={(next) => {
+            if (!next.trim()) {
+              setError("name", "Enter a category name.")
+              return false
+            }
+            return save("name", { name: next.trim() })
+          }}
+        />
+      )}
       <PropertyList>
         <Property label="Type">{category.type === "income" ? "Income" : "Expense"}</Property>
         <Property label="Icon" editable error={errors.icon}>

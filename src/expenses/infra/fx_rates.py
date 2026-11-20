@@ -36,9 +36,14 @@ class FxQuote:
 
 
 class FxRateService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, cache_in_session: bool = False) -> None:
         self.session = session
         self.settings = get_settings()
+        # A caller that writes and commits (recurring posting) caches fetched
+        # quotes in its own transaction: a second connection would wait for, or
+        # invalidate, the write lock that transaction holds. Read-only callers
+        # never commit, so they cache through a separate session.
+        self.cache_in_session = cache_in_session
 
     def resolve_usd_to_eur_quotes(
         self,
@@ -192,44 +197,41 @@ class FxRateService:
 
     def _store_quote(self, lookup_date: date, quote: FxQuote) -> FxQuote:
         rate_micros = self.rate_to_micros(quote.rate)
-        cache_session = sessionmaker(
-            bind=self.session.get_bind(),
-            autoflush=False,
-            expire_on_commit=False,
-        )()
-        try:
-            values = {
-                "base_currency_code": _USD,
-                "quote_currency_code": _EUR,
-                "lookup_date": lookup_date,
+        values = {
+            "base_currency_code": _USD,
+            "quote_currency_code": _EUR,
+            "lookup_date": lookup_date,
+            "effective_date": quote.rate_date,
+            "rate_micros": rate_micros,
+            "provider": quote.provider,
+            "fetched_at": quote.fetched_at,
+        }
+        bind = self.session.get_bind()
+        if bind.dialect.name == "postgresql":
+            stmt = postgresql_insert(FxQuoteCache).values(**values)
+        else:
+            stmt = sqlite_insert(FxQuoteCache).values(**values)
+        upsert = stmt.on_conflict_do_update(
+            index_elements=[
+                FxQuoteCache.base_currency_code,
+                FxQuoteCache.quote_currency_code,
+                FxQuoteCache.lookup_date,
+            ],
+            set_={
                 "effective_date": quote.rate_date,
                 "rate_micros": rate_micros,
                 "provider": quote.provider,
                 "fetched_at": quote.fetched_at,
-            }
-            bind = cache_session.get_bind()
-            if bind.dialect.name == "postgresql":
-                stmt = postgresql_insert(FxQuoteCache).values(**values)
-            else:
-                stmt = sqlite_insert(FxQuoteCache).values(**values)
-            cache_session.execute(
-                stmt.on_conflict_do_update(
-                    index_elements=[
-                        FxQuoteCache.base_currency_code,
-                        FxQuoteCache.quote_currency_code,
-                        FxQuoteCache.lookup_date,
-                    ],
-                    set_={
-                        "effective_date": quote.rate_date,
-                        "rate_micros": rate_micros,
-                        "provider": quote.provider,
-                        "fetched_at": quote.fetched_at,
-                    },
-                )
-            )
-            cache_session.commit()
-        finally:
-            cache_session.close()
+            },
+        )
+        if self.cache_in_session:
+            self.session.execute(upsert)
+        else:
+            with sessionmaker(
+                bind=bind, autoflush=False, expire_on_commit=False
+            )() as cache_session:
+                cache_session.execute(upsert)
+                cache_session.commit()
         return FxQuote(
             provider=quote.provider,
             base=_USD.value,

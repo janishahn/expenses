@@ -12,6 +12,8 @@ final class FieldSaves<Field: CaseIterable & Hashable, Body> {
     // The record as last read or saved, for a save that runs after another record took
     // the model's place, as when the screen closed.
     @ObservationIgnored private var base: Body?
+    // The entered values the running save carries.
+    @ObservationIgnored private var sending: [Field: Entry] = [:]
 
     private struct Entry {
         let id = UUID()
@@ -27,26 +29,47 @@ final class FieldSaves<Field: CaseIterable & Hashable, Body> {
         entered[field] = Entry(change: change)
     }
 
-    /// Shows `change` at once and saves it after the saves before it. `stored` reads the
-    /// record when the save runs; `commit` returns why the save failed, or nil.
+    /// Drops the values the running save carries, as when the server refused it, so no
+    /// later save sends them, and shows `message` on their fields. A value entered again
+    /// since that save started stays. Returns the fields dropped.
+    @discardableResult
+    func discardSending(_ message: String) -> Set<Field> {
+        var dropped: Set<Field> = []
+        for (field, entry) in sending where entered[field]?.id == entry.id {
+            entered[field] = nil
+            errors[field] = message
+            dropped.insert(field)
+        }
+        return dropped
+    }
+
+    /// Shows `change` at once and saves it after the saves before it; without `change`, saves
+    /// the value already entered for `field`. `stored` reads the record when the save runs;
+    /// `commit` returns why the save failed, or nil, and can update the sent body to the
+    /// record as the server saved it.
     func save(
         _ field: Field,
         stored: @escaping @MainActor () -> Body?,
-        commit: @escaping @MainActor (Body) async -> String?,
-        _ change: @escaping (inout Body) -> Void
+        commit: @escaping @MainActor (inout Body) async -> String?,
+        _ change: ((inout Body) -> Void)?
     ) {
-        enter(field, change)
+        if let change {
+            enter(field, change)
+        }
         errors[field] = nil
         base = stored() ?? base
         let previous = queue
         queue = Task {
             await previous?.value
-            guard let record = stored() ?? base else {
+            // An earlier save may have carried or dropped every entered value.
+            guard !entered.isEmpty, let record = stored() ?? base else {
                 return
             }
             let sent = entered
-            let body = apply(sent, to: record)
-            if let failure = await commit(body) {
+            var body = apply(sent, to: record)
+            sending = sent
+            defer { sending = [:] }
+            if let failure = await commit(&body) {
                 errors[field] = failure
                 return
             }

@@ -130,6 +130,8 @@ struct FieldError: View {
         Text(message)
             .font(.footnote)
             .foregroundStyle(ExpensesTheme.expense(for: scheme))
+            // A list row would cut a long message to one line.
+            .fixedSize(horizontal: false, vertical: true)
             // VoiceOver says why a submit or save did not go through.
             .task(id: message) {
                 AccessibilityNotification.Announcement(message).post()

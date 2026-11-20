@@ -2,6 +2,8 @@ from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from expenses.recurrence.engine import local_today
+
 
 def _create_category(
     client: TestClient, headers: dict[str, str], name: str, txn_type: str
@@ -395,3 +397,177 @@ def test_burndown_matches_progress_when_hidden_budget_tags_exist(
     assert burndown_response.status_code == 200
     daily_series = burndown_response.json()["daily_series"]
     assert daily_series[-1]["cumulative_cents"] == 10_000
+
+
+def test_dashboard_budget_pace_counts_spend_up_to_the_period_end(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": None,
+            "amount_cents": 100_000,
+            "starts_on": "2025-11-01",
+        },
+    )
+    assert response.status_code == 200
+    for day, amount in ((1, 5_000), (19, 60_000)):
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=date(2025, 11, day),
+            txn_type="expense",
+            amount_cents=amount,
+            category_id=category_id,
+            title=f"Nov {day}",
+        )
+
+    response = api_client.get(
+        "/api/dashboard?period=custom&start=2025-11-01&end=2025-11-05"
+    )
+    assert response.status_code == 200
+    pace = response.json()["budget_pace"]
+    # Pace is as of Nov 5, so the Nov 19 purchase is not spent yet.
+    assert pace["spent_cents"] == 5_000
+    assert round(pace["velocity_ratio"], 2) == 0.3
+
+    # A completed month still counts all of its spending.
+    response = api_client.get(
+        "/api/dashboard?period=custom&start=2025-11-01&end=2025-11-30"
+    )
+    assert response.json()["budget_pace"]["spent_cents"] == 65_000
+
+
+def test_budget_progress_does_not_count_expenses_dated_after_today(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = local_today()
+    month_value = f"{today.year:04d}-{today.month:02d}"
+    category_id = _create_category(api_client, csrf_headers, "Planned", "expense")
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": None,
+            "amount_cents": 100_000,
+            "starts_on": f"{month_value}-01",
+        },
+    )
+    assert response.status_code == 200
+
+    def spent() -> tuple[int, int]:
+        budgets = api_client.get(f"/api/budgets?month={month_value}").json()
+        (overall,) = budgets["progress"]
+        pace = api_client.get("/api/dashboard?period=this_month").json()
+        return overall["spent_cents"], pace["budget_pace"]["spent_cents"]
+
+    before = spent()
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=today + timedelta(days=1),
+        txn_type="expense",
+        amount_cents=40_000,
+        category_id=category_id,
+        title="Due tomorrow",
+    )
+    assert spent() == before
+
+
+def test_budgets_for_a_later_month_count_spend_as_of_today(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Planned", "expense")
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": None,
+            "amount_cents": 100_000,
+            "starts_on": "2100-01-01",
+        },
+    )
+    assert response.status_code == 200
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date(2100, 3, 10),
+        txn_type="expense",
+        amount_cents=10_000,
+        category_id=category_id,
+        title="Planned",
+    )
+
+    (overall,) = api_client.get("/api/budgets?month=2100-03").json()["progress"]
+    assert overall["spent_cents"] == 0
+    assert overall["remaining_cents"] == 100_000
+    dashboard = api_client.get(
+        "/api/dashboard?period=custom&start=2100-03-01&end=2100-03-31"
+    ).json()
+    # A later month is shown as of its first day.
+    assert dashboard["budget_pace"]["spent_cents"] == 0
+    # The burndown chart still plots every day of the month.
+    burndown = api_client.get("/api/budgets/burndown?month=2100-03").json()
+    assert burndown["daily_series"][-1]["cumulative_cents"] == 10_000
+
+
+def test_budget_endpoints_reject_malformed_query_values(
+    api_client: TestClient,
+) -> None:
+    for url, detail in (
+        ("/api/budgets?view=year&year=abc", "Invalid year value"),
+        ("/api/budgets?view=year&year=0", "Invalid year value"),
+        ("/api/budgets?month=0-05", "Invalid month value"),
+        ("/api/budgets?month=2025-13", "Invalid month value"),
+        ("/api/budgets?month=May", "Invalid month format"),
+        ("/api/budgets/burndown?month=0-05", "Invalid month value"),
+        (
+            "/api/budgets/burndown?month=2025-05&compare_month=0-01",
+            "Invalid compare_month value",
+        ),
+    ):
+        response = api_client.get(url)
+        assert response.status_code == 400, url
+        assert response.json()["detail"] == detail
+
+
+def test_budget_overrides_use_the_years_budgets_can_be_read_for(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    for year, status in ((2200, 422), (1950, 200)):
+        response = api_client.post(
+            "/api/budgets/overrides",
+            headers=csrf_headers,
+            json={"year": year, "month": 1, "category_id": None, "amount_cents": 100},
+        )
+        assert response.status_code == status, year
+    budgets = api_client.get("/api/budgets?month=1950-01").json()
+    assert [row["amount_cents"] for row in budgets["budgets"]] == [100]
+
+
+def test_budget_amounts_above_the_limit_are_rejected(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    too_large = 1_000_000_000_001
+    for path, payload in (
+        (
+            "/api/budgets/templates",
+            {"frequency": "monthly", "starts_on": "2025-11-01"},
+        ),
+        (
+            "/api/budgets/templates/apply-from",
+            {"frequency": "monthly", "starts_on": "2025-11-01"},
+        ),
+        ("/api/budgets/overrides", {"year": 2025, "month": 11}),
+    ):
+        response = api_client.post(
+            path,
+            headers=csrf_headers,
+            json={**payload, "category_id": None, "amount_cents": too_large},
+        )
+        assert response.status_code == 422, path

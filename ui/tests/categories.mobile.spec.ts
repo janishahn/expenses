@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "./fixtures"
-import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, createUncategorizedExpense, getCsrfToken } from "./helpers"
 
 async function fetchCategory(request: APIRequestContext, name: string) {
   const response = await request.get("/api/categories?period=all")
@@ -54,6 +54,20 @@ test.describe("Categories Page (mobile)", () => {
     await peek.getByRole("button", { name: "Categories" }).click()
     await expect(page.getByRole("heading", { name: "Categories", level: 1 })).toBeVisible()
     await expect(categoryRow(page, updatedName)).toBeVisible()
+  })
+
+  test("keeps Uncategorized's name and offers no archive or merge for it", async ({ page, request }) => {
+    const token = await getCsrfToken(request)
+    await createUncategorizedExpense(request, token, `E2E Mobile Fixed Uncategorized ${Date.now()}`)
+    const uncategorized = await fetchCategory(request, "Uncategorized")
+    expect(uncategorized).toBeDefined()
+
+    await page.goto(`/categories?peek=${uncategorized!.id}`)
+    const peek = page.getByRole("complementary", { name: "Uncategorized" })
+    await expect(peek.getByRole("heading", { name: "Uncategorized", level: 2 })).toBeVisible()
+    await expect(peek.getByRole("button", { name: /^Icon/ })).toBeVisible()
+    await expect(peek.getByRole("button", { name: "Edit Name" })).toHaveCount(0)
+    await expect(peek.getByRole("button", { name: "More actions" })).toHaveCount(0)
   })
 
   test("merges a category from the peek menu sheet", async ({ page, request }) => {

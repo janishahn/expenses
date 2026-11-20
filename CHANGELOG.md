@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Saving a transaction that was changed in another tab or on another device since it was opened is refused with a message and the current version loads, instead of the older copy overwriting the newer edit. The web keeps your entry in the field and sends it again when you press Enter or go back into the field. iOS keeps a typed title, amount, or note in its field and saves it again only after you go back into that field or change it; pulling down discards it. A refused choice on iOS, such as a category or date, shows the current value. Renaming, merging, or deleting a tag counts as a change to its transactions. Transactions in the API add `updated_at`; `PUT /api/transactions/{id}` takes an optional `expected_updated_at`, answers 409 when it is outdated, and returns the new `updated_at`.
+- Budget spend and pace refer to the same day. A past weekly digest counts what was spent by the end of that week, a dashboard period that ends mid-month counts spend up to its end, and an expense dated later in the month counts from its date, also in the Insights budget history and in yearly budget spend.
+- The dashboard's "vs previous" compares whole calendar months with the same number of whole months before them, February with January and January to March with October to December, instead of with the same number of days. Other ranges keep the window of equal length.
+- Recurring rules need a name, and an interval is at most 1000. Rules stored without a name keep posting, under their category's name, and can still be edited. Changing a rule's start moves its next posting onto the new schedule, and switching a rule to automatic posting no longer posts the occurrences missed while it was manual.
+- Ended recurring rules no longer count in the recurring totals, the Audit mix, rule count, and cost list, the overdue count, or the PDF's upcoming payments. Rules in `GET /api/recurring` add `ended`.
+- Uncategorized cannot be renamed, archived, or merged into another category, and no other category can take its name; the app finds it by name. If you renamed it earlier, merge the renamed category into Uncategorized.
+- Merging two categories that both have a budget for the same months is refused and names the budgets to end first; before, one budget was dropped. Merging a tag that is excluded from budgets into one that is not, or the reverse, is refused until both have the same setting.
+- Typing the name of an archived tag on a transaction is refused with a hint to restore it, instead of attaching the archived tag again.
+- Amounts above 10 000 000 000,00 and dates outside 1900 to 2199 are rejected for transactions, ingest, CSV import, templates, rules, recurring rules, budgets, durable purchases, balance snapshots, and custom periods. A durable purchase's lifespan is at most 100 years, a rule's minimum amount cannot exceed its maximum, and PDF notes hold up to 2000 characters.
+- CSV and bank statement imports report a blank, unreadable, or too large amount as a row error, and an amount such as `1.000` or `1,000`, which can mean a thousand or one, asks for decimals. Before, a blank amount imported as 0,00 and `1,000` as 1,00. A bank debit written as `12,00S` is read as a debit.
+- **Create transaction** is refused for a bank row in a currency other than EUR; before, the foreign amount was booked as euros.
+- Requests with a body over 1 MiB are refused with 413 before they are read; uploads keep their configured limits.
+- Receipts and their thumbnails are checked against your session on every view instead of being kept in the browser cache for a day.
+- `start.sh` honours `EXPENSES_FORWARDED_ALLOW_IPS`. The README explains how to trust `tailscale serve` in front of Docker Compose, so the session cookie is marked `Secure` and login throttling sees each client.
+- Malformed `page`, `limit`, `year`, `month`, `budget_month`, and `week_of` values return 400 with a message instead of a server error.
+
+### Fixed
+- Restoring a transaction from the Trash no longer counts a reimbursement twice. The restore is refused, with what to remove first, when a reimbursement would be allocated beyond its amount or an expense reimbursed beyond its price. An allocation to a transaction in the Trash no longer blocks editing the other side.
+- A recurring payment with "Skip weekends" no longer loses the following month's payment when a month-end date moves to Monday. "Skip that month" keeps a yearly 29 February rule and every-N-months rules on their schedule.
+- One recurring rule with an extreme interval can no longer stop recurring posting for every user or keep the app from starting. A rule that cannot be advanced is skipped and logged.
+- A transaction saved without a title, as an unnamed recurring rule posted it, opens, exports, and appears in the weekly digest and in Assistant cards under its category's name instead of failing.
+- Dollar recurring payments post when the exchange rate was not cached yet, instead of failing with "database is locked".
+- The forecast keeps manual spending in months where a quarterly or yearly rule did not post. What-If applies several changes to the same rule, each from its own month, and takes at most 50 changes.
+- A request with a `date` to `/api/ingest` stores the time on that date, so a later edit keeps the booking day.
+- Choosing an existing tag with letters outside ASCII, such as "ÖPNV", no longer fails, and ingest matches category names with umlauts.
+- Merging categories moves transaction templates and pending AI suggestions to the merged category. Renaming, merging, or deleting a tag updates templates and pending rule suggestions, so a template no longer brings the old tag back.
+- Rules no longer file transactions into an archived category, budgets cannot be set for one, and Assistant cards that add transactions or set budgets refuse when their category was archived after the card was shown. Rule suggestions no longer learn from the Trash or propose archived categories.
+- PDF reports: the opening balance of a filtered report no longer subtracts reimbursements twice, the running balance no longer applies a transaction twice when a balance snapshot has the same time, the category breakdown lists every category instead of the top 8, and dollar recurring amounts show "$".
+- A durable purchase with a very long lifespan no longer breaks the dashboard and Insights.
+- A category budget of 0 with spending shows as over budget in the weekly digest, on the dashboard, and in the Insights budget history, instead of 0 % or a huge percentage.
+- The CSV download in Settings and the admin export include every transaction instead of the newest 10,000. Transaction CSV files saved with a UTF-8 byte order mark import.
+- Bank statements: identical bookings on the same day import as separate rows, a Commerzbank row without payee and purpose keeps its Buchungstext, and an upload uses far less memory.
+- A CSV import whose regex rules take too long fails with a message instead of blocking other users' changes.
+- A receipt whose file name has characters outside Latin-1 can be downloaded. A receipt thumbnail can no longer show the image of a deleted receipt. One receipt that fails to read no longer stops the others from being read at startup, and is not read again at every restart.
+- Assistant: approving two changes at once keeps both, a card only applies the change it shows also with AI backends that reuse tool call ids, database queries return less data when rows are very large, and a running answer no longer holds database connections while waiting for the model.
+- The admin system-health test-profile cookie is marked `Secure` over HTTPS.
+- Web: editing a transaction's title, category, or notes no longer moves its booking date or drops the seconds of its time. The ledger shows one band per booking date.
+- Web: bulk actions in Uncategorized and Transactions change only the selected rows that are still listed.
+- Web: balance snapshots and What-If amounts reject "1.234" instead of reading it as 1,23 €, and a snapshot accepts a negative balance as the app shows it, "− 120,50 €". An amount with the euro sign between its digits, such as "12€50", is rejected instead of read as 1 250,00 €. What-If shows and changes dollar rules in dollars.
+- Web: copying the ingest token reports when copying failed and selects the token. An overspent budget no longer shows a negative daily allowance.
+- iOS: editing a transaction's title, category, or notes no longer moves its date or time, also when the app started without reaching the server. A changed date is saved in the server's time zone, and the date can be changed once that zone is known; while the server can't be reached, the date says so.
+- iOS: a device set to a Buddhist, Japanese, Hebrew, or Islamic calendar no longer sends wrong dates or months.
+- iOS: adding a rule, category, tag, template, balance snapshot, or receipt no longer reports a failure, which invited a duplicate, when only the refresh afterwards failed.
+- iOS: an overspent budget no longer shows a negative daily allowance.
+- iOS: a long message under a field shows in full instead of being cut to one line.
+
 ## [0.9.0] - 2026-11-17
 
 ### Added

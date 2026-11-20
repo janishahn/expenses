@@ -184,6 +184,81 @@ def test_weekly_digest_sections_and_metrics(
 def test_weekly_digest_rejects_invalid_week_of(api_client: TestClient) -> None:
     response = api_client.get("/api/digest?week_of=bad-date")
     assert response.status_code == 400
+    response = api_client.get("/api/digest?week_of=0001-01-01")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid week_of value"
+
+
+def test_digest_budget_pulse_counts_spend_up_to_the_week_end(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": None,
+            "amount_cents": 100_000,
+            "starts_on": "2025-10-01",
+        },
+    )
+    assert response.status_code == 200
+    for day, amount in ((7, 10_000), (25, 80_000)):
+        _create_transaction(
+            api_client,
+            csrf_headers,
+            txn_date=date(2025, 10, day),
+            txn_type="expense",
+            amount_cents=amount,
+            category_id=category_id,
+            title=f"Oct {day}",
+        )
+
+    response = api_client.get("/api/digest?week_of=2025-10-07")
+    assert response.status_code == 200
+    (overall,) = response.json()["budget_pulse"]
+    # The week ends on Oct 12, before the Oct 25 purchase.
+    assert overall["spent_cents"] == 10_000
+    assert overall["used_percent"] == 10.0
+    assert overall["pace_state"] == "under"
+
+
+def test_digest_reports_spending_against_a_zero_budget_as_over(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    eating_out_id = _create_category(api_client, csrf_headers, "Eating out", "expense")
+    taxis_id = _create_category(api_client, csrf_headers, "Taxis", "expense")
+    for category_id in (eating_out_id, taxis_id):
+        response = api_client.post(
+            "/api/budgets/templates",
+            headers=csrf_headers,
+            json={
+                "frequency": "monthly",
+                "category_id": category_id,
+                "amount_cents": 0,
+                "starts_on": "2025-10-01",
+            },
+        )
+        assert response.status_code == 200
+    _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date(2025, 10, 7),
+        txn_type="expense",
+        amount_cents=20_000,
+        category_id=eating_out_id,
+        title="Dinner",
+    )
+
+    response = api_client.get("/api/digest?week_of=2025-10-07")
+    assert response.status_code == 200
+    pulse = {row["scope_label"]: row for row in response.json()["budget_pulse"]}
+    assert pulse["Eating out"]["pace_state"] == "over"
+    assert pulse["Eating out"]["used_percent"] == 100.0
+    assert pulse["Eating out"]["velocity_ratio"] == 0.0
+    assert pulse["Taxis"]["pace_state"] == "under"
+    assert pulse["Taxis"]["used_percent"] == 0.0
 
 
 def test_digest_recurring_postings_report_their_type(
@@ -223,4 +298,51 @@ def test_digest_recurring_postings_report_their_type(
     postings = api_client.get("/api/digest").json()["recurring_postings"]
     assert [(row["transaction_id"], row["type"]) for row in postings] == [
         (posted, "income")
+    ]
+
+
+def test_digest_lists_postings_of_a_rule_stored_without_a_name(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from expenses.db.models import RecurringRule
+
+    category_id = _create_category(api_client, csrf_headers, "Streaming", "expense")
+    rule = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={
+            "name": "Video",
+            "type": "expense",
+            "amount_cents": 999,
+            "category_id": category_id,
+            "anchor_date": "2030-01-01",
+            "interval_unit": "month",
+            "interval_count": 1,
+            "next_occurrence": "2030-01-01",
+            "auto_post": False,
+        },
+    ).json()
+    posted = _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=999,
+        title="Video",
+        category_id=category_id,
+    )
+    # Rules and their postings saved before a name was required.
+    db_session.execute(
+        update(RecurringRule).where(RecurringRule.id == rule["id"]).values(name=None)
+    )
+    db_session.execute(
+        update(Transaction)
+        .where(Transaction.id == posted)
+        .values(origin_rule_id=rule["id"], title=None)
+    )
+    db_session.commit()
+
+    response = api_client.get("/api/digest")
+    assert response.status_code == 200
+    postings = response.json()["recurring_postings"]
+    assert [(row["transaction_id"], row["rule_name"]) for row in postings] == [
+        (posted, "Streaming")
     ]
