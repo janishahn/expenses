@@ -202,7 +202,7 @@ test.describe("Transaction peek and full view", () => {
     const title = `E2E Keep Date ${Date.now()}`
     const id = await createTransaction(request, token, {
       date: "2026-03-20",
-      occurred_at: "2026-04-18T10:05:37.250000",
+      occurred_at: "2026-04-18T10:05:37.250731",
       type: "expense",
       amount_cents: 1234,
       category_id: categoryId,
@@ -263,6 +263,40 @@ test.describe("Transaction peek and full view", () => {
     await expect(renamed.getByRole("alert")).toHaveCount(0)
     await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} stale`)
     expect((await fetchTransaction(request, id)).amount_cents).toBe(1200)
+  })
+
+  test("saves again after the reload following a save fails", async ({ page, request }) => {
+    const { title, id } = await seedExpense(request, "Failed Reload")
+    let saved = false
+    await page.route(`**/api/transactions/${id}`, async (route, routed) => {
+      if (routed.method() === "PUT") saved = true
+      if (routed.method() === "GET" && saved) {
+        await route.fulfill({ status: 500, json: { detail: "Reload failed from test" } })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto(peekUrl(title, id))
+    const peek = page.getByRole("complementary", { name: title })
+    await peek.getByRole("button", { name: "Edit Title" }).click()
+    const reloadFailed = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "GET" && response.status() === 500,
+    )
+    await peek.getByRole("textbox", { name: "Title" }).fill(`${title} first`)
+    await peek.getByRole("textbox", { name: "Title" }).press("Enter")
+    await reloadFailed
+    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} first`)
+
+    const renamed = page.getByRole("complementary", { name: `${title} first` })
+    await renamed.getByRole("button", { name: "Edit Title" }).click()
+    const second = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/transactions/${id}`) && response.request().method() === "PUT",
+    )
+    await renamed.getByRole("textbox", { name: "Title" }).fill(`${title} second`)
+    await renamed.getByRole("textbox", { name: "Title" }).press("Enter")
+    expect((await second).status()).toBe(200)
+    await expect.poll(async () => (await fetchTransaction(request, id)).title).toBe(`${title} second`)
   })
 
   test("keeps a newer picker value when it fails after an earlier one saves", async ({ page, request }) => {

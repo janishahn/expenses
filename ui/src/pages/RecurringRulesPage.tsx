@@ -821,7 +821,7 @@ function RecurringRulesPage() {
     </>
   ) : null
 
-  const audit = expenses.length ? (
+  const audit = activeExpenses.length ? (
     <>
       <MetricStrip
         metrics={[
@@ -878,7 +878,7 @@ function RecurringRulesPage() {
             5 years
           </Cell>
         </ListHead>
-        {byCost.map((rule) => (
+        {activeExpenses.map((rule) => (
           <Row
             key={rule.id}
             {...AUDIT_COLUMNS}

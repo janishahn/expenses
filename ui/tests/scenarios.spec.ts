@@ -206,11 +206,39 @@ test.describe("Scenarios Page", () => {
     await selectRule(form, ruleName)
     const amount = form.getByLabel("New amount")
     await expect(amount.locator("xpath=following-sibling::span")).toHaveText("$")
-    await amount.fill("60")
+    await amount.fill("60,00 €")
     await submit(form)
+    await expect(form).toContainText("Enter the amount in USD.")
+    await expect(adjustments(page).getByRole("listitem")).toHaveCount(0)
+
+    await amount.fill("60")
+    const calculated = page.waitForResponse(
+      (response) => response.url().includes("/api/forecast/scenario") && response.request().method() === "POST",
+    )
+    await submit(form)
+    expect((await calculated).ok()).toBeTruthy()
     await expect(adjustments(page).getByRole("listitem")).toContainText(
       new RegExp(`${ruleName} 60\\s?\\$ from`),
     )
+    await expect(page.getByRole("list", { name: "Impact by adjustment" })).toContainText(ruleName)
+  })
+
+  test("refuses a 51st adjustment", async ({ page }) => {
+    // Fifty adds through the form take a while under parallel load.
+    test.slow()
+    await page.goto("/scenarios")
+    for (let index = 1; index <= 50; index += 1) {
+      await addOneTime(page, `Limit event ${index}`, "1")
+      await expect(adjustments(page).getByRole("listitem")).toHaveCount(index)
+    }
+    await expect(page.getByText("after 50 adjustments")).toBeVisible()
+
+    const form = await openAdjustmentForm(page, "One-time event")
+    await form.getByLabel("Name").fill("Limit event 51")
+    await form.getByLabel("Amount").fill("1")
+    await submit(form)
+    await expect(form).toContainText("A scenario can have up to 50 adjustments.")
+    await expect(adjustments(page).getByRole("listitem")).toHaveCount(50)
   })
 
   test("rejects an amount with a thousands dot", async ({ page }) => {

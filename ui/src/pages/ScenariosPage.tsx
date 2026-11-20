@@ -81,6 +81,8 @@ const KINDS: Array<{ type: ModificationType; label: string; icon: Icon }> = [
 ]
 const KIND_ICON = Object.fromEntries(KINDS.map((kind) => [kind.type, kind.icon])) as Record<ModificationType, Icon>
 const CURRENCY_SYMBOL: Record<Currency, string> = { EUR: "€", USD: "$" }
+// The server calculates at most this many adjustments.
+const MAX_ADJUSTMENTS = 50
 const INTERVAL_TEXT: Record<Interval, string> = { monthly: "per month", yearly: "per year", weekly: "per week" }
 
 const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
@@ -134,11 +136,13 @@ function AdjustmentForm({
   type,
   rules,
   categories,
+  full,
   onTypeChange,
   onAdd,
   onCancel,
 }: {
   type: ModificationType
+  full: boolean
   rules: RuleRow[]
   categories: CategoryRow[]
   onTypeChange: (type: ModificationType) => void
@@ -163,6 +167,8 @@ function AdjustmentForm({
   }, [])
 
   const submit = () => {
+    if (full) return setError(`A scenario can have up to ${MAX_ADJUSTMENTS} adjustments.`)
+    if (currency !== "EUR" && amount.includes("€")) return setError(`Enter the amount in ${currency}.`)
     const cents = parseAmountCents(amount)
     if (type === "remove_rule") {
       if (!ruleId) return setError("Select a rule to remove.")
@@ -460,6 +466,7 @@ function ScenariosPage() {
           type={draft}
           rules={rules}
           categories={expenseCategories}
+          full={modifications.length >= MAX_ADJUSTMENTS}
           onTypeChange={setDraft}
           onAdd={addModification}
           onCancel={() => setDraft(null)}

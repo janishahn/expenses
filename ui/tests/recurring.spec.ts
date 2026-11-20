@@ -167,6 +167,7 @@ test.describe("Recurring page", () => {
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/20,00\s*€/)
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/240\s*€/)
       await expect(audit.getByRole("listitem", { name: "Gym" })).toContainText(/1\s200\s*€/)
+      await expect(audit.getByRole("listitem", { name: "Closed club" })).toHaveCount(0)
 
       await page
         .getByRole("region", { name: "Annual mix" })
@@ -179,6 +180,27 @@ test.describe("Recurring page", () => {
       await expect(table).toContainText("100 %")
       // An ended rule costs nothing more, so it stays out of the mix.
       await expect(table).not.toContainText("Stats ended")
+    } finally {
+      await request.dispose()
+    }
+  })
+
+  test("shows no Audit costs when every expense rule has ended", async ({ page }) => {
+    await page.goto("/recurring")
+    const { request, csrfToken } = await loginAsIsolatedUser(page)
+    try {
+      const endedId = await createCategory(request, csrfToken, "expense", "Audit ended only")
+      await seedRule(request, csrfToken, endedId, {
+        name: "Closed gym",
+        amount_cents: 5000,
+        anchor_date: "2025-01-15",
+        next_occurrence: "2025-01-15",
+        end_date: "2025-06-30",
+      })
+
+      await page.goto("/recurring?view=audit")
+      await expect(page.getByText("No recurring expenses.")).toBeVisible()
+      await expect(page.getByRole("list", { name: "True cost" })).toHaveCount(0)
     } finally {
       await request.dispose()
     }
