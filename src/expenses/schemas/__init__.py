@@ -6,7 +6,14 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from expenses.db.models import (
     BudgetFrequency,
@@ -1383,12 +1390,24 @@ class RecurringRuleIn(BaseModel):
     skip_weekends: bool = False
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
 
-    @model_validator(mode="after")
-    def normalize_name(self):
-        self.name = self.name.strip()
-        if not self.name:
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, name: str) -> str:
+        name = name.strip()
+        if not name:
             raise ValueError("Name cannot be blank")
-        return self
+        return name
+
+
+class RecurringRuleUpdateIn(RecurringRuleIn):
+    # Rules saved before names were required stay unnamed until given one; the
+    # service refuses a blank name for a rule that has one.
+    name: Optional[str] = Field(None, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, name: Optional[str]) -> Optional[str]:
+        return (name or "").strip() or None
 
 
 class RecurringRuleCategoryOut(BaseModel):
@@ -1437,6 +1456,8 @@ class RecurringRuleOut(BaseModel):
     auto_post: bool
     skip_weekends: Optional[bool] = None
     month_day_policy: Optional[str] = None
+    # Past its end date, or its next occurrence lies beyond it.
+    ended: bool
 
 
 class RecurringResponseOut(BaseModel):

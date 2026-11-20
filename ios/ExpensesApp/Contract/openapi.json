@@ -8124,6 +8124,10 @@
             ],
             "title": "End Date"
           },
+          "ended": {
+            "title": "Ended",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -8199,9 +8203,99 @@
           "interval_unit",
           "interval_count",
           "next_occurrence",
-          "auto_post"
+          "auto_post",
+          "ended"
         ],
         "title": "RecurringRuleOut",
+        "type": "object"
+      },
+      "RecurringRuleUpdateIn": {
+        "properties": {
+          "amount_cents": {
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "anchor_date": {
+            "format": "date",
+            "title": "Anchor Date",
+            "type": "string"
+          },
+          "auto_post": {
+            "default": true,
+            "title": "Auto Post",
+            "type": "boolean"
+          },
+          "category_id": {
+            "title": "Category Id",
+            "type": "integer"
+          },
+          "currency_code": {
+            "$ref": "#/components/schemas/CurrencyCode",
+            "default": "EUR"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "interval_count": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
+            "title": "Interval Count",
+            "type": "integer"
+          },
+          "interval_unit": {
+            "$ref": "#/components/schemas/IntervalUnit"
+          },
+          "month_day_policy": {
+            "$ref": "#/components/schemas/MonthDayPolicy",
+            "default": "snap_to_end"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "next_occurrence": {
+            "format": "date",
+            "title": "Next Occurrence",
+            "type": "string"
+          },
+          "skip_weekends": {
+            "default": false,
+            "title": "Skip Weekends",
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TransactionType"
+          }
+        },
+        "required": [
+          "type",
+          "amount_cents",
+          "category_id",
+          "anchor_date",
+          "interval_unit",
+          "interval_count",
+          "next_occurrence"
+        ],
+        "title": "RecurringRuleUpdateIn",
         "type": "object"
       },
       "RecurringStatsOut": {
@@ -14826,7 +14920,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RecurringRuleIn"
+                "$ref": "#/components/schemas/RecurringRuleUpdateIn"
               }
             }
           },

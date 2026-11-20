@@ -44,7 +44,6 @@ import {
   MONTH_DAY_POLICIES,
   fullDate,
   needsMonthDayPolicy,
-  nextOccurrenceFromStart,
   repeatsText,
   ruleLabel,
   rulePayload,
@@ -451,7 +450,18 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
     url: `/api/recurring/${stored.id}`,
     source: stored,
     toPayload: rulePayload,
-    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring"] }),
+    // The server moves the next occurrence when the start or automatic posting changes.
+    reload: async () => {
+      const fresh = await queryClient.fetchQuery({
+        queryKey: ["recurring"],
+        queryFn: () => apiFetch<RecurringResponse>("/api/recurring"),
+        staleTime: 0,
+      })
+      const saved = fresh.rules.find((entry) => entry.id === stored.id)
+      if (!saved) throw new Error("Rule not found")
+      return saved
+    },
+    onSaved: () => void queryClient.invalidateQueries({ queryKey: ["recurring", stored.id] }),
     draftFields: ["name", "amount"],
   })
   const label = ruleLabel(rule)
@@ -591,7 +601,7 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
             value={rule.anchor_date}
             submitLabel="Save"
             onSave={(next) =>
-              void save("starts", { anchor_date: next, next_occurrence: nextOccurrenceFromStart(rule, next, todayIso(new Date())) })
+              void save("starts", { anchor_date: next })
             }
             trigger={<PropertyButton>{fullDate(rule.anchor_date)}</PropertyButton>}
           />
@@ -739,8 +749,10 @@ function RecurringRulesPage() {
   )
 
   const byCost = expenses.slice().sort((a, b) => b.monthly_equivalent_cents - a.monthly_equivalent_cents)
+  // Ended rules cost nothing more, as in the server's totals.
+  const activeExpenses = byCost.filter((rule) => !rule.ended)
   const mix = Array.from(
-    byCost
+    activeExpenses
       .reduce((groups, rule) => {
         const entry = groups.get(rule.category_id) ?? { rule, perYear: 0 }
         entry.perYear += rule.monthly_equivalent_cents * 12
@@ -816,7 +828,7 @@ function RecurringRulesPage() {
           {
             label: "Per month",
             value: <Amount cents={stats.total_monthly_expenses} />,
-            detail: `${expenses.length} expense ${expenses.length === 1 ? "rule" : "rules"}`,
+            detail: `${activeExpenses.length} expense ${activeExpenses.length === 1 ? "rule" : "rules"}`,
           },
           { label: "Per year", value: <Amount cents={annualTotal} /> },
           { label: "Over 5 years", value: <Amount cents={stats.total_monthly_expenses * 60} decimals={false} /> },

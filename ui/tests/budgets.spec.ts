@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { test, expect } from "./fixtures"
-import { createCategory, createTransaction, getCsrfToken } from "./helpers"
+import { createCategory, createTransaction, getCsrfToken, loginAsIsolatedUser } from "./helpers"
 
 const monthFormat = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" })
 
@@ -400,6 +400,33 @@ test.describe("Budgets Page", () => {
     await expect(page.getByRole("listitem", { name: categoryName })).toBeVisible()
     await expect(page.getByText("Pacing starts in December 2099")).toBeVisible()
     await expect(page.getByText(/Over pace|On pace|On track/)).toHaveCount(0)
+  })
+
+  test("shows spending against a zero overall budget as over pace", async ({ page }) => {
+    await page.goto("/")
+    const isolated = await loginAsIsolatedUser(page)
+    const categoryId = await createCategory(isolated.request, isolated.csrfToken, "expense", "Dining out")
+    const response = await isolated.request.post("/api/budgets/templates", {
+      headers: { "X-CSRF-Token": isolated.csrfToken },
+      data: { frequency: "monthly", category_id: null, amount_cents: 0, starts_on: `${localMonth()}-01`, ends_on: null },
+    })
+    expect(response.ok()).toBeTruthy()
+    const today = localDate()
+    await createTransaction(isolated.request, isolated.csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: categoryId,
+      title: "Dinner",
+      tags: [],
+    })
+    await isolated.request.dispose()
+
+    await page.goto("/budgets")
+    const projected = page.getByText("Projected", { exact: true }).first().locator("..")
+    await expect(projected).toContainText("Over pace")
+    await expect(projected).not.toContainText("×")
   })
 
   test("lists ended and future budgets on request", async ({ page, request }) => {

@@ -724,7 +724,13 @@ function BudgetsPage() {
     {
       label: "Projected",
       value: <Amount cents={projected} tone={projected > allocation * OVER_PACE ? "over" : undefined} />,
-      detail: elapsed === 0 ? `Pacing starts in ${monthLabel}` : `${paceStatus(ratio)} · ${ratioText(ratio)}`,
+      detail:
+        elapsed === 0
+          ? `Pacing starts in ${monthLabel}`
+          : allocation === 0 && projected > 0
+            ? // A zero budget has no ratio to show.
+              "Over pace"
+            : `${paceStatus(ratio)} · ${ratioText(ratio)}`,
     },
   ]
 

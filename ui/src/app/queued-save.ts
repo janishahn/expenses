@@ -13,6 +13,7 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
   source,
   toPayload,
   onSaved,
+  reload,
   draftFields = [],
 }: {
   url: string
@@ -20,6 +21,9 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
   source: Source
   toPayload: (source: Source) => Payload
   onSaved: () => void
+  // The record as stored after a save, for records whose server derives fields from the
+  // saved ones. Later queued saves build on it instead of the body that was sent.
+  reload?: () => Promise<Source>
   draftFields?: readonly Field[]
 }) {
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
@@ -53,7 +57,8 @@ export function useQueuedSave<Source, Payload extends Partial<Source>, Field ext
         setError(field, getApiErrorMessage(failure, "Unable to save the change."))
         return false
       }
-      known.current = payload
+      // Without the reloaded record, later saves build on the body that was sent.
+      known.current = reload ? await reload().then(toPayload, () => payload) : payload
       // Saves run in order, so this one supersedes an earlier failure of the field.
       setError(field, null)
       if (shown) {

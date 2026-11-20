@@ -1819,6 +1819,47 @@ def test_assistant_destructive_changes_undo_exactly() -> None:
         assert gym.end_date is None
 
 
+def test_assistant_changes_untitled_transactions_and_keeps_them_untitled() -> None:
+    with make_session() as session:
+        session.add(User(id=1, username="owner", password_hash="unused"))
+        ids = _seed_spending_fixture(session)
+        reader = _reader(session)
+        # Postings of rules saved without a name were stored without a title.
+        untitled = Transaction(
+            user_id=1,
+            date=date(2026, 6, 20),
+            occurred_at=datetime(2026, 6, 20, 12, 0),
+            type=TransactionType.expense,
+            amount_cents=999,
+            category_id=ids["groceries_id"],
+            title=None,
+        )
+        session.add(untitled)
+        session.commit()
+
+        edit = propose_edit(
+            reader,
+            transaction_ids=[untitled.id],
+            category_id=ids["leisure_id"],
+            add_tags=[],
+            remove_tags=[],
+            title=None,
+            notes=None,
+        )
+        assert edit.card.rows[0].title == "Groceries"
+        edited = _apply_proposal(session, edit)
+        assert (untitled.category_id, untitled.title) == (ids["leisure_id"], None)
+        _apply_proposal(session, propose_undo(reader, edited.id))
+        assert (untitled.category_id, untitled.title) == (ids["groceries_id"], None)
+
+        trash = propose_trash(reader, [untitled.id])
+        assert trash.card.rows[0].title == "Groceries"
+        trashed = _apply_proposal(session, trash)
+        assert untitled.deleted_at is not None
+        _apply_proposal(session, propose_undo(reader, trashed.id))
+        assert (untitled.deleted_at, untitled.title) == (None, None)
+
+
 def test_assistant_adds_and_renames_categories_and_undoes_both() -> None:
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))

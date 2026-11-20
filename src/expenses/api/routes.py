@@ -28,6 +28,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
@@ -183,6 +184,7 @@ from expenses.schemas import (
     RecurringPreviewIn,
     RecurringPreviewOut,
     RecurringRuleIn,
+    RecurringRuleUpdateIn,
     RecurringOccurrencesResponseOut,
     RecurringResponseOut,
     RecurringToggleIn,
@@ -247,7 +249,7 @@ from expenses.services import (
     ReportService,
     rebuild_monthly_rollups,
 )
-from expenses.services.main import TransactionConflict
+from expenses.services.main import RecurringRuleNameRequired, TransactionConflict
 from expenses.services.bank_reconciliation import (
     BankReconciliationService,
     BankRowAlreadyResolvedError,
@@ -2564,6 +2566,7 @@ def api_recurring_rules(request: Request, db: Session = Depends(get_db)):
                 "auto_post": item.rule.auto_post,
                 "skip_weekends": item.rule.skip_weekends,
                 "month_day_policy": item.rule.month_day_policy.value,
+                "ended": item.ended,
             }
             for item in overview_rules
         ],
@@ -2595,12 +2598,26 @@ def api_create_recurring_rule(
 
 @router.put("/api/recurring/{rule_id}", response_model=IdOut)
 def api_update_recurring_rule(
-    rule_id: int, data: RecurringRuleIn, request: Request, db: Session = Depends(get_db)
+    rule_id: int,
+    data: RecurringRuleUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
         rule = RecurringRuleService(db, user_id=user_id).update(rule_id, data)
+    except RecurringRuleNameRequired as exc:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "name"),
+                    "msg": f"Value error, {exc}",
+                    "input": data.name,
+                }
+            ]
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"id": rule.id}
@@ -2686,6 +2703,7 @@ def api_recurring_occurrences(
             "next_occurrence": rule.next_occurrence.isoformat(),
             "end_date": rule.end_date.isoformat() if rule.end_date else None,
             "auto_post": rule.auto_post,
+            "ended": service.has_ended(rule, local_today()),
         },
         "occurrences": [
             {

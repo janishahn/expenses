@@ -87,6 +87,7 @@ from expenses.schemas import (
     MAX_LEDGER_DATE,
     MIN_LEDGER_DATE,
     RecurringRuleIn,
+    RecurringRuleUpdateIn,
     ReportOptions,
     RuleIn,
     ScenarioAddRuleIn,
@@ -6993,11 +6994,16 @@ class ForecastService:
         }
 
 
+class RecurringRuleNameRequired(ValueError):
+    """A named rule cannot lose its name."""
+
+
 class RecurringRuleService:
     @dataclass
     class OverviewRule:
         rule: RecurringRule
         monthly_equivalent_cents: int
+        ended: bool
 
     def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
         self.session = session
@@ -7048,6 +7054,26 @@ class RecurringRuleService:
             occurrence = next_occurrence
         rule.next_occurrence = occurrence
 
+    @staticmethod
+    def _nearest_on_schedule(rule: RecurringRule, old_next: date) -> date:
+        """The rule's scheduled date nearest old_next (the later one on a tie), so
+        moving the schedule neither drops nor adds a posting. It lies in the past
+        only when old_next already did."""
+        before: Optional[date] = None
+        after = rule.anchor_date
+        while after < old_next:
+            following = next_date_in_range(rule, after)
+            if following is None or following <= after:
+                break
+            before, after = after, following
+        if (
+            before is not None
+            and (before >= local_today() or old_next < local_today())
+            and old_next - before < after - old_next
+        ):
+            return before
+        return after
+
     def overview(
         self,
     ) -> tuple[list["RecurringRuleService.OverviewRule"], dict[str, object]]:
@@ -7083,13 +7109,15 @@ class RecurringRuleService:
             monthly = self._monthly_equivalent_amount(
                 amount, rule.interval_unit, rule.interval_count
             )
+            ended = self.has_ended(rule, today)
             overview_rules.append(
                 RecurringRuleService.OverviewRule(
                     rule=rule,
                     monthly_equivalent_cents=monthly,
+                    ended=ended,
                 )
             )
-            if self.has_ended(rule, today):
+            if ended:
                 continue
             category_name = rule.category.name if rule.category else "Uncategorized"
 
@@ -7178,10 +7206,12 @@ class RecurringRuleService:
         )
         return rule
 
-    def update(self, rule_id: int, data: RecurringRuleIn) -> RecurringRule:
+    def update(self, rule_id: int, data: RecurringRuleUpdateIn) -> RecurringRule:
         rule = self.session.get(RecurringRule, rule_id)
         if not rule or rule.user_id != self.user_id:
             raise ValueError("Rule not found")
+        if data.name is None and (rule.name or "").strip():
+            raise RecurringRuleNameRequired("Name cannot be blank")
         if data.category_id != rule.category_id:
             category = self.session.get(Category, data.category_id)
             if not category or category.user_id != self.user_id:
@@ -7189,8 +7219,15 @@ class RecurringRuleService:
             if category.type != data.type:
                 raise ValueError("Category type mismatch")
         was_auto_post = rule.auto_post
+        old_next = rule.next_occurrence
+        # A new start with the stored next occurrence: the client left it to us.
+        moves_schedule = (
+            data.anchor_date != rule.anchor_date and data.next_occurrence == old_next
+        )
         for attr_name, value in data.model_dump().items():
             setattr(rule, attr_name, value)
+        if moves_schedule:
+            rule.next_occurrence = self._nearest_on_schedule(rule, old_next)
         # The anchor is the schedule's first occurrence, so a later start must not
         # leave an earlier next occurrence for catch-up to post.
         if rule.anchor_date > rule.next_occurrence:

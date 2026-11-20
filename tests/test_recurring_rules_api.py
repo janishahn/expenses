@@ -223,18 +223,165 @@ def test_recurring_rule_later_start_moves_next_occurrence(
     assert next_occurrence == (today + timedelta(days=35)).isoformat()
 
 
-def test_recurring_rule_earlier_start_keeps_next_occurrence(
+def _fifteenth_from(day: date) -> date:
+    if day.day <= 15:
+        return day.replace(day=15)
+    return (day.replace(day=1) + timedelta(days=32)).replace(day=15)
+
+
+def test_recurring_rule_start_on_a_later_day_moves_next_occurrence_forward(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
-    today = date.today()
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    old_next = _fifteenth_from(today + timedelta(days=20))
     next_occurrence = _next_occurrence_after_start_change(
         api_client,
         csrf_headers,
-        anchor=today - timedelta(days=60),
-        next_occurrence=today + timedelta(days=5),
-        new_anchor=today - timedelta(days=90),
+        anchor=date(today.year - 1, 1, 15),
+        next_occurrence=old_next,
+        new_anchor=date(today.year - 1, 1, 25),
     )
-    assert next_occurrence == (today + timedelta(days=5)).isoformat()
+    # The 25th of the month before would post a second time before the 15th.
+    assert next_occurrence == old_next.replace(day=25).isoformat()
+
+
+def test_recurring_rule_start_on_an_earlier_day_moves_next_occurrence_back(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    old_next = _fifteenth_from(today + timedelta(days=20))
+    next_occurrence = _next_occurrence_after_start_change(
+        api_client,
+        csrf_headers,
+        anchor=date(today.year - 1, 1, 15),
+        next_occurrence=old_next,
+        new_anchor=date(today.year - 1, 1, 5),
+    )
+    # The 5th of the following month would skip a posting.
+    assert next_occurrence == old_next.replace(day=5).isoformat()
+
+
+def test_recurring_rule_weekly_start_moves_next_occurrence_to_new_weekday(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    thursday = date(2026, 1, 1)
+    old_next = today + timedelta(days=7 + (thursday - today).days % 7)
+    category_id = _create_category(api_client, csrf_headers, "Cleaning", "expense")
+    payload = {
+        **_rule_payload(category_id, thursday, old_next),
+        "interval_unit": "week",
+    }
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "anchor_date": "2025-12-29"},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == (old_next - timedelta(days=3)).isoformat()
+
+
+def test_recurring_rule_start_change_does_not_move_next_occurrence_into_the_past(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    old_next = today + timedelta(days=1)
+    anchor = old_next - timedelta(days=70)
+    category_id = _create_category(api_client, csrf_headers, "Cleaning", "expense")
+    payload = {**_rule_payload(category_id, anchor, old_next), "interval_unit": "week"}
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    new_anchor = anchor - timedelta(days=2)
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "anchor_date": new_anchor.isoformat()},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    # Yesterday is nearer, but it would post a payment that is already past.
+    assert rule["next_occurrence"] == (today + timedelta(days=6)).isoformat()
+
+
+def test_recurring_rule_start_change_keeps_an_overdue_next_occurrence_nearby(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    old_next = _fifteenth_from(today - timedelta(days=70))
+    category_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    payload = {
+        **_rule_payload(category_id, date(today.year - 2, 1, 15), old_next),
+        "auto_post": False,
+    }
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "anchor_date": date(today.year - 2, 1, 5).isoformat()},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == old_next.replace(day=5).isoformat()
+
+
+def test_recurring_rule_start_change_keeps_a_chosen_next_occurrence(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    old_next = _fifteenth_from(today + timedelta(days=20))
+    chosen = old_next + timedelta(days=3)
+    category_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    payload = _rule_payload(category_id, date(today.year - 1, 1, 15), old_next)
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={
+            **payload,
+            "anchor_date": date(today.year - 1, 1, 25).isoformat(),
+            "next_occurrence": chosen.isoformat(),
+        },
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == chosen.isoformat()
 
 
 def test_recurring_rule_requires_a_name(
@@ -496,3 +643,124 @@ def test_unnamed_stored_rule_posts_and_its_transactions_stay_readable(
     assert export.status_code == 200
     lines = [line for line in export.text.splitlines()[1:] if line]
     assert lines and all(",Streaming,Streaming," in line for line in lines), lines
+
+
+def test_unnamed_stored_rule_stays_editable_and_can_be_named(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    from expenses.db.models import (
+        CurrencyCode,
+        IntervalUnit,
+        MonthDayPolicy,
+        RecurringRule,
+        TransactionType,
+    )
+
+    category_id = _create_category(api_client, csrf_headers, "Streaming", "expense")
+    user_id = int(api_client.get("/api/auth/me").json()["user"]["id"])
+    start = date.today() + timedelta(days=10)
+    rule = RecurringRule(
+        user_id=user_id,
+        name=None,
+        type=TransactionType.expense,
+        currency_code=CurrencyCode.eur,
+        amount_cents=999,
+        category_id=category_id,
+        anchor_date=start,
+        interval_unit=IntervalUnit.month,
+        interval_count=1,
+        next_occurrence=start,
+        auto_post=True,
+        skip_weekends=False,
+        month_day_policy=MonthDayPolicy.snap_to_end,
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    payload = _rule_payload(category_id, start, start)
+    for name, amount in ((None, 1299), ("  ", 1399)):
+        response = api_client.put(
+            f"/api/recurring/{rule.id}",
+            headers=csrf_headers,
+            json={**payload, "name": name, "amount_cents": amount},
+        )
+        assert response.status_code == 200, response.text
+        stored = next(
+            r
+            for r in api_client.get("/api/recurring").json()["rules"]
+            if r["id"] == rule.id
+        )
+        assert (stored["name"], stored["amount_cents"]) == (None, amount)
+
+    response = api_client.put(
+        f"/api/recurring/{rule.id}",
+        headers=csrf_headers,
+        json={**payload, "name": " Music "},
+    )
+    assert response.status_code == 200
+    response = api_client.put(
+        f"/api/recurring/{rule.id}",
+        headers=csrf_headers,
+        json={**payload, "name": None},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "name"]
+    rules = api_client.get("/api/recurring").json()["rules"]
+    assert [r["name"] for r in rules if r["id"] == rule.id] == ["Music"]
+
+
+def test_blank_name_on_create_points_at_the_name_field(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    response = api_client.post(
+        "/api/recurring",
+        headers=csrf_headers,
+        json={**_rule_payload(category_id, date.today(), date.today()), "name": " "},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "name"]
+
+
+def test_recurring_list_marks_ended_rules(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    from expenses.recurrence.engine import local_today
+
+    today = local_today()
+    category_id = _create_category(api_client, csrf_headers, "Gym", "expense")
+    for payload in (
+        {
+            **_rule_payload(category_id, date(2025, 1, 15), date(2025, 1, 15)),
+            "name": "Past end",
+            "auto_post": False,
+            "end_date": "2025-06-30",
+        },
+        {
+            **_rule_payload(category_id, today, today + timedelta(days=40)),
+            "name": "Beyond end",
+            "end_date": (today + timedelta(days=30)).isoformat(),
+        },
+        {
+            **_rule_payload(category_id, today, today + timedelta(days=3)),
+            "name": "Running",
+            "end_date": (today + timedelta(days=30)).isoformat(),
+        },
+        {
+            **_rule_payload(category_id, today, today + timedelta(days=3)),
+            "name": "Open",
+        },
+    ):
+        response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+        assert response.status_code == 200
+
+    rules = api_client.get("/api/recurring").json()["rules"]
+    assert {rule["name"]: rule["ended"] for rule in rules} == {
+        "Past end": True,
+        "Beyond end": True,
+        "Running": False,
+        "Open": False,
+    }
+    rule_id = next(rule["id"] for rule in rules if rule["name"] == "Past end")
+    body = api_client.get(f"/api/recurring/{rule_id}/occurrences").json()
+    assert body["rule"]["ended"] is True

@@ -287,7 +287,15 @@ function DashboardPage() {
   if (data.budget_pace) {
     metrics.push({
       label: "Budget pace",
-      value: `${data.budget_pace.velocity_ratio.toFixed(2).replace(".", ",")}×`,
+      // Spending against a zero budget has no pace ratio; it is simply over.
+      value:
+        data.budget_pace.budget_cents === 0 && data.budget_pace.remaining_cents < 0 ? (
+          <>
+            <Amount cents={-data.budget_pace.remaining_cents} decimals={false} tone="over" /> over
+          </>
+        ) : (
+          `${data.budget_pace.velocity_ratio.toFixed(2).replace(".", ",")}×`
+        ),
       detail: (
         <>
           <Amount cents={data.budget_pace.projected_cents} decimals={false} /> of{" "}

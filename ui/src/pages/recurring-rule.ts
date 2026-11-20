@@ -22,6 +22,8 @@ export type RecurringRule = {
   auto_post: boolean
   skip_weekends: boolean
   month_day_policy: MonthDayPolicy
+  // Past its end date; left out of the totals.
+  ended: boolean
 }
 
 export type RecurringResponse = {
@@ -136,55 +138,6 @@ export function scheduleText(unit: IntervalUnit, count: number, anchor: string):
   if (unit === "year") return `${repeats} on ${dayMonth(date)}`
   if (unit === "week") return `${repeats} on ${WEEKDAY.format(date)}`
   return repeats
-}
-
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * 86_400_000)
-}
-
-function addMonths(base: Date, months: number, desiredDay: number, policy: MonthDayPolicy): Date {
-  let month = base.getUTCMonth() + months
-  const daysIn = (offset: number) => new Date(Date.UTC(base.getUTCFullYear(), offset + 1, 0)).getUTCDate()
-  if (policy === "skip") while (desiredDay > daysIn(month)) month += 1
-  return new Date(Date.UTC(base.getUTCFullYear(), month, Math.min(desiredDay, daysIn(month))))
-}
-
-// The server's calculate_next_date in the recurrence engine.
-function nextScheduleDate(rule: RecurringRule, anchor: Date, from: Date): Date {
-  const count = rule.interval_count
-  let next =
-    rule.interval_unit === "day"
-      ? addDays(from, count)
-      : rule.interval_unit === "week"
-        ? addDays(from, 7 * count)
-        : rule.interval_unit === "month"
-          ? addMonths(from, count, rule.month_day_policy === "carry_forward" ? from.getUTCDate() : anchor.getUTCDate(), rule.month_day_policy)
-          : addMonths(from, 12 * count, anchor.getUTCDate(), rule.month_day_policy)
-  if (rule.skip_weekends) while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next = addDays(next, 1)
-  return next
-}
-
-// The next occurrence once the rule starts on `anchor`: the new schedule's date nearest the current
-// next occurrence, so the coming posting moves rather than being added or dropped. It moves into
-// the past only when the current one is already overdue.
-export function nextOccurrenceFromStart(rule: RecurringRule, anchor: string, today: string): string {
-  const start = isoDate(anchor)
-  const current = isoDate(rule.next_occurrence)
-  let before: Date | null = null
-  let after = start
-  while (after < current) {
-    before = after
-    after = nextScheduleDate(rule, start, after)
-  }
-  const day = (date: Date) => date.toISOString().slice(0, 10)
-  if (
-    before &&
-    (day(before) >= today || rule.next_occurrence < today) &&
-    current.getTime() - before.getTime() < after.getTime() - current.getTime()
-  ) {
-    return day(before)
-  }
-  return day(after)
 }
 
 // Days past the 28th need a rule for shorter months.

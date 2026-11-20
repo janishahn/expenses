@@ -186,7 +186,8 @@ class Classification(BaseModel):
     category_id: int
     # Sorted case-insensitively, so equal tag sets compare equal.
     tags: list[str]
-    title: str
+    # As stored, so an edit that leaves the title alone keeps a missing one missing.
+    title: str | None
 
 
 class NotesChange(BaseModel):
@@ -461,10 +462,15 @@ def _sorted_tags(names: list[str]) -> list[str]:
     return sorted(names, key=str.lower)
 
 
+def _shown_title(txn: Transaction) -> str:
+    # Postings of rules saved without a name were stored without a title.
+    return txn.title if (txn.title or "").strip() else txn.category.name
+
+
 def _trash_row(txn: Transaction) -> TrashRow:
     return TrashRow(
         transaction_id=txn.id,
-        title=txn.title,
+        title=_shown_title(txn),
         date=txn.date,
         amount_cents=txn.amount_cents,
         category_id=txn.category_id,
@@ -580,7 +586,7 @@ def _edit_detail(categories: dict[int, Category], row: EditRow) -> str:
     parts += [f"+{tag}" for tag in after.tags if tag.lower() not in before_tags]
     parts += [f"−{tag}" for tag in before.tags if tag.lower() not in after_tags]
     if before.title != after.title:
-        parts.append(f"Renamed to {after.title}")
+        parts.append(f"Renamed to {after.title}" if after.title else "Title removed")
     if row.notes is not None:
         parts.append(
             f"Notes: {row.notes.after}" if row.notes.after else "Notes removed"
@@ -595,7 +601,7 @@ def _edit_rows(
 ) -> list[ApprovalRow]:
     return [
         ApprovalRow(
-            title=transactions[row.transaction_id].title,
+            title=_shown_title(transactions[row.transaction_id]),
             detail=_edit_detail(categories, row),
             category=_category_card(categories[row.after.category_id]),
             date=transactions[row.transaction_id].date,
@@ -738,7 +744,9 @@ def propose_allocate(
     if income := next(
         (txn for txn in expenses if txn.type != TransactionType.expense), None
     ):
-        raise InvalidProposal("not_expense", f"{income.title} is not an expense.")
+        raise InvalidProposal(
+            "not_expense", f"{_shown_title(income)} is not an expense."
+        )
 
     service = ReimbursementService(session, user_id)
     existing = _allocation_rows(session, user_id, reimbursement.id)
@@ -804,24 +812,24 @@ def propose_allocate(
                 if amount > remaining[txn.id]:
                     raise InvalidProposal(
                         "exceeds_expense",
-                        f"{txn.title} has only {_eur(remaining[txn.id])} left to reimburse.",
+                        f"{_shown_title(txn)} has only {_eur(remaining[txn.id])} left to reimburse.",
                     )
     for txn, amount in zip(expenses, cents, strict=True):
         if amount <= 0:
             raise InvalidProposal(
-                "nothing_left", f"Nothing of {txn.title} is left to allocate."
+                "nothing_left", f"Nothing of {_shown_title(txn)} is left to allocate."
             )
     total = sum(cents)
     if total > available:
         raise InvalidProposal(
             "exceeds_reimbursement",
             f"These allocations add up to {_eur(total)}, but only {_eur(max(0, available))} "
-            f"of {reimbursement.title} is unallocated.",
+            f"of {_shown_title(reimbursement)} is unallocated.",
         )
     return Proposal(
-        summary=f"Allocated {_eur(total)} from {reimbursement.title}",
+        summary=f"Allocated {_eur(total)} from {_shown_title(reimbursement)}",
         card=ApprovalCard(
-            title=f"Allocate {_eur(total)} from {reimbursement.title}",
+            title=f"Allocate {_eur(total)} from {_shown_title(reimbursement)}",
             meta=None
             if reimbursement.is_reimbursement
             else "Marks it as a reimbursement",
@@ -829,7 +837,7 @@ def propose_allocate(
             done="Allocated",
             rows=[
                 ApprovalRow(
-                    title=txn.title,
+                    title=_shown_title(txn),
                     category=_category_card(txn.category),
                     date=txn.date,
                     amount_cents=amount,
@@ -1029,7 +1037,7 @@ def propose_remove_budgets(
 
 def _transaction_row(txn: Transaction, detail: str) -> ApprovalRow:
     return ApprovalRow(
-        title=txn.title,
+        title=_shown_title(txn),
         detail=detail,
         category=_category_card(txn.category),
         date=txn.date,
@@ -1616,7 +1624,7 @@ def propose_undo(reader: AssistantReader, action_id: int) -> Proposal:
             plan = inverse.model_copy(update={"allocations": shown})
             rows = [
                 ApprovalRow(
-                    title=expenses[row.expense_id].title,
+                    title=_shown_title(expenses[row.expense_id]),
                     detail="Removes the allocation"
                     if row.cents is None
                     else f"Back to {_eur(row.cents)}",
@@ -2079,7 +2087,9 @@ def _apply_edit(
             or txn.date != row.date
             or txn.amount_cents != row.amount_cents
         ):
-            raise ActionConflict(f"{txn.title} changed since this was proposed.")
+            raise ActionConflict(
+                f"{_shown_title(txn)} changed since this was proposed."
+            )
         if row.after.category_id != txn.category_id:
             category = categories.get(row.after.category_id)
             if (
@@ -2088,7 +2098,7 @@ def _apply_edit(
                 or category.type != txn.type
             ):
                 raise ActionConflict(
-                    f"{txn.title} can't move to that category anymore."
+                    f"{_shown_title(txn)} can't move to that category anymore."
                 )
             txn.category_id = category.id
             txn.auto_category_confidence = None
