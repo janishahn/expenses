@@ -18,6 +18,14 @@ from expenses.db.models import (
 )
 from expenses.services.category_model import MIN_HISTORY
 
+# Sums of many amounts this large stay exact in SQLite integers and in the
+# clients' floating-point numbers.
+MAX_AMOUNT_CENTS = 1_000_000_000_000
+# Date arithmetic around a ledger date (month ends, lifespans, periods) stays
+# inside what `date` can hold.
+MIN_LEDGER_DATE = date(1900, 1, 1)
+MAX_LEDGER_DATE = date(2199, 12, 31)
+
 
 class ReportOptions(BaseModel):
     start: date
