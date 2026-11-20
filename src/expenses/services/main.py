@@ -32,6 +32,7 @@ from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.services.auto_categorization import apply_prediction
 from expenses.core.safe_regex import (
+    RegexBudget,
     RegexRejected,
     safe_regex_search,
     validate_regex,
@@ -730,7 +731,9 @@ class RuleService:
         self.session.commit()
         log_event(logger, logging.INFO, "rule_deleted", rule_id=rule_id, name=rule_name)
 
-    def apply_rules(self, txn: Transaction) -> dict[str, object]:
+    def apply_rules(
+        self, txn: Transaction, *, regex_budget: RegexBudget | None = None
+    ) -> dict[str, object]:
         """
         Apply enabled rules to a transaction (category + tags).
         Returns a lightweight summary for UI/debugging.
@@ -796,7 +799,7 @@ class RuleService:
                 return title_lower.startswith(needle.lower())
             if rule.match_type == RuleMatchType.regex:
                 try:
-                    return safe_regex_search(needle, title)
+                    return safe_regex_search(needle, title, budget=regex_budget)
                 except RegexRejected:
                     return False
             return False
@@ -7160,6 +7163,8 @@ class CSVService:
             raise ValueError("; ".join(errors))
         dates = set()
         rule_service = RuleService(self.session, self.user_id)
+        # Bounds the whole import, which holds the database write lock meanwhile.
+        regex_budget = RegexBudget(get_settings().rule_regex_timeout_seconds * 60)
         months: set[tuple[int, int]] = set()
         for row in preview_rows:
             txn_type = TransactionType(row["type"])
@@ -7177,7 +7182,7 @@ class CSVService:
                 description=row["description"],
             )
             self.session.add(txn)
-            rule_service.apply_rules(txn)
+            rule_service.apply_rules(txn, regex_budget=regex_budget)
             dates.add(row["date"])
             months.add((row["date"].year, row["date"].month))
         self.session.flush()

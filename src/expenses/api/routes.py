@@ -88,6 +88,7 @@ from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.db.session import SessionLocal
 from expenses.exporters import PortableExportError, PortableExportService
 from expenses.importers.legacy_sqlite import LegacySQLiteImportService
+from expenses.services.csv_utils import iter_export_transactions
 from expenses.db.models import (
     AutoCategorizationPreference,
     BankStatementRow,
@@ -1290,11 +1291,10 @@ def _user_settings_payload(db: Session, user_id: int) -> dict[str, object]:
 def _csv_export_response(
     db: Session,
     *,
-    transactions: list[Transaction],
-    actor_user_id: int,
+    conditions: list,
     log_event_name: str,
 ) -> StreamingResponse:
-    csv_text = CSVService(db, user_id=actor_user_id).export(transactions)
+    conditions = [*conditions, Transaction.deleted_at.is_(None)]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"expenses_export_{timestamp}.csv"
     log_event(
@@ -1302,10 +1302,20 @@ def _csv_export_response(
         logging.INFO,
         log_event_name,
         filename=filename,
-        transactions_count=len(transactions),
+        transactions_count=db.scalar(
+            select(func.count(Transaction.id)).where(*conditions)
+        ),
+    )
+    # Streamed in batches so a large ledger is never held in memory at once.
+    transactions = db.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.category))
+        .where(*conditions)
+        .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
+        .execution_options(yield_per=500)
     )
     return StreamingResponse(
-        iter([csv_text]),
+        iter_export_transactions(transactions),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -3201,11 +3211,9 @@ def api_admin_download_db(
 @router.get("/api/export/csv")
 def api_export_user_csv(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    transactions = TransactionService(db, user_id=user_id).recent(limit=10000)
     return _csv_export_response(
         db,
-        transactions=transactions,
-        actor_user_id=user_id,
+        conditions=[Transaction.user_id == user_id],
         log_event_name="user_csv_export_downloaded",
     )
 
@@ -3255,22 +3263,10 @@ def api_export_user_portable_zip(request: Request, db: Session = Depends(get_db)
 @router.get("/api/admin/export-csv")
 def api_admin_export_all_transactions(request: Request, db: Session = Depends(get_db)):
     _require_elevated_admin_context(request, db)
-    actor_user_id = _require_current_user_id(request, db)
-    transactions = (
-        db.scalars(
-            select(Transaction)
-            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
-            .where(Transaction.deleted_at.is_(None))
-            .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
-            .limit(10000)
-        )
-        .unique()
-        .all()
-    )
+    _require_current_user_id(request, db)
     return _csv_export_response(
         db,
-        transactions=transactions,
-        actor_user_id=actor_user_id,
+        conditions=[],
         log_event_name="admin_csv_export_downloaded",
     )
 
@@ -3498,7 +3494,7 @@ def api_import_csv_preview(
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
         )
-        content = content_bytes.decode("utf-8")
+        content = content_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         log_event(
             logger,
@@ -3554,7 +3550,7 @@ def api_import_csv_commit(
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
         )
-        content = content_bytes.decode("utf-8")
+        content = content_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         log_event(
             logger,

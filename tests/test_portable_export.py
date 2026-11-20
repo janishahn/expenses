@@ -7,7 +7,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -446,6 +446,39 @@ def test_portable_export_api_returns_zip(
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["format"] == "expenses-portable-export"
         assert manifest["datasets"]["transactions"]["row_count"] == 1
+
+
+def test_csv_export_includes_every_transaction(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session: Session
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Portable", "expense")
+    first_id = _create_transaction(
+        api_client, csrf_headers, category_id=category_id, title="Oldest"
+    )
+    user_id = db_session.get(Transaction, first_id).user_id
+    db_session.execute(
+        insert(Transaction),
+        [
+            {
+                "user_id": user_id,
+                "date": date(2026, 2, 1),
+                "occurred_at": datetime(2026, 2, 1, 12, 0),
+                "type": TransactionType.expense,
+                "amount_cents": 100,
+                "category_id": category_id,
+                "title": f"Bulk {index}",
+            }
+            for index in range(10_000)
+        ],
+    )
+    db_session.commit()
+
+    response = api_client.get("/api/export/csv")
+
+    assert response.status_code == 200
+    lines = response.text.splitlines()
+    assert len(lines) == 1 + 10_001
+    assert lines[-1] == "2026-01-12,expense,0,12.99,Portable,Oldest,"
 
 
 def test_portable_export_api_requires_authentication(

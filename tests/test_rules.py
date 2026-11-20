@@ -421,3 +421,40 @@ def test_rule_service_rejects_regex_over_configured_limit(
                 )
     finally:
         get_settings.cache_clear()
+
+
+def test_csv_import_fails_when_regex_rules_exceed_the_import_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXPENSES_RULE_REGEX_TIMEOUT_SECONDS", "0.01")
+    get_settings.cache_clear()
+    try:
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            CategoryService(session).create(
+                CategoryIn(name="Uncategorized", type=TransactionType.expense, order=0)
+            )
+            RuleService(session).create(
+                RuleIn(
+                    name="Slow regex",
+                    enabled=True,
+                    priority=10,
+                    match_type=RuleMatchType.regex,
+                    match_value="(a|aa)+$",
+                    add_tags=["Slow"],
+                )
+            )
+            title = "a" * 40 + "b"
+            content = "Date,Type,IsReimbursement,Amount,Category,Title\n" + (
+                f"2025-01-05,expense,0,1.00,Uncategorized,{title}\n" * 200
+            )
+
+            with pytest.raises(ValueError, match="Regex rules took too long"):
+                CSVService(session).commit(content)
+            session.rollback()
+
+            assert session.scalars(select(Transaction)).all() == []
+    finally:
+        get_settings.cache_clear()
