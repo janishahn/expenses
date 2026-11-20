@@ -609,13 +609,16 @@ def test_allocations_never_exceed_either_side(
         return set(
             db_session.execute(
                 select(
-                    ReimbursementAllocation.id, ReimbursementAllocation.amount_cents
+                    ReimbursementAllocation.id,
+                    ReimbursementAllocation.reimbursement_transaction_id,
+                    ReimbursementAllocation.amount_cents,
                 ).where(ReimbursementAllocation.expense_transaction_id.in_(ids))
             )
         )
 
     for step in steps:
         before = stored_allocations()
+        roles_before = list(roles)
         match step:
             case ("allocate", r, e, amount):
                 response = api_client.post(
@@ -676,9 +679,16 @@ def test_allocations_never_exceed_either_side(
         txns, totals = _counted_totals(db_session, ids)
         for txn_id, total in totals.items():
             assert total <= txns[txn_id].amount_cents, (step, txn_id, total)
-        if step[0] == "restore":
-            # A restore either fits the stored allocations or is refused.
-            assert stored_allocations() == before, step
+        if step[0] not in ("allocate", "unallocate"):
+            # Other edits keep allocations or are refused, except that a
+            # reimbursement turned into plain income gives its allocations up.
+            expected = before
+            if step[0] == "role" and (roles_before[step[1]], roles[step[1]]) == (
+                "reimbursement",
+                "income",
+            ):
+                expected = {row for row in before if row[1] != ids[step[1]]}
+            assert stored_allocations() == expected, step
         if step[0] == "restore" and txns[ids[step[1]]].deleted_at is not None:
             # A restore is refused only when the side would not fit.
             txns, revived = _counted_totals(db_session, ids, revived=ids[step[1]])
