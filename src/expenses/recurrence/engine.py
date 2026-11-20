@@ -66,6 +66,10 @@ def _add_months(
     return date(year, month, day)
 
 
+# A century of monthly occurrences.
+_MAX_CARRY_FORWARD_REPLAY = 1200
+
+
 class RecurrenceRuleLike(Protocol):
     interval_unit: IntervalUnit
     interval_count: int
@@ -96,8 +100,29 @@ def _unshifted_date(rule: RecurrenceRuleLike, stored: date) -> date:
     for days_back in (2, 1):
         candidate = stored - timedelta(days=days_back)
         if _fits_rule_day(rule, candidate):
-            return candidate
-    return stored
+            break
+    else:
+        return stored
+    if (
+        rule.month_day_policy == MonthDayPolicy.carry_forward
+        and rule.interval_unit == IntervalUnit.month
+    ):
+        # The carried day lives only in the dates, so a Monday can be the
+        # scheduled day itself (the 30th) or a moved weekend (the 28th). Replay
+        # the schedule from the anchor; a date set by hand off it keeps the guess.
+        scheduled = rule.anchor_date
+        for _ in range(_MAX_CARRY_FORWARD_REPLAY):
+            if scheduled > stored:
+                break
+            if scheduled >= stored - timedelta(days=2):
+                return scheduled
+            scheduled = _add_months(
+                scheduled,
+                rule.interval_count,
+                desired_day=scheduled.day,
+                policy=MonthDayPolicy.carry_forward,
+            )
+    return candidate
 
 
 def calculate_next_date(rule: RecurrenceRuleLike, from_date: date) -> date:

@@ -1,3 +1,4 @@
+import hashlib
 import tracemalloc
 
 from fastapi.testclient import TestClient
@@ -315,6 +316,13 @@ def test_parse_commerzbank_csv_reads_amount_formats_and_rejects_unclear_ones() -
         "12,00 S": -1_200,
         "12,00S": -1_200,
         "12,00 H": 1_200,
+        "12,": 1_200,
+        "-12.": -1_200,
+        "1.234,": 123_400,
+        "+-12,00": "Row 2: Invalid amount",
+        "-+12,00": "Row 2: Invalid amount",
+        "--12,00": "Row 2: Invalid amount",
+        ",": "Row 2: Invalid amount",
         "1.000": "Row 2: Ambiguous amount '1.000': write it with decimals, such as 1000,00",
         "1E+3": "Row 2: Invalid amount",
         "Infinity": "Row 2: Invalid amount",
@@ -349,7 +357,15 @@ def test_commerzbank_buchungstext_next_to_umsatzart_is_kept() -> None:
         ("Lastschrift", "SPOTIFY Premium Ref 456"),
     ]
     assert rows[0].raw_description == "Lastschrift · NETFLIX Abo Mai Ref 123"
-    assert rows[0].import_hash != rows[1].import_hash
+    # The hash keeps the description earlier releases stored ("Lastschrift"),
+    # so a statement imported before matches its rows again.
+    legacy_hash = hashlib.sha256(
+        b"giro|2026-05-05|2026-05-05|-999|EUR|lastschrift"
+    ).hexdigest()
+    assert [row.import_hash for row in rows] == [
+        legacy_hash,
+        hashlib.sha256(f"{legacy_hash}|2".encode()).hexdigest(),
+    ]
 
 
 def test_missing_bank_row_can_create_and_match_edited_transaction(

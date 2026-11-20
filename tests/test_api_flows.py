@@ -679,6 +679,10 @@ def test_csv_import_reads_bom_and_reports_unclear_amounts_per_row(
         f"{today},expense,0,1e30,Groceries,Huge\n"
         f'{today},expense,0,"1,000",Groceries,Thousand\n'
         f"{today},expense,0,99999999999.00,Groceries,Too large\n"
+        f"{today},expense,0,12.,Groceries,Trailing dot\n"
+        f'{today},expense,0,"12,",Groceries,Trailing comma\n'
+        f"{today},expense,0,+-12.00,Groceries,Two signs\n"
+        f"{today},expense,0,.,Groceries,Separator only\n"
     ).encode("utf-8")
 
     response = api_client.post(
@@ -691,6 +695,8 @@ def test_csv_import_reads_bom_and_reports_unclear_amounts_per_row(
     assert [(row["title"], row["amount_cents"]) for row in response.json()["rows"]] == [
         ("German", 123_456),
         ("English", 123_456),
+        ("Trailing dot", 1_200),
+        ("Trailing comma", 1_200),
     ]
     assert response.json()["errors"] == [
         "Row 3: Amount is required",
@@ -698,6 +704,8 @@ def test_csv_import_reads_bom_and_reports_unclear_amounts_per_row(
         "Row 5: Invalid amount",
         "Row 6: Ambiguous amount '1,000': write it with decimals, such as 1000,00",
         "Row 7: Amount is too large",
+        "Row 10: Invalid amount",
+        "Row 11: Invalid amount",
     ]
 
     response = api_client.post(

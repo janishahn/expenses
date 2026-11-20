@@ -150,10 +150,16 @@ def _parse_amount(value: str) -> int:
         raise ValueError("Missing amount")
     clean = clean.replace("EUR", "").replace("€", "").replace(" ", "")
     negative = clean.startswith("-") or clean.endswith("S")
-    clean = clean.removeprefix("+").removeprefix("-")
+    if clean[:1] in {"+", "-"}:
+        clean = clean[1:]
     clean = clean.removesuffix("S").removesuffix("H")
     cents = unsigned_amount_cents(clean)
     return -cents if negative else cents
+
+
+def _describe(booking_text: str | None, payee: str | None, purpose: str | None) -> str:
+    parts = [part for part in (booking_text, payee, purpose) if part]
+    return " · ".join(dict.fromkeys(parts)) or "Bank transaction"
 
 
 def _hash_row(
@@ -217,8 +223,8 @@ def parse_commerzbank_csv(
     )
     # Booking text is read from the first booking-text column. When that is
     # Umsatzart and a row has no payee or purpose of its own, a later
-    # Buchungstext column holds them. Rows that have a payee or purpose keep
-    # the description, and so the import hash, they always had.
+    # Buchungstext column holds them. The import hash keeps the description
+    # without it, so statements imported before match their rows again.
     booking_text_columns = [
         header for header in normalized_headers if header in BOOKING_TEXT_HEADERS
     ]
@@ -247,6 +253,7 @@ def parse_commerzbank_csv(
                 booking_text = _pick(row, BOOKING_TEXT_HEADERS) or None
                 purpose = _pick(row, PURPOSE_HEADERS) or None
                 account = _pick(row, ACCOUNT_HEADERS)
+                hash_purpose = purpose
                 if keeps_buchungstext and not payee and not purpose:
                     buchungstext = _pick(row, {"buchungstext"})
                     if buchungstext != booking_text:
@@ -263,18 +270,14 @@ def parse_commerzbank_csv(
                 purpose = (
                     _clean_cell(raw_cells[6]) or None if len(raw_cells) > 6 else None
                 )
+                hash_purpose = purpose
                 account = ""
             else:
                 raise ValueError("Missing required Commerzbank columns")
             value_date = (
                 _parse_date(value_date_raw) if _clean_cell(value_date_raw) else None
             )
-            description_parts = [
-                part for part in (booking_text, payee, purpose) if part
-            ]
-            raw_description = " · ".join(dict.fromkeys(description_parts))
-            if not raw_description:
-                raw_description = "Bank transaction"
+            raw_description = _describe(booking_text, payee, purpose)
             row_account_label = _clean_cell(account) or account_label
             import_hash = _hash_row(
                 account_label=row_account_label,
@@ -282,7 +285,7 @@ def parse_commerzbank_csv(
                 value_date=value_date,
                 amount_cents=amount_cents,
                 currency=currency,
-                raw_description=raw_description,
+                raw_description=_describe(booking_text, payee, hash_purpose),
             )
             # Identical bookings in one file are separate payments; the first
             # keeps the plain hash, so files imported before still match.

@@ -46,16 +46,16 @@ def parse_date(value: str):
         return datetime.strptime(value, "%d.%m.%Y").date()
 
 
-_PLAIN_AMOUNT = re.compile(r"([0-9]+)(?:[.,]([0-9]{1,2}))?")
-_GERMAN_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:\.[0-9]{3})+)(?:,([0-9]{1,2}))?")
-_ENGLISH_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:,[0-9]{3})+)(?:\.([0-9]{1,2}))?")
+_PLAIN_AMOUNT = re.compile(r"([0-9]+)(?:[.,]([0-9]{1,2})?)?")
+_GERMAN_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:\.[0-9]{3})+)(?:,([0-9]{1,2})?)?")
+_ENGLISH_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:,[0-9]{3})+)(?:\.([0-9]{1,2})?)?")
 # One separator before exactly three digits reads as 1000 or as 1.000.
 _AMBIGUOUS_AMOUNT = re.compile(r"[0-9]{1,3}[.,][0-9]{3}")
 
 
 def unsigned_amount_cents(value: str) -> int:
     """Read an unsigned amount such as 12,50, 1.234,56 or 1,234.56 as cents."""
-    if value[:1] in {".", ","}:
+    if value[:1] in {".", ","} and value[1:2].isdigit():
         value = "0" + value
     if _AMBIGUOUS_AMOUNT.fullmatch(value):
         raise ValueError(
@@ -80,7 +80,9 @@ def parse_amount(value: str, *, allow_negative: bool = False) -> int:
     if not clean:
         raise ValueError("Amount is required")
     negative = clean.startswith("-")
-    cents = unsigned_amount_cents(clean.removeprefix("+").removeprefix("-"))
+    if clean[:1] in {"+", "-"}:
+        clean = clean[1:]
+    cents = unsigned_amount_cents(clean)
     if negative:
         cents = -cents
     if cents < 0 and not allow_negative:

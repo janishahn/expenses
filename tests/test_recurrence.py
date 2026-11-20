@@ -474,18 +474,56 @@ def test_weekend_shift_across_month_end_keeps_every_period():
     assert date(2026, 2, 28).weekday() == 5
 
 
+def _expected_carry_forward(anchor: date, count: int) -> list[date]:
+    """Nominal "use previous month's day" dates: a day cut to a month end stays cut."""
+    out: list[date] = []
+    index = _month_index(anchor)
+    day = anchor.day
+    while len(out) < count:
+        year, month = divmod(index, 12)
+        day = min(day, monthrange(year, month + 1)[1])
+        out.append(date(year, month + 1, day))
+        index += 1
+    return out
+
+
 def test_weekend_shift_carry_forward_posts_once_per_month():
-    for anchor in (date(2024, 1, 29), date(2024, 1, 30), date(2024, 1, 31)):
+    for anchor in (
+        date(2024, 1, 29),
+        date(2024, 1, 30),
+        date(2024, 1, 31),
+        date(2025, 3, 31),
+        date(2025, 6, 30),
+    ):
         rule = _schedule_rule(anchor, policy=MonthDayPolicy.carry_forward)
+        expected = _expected_carry_forward(anchor, 31)
         walked = _walk(rule, anchor, 30)
-        for offset, posted in enumerate(walked):
-            nominal_month = _month_index(anchor) + offset
-            # A Monday on the 1st or 2nd stands for the end of the month before.
-            assert _month_index(posted) == nominal_month or (
-                _month_index(posted) == nominal_month + 1
-                and posted.weekday() == 0
-                and posted.day <= 2
-            ), (anchor, walked)
+        assert walked == [anchor] + [_moved_to_monday(d) for d in expected[1:]], anchor
+
+
+def test_weekend_shift_carry_forward_keeps_a_scheduled_monday():
+    # Monday 2025-03-31 is the scheduled day itself, not a moved Saturday.
+    rule = _schedule_rule(date(2025, 3, 31), policy=MonthDayPolicy.carry_forward)
+    assert _walk(rule, date(2025, 3, 31), 15) == [
+        date(2025, 3, 31),
+        date(2025, 4, 30),
+        date(2025, 5, 30),
+        date(2025, 6, 30),  # scheduled Monday
+        date(2025, 7, 30),
+        date(2025, 9, 1),  # Saturday 30 August moved
+        date(2025, 9, 30),
+        date(2025, 10, 30),
+        date(2025, 12, 1),  # Sunday 30 November moved
+        date(2025, 12, 30),
+        date(2026, 1, 30),
+        date(2026, 3, 2),  # Saturday 28 February moved
+        date(2026, 3, 30),  # Saturday 28 March moved
+        date(2026, 4, 28),
+        date(2026, 5, 28),
+        date(2026, 6, 29),  # Sunday 28 June moved
+    ]
+    # A Monday set by hand off the schedule still reads as a moved Sunday 28th.
+    assert calculate_next_date(rule, date(2025, 9, 29)) == date(2025, 10, 28)
 
 
 def test_stored_monday_after_weekend_shift_resumes_on_rule_day():
