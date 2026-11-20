@@ -40,7 +40,7 @@ class AIBackendOut(OutModel):
     kind: AIBackendKind
 
 
-class AIFeatureOut(FeatureSettings):
+class AIFeatureOut(FeatureSettings, OutModel):
     id: Feature
     name: str
 

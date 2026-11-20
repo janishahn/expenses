@@ -72,6 +72,10 @@
           }
         },
         "required": [
+          "enabled",
+          "backend",
+          "model",
+          "thinking",
           "id",
           "name"
         ],
@@ -1599,6 +1603,13 @@
             "type": "string"
           }
         },
+        "required": [
+          "enabled",
+          "threshold",
+          "training_status",
+          "trained_at",
+          "min_history"
+        ],
         "title": "AutoCategorizationSettingsOut",
         "type": "object"
       },

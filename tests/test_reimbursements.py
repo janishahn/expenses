@@ -462,8 +462,8 @@ _ROLES = {
     "income": ("income", False),
 }
 _SIDES = range(4)
-# A few round amounts make full and overlapping allocations likely.
-_cents = st.sampled_from([6_000, 10_000])
+# A few round amounts make full, overlapping and exactly fitting allocations likely.
+_cents = st.sampled_from([4_000, 6_000, 10_000])
 # Sides 0 and 1 start as expenses and sides 2 and 3 as reimbursements paying them back.
 _ORIGINAL_ROLES = ["expense", "expense", "reimbursement", "reimbursement"]
 _allocation = st.tuples(
@@ -700,6 +700,16 @@ def _trash_or_restore(client, headers, txn_id, how):
         ("restore", 2, "one"),
         ("allocate", 2, 1, 10_000),
         ("role", 0, "expense"),
+    ],
+)
+# Two live reimbursements paying one expense exactly.
+@example(
+    amounts=[10_000, 10_000, 6_000, 4_000],
+    steps=[
+        ("allocate", 2, 0, 6_000),
+        ("allocate", 3, 0, 4_000),
+        ("delete", 0),
+        ("restore", 0, "one"),
     ],
 )
 # Restoring a reimbursement after another one paid the same expense.

@@ -2765,7 +2765,7 @@ export interface components {
              * Days
              * @default 30
              */
-            days: number;
+            days?: number;
         };
         /** AdminPurgeDeletedOut */
         AdminPurgeDeletedOut: {
@@ -2994,12 +2994,12 @@ export interface components {
              * Enabled
              * @default false
              */
-            enabled: boolean;
+            enabled?: boolean;
             /**
              * Threshold
              * @default 0.8
              */
-            threshold: number;
+            threshold?: number;
         };
         /** AutoCategorizationSettingsOut */
         AutoCategorizationSettingsOut: {
@@ -3019,7 +3019,7 @@ export interface components {
              */
             threshold: number;
             /** Trained At */
-            trained_at?: string | null;
+            trained_at: string | null;
             /**
              * Training Status
              * @default untrained
@@ -3188,14 +3188,14 @@ export interface components {
              * @default matched
              * @enum {string}
              */
-            resolution: "matched" | "created";
+            resolution?: "matched" | "created";
             /** Transaction Id */
             transaction_id: number;
             /**
              * Update Amount To Bank
              * @default false
              */
-            update_amount_to_bank: boolean;
+            update_amount_to_bank?: boolean;
         };
         /** BankRowReopenIn */
         BankRowReopenIn: {
@@ -3209,7 +3209,7 @@ export interface components {
              * Trash Created Transaction
              * @default false
              */
-            trash_created_transaction: boolean;
+            trash_created_transaction?: boolean;
         };
         /** BankRowsPageOut */
         BankRowsPageOut: {
@@ -3334,7 +3334,7 @@ export interface components {
              * Account Label
              * @default Commerzbank
              */
-            account_label: string;
+            account_label?: string;
             /** File */
             file: string;
         };
@@ -3359,7 +3359,7 @@ export interface components {
              * Account Label
              * @default Commerzbank
              */
-            account_label: string;
+            account_label?: string;
             /** File */
             file: string;
         };
@@ -3643,7 +3643,7 @@ export interface components {
              * @default none
              * @enum {string}
              */
-            lifecycle: "none" | "soft_delete" | "restore";
+            lifecycle?: "none" | "soft_delete" | "restore";
             /** Set Category Id */
             set_category_id?: number | null;
             tag_patch?: components["schemas"]["BulkTagPatchIn"] | null;
@@ -3673,7 +3673,7 @@ export interface components {
              * Period
              * @default all
              */
-            period: string | null;
+            period?: string | null;
             /** Q */
             q?: string | null;
             /** Start */
@@ -3744,7 +3744,7 @@ export interface components {
              * Order
              * @default 0
              */
-            order: number;
+            order?: number;
             type: components["schemas"]["TransactionType"];
         };
         /** CategoryListItemOut */
@@ -3839,7 +3839,7 @@ export interface components {
              * Order
              * @default 0
              */
-            order: number;
+            order?: number;
         };
         /**
          * CurrencyCode
@@ -4178,23 +4178,23 @@ export interface components {
              * Backend
              * @default
              */
-            backend: string;
+            backend?: string;
             /**
              * Enabled
              * @default false
              */
-            enabled: boolean;
+            enabled?: boolean;
             /**
              * Model
              * @default
              */
-            model: string;
+            model?: string;
             /**
              * Thinking
              * @default auto
              * @enum {string}
              */
-            thinking: "auto" | "off" | "low" | "medium" | "high";
+            thinking?: "auto" | "off" | "low" | "medium" | "high";
         };
         /** FilterTagOut */
         FilterTagOut: {
@@ -4342,7 +4342,7 @@ export interface components {
              * @default 12
              * @enum {integer}
              */
-            horizon: 3 | 6 | 12;
+            horizon?: 3 | 6 | 12;
             /** Modifications */
             modifications?: (components["schemas"]["ScenarioRemoveRuleIn"] | components["schemas"]["ScenarioAddRuleIn"] | components["schemas"]["ScenarioModifyRuleIn"] | components["schemas"]["ScenarioOneTimeIn"] | components["schemas"]["ScenarioAdjustCategoryIn"])[];
         };
@@ -4803,22 +4803,22 @@ export interface components {
              * Import Recurring Rules
              * @default true
              */
-            import_recurring_rules: boolean;
+            import_recurring_rules?: boolean;
             /**
              * Link Recurring Transactions
              * @default true
              */
-            link_recurring_transactions: boolean;
+            link_recurring_transactions?: boolean;
             /**
              * Preserve Time In Title
              * @default false
              */
-            preserve_time_in_title: boolean;
+            preserve_time_in_title?: boolean;
             /**
              * Recurring Auto Post
              * @default false
              */
-            recurring_auto_post: boolean;
+            recurring_auto_post?: boolean;
         };
         /** LegacySqliteMappingRowOut */
         LegacySqliteMappingRowOut: {
@@ -5129,18 +5129,18 @@ export interface components {
              * Interval Count
              * @default 1
              */
-            interval_count: number;
+            interval_count?: number;
             /** @default month */
-            interval_unit: components["schemas"]["IntervalUnit"];
+            interval_unit?: components["schemas"]["IntervalUnit"];
             /** @default snap_to_end */
-            month_day_policy: components["schemas"]["MonthDayPolicy"];
+            month_day_policy?: components["schemas"]["MonthDayPolicy"];
             /** Rule Anchor Date */
             rule_anchor_date?: string | null;
             /**
              * Skip Weekends
              * @default false
              */
-            skip_weekends: boolean;
+            skip_weekends?: boolean;
             /**
              * Start Date
              * Format: date
@@ -5195,18 +5195,18 @@ export interface components {
              * Auto Post
              * @default true
              */
-            auto_post: boolean;
+            auto_post?: boolean;
             /** Category Id */
             category_id: number;
             /** @default EUR */
-            currency_code: components["schemas"]["CurrencyCode"];
+            currency_code?: components["schemas"]["CurrencyCode"];
             /** End Date */
             end_date?: string | null;
             /** Interval Count */
             interval_count: number;
             interval_unit: components["schemas"]["IntervalUnit"];
             /** @default snap_to_end */
-            month_day_policy: components["schemas"]["MonthDayPolicy"];
+            month_day_policy?: components["schemas"]["MonthDayPolicy"];
             /** Name */
             name: string;
             /**
@@ -5218,7 +5218,7 @@ export interface components {
              * Skip Weekends
              * @default false
              */
-            skip_weekends: boolean;
+            skip_weekends?: boolean;
             type: components["schemas"]["TransactionType"];
         };
         /** RecurringRuleOut */
@@ -5275,18 +5275,18 @@ export interface components {
              * Auto Post
              * @default true
              */
-            auto_post: boolean;
+            auto_post?: boolean;
             /** Category Id */
             category_id: number;
             /** @default EUR */
-            currency_code: components["schemas"]["CurrencyCode"];
+            currency_code?: components["schemas"]["CurrencyCode"];
             /** End Date */
             end_date?: string | null;
             /** Interval Count */
             interval_count: number;
             interval_unit: components["schemas"]["IntervalUnit"];
             /** @default snap_to_end */
-            month_day_policy: components["schemas"]["MonthDayPolicy"];
+            month_day_policy?: components["schemas"]["MonthDayPolicy"];
             /** Name */
             name?: string | null;
             /**
@@ -5298,7 +5298,7 @@ export interface components {
              * Skip Weekends
              * @default false
              */
-            skip_weekends: boolean;
+            skip_weekends?: boolean;
             type: components["schemas"]["TransactionType"];
         };
         /** RecurringStatsOut */
@@ -5416,12 +5416,12 @@ export interface components {
              * Include Category Subtotals
              * @default false
              */
-            include_category_subtotals: boolean;
+            include_category_subtotals?: boolean;
             /**
              * Include Cents
              * @default true
              */
-            include_cents: boolean;
+            include_cents?: boolean;
             /** Notes */
             notes?: string | null;
             /** Sections */
@@ -5430,7 +5430,7 @@ export interface components {
              * Show Running Balance
              * @default false
              */
-            show_running_balance: boolean;
+            show_running_balance?: boolean;
             /**
              * Start
              * Format: date
@@ -5444,7 +5444,7 @@ export interface components {
              * @default newest
              * @enum {string}
              */
-            transactions_sort: "newest" | "oldest";
+            transactions_sort?: "newest" | "oldest";
         };
         /** RuleBudgetExcludeTagOut */
         RuleBudgetExcludeTagOut: {
@@ -5463,7 +5463,7 @@ export interface components {
              * Enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             match_type: components["schemas"]["RuleMatchType"];
             /** Match Value */
             match_value: string;
@@ -5477,7 +5477,7 @@ export interface components {
              * Priority
              * @default 100
              */
-            priority: number;
+            priority?: number;
             /** Set Category Id */
             set_category_id?: number | null;
             transaction_type?: components["schemas"]["TransactionType"] | null;
@@ -5701,7 +5701,7 @@ export interface components {
              * Is Hidden From Budget
              * @default false
              */
-            is_hidden_from_budget: boolean;
+            is_hidden_from_budget?: boolean;
             /** Is Hidden From Filters */
             is_hidden_from_filters?: boolean | null;
             /** Name */

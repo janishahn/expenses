@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "gen:api": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts",
-    "lint": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts --check && oxlint --type-aware --report-unused-disable-directives",
+    "gen:api": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts --default-non-nullable=false",
+    "lint": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts --default-non-nullable=false --check && oxlint --type-aware --report-unused-disable-directives",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium firefox webkit",

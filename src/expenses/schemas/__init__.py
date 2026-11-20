@@ -1553,7 +1553,7 @@ class AutoCategorizationSettingsIn(BaseModel):
     threshold: float = Field(default=0.8, ge=0, le=1, allow_inf_nan=False)
 
 
-class AutoCategorizationSettingsOut(AutoCategorizationSettingsIn):
+class AutoCategorizationSettingsOut(AutoCategorizationSettingsIn, OutModel):
     training_status: Literal[
         "untrained", "training", "ready", "insufficient_data", "failed"
     ] = "untrained"
