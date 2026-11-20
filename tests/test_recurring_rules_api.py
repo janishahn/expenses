@@ -410,6 +410,34 @@ def test_recurring_rule_start_move_follows_the_scheduled_billing_month(
     assert rule["next_occurrence"] == expected
 
 
+def test_recurring_rule_changed_from_weekly_keeps_a_monday_in_its_month(
+    api_client: TestClient, csrf_headers: dict[str, str], monkeypatch
+) -> None:
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: date(2026, 5, 26))
+    category_id = _create_category(api_client, csrf_headers, "Cleaning", "expense")
+    # A weekly rule's Monday is its own day, not a weekend moved from May.
+    payload = {
+        **_rule_payload(category_id, date(2026, 3, 30), date(2026, 6, 1)),
+        "interval_unit": "week",
+        "skip_weekends": True,
+    }
+    response = api_client.post("/api/recurring", headers=csrf_headers, json=payload)
+    assert response.status_code == 200
+    rule_id = int(response.json()["id"])
+    response = api_client.put(
+        f"/api/recurring/{rule_id}",
+        headers=csrf_headers,
+        json={**payload, "interval_unit": "month", "anchor_date": "2026-03-28"},
+    )
+    assert response.status_code == 200
+    rule = next(
+        r
+        for r in api_client.get("/api/recurring").json()["rules"]
+        if r["id"] == rule_id
+    )
+    assert rule["next_occurrence"] == "2026-06-29"
+
+
 def test_recurring_rule_weekly_start_moves_next_occurrence_to_new_weekday(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

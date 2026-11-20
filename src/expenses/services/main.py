@@ -7296,8 +7296,13 @@ class RecurringRuleService:
                 raise ValueError("Category type mismatch")
         was_auto_post = rule.auto_post
         old_next = rule.next_occurrence
-        # Read under the old schedule, before the new anchor is set.
-        old_scheduled = _unshifted_date(rule, old_next)
+        # Read under the old schedule, before the new anchor is set. A day or
+        # week rule's Monday is its own day.
+        old_scheduled = (
+            _unshifted_date(rule, old_next)
+            if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year)
+            else old_next
+        )
         # A new start with the stored next occurrence: the client left it to us.
         moves_schedule = (
             data.anchor_date != rule.anchor_date and data.next_occurrence == old_next
