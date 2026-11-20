@@ -528,13 +528,15 @@ def _type_locked(session, txn_id):
     return False
 
 
-def _overruns(session, ids, revived=None, changed=None):
+def _overruns(session, ids, revived=None, changed=None, added=None):
     """Whether any side's counted allocations exceed its amount.
 
     An allocation counts as the rollups count it: both sides are live, the
     expense is an expense, and the reimbursement is reimbursement income.
-    A revived side counts as live, and a changed side, given as (id, role,
-    amount), counts with that role and amount.
+    A revived side counts as live, a changed side, given as (id, role,
+    amount), counts with that role and amount, and an added allocation, given
+    as (reimbursement id, expense id, amount), counts in place of any stored
+    one between the same pair.
     """
     session.expire_all()
     sides = {
@@ -546,22 +548,33 @@ def _overruns(session, ids, revived=None, changed=None):
     if changed is not None:
         txn_id, role, amount = changed
         sides[txn_id] = (*_ROLES[role], amount, sides[txn_id][3])
-    totals = defaultdict(int)
-    for row in session.scalars(
-        select(ReimbursementAllocation).where(
-            ReimbursementAllocation.expense_transaction_id.in_(ids)
+    rows = [
+        (
+            row.reimbursement_transaction_id,
+            row.expense_transaction_id,
+            row.amount_cents,
         )
-    ):
-        expense = sides[row.expense_transaction_id]
-        reimbursement = sides[row.reimbursement_transaction_id]
+        for row in session.scalars(
+            select(ReimbursementAllocation).where(
+                ReimbursementAllocation.expense_transaction_id.in_(ids)
+            )
+        )
+    ]
+    if added is not None:
+        # Allocating to the same pair again replaces the amount.
+        rows = [row for row in rows if row[:2] != added[:2]] + [added]
+    totals = defaultdict(int)
+    for reimbursement_id, expense_id, amount in rows:
+        expense = sides[expense_id]
+        reimbursement = sides[reimbursement_id]
         if (
             expense[3]
             and reimbursement[3]
             and expense[0] == "expense"
             and reimbursement[:2] == ("income", True)
         ):
-            totals[row.expense_transaction_id] += row.amount_cents
-            totals[row.reimbursement_transaction_id] += row.amount_cents
+            totals[expense_id] += amount
+            totals[reimbursement_id] += amount
     return any(total > sides[txn_id][2] for txn_id, total in totals.items())
 
 
@@ -709,6 +722,17 @@ def test_allocations_never_exceed_either_side(
                 amounts[i],
             ), (step, i)
 
+        match step:
+            case ("allocate", r, e, amount) if response.status_code != 200:
+                # A refused allocation has a side in Trash or in the wrong
+                # role, or would push a side past its amount.
+                db_session.expire_all()
+                assert (
+                    db_session.get(Transaction, ids[r]).deleted_at is not None
+                    or db_session.get(Transaction, ids[e]).deleted_at is not None
+                    or (roles[r], roles[e]) != ("reimbursement", "expense")
+                    or _overruns(db_session, ids, added=(ids[r], ids[e], amount))
+                ), (step, response.text)
         if step[0] in ("allocate", "unallocate"):
             continue
         # Other edits keep allocations or are refused, except that a
