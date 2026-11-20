@@ -22,6 +22,8 @@ export type RecurringRule = {
   auto_post: boolean
   skip_weekends: boolean
   month_day_policy: MonthDayPolicy
+  // Past its end date; left out of the totals.
+  ended: boolean
 }
 
 export type RecurringResponse = {

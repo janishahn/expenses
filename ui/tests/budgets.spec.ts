@@ -161,6 +161,8 @@ test.describe("Budgets Page", () => {
     const peek = page.getByRole("complementary", { name: categoryName })
     await expect(peek).toContainText(/500,00\s?€\s*of 400,00\s?€/)
     await expect(peek.getByText("Projected", { exact: true })).toBeVisible()
+    // Over budget, there is no daily allowance left.
+    await expect(peek.getByText("Allowance")).toHaveCount(0)
     await expect(peek.getByRole("heading", { name: "Pace" })).toBeVisible()
     await expect(peek.getByRole("heading", { name: "Top spending days" })).toBeVisible()
     await expect(peek.getByRole("list", { name: "Top spending days" })).toContainText(title)
@@ -193,5 +195,50 @@ test.describe("Budgets Page", () => {
       /500,00\s?€ of 1\s?000,00\s?€/,
     )
     await request.dispose()
+  })
+
+  test("shows spending against zero budgets as over on Budgets, the dashboard and Insights", async ({ page }) => {
+    // A zero budget has no pace ratio; each page shows the spending as over instead.
+    await page.goto("/")
+    const { request, csrfToken } = await loginAsIsolatedUser(page)
+    const categoryName = `E2E Zero budget ${Date.now()}`
+    const categoryId = await createCategory(request, csrfToken, "expense", categoryName)
+    for (const scope of [null, categoryId]) {
+      const response = await request.post("/api/budgets/templates", {
+        headers: { "X-CSRF-Token": csrfToken },
+        data: { frequency: "monthly", category_id: scope, amount_cents: 0, starts_on: `${localMonth()}-01`, ends_on: null },
+      })
+      expect(response.ok()).toBeTruthy()
+    }
+    const today = localDate()
+    await createTransaction(request, csrfToken, {
+      date: today,
+      occurred_at: `${today}T09:00:00`,
+      type: "expense",
+      amount_cents: 12_000,
+      category_id: categoryId,
+      title: "Dinner",
+      tags: [],
+    })
+    await request.dispose()
+
+    await page.goto("/budgets")
+    const projected = page.getByText("Projected", { exact: true }).first().locator("..")
+    await expect(projected).toContainText("Over pace")
+    await expect(projected).not.toContainText("×")
+
+    await page.goto("/?period=this_month")
+    const pace = page.getByText("Budget pace", { exact: true }).first().locator("..")
+    await expect(pace).toContainText(/120\s?€ over/)
+    await expect(pace).not.toContainText("×")
+
+    await page.goto("/insights")
+    const history = page.getByRole("region", { name: "Budget history" })
+    // The current month is the last cell of the row.
+    await history.locator('[class*="_hmRow_"]').filter({ hasText: categoryName }).locator('[class*="_bc_"]').last().hover()
+    const tooltip = page.locator('[class*="_chartTip_"]')
+    await expect(tooltip).toContainText("Over budget")
+    await expect(tooltip).toContainText(/120\s?€ of 0\s?€/)
+    await expect(tooltip).not.toContainText("%")
   })
 })

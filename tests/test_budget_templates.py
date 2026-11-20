@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,45 @@ def test_effective_budget_prefers_override_over_template() -> None:
         by_scope2 = {b.scope_category_id: b for b in effective2}
         assert by_scope2[groceries.id].amount_cents == 15_000
         assert by_scope2[groceries.id].source == "override"
+
+
+def test_budgets_cannot_be_set_for_an_archived_category() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        categories = CategoryService(session)
+        old = categories.create(
+            CategoryIn(name="Old", type=TransactionType.expense, order=0)
+        )
+        categories.archive(old.id)
+        budgets = BudgetService(session)
+        writes = [
+            lambda: budgets.upsert_override(
+                BudgetOverrideIn(year=2025, month=2, category_id=old.id, amount_cents=1)
+            ),
+            lambda: budgets.upsert_template(
+                BudgetTemplateIn(
+                    frequency=BudgetFrequency.monthly,
+                    category_id=old.id,
+                    amount_cents=1,
+                    starts_on=date(2025, 1, 1),
+                    ends_on=None,
+                )
+            ),
+            lambda: budgets.apply_template_from(
+                BudgetTemplateApplyFromIn(
+                    frequency=BudgetFrequency.monthly,
+                    category_id=old.id,
+                    amount_cents=1,
+                    starts_on=date(2025, 1, 1),
+                )
+            ),
+        ]
+        for write in writes:
+            with pytest.raises(ValueError, match="Old is archived"):
+                write()
+        assert budgets.effective_budgets_for_month(2025, 2) == []
 
 
 def test_apply_template_from_preserves_history_and_clears_month_override() -> None:

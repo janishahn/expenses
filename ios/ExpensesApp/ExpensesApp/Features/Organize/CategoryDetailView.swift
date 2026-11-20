@@ -19,6 +19,8 @@ struct CategoryDetailView: View {
     @State private var actionError: String?
     @State private var recent: Result<TransactionsResponse, APIErrorInfo>?
 
+    private static let uncategorized = "uncategorized"
+
     private enum Field: CaseIterable, Hashable {
         case name
         case icon
@@ -53,7 +55,8 @@ struct CategoryDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .expensesScreenStyle()
         .toolbar {
-            if let category {
+            // The app keeps uncategorized rows in the category of this name, so it stays as it is.
+            if let category, !(category.name.lowercased() == Self.uncategorized && category.archivedAt == nil) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if category.archivedAt == nil {
@@ -146,6 +149,7 @@ struct CategoryDetailView: View {
             TextField("Name", text: $nameDraft, axis: .vertical)
                 .focused($nameFocused)
                 .detailNameField($nameDraft) { nameFocused = false }
+                .disabled(category.name.lowercased() == Self.uncategorized)
                 .fieldError(saves.errors[.name])
         }
         .detailHeadSection()
@@ -268,7 +272,7 @@ struct CategoryDetailView: View {
     }
 
     private func commitName() {
-        guard let category else {
+        guard let category, category.name.lowercased() != Self.uncategorized else {
             return
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)

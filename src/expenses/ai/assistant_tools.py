@@ -136,6 +136,10 @@ CLIENT_LINES: dict[AssistantClient, str] = {
 SQL_ROWS = 100
 SQL_SECONDS = 2
 SQL_TEXT = 300
+# What one query may fetch before its rows are cut, by the size of their values.
+SQL_BYTES = 1_000_000
+# Bounds one row's size, which is fetched whole: columns times SQLITE_LIMIT_LENGTH.
+SQL_COLUMNS = 64
 
 # What sql_query reads: one user's rows, copied so a query reaches nothing else.
 SQL_TABLES = {
@@ -398,6 +402,7 @@ class AssistantReader:
         copy.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
         copy.setconfig(sqlite3.SQLITE_DBCONFIG_TRUSTED_SCHEMA, False)
         copy.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 1_000_000)
+        copy.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, SQL_COLUMNS)
         copy.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, 20_000)
         copy.set_authorizer(_read_only)
         self._sql = copy
@@ -409,7 +414,16 @@ class AssistantReader:
         connection.set_progress_handler(lambda: monotonic() > deadline, 10_000)
         try:
             cursor = connection.execute(sql)
-            rows = cursor.fetchmany(SQL_ROWS + 1)
+            rows = []
+            fetched_bytes = 0
+            while len(rows) <= SQL_ROWS and fetched_bytes <= SQL_BYTES:
+                row = cursor.fetchone()
+                if row is None:
+                    break
+                rows.append(row)
+                fetched_bytes += sum(
+                    len(value) if isinstance(value, str | bytes) else 8 for value in row
+                )
             columns = [column[0] for column in cursor.description or []]
             cursor.close()
         except sqlite3.Error as exc:
@@ -449,6 +463,12 @@ class AssistantReader:
         }
         if len(rows) > SQL_ROWS:
             result["more"] = True
+        if fetched_bytes > SQL_BYTES:
+            result["more"] = True
+            result["message"] = (
+                "The rows were too large to return in full, so these are only the "
+                "first. Select fewer or shorter columns, or use substr."
+            )
         return result
 
     def get_budgets(

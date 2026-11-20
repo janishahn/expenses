@@ -38,8 +38,9 @@ final class AppModel {
     var status: MobileStatus?
     var aiFeatures: [String] { status?.aiFeatures ?? [] }
     // The server stores transaction and balance snapshot times as wall-clock times in its
-    // zone, so a stored time shows and saves in it. The device's zone until it is known.
-    var serverTimeZone: TimeZone { status.flatMap { TimeZone(identifier: $0.timezone) } ?? .current }
+    // zone, so a stored time shows and saves in it. Nil until the server's status is read;
+    // a time to save then waits for it, while screens show the device's zone.
+    var serverTimeZone: TimeZone? { status.flatMap { TimeZone(identifier: $0.timezone) } }
     // A mobile session token is stored. The app shows sign-in until there is one.
     private(set) var hasSession = false
     var identity: MobileAuthIdentity?
@@ -180,6 +181,14 @@ final class AppModel {
         if let status = try? await apiClient.mobileStatus() {
             self.status = status
         }
+    }
+
+    /// The server's zone, read again when the launch couldn't reach the server.
+    func loadServerTimeZone() async -> TimeZone? {
+        if serverTimeZone == nil {
+            await refreshStatus()
+        }
+        return serverTimeZone
     }
 
     func loadCurrentSession() async {
@@ -351,10 +360,15 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // A new record exists once created, even when the refresh fails, so Add must not
+        // create it again.
+        var created = false
+        let saved = await runRequestReturningSuccess {
             _ = try await apiClient.saveBalanceAnchor(id: id, body: body, token: token)
+            created = id == nil
             settings = try await apiClient.settings(token: token)
         }
+        return saved || created
     }
 
     func deleteBalanceAnchor(_ anchor: BalanceAnchor) async -> Bool {
@@ -1122,15 +1136,20 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // A new record exists once created, even when the refresh fails, so Add must not
+        // create it again.
+        var created = false
+        let saved = await runRequestReturningSuccess {
             if let id {
                 _ = try await apiClient.updateRule(id: id, body: body, token: token)
             } else {
                 _ = try await apiClient.createRule(body, token: token)
+                created = true
             }
             rules = try await apiClient.rules(token: token)
             try await reloadTransactions(token: token)
         }
+        return saved || created
     }
 
     func mineRuleSuggestions() async -> Bool {
@@ -1606,10 +1625,13 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        var created = false
+        let saved = await runRequestReturningSuccess {
             try await apiClient.createCategory(body, token: token)
+            created = true
             categories = try await apiClient.categories(period: categoriesPeriod, token: token)
         }
+        return saved || created
     }
 
     // Names and icons also show on the Dashboard, in transactions, and in rules.
@@ -1657,14 +1679,17 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        var created = false
+        let saved = await runRequestReturningSuccess {
             if let id {
                 try await apiClient.updateTag(id: id, body: body, token: token)
             } else {
                 try await apiClient.createTag(body, token: token)
+                created = true
             }
             try await reloadPrimaryData()
         }
+        return saved || created
     }
 
     func setTagArchived(id: Int, archived: Bool) async -> Bool {
@@ -1708,14 +1733,17 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        var created = false
+        let saved = await runRequestReturningSuccess {
             if let id {
                 try await apiClient.updateTemplate(id: id, body: body, token: token)
             } else {
                 try await apiClient.createTemplate(body, token: token)
+                created = true
             }
             templates = try await apiClient.templates(token: token)
         }
+        return saved || created
     }
 
     func deleteTemplate(id: Int) async -> Bool {
@@ -1761,16 +1789,38 @@ final class AppModel {
         return createdID
     }
 
-    func updateTransaction(id: Int, body: TransactionMutationRequest) async -> Bool {
+    /// The server's answer to the save, or nil when the save or the refresh after it failed.
+    func updateTransaction(id: Int, body: TransactionMutationRequest) async -> TransactionSavedResponse? {
         guard let token else {
-            return false
+            return nil
         }
-        return await runRequestReturningSuccess {
-            _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
+        var body = body
+        if body.changesTime, body.timeZone == nil {
+            guard let timeZone = await loadServerTimeZone() else {
+                lastError = APIErrorInfo(message: "Couldn't read the server's time zone, so the date can't change yet. Check the connection and try again.")
+                return nil
+            }
+            body.timeZone = timeZone
+        }
+        var response: TransactionSavedResponse?
+        let refreshed = await runRequestReturningSuccess {
+            do {
+                let saved = try await apiClient.updateTransaction(id: id, body: body, token: token)
+                response = saved
+                // The next save sends this version, even when the refresh below fails.
+                if let updatedAt = saved.updatedAt, selectedTransaction?.id == id {
+                    selectedTransaction?.updatedAt = updatedAt
+                }
+            } catch let error as APIErrorInfo where error.statusCode == 409 {
+                // Saved elsewhere since it loaded: show that version with the server's message.
+                try? await refreshTransactionDetail(id: id, token: token)
+                throw error
+            }
             async let ledger: Void = reloadLedger(token: token)
             try await refreshTransactionDetail(id: id, token: token)
             try await ledger
         }
+        return refreshed ? response : nil
     }
 
     /// Tracks the transaction as a durable purchase, or stops tracking it when `body` is nil.
@@ -1842,7 +1892,10 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // An uploaded receipt is stored even when the refresh fails, so a retry must not
+        // upload it again.
+        var uploaded = false
+        let saved = await runRequestReturningSuccess {
             let didStartAccess = fileURL.startAccessingSecurityScopedResource()
             defer {
                 if didStartAccess {
@@ -1858,12 +1911,14 @@ final class AppModel {
                 replacing: replacing,
                 token: token
             )
+            uploaded = true
             let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
             if selectedTransaction?.id == transactionID {
                 selectedTransaction = detail
             }
             try await reloadTransactions(token: token)
         }
+        return saved || uploaded
     }
 
     func uploadAttachmentData(
@@ -1876,7 +1931,10 @@ final class AppModel {
         guard let token else {
             return false
         }
-        return await runRequestReturningSuccess {
+        // An uploaded receipt is stored even when the refresh fails, so a retry must not
+        // upload it again.
+        var uploaded = false
+        let saved = await runRequestReturningSuccess {
             _ = try await apiClient.uploadAttachment(
                 transactionID: transactionID,
                 filename: filename,
@@ -1885,12 +1943,14 @@ final class AppModel {
                 replacing: replacing,
                 token: token
             )
+            uploaded = true
             let detail = try await apiClient.transactionDetail(id: transactionID, token: token)
             if selectedTransaction?.id == transactionID {
                 selectedTransaction = detail
             }
             try await reloadTransactions(token: token)
         }
+        return saved || uploaded
     }
 
     func readReceiptItems(_ attachment: ReceiptAttachment, transactionID: Int) async -> Bool {

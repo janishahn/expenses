@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import date
 
 from sqlalchemy import delete, func, select
@@ -16,9 +17,7 @@ def _month_start(year: int, month: int) -> date:
 
 
 def _month_end(year: int, month: int) -> date:
-    if month == 12:
-        return date(year + 1, 1, 1) - date.resolution
-    return date(year, month + 1, 1) - date.resolution
+    return date(year, month, monthrange(year, month)[1])
 
 
 def recompute_monthly_rollup(

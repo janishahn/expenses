@@ -128,7 +128,7 @@ test.describe("Categories Page", () => {
     await dialog.getByLabel("Into").selectOption(String(conflictId))
     await expect(dialog).toContainText("1 plan, 0 adjustments")
     await dialog.getByRole("button", { name: "Merge", exact: true }).click()
-    await expect(dialog.getByRole("alert")).toContainText(/overlapping budget scopes/i)
+    await expect(dialog.getByRole("alert")).toContainText(/both have a budget for the same period/i)
     expect((await fetchCategory(request, sourceName))?.archived_at).toBeNull()
 
     await dialog.getByLabel("Into").selectOption(String(targetId))

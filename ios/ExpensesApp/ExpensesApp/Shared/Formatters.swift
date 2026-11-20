@@ -45,7 +45,7 @@ enum AppFormatters {
         }
         let style = Date.FormatStyle(timeZone: .gmt).weekday(.abbreviated).day().month(.abbreviated)
         let year = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: date).year
-        return date.formatted(year == Calendar.current.component(.year, from: .now) ? style : style.year())
+        return date.formatted(year == Calendar.gregorianDays.component(.year, from: .now) ? style : style.year())
     }
 
     /// "Today, 14:32", "Yesterday, 14:32", or "Thu 22 Oct, 20:15".
@@ -67,7 +67,7 @@ enum AppFormatters {
     /// the device's unless given.
     static func localDay(_ utcDay: Date, in timeZone: TimeZone = .current) -> Date {
         let parts = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: utcDay)
-        return Calendar.current.date(from: DateComponents(timeZone: timeZone, year: parts.year, month: parts.month, day: parts.day, hour: 12))!
+        return Calendar.gregorianDays.date(from: DateComponents(timeZone: timeZone, year: parts.year, month: parts.month, day: parts.day, hour: 12))!
     }
 
     /// "12,34" for an amount field: the locale's decimal separator and no grouping.

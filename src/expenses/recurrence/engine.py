@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, time, timedelta
 from typing import Optional, Protocol
 from zoneinfo import ZoneInfo
@@ -6,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
 from expenses.db.models import (
     CurrencyCode,
@@ -16,6 +18,8 @@ from expenses.db.models import (
 )
 from expenses.infra.fx_rates import FxRateService
 from expenses.services.rollups import recompute_monthly_rollup_for_date
+
+logger = get_logger("expenses.recurrence")
 
 
 def local_now() -> datetime:
@@ -44,14 +48,22 @@ def _add_months(
 
     dim = days_in_month(year, month)
     if policy == MonthDayPolicy.skip and desired_day > dim:
-        while desired_day > dim:
-            total_months += 1
-            year = base.year + total_months // 12
-            month = total_months % 12 + 1
-            dim = days_in_month(year, month)
+        # Skip whole intervals so the rule stays on its months. 48 steps cover
+        # every month of the cycle across a leap cycle; a rule whose months never
+        # have the day (one moved off its anchor month) falls back to month end.
+        for _ in range(48):
+            total_months += months
+            candidate_year = base.year + total_months // 12
+            candidate_month = total_months % 12 + 1
+            if desired_day <= days_in_month(candidate_year, candidate_month):
+                return date(candidate_year, candidate_month, desired_day)
 
     day = dim if desired_day > dim else desired_day
     return date(year, month, day)
+
+
+# A century of monthly occurrences.
+_MAX_CARRY_FORWARD_REPLAY = 1200
 
 
 class RecurrenceRuleLike(Protocol):
@@ -62,7 +74,56 @@ class RecurrenceRuleLike(Protocol):
     month_day_policy: MonthDayPolicy
 
 
+def _fits_rule_day(rule: RecurrenceRuleLike, day: date) -> bool:
+    anchor_day = rule.anchor_date.day
+    if rule.month_day_policy == MonthDayPolicy.skip:
+        return day.day == anchor_day
+    if day.day == min(anchor_day, days_in_month(day.year, day.month)):
+        return True
+    # "Use previous month's day" keeps a month end it was cut to (31 -> 30 -> 28).
+    return (
+        rule.month_day_policy == MonthDayPolicy.carry_forward
+        and rule.interval_unit == IntervalUnit.month
+        and 28 <= day.day < anchor_day
+    )
+
+
+def _unshifted_date(rule: RecurrenceRuleLike, stored: date) -> date:
+    """The scheduled date a stored occurrence stands for before "Skip weekends"
+    moved it to Monday, so the next date follows the rule's own months."""
+    if not rule.skip_weekends or stored.weekday() != 0:
+        return stored
+    for days_back in (2, 1):
+        candidate = stored - timedelta(days=days_back)
+        if _fits_rule_day(rule, candidate):
+            break
+    else:
+        return stored
+    if (
+        rule.month_day_policy == MonthDayPolicy.carry_forward
+        and rule.interval_unit == IntervalUnit.month
+    ):
+        # The carried day lives only in the dates, so a Monday can be the
+        # scheduled day itself (the 30th) or a moved weekend (the 28th). Replay
+        # the schedule from the anchor; a date set by hand off it keeps the guess.
+        scheduled = rule.anchor_date
+        for _ in range(_MAX_CARRY_FORWARD_REPLAY):
+            if scheduled > stored:
+                break
+            if scheduled >= stored - timedelta(days=2):
+                return scheduled
+            scheduled = _add_months(
+                scheduled,
+                rule.interval_count,
+                desired_day=scheduled.day,
+                policy=MonthDayPolicy.carry_forward,
+            )
+    return candidate
+
+
 def calculate_next_date(rule: RecurrenceRuleLike, from_date: date) -> date:
+    if rule.interval_unit in (IntervalUnit.month, IntervalUnit.year):
+        from_date = _unshifted_date(rule, from_date)
     if rule.interval_unit == IntervalUnit.day:
         next_date = from_date + timedelta(days=rule.interval_count)
     elif rule.interval_unit == IntervalUnit.week:
@@ -93,6 +154,14 @@ def calculate_next_date(rule: RecurrenceRuleLike, from_date: date) -> date:
     return next_date
 
 
+def next_date_in_range(rule: RecurrenceRuleLike, from_date: date) -> Optional[date]:
+    """The next occurrence, or None when it lies beyond the dates Python can hold."""
+    try:
+        return calculate_next_date(rule, from_date)
+    except (ValueError, OverflowError):
+        return None
+
+
 class RecurringEngine:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -110,7 +179,16 @@ class RecurringEngine:
                     posted = self._post_occurrence(rule, occurrence_date)
             except (SQLAlchemyError, RuntimeError, ValueError):
                 break
-            next_date = calculate_next_date(rule, occurrence_date)
+            next_date = next_date_in_range(rule, occurrence_date)
+            if next_date is None:
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "recurring_rule_cannot_advance",
+                    rule_id=rule.id,
+                    occurrence_date=occurrence_date.isoformat(),
+                )
+                break
             rule.next_occurrence = next_date
             if not posted and occurrence_date == next_date:
                 break
@@ -158,7 +236,7 @@ class RecurringEngine:
         fx_fetched_at = None
 
         if rule.currency_code == CurrencyCode.usd:
-            fx = FxRateService(self.session)
+            fx = FxRateService(self.session, cache_in_session=True)
             amount_eur_cents, quote = fx.convert_usd_cents_to_eur_cents(
                 rule.amount_cents, occurrence_date
             )
@@ -184,7 +262,8 @@ class RecurringEngine:
             category_id=rule.category_id,
             origin_rule_id=rule.id,
             occurrence_date=occurrence_date,
-            title=rule.name,
+            # Rules saved before names were required post under their category.
+            title=(rule.name or "").strip() or rule.category.name,
         )
         self.session.add(txn)
         self.session.flush()

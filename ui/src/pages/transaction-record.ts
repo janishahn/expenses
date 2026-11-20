@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
+import { apiFetch, apiFetchFormData, getApiErrorMessage, isApiErrorStatus } from "../app/api"
 import type {
   CategoriesResponse,
   CategorySummary,
@@ -79,10 +79,13 @@ export function useTransactionRecord(id: number) {
       try {
         await apiFetch(`/api/transactions/${id}`, {
           method: "PUT",
-          body: JSON.stringify(transactionPayload(current, changes)),
+          // The server refuses the save when the record changed since this version loaded.
+          body: JSON.stringify({ ...transactionPayload(current, changes), expected_updated_at: current.updated_at }),
         })
       } catch (error) {
         setError(field, getApiErrorMessage(error, "Unable to save the change."))
+        // Load the newer version under the kept entry, so saving it again applies to that version.
+        if (isApiErrorStatus(error, 409)) await queryClient.refetchQueries({ queryKey: key, exact: true })
         return false
       }
       queryClient.setQueryData(key, applyTransactionChanges(current, changes))
@@ -99,7 +102,10 @@ export function useTransactionRecord(id: number) {
       return true
     }
     const result = queue.current.then(run)
-    queue.current = result
+    // The next save sends the version this one stored, so it waits for the record to reload.
+    queue.current = result.then((saved) =>
+      saved ? queryClient.refetchQueries({ queryKey: key, exact: true }, { cancelRefetch: false }) : undefined
+    )
     return result
   }
 

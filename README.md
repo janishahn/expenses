@@ -189,7 +189,11 @@ tailscale serve --bg 8000
 tailscale serve status
 ```
 
-Use the resulting `https://<host>.<tailnet>.ts.net` address in the browser, the iOS app, and ingest automations. If you use a public reverse proxy or tunnel, remember that the same origin also exposes the mobile and ingest APIs. Read [`SECURITY.md`](SECURITY.md) before exposing an instance outside a private network.
+Use the resulting `https://<host>.<tailnet>.ts.net` address in the browser, the iOS app, and ingest automations.
+
+The app trusts forwarded headers only from the addresses in `EXPENSES_FORWARDED_ALLOW_IPS` (`127.0.0.1` by default; `start.sh` reads it from its environment, not from `.env`, and Docker Compose passes it to the image). Without that trust, the session cookie is issued without `Secure` and login throttling sees one address for every client. With Docker Compose on Linux, `tailscale serve` requests reach the container from the compose network's gateway, not from `127.0.0.1`. To check, sign in through the Tailscale address and look at the session cookie in the browser's developer tools: if it lacks `Secure`, pin the compose subnet as shown in [`docker-compose.yml`](docker-compose.yml) and set `EXPENSES_FORWARDED_ALLOW_IPS` to its gateway in `.env`. Publish the port on the loopback address only (prefix the `ports` entry with `127.0.0.1:`), so `tailscale serve` is the only way in through the trusted gateway. Do not do this on Docker Desktop, where every client arrives from the gateway.
+
+If you use a public reverse proxy or tunnel, remember that the same origin also exposes the mobile and ingest APIs. Read [`SECURITY.md`](SECURITY.md) before exposing an instance outside a private network.
 
 ## Data and backups
 

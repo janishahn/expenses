@@ -974,6 +974,8 @@ struct RecurringRule: Codable, Equatable, Identifiable {
     let autoPost: Bool
     let skipWeekends: Bool
     let monthDayPolicy: MonthDayPolicy
+    // Past its end date, so the server's totals leave it out; older servers don't send it.
+    let ended: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -992,6 +994,7 @@ struct RecurringRule: Codable, Equatable, Identifiable {
         case autoPost = "auto_post"
         case skipWeekends = "skip_weekends"
         case monthDayPolicy = "month_day_policy"
+        case ended
     }
 }
 
@@ -1031,6 +1034,24 @@ struct RecurringRuleRequest: Codable, Equatable {
         case autoPost = "auto_post"
         case skipWeekends = "skip_weekends"
         case monthDayPolicy = "month_day_policy"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        // A rule stored without a name saves with null, as it is stored.
+        try container.encode(name, forKey: .name)
+        try container.encode(type, forKey: .type)
+        try container.encode(currencyCode, forKey: .currencyCode)
+        try container.encode(amountCents, forKey: .amountCents)
+        try container.encode(categoryID, forKey: .categoryID)
+        try container.encode(anchorDate, forKey: .anchorDate)
+        try container.encode(intervalUnit, forKey: .intervalUnit)
+        try container.encode(intervalCount, forKey: .intervalCount)
+        try container.encode(nextOccurrence, forKey: .nextOccurrence)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+        try container.encode(autoPost, forKey: .autoPost)
+        try container.encode(skipWeekends, forKey: .skipWeekends)
+        try container.encode(monthDayPolicy, forKey: .monthDayPolicy)
     }
 }
 
@@ -1264,6 +1285,8 @@ struct TransactionListItem: Codable, Equatable, Identifiable {
     let longitude: Double?
     let tags: [TransactionTag]
     let hasAttachments: Bool
+    // The server's text, as an edit sends it back; older servers leave it out.
+    let updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1281,13 +1304,37 @@ struct TransactionListItem: Codable, Equatable, Identifiable {
         case longitude
         case tags
         case hasAttachments = "has_attachments"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// A date-time with the text the server sent, so a save can send it back unchanged.
+struct ServerDateTime: Codable, Equatable {
+    let text: String
+    let date: Date
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        text = try container.decode(String.self)
+        date = try container.decode(Date.self)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(text)
+    }
+
+    /// "2026-05-17T03:00:00" from "2026-05-17T03:00:00+02:00": the wall-clock time the
+    /// server stores, without the offset it adds when it sends one.
+    var wallClock: String {
+        text.replacing(#/(?:Z|[+-]\d{2}:\d{2})$/#, with: "")
     }
 }
 
 struct TransactionDetail: Codable, Equatable, Identifiable {
     let id: Int
     let date: Date
-    let occurredAt: Date?
+    let occurredAt: ServerDateTime?
     let type: String
     let amountCents: Int
     let categoryID: Int?
@@ -1303,6 +1350,9 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
     let durablePurchase: DurablePurchase?
     let attachments: [ReceiptAttachment]
     let bankRow: TransactionBankRow?
+    // The server's text, sent back so a save can't overwrite a newer edit; older servers leave it out.
+    // A save sets it to the version the server returned.
+    var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1323,6 +1373,7 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
         case durablePurchase = "durable_purchase"
         case attachments
         case bankRow = "bank_row"
+        case updatedAt = "updated_at"
     }
 }
 
@@ -1814,8 +1865,9 @@ struct TransactionFilters: Codable, Equatable {
 /// The full body that creates or replaces a transaction.
 struct TransactionMutationRequest: Encodable, Equatable {
     var occurredAt: Date
-    // The zone `occurredAt` is written in. The server stores the wall-clock time without one.
-    var timeZone: TimeZone
+    // The zone a changed `occurredAt` is written in. The server stores the wall-clock time
+    // without one. Nil while the server's zone is unknown, which a changed time must wait for.
+    var timeZone: TimeZone?
     var type: TransactionKind
     var isReimbursement: Bool
     var amountCents: Int
@@ -1824,6 +1876,23 @@ struct TransactionMutationRequest: Encodable, Equatable {
     var description: String?
     var location: LocationUpdate = .keep
     var tags: [String]
+    // The stored day and time as the server sent them, sent back as they are while
+    // `occurredAt` is unchanged.
+    var stored: StoredTime?
+    // The stored record's `updated_at`; the server refuses the save when it changed since.
+    var expectedUpdatedAt: String?
+
+    struct StoredTime: Equatable {
+        let date: String
+        let occurredAt: String
+        // `occurredAt` as the body first showed it.
+        let shown: Date
+    }
+
+    /// The time differs from the stored one, so it is written in `timeZone`.
+    var changesTime: Bool {
+        stored?.shown != occurredAt
+    }
 
     /// Omitted coordinates keep the stored ones; clearing needs explicit nulls.
     enum LocationUpdate: Equatable {
@@ -1844,12 +1913,20 @@ struct TransactionMutationRequest: Encodable, Equatable {
         case latitude
         case longitude
         case tags
+        case expectedUpdatedAt = "expected_updated_at"
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(AppFormatters.isoDay(occurredAt, in: timeZone), forKey: .date)
-        try container.encode(AppFormatters.isoDateTime(occurredAt, in: timeZone), forKey: .occurredAt)
+        if let stored, !changesTime {
+            try container.encode(stored.date, forKey: .date)
+            try container.encode(stored.occurredAt, forKey: .occurredAt)
+        } else if let timeZone {
+            try container.encode(AppFormatters.isoDay(occurredAt, in: timeZone), forKey: .date)
+            try container.encode(AppFormatters.isoDateTime(occurredAt, in: timeZone), forKey: .occurredAt)
+        } else {
+            throw EncodingError.invalidValue(occurredAt, EncodingError.Context(codingPath: [CodingKeys.occurredAt], debugDescription: "A changed time needs the server's time zone."))
+        }
         try container.encode(type.rawValue, forKey: .type)
         try container.encode(type == .income && isReimbursement, forKey: .isReimbursement)
         try container.encode(amountCents, forKey: .amountCents)
@@ -1867,15 +1944,20 @@ struct TransactionMutationRequest: Encodable, Equatable {
             try container.encode(longitude, forKey: .longitude)
         }
         try container.encode(tags, forKey: .tags)
+        // Older servers refuse unknown fields, so it is left out when there is none.
+        try container.encodeIfPresent(expectedUpdatedAt, forKey: .expectedUpdatedAt)
     }
 }
 
 extension TransactionMutationRequest {
-    /// The stored transaction as a body, to change one field at a time. Its time is written
-    /// in the server's zone, so it saves back as the wall-clock time the server stored.
-    init(_ transaction: TransactionDetail, serverTimeZone: TimeZone) {
+    /// The stored transaction as a body, to change one field at a time. Its day and time
+    /// save back as the server sent them; a changed time is written in the server's zone,
+    /// nil until it is known, and shows in the device's meanwhile.
+    init(_ transaction: TransactionDetail, serverTimeZone: TimeZone?) {
+        let date = AppFormatters.isoDay(transaction.date, in: .gmt)
+        let shown = transaction.occurredAt?.date ?? AppFormatters.localDay(transaction.date, in: serverTimeZone ?? .current)
         self.init(
-            occurredAt: transaction.occurredAt ?? AppFormatters.localDay(transaction.date, in: serverTimeZone),
+            occurredAt: shown,
             timeZone: serverTimeZone,
             type: TransactionKind(rawValue: transaction.type) ?? .expense,
             isReimbursement: transaction.isReimbursement,
@@ -1883,7 +1965,10 @@ extension TransactionMutationRequest {
             categoryID: transaction.categoryID,
             title: transaction.title,
             description: transaction.description,
-            tags: transaction.tags
+            tags: transaction.tags,
+            // A transaction without a time saves at noon of its day, as the web does.
+            stored: StoredTime(date: date, occurredAt: transaction.occurredAt?.wallClock ?? "\(date)T12:00:00", shown: shown),
+            expectedUpdatedAt: transaction.updatedAt
         )
     }
 }
@@ -1982,6 +2067,18 @@ struct BulkEditResponse: Codable, Equatable {
 
 struct IDResponse: Codable, Equatable {
     let id: Int
+}
+
+/// The answer to a transaction save.
+struct TransactionSavedResponse: Codable, Equatable {
+    let id: Int
+    // The saved version, as the server's text; older servers leave it out.
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case updatedAt = "updated_at"
+    }
 }
 
 struct DashboardResponse: Codable, Equatable {

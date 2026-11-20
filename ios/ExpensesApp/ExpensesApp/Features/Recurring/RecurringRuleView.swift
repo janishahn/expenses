@@ -570,9 +570,15 @@ struct RecurringRuleView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         nameDraft = name
-        let value = name.isEmpty ? nil : name
-        if value != shown(rule).name || saves.errors[.name] != nil {
-            save(.name) { $0.name = value }
+        guard !name.isEmpty else {
+            // A rule saved before names were required stays unnamed until one is entered.
+            if !(shown(rule).name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                saves.errors[.name] = "Enter a name."
+            }
+            return
+        }
+        if name != shown(rule).name || saves.errors[.name] != nil {
+            save(.name) { $0.name = name }
         }
     }
 

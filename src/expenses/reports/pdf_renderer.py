@@ -2,7 +2,7 @@ from datetime import date, datetime
 from html import escape
 from typing import cast
 
-from expenses.db.models import TransactionType
+from expenses.db.models import CurrencyCode, TransactionType
 from expenses.schemas import ReportOptions
 
 
@@ -305,11 +305,13 @@ def render_report_html(data: dict[str, object]) -> str:
             "<div class='table-wrap'><table><thead><tr><th>Name</th><th>Type</th><th class='right'>Amount</th><th>Next occurrence</th><th>Interval</th></tr></thead><tbody>"
         )
         for rule in recurring_upcoming:
+            # Rule amounts are in the rule's own currency, not converted.
+            symbol = "$" if rule.currency_code == CurrencyCode.usd else "€"
             parts.append(
                 "<tr>"
                 f"<td>{escape(rule.name or 'Untitled')}</td>"
                 f"<td>{escape(rule.type.value)}</td>"
-                f"<td class='right mono'>{_format_currency(int(rule.amount_cents), include_cents)} €</td>"
+                f"<td class='right mono'>{_format_currency(int(rule.amount_cents), include_cents)} {symbol}</td>"
                 f"<td>{_format_eurodate(rule.next_occurrence)}</td>"
                 f"<td>{rule.interval_count} {escape(rule.interval_unit.value)}</td>"
                 "</tr>"

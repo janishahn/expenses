@@ -325,11 +325,12 @@ function TransactionsPage() {
   exportParams.delete("page")
   const exportHref = `/api/transactions/export.csv?${exportParams.toString()}`
 
-  // Selection
-  const selectionCount = selection.mode === "ids" ? selection.ids.length : total
-  const isChecked = (id: number) => selection.mode === "query" || selection.ids.includes(id)
+  // Selection. Rows that left the list since they were checked drop out of it.
+  const selectedIds = selection.mode === "ids" ? selection.ids.filter((id) => items.some((row) => row.id === id)) : []
+  const selectionCount = selection.mode === "ids" ? selectedIds.length : total
+  const isChecked = (id: number) => selection.mode === "query" || selectedIds.includes(id)
   const setChecked = (id: number, checked: boolean) => {
-    const current = selection.mode === "ids" ? selection.ids : items.map((row) => row.id)
+    const current = selection.mode === "ids" ? selectedIds : items.map((row) => row.id)
     setSelection({
       mode: "ids",
       ids: checked ? [...current.filter((value) => value !== id), id] : current.filter((value) => value !== id),
@@ -342,7 +343,7 @@ function TransactionsPage() {
 
   const bulkPayload = (operation: BulkOperation) => {
     if (selection.mode === "ids") {
-      return { selection: { mode: "ids", transaction_ids: selection.ids }, operation }
+      return { selection: { mode: "ids", transaction_ids: selectedIds }, operation }
     }
     if (!settled) return null
     const settledTagMode: TagMode = settled.filters.excluded_tag_ids.length ? "exclude" : "include"
@@ -431,12 +432,15 @@ function TransactionsPage() {
     if (applied) setTagPatch(null)
   }
 
-  // Rows by day. A band at a page edge may continue on the next or previous page, so it
-  // shows no net rather than a partial one.
+  // Rows by day. The bands holding the page's first and last rows may continue on the
+  // previous or next page, so they show no net rather than a partial one. So may a band
+  // with a row whose time falls on another day, when there are other pages.
   const groups = groupByDay(items)
   const bandNet = (index: number): ReactNode => {
-    if ((index === 0 && page > 1) || (index === groups.length - 1 && has_more)) return null
-    return <Amount cents={dayNet(groups[index].rows)} kind="signed" />
+    const rows = groups[index].rows
+    if ((page > 1 && rows.includes(items[0])) || (has_more && rows.includes(items[items.length - 1]))) return null
+    if ((page > 1 || has_more) && rows.some((row) => row.occurred_at.slice(0, 10) !== row.date)) return null
+    return <Amount cents={dayNet(rows)} kind="signed" />
   }
 
   const searchField = searchVisible ? (

@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, or_, select, update
+from sqlalchemy import Connection, Engine, case, func, or_, select, update
 from sqlalchemy.orm import Session, aliased, joinedload
 
 from expenses.ai.client import (
@@ -50,7 +50,7 @@ from expenses.db.models import (
     TransactionLLMSuggestion,
     TransactionType,
 )
-from expenses.schemas import RuleIn, TransactionIn
+from expenses.schemas import MAX_AMOUNT_CENTS, RuleIn, TransactionIn
 from expenses.services.main import (
     CategoryService,
     ReceiptAttachmentService,
@@ -424,6 +424,16 @@ class LLMAssistantService:
                     )
             if proposal.set_category_id is None and not proposal.add_tags:
                 continue
+            low, high = proposal.min_amount_cents, proposal.max_amount_cents
+            # RuleIn refuses these on accept.
+            if (low or 0) > MAX_AMOUNT_CENTS or (high or 0) > MAX_AMOUNT_CENTS:
+                continue
+            if low is not None and high is not None and low > high:
+                continue
+            if proposal.set_category_id is not None:
+                category = self.session.get(Category, proposal.set_category_id)
+                if category is not None and category.archived_at is not None:
+                    continue
             stored = self._store_rule_suggestion(proposal, job_id=job_id)
             suggestions.append(
                 RuleSuggestionResult(
@@ -533,6 +543,14 @@ class LLMAssistantService:
         )
         if suggestion is None:
             raise ValueError("Suggestion not found")
+        if (
+            suggestion.set_category is not None
+            and suggestion.set_category.archived_at is not None
+        ):
+            raise ValueError(
+                f"{suggestion.set_category.name} is archived. Restore it or reject "
+                "this suggestion."
+            )
         rule = RuleService(self.session, self.user_id).create(
             RuleIn(
                 name=suggestion.name,
@@ -867,6 +885,7 @@ class LLMAssistantService:
             .options(joinedload(TransactionClassificationEvent.transaction))
             .where(
                 TransactionClassificationEvent.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
                 TransactionClassificationEvent.event_type == "updated",
                 TransactionClassificationEvent.before_category_id.is_not(None),
                 TransactionClassificationEvent.after_category_id.is_not(None),
@@ -897,7 +916,7 @@ class LLMAssistantService:
             if len(rows) < 2:
                 continue
             category = categories.get(category_id)
-            if category is None:
+            if category is None or category.archived_at is not None:
                 continue
             txns = [row.transaction for row in rows if row.transaction is not None]
             payload.append(
@@ -1065,9 +1084,44 @@ async def read_receipt_in_background(
     bind: Engine | Connection, user_id: int, attachment_id: int
 ) -> None:
     with Session(bind) as session:
-        await LLMAssistantService(session, user_id=user_id).read_receipt_items(
-            attachment_id
+        storage_key = session.scalar(
+            select(ReceiptAttachment.storage_key).where(
+                ReceiptAttachment.id == attachment_id
+            )
         )
+        try:
+            await LLMAssistantService(session, user_id=user_id).read_receipt_items(
+                attachment_id
+            )
+        except Exception:  # noqa: BLE001 - one failed receipt must not stop the rest
+            # Left reading, it would stop the other receipts at startup and be
+            # read, and billed, again on every restart.
+            session.rollback()
+            log_event(
+                logger,
+                logging.ERROR,
+                "receipt_items_read_crashed",
+                attachment_id=attachment_id,
+                exc_info=True,
+            )
+            # The id may belong to a new upload by now, so the stored file must match.
+            session.execute(
+                update(ReceiptAttachment)
+                .where(
+                    ReceiptAttachment.id == attachment_id,
+                    ReceiptAttachment.user_id == user_id,
+                    ReceiptAttachment.storage_key == storage_key,
+                    ReceiptAttachment.items_status == "reading",
+                )
+                .values(
+                    items_status=case(
+                        (ReceiptAttachment.items.any(), "read"), else_="failed"
+                    ),
+                    items_error="The receipt could not be read.",
+                )
+                .execution_options(synchronize_session=False)
+            )
+            session.commit()
 
 
 def merge_products_for_users_with_new_readings(bind: Engine | Connection) -> None:

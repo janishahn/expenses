@@ -251,11 +251,12 @@ function UncategorizedInboxPage() {
     void queryClient.invalidateQueries({ queryKey: ["transactions", "uncategorized"] })
   }
 
-  // Selection
-  const selectionCount = selection.mode === "ids" ? selection.ids.length : total
-  const isChecked = (id: number) => selection.mode === "query" || selection.ids.includes(id)
+  // Selection. Rows that left the list since they were checked drop out of it.
+  const selectedIds = selection.mode === "ids" ? selection.ids.filter((id) => items.some((row) => row.id === id)) : []
+  const selectionCount = selection.mode === "ids" ? selectedIds.length : total
+  const isChecked = (id: number) => selection.mode === "query" || selectedIds.includes(id)
   const setChecked = (id: number, checked: boolean) => {
-    const current = selection.mode === "ids" ? selection.ids : items.map((row) => row.id)
+    const current = selection.mode === "ids" ? selectedIds : items.map((row) => row.id)
     setSelection({
       mode: "ids",
       ids: checked ? [...current.filter((value) => value !== id), id] : current.filter((value) => value !== id),
@@ -266,7 +267,7 @@ function UncategorizedInboxPage() {
     setSelectMode(false)
   }
   const bulkSelection = () => {
-    if (selection.mode === "ids") return { mode: "ids", transaction_ids: selection.ids }
+    if (selection.mode === "ids") return { mode: "ids", transaction_ids: selectedIds }
     if (!settled) return null
     return {
       mode: "query",

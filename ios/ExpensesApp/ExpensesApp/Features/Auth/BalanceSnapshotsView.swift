@@ -42,7 +42,7 @@ struct BalanceSnapshotsView: View {
                             } label: {
                                 TrailingRow {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(AppFormatters.dateTime(anchor.asOfAt, in: model.serverTimeZone))
+                                        Text(AppFormatters.dateTime(anchor.asOfAt, in: model.serverTimeZone ?? .current))
                                         if let note = anchor.note, !note.isEmpty {
                                             Text(note)
                                                 .font(.subheadline)
@@ -139,6 +139,8 @@ private struct SnapshotSheet: View {
                             EntryChip(AppFormatters.dateTime(asOf, in: timeZone), systemImage: "calendar", isSet: true)
                         }
                         .buttonStyle(.plain)
+                        // A stored time picked before the server's zone is known could save on another day.
+                        .disabled(anchor != nil && model.serverTimeZone == nil)
                         .popover(isPresented: $choosingDate) {
                             DatePicker("As of", selection: $asOf)
                                 .environment(\.timeZone, timeZone)
@@ -193,6 +195,8 @@ private struct SnapshotSheet: View {
         .task {
             if anchor == nil {
                 balanceFocused = true
+            } else if await model.loadServerTimeZone() == nil {
+                formError = Self.zoneUnavailable
             }
         }
     }
@@ -200,7 +204,7 @@ private struct SnapshotSheet: View {
     // A stored time shows and saves in the server's zone, so it keeps its value; a new
     // snapshot takes the device's clock time, as a new transaction does.
     private var timeZone: TimeZone {
-        anchor == nil ? .current : model.serverTimeZone
+        anchor == nil ? .current : model.serverTimeZone ?? .current
     }
 
     // A new snapshot's date is a default, so it alone is no input to lose.
@@ -208,6 +212,8 @@ private struct SnapshotSheet: View {
         balance != (anchor.map { Self.balanceInput($0.balanceCents) } ?? "") || note != (anchor?.note ?? "")
             || anchor.map { asOf != $0.asOfAt } == true
     }
+
+    private static let zoneUnavailable = "Couldn't read the server's time zone, so the snapshot can't be saved yet. Check the connection and try again."
 
     /// "1234,56" or "-1234,56"; a balance can be overdrawn.
     private static func balanceInput(_ cents: Int) -> String {
@@ -225,9 +231,14 @@ private struct SnapshotSheet: View {
         }
         saving = true
         defer { saving = false }
+        let saveTimeZone: TimeZone? = if anchor == nil { .current } else { await model.loadServerTimeZone() }
+        guard let saveTimeZone else {
+            formError = Self.zoneUnavailable
+            return
+        }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = BalanceAnchorRequest(
-            asOfAt: AppFormatters.isoDateTime(asOf, in: timeZone),
+            asOfAt: AppFormatters.isoDateTime(asOf, in: saveTimeZone),
             balanceCents: cents,
             note: trimmedNote.isEmpty ? nil : trimmedNote
         )

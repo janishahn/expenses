@@ -2,7 +2,9 @@ from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from expenses.db.models import RuleLLMSuggestion
 from expenses.recurrence.engine import local_today
+from expenses.services import BudgetService
 
 
 def _create_category(
@@ -288,3 +290,191 @@ def test_categories_and_tags_report_period_totals_and_created_at(
     detail = api_client.get(f"/api/tags/{tag_id}").json()
     assert detail["tag"]["created_at"] == tags[0]["created_at"]
     assert {"kpis", "donut", "transactions"} <= detail.keys()
+
+
+def test_category_merge_moves_templates_and_pending_suggestions(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    groceries = _create_category(api_client, csrf_headers, "Groceries", "expense")
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    response = api_client.post(
+        "/api/templates",
+        headers=csrf_headers,
+        json={
+            "name": "Weekly shop",
+            "type": "expense",
+            "category_id": groceries,
+            "default_amount_cents": 5_000,
+            "title": "Weekly shop",
+            "tags": [],
+        },
+    )
+    assert response.status_code == 200
+    template_id = response.json()["id"]
+    suggestion = RuleLLMSuggestion(
+        user_id=1,
+        name="Lidl",
+        match_type="contains",
+        match_value="LIDL",
+        set_category_id=groceries,
+        reason="Corrections",
+    )
+    db_session.add(suggestion)
+    db_session.commit()
+
+    preview = api_client.post(
+        "/api/categories/merge/preview",
+        headers=csrf_headers,
+        json={"source_category_id": groceries, "target_category_id": food},
+    )
+    assert preview.json()["counts"]["templates"] == 1
+    response = _merge(api_client, csrf_headers, groceries, food)
+    assert response.status_code == 200
+    assert response.json()["counts"]["templates"] == 1
+
+    templates = api_client.get("/api/templates").json()["templates"]
+    assert [(t["id"], t["category_id"]) for t in templates] == [(template_id, food)]
+    db_session.expire_all()
+    assert db_session.get(RuleLLMSuggestion, suggestion.id).set_category_id == food
+
+
+def _budget_template(
+    client: TestClient,
+    headers: dict[str, str],
+    category_id: int,
+    amount_cents: int,
+    starts_on: str,
+    ends_on: str | None = None,
+) -> None:
+    response = client.post(
+        "/api/budgets/templates",
+        headers=headers,
+        json={
+            "frequency": "monthly",
+            "category_id": category_id,
+            "amount_cents": amount_cents,
+            "starts_on": starts_on,
+            "ends_on": ends_on,
+        },
+    )
+    assert response.status_code == 200
+
+
+def _merge(client: TestClient, headers: dict[str, str], source: int, target: int):
+    return client.post(
+        "/api/categories/merge",
+        headers=headers,
+        json={"source_category_id": source, "target_category_id": target},
+    )
+
+
+def test_category_merge_refuses_to_drop_a_budget(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    groceries = _create_category(api_client, csrf_headers, "Groceries", "expense")
+    _budget_template(api_client, csrf_headers, food, 30_000, "2025-01-01")
+    _budget_template(api_client, csrf_headers, groceries, 20_000, "2025-03-01")
+
+    response = _merge(api_client, csrf_headers, groceries, food)
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Cannot merge: Groceries and Food both have a budget for the same period "
+        "(Groceries monthly budget from 2025-03-01 and Food monthly budget from "
+        "2025-01-01). End or delete one of these budgets first."
+    )
+    june = {
+        budget.scope_category_id: budget.amount_cents
+        for budget in BudgetService(db_session, 1).effective_budgets_for_month(2025, 6)
+    }
+    assert june == {food: 30_000, groceries: 20_000}
+
+    # A one-month adjustment would replace the other category's monthly budget.
+    snacks = _create_category(api_client, csrf_headers, "Snacks", "expense")
+    response = api_client.post(
+        "/api/budgets/overrides",
+        headers=csrf_headers,
+        json={"year": 2025, "month": 6, "category_id": snacks, "amount_cents": 4_000},
+    )
+    assert response.status_code == 200
+    response = _merge(api_client, csrf_headers, snacks, food)
+    assert response.status_code == 400
+    assert (
+        "Snacks budget for 2025-06 and Food monthly budget from 2025-01-01"
+        in response.json()["detail"]
+    )
+
+    # Budgets for different months move over unchanged.
+    old = _create_category(api_client, csrf_headers, "Old food", "expense")
+    _budget_template(api_client, csrf_headers, old, 25_000, "2024-01-01", "2024-12-31")
+    response = _merge(api_client, csrf_headers, old, food)
+    assert response.status_code == 200
+    budgets = BudgetService(db_session, 1)
+    assert {
+        b.scope_category_id: b.amount_cents
+        for b in budgets.effective_budgets_for_month(2024, 6)
+    } == {food: 25_000}
+    assert {
+        b.scope_category_id: b.amount_cents
+        for b in budgets.effective_budgets_for_month(2025, 2)
+    } == {food: 30_000}
+
+
+def test_uncategorized_keeps_its_name_and_stays_active(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    txn_id = _transaction(api_client, csrf_headers, amount_cents=500, title="Unknown")
+    uncategorized = api_client.get(f"/api/transactions/{txn_id}").json()["category"]
+    food = _create_category(api_client, csrf_headers, "Food", "expense")
+    salary = _create_category(api_client, csrf_headers, "Salary", "income")
+
+    response = api_client.put(
+        f"/api/categories/{uncategorized['id']}",
+        headers=csrf_headers,
+        json={"name": "Sonstiges", "icon": None, "order": 0},
+    )
+    assert (response.status_code, response.json()["detail"]) == (
+        400,
+        "Uncategorized can't be renamed; transactions without a category use it",
+    )
+    response = api_client.put(
+        f"/api/categories/{uncategorized['id']}",
+        headers=csrf_headers,
+        json={"name": "Uncategorized", "icon": "question", "order": 3},
+    )
+    assert response.status_code == 200
+    response = api_client.post(
+        f"/api/categories/{uncategorized['id']}/archive", headers=csrf_headers
+    )
+    assert (response.status_code, response.json()["detail"]) == (
+        400,
+        "Uncategorized can't be archived; transactions without a category use it",
+    )
+    response = _merge(api_client, csrf_headers, uncategorized["id"], food)
+    assert (response.status_code, response.json()["detail"]) == (
+        400,
+        "Uncategorized can't be merged into another category; "
+        "transactions without a category use it",
+    )
+    response = api_client.put(
+        f"/api/categories/{salary}",
+        headers=csrf_headers,
+        json={"name": "uncategorized", "icon": None, "order": 0},
+    )
+    assert (response.status_code, response.json()["detail"]) == (
+        400,
+        "Uncategorized is reserved for transactions without a category",
+    )
+
+    response = api_client.post(
+        "/api/categories",
+        headers=csrf_headers,
+        json={"name": "UNCATEGORIZED", "type": "expense", "order": 0},
+    )
+    assert (response.status_code, response.json()["detail"]) == (
+        400,
+        "Category with this name already exists",
+    )
+
+    response = _merge(api_client, csrf_headers, food, uncategorized["id"])
+    assert response.status_code == 200

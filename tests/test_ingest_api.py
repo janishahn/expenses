@@ -175,3 +175,22 @@ def test_api_ingest_rejects_nested_location_object(api_client: TestClient) -> No
     )
 
     assert response.status_code == 422
+
+
+def test_api_ingest_rejects_out_of_range_amounts_and_dates(
+    api_client: TestClient,
+) -> None:
+    headers = _ingest_headers(api_client)
+
+    def ingest(**fields):
+        return api_client.post(
+            "/api/ingest",
+            headers=headers,
+            json={"amount_cents": 100, "title": "Coffee", **fields},
+        )
+
+    assert ingest(amount_cents=2**63).status_code == 422
+    assert ingest(amount_cents=2**62).status_code == 422
+    assert ingest(date="9999-12-01").status_code == 422
+    assert ingest(date="1899-12-31").status_code == 422
+    assert ingest(date="2025-03-20").status_code == 201

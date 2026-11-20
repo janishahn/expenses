@@ -686,7 +686,12 @@ function InsightsPage() {
                       : [
                           {
                             key: "spent",
-                            label: `${percent(cell.spent_cents / (cell.budget_cents || 1))} used`,
+                            // A zero budget has no share to show, only whether it was kept.
+                            label: cell.budget_cents
+                              ? `${percent(cell.spent_cents / cell.budget_cents)} used`
+                              : cell.spent_cents > 0
+                                ? "Over budget"
+                                : "Within budget",
                             value: (
                               <>
                                 <Amount cents={cell.spent_cents} decimals={false} /> of <Amount cents={cell.budget_cents} decimals={false} />

@@ -13,6 +13,7 @@ type StoredRule = {
   category_id: number
   interval_unit: string
   interval_count: number
+  next_occurrence: string
   end_date: string | null
   auto_post: boolean
   skip_weekends: boolean
@@ -153,5 +154,67 @@ test.describe("Recurring page", () => {
     await peek.getByRole("textbox", { name: "Name" }).press("Escape")
     await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
     expect((await fetchRule(request, id)).name).toBe(renamed)
+
+    await peek.getByRole("button", { name: "Edit Name" }).click()
+    await peek.getByRole("textbox", { name: "Name" }).fill("")
+    await peek.getByRole("textbox", { name: "Name" }).press("Enter")
+    await expect(peek.getByText("Enter a name.")).toBeVisible()
+    await peek.getByRole("textbox", { name: "Name" }).press("Escape")
+    await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
+    expect((await fetchRule(request, id)).name).toBe(renamed)
+  })
+
+  // A weekly rule from Thursday 1 Jan 2026 whose next posting is a Thursday at least four days ahead.
+  async function seedThursdayRule(request: APIRequestContext) {
+    const { token, categoryId } = await seedExpenseCategory(request, "Start")
+    const next = new Date(Date.now() + 4 * 86_400_000)
+    while (next.getUTCDay() !== 4) next.setUTCDate(next.getUTCDate() + 1)
+    const nextIso = next.toISOString().slice(0, 10)
+    const { id, name } = await seedRule(request, token, categoryId, {
+      anchor_date: "2026-01-01",
+      next_occurrence: nextIso,
+      interval_unit: "week",
+    })
+    const monday = new Date(next.getTime() - 3 * 86_400_000).toISOString().slice(0, 10)
+    return { id, name, next: nextIso, monday }
+  }
+
+  async function changeStartToMonday(page: Page, name: string) {
+    const peek = page.getByRole("complementary", { name })
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Thursday" })).toBeVisible()
+    await peek.getByRole("button", { name: "Starts 1 Jan 2026" }).click()
+    await page.getByRole("textbox", { name: "Starts" }).fill("2025-12-29")
+    await page.getByRole("button", { name: "Save" }).click()
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Monday" })).toBeVisible()
+    return peek
+  }
+
+  test("keeps the moved next occurrence when another edit follows before the start is saved", async ({
+    page,
+    request,
+  }) => {
+    const { id, name, monday } = await seedThursdayRule(request)
+    await page.goto(`/recurring?peek=${id}`)
+    // The start's save is held, so the next edit queues behind it as on a slow connection.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    await page.route(
+      `**/api/recurring/${id}`,
+      async (route) => {
+        await held
+        await route.continue()
+      },
+      { times: 1 },
+    )
+    const peek = await changeStartToMonday(page, name)
+    await peek.getByRole("switch", { name: "Skip weekends" }).click()
+    release()
+
+    await expect
+      .poll(async () => {
+        const rule = await fetchRule(request, id)
+        return `${rule.next_occurrence} ${rule.skip_weekends}`
+      })
+      .toBe(`${monday} true`)
   })
 })

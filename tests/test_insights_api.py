@@ -218,6 +218,26 @@ def test_insights_ignores_invalid_trend_category_value(
     assert len(payload["trend"]) == 12
 
 
+def test_insights_rejects_bad_budget_month_and_out_of_range_periods(
+    api_client: TestClient,
+) -> None:
+    for url, detail in (
+        ("/api/insights?budget_month=2025-13", "Invalid budget_month value"),
+        ("/api/insights?budget_month=soon", "Invalid budget_month format"),
+        (
+            "/api/insights?period=custom&start=0001-01-01&end=2025-11-19",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+        (
+            "/api/insights?period=custom&start=9999-12-01&end=9999-12-31",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+    ):
+        response = api_client.get(url)
+        assert response.status_code == 400, url
+        assert response.json()["detail"] == detail
+
+
 def test_insights_serializes_budget_progress_keys_as_strings(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
@@ -528,6 +548,42 @@ def test_budget_history_reports_budget_and_spend_per_month(
         "spent_cents": 12_000,
     }
     assert overall["cells"][-1]["spent_cents"] == 12_000
+
+
+def test_budget_history_and_yearly_spend_stop_at_today(
+    monkeypatch, api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    today = date(2025, 11, 5)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: today)
+    monkeypatch.setattr("expenses.api.routes.local_today", lambda: today)
+    response = api_client.post(
+        "/api/budgets/templates",
+        headers=csrf_headers,
+        json={
+            "frequency": "monthly",
+            "category_id": None,
+            "amount_cents": 100_000,
+            "starts_on": "2025-01-01",
+        },
+    )
+    assert response.status_code == 200
+    for on, amount in (
+        (date(2025, 10, 20), 3_000),
+        (date(2025, 11, 3), 5_000),
+        (date(2025, 11, 20), 10_000),
+    ):
+        _transaction(api_client, csrf_headers, amount_cents=amount, title="X", on=on)
+
+    history = api_client.get("/api/insights/budget-history").json()
+    (overall,) = history["rows"]
+    cells = {cell["month"]: cell["spent_cents"] for cell in overall["cells"]}
+    assert (cells["2025-10"], cells["2025-11"]) == (3_000, 5_000)
+
+    budgets = api_client.get("/api/budgets?view=year&year=2025").json()
+    spent = {
+        row["scope_category_id"]: row["spent_cents"] for row in budgets["yearly_spent"]
+    }
+    assert spent[None] == 8_000
 
 
 def test_spread_durables_counts_each_day_of_their_life(

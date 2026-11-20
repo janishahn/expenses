@@ -6,7 +6,14 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from expenses.db.models import (
     BudgetFrequency,
@@ -18,10 +25,18 @@ from expenses.db.models import (
 )
 from expenses.services.category_model import MIN_HISTORY
 
+# Sums of many amounts this large stay exact in SQLite integers and in the
+# clients' floating-point numbers.
+MAX_AMOUNT_CENTS = 1_000_000_000_000
+# Date arithmetic around a ledger date (month ends, lifespans, periods) stays
+# inside what `date` can hold.
+MIN_LEDGER_DATE = date(1900, 1, 1)
+MAX_LEDGER_DATE = date(2199, 12, 31)
+
 
 class ReportOptions(BaseModel):
-    start: date
-    end: date
+    start: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    end: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     sections: list[str] = Field(
         default_factory=lambda: [
             "summary",
@@ -30,7 +45,7 @@ class ReportOptions(BaseModel):
         ]
     )
     include_cents: bool = True
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
     transaction_type: Optional[TransactionType] = None
     category_ids: Optional[list[int]] = None
     tag_ids: list[int] = Field(default_factory=list)
@@ -115,10 +130,14 @@ class MobileStatusOut(BaseModel):
     ai_features: list[str]
 
 
+# Keeps a recurring schedule's steps far inside what `date` can hold.
+MAX_RECURRING_INTERVAL_COUNT = 1000
+
+
 class RecurringPreviewIn(BaseModel):
     start_date: date
     interval_unit: IntervalUnit = IntervalUnit.month
-    interval_count: int = Field(default=1, ge=1)
+    interval_count: int = Field(default=1, ge=1, le=MAX_RECURRING_INTERVAL_COUNT)
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
     skip_weekends: bool = False
     # A saved rule's anchor, when previewing from its next occurrence rather than its start.
@@ -243,6 +262,8 @@ class TransactionListItemOut(BaseModel):
     longitude: Optional[float] = None
     tags: list[TransactionTagOut] = Field(default_factory=list)
     has_attachments: bool = False
+    # Echo verbatim as expected_updated_at when saving.
+    updated_at: datetime
 
 
 class DurablePurchaseOut(BaseModel):
@@ -266,6 +287,8 @@ class TransactionDetailOut(BaseModel):
     net_amount_cents: int
     reimbursed_total_cents: int
     created_at: datetime
+    # Echo verbatim as expected_updated_at when saving.
+    updated_at: datetime
     category_id: Optional[int] = None
     category: Optional[CategorySummaryOut] = None
     title: str
@@ -277,6 +300,15 @@ class TransactionDetailOut(BaseModel):
     durable_purchase: Optional[DurablePurchaseOut] = None
     attachments: list[ReceiptAttachmentOut] = Field(default_factory=list)
     bank_row: Optional[TransactionBankRowOut] = None
+
+
+class TransactionSavedOut(BaseModel):
+    id: int
+    updated_at: datetime
+
+
+class ErrorDetailOut(BaseModel):
+    detail: str
 
 
 class TransactionFiltersOut(BaseModel):
@@ -883,25 +915,27 @@ class AdminElevationIn(BaseModel):
 
 
 class BudgetOverrideIn(BaseModel):
-    year: int = Field(..., ge=1970, le=3000)
+    year: int = Field(..., ge=MIN_LEDGER_DATE.year, le=MAX_LEDGER_DATE.year)
     month: int = Field(..., ge=1, le=12)
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
 
 
 class BudgetTemplateIn(BaseModel):
     frequency: BudgetFrequency
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
-    starts_on: date
-    ends_on: Optional[date] = None
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
+    starts_on: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    ends_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
 
 
 class BudgetTemplateApplyFromIn(BaseModel):
     frequency: BudgetFrequency
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
-    starts_on: date
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
+    starts_on: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
 
 
 class BudgetCategoryOut(BaseModel):
@@ -1037,17 +1071,20 @@ class CategoryUpdateIn(BaseModel):
 class TransactionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    date: date
+    date: dt.date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     occurred_at: datetime
     type: TransactionType
     is_reimbursement: Optional[bool] = None
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     category_id: Optional[int] = None
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
     tags: list[str] = Field(default_factory=list)
+    # Update only: the updated_at the client loaded, echoed verbatim. A newer
+    # stored value means another save happened since, and the update is refused.
+    expected_updated_at: Optional[datetime] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1086,12 +1123,20 @@ class TransactionIn(BaseModel):
                 raise ValueError("Longitude must be between -180 and 180")
         return self
 
+    @model_validator(mode="after")
+    def validate_occurred_at(self):
+        if not MIN_LEDGER_DATE <= self.occurred_at.date() <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"occurred_at must fall between {MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+            )
+        return self
+
 
 class TransactionTemplateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     type: TransactionType
     category_id: int
-    default_amount_cents: Optional[int] = Field(default=None, ge=0)
+    default_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
     title: Optional[str] = Field(default=None, max_length=200)
     tags: list[str] = Field(default_factory=list)
 
@@ -1100,10 +1145,18 @@ class TemplateReorderIn(BaseModel):
     template_ids: list[int] = Field(default_factory=list)
 
 
+# 100 years.
+MAX_DURABLE_LIFESPAN_DAYS = 36_500
+
+
 class DurablePurchaseIn(BaseModel):
-    expected_lifespan_days: int = Field(..., gt=0)
-    acquired_on: Optional[date] = None
-    ended_on: Optional[date] = None
+    expected_lifespan_days: int = Field(..., gt=0, le=MAX_DURABLE_LIFESPAN_DAYS)
+    acquired_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
+    ended_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
 
 
 class ScenarioRemoveRuleIn(BaseModel):
@@ -1115,14 +1168,14 @@ class ScenarioAddRuleIn(BaseModel):
     type: Literal["add_rule"]
     name: str = Field(..., min_length=1, max_length=120)
     tx_type: TransactionType
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     interval: Literal["monthly", "yearly", "weekly"]
 
 
 class ScenarioModifyRuleIn(BaseModel):
     type: Literal["modify_rule"]
     rule_id: int
-    new_amount_cents: int = Field(..., ge=0)
+    new_amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     effective_month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
@@ -1130,14 +1183,14 @@ class ScenarioOneTimeIn(BaseModel):
     type: Literal["one_time"]
     name: str = Field(..., min_length=1, max_length=120)
     tx_type: TransactionType
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
 class ScenarioAdjustCategoryIn(BaseModel):
     type: Literal["adjust_category"]
     category_id: int
-    new_monthly_cents: int = Field(..., ge=0)
+    new_monthly_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
 
 
 ScenarioModificationIn = Annotated[
@@ -1152,7 +1205,10 @@ ScenarioModificationIn = Annotated[
 
 class ForecastScenarioIn(BaseModel):
     horizon: Literal[3, 6, 12] = 12
-    modifications: list[ScenarioModificationIn] = Field(default_factory=list)
+    # Each distinct change costs one projection for its own impact.
+    modifications: list[ScenarioModificationIn] = Field(
+        default_factory=list, max_length=50
+    )
 
 
 class ForecastRecurringRuleOut(BaseModel):
@@ -1255,9 +1311,11 @@ class ForecastScenarioResponseOut(ForecastResponseOut):
 class IngestTransactionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     title: str = Field(..., min_length=1, max_length=200)
-    date: Optional[dt.date] = None
+    date: Optional[dt.date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
     category: Optional[str] = Field(default=None, max_length=100)
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
@@ -1322,19 +1380,38 @@ class TagIn(BaseModel):
 
 
 class RecurringRuleIn(BaseModel):
-    name: Optional[str] = None
+    name: str = Field(..., max_length=120)
     type: TransactionType
     currency_code: CurrencyCode = CurrencyCode.eur
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
     category_id: int
-    anchor_date: date
+    anchor_date: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     interval_unit: IntervalUnit
-    interval_count: int = Field(..., gt=0)
-    next_occurrence: date
-    end_date: Optional[date] = None
+    interval_count: int = Field(..., gt=0, le=MAX_RECURRING_INTERVAL_COUNT)
+    next_occurrence: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    end_date: Optional[date] = Field(None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     auto_post: bool = True
     skip_weekends: bool = False
     month_day_policy: MonthDayPolicy = MonthDayPolicy.snap_to_end
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, name: str) -> str:
+        name = name.strip()
+        if not name:
+            raise ValueError("Name cannot be blank")
+        return name
+
+
+class RecurringRuleUpdateIn(RecurringRuleIn):
+    # Rules saved before names were required stay unnamed until given one; the
+    # service refuses a blank name for a rule that has one.
+    name: Optional[str] = Field(None, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, name: Optional[str]) -> Optional[str]:
+        return (name or "").strip() or None
 
 
 class RecurringRuleCategoryOut(BaseModel):
@@ -1383,6 +1460,8 @@ class RecurringRuleOut(BaseModel):
     auto_post: bool
     skip_weekends: Optional[bool] = None
     month_day_policy: Optional[str] = None
+    # Past its end date, or its next occurrence lies beyond it.
+    ended: bool
 
 
 class RecurringResponseOut(BaseModel):
@@ -1442,8 +1521,16 @@ class CSVCommitResponseOut(BaseModel):
 
 class BalanceAnchorIn(BaseModel):
     as_of_at: datetime
-    balance_cents: int
+    balance_cents: int = Field(..., ge=-MAX_AMOUNT_CENTS, le=MAX_AMOUNT_CENTS)
     note: Optional[str] = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_as_of_at(self):
+        if not MIN_LEDGER_DATE <= self.as_of_at.date() <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"as_of_at must fall between {MIN_LEDGER_DATE} and {MAX_LEDGER_DATE}"
+            )
+        return self
 
 
 class BalanceAnchorOut(BaseModel):
@@ -1494,11 +1581,21 @@ class RuleIn(BaseModel):
     match_type: RuleMatchType
     match_value: str = Field(..., min_length=1, max_length=200)
     transaction_type: Optional[TransactionType] = None
-    min_amount_cents: Optional[int] = Field(default=None, ge=0)
-    max_amount_cents: Optional[int] = Field(default=None, ge=0)
+    min_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
+    max_amount_cents: Optional[int] = Field(default=None, ge=0, le=MAX_AMOUNT_CENTS)
     set_category_id: Optional[int] = None
     add_tags: list[str] = Field(default_factory=list)
     budget_exclude_tag_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def validate_amount_range(self):
+        if (
+            self.min_amount_cents is not None
+            and self.max_amount_cents is not None
+            and self.min_amount_cents > self.max_amount_cents
+        ):
+            raise ValueError("The minimum amount cannot be above the maximum amount")
+        return self
 
 
 class RuleTagOut(BaseModel):

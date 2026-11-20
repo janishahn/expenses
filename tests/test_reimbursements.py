@@ -322,3 +322,250 @@ def test_top_tags_use_net_expense() -> None:
     assert top
     assert top[0]["name"] == "group"
     assert top[0]["amount_cents"] == 10_000
+
+
+def _api_txn(client, headers, *, title, cents, on, kind="expense", reimb=False):
+    response = client.post(
+        "/api/transactions",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": f"{on.isoformat()}T12:00:00",
+            "type": kind,
+            "amount_cents": cents,
+            "title": title,
+            "is_reimbursement": reimb,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["id"]
+
+
+def _api_edit(client, headers, transaction_id, *, title, cents, on, kind="expense"):
+    return client.put(
+        f"/api/transactions/{transaction_id}",
+        headers=headers,
+        json={
+            "date": on.isoformat(),
+            "occurred_at": f"{on.isoformat()}T12:00:00",
+            "type": kind,
+            "amount_cents": cents,
+            "title": title,
+        },
+    )
+
+
+def _allocate(client, headers, reimbursement_id, expense_id, cents):
+    response = client.post(
+        f"/api/reimbursements/{reimbursement_id}/allocations",
+        headers=headers,
+        json={"expense_transaction_id": expense_id, "amount_cents": cents},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["allocation_id"]
+
+
+def test_restoring_an_expense_cannot_overallocate_its_reimbursement(
+    api_client, csrf_headers
+) -> None:
+    june = date(2025, 6, 1)
+    first = _api_txn(api_client, csrf_headers, title="First", cents=10_000, on=june)
+    second = _api_txn(api_client, csrf_headers, title="Second", cents=10_000, on=june)
+    payback = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Payback",
+        cents=6_000,
+        on=june,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, payback, first, 6_000)
+    api_client.delete(f"/api/transactions/{first}", headers=csrf_headers)
+    to_second = _allocate(api_client, csrf_headers, payback, second, 6_000)
+
+    single = api_client.post(f"/api/transactions/{first}/restore", headers=csrf_headers)
+    many = api_client.post(
+        "/api/transactions/deleted/restore",
+        headers=csrf_headers,
+        json={"ids": [first]},
+    )
+    bulk = api_client.post(
+        "/api/transactions/bulk/apply",
+        headers=csrf_headers,
+        json={
+            "selection": {"mode": "ids", "transaction_ids": [first]},
+            "operation": {"lifecycle": "restore"},
+        },
+    )
+
+    for response in (single, many, bulk):
+        assert response.status_code == 409
+        assert '"Payback"' in response.json()["detail"]
+        assert "120,00 €" in response.json()["detail"]
+    kpis = api_client.get(
+        "/api/dashboard?period=custom&start=2025-06-01&end=2025-06-30"
+    ).json()["kpis"]
+    assert kpis["expenses"] == 4_000
+
+    # Doing what the message asks lets the restore through.
+    api_client.delete(
+        f"/api/reimbursements/allocations/{to_second}", headers=csrf_headers
+    )
+    restored = api_client.post(
+        f"/api/transactions/{first}/restore", headers=csrf_headers
+    )
+    assert restored.status_code == 200
+
+
+def test_bulk_restore_is_all_or_nothing(api_client, csrf_headers) -> None:
+    june = date(2025, 6, 1)
+    first = _api_txn(api_client, csrf_headers, title="First", cents=10_000, on=june)
+    second = _api_txn(api_client, csrf_headers, title="Second", cents=10_000, on=june)
+    other = _api_txn(api_client, csrf_headers, title="Other", cents=500, on=june)
+    payback = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Payback",
+        cents=6_000,
+        on=june,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, payback, first, 6_000)
+    api_client.delete(f"/api/transactions/{first}", headers=csrf_headers)
+    api_client.delete(f"/api/transactions/{other}", headers=csrf_headers)
+    _allocate(api_client, csrf_headers, payback, second, 6_000)
+
+    response = api_client.post(
+        "/api/transactions/deleted/restore",
+        headers=csrf_headers,
+        json={"ids": [other, first]},
+    )
+
+    assert response.status_code == 409
+    assert api_client.get(f"/api/transactions/{other}").status_code == 404
+
+
+def test_restoring_a_reimbursement_cannot_reimburse_an_expense_past_its_amount(
+    api_client, csrf_headers
+) -> None:
+    sept = date(2025, 9, 1)
+    expense = _api_txn(api_client, csrf_headers, title="Shop", cents=10_000, on=sept)
+    payback = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Payback",
+        cents=8_000,
+        on=sept,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, payback, expense, 8_000)
+    api_client.delete(f"/api/transactions/{payback}", headers=csrf_headers)
+    lowered = _api_edit(
+        api_client, csrf_headers, expense, title="Shop", cents=5_000, on=sept
+    )
+    assert lowered.status_code == 200, lowered.text
+
+    response = api_client.post(
+        f"/api/transactions/{payback}/restore", headers=csrf_headers
+    )
+
+    assert response.status_code == 409
+    assert '"Shop"' in response.json()["detail"]
+    assert api_client.get(f"/api/transactions/{payback}").status_code == 404
+
+
+def test_allocations_with_a_trashed_side_do_not_block_edits(
+    api_client, csrf_headers
+) -> None:
+    july = date(2025, 7, 1)
+    hotel = _api_txn(api_client, csrf_headers, title="Hotel", cents=10_000, on=july)
+    old = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Old payback",
+        cents=10_000,
+        on=july,
+        kind="income",
+        reimb=True,
+    )
+    new = _api_txn(
+        api_client,
+        csrf_headers,
+        title="New payback",
+        cents=10_000,
+        on=july,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, old, hotel, 10_000)
+    api_client.delete(f"/api/transactions/{old}", headers=csrf_headers)
+
+    _allocate(api_client, csrf_headers, new, hotel, 4_000)
+    assert (
+        _api_edit(
+            api_client, csrf_headers, hotel, title="Hotel", cents=6_000, on=july
+        ).status_code
+        == 200
+    )
+
+    # A trashed expense's allocation does not block the reimbursement either.
+    taxi = _api_txn(api_client, csrf_headers, title="Taxi", cents=3_000, on=july)
+    refund = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Refund",
+        cents=3_000,
+        on=july,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, refund, taxi, 3_000)
+    api_client.delete(f"/api/transactions/{taxi}", headers=csrf_headers)
+    switched = _api_edit(
+        api_client, csrf_headers, refund, title="Refund", cents=1_000, on=july
+    )
+    assert switched.status_code == 200, switched.text
+
+
+def test_a_type_switch_cannot_revive_an_allocation_past_the_other_side(
+    api_client, csrf_headers
+) -> None:
+    july = date(2025, 7, 1)
+    hotel = _api_txn(api_client, csrf_headers, title="Hotel", cents=10_000, on=july)
+    hostel = _api_txn(api_client, csrf_headers, title="Hostel", cents=10_000, on=july)
+    payback = _api_txn(
+        api_client,
+        csrf_headers,
+        title="Payback",
+        cents=10_000,
+        on=july,
+        kind="income",
+        reimb=True,
+    )
+    _allocate(api_client, csrf_headers, payback, hotel, 10_000)
+    api_client.delete(f"/api/transactions/{payback}", headers=csrf_headers)
+    to_income = _api_edit(
+        api_client,
+        csrf_headers,
+        hotel,
+        title="Hotel",
+        cents=10_000,
+        on=july,
+        kind="income",
+    )
+    assert to_income.status_code == 200, to_income.text
+    restore = api_client.post(
+        f"/api/transactions/{payback}/restore", headers=csrf_headers
+    )
+    assert restore.status_code == 200, restore.text
+    _allocate(api_client, csrf_headers, payback, hostel, 10_000)
+
+    back = _api_edit(
+        api_client, csrf_headers, hotel, title="Hotel", cents=10_000, on=july
+    )
+
+    assert back.status_code == 400
+    assert '"Payback"' in back.json()["detail"]

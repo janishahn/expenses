@@ -49,7 +49,8 @@ struct RecurringView: View {
 
     @ViewBuilder
     private func content(_ recurring: RecurringResponse) -> some View {
-        let expenses = recurring.rules.filter { $0.type == .expense }
+        // The audit counts what the rules cost now, as the server's totals do.
+        let expenses = recurring.rules.filter { $0.type == .expense && $0.ended != true }
         if recurring.rules.isEmpty {
             empty("No recurring rules yet")
         } else {

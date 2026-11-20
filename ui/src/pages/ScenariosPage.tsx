@@ -14,6 +14,7 @@ import { XIcon } from "@phosphor-icons/react/X"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
 import { formatAmount, formatAmountPrivate } from "../app/format"
+import { parseAmountCents } from "../app/transactions"
 import { usePrivacy } from "../app/privacy"
 import { Amount } from "../components/ui/Amount"
 import { Button, IconButton } from "../components/ui/Button"
@@ -32,6 +33,7 @@ import { SegmentedControl } from "../components/ui/SegmentedControl"
 import { CardForm, MetricStrip, Sheet, type Metric } from "../components/ui/Sheet"
 import { Field, FieldError, FieldGrid, Select, TextField } from "../components/ui/TextField"
 import { buildSearchParams } from "../lib/searchParams"
+import type { Currency } from "./recurring-rule"
 
 type ForecastProjection = {
   mode: "recurring" | "full"
@@ -51,7 +53,7 @@ type ScenarioResponse = ForecastProjection & {
   }
 }
 
-type RuleRow = { id: number; name: string | null; type: "income" | "expense"; amount_cents: number }
+type RuleRow = { id: number; name: string | null; type: "income" | "expense"; currency_code: Currency; amount_cents: number }
 type CategoryRow = { id: number; name: string; type: "income" | "expense" }
 type RecurringResponse = { rules: RuleRow[]; categories: CategoryRow[] }
 
@@ -78,6 +80,9 @@ const KINDS: Array<{ type: ModificationType; label: string; icon: Icon }> = [
   { type: "adjust_category", label: "Category estimate", icon: SlidersHorizontalIcon },
 ]
 const KIND_ICON = Object.fromEntries(KINDS.map((kind) => [kind.type, kind.icon])) as Record<ModificationType, Icon>
+const CURRENCY_SYMBOL: Record<Currency, string> = { EUR: "€", USD: "$" }
+// The server calculates at most this many adjustments.
+const MAX_ADJUSTMENTS = 50
 const INTERVAL_TEXT: Record<Interval, string> = { monthly: "per month", yearly: "per year", weekly: "per week" }
 
 const SHORT_MONTH = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
@@ -91,14 +96,6 @@ function monthDate(month: string): Date {
 
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function parseAmount(raw: string): number | null {
-  const normalized = raw.trim().replace(/\s/g, "").replace(",", ".")
-  if (!normalized) return null
-  const value = Number(normalized)
-  if (!Number.isFinite(value) || value < 0) return null
-  return Math.round(value * 100)
 }
 
 function nextMonthValue(): string {
@@ -139,11 +136,13 @@ function AdjustmentForm({
   type,
   rules,
   categories,
+  full,
   onTypeChange,
   onAdd,
   onCancel,
 }: {
   type: ModificationType
+  full: boolean
   rules: RuleRow[]
   categories: CategoryRow[]
   onTypeChange: (type: ModificationType) => void
@@ -168,7 +167,9 @@ function AdjustmentForm({
   }, [])
 
   const submit = () => {
-    const cents = parseAmount(amount)
+    if (full) return setError(`A scenario can have up to ${MAX_ADJUSTMENTS} adjustments.`)
+    if (currency !== "EUR" && amount.includes("€")) return setError(`Enter the amount in ${currency}.`)
+    const cents = parseAmountCents(amount)
     if (type === "remove_rule") {
       if (!ruleId) return setError("Select a rule to remove.")
       return onAdd({ id: newId(), type, rule_id: Number(ruleId) })
@@ -194,14 +195,23 @@ function AdjustmentForm({
       <option value="">Select rule…</option>
       {rules.map((rule) => (
         <option key={rule.id} value={rule.id}>
-          {rule.name || "Recurring rule"} ({formatAmountPrivate(rule.amount_cents, rule.type === "income" ? "income" : "expense")})
+          {rule.name || "Recurring rule"} (
+          {formatAmountPrivate(rule.amount_cents, rule.type === "income" ? "income" : "expense", true, CURRENCY_SYMBOL[rule.currency_code])})
         </option>
       ))}
     </Select>
   )
+  // A rule change is entered in the rule's own currency; everything else in euros.
+  const currency = type === "modify_rule" ? (rules.find((rule) => String(rule.id) === ruleId)?.currency_code ?? "EUR") : "EUR"
   const amountField = (label: string) => (
     <Field label={label}>
-      <TextField value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="0,00" suffix="€" />
+      <TextField
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+        inputMode="decimal"
+        placeholder="0,00"
+        suffix={CURRENCY_SYMBOL[currency]}
+      />
     </Field>
   )
   const directionField = (
@@ -352,7 +362,13 @@ function ScenariosPage() {
       case "modify_rule":
         return (
           <>
-            {ruleName(row.rule_id)} <Amount cents={row.new_amount_cents} decimals={false} /> from{" "}
+            {ruleName(row.rule_id)}{" "}
+            <Amount
+              cents={row.new_amount_cents}
+              decimals={false}
+              currency={rules.find((rule) => rule.id === row.rule_id)?.currency_code}
+            />{" "}
+            from{" "}
             {MONTH_YEAR.format(monthDate(row.effective_month))}
           </>
         )
@@ -451,6 +467,7 @@ function ScenariosPage() {
           type={draft}
           rules={rules}
           categories={expenseCategories}
+          full={modifications.length >= MAX_ADJUSTMENTS}
           onTypeChange={setDraft}
           onAdd={addModification}
           onCancel={() => setDraft(null)}

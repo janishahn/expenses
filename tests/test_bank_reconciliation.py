@@ -1,3 +1,6 @@
+import hashlib
+import tracemalloc
+
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
@@ -76,6 +79,35 @@ def test_parse_commerzbank_csv_handles_german_dates_amounts_and_cp1252() -> None
     assert "Bargeld" in row.raw_description
 
 
+def test_import_hashes_of_supported_layouts_stay_stable() -> None:
+    # Stored rows are de-duplicated by these hashes; a change re-imports them.
+    layouts = {
+        _csv_bytes(
+            [
+                "05.05.2026;05.05.2026;Kartenzahlung;REWE Markt GmbH;"
+                "-111,78;EUR;Berlin Einkauf + Bargeld"
+            ]
+        ): "b8f240b3e237bd433ffe910cf2fc6aa9fe025f8a9c939ddbc7a7620c934fdad8",
+        (
+            "Buchungstag;Wertstellung;Umsatzart;Auftraggeber / Begünstigter;"
+            "Verwendungszweck;IBAN Auftraggeberkonto;Betrag;Währung\r\n\r\n"
+            '05.05.2026;05.05.2026;Lastschrift;"Netflix, B.V.";"Abo Mai\nRef 1";'
+            "DE001;-1.234,56;EUR\r\n"
+        ).encode(
+            "utf-8-sig"
+        ): "f60f991c0feaeedd1b24c1570de1bd28dead838c55707b6789215a30980c6c53",
+        (
+            "a;b;c;d;e;f;g\n"
+            "05.05.2026;06.05.2026;Gutschrift;Arbeitgeber GmbH;2500,00;EUR;Gehalt Mai\n"
+        ).encode(): "4c947fd2bc37696cba13fda0b903f8d056e200d144c90445c0dd1909620c88fb",
+    }
+
+    for content, expected_hash in layouts.items():
+        rows, errors = parse_commerzbank_csv(content, account_label="Giro")
+        assert errors == []
+        assert [row.import_hash for row in rows] == [expected_hash]
+
+
 def test_parse_commerzbank_csv_enforces_row_limit() -> None:
     rows, errors = parse_commerzbank_csv(
         _csv_bytes(
@@ -90,6 +122,24 @@ def test_parse_commerzbank_csv_enforces_row_limit() -> None:
 
     assert len(rows) == 1
     assert errors == ["CSV row limit exceeded (max 1)"]
+
+
+def test_parse_commerzbank_csv_stops_reading_at_row_limit() -> None:
+    content = b"Buchungstag;Betrag\n" + b"1\n" * 1_000_000
+
+    tracemalloc.start()
+    try:
+        rows, errors = parse_commerzbank_csv(
+            content, account_label="StartKonto", max_rows=10
+        )
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert rows == []
+    assert errors[-1] == "CSV row limit exceeded (max 10)"
+    assert len(errors) == 11
+    assert peak_bytes < 20_000_000
 
 
 def test_reconciliation_suggests_card_payment_with_bank_posting_delay(
@@ -166,25 +216,34 @@ def test_commerzbank_csv_upload_rejects_oversized_file(
     assert response.status_code == 413
 
 
-def test_reconciliation_import_deduplicates_rows_within_same_upload(
+def test_identical_bookings_in_one_upload_import_once_each(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
+    # Two coffees at one café on one day are two real payments.
+    single = _csv_bytes(["06.05.2026;06.05.2026;Online-Zahlung;Amazon;-9,99;EUR;"])
     content = _csv_bytes(
         [
             "06.05.2026;06.05.2026;Online-Zahlung;Amazon;-9,99;EUR;",
             "06.05.2026;06.05.2026;Online-Zahlung;Amazon;-9,99;EUR;",
         ]
     )
+    single_rows, _ = parse_commerzbank_csv(single, account_label="StartKonto")
+    rows, _ = parse_commerzbank_csv(content, account_label="StartKonto")
+    assert rows[0].import_hash == single_rows[0].import_hash
+    assert rows[1].import_hash != rows[0].import_hash
 
     preview = _upload_csv(api_client, csrf_headers, content, endpoint="preview")
     assert preview.status_code == 200
-    assert preview.json()["new_count"] == 1
-    assert preview.json()["duplicate_count"] == 1
+    assert preview.json()["new_count"] == 2
+    assert preview.json()["duplicate_count"] == 0
 
     response = _upload_csv(api_client, csrf_headers, content)
-
     assert response.status_code == 200
-    assert response.json() == {"imported_count": 1, "duplicate_count": 1}
+    assert response.json() == {"imported_count": 2, "duplicate_count": 0}
+
+    again = _upload_csv(api_client, csrf_headers, content)
+    assert again.status_code == 200
+    assert again.json() == {"imported_count": 0, "duplicate_count": 2}
 
 
 def test_missing_bank_row_can_create_uncategorized_transaction(
@@ -218,6 +277,104 @@ def test_missing_bank_row_can_create_uncategorized_transaction(
     )
     assert created["title"] == "Amazon"
     assert created["category"]["name"] == "Uncategorized"
+
+
+def test_foreign_bank_row_cannot_create_a_euro_transaction(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    _upload_csv(
+        api_client,
+        csrf_headers,
+        _csv_bytes(["06.05.2026;06.05.2026;Karte;Card USD;-100,00;USD;"]),
+    )
+    row = api_client.get("/api/reconciliation").json()["rows"][0]
+
+    response = api_client.post(
+        f"/api/reconciliation/bank-rows/{row['id']}/create-transaction",
+        headers=csrf_headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Only a EUR bank row can create a transaction; add this USD payment "
+        "as a transaction yourself, then match it"
+    )
+    assert api_client.get("/api/transactions?period=all").json()["items"] == []
+    assert api_client.get("/api/reconciliation").json()["rows"][0]["status"] == (
+        "missing"
+    )
+
+
+def test_parse_commerzbank_csv_reads_amount_formats_and_rejects_unclear_ones() -> None:
+    amounts = {
+        "-111,78": -11_178,
+        "1.234,56": 123_456,
+        "-1.234.567,89": -123_456_789,
+        "1234,5": 123_450,
+        "12.50": 1_250,
+        "1,234.56": 123_456,
+        "12,00 S": -1_200,
+        "12,00S": -1_200,
+        "12,00 H": 1_200,
+        "12,": 1_200,
+        "-12.": -1_200,
+        "1.234,": 123_400,
+        "1234,5600": 123_456,
+        "1234.5600": 123_456,
+        "1.234,5600": 123_456,
+        "1,234.5600": 123_456,
+        "12,3400": 1_234,
+        "1234,500": 123_450,
+        "12,340": "Row 2: Ambiguous amount '12,340': write it with decimals, such as 1000,00",
+        "12,345": "Row 2: Ambiguous amount '12,345': write it with decimals, such as 1000,00",
+        "1234,567": "Row 2: Invalid amount",
+        "+-12,00": "Row 2: Invalid amount",
+        "-+12,00": "Row 2: Invalid amount",
+        "--12,00": "Row 2: Invalid amount",
+        ",": "Row 2: Invalid amount",
+        "1.000": "Row 2: Ambiguous amount '1.000': write it with decimals, such as 1000,00",
+        "1E+3": "Row 2: Invalid amount",
+        "Infinity": "Row 2: Invalid amount",
+        "100000000000000000": "Row 2: Amount is too large",
+    }
+
+    for amount, expected in amounts.items():
+        rows, errors = parse_commerzbank_csv(
+            _csv_bytes([f"05.05.2026;05.05.2026;Karte;Shop;{amount};EUR;"]),
+            account_label="StartKonto",
+        )
+        if isinstance(expected, int):
+            assert errors == [], amount
+            assert rows[0].amount_cents == expected, amount
+        else:
+            assert (rows, errors) == ([], [expected]), amount
+
+
+def test_commerzbank_buchungstext_next_to_umsatzart_is_kept() -> None:
+    header = "Buchungstag;Wertstellung;Umsatzart;Buchungstext;Betrag;Währung"
+    content = (
+        header + "\n"
+        "05.05.2026;05.05.2026;Lastschrift;NETFLIX Abo Mai Ref 123;-9,99;EUR\n"
+        "05.05.2026;05.05.2026;Lastschrift;SPOTIFY Premium Ref 456;-9,99;EUR\n"
+    ).encode("utf-8")
+
+    rows, errors = parse_commerzbank_csv(content, account_label="Giro")
+
+    assert errors == []
+    assert [(row.booking_text, row.purpose) for row in rows] == [
+        ("Lastschrift", "NETFLIX Abo Mai Ref 123"),
+        ("Lastschrift", "SPOTIFY Premium Ref 456"),
+    ]
+    assert rows[0].raw_description == "Lastschrift · NETFLIX Abo Mai Ref 123"
+    # The hash keeps the description earlier releases stored ("Lastschrift"),
+    # so a statement imported before matches its rows again.
+    legacy_hash = hashlib.sha256(
+        b"giro|2026-05-05|2026-05-05|-999|EUR|lastschrift"
+    ).hexdigest()
+    assert [row.import_hash for row in rows] == [
+        legacy_hash,
+        hashlib.sha256(f"{legacy_hash}|2".encode()).hexdigest(),
+    ]
 
 
 def test_missing_bank_row_can_create_and_match_edited_transaction(

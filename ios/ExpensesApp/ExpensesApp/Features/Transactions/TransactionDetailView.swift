@@ -21,6 +21,11 @@ struct TransactionDetailView: View {
     @State private var amountDraft = ""
     @State private var notesDraft = ""
     @State private var editingAmount = false
+    // Text a conflict kept in its field. It saves again only after the field is entered
+    // or the text changes.
+    @State private var refused: [Field: String] = [:]
+    // The server's zone could not be read, so the date cannot change.
+    @State private var zoneUnavailable = false
     @FocusState private var focus: Field?
     @State private var sheet: Sheet?
     @State private var locating = false
@@ -102,7 +107,15 @@ struct TransactionDetailView: View {
             }
         }
         .refreshable {
+            // Pulling down gives up the text a conflict kept.
+            for field in [Field.title, .amount, .notes] where refused[field] != nil || saves.errors[field] == Self.keptAfterConflict {
+                saves.errors[field] = nil
+            }
+            refused = [:]
+            // The date can change once the server's zone is known.
+            async let zone = model.loadServerTimeZone()
             await reload()
+            zoneUnavailable = await zone == nil
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -186,7 +199,10 @@ struct TransactionDetailView: View {
         }
         .failureAlert("Couldn't complete the action", message: $actionError)
         .sensoryFeedback(.success, trigger: copied)
-        .onChange(of: focus) { previous, _ in
+        .onChange(of: focus) { previous, current in
+            if let current {
+                refused[current] = nil
+            }
             switch previous {
             case .title:
                 commitTitle()
@@ -205,7 +221,10 @@ struct TransactionDetailView: View {
             commitNotes()
         }
         .task {
+            // A changed date is written in the server's zone, so the picker shows it.
+            async let zone = model.loadServerTimeZone()
             await reload()
+            zoneUnavailable = await zone == nil
             if model.tags == nil {
                 await model.loadOrganizeData()
             }
@@ -225,7 +244,10 @@ struct TransactionDetailView: View {
                     EntryAmountField(text: $amountDraft, income: shown.type == .income)
                         .focused($focus, equals: .amount)
                         .onAppear {
-                            focus = .amount
+                            // A refused amount waits to be entered again.
+                            if refused[.amount] == nil {
+                                focus = .amount
+                            }
                         }
                         .fieldError(saves.errors[.amount])
                 } else {
@@ -263,10 +285,20 @@ struct TransactionDetailView: View {
             .pickerStyle(.menu)
             .fieldError(saves.errors[.type])
 
-            // The stored time shows as the server stored it, wherever the device is.
-            DatePicker("Date", selection: dateSelection(shown))
-                .environment(\.timeZone, model.serverTimeZone)
-                .fieldError(saves.errors[.date])
+            // The stored time shows as the server stored it, wherever the device is. Until
+            // its zone is known, a time picked here could save on another day.
+            VStack(alignment: .leading, spacing: 4) {
+                DatePicker("Date", selection: dateSelection(shown))
+                    .environment(\.timeZone, model.serverTimeZone ?? .current)
+                    .disabled(model.serverTimeZone == nil)
+                if zoneUnavailable, model.serverTimeZone == nil {
+                    Text("Couldn't reach the server, so the date can't be changed yet. Pull down to try again.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .fieldError(saves.errors[.date])
 
             Button {
                 sheet = .category
@@ -491,9 +523,41 @@ struct TransactionDetailView: View {
 
     // MARK: Saving
 
-    private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
+    private static let keptAfterConflict = "This transaction changed elsewhere, so this wasn't saved. Edit it again to save, or pull down to discard it."
+
+    private func save(_ field: Field, _ change: ((inout TransactionMutationRequest) -> Void)?) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
-            await model.updateTransaction(id: transactionID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+            if let saved = await model.updateTransaction(id: transactionID, body: body) {
+                // A save after another transaction opened builds on this one, so it sends
+                // the version the server saved.
+                body.expectedUpdatedAt = saved.updatedAt
+                return nil
+            }
+            // Another device saved first: the refused values are dropped, so no later save
+            // sends them again, and the fields show the other version. Refused text stays
+            // in its field, as does a field being typed in.
+            if let error = model.lastError, error.statusCode == 409 {
+                let dropped = saves.discardSending(error.message)
+                if dropped.contains(.date) {
+                    dateSave?.cancel()
+                }
+                let kept = dropped.intersection([.title, .amount, .notes])
+                for field in kept {
+                    saves.errors[field] = Self.keptAfterConflict
+                    refused[field] = draft(field)
+                }
+                if let transaction {
+                    // A field in focus keeps its text only if it was typed in. Untouched,
+                    // it would save the version this screen had over the other one.
+                    let sent = [Field.title: body.title, .amount: AppFormatters.amountInput(body.amountCents), .notes: body.description ?? ""]
+                    let typing = focus.flatMap { draft($0) != sent[$0] ? [$0] : nil } ?? []
+                    fillDrafts(transaction, keeping: Set(refused.keys).union(typing))
+                }
+                if kept.contains(field) {
+                    return Self.keptAfterConflict
+                }
+            }
+            return model.lastError?.message ?? "Unable to save the change."
         }, change)
     }
 
@@ -506,8 +570,10 @@ struct TransactionDetailView: View {
                 dateSave?.cancel()
                 dateSave = Task {
                     try? await Task.sleep(for: .milliseconds(800))
+                    // Saves the value entered above, so a refused save that carried it
+                    // meanwhile drops it.
                     if !Task.isCancelled {
-                        save(.date) { $0.occurredAt = date }
+                        save(.date, nil)
                     }
                 }
             }
@@ -520,8 +586,22 @@ struct TransactionDetailView: View {
         }
     }
 
+    private func draft(_ field: Field) -> String? {
+        switch field {
+        case .title: titleDraft
+        case .amount: amountDraft
+        case .notes: notesDraft
+        default: nil
+        }
+    }
+
+    /// Refused text is not sent again as it stands.
+    private func waits(_ field: Field) -> Bool {
+        refused[field].map { $0 == draft(field) } ?? false
+    }
+
     private func commitTitle() {
-        guard let transaction else {
+        guard let transaction, !waits(.title) else {
             return
         }
         let title = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -530,13 +610,14 @@ struct TransactionDetailView: View {
             return
         }
         titleDraft = title
+        refused[.title] = nil
         if title != shown(transaction).title || saves.errors[.title] != nil {
             save(.title) { $0.title = title }
         }
     }
 
     private func commitAmount() {
-        guard let transaction else {
+        guard let transaction, !waits(.amount) else {
             return
         }
         guard let cents = AppFormatters.parseAmountCents(amountDraft), cents > 0 else {
@@ -544,17 +625,22 @@ struct TransactionDetailView: View {
             return
         }
         editingAmount = false
+        // The drafts take the form a save sends, which tells typed text from untouched text.
+        amountDraft = AppFormatters.amountInput(cents)
+        refused[.amount] = nil
         if cents != shown(transaction).amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
     }
 
     private func commitNotes() {
-        guard let transaction else {
+        guard let transaction, !waits(.notes) else {
             return
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = notes.isEmpty ? nil : notes
+        notesDraft = notes
+        refused[.notes] = nil
         if description != shown(transaction).description || saves.errors[.notes] != nil {
             save(.notes) { $0.description = description }
         }
@@ -581,22 +667,28 @@ struct TransactionDetailView: View {
         loadFailed = false
         // A transaction opened again shows its last copy while it loads.
         if let transaction {
-            fillDrafts(transaction)
+            fillDrafts(transaction, keeping: Set(refused.keys))
         }
         await model.loadTransactionDetail(id: transactionID)
         guard let transaction else {
             loadFailed = true
             return
         }
-        fillDrafts(transaction)
+        fillDrafts(transaction, keeping: Set(refused.keys))
     }
 
-    private func fillDrafts(_ transaction: TransactionDetail) {
+    private func fillDrafts(_ transaction: TransactionDetail, keeping typed: Set<Field>) {
         // A value still to save stays in its field.
         let shown = shown(transaction)
-        titleDraft = shown.title
-        amountDraft = AppFormatters.amountInput(shown.amountCents)
-        notesDraft = shown.description ?? ""
+        if !typed.contains(.title) {
+            titleDraft = shown.title
+        }
+        if !typed.contains(.amount) {
+            amountDraft = AppFormatters.amountInput(shown.amountCents)
+        }
+        if !typed.contains(.notes) {
+            notesDraft = shown.description ?? ""
+        }
     }
 }
 

@@ -164,3 +164,19 @@ def test_settings_balance_anchor_time_is_timezone_aware(
     parsed = datetime.fromisoformat(response.json()["balance_anchors"][0]["as_of_at"])
     assert parsed.utcoffset() is not None
     assert parsed.replace(tzinfo=None) == datetime(2026, 1, 1, 10, 0)
+
+
+def test_settings_balance_anchor_rejects_out_of_range_values(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    def create(as_of_at: str, balance_cents: int):
+        return api_client.post(
+            "/api/settings/balance-anchors",
+            headers=csrf_headers,
+            json={"as_of_at": as_of_at, "balance_cents": balance_cents},
+        )
+
+    assert create("2026-01-01T10:00:00", 10**19).status_code == 422
+    assert create("2026-01-01T10:00:00", -(10**19)).status_code == 422
+    assert create("9999-12-31T10:00:00", 100).status_code == 422
+    assert create("2026-01-01T10:00:00", -1_000_000_000_000).status_code == 200

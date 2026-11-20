@@ -1,5 +1,6 @@
-import type { Locator, Page } from "@playwright/test"
+import type { APIRequestContext, Locator, Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
+import { ensureCategory, getCsrfToken } from "./helpers"
 
 function nextMonthDate(): Date {
   const value = new Date()
@@ -36,6 +37,49 @@ async function addOneTime(page: Page, name: string, amount: string): Promise<voi
   await form.getByLabel("Name").fill(name)
   await form.getByLabel("Amount").fill(amount)
   await submit(form)
+}
+
+function monthValue(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+async function createRule(
+  request: APIRequestContext,
+  type: "income" | "expense",
+  name: string,
+  amountCents: number,
+  currency: "EUR" | "USD" = "EUR",
+): Promise<void> {
+  const token = await getCsrfToken(request)
+  const categoryId = await ensureCategory(request, token, type, `E2E Scn ${type}`)
+  const start = `${monthValue(nextMonthDate())}-01`
+  const response = await request.post("/api/recurring", {
+    headers: { "X-CSRF-Token": token },
+    data: {
+      name,
+      type,
+      currency_code: currency,
+      amount_cents: amountCents,
+      category_id: categoryId,
+      anchor_date: start,
+      interval_unit: "month",
+      interval_count: 1,
+      next_occurrence: start,
+      end_date: null,
+      auto_post: true,
+      skip_weekends: false,
+      month_day_policy: "snap_to_end",
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
+async function selectRule(form: Locator, ruleName: string): Promise<void> {
+  const value = await form
+    .getByLabel("Rule")
+    .locator("option", { hasText: ruleName })
+    .getAttribute("value")
+  await form.getByLabel("Rule").selectOption(value)
 }
 
 test.describe("Scenarios Page", () => {
@@ -91,5 +135,34 @@ test.describe("Scenarios Page", () => {
     const total = impact.getByRole("listitem").last()
     await expect(total).toContainText("Total")
     await expect(total).toContainText(/150\s?€/)
+  })
+
+  test("shows and changes a dollar rule in dollars", async ({ page, request }) => {
+    const ruleName = `E2E Scenario Hosting ${Date.now()}`
+    await createRule(request, "expense", ruleName, 5_000, "USD")
+
+    await page.goto("/scenarios")
+    const form = await openAdjustmentForm(page, "Change a recurring rule")
+    await expect(form.getByLabel("Rule").locator("option", { hasText: ruleName })).toHaveText(
+      new RegExp(`${ruleName} \\(50,00\\s?\\$\\)`),
+    )
+    await selectRule(form, ruleName)
+    const amount = form.getByLabel("New amount")
+    await expect(amount.locator("xpath=following-sibling::span")).toHaveText("$")
+    await amount.fill("60,00 €")
+    await submit(form)
+    await expect(form).toContainText("Enter the amount in USD.")
+    await expect(adjustments(page).getByRole("listitem")).toHaveCount(0)
+
+    await amount.fill("60")
+    const calculated = page.waitForResponse(
+      (response) => response.url().includes("/api/forecast/scenario") && response.request().method() === "POST",
+    )
+    await submit(form)
+    expect((await calculated).ok()).toBeTruthy()
+    await expect(adjustments(page).getByRole("listitem")).toContainText(
+      new RegExp(`${ruleName} 60\\s?\\$ from`),
+    )
+    await expect(page.getByRole("list", { name: "Impact by adjustment" })).toContainText(ruleName)
   })
 })

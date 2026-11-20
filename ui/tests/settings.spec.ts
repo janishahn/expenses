@@ -32,7 +32,29 @@ test.describe.serial("Settings and ordinary-user flows", () => {
     expect(first.length).toBeGreaterThan(6)
     await expect(label).toContainText(`Token ending in ${first.slice(-6)}`)
     await expect(page.getByText("not used yet")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Copy token" })).toBeVisible()
+    // The clipboard is stubbed, so both outcomes are deterministic.
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: () => Promise.resolve() },
+      })
+    })
+    await page.getByRole("button", { name: "Copy token" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Token copied." })).toBeVisible()
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: () => Promise.reject(new Error("denied")) },
+      })
+    })
+    await page.getByRole("button", { name: "Copy token" }).click()
+    await expect(page.getByRole("status").filter({ hasText: "Could not copy the token. Copy it from the field." })).toBeVisible()
+    await expect(issued).toBeFocused()
+    await expect(issued).toHaveValue(first)
+    expect(await issued.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([
+      0,
+      first.length,
+    ])
 
     await page.getByRole("button", { name: "Rotate", exact: true }).click()
     await expect(page.getByRole("status").filter({ hasText: "Ingest token rotated." })).toBeVisible()

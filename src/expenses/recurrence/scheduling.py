@@ -68,7 +68,13 @@ class SchedulerManager:
                 )
 
     def start(self) -> None:
-        self._run_job("startup")
+        # A failed catch-up must not stop the app; the scheduled runs retry it.
+        try:
+            self._run_job("startup")
+        except Exception:  # noqa: BLE001 - the scheduled runs retry it
+            log_event(
+                logger, logging.ERROR, "scheduler_startup_run_failed", exc_info=True
+            )
         # Without a trigger, the job runs once as soon as the scheduler starts.
         self.scheduler.add_job(
             retry_receipt_readings,

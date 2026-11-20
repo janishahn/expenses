@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { CopyIcon } from "@phosphor-icons/react/Copy"
 import { DownloadSimpleIcon } from "@phosphor-icons/react/DownloadSimple"
@@ -10,7 +10,7 @@ import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
 import { useAuth } from "../app/auth"
 import { copyText } from "../app/clipboard"
 import { formatShortDate, formatShortDateTime } from "../app/format"
-import { amountInput } from "../app/transactions"
+import { amountInput, parseAmountCents } from "../app/transactions"
 import AutoCategorizationSettings, { type AutoCategorizationSettingsData } from "../components/AutoCategorizationSettings"
 import { confirmDialog } from "../components/confirm"
 import { Amount } from "../components/ui/Amount"
@@ -87,9 +87,11 @@ const PREVIEW_COLUMNS: Columns = {
 }
 const PREVIEW_ROWS = 15
 
-function parseAmount(raw: string): number | null {
-  const value = Number(raw.replace(/\s/g, "").replace(",", "."))
-  return raw.trim() && Number.isFinite(value) ? Math.round(value * 100) : null
+// A balance may be negative, written with "-" or the "−" the app displays.
+function parseBalance(raw: string): number | null {
+  const sign = /^\s*[-−]/
+  const cents = parseAmountCents(raw.replace(sign, ""))
+  return cents === null ? null : sign.test(raw) ? -cents : cents
 }
 
 function ProfileCard() {
@@ -120,6 +122,7 @@ function ProfileCard() {
 function IngestTokenCard({ token }: { token: IngestTokenMetadata | null }) {
   const queryClient = useQueryClient()
   const [generated, setGenerated] = useState("")
+  const tokenField = useRef<HTMLInputElement>(null)
   const rotate = useMutation({
     mutationFn: () => apiFetch<{ token: string; ingest_token: IngestTokenMetadata }>("/api/settings/ingest-token", { method: "POST" }),
     onSuccess: (result) => {
@@ -181,14 +184,25 @@ function IngestTokenCard({ token }: { token: IngestTokenMetadata | null }) {
       </SettingRow>
       {generated ? (
         <SettingRow label="Copy the new token now. It is shown once." stack>
-          <TextField readOnly value={generated} aria-label="New ingest token" onFocus={(event) => event.target.select()} />
+          <TextField
+            ref={tokenField}
+            readOnly
+            value={generated}
+            aria-label="New ingest token"
+            onFocus={(event) => event.target.select()}
+          />
           <IconButton
             icon={CopyIcon}
             label="Copy token"
-            onClick={() => {
-              void copyText(generated).then((copied) => {
-                showToast({ message: copied ? "Token copied." : "Couldn't copy the token. Select it and copy it." })
-              })
+            onClick={async () => {
+              if (await copyText(generated)) {
+                showToast({ message: "Token copied." })
+                return
+              }
+              // Selected, so it can be copied by hand.
+              tokenField.current?.focus()
+              tokenField.current?.select()
+              showToast({ message: "Could not copy the token. Copy it from the field." })
             }}
           />
         </SettingRow>
@@ -270,7 +284,7 @@ function SnapshotDialog({ anchor, onClose }: { anchor: BalanceAnchor | null; onC
     },
   })
   const submit = () => {
-    const balanceCents = parseAmount(balance)
+    const balanceCents = parseBalance(balance)
     const nextErrors = {
       asOf: asOf ? undefined : "Select a date and time.",
       balance: balanceCents === null ? "Enter a valid balance." : undefined,

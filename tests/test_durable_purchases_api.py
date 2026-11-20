@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from fastapi.testclient import TestClient
 
+from expenses.db.models import DurablePurchase
+
 
 def _create_category(
     client: TestClient, headers: dict[str, str], name: str, txn_type: str
@@ -176,6 +178,93 @@ def test_durable_upsert_returns_404_for_missing_transaction(
         json={"expected_lifespan_days": 365},
     )
     assert response.status_code == 404
+
+
+def test_durable_upsert_rejects_lifespans_and_dates_out_of_range(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    txn_id = _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date(2025, 3, 1),
+        txn_type="expense",
+        amount_cents=50_000,
+        category_id=category_id,
+        title="Sofa",
+    )
+    for payload in (
+        {"expected_lifespan_days": 36_501},
+        {"expected_lifespan_days": 3_000_000},
+        {"expected_lifespan_days": 1, "acquired_on": "9999-12-31"},
+        {"expected_lifespan_days": 1, "ended_on": "0001-01-01"},
+    ):
+        response = api_client.post(
+            f"/api/transactions/{txn_id}/durable",
+            headers=csrf_headers,
+            json=payload,
+        )
+        assert response.status_code == 422, payload
+
+    response = api_client.post(
+        f"/api/transactions/{txn_id}/durable",
+        headers=csrf_headers,
+        json={"expected_lifespan_days": 36_500},
+    )
+    assert response.status_code == 200
+
+
+def test_stored_durables_past_the_last_date_keep_pages_loading(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
+    huge_lifespan_id = _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date(2025, 3, 1),
+        txn_type="expense",
+        amount_cents=50_000,
+        category_id=category_id,
+        title="Sofa",
+    )
+    late_id = _create_transaction(
+        api_client,
+        csrf_headers,
+        txn_date=date(2025, 3, 2),
+        txn_type="expense",
+        amount_cents=20_000,
+        category_id=category_id,
+        title="Lamp",
+    )
+    # Rows saved before the limits existed.
+    db_session.add_all(
+        [
+            DurablePurchase(
+                user_id=1,
+                transaction_id=huge_lifespan_id,
+                expected_lifespan_days=3_000_000,
+                acquired_on=date(2025, 3, 1),
+            ),
+            DurablePurchase(
+                user_id=1,
+                transaction_id=late_id,
+                expected_lifespan_days=10,
+                acquired_on=date(9999, 12, 31),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = api_client.get("/api/durable-purchases")
+    assert response.status_code == 200
+    by_title = {item["title"]: item for item in response.json()["items"]}
+    assert by_title["Sofa"]["paid_for_itself_on"] == "9999-12-31"
+    assert by_title["Lamp"]["paid_for_itself_on"] == "9999-12-31"
+    assert api_client.get("/api/dashboard").status_code == 200
+    response = api_client.get(
+        "/api/insights?period=custom&start=2025-03-01&end=2025-03-31&spread_durables=true"
+    )
+    assert response.status_code == 200
 
 
 def test_durables_spread_their_net_cost_until_they_end(

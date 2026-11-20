@@ -9,7 +9,6 @@ import sqlite3
 import tempfile
 import time
 import tomllib
-import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
@@ -29,6 +28,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
@@ -79,7 +79,7 @@ from expenses.core.app_logging import (
 )
 from expenses.core.config import get_settings
 from expenses.core.csrf import generate_csrf_token, validate_csrf_token
-from expenses.core.periods import Period, resolve_period
+from expenses.core.periods import Period, previous_period, resolve_period
 from expenses.core.safe_regex import RegexRejected, safe_regex_search
 from expenses.db.models import (
     AutoCategorizationPreference,
@@ -102,6 +102,8 @@ from expenses.importers.legacy_sqlite import LegacySQLiteImportService
 from expenses.recurrence.engine import calculate_next_date, local_now, local_today
 from expenses.reports.pdf_renderer import render_report_html
 from expenses.schemas import (
+    MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     AdminElevationIn,
     AdminElevationOut,
     AdminInfoOut,
@@ -157,6 +159,7 @@ from expenses.schemas import (
     DigestResponseOut,
     DurablePurchaseIn,
     DurablePurchasesResponseOut,
+    ErrorDetailOut,
     ForecastResponseOut,
     ForecastScenarioIn,
     ForecastScenarioResponseOut,
@@ -188,6 +191,7 @@ from expenses.schemas import (
     RecurringPreviewOut,
     RecurringResponseOut,
     RecurringRuleIn,
+    RecurringRuleUpdateIn,
     RecurringToggleIn,
     ReimbursementAllocationIn,
     ReimbursementExpenseSearchResponseOut,
@@ -209,6 +213,7 @@ from expenses.schemas import (
     TransactionIdsIn,
     TransactionIn,
     TransactionReimbursementsResponseOut,
+    TransactionSavedOut,
     TransactionsPurgedOut,
     TransactionsResponseOut,
     TransactionsRestoredOut,
@@ -251,6 +256,8 @@ from expenses.services.bank_reconciliation import (
     BankRowChangedError,
     BankRowNotFoundError,
 )
+from expenses.services.csv_utils import iter_export_transactions
+from expenses.services.main import RecurringRuleNameRequired, TransactionConflict
 
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -440,21 +447,27 @@ def _require_csrf(request: Request, db: Session) -> None:
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
 
 
-def _set_admin_system_health_override_cookie(response: Response, profile: str) -> None:
+def _set_admin_system_health_override_cookie(
+    response: Response, request: Request, profile: str
+) -> None:
     response.set_cookie(
         key=ADMIN_SYSTEM_HEALTH_OVERRIDE_COOKIE,
         value=profile,
         httponly=True,
         samesite="lax",
+        secure=_request_is_https(request),
         path="/",
     )
 
 
-def _clear_admin_system_health_override_cookie(response: Response) -> None:
+def _clear_admin_system_health_override_cookie(
+    response: Response, request: Request
+) -> None:
     response.delete_cookie(
         key=ADMIN_SYSTEM_HEALTH_OVERRIDE_COOKIE,
         httponly=True,
         samesite="lax",
+        secure=_request_is_https(request),
         path="/",
     )
 
@@ -1079,9 +1092,50 @@ def period_from_request(request: Request) -> Period:
     start = request.query_params.get("start")
     end = request.query_params.get("end")
     try:
-        return resolve_period(period_slug, start, end, today=local_today())
+        period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _require_period_in_ledger_range(period)
+    return period
+
+
+def _require_period_in_ledger_range(period: Period) -> None:
+    if period.start < MIN_LEDGER_DATE or period.end > MAX_LEDGER_DATE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Period must be between {MIN_LEDGER_DATE.isoformat()} "
+                f"and {MAX_LEDGER_DATE.isoformat()}"
+            ),
+        )
+
+
+def _int_query_param(request: Request, name: str, default: int) -> int:
+    raw = request.query_params.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value") from exc
+    if abs(value) > 1_000_000_000:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value")
+    return value
+
+
+def _month_query_param(raw: str, name: str) -> tuple[int, int]:
+    """Parse a `YYYY-MM` query value into a year and month inside the ledger range."""
+    try:
+        year_str, month_str = raw.split("-", 1)
+        year = int(year_str)
+        month = int(month_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} format") from exc
+    if not 1 <= month <= 12 or not (
+        MIN_LEDGER_DATE.year <= year <= MAX_LEDGER_DATE.year
+    ):
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value")
+    return year, month
 
 
 def filters_from_request(request: Request) -> TransactionFilters:
@@ -1290,11 +1344,10 @@ def _user_settings_payload(db: Session, user_id: int) -> dict[str, object]:
 def _csv_export_response(
     db: Session,
     *,
-    transactions: list[Transaction],
-    actor_user_id: int,
+    conditions: list,
     log_event_name: str,
 ) -> StreamingResponse:
-    csv_text = CSVService(db, user_id=actor_user_id).export(transactions)
+    conditions = [*conditions, Transaction.deleted_at.is_(None)]
     timestamp = local_now().strftime("%Y%m%d_%H%M%S")
     filename = f"expenses_export_{timestamp}.csv"
     log_event(
@@ -1302,10 +1355,20 @@ def _csv_export_response(
         logging.INFO,
         log_event_name,
         filename=filename,
-        transactions_count=len(transactions),
+        transactions_count=db.scalar(
+            select(func.count(Transaction.id)).where(*conditions)
+        ),
+    )
+    # Streamed in batches so a large ledger is never held in memory at once.
+    transactions = db.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.category))
+        .where(*conditions)
+        .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
+        .execution_options(yield_per=500)
     )
     return StreamingResponse(
-        iter([csv_text]),
+        iter_export_transactions(transactions),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -1373,6 +1436,7 @@ def _serialize_transaction_item(txn: Transaction) -> dict[str, object]:
         "longitude": float(txn.longitude) if txn.longitude is not None else None,
         "tags": [{"id": tag.id, "name": tag.name} for tag in txn.tags],
         "has_attachments": bool(txn.attachments),
+        "updated_at": txn.updated_at,
     }
 
 
@@ -1423,6 +1487,7 @@ def _filters_from_bulk_query(
         period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _require_period_in_ledger_range(period)
     return period, TransactionFilters(
         type=txn_type,
         category_id=category_id,
@@ -1783,7 +1848,8 @@ def api_archive_category(
     try:
         CategoryService(db, user_id=user_id).archive(category_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        status_code = 404 if str(exc) == "Category not found" else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -2232,14 +2298,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
 
     ym = request.query_params.get("month")
     if ym:
-        try:
-            year_str, month_str = ym.split("-", 1)
-            year = int(year_str)
-            month = int(month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid month format") from exc
-        if month < 1 or month > 12:
-            raise HTTPException(status_code=400, detail="Invalid month value")
+        year, month = _month_query_param(ym, "month")
     else:
         year = today.year
         month = today.month
@@ -2257,12 +2316,14 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
     if view in {"templates", "workspace"}:
         templates = svc.list_templates()
 
-    year_value = int(request.query_params.get("year") or today.year)
+    year_value = _int_query_param(request, "year", today.year)
+    if not MIN_LEDGER_DATE.year <= year_value <= MAX_LEDGER_DATE.year:
+        raise HTTPException(status_code=400, detail="Invalid year value")
     yearly_budgets = []
     yearly_spent_map: dict[Optional[int], int] = {}
     if view in {"year", "workspace"}:
         yearly_budgets = svc.yearly_budgets_for_year(year_value)
-        yearly_spent_map = svc.spent_by_category_for_year(year_value)
+        yearly_spent_map = svc.spent_by_category_for_year(year_value, through=today)
 
     categories = CategoryService(db, user_id=user_id).list_all()
 
@@ -2351,14 +2412,7 @@ def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     today = local_today()
     month_param = (request.query_params.get("month") or "").strip()
     if month_param:
-        try:
-            year_str, month_str = month_param.split("-", 1)
-            year = int(year_str)
-            month = int(month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid month format") from exc
-        if month < 1 or month > 12:
-            raise HTTPException(status_code=400, detail="Invalid month value")
+        year, month = _month_query_param(month_param, "month")
     else:
         year = today.year
         month = today.month
@@ -2376,16 +2430,7 @@ def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     compare_year: int | None = None
     compare_month: int | None = None
     if compare_param:
-        try:
-            compare_year_str, compare_month_str = compare_param.split("-", 1)
-            compare_year = int(compare_year_str)
-            compare_month = int(compare_month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail="Invalid compare_month format"
-            ) from exc
-        if compare_month < 1 or compare_month > 12:
-            raise HTTPException(status_code=400, detail="Invalid compare_month value")
+        compare_year, compare_month = _month_query_param(compare_param, "compare_month")
 
     return BudgetService(db, user_id=user_id).burndown_for_month(
         year,
@@ -2522,6 +2567,7 @@ def api_recurring_rules(request: Request, db: Session = Depends(get_db)):
                 "auto_post": item.rule.auto_post,
                 "skip_weekends": item.rule.skip_weekends,
                 "month_day_policy": item.rule.month_day_policy.value,
+                "ended": item.ended,
             }
             for item in overview_rules
         ],
@@ -2553,12 +2599,26 @@ def api_create_recurring_rule(
 
 @router.put("/api/recurring/{rule_id}", response_model=IdOut)
 def api_update_recurring_rule(
-    rule_id: int, data: RecurringRuleIn, request: Request, db: Session = Depends(get_db)
+    rule_id: int,
+    data: RecurringRuleUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
     try:
         rule = RecurringRuleService(db, user_id=user_id).update(rule_id, data)
+    except RecurringRuleNameRequired as exc:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "name"),
+                    "msg": f"Value error, {exc}",
+                    "input": data.name,
+                }
+            ]
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"id": rule.id}
@@ -2644,6 +2704,7 @@ def api_recurring_occurrences(
             "next_occurrence": rule.next_occurrence.isoformat(),
             "end_date": rule.end_date.isoformat() if rule.end_date else None,
             "auto_post": rule.auto_post,
+            "ended": service.has_ended(rule, local_today()),
         },
         "occurrences": [
             {
@@ -3112,7 +3173,7 @@ def api_set_admin_system_health_validation_override(
             status_code=400,
             detail="Invalid profile. Use healthy, warm, or critical.",
         )
-    _set_admin_system_health_override_cookie(response, profile)
+    _set_admin_system_health_override_cookie(response, request, profile)
     return {"profile": profile}
 
 
@@ -3124,7 +3185,7 @@ def api_clear_admin_system_health_validation_override(
 ):
     _require_elevated_admin_context(request, db)
     _require_csrf(request, db)
-    _clear_admin_system_health_override_cookie(response)
+    _clear_admin_system_health_override_cookie(response, request)
     return {"profile": None}
 
 
@@ -3200,11 +3261,9 @@ def api_admin_download_db(
 @router.get("/api/export/csv")
 def api_export_user_csv(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
-    transactions = TransactionService(db, user_id=user_id).recent(limit=10000)
     return _csv_export_response(
         db,
-        transactions=transactions,
-        actor_user_id=user_id,
+        conditions=[Transaction.user_id == user_id],
         log_event_name="user_csv_export_downloaded",
     )
 
@@ -3254,22 +3313,10 @@ def api_export_user_portable_zip(request: Request, db: Session = Depends(get_db)
 @router.get("/api/admin/export-csv")
 def api_admin_export_all_transactions(request: Request, db: Session = Depends(get_db)):
     _require_elevated_admin_context(request, db)
-    actor_user_id = _require_current_user_id(request, db)
-    transactions = (
-        db.scalars(
-            select(Transaction)
-            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
-            .where(Transaction.deleted_at.is_(None))
-            .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
-            .limit(10000)
-        )
-        .unique()
-        .all()
-    )
+    _require_current_user_id(request, db)
     return _csv_export_response(
         db,
-        transactions=transactions,
-        actor_user_id=actor_user_id,
+        conditions=[],
         log_event_name="admin_csv_export_downloaded",
     )
 
@@ -3463,6 +3510,10 @@ def api_admin_recurring_catch_up(request: Request, db: Session = Depends(get_db)
             select(func.count(RecurringRule.id)).where(
                 RecurringRule.auto_post.is_(True),
                 RecurringRule.next_occurrence <= local_today(),
+                or_(
+                    RecurringRule.end_date.is_(None),
+                    RecurringRule.next_occurrence <= RecurringRule.end_date,
+                ),
             )
         )
         or 0
@@ -3497,7 +3548,7 @@ def api_import_csv_preview(
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
         )
-        content = content_bytes.decode("utf-8")
+        content = content_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         log_event(
             logger,
@@ -3553,7 +3604,7 @@ def api_import_csv_commit(
             max_bytes=settings.csv_import_max_bytes,
             detail=f"CSV file too large (max {settings.csv_import_max_bytes} bytes)",
         )
-        content = content_bytes.decode("utf-8")
+        content = content_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         log_event(
             logger,
@@ -4138,7 +4189,10 @@ def api_restore_deleted_transactions(
 ):
     user_id = _require_current_user_id(request, db)
     _require_csrf(request, db)
-    restored = TransactionService(db, user_id=user_id).restore_many(data.ids)
+    try:
+        restored = TransactionService(db, user_id=user_id).restore_many(data.ids)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"restored": restored}
 
 
@@ -4162,6 +4216,8 @@ def api_restore_transaction(
     _require_csrf(request, db)
     try:
         TransactionService(db, user_id=user_id).restore(transaction_id)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -4222,6 +4278,7 @@ def api_get_transaction(
         "net_amount_cents": txn.net_amount_cents,
         "reimbursed_total_cents": txn.reimbursed_total_cents,
         "created_at": txn.created_at,
+        "updated_at": txn.updated_at,
         "bank_row": (
             {
                 "id": bank_row.id,
@@ -4242,7 +4299,8 @@ def api_get_transaction(
             if txn.category
             else None
         ),
-        "title": txn.title,
+        # Postings of rules saved without a name were stored without a title.
+        "title": txn.title if (txn.title or "").strip() else txn.category.name,
         "description": txn.description,
         "latitude": float(txn.latitude) if txn.latitude is not None else None,
         "longitude": float(txn.longitude) if txn.longitude is not None else None,
@@ -4492,25 +4550,19 @@ def api_download_attachment(
         raise HTTPException(status_code=404, detail="Attachment file not found")
 
     etag = f'"{attachment.sha256_hex}"'
-    cache_control = "private, max-age=86400"
+    cache_control = "private, no-cache"
     if request.headers.get("if-none-match") == etag:
         return Response(
             status_code=304,
             headers={"ETag": etag, "Cache-Control": cache_control},
         )
 
-    safe_name = attachment.original_filename.replace('"', "_")
-    encoded_name = urllib.parse.quote(attachment.original_filename)
     return FileResponse(
         path,
         media_type=attachment.mime_type,
-        headers={
-            "ETag": etag,
-            "Cache-Control": cache_control,
-            "Content-Disposition": (
-                f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{encoded_name}"
-            ),
-        },
+        filename=attachment.original_filename,
+        content_disposition_type="inline",
+        headers={"ETag": etag, "Cache-Control": cache_control},
     )
 
 
@@ -4532,8 +4584,9 @@ def api_attachment_thumbnail(
     if thumb_path is None:
         raise HTTPException(status_code=404, detail="No thumbnail available")
 
-    etag = f'"{attachment.sha256_hex}-thumbnail"'
-    cache_control = "private, max-age=86400"
+    # Named after the cached file, so copies from earlier cache layouts revalidate.
+    etag = f'"{thumb_path.stem}"'
+    cache_control = "private, no-cache"
     if request.headers.get("if-none-match") == etag:
         return Response(
             status_code=304,
@@ -4774,7 +4827,16 @@ def api_delete_reimbursement_allocation(
     return {"status": "ok"}
 
 
-@router.put("/api/transactions/{transaction_id:int}", response_model=IdOut)
+@router.put(
+    "/api/transactions/{transaction_id:int}",
+    response_model=TransactionSavedOut,
+    responses={
+        409: {
+            "model": ErrorDetailOut,
+            "description": "The transaction was changed since expected_updated_at",
+        }
+    },
+)
 def api_update_transaction(
     transaction_id: int,
     data: TransactionIn,
@@ -4785,9 +4847,11 @@ def api_update_transaction(
     _require_csrf(request, db)
     try:
         txn = TransactionService(db, user_id=user_id).update(transaction_id, data)
+    except TransactionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": txn.id}
+    return {"id": txn.id, "updated_at": txn._saved_updated_at}
 
 
 @router.delete("/api/transactions/{transaction_id:int}")
@@ -5005,7 +5069,12 @@ def api_transactions_bulk_apply(
             "changes": counts,
         }
     if operation.lifecycle == "restore":
-        counts["restored"] = txn_service.restore_many([txn.id for txn in transactions])
+        try:
+            counts["restored"] = txn_service.restore_many(
+                [txn.id for txn in transactions]
+            )
+        except TransactionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
             "resolved_count": len(transactions),
             "eligible_count": len(transactions),
@@ -5024,15 +5093,12 @@ def api_transactions_bulk_apply(
     tag_service = TagService(db, user_id=user_id)
     patch_tags = []
     if tag_patch and tag_patch.mode in {"add", "replace"}:
-        seen_tag_names: set[str] = set()
-        for raw_name in tag_patch.tags:
-            clean_name = raw_name.strip()
-            if not clean_name:
-                continue
-            if clean_name.lower() in seen_tag_names:
-                continue
-            seen_tag_names.add(clean_name.lower())
-            patch_tags.append(tag_service.get_or_create(clean_name))
+        try:
+            patch_tags = tag_service.resolve_typed(
+                [name for name in tag_patch.tags if name.strip()]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     patch_tag_name_set = (
         {tag.name.lower() for tag in patch_tags}
         if tag_patch and tag_patch.mode in {"add", "replace"}
@@ -5057,6 +5123,7 @@ def api_transactions_bulk_apply(
 
         if not tag_patch:
             continue
+        tag_ids_before = {tag.id for tag in txn.tags}
         existing_by_lower = {tag.name.lower(): tag for tag in txn.tags}
         if tag_patch.mode == "add":
             for patch_tag in patch_tags:
@@ -5077,6 +5144,10 @@ def api_transactions_bulk_apply(
         elif tag_patch.mode == "clear" and txn.tags:
             txn.tags = []
             counts["tags_replaced"] += 1
+        # Tag links leave the transactions row alone; stamp it for
+        # expected_updated_at.
+        if {tag.id for tag in txn.tags} != tag_ids_before:
+            txn.updated_at = datetime.utcnow()
 
     db.commit()
     return {
@@ -5110,9 +5181,9 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    page = int(request.query_params.get("page", "1"))
+    page = _int_query_param(request, "page", 1)
     page = max(page, 1)
-    limit = int(request.query_params.get("limit", "50"))
+    limit = _int_query_param(request, "limit", 50)
     # A printout gathers every row 1000 at a time; each page stays a few MB.
     limit = min(max(limit, 1), 1000)
     offset = (page - 1) * limit
@@ -5180,9 +5251,9 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    page = int(request.query_params.get("page", "1"))
+    page = _int_query_param(request, "page", 1)
     page = max(page, 1)
-    limit = int(request.query_params.get("limit", "50"))
+    limit = _int_query_param(request, "limit", 50)
     limit = min(max(limit, 1), 100)
     offset = (page - 1) * limit
 
@@ -5433,11 +5504,8 @@ def api_insights(
     budget_month = str(request.query_params.get("budget_month") or "")
     if not budget_month:
         budget_month = f"{period.end.year:04d}-{period.end.month:02d}"
-    try:
-        byear, bmonth = (int(p) for p in budget_month.split("-", 1))
-    except ValueError:
-        byear, bmonth = period.end.year, period.end.month
-        budget_month = f"{byear:04d}-{bmonth:02d}"
+    byear, bmonth = _month_query_param(budget_month, "budget_month")
+    budget_month = f"{byear:04d}-{bmonth:02d}"
     budget_service = BudgetService(db, user_id=user_id)
     budget_effective = budget_service.effective_budgets_for_month(byear, bmonth)
     budget_progress_raw = budget_service.progress_for_month(byear, bmonth)
@@ -5570,6 +5638,8 @@ def api_digest(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=400, detail="Invalid week_of value"
             ) from exc
+        if not MIN_LEDGER_DATE <= week_of <= MAX_LEDGER_DATE:
+            raise HTTPException(status_code=400, detail="Invalid week_of value")
     return DigestService(db, user_id=user_id).weekly_digest(week_of=week_of)
 
 
@@ -5648,9 +5718,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     deltas = None
     duration_days = (period.end - period.start).days + 1
     if period.slug != "all" and duration_days <= 370:
-        prev_end = period.start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=duration_days - 1)
-        prev_period = Period("prev", prev_start, prev_end)
+        prev_period = previous_period(period)
         prev = metrics_service.kpis(
             prev_period,
             tag_ids=included_tag_ids,
@@ -5722,6 +5790,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
                 "title": txn.title,
                 "description": txn.description,
                 "tags": [{"id": tag.id, "name": tag.name} for tag in txn.tags],
+                "updated_at": txn.updated_at,
             }
             for txn in recent
         ],
