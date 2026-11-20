@@ -195,8 +195,8 @@ private struct SnapshotSheet: View {
         .task {
             if anchor == nil {
                 balanceFocused = true
-            } else {
-                _ = await model.loadServerTimeZone()
+            } else if await model.loadServerTimeZone() == nil {
+                formError = Self.zoneUnavailable
             }
         }
     }
@@ -212,6 +212,8 @@ private struct SnapshotSheet: View {
         balance != (anchor.map { Self.balanceInput($0.balanceCents) } ?? "") || note != (anchor?.note ?? "")
             || anchor.map { asOf != $0.asOfAt } == true
     }
+
+    private static let zoneUnavailable = "Couldn't read the server's time zone, so the snapshot can't be saved yet. Check the connection and try again."
 
     /// "1234,56" or "-1234,56"; a balance can be overdrawn.
     private static func balanceInput(_ cents: Int) -> String {
@@ -231,7 +233,7 @@ private struct SnapshotSheet: View {
         defer { saving = false }
         let saveTimeZone: TimeZone? = if anchor == nil { .current } else { await model.loadServerTimeZone() }
         guard let saveTimeZone else {
-            formError = "Couldn't read the server's time zone, so the snapshot can't be saved yet. Check the connection and try again."
+            formError = Self.zoneUnavailable
             return
         }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)

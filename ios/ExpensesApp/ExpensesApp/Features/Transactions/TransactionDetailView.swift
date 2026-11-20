@@ -21,6 +21,10 @@ struct TransactionDetailView: View {
     @State private var amountDraft = ""
     @State private var notesDraft = ""
     @State private var editingAmount = false
+    // Text a conflict kept in its field. It saves again only after the field is entered.
+    @State private var refused: Set<Field> = []
+    // The server's zone could not be read, so the date cannot change.
+    @State private var zoneUnavailable = false
     @FocusState private var focus: Field?
     @State private var sheet: Sheet?
     @State private var locating = false
@@ -102,9 +106,15 @@ struct TransactionDetailView: View {
             }
         }
         .refreshable {
-            await reload()
+            // Pulling down gives up the text a conflict kept.
+            for field in refused {
+                saves.errors[field] = nil
+            }
+            refused = []
             // The date can change once the server's zone is known.
-            _ = await model.loadServerTimeZone()
+            async let zone = model.loadServerTimeZone()
+            await reload()
+            zoneUnavailable = await zone == nil
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -188,7 +198,10 @@ struct TransactionDetailView: View {
         }
         .failureAlert("Couldn't complete the action", message: $actionError)
         .sensoryFeedback(.success, trigger: copied)
-        .onChange(of: focus) { previous, _ in
+        .onChange(of: focus) { previous, current in
+            if let current {
+                refused.remove(current)
+            }
             switch previous {
             case .title:
                 commitTitle()
@@ -207,9 +220,10 @@ struct TransactionDetailView: View {
             commitNotes()
         }
         .task {
-            await reload()
             // A changed date is written in the server's zone, so the picker shows it.
-            _ = await model.loadServerTimeZone()
+            async let zone = model.loadServerTimeZone()
+            await reload()
+            zoneUnavailable = await zone == nil
             if model.tags == nil {
                 await model.loadOrganizeData()
             }
@@ -229,7 +243,10 @@ struct TransactionDetailView: View {
                     EntryAmountField(text: $amountDraft, income: shown.type == .income)
                         .focused($focus, equals: .amount)
                         .onAppear {
-                            focus = .amount
+                            // A refused amount waits to be entered again.
+                            if !refused.contains(.amount) {
+                                focus = .amount
+                            }
                         }
                         .fieldError(saves.errors[.amount])
                 } else {
@@ -269,10 +286,17 @@ struct TransactionDetailView: View {
 
             // The stored time shows as the server stored it, wherever the device is. Until
             // its zone is known, a time picked here could save on another day.
-            DatePicker("Date", selection: dateSelection(shown))
-                .environment(\.timeZone, model.serverTimeZone ?? .current)
-                .disabled(model.serverTimeZone == nil)
-                .fieldError(saves.errors[.date])
+            VStack(alignment: .leading, spacing: 4) {
+                DatePicker("Date", selection: dateSelection(shown))
+                    .environment(\.timeZone, model.serverTimeZone ?? .current)
+                    .disabled(model.serverTimeZone == nil)
+                if zoneUnavailable, model.serverTimeZone == nil {
+                    Text("Couldn't reach the server, so the date can't be changed yet. Pull down to try again.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .fieldError(saves.errors[.date])
 
             Button {
                 sheet = .category
@@ -497,6 +521,8 @@ struct TransactionDetailView: View {
 
     // MARK: Saving
 
+    private static let keptAfterConflict = "This transaction changed elsewhere, so this wasn't saved. Edit it again to save, or pull down to discard it."
+
     private func save(_ field: Field, _ change: ((inout TransactionMutationRequest) -> Void)?) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
             if let saved = await model.updateTransaction(id: transactionID, body: body) {
@@ -506,15 +532,23 @@ struct TransactionDetailView: View {
                 return nil
             }
             // Another device saved first: the refused values are dropped, so no later save
-            // sends them again, and the fields show the other version, apart from values
-            // entered since and a field being typed in whose value was not refused.
+            // sends them again, and the fields show the other version. Refused text stays
+            // in its field, as does a field being typed in.
             if let error = model.lastError, error.statusCode == 409 {
                 let dropped = saves.discardSending(error.message)
                 if dropped.contains(.date) {
                     dateSave?.cancel()
                 }
+                let kept = dropped.intersection([.title, .amount, .notes])
+                for field in kept {
+                    saves.errors[field] = Self.keptAfterConflict
+                }
+                refused.formUnion(kept)
                 if let transaction {
-                    fillDrafts(transaction, keeping: focus.flatMap { dropped.contains($0) ? nil : $0 })
+                    fillDrafts(transaction, keeping: refused.union(focus.map { [$0] } ?? []))
+                }
+                if kept.contains(field) {
+                    return Self.keptAfterConflict
                 }
             }
             return model.lastError?.message ?? "Unable to save the change."
@@ -547,7 +581,7 @@ struct TransactionDetailView: View {
     }
 
     private func commitTitle() {
-        guard let transaction else {
+        guard let transaction, !refused.contains(.title) else {
             return
         }
         let title = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -562,7 +596,7 @@ struct TransactionDetailView: View {
     }
 
     private func commitAmount() {
-        guard let transaction else {
+        guard let transaction, !refused.contains(.amount) else {
             return
         }
         guard let cents = AppFormatters.parseAmountCents(amountDraft), cents > 0 else {
@@ -576,7 +610,7 @@ struct TransactionDetailView: View {
     }
 
     private func commitNotes() {
-        guard let transaction else {
+        guard let transaction, !refused.contains(.notes) else {
             return
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -607,26 +641,26 @@ struct TransactionDetailView: View {
         loadFailed = false
         // A transaction opened again shows its last copy while it loads.
         if let transaction {
-            fillDrafts(transaction)
+            fillDrafts(transaction, keeping: refused)
         }
         await model.loadTransactionDetail(id: transactionID)
         guard let transaction else {
             loadFailed = true
             return
         }
-        fillDrafts(transaction)
+        fillDrafts(transaction, keeping: refused)
     }
 
-    private func fillDrafts(_ transaction: TransactionDetail, keeping typed: Field? = nil) {
+    private func fillDrafts(_ transaction: TransactionDetail, keeping typed: Set<Field>) {
         // A value still to save stays in its field.
         let shown = shown(transaction)
-        if typed != .title {
+        if !typed.contains(.title) {
             titleDraft = shown.title
         }
-        if typed != .amount {
+        if !typed.contains(.amount) {
             amountDraft = AppFormatters.amountInput(shown.amountCents)
         }
-        if typed != .notes {
+        if !typed.contains(.notes) {
             notesDraft = shown.description ?? ""
         }
     }
