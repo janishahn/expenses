@@ -84,6 +84,8 @@ from expenses.schemas import (
     DurablePurchaseIn,
     ForecastScenarioIn,
     IngestTransactionIn,
+    MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     RecurringRuleIn,
     ReportOptions,
     RuleIn,
@@ -1460,6 +1462,11 @@ class DurablePurchaseService:
         if transaction.type != TransactionType.expense:
             raise ValueError("Durable tracking requires an expense transaction")
         acquired_on = data.acquired_on or transaction.date
+        if not MIN_LEDGER_DATE <= acquired_on <= MAX_LEDGER_DATE:
+            raise ValueError(
+                f"The acquired date must be between {MIN_LEDGER_DATE.isoformat()} "
+                f"and {MAX_LEDGER_DATE.isoformat()}"
+            )
         if data.ended_on is not None and data.ended_on < acquired_on:
             raise ValueError("End date must be on or after the acquired date")
 
@@ -1550,7 +1557,10 @@ class DurablePurchaseService:
                 100.0 if ended else min(100.0, days_owned / lifespan_days * 100)
             )
             fully_amortized = ended or days_owned >= lifespan_days
-            paid_for_itself_on = row.acquired_on + timedelta(days=lifespan_days)
+            # Stored rows can have lifespans that reach past the last date.
+            paid_for_itself_on = row.acquired_on + timedelta(
+                days=min(lifespan_days, (date.max - row.acquired_on).days)
+            )
             items.append(
                 {
                     "id": row.id,
@@ -4206,7 +4216,9 @@ class InsightsService:
         for durable in durables:
             amount = int(durable.transaction.net_amount_cents)
             lifespan = int(durable.expected_lifespan_days)
-            last = durable.acquired_on + timedelta(days=lifespan - 1)
+            last = durable.acquired_on + timedelta(
+                days=min(lifespan - 1, (date.max - durable.acquired_on).days)
+            )
             if durable.ended_on is not None:
                 last = min(last, durable.ended_on)
             day = max(start, durable.acquired_on)
@@ -7352,12 +7364,14 @@ class ReportService:
                 if options.transaction_type is not None
                 else TransactionType.expense
             )
+            # Every category, so the rows add up to the total and to 100 %.
             breakdown = self.metrics_service.category_breakdown(
                 period,
                 breakdown_type,
                 category_ids=options.category_ids,
                 tag_ids=options.tag_ids,
                 excluded_tag_ids=options.excluded_tag_ids,
+                limit=None,
             )
             data["category_breakdown"] = breakdown
 
@@ -7570,12 +7584,17 @@ class ReportService:
                     ).all()
                     next_anchor_idx = 0
                 else:
+                    # Reimbursement income is left out, as in the rows below:
+                    # it is already netted from the expenses it covers.
                     opening_stmt = select(
                         func.coalesce(
                             func.sum(
                                 case(
                                     (
-                                        Transaction.type == TransactionType.income,
+                                        and_(
+                                            Transaction.type == TransactionType.income,
+                                            Transaction.is_reimbursement.is_(False),
+                                        ),
                                         Transaction.amount_cents,
                                     ),
                                     else_=0,
@@ -7668,6 +7687,7 @@ class ReportService:
                 data["opening_balance_cents"] = opening_balance
 
                 running = opening_balance
+                anchor_at: datetime | None = None
                 for txn in transactions:
                     if use_account_balance:
                         while (
@@ -7675,11 +7695,14 @@ class ReportService:
                             and anchors[next_anchor_idx].as_of_at <= txn.occurred_at
                         ):
                             running = int(anchors[next_anchor_idx].balance_cents)
+                            anchor_at = anchors[next_anchor_idx].as_of_at
                             next_anchor_idx += 1
-                    if txn.type == TransactionType.income:
-                        running += txn.report_amount_cents
-                    else:
-                        running -= txn.report_amount_cents
+                    # A snapshot already includes transactions at its own time.
+                    if txn.occurred_at != anchor_at:
+                        if txn.type == TransactionType.income:
+                            running += txn.report_amount_cents
+                        else:
+                            running -= txn.report_amount_cents
                     setattr(txn, "running_balance_cents", running)
             data["recent_transactions"] = transactions
             if options.include_category_subtotals and transactions:
@@ -8083,10 +8106,13 @@ class BudgetService:
         return effective
 
     def spent_by_category_for_month(
-        self, year: int, month: int
+        self, year: int, month: int, *, through: Optional[date] = None
     ) -> dict[Optional[int], int]:
+        """Spend in the month, counting only days up to `through` when given."""
         start = month_start(year, month)
         end = month_end(year, month)
+        if through is not None:
+            end = min(end, through)
         gross_stmt = (
             select(
                 Transaction.category_id,
@@ -8154,10 +8180,15 @@ class BudgetService:
     def progress_for_month(
         self, year: int, month: int, *, as_of: Optional[date] = None
     ) -> dict[Optional[int], dict[str, int]]:
+        as_of_date = as_of or local_today()
         effective = self.effective_budgets_for_month(year, month)
-        spent_by_scope = self.spent_by_category_for_month(year, month)
+        # Spend is counted to the same day as the pace, so a past week or a
+        # future-dated expense does not count as spent before its date.
+        spent_by_scope = self.spent_by_category_for_month(
+            year, month, through=as_of_date
+        )
         return self._derive_progress(
-            effective, spent_by_scope, year, month, as_of=as_of
+            effective, spent_by_scope, year, month, as_of=as_of_date
         )
 
     def _derive_progress(
@@ -8355,7 +8386,9 @@ class BudgetService:
         if overall is None:
             return {}
 
-        spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
+        spent_by_scope = self.spent_by_category_for_month(
+            current.year, current.month, through=current
+        )
         overall_progress = self._derive_progress(
             effective, spent_by_scope, current.year, current.month, as_of=current
         ).get(None)
@@ -8393,7 +8426,9 @@ class BudgetService:
     ) -> dict[str, object]:
         current = today or local_today()
         effective = self.effective_budgets_for_month(current.year, current.month)
-        spent_by_scope = self.spent_by_category_for_month(current.year, current.month)
+        spent_by_scope = self.spent_by_category_for_month(
+            current.year, current.month, through=current
+        )
         progress = self._derive_progress(
             effective, spent_by_scope, current.year, current.month, as_of=current
         )
@@ -8787,7 +8822,10 @@ class DigestService:
             if progress is None:
                 continue
             velocity_ratio = float(progress["velocity_ratio"])
-            if velocity_ratio > 1.1:
+            spent_cents = int(progress["spent_cents"])
+            # A zero budget has no pace to compare against; any spend is over it.
+            zero_budget_spent = budget.amount_cents == 0 and spent_cents > 0
+            if velocity_ratio > 1.1 or zero_budget_spent:
                 pace_state = "over"
             elif velocity_ratio < 0.9:
                 pace_state = "under"
@@ -8798,11 +8836,11 @@ class DigestService:
                     "scope_category_id": budget.scope_category_id,
                     "scope_label": budget.scope_label,
                     "amount_cents": budget.amount_cents,
-                    "spent_cents": int(progress["spent_cents"]),
+                    "spent_cents": spent_cents,
                     "used_percent": (
-                        (int(progress["spent_cents"]) / budget.amount_cents) * 100
+                        (spent_cents / budget.amount_cents) * 100
                         if budget.amount_cents > 0
-                        else 0.0
+                        else (100.0 if zero_budget_spent else 0.0)
                     ),
                     "days_left": int(progress["days_remaining"]),
                     "velocity_ratio": velocity_ratio,

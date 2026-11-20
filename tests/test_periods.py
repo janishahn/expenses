@@ -5,8 +5,32 @@ from expenses.core.periods import (
     add_months,
     month_end,
     month_start,
+    previous_period,
     resolve_period,
 )
+
+
+def test_previous_period_steps_back_by_whole_months_or_by_days() -> None:
+    def previous(start: date, end: date) -> tuple[date, date]:
+        period = previous_period(Period("custom", start, end))
+        return period.start, period.end
+
+    assert previous(date(2025, 3, 1), date(2025, 3, 31)) == (
+        date(2025, 2, 1),
+        date(2025, 2, 28),
+    )
+    assert previous(date(2025, 11, 1), date(2025, 11, 30)) == (
+        date(2025, 10, 1),
+        date(2025, 10, 31),
+    )
+    assert previous(date(2025, 1, 1), date(2025, 3, 31)) == (
+        date(2024, 10, 1),
+        date(2024, 12, 31),
+    )
+    assert previous(date(2025, 11, 1), date(2025, 11, 15)) == (
+        date(2025, 10, 17),
+        date(2025, 10, 31),
+    )
 
 
 def test_month_helpers_cover_month_boundaries() -> None:

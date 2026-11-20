@@ -28,8 +28,8 @@ MAX_LEDGER_DATE = date(2199, 12, 31)
 
 
 class ReportOptions(BaseModel):
-    start: date
-    end: date
+    start: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    end: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
     sections: list[str] = Field(
         default_factory=lambda: [
             "summary",
@@ -38,7 +38,7 @@ class ReportOptions(BaseModel):
         ]
     )
     include_cents: bool = True
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
     transaction_type: Optional[TransactionType] = None
     category_ids: Optional[list[int]] = None
     tag_ids: list[int] = Field(default_factory=list)
@@ -894,22 +894,24 @@ class BudgetOverrideIn(BaseModel):
     year: int = Field(..., ge=1970, le=3000)
     month: int = Field(..., ge=1, le=12)
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
 
 
 class BudgetTemplateIn(BaseModel):
     frequency: BudgetFrequency
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
-    starts_on: date
-    ends_on: Optional[date] = None
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
+    starts_on: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
+    ends_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
 
 
 class BudgetTemplateApplyFromIn(BaseModel):
     frequency: BudgetFrequency
     category_id: Optional[int] = None
-    amount_cents: int = Field(..., ge=0)
-    starts_on: date
+    amount_cents: int = Field(..., ge=0, le=MAX_AMOUNT_CENTS)
+    starts_on: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
 
 
 class BudgetCategoryOut(BaseModel):
@@ -1108,10 +1110,18 @@ class TemplateReorderIn(BaseModel):
     template_ids: list[int] = Field(default_factory=list)
 
 
+# 100 years.
+MAX_DURABLE_LIFESPAN_DAYS = 36_500
+
+
 class DurablePurchaseIn(BaseModel):
-    expected_lifespan_days: int = Field(..., gt=0)
-    acquired_on: Optional[date] = None
-    ended_on: Optional[date] = None
+    expected_lifespan_days: int = Field(..., gt=0, le=MAX_DURABLE_LIFESPAN_DAYS)
+    acquired_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
+    ended_on: Optional[date] = Field(
+        default=None, ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE
+    )
 
 
 class ScenarioRemoveRuleIn(BaseModel):

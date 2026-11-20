@@ -218,6 +218,26 @@ def test_insights_ignores_invalid_trend_category_value(
     assert len(payload["trend"]) == 12
 
 
+def test_insights_rejects_bad_budget_month_and_out_of_range_periods(
+    api_client: TestClient,
+) -> None:
+    for url, detail in (
+        ("/api/insights?budget_month=2025-13", "Invalid budget_month value"),
+        ("/api/insights?budget_month=soon", "Invalid budget_month format"),
+        (
+            "/api/insights?period=custom&start=0001-01-01&end=2025-11-19",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+        (
+            "/api/insights?period=custom&start=9999-12-01&end=9999-12-31",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+    ):
+        response = api_client.get(url)
+        assert response.status_code == 400, url
+        assert response.json()["detail"] == detail
+
+
 def test_insights_serializes_budget_progress_keys_as_strings(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:

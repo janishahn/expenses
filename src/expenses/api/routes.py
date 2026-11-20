@@ -104,7 +104,7 @@ from expenses.db.models import (
     UserIngestToken,
     transaction_tags,
 )
-from expenses.core.periods import Period, resolve_period
+from expenses.core.periods import Period, previous_period, resolve_period
 from expenses.recurrence.engine import calculate_next_date, local_today
 from expenses.schemas import (
     AdminElevationOut,
@@ -195,6 +195,8 @@ from expenses.schemas import (
     OpenReimbursementsResponseOut,
     TransactionReimbursementsResponseOut,
     ReportOptions,
+    MAX_LEDGER_DATE,
+    MIN_LEDGER_DATE,
     RuleIn,
     RulePreviewOut,
     RulesResponseOut,
@@ -1080,9 +1082,50 @@ def period_from_request(request: Request) -> Period:
     start = request.query_params.get("start")
     end = request.query_params.get("end")
     try:
-        return resolve_period(period_slug, start, end, today=local_today())
+        period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _require_period_in_ledger_range(period)
+    return period
+
+
+def _require_period_in_ledger_range(period: Period) -> None:
+    if period.start < MIN_LEDGER_DATE or period.end > MAX_LEDGER_DATE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Period must be between {MIN_LEDGER_DATE.isoformat()} "
+                f"and {MAX_LEDGER_DATE.isoformat()}"
+            ),
+        )
+
+
+def _int_query_param(request: Request, name: str, default: int) -> int:
+    raw = request.query_params.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value") from exc
+    if abs(value) > 1_000_000_000:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value")
+    return value
+
+
+def _month_query_param(raw: str, name: str) -> tuple[int, int]:
+    """Parse a `YYYY-MM` query value into a year and month inside the ledger range."""
+    try:
+        year_str, month_str = raw.split("-", 1)
+        year = int(year_str)
+        month = int(month_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {name} format") from exc
+    if not 1 <= month <= 12 or not (
+        MIN_LEDGER_DATE.year <= year <= MAX_LEDGER_DATE.year
+    ):
+        raise HTTPException(status_code=400, detail=f"Invalid {name} value")
+    return year, month
 
 
 def filters_from_request(request: Request) -> TransactionFilters:
@@ -1433,6 +1476,7 @@ def _filters_from_bulk_query(
         period = resolve_period(period_slug, start, end, today=local_today())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _require_period_in_ledger_range(period)
     return period, TransactionFilters(
         type=txn_type,
         category_id=category_id,
@@ -2243,14 +2287,7 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
 
     ym = request.query_params.get("month")
     if ym:
-        try:
-            year_str, month_str = ym.split("-", 1)
-            year = int(year_str)
-            month = int(month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid month format") from exc
-        if month < 1 or month > 12:
-            raise HTTPException(status_code=400, detail="Invalid month value")
+        year, month = _month_query_param(ym, "month")
     else:
         year = today.year
         month = today.month
@@ -2268,7 +2305,9 @@ def api_budgets(request: Request, db: Session = Depends(get_db)):
     if view in {"templates", "workspace"}:
         templates = svc.list_templates()
 
-    year_value = int(request.query_params.get("year") or today.year)
+    year_value = _int_query_param(request, "year", today.year)
+    if not MIN_LEDGER_DATE.year <= year_value <= MAX_LEDGER_DATE.year:
+        raise HTTPException(status_code=400, detail="Invalid year value")
     yearly_budgets = []
     yearly_spent_map: dict[Optional[int], int] = {}
     if view in {"year", "workspace"}:
@@ -2362,14 +2401,7 @@ def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     today = local_today()
     month_param = (request.query_params.get("month") or "").strip()
     if month_param:
-        try:
-            year_str, month_str = month_param.split("-", 1)
-            year = int(year_str)
-            month = int(month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid month format") from exc
-        if month < 1 or month > 12:
-            raise HTTPException(status_code=400, detail="Invalid month value")
+        year, month = _month_query_param(month_param, "month")
     else:
         year = today.year
         month = today.month
@@ -2387,16 +2419,7 @@ def api_budget_burndown(request: Request, db: Session = Depends(get_db)):
     compare_year: int | None = None
     compare_month: int | None = None
     if compare_param:
-        try:
-            compare_year_str, compare_month_str = compare_param.split("-", 1)
-            compare_year = int(compare_year_str)
-            compare_month = int(compare_month_str)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail="Invalid compare_month format"
-            ) from exc
-        if compare_month < 1 or compare_month > 12:
-            raise HTTPException(status_code=400, detail="Invalid compare_month value")
+        compare_year, compare_month = _month_query_param(compare_param, "compare_month")
 
     return BudgetService(db, user_id=user_id).burndown_for_month(
         year,
@@ -5108,9 +5131,9 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    page = int(request.query_params.get("page", "1"))
+    page = _int_query_param(request, "page", 1)
     page = max(page, 1)
-    limit = int(request.query_params.get("limit", "50"))
+    limit = _int_query_param(request, "limit", 50)
     # A printout gathers every row 1000 at a time; each page stays a few MB.
     limit = min(max(limit, 1), 1000)
     offset = (page - 1) * limit
@@ -5178,9 +5201,9 @@ def api_uncategorized_transactions(request: Request, db: Session = Depends(get_d
     user_id = _require_current_user_id(request, db)
     period = period_from_request(request)
     filters = filters_from_request(request)
-    page = int(request.query_params.get("page", "1"))
+    page = _int_query_param(request, "page", 1)
     page = max(page, 1)
-    limit = int(request.query_params.get("limit", "50"))
+    limit = _int_query_param(request, "limit", 50)
     limit = min(max(limit, 1), 100)
     offset = (page - 1) * limit
 
@@ -5431,11 +5454,8 @@ def api_insights(
     budget_month = str(request.query_params.get("budget_month") or "")
     if not budget_month:
         budget_month = f"{period.end.year:04d}-{period.end.month:02d}"
-    try:
-        byear, bmonth = (int(p) for p in budget_month.split("-", 1))
-    except ValueError:
-        byear, bmonth = period.end.year, period.end.month
-        budget_month = f"{byear:04d}-{bmonth:02d}"
+    byear, bmonth = _month_query_param(budget_month, "budget_month")
+    budget_month = f"{byear:04d}-{bmonth:02d}"
     budget_service = BudgetService(db, user_id=user_id)
     budget_effective = budget_service.effective_budgets_for_month(byear, bmonth)
     budget_progress_raw = budget_service.progress_for_month(byear, bmonth)
@@ -5568,6 +5588,8 @@ def api_digest(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=400, detail="Invalid week_of value"
             ) from exc
+        if not MIN_LEDGER_DATE <= week_of <= MAX_LEDGER_DATE:
+            raise HTTPException(status_code=400, detail="Invalid week_of value")
     return DigestService(db, user_id=user_id).weekly_digest(week_of=week_of)
 
 
@@ -5646,9 +5668,7 @@ def api_dashboard(request: Request, db: Session = Depends(get_db)):
     deltas = None
     duration_days = (period.end - period.start).days + 1
     if period.slug != "all" and duration_days <= 370:
-        prev_end = period.start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=duration_days - 1)
-        prev_period = Period("prev", prev_start, prev_end)
+        prev_period = previous_period(period)
         prev = metrics_service.kpis(
             prev_period,
             tag_ids=included_tag_ids,

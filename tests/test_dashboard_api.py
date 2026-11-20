@@ -388,3 +388,64 @@ def test_dashboard_balance_excludes_transactions_dated_later_this_month(
     after = api_client.get("/api/dashboard?period=this_month").json()["kpis"]
     # The balance is shown "as of today", so a later-dated expense does not count yet.
     assert after["balance"] == before["balance"]
+
+
+def test_dashboard_compares_a_calendar_month_with_the_previous_month(
+    api_client: TestClient, csrf_headers: dict[str, str]
+) -> None:
+    category_id = _create_category(api_client, csrf_headers, "Rent", "expense")
+    for on in (date(2025, 10, 1), date(2025, 11, 1)):
+        _transaction(
+            api_client,
+            csrf_headers,
+            amount_cents=100_000,
+            title="Rent",
+            on=on,
+            category_id=category_id,
+        )
+    _transaction(
+        api_client,
+        csrf_headers,
+        amount_cents=50_000,
+        title="Late January",
+        on=date(2025, 1, 30),
+        category_id=category_id,
+    )
+
+    def deltas(start: str, end: str) -> dict[str, int]:
+        response = api_client.get(
+            f"/api/dashboard?period=custom&start={start}&end={end}"
+        )
+        assert response.status_code == 200
+        return response.json()["deltas"]
+
+    # November against all of October, not October 2-31.
+    assert deltas("2025-11-01", "2025-11-30")["expenses"] == 0
+    # March against February only, not three days of January as well.
+    assert deltas("2025-03-01", "2025-03-31")["expenses"] == 0
+    # Other ranges keep the window of the same length before them:
+    # Oct 17-31 and Sep 2-Oct 1.
+    assert deltas("2025-11-01", "2025-11-15")["expenses"] == 100_000
+    assert deltas("2025-10-02", "2025-10-31")["expenses"] == -100_000
+
+
+def test_dashboard_rejects_malformed_and_out_of_range_query_values(
+    api_client: TestClient,
+) -> None:
+    for url, detail in (
+        (
+            "/api/dashboard?period=custom&start=0001-01-01&end=2025-01-31",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+        (
+            "/api/dashboard?period=custom&start=2025-01-01&end=9999-12-31",
+            "Period must be between 1900-01-01 and 2199-12-31",
+        ),
+        ("/api/transactions?page=abc", "Invalid page value"),
+        ("/api/transactions?limit=abc", "Invalid limit value"),
+        ("/api/transactions?page=100000000000000000000", "Invalid page value"),
+        ("/api/transactions/uncategorized?page=abc", "Invalid page value"),
+    ):
+        response = api_client.get(url)
+        assert response.status_code == 400, url
+        assert response.json()["detail"] == detail
