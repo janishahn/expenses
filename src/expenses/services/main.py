@@ -3251,12 +3251,13 @@ class ReceiptAttachmentService:
             path = self.path_for_storage_key(attachment.storage_key)
             if path.exists():
                 path.unlink()
-            for thumb_path in [
-                self.thumbnail_path_for(attachment),
-                *self._stale_thumbnails(attachment),
-            ]:
-                thumb_path.unlink(missing_ok=True)
             self.session.delete(attachment)
+        # One directory pass for the batch: "<id>.webp" and "<id>-<hash>.webp".
+        purged_ids = {str(attachment.id) for attachment in attachments}
+        if purged_ids:
+            for thumb_path in (self._receipts_dir() / ".thumbnails").glob("*.webp"):
+                if thumb_path.stem.split("-", 1)[0] in purged_ids:
+                    thumb_path.unlink(missing_ok=True)
         return len(attachments)
 
 
@@ -3319,9 +3320,10 @@ class IngestService:
         category_name_raw = (data.category or "").strip()
         if category_name_raw:
             input_lower = category_name_raw.lower()
-            # Matched in Python: SQLite's lower() folds ASCII only. An active
-            # exact name wins, then a fuzzy active match, then an archived
-            # exact name.
+            # Matched in Python: SQLite's lower() folds ASCII only, so names
+            # differing only in non-ASCII case can both exist. An active name
+            # spelled exactly wins, then an active exact name in any case, then
+            # a fuzzy active match, then an archived exact name.
             expense_categories = (
                 select(Category)
                 .where(
@@ -3332,6 +3334,13 @@ class IngestService:
             )
             all_categories = self.session.scalars(expense_categories).all()
             exact = next(
+                (
+                    c
+                    for c in all_categories
+                    if c.name == category_name_raw and c.archived_at is None
+                ),
+                None,
+            ) or next(
                 (c for c in all_categories if c.name.lower() == input_lower), None
             )
             if exact and exact.archived_at is None:

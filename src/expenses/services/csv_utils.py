@@ -46,9 +46,14 @@ def parse_date(value: str):
         return datetime.strptime(value, "%d.%m.%Y").date()
 
 
-_PLAIN_AMOUNT = re.compile(r"([0-9]+)(?:[.,]([0-9]{1,2})?)?")
-_GERMAN_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:\.[0-9]{3})+)(?:,([0-9]{1,2})?)?")
-_ENGLISH_GROUPED_AMOUNT = re.compile(r"([0-9]{1,3}(?:,[0-9]{3})+)(?:\.([0-9]{1,2})?)?")
+# Decimals past the cents may only be trailing zeros, as in 1234,5600.
+_PLAIN_AMOUNT = re.compile(r"([0-9]+)(?:[.,](?:([0-9]{1,2})0*)?)?")
+_GERMAN_GROUPED_AMOUNT = re.compile(
+    r"([0-9]{1,3}(?:\.[0-9]{3})+)(?:,(?:([0-9]{1,2})0*)?)?"
+)
+_ENGLISH_GROUPED_AMOUNT = re.compile(
+    r"([0-9]{1,3}(?:,[0-9]{3})+)(?:\.(?:([0-9]{1,2})0*)?)?"
+)
 # One separator before exactly three digits reads as 1000 or as 1.000.
 _AMBIGUOUS_AMOUNT = re.compile(r"[0-9]{1,3}[.,][0-9]{3}")
 

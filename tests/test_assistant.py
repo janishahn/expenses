@@ -2030,7 +2030,7 @@ def test_assistant_budget_proposals_stay_in_the_ledger_years() -> None:
     with make_session() as session:
         session.add(User(id=1, username="owner", password_hash="unused"))
         session.commit()
-        with pytest.raises(InvalidProposal):
+        with pytest.raises(InvalidProposal) as caught:
             propose_budgets(
                 _reader(session),
                 [
@@ -2042,6 +2042,12 @@ def test_assistant_budget_proposals_stay_in_the_ledger_years() -> None:
                     )
                 ],
             )
+        assert caught.value.status == "invalid_month"
+        with pytest.raises(InvalidProposal) as caught:
+            propose_remove_budgets(
+                _reader(session), [BudgetScope(category_id=None, month="2301-01")]
+            )
+        assert caught.value.status == "invalid_month"
 
 
 def test_assistant_approvals_refuse_amounts_changed_since_the_card() -> None:

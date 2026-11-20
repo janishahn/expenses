@@ -498,6 +498,11 @@ def _month(value: str) -> tuple[int, int]:
         parsed = date.fromisoformat(f"{value}-01")
     except ValueError:
         raise InvalidProposal("invalid_month", f"{value} is not a month like 2026-10.")
+    if not MIN_LEDGER_DATE.year <= parsed.year <= MAX_LEDGER_DATE.year:
+        raise InvalidProposal(
+            "invalid_month",
+            f"Pick a month between {MIN_LEDGER_DATE.year} and {MAX_LEDGER_DATE.year}.",
+        )
     return parsed.year, parsed.month
 
 
@@ -890,12 +895,6 @@ def propose_budgets(reader: AssistantReader, budgets: list[BudgetRequest]) -> Pr
     rows: list[ApprovalRow] = []
     for budget in budgets:
         year, month = _month(budget.month)
-        if not MIN_LEDGER_DATE.year <= year <= MAX_LEDGER_DATE.year:
-            raise InvalidProposal(
-                "invalid_month",
-                f"Set budgets between {MIN_LEDGER_DATE.year} and "
-                f"{MAX_LEDGER_DATE.year}.",
-            )
         category = (
             _usable_category(categories, budget.category_id, TransactionType.expense)
             if budget.category_id is not None

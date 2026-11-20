@@ -293,6 +293,39 @@ def test_ingest_matches_non_ascii_and_archived_category_names_exactly() -> None:
         assert sorted(names) == ["Food", "Ärzte", "Übernachtung"]
 
 
+def test_ingest_prefers_the_category_with_the_exact_spelling() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        # SQLite's lower() folds ASCII only, so both names can exist.
+        categories = CategoryService(session)
+        upper = categories.create(
+            CategoryIn(name="ÖPNV", type=TransactionType.expense, order=0)
+        )
+        lower = categories.create(
+            CategoryIn(name="öpnv", type=TransactionType.expense, order=0)
+        )
+
+        def ingest(name: str) -> int:
+            return (
+                IngestService(session)
+                .ingest_expense(
+                    IngestTransactionIn(
+                        amount_cents=100,
+                        title="Ticket",
+                        date=date(2025, 1, 2),
+                        category=name,
+                    )
+                )
+                .transaction.category_id
+            )
+
+        assert ingest("öpnv") == lower.id
+        assert ingest("ÖPNV") == upper.id
+        assert ingest("Öpnv") == upper.id
+
+
 def test_ingest_uses_a_category_another_request_created_meanwhile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -956,6 +956,46 @@ def test_late_thumbnail_of_a_deleted_attachment_is_not_served_for_its_id(
     assert not legacy_thumbnail.exists()
 
 
+def test_purging_transactions_removes_their_attachment_thumbnails(
+    api_client: TestClient, csrf_headers: dict[str, str], db_session
+) -> None:
+    def upload(transaction_id: int) -> int:
+        response = api_client.post(
+            f"/api/transactions/{transaction_id}/attachments",
+            files={"file": ("receipt.png", _png(8), "image/png")},
+            headers=csrf_headers,
+        )
+        return int(response.json()["id"])
+
+    purged_txn = _transaction(api_client, csrf_headers, amount_cents=500, title="Gone")
+    kept_txn = _transaction(api_client, csrf_headers, amount_cents=500, title="Kept")
+    service = ReceiptAttachmentService(db_session, user_id=1)
+    purged = service.get(upload(purged_txn))
+    kept = service.get(upload(kept_txn))
+    current = service.ensure_thumbnail(purged)
+    kept_thumbnail = service.ensure_thumbnail(kept)
+    legacy = current.with_name(f"{purged.id}.webp")
+    stale = current.with_name(f"{purged.id}-otherhash.webp")
+    # Another attachment's id that starts with the purged id's digits.
+    longer_id = current.with_name(f"{purged.id}2-otherhash.webp")
+    for path in (legacy, stale, longer_id):
+        path.write_bytes(b"thumbnail")
+
+    api_client.delete(f"/api/transactions/{purged_txn}", headers=csrf_headers)
+    purged_response = api_client.post(
+        "/api/transactions/deleted/purge",
+        headers=csrf_headers,
+        json={"ids": [purged_txn]},
+    )
+
+    assert purged_response.json() == {"deleted": 1}
+    assert not current.exists()
+    assert not legacy.exists()
+    assert not stale.exists()
+    assert kept_thumbnail.exists()
+    assert longer_id.exists()
+
+
 def test_attachment_thumbnail_follows_photo_orientation(
     api_client: TestClient, csrf_headers: dict[str, str]
 ) -> None:
