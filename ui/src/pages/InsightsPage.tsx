@@ -5,6 +5,7 @@ import { FunnelIcon } from "@phosphor-icons/react/Funnel"
 import { PackageIcon } from "@phosphor-icons/react/Package"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { components } from "../app/api-schema"
 import { formatAmount, formatCount } from "../app/format"
 import { dayLabel } from "../app/transactions"
 import { TagFilterOptions, type TagMode } from "../components/TagFilterOptions"
@@ -27,16 +28,7 @@ import { neighbourCategoryColors } from "../components/ui/tokens"
 import { buildSearchParams } from "../lib/searchParams"
 import { canonicalizeTagScope, parseTagIds, serializeTagIds } from "../lib/tagFilters"
 
-type InsightsResponse = {
-  period: { slug: string; start: string; end: string }
-  tags: Array<{ id: number; name: string }>
-  series: Array<{ year: number; month: number; income_cents: number; expense_cents: number }>
-  // Totals for the exact period; the series covers whole months, at most 12.
-  income_cents: number
-  expense_cents: number
-  recurring_cents: number
-  month_count: number
-}
+type InsightsResponse = components["schemas"]["InsightsResponseOut"]
 
 type GridKind = "expense" | "income" | "tag"
 

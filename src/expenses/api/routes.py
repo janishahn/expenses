@@ -5655,7 +5655,6 @@ def api_durable_purchases(request: Request, db: Session = Depends(get_db)):
 @router.get(
     "/api/dashboard",
     response_model=DashboardResponseOut,
-    response_model_exclude_none=True,
 )
 def api_dashboard(request: Request, db: Session = Depends(get_db)):
     user_id = _require_current_user_id(request, db)

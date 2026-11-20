@@ -80,6 +80,7 @@ from expenses.ai.usage import (
 )
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
+from expenses.core.response_model import OutModel
 from expenses.db.models import (
     AssistantAction,
     AssistantChat,
@@ -103,7 +104,7 @@ TURN_OUTPUT_TOKENS = 100_000
 TurnStatus = Literal["completed", "stopped", "failed"]
 
 
-class ThinkingItem(BaseModel):
+class ThinkingItem(OutModel):
     kind: Literal["thinking"] = "thinking"
     id: str
     # Empty when the provider keeps its reasoning hidden.
@@ -112,7 +113,7 @@ class ThinkingItem(BaseModel):
     state: Literal["active", "done"]
 
 
-class NoteItem(BaseModel):
+class NoteItem(OutModel):
     """What the model says about its next step before it calls a tool."""
 
     kind: Literal["note"] = "note"
@@ -121,7 +122,7 @@ class NoteItem(BaseModel):
     state: Literal["active", "done"]
 
 
-class ToolItem(BaseModel):
+class ToolItem(OutModel):
     kind: Literal["tool"] = "tool"
     id: str
     name: str
@@ -130,14 +131,14 @@ class ToolItem(BaseModel):
     state: Literal["running", "done", "failed", "stopped"]
 
 
-class TextItem(BaseModel):
+class TextItem(OutModel):
     kind: Literal["text"] = "text"
     id: str
     text: str
     state: Literal["streaming", "done"]
 
 
-class ApprovalItem(BaseModel):
+class ApprovalItem(OutModel):
     """A change the model proposed. Nothing changes until the user approves it."""
 
     kind: Literal["approval"] = "approval"
@@ -167,13 +168,13 @@ class AssistantMessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
 
 
-class AssistantChatSummaryOut(BaseModel):
+class AssistantChatSummaryOut(OutModel):
     id: str
     title: str
     updated_at: datetime
 
 
-class AssistantTurnOut(BaseModel):
+class AssistantTurnOut(OutModel):
     id: int
     user_text: str
     items: list[AssistantItem]
@@ -210,7 +211,7 @@ class AssistantSettingsIn(BaseModel):
     chat_days: ChatDays
 
 
-class AssistantSettingsOut(BaseModel):
+class AssistantSettingsOut(OutModel):
     chat_days: int
 
 

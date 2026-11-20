@@ -15,6 +15,7 @@ import { WalletIcon } from "@phosphor-icons/react/Wallet"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import type { CategorySummary } from "../app/api-types"
 import { useAuth } from "../app/auth"
 import { useQueuedSave } from "../app/queued-save"
@@ -86,18 +87,7 @@ type RulePayload = {
   budget_exclude_tag_id: number | null
 }
 
-type RulePreview = {
-  matches_count: number
-  sample: Array<{
-    id: number
-    title: string | null
-    amount_cents: number
-    type: string
-    before_category: string
-    after_category: string
-    add_tags: string[]
-  }>
-}
+type RulePreview = components["schemas"]["RulePreviewOut"]
 
 type RuleSuggestion = {
   id: number

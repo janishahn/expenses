@@ -7,6 +7,7 @@ import { SignOutIcon } from "@phosphor-icons/react/SignOut"
 import { XIcon } from "@phosphor-icons/react/X"
 import { Navigate, useNavigate, useParams } from "react-router-dom"
 import { apiFetch, apiFetchFormData, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { useAuth } from "../app/auth"
 import { copyText } from "../app/clipboard"
 import { formatShortDate, formatShortDateTime } from "../app/format"
@@ -30,19 +31,9 @@ import type { ThemePreference } from "../theme/runtime"
 import { useThemePreference } from "../theme/useThemePreference"
 import { SETTINGS_SECTIONS, useSettingsGroups, type SettingsSectionKey } from "./settings-nav"
 
-type BalanceAnchor = {
-  id: number
-  as_of_at: string
-  balance_cents: number
-  note: string | null
-}
+type BalanceAnchor = components["schemas"]["BalanceAnchorOut"]
 
-type IngestTokenMetadata = {
-  token_hint: string
-  created_at: string
-  updated_at: string
-  last_used_at: string | null
-}
+type IngestTokenMetadata = components["schemas"]["IngestTokenMetadataOut"]
 
 type SettingsPayload = {
   auto_categorization: AutoCategorizationSettingsData
@@ -225,7 +216,7 @@ function AppearanceCard() {
   )
 }
 
-type AssistantSettings = { chat_days: number }
+type AssistantSettings = components["schemas"]["AssistantSettingsOut"]
 
 // The server deletes chats this long after their last message.
 function AssistantCard() {

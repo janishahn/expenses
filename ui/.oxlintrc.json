@@ -16,7 +16,8 @@
   },
   "ignorePatterns": [
     "dist",
-    "prototypes"
+    "prototypes",
+    "src/app/api-schema.ts"
   ],
   "rules": {
     "no-restricted-globals": [

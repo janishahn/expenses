@@ -4,6 +4,7 @@ import { InfoIcon } from "@phosphor-icons/react/Info"
 import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { components } from "../app/api-schema"
 import type { CategoriesResponse } from "../app/api-types"
 import { formatAmount, formatAmountPrivate } from "../app/format"
 import { usePrivacy } from "../app/privacy"
@@ -22,56 +23,9 @@ import { SegmentedControl } from "../components/ui/SegmentedControl"
 import { MetricStrip, type Metric } from "../components/ui/Sheet"
 import { buildSearchParams } from "../lib/searchParams"
 
-type ForecastRecurringRow = {
-  rule_id: number | null
-  name: string
-  type: "income" | "expense"
-  amount_cents: number
-  occurrence_date: string
-  category_id: number | null
-  category_name: string | null
-}
+type ForecastMonth = components["schemas"]["ForecastMonthOut"]
 
-type ForecastVariableRow = { category_id: number; name: string; icon: string | null; amount_cents: number }
-
-type ForecastOneTimeRow = { name: string; type: "income" | "expense"; amount_cents: number }
-
-type ForecastMonth = {
-  month: string
-  projected_income_cents: number
-  projected_expenses_cents: number
-  projected_net_cents: number
-  end_balance_cents: number
-  end_balance_p10_cents: number | null
-  end_balance_p90_cents: number | null
-  minimum_balance_cents: number
-  crosses_negative: boolean
-  breakdown: {
-    recurring_rules: ForecastRecurringRow[]
-    variable_estimates: ForecastVariableRow[]
-    variable_income_estimates: ForecastVariableRow[]
-    one_time_events: ForecastOneTimeRow[]
-  }
-}
-
-type ForecastResponse = {
-  start_balance_cents: number
-  current_month_net_cents: number
-  months: ForecastMonth[]
-  model: {
-    method: "recurring_only" | "recent_average" | "seasonal_average"
-    history_months: number
-    prediction_interval_available: boolean
-  }
-  summary: {
-    projected_balance_cents: number
-    projected_balance_p10_cents: number | null
-    projected_balance_p90_cents: number | null
-    average_monthly_net_cents: number
-    months_until_negative: number | null
-    risk_months_until_negative: number | null
-  }
-}
+type ForecastResponse = components["schemas"]["ForecastResponseOut"]
 
 type Horizon = "3" | "6" | "12"
 type Mode = "recurring" | "full"

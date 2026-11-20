@@ -19,6 +19,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from expenses.ai.assistant_tools import AssistantReader, _eur, _invalid
+from expenses.core.response_model import OutModel
 from expenses.db.models import (
     AssistantAction,
     BudgetFrequency,
@@ -78,13 +79,13 @@ class ActionConflict(Exception):
 # ───────── Cards ─────────
 
 
-class ApprovalCategory(BaseModel):
+class ApprovalCategory(OutModel):
     id: int
     name: str
     icon: str | None
 
 
-class ApprovalRow(BaseModel):
+class ApprovalRow(OutModel):
     title: str
     detail: str | None = None
     category: ApprovalCategory | None = None
@@ -95,7 +96,7 @@ class ApprovalRow(BaseModel):
     income: bool = False
 
 
-class ApprovalCard(BaseModel):
+class ApprovalCard(OutModel):
     title: str
     meta: str | None = None
     # The approve button, such as Add, and the state after it, such as Added.

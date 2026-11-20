@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --type-aware --report-unused-disable-directives",
+    "gen:api": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts",
+    "lint": "openapi-typescript ../ios/ExpensesApp/Contract/openapi.json -o src/app/api-schema.ts --check && oxlint --type-aware --report-unused-disable-directives",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium firefox webkit",
@@ -44,6 +45,7 @@
     "@types/react-dom": "^18.2.24",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.5.1",
+    "openapi-typescript": "7.13.0",
     "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2007",
     "postcss": "^8.5.26",

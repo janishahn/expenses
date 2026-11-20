@@ -752,7 +752,8 @@
           }
         },
         "required": [
-          "elevated"
+          "elevated",
+          "elevated_until"
         ],
         "title": "AdminElevationOut",
         "type": "object"
@@ -821,8 +822,10 @@
           "environment",
           "db_path",
           "db_size_mb",
+          "db_modified",
           "log_path",
           "log_size_mb",
+          "log_modified",
           "log_retained_files",
           "users_count"
         ],
@@ -852,7 +855,8 @@
           }
         },
         "required": [
-          "entries"
+          "entries",
+          "next_cursor"
         ],
         "title": "AdminLogsResponseOut",
         "type": "object"
@@ -1018,6 +1022,7 @@
           }
         },
         "required": [
+          "cpu_temp_celsius",
           "cpu_load_percent",
           "ram_used_bytes",
           "ram_total_bytes",
@@ -1026,7 +1031,8 @@
           "disk_free_bytes",
           "db_size_bytes",
           "receipts_size_bytes",
-          "status"
+          "status",
+          "status_reason"
         ],
         "title": "AdminSystemHealthOut",
         "type": "object"
@@ -1101,9 +1107,12 @@
         },
         "required": [
           "title",
+          "meta",
           "verb",
           "done",
-          "rows"
+          "rows",
+          "total_cents",
+          "total_of_cents"
         ],
         "title": "ApprovalCard",
         "type": "object"
@@ -1177,9 +1186,11 @@
           }
         },
         "required": [
+          "kind",
           "id",
           "card",
-          "state"
+          "state",
+          "message"
         ],
         "title": "ApprovalItem",
         "type": "object"
@@ -1252,7 +1263,13 @@
           }
         },
         "required": [
-          "title"
+          "title",
+          "detail",
+          "category",
+          "date",
+          "amount_cents",
+          "of_cents",
+          "income"
         ],
         "title": "ApprovalRow",
         "type": "object"
@@ -1648,7 +1665,8 @@
         "required": [
           "id",
           "as_of_at",
-          "balance_cents"
+          "balance_cents",
+          "note"
         ],
         "title": "BalanceAnchorOut",
         "type": "object"
@@ -1763,7 +1781,8 @@
         },
         "required": [
           "label",
-          "row_count"
+          "row_count",
+          "last_import_at"
         ],
         "title": "BankAccountOut",
         "type": "object"
@@ -1981,6 +2000,11 @@
           "type",
           "amount_cents",
           "signed_amount_cents",
+          "title",
+          "description",
+          "category",
+          "category_id",
+          "category_icon",
           "date_delta_days"
         ],
         "title": "BankReconciliationTransactionOut",
@@ -2016,7 +2040,9 @@
           }
         },
         "required": [
-          "status"
+          "status",
+          "transaction_id",
+          "previous_amount_cents"
         ],
         "title": "BankRowActionResponseOut",
         "type": "object"
@@ -2291,8 +2317,12 @@
         },
         "required": [
           "booking_date",
+          "value_date",
           "amount_cents",
           "currency",
+          "payee",
+          "booking_text",
+          "purpose",
           "raw_description",
           "duplicate"
         ],
@@ -2459,12 +2489,21 @@
           "id",
           "account_label",
           "booking_date",
+          "value_date",
           "amount_cents",
           "currency",
+          "payee",
+          "booking_text",
+          "purpose",
           "raw_description",
+          "reviewed_at",
+          "resolution",
+          "resolved_at",
+          "ignore_reason",
           "status",
           "candidate_count",
-          "candidates"
+          "candidates",
+          "suggested_transaction"
         ],
         "title": "BankStatementRowOut",
         "type": "object"
@@ -2664,6 +2703,7 @@
           }
         },
         "required": [
+          "category_id",
           "name",
           "amount_cents",
           "percent"
@@ -2736,6 +2776,7 @@
           "budget_amount_cents",
           "days_in_month",
           "daily_series",
+          "compare_month",
           "compare_daily_series",
           "top_spending_days"
         ],
@@ -2774,6 +2815,7 @@
         },
         "required": [
           "day",
+          "date",
           "total_cents",
           "transactions"
         ],
@@ -2844,7 +2886,9 @@
         "required": [
           "id",
           "name",
-          "type"
+          "type",
+          "icon",
+          "archived_at"
         ],
         "title": "BudgetCategoryOut",
         "type": "object"
@@ -2931,6 +2975,7 @@
           "id",
           "year",
           "month",
+          "category_id",
           "amount_cents"
         ],
         "title": "BudgetOverrideOut",
@@ -2979,6 +3024,7 @@
           }
         },
         "required": [
+          "scope_category_id",
           "spent_cents",
           "remaining_cents",
           "velocity_ratio",
@@ -3021,6 +3067,7 @@
           }
         },
         "required": [
+          "scope_category_id",
           "scope_label",
           "amount_cents",
           "source",
@@ -3159,8 +3206,10 @@
         "required": [
           "id",
           "frequency",
+          "category_id",
           "amount_cents",
-          "starts_on"
+          "starts_on",
+          "ends_on"
         ],
         "title": "BudgetTemplateMutationOut",
         "type": "object"
@@ -3210,8 +3259,10 @@
         "required": [
           "id",
           "frequency",
+          "category",
           "amount_cents",
-          "starts_on"
+          "starts_on",
+          "ends_on"
         ],
         "title": "BudgetTemplateRowOut",
         "type": "object"
@@ -3235,6 +3286,7 @@
           }
         },
         "required": [
+          "scope_category_id",
           "spent_cents"
         ],
         "title": "BudgetYearSpentOut",
@@ -3416,6 +3468,7 @@
           "resolved_count",
           "eligible_count",
           "skipped_count",
+          "sample_ids",
           "changes"
         ],
         "title": "BulkEditResponseOut",
@@ -3741,7 +3794,10 @@
           "type",
           "is_reimbursement",
           "amount_cents",
-          "title"
+          "category",
+          "title",
+          "description",
+          "category_id"
         ],
         "title": "CSVPreviewRowOut",
         "type": "object"
@@ -3869,7 +3925,13 @@
         "required": [
           "id",
           "name",
-          "order"
+          "type",
+          "icon",
+          "archived_at",
+          "order",
+          "usage_count",
+          "expense_cents",
+          "income_cents"
         ],
         "title": "CategoryListItemOut",
         "type": "object"
@@ -3960,6 +4022,9 @@
         "required": [
           "id",
           "name",
+          "type",
+          "icon",
+          "archived_at",
           "order"
         ],
         "title": "CategoryOut",
@@ -4031,7 +4096,9 @@
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "type",
+          "icon"
         ],
         "title": "CategorySummaryOut",
         "type": "object"
@@ -4259,7 +4326,10 @@
           }
         },
         "required": [
-          "has_any_transactions"
+          "has_any_transactions",
+          "mode",
+          "expense_breakdown",
+          "income_breakdown"
         ],
         "title": "DashboardDonutOut",
         "type": "object"
@@ -4367,6 +4437,7 @@
           "transaction_id",
           "expected_lifespan_days",
           "acquired_on",
+          "ended_on",
           "ended",
           "days_owned",
           "cost_per_day_cents",
@@ -4377,7 +4448,9 @@
           "fully_amortized",
           "paid_for_itself_on",
           "original_amount_cents",
-          "net_amount_cents"
+          "net_amount_cents",
+          "title",
+          "category"
         ],
         "title": "DashboardDurablePurchaseOut",
         "type": "object"
@@ -4399,6 +4472,10 @@
             "type": "array"
           }
         },
+        "required": [
+          "included_tag_ids",
+          "excluded_tag_ids"
+        ],
         "title": "DashboardFiltersOut",
         "type": "object"
       },
@@ -4527,10 +4604,15 @@
           "filters",
           "kpis",
           "sparklines",
+          "deltas",
           "donut",
           "recent",
           "categories",
-          "tags"
+          "tags",
+          "durable_purchases",
+          "budget_pace",
+          "category_budget_pulse",
+          "category_budget_summary"
         ],
         "title": "DashboardResponseOut",
         "type": "object"
@@ -4571,6 +4653,11 @@
             "title": "Income"
           }
         },
+        "required": [
+          "income",
+          "expenses",
+          "balance"
+        ],
         "title": "DashboardSparklinesOut",
         "type": "object"
       },
@@ -4642,7 +4729,11 @@
           "id",
           "date",
           "type",
-          "amount_cents"
+          "amount_cents",
+          "category",
+          "title",
+          "description",
+          "deleted_at"
         ],
         "title": "DeletedTransactionOut",
         "type": "object"
@@ -4716,6 +4807,7 @@
           }
         },
         "required": [
+          "scope_category_id",
           "scope_label",
           "amount_cents",
           "spent_cents",
@@ -4768,6 +4860,7 @@
         "required": [
           "category_id",
           "name",
+          "icon",
           "amount_cents",
           "bar_percent",
           "trailing_weekly_avg_cents",
@@ -4800,7 +4893,8 @@
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "icon"
         ],
         "title": "DigestCategoryRefOut",
         "type": "object"
@@ -4879,10 +4973,12 @@
         },
         "required": [
           "transaction_id",
+          "rule_id",
           "rule_name",
           "date",
           "type",
-          "amount_cents"
+          "amount_cents",
+          "category"
         ],
         "title": "DigestRecurringPostingOut",
         "type": "object"
@@ -4982,7 +5078,8 @@
           "date",
           "title",
           "amount_cents",
-          "trailing_avg_cents"
+          "trailing_avg_cents",
+          "category"
         ],
         "title": "DigestUnusualTransactionOut",
         "type": "object"
@@ -5052,7 +5149,8 @@
         },
         "required": [
           "expected_lifespan_days",
-          "acquired_on"
+          "acquired_on",
+          "ended_on"
         ],
         "title": "DurablePurchaseOut",
         "type": "object"
@@ -5146,7 +5244,8 @@
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "archived_at"
         ],
         "title": "FilterTagOut",
         "type": "object"
@@ -5287,6 +5386,8 @@
           "projected_expenses_cents",
           "projected_net_cents",
           "end_balance_cents",
+          "end_balance_p10_cents",
+          "end_balance_p90_cents",
           "minimum_balance_cents",
           "crosses_negative",
           "breakdown"
@@ -5422,10 +5523,13 @@
           }
         },
         "required": [
+          "rule_id",
           "name",
           "type",
           "amount_cents",
-          "occurrence_date"
+          "occurrence_date",
+          "category_id",
+          "category_name"
         ],
         "title": "ForecastRecurringRuleOut",
         "type": "object"
@@ -5740,7 +5844,11 @@
         },
         "required": [
           "projected_balance_cents",
-          "average_monthly_net_cents"
+          "projected_balance_p10_cents",
+          "projected_balance_p90_cents",
+          "average_monthly_net_cents",
+          "months_until_negative",
+          "risk_months_until_negative"
         ],
         "title": "ForecastSummaryOut",
         "type": "object"
@@ -5774,6 +5882,7 @@
         "required": [
           "category_id",
           "name",
+          "icon",
           "amount_cents"
         ],
         "title": "ForecastVariableEstimateOut",
@@ -5854,7 +5963,8 @@
         "required": [
           "token_hint",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "last_used_at"
         ],
         "title": "IngestTokenMetadataOut",
         "type": "object"
@@ -6010,6 +6120,8 @@
           "amount_cents",
           "category",
           "title",
+          "latitude",
+          "longitude",
           "location_status"
         ],
         "title": "IngestTransactionOut",
@@ -6046,6 +6158,7 @@
           }
         },
         "required": [
+          "scope_category_id",
           "scope_label",
           "amount_cents",
           "source",
@@ -6078,6 +6191,7 @@
         },
         "required": [
           "month",
+          "budget_cents",
           "spent_cents"
         ],
         "title": "InsightsBudgetHistoryCellOut",
@@ -6160,7 +6274,10 @@
           }
         },
         "required": [
+          "category_id",
           "name",
+          "icon",
+          "first_month",
           "cells"
         ],
         "title": "InsightsBudgetHistoryRowOut",
@@ -6217,7 +6334,8 @@
         "required": [
           "id",
           "name",
-          "type"
+          "type",
+          "icon"
         ],
         "title": "InsightsCategoryOut",
         "type": "object"
@@ -6367,6 +6485,11 @@
             "title": "Tag Id"
           }
         },
+        "required": [
+          "tag_id",
+          "included_tag_ids",
+          "excluded_tag_ids"
+        ],
         "title": "InsightsFiltersOut",
         "type": "object"
       },
@@ -6433,7 +6556,8 @@
           "id",
           "label",
           "type",
-          "amount_cents"
+          "amount_cents",
+          "category_id"
         ],
         "title": "InsightsFlowNodeOut",
         "type": "object"
@@ -6536,7 +6660,9 @@
           }
         },
         "required": [
+          "id",
           "name",
+          "icon",
           "values_cents"
         ],
         "title": "InsightsMonthGridRowOut",
@@ -6748,6 +6874,7 @@
           "income_breakdown",
           "deltas",
           "top_tags",
+          "trend_category_id",
           "trend",
           "budget_month",
           "budget_effective",
@@ -6850,7 +6977,8 @@
         "required": [
           "id",
           "name",
-          "type"
+          "type",
+          "icon"
         ],
         "title": "LegacySqliteCategoryOut",
         "type": "object"
@@ -6969,7 +7097,9 @@
           "idx",
           "legacy_type",
           "legacy_category",
-          "transaction_count"
+          "transaction_count",
+          "suggested_category_id",
+          "suggested_category_name"
         ],
         "title": "LegacySqliteMappingRowOut",
         "type": "object"
@@ -7077,6 +7207,8 @@
         "required": [
           "transactions_count",
           "recurring_count",
+          "min_transaction_date",
+          "max_transaction_date",
           "non_midnight_transaction_times",
           "warnings",
           "mapping_rows",
@@ -7173,7 +7305,9 @@
           "amount_cents",
           "start_date",
           "recurrence_type",
-          "interval"
+          "interval",
+          "last_processed_date",
+          "computed_next_occurrence"
         ],
         "title": "LegacySqliteRecurringRowOut",
         "type": "object"
@@ -7253,7 +7387,10 @@
           }
         },
         "required": [
-          "authenticated"
+          "authenticated",
+          "user",
+          "token",
+          "session"
         ],
         "title": "MobileAuthIdentityOut",
         "type": "object"
@@ -7324,7 +7461,10 @@
           "device_id",
           "device_name",
           "created_at",
-          "expires_at"
+          "last_used_at",
+          "expires_at",
+          "revoked_at",
+          "elevated_until"
         ],
         "title": "MobileSessionOut",
         "type": "object"
@@ -7432,6 +7572,7 @@
           }
         },
         "required": [
+          "kind",
           "id",
           "text",
           "state"
@@ -7609,7 +7750,10 @@
           "mime_type",
           "size_bytes",
           "sha256_hex",
-          "created_at"
+          "created_at",
+          "items_status",
+          "items_error",
+          "items"
         ],
         "title": "ReceiptAttachmentOut",
         "type": "object"
@@ -7812,7 +7956,11 @@
         },
         "required": [
           "id",
-          "amount_cents"
+          "occurrence_date",
+          "amount_cents",
+          "category",
+          "title",
+          "created_at"
         ],
         "title": "RecurringOccurrenceOut",
         "type": "object"
@@ -7906,7 +8054,8 @@
           }
         },
         "required": [
-          "occurrences"
+          "occurrences",
+          "error"
         ],
         "title": "RecurringPreviewOut",
         "type": "object"
@@ -7974,7 +8123,9 @@
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "type",
+          "icon"
         ],
         "title": "RecurringRuleCategoryOut",
         "type": "object"
@@ -8209,14 +8360,21 @@
         },
         "required": [
           "id",
+          "name",
           "type",
           "currency_code",
           "amount_cents",
+          "monthly_equivalent_cents",
+          "category_id",
+          "category",
           "anchor_date",
           "interval_unit",
           "interval_count",
           "next_occurrence",
+          "end_date",
           "auto_post",
+          "skip_weekends",
+          "month_day_policy",
           "ended"
         ],
         "title": "RecurringRuleOut",
@@ -8523,7 +8681,9 @@
         "required": [
           "id",
           "date",
-          "amount_cents"
+          "amount_cents",
+          "title",
+          "category"
         ],
         "title": "ReimbursementExpenseSummaryOut",
         "type": "object"
@@ -8598,7 +8758,10 @@
         },
         "required": [
           "id",
-          "date"
+          "date",
+          "title",
+          "deleted_at",
+          "category"
         ],
         "title": "ReimbursementTransactionSummaryOut",
         "type": "object"
@@ -8950,7 +9113,15 @@
           "enabled",
           "priority",
           "match_type",
-          "match_value"
+          "match_value",
+          "transaction_type",
+          "min_amount_cents",
+          "max_amount_cents",
+          "set_category_id",
+          "set_category",
+          "add_tags",
+          "budget_exclude_tag_id",
+          "budget_exclude_tag"
         ],
         "title": "RuleOut",
         "type": "object"
@@ -9019,10 +9190,12 @@
         },
         "required": [
           "id",
+          "title",
           "amount_cents",
           "type",
           "before_category",
-          "after_category"
+          "after_category",
+          "add_tags"
         ],
         "title": "RulePreviewSampleOut",
         "type": "object"
@@ -9137,8 +9310,15 @@
           "name",
           "match_type",
           "match_value",
+          "transaction_type",
+          "min_amount_cents",
+          "max_amount_cents",
+          "set_category_id",
+          "set_category_name",
+          "add_tags",
           "confidence",
           "reason",
+          "evidence_transaction_ids",
           "preview_matches_count"
         ],
         "title": "RuleSuggestionOut",
@@ -9398,7 +9578,9 @@
         },
         "required": [
           "current_balance",
-          "balance_anchors"
+          "balance_anchors",
+          "ingest_token",
+          "auto_categorization"
         ],
         "title": "SettingsResponseOut",
         "type": "object"
@@ -9583,8 +9765,11 @@
         "required": [
           "id",
           "name",
+          "color",
           "is_hidden_from_budget",
           "is_hidden_from_filters",
+          "auto_attach_period",
+          "archived_at",
           "created_at"
         ],
         "title": "TagMutationOut",
@@ -9665,8 +9850,14 @@
         "required": [
           "id",
           "name",
+          "color",
           "is_hidden_from_budget",
           "is_hidden_from_filters",
+          "auto_attach_period",
+          "archived_at",
+          "usage_count",
+          "expense_cents",
+          "income_cents",
           "created_at"
         ],
         "title": "TagOut",
@@ -9747,6 +9938,7 @@
           }
         },
         "required": [
+          "kind",
           "id",
           "text",
           "state"
@@ -9791,8 +9983,10 @@
           }
         },
         "required": [
+          "kind",
           "id",
           "text",
+          "seconds",
           "state"
         ],
         "title": "ThinkingItem",
@@ -9841,9 +10035,11 @@
           }
         },
         "required": [
+          "kind",
           "id",
           "name",
           "label",
+          "detail",
           "state"
         ],
         "title": "ToolItem",
@@ -10022,14 +10218,24 @@
         "required": [
           "id",
           "date",
+          "occurred_at",
           "type",
           "amount_cents",
           "net_amount_cents",
           "reimbursed_total_cents",
           "created_at",
           "updated_at",
+          "category_id",
+          "category",
           "title",
-          "is_reimbursement"
+          "description",
+          "latitude",
+          "longitude",
+          "is_reimbursement",
+          "tags",
+          "durable_purchase",
+          "attachments",
+          "bank_row"
         ],
         "title": "TransactionDetailOut",
         "type": "object"
@@ -10095,6 +10301,14 @@
             "title": "Type"
           }
         },
+        "required": [
+          "type",
+          "category_id",
+          "tag_id",
+          "included_tag_ids",
+          "excluded_tag_ids",
+          "query"
+        ],
         "title": "TransactionFiltersOut",
         "type": "object"
       },
@@ -10353,6 +10567,13 @@
           "net_amount_cents",
           "reimbursed_total_cents",
           "is_reimbursement",
+          "category",
+          "title",
+          "description",
+          "latitude",
+          "longitude",
+          "tags",
+          "has_attachments",
           "updated_at"
         ],
         "title": "TransactionListItemOut",
@@ -10449,7 +10670,14 @@
           }
         },
         "required": [
-          "mode"
+          "mode",
+          "is_reimbursement",
+          "allocated_total_cents",
+          "remaining_to_allocate_cents",
+          "allocations_out",
+          "reimbursed_total_cents",
+          "net_cost_cents",
+          "allocations_in"
         ],
         "title": "TransactionReimbursementsResponseOut",
         "type": "object"
@@ -10540,6 +10768,10 @@
           "id",
           "transaction_id",
           "status",
+          "category_id",
+          "category_name",
+          "clean_title",
+          "tags",
           "confidence",
           "reason"
         ],
@@ -10688,6 +10920,9 @@
           "type",
           "category_id",
           "category",
+          "default_amount_cents",
+          "title",
+          "tags",
           "sort_order"
         ],
         "title": "TransactionTemplateOut",
@@ -10935,7 +11170,15 @@
           "net_amount_cents",
           "reimbursed_total_cents",
           "is_reimbursement",
-          "updated_at"
+          "category",
+          "title",
+          "description",
+          "latitude",
+          "longitude",
+          "tags",
+          "has_attachments",
+          "updated_at",
+          "suggestion"
         ],
         "title": "UncategorizedTransactionItemOut",
         "type": "object"

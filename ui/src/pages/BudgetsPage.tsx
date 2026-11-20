@@ -13,6 +13,7 @@ import { TargetIcon } from "@phosphor-icons/react/Target"
 import { TrashIcon } from "@phosphor-icons/react/Trash"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch, getApiErrorMessage } from "../app/api"
+import type { components } from "../app/api-schema"
 import { formatCount } from "../app/format"
 import { amountInput, dayLabel, parseAmountCents, shortDateLabel } from "../app/transactions"
 import { confirmDialog } from "../components/confirm"
@@ -59,16 +60,9 @@ type BudgetProgressRow = {
   days_remaining: number
 }
 
-type BudgetTemplateRow = {
-  id: number
-  frequency: string
-  category: { id: number; name: string; icon: string | null } | null
-  amount_cents: number
-  starts_on: string
-  ends_on: string | null
-}
+type BudgetTemplateRow = components["schemas"]["BudgetTemplateRowOut"]
 
-type BudgetCategory = { id: number; name: string; type: string; icon: string | null; archived_at: string | null }
+type BudgetCategory = components["schemas"]["BudgetCategoryOut"]
 
 type BudgetResponse = {
   month_value: string

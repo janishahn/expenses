@@ -13,6 +13,7 @@ import { WarningIcon } from "@phosphor-icons/react/Warning"
 import { XIcon } from "@phosphor-icons/react/X"
 import { useSearchParams } from "react-router-dom"
 import { apiFetch } from "../app/api"
+import type { components } from "../app/api-schema"
 import { formatAmount, formatAmountPrivate } from "../app/format"
 import { parseAmountCents } from "../app/transactions"
 import { usePrivacy } from "../app/privacy"
@@ -35,12 +36,7 @@ import { Field, FieldError, FieldGrid, Select, TextField } from "../components/u
 import { buildSearchParams } from "../lib/searchParams"
 import type { Currency } from "./recurring-rule"
 
-type ForecastProjection = {
-  mode: "recurring" | "full"
-  start_balance_cents: number
-  months: Array<{ month: string; end_balance_cents: number }>
-  summary: { projected_balance_cents: number }
-}
+type ForecastProjection = components["schemas"]["ForecastProjectionOut"]
 
 type MonthlyDelta = Array<{ month: string; delta_end_balance_cents: number }>
 

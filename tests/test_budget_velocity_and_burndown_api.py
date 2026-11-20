@@ -105,8 +105,8 @@ def test_dashboard_budget_pace_only_for_overall_budget(
 ) -> None:
     response = api_client.get("/api/dashboard?period=this_month")
     assert response.status_code == 200
-    assert "budget_pace" not in response.json()
-    assert "category_budget_summary" not in response.json()
+    assert response.json()["budget_pace"] is None
+    assert response.json()["category_budget_summary"] is None
 
     today = date.today()
     response = api_client.post(
@@ -126,7 +126,7 @@ def test_dashboard_budget_pace_only_for_overall_budget(
     assert response.status_code == 200
     payload = response.json()
     assert "budget_pace" in payload
-    assert "category_budget_summary" not in payload
+    assert payload["category_budget_summary"] is None
     assert set(payload["budget_pace"].keys()) == {
         "velocity_ratio",
         "projected_cents",
@@ -196,7 +196,7 @@ def test_dashboard_category_budget_pulse_shows_top_category_budgets(
     assert response.status_code == 200
     payload = response.json()
 
-    assert "budget_pace" not in payload
+    assert payload["budget_pace"] is None
     assert [row["scope_label"] for row in payload["category_budget_pulse"]] == [
         "Groceries",
         "Other food",
@@ -252,7 +252,7 @@ def test_dashboard_category_budget_summary_counts_attention(
     assert response.status_code == 200
     payload = response.json()
 
-    assert "budget_pace" not in payload
+    assert payload["budget_pace"] is None
     assert payload["category_budget_summary"]["total"] == 2
     assert payload["category_budget_summary"]["needs_attention"] == 1
     assert payload["category_budget_summary"]["priority"]["scope_label"] == "At risk"

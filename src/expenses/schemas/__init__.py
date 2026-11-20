@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from expenses.core.response_model import OutModel
 from expenses.db.models import (
     BudgetFrequency,
     CurrencyCode,
@@ -93,7 +94,7 @@ class MobileAuthCredentialsIn(AuthCredentialsIn):
         return self
 
 
-class MobileSessionOut(BaseModel):
+class MobileSessionOut(OutModel):
     id: int
     device_id: str
     device_name: str
@@ -106,20 +107,20 @@ class MobileSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AuthUserOut(BaseModel):
+class AuthUserOut(OutModel):
     id: int
     username: str
     is_admin: bool
 
 
-class MobileAuthIdentityOut(BaseModel):
+class MobileAuthIdentityOut(OutModel):
     authenticated: bool
     user: Optional[AuthUserOut] = None
     token: Optional[str] = None
     session: Optional[MobileSessionOut] = None
 
 
-class MobileStatusOut(BaseModel):
+class MobileStatusOut(OutModel):
     app: str
     version: str
     setup_required: bool
@@ -148,18 +149,18 @@ class RecurringPreviewIn(BaseModel):
         return self.rule_anchor_date or self.start_date
 
 
-class RecurringPreviewOut(BaseModel):
+class RecurringPreviewOut(OutModel):
     occurrences: list[date]
     error: Optional[str] = None
 
 
-class PeriodOut(BaseModel):
+class PeriodOut(OutModel):
     slug: str
     start: date
     end: date
 
 
-class CategorySummaryOut(BaseModel):
+class CategorySummaryOut(OutModel):
     id: int
     name: str
     type: Optional[str] = None
@@ -179,12 +180,12 @@ class CategoryOut(CategorySummaryOut):
     order: int
 
 
-class CategoriesResponseOut(BaseModel):
+class CategoriesResponseOut(OutModel):
     period: PeriodOut
     categories: list[CategoryListItemOut]
 
 
-class TransactionTagOut(BaseModel):
+class TransactionTagOut(OutModel):
     id: int
     name: str
 
@@ -225,12 +226,12 @@ class TagMutationOut(TransactionTagOut):
     created_at: datetime
 
 
-class TagsResponseOut(BaseModel):
+class TagsResponseOut(OutModel):
     period: PeriodOut
     tags: list[TagOut]
 
 
-class TransactionTemplateOut(BaseModel):
+class TransactionTemplateOut(OutModel):
     id: int
     name: str
     type: str
@@ -242,11 +243,11 @@ class TransactionTemplateOut(BaseModel):
     sort_order: int
 
 
-class TemplatesResponseOut(BaseModel):
+class TemplatesResponseOut(OutModel):
     templates: list[TransactionTemplateOut]
 
 
-class TransactionListItemOut(BaseModel):
+class TransactionListItemOut(OutModel):
     id: int
     date: date
     occurred_at: datetime
@@ -266,19 +267,19 @@ class TransactionListItemOut(BaseModel):
     updated_at: datetime
 
 
-class DurablePurchaseOut(BaseModel):
+class DurablePurchaseOut(OutModel):
     expected_lifespan_days: int
     acquired_on: date
     ended_on: Optional[date] = None
 
 
-class TransactionBankRowOut(BaseModel):
+class TransactionBankRowOut(OutModel):
     id: int
     account_label: str
     booking_date: date
 
 
-class TransactionDetailOut(BaseModel):
+class TransactionDetailOut(OutModel):
     id: int
     date: date
     occurred_at: Optional[datetime] = None
@@ -302,16 +303,16 @@ class TransactionDetailOut(BaseModel):
     bank_row: Optional[TransactionBankRowOut] = None
 
 
-class TransactionSavedOut(BaseModel):
+class TransactionSavedOut(OutModel):
     id: int
     updated_at: datetime
 
 
-class ErrorDetailOut(BaseModel):
+class ErrorDetailOut(OutModel):
     detail: str
 
 
-class TransactionFiltersOut(BaseModel):
+class TransactionFiltersOut(OutModel):
     type: Optional[str] = None
     category_id: Optional[int] = None
     tag_id: Optional[int] = None
@@ -320,7 +321,7 @@ class TransactionFiltersOut(BaseModel):
     query: Optional[str] = None
 
 
-class TransactionsResponseOut(BaseModel):
+class TransactionsResponseOut(OutModel):
     items: list[TransactionListItemOut]
     page: int
     limit: int
@@ -332,7 +333,7 @@ class TransactionsResponseOut(BaseModel):
     tags: list[FilterTagOut]
 
 
-class DeletedTransactionOut(BaseModel):
+class DeletedTransactionOut(OutModel):
     id: int
     date: date
     type: str
@@ -343,7 +344,7 @@ class DeletedTransactionOut(BaseModel):
     deleted_at: Optional[datetime] = None
 
 
-class DeletedTransactionsResponseOut(BaseModel):
+class DeletedTransactionsResponseOut(OutModel):
     transactions: list[DeletedTransactionOut]
     total: int
 
@@ -352,19 +353,19 @@ class TransactionIdsIn(BaseModel):
     ids: list[int] = Field(..., max_length=1000)
 
 
-class TransactionsRestoredOut(BaseModel):
+class TransactionsRestoredOut(OutModel):
     restored: int
 
 
-class TransactionsPurgedOut(BaseModel):
+class TransactionsPurgedOut(OutModel):
     deleted: int
 
 
-class IdOut(BaseModel):
+class IdOut(OutModel):
     id: int
 
 
-class StatusOut(BaseModel):
+class StatusOut(OutModel):
     status: str
 
 
@@ -373,30 +374,30 @@ class PermanentDeleteTransactionOut(StatusOut):
     deleted_count: int
 
 
-class DashboardFiltersOut(BaseModel):
+class DashboardFiltersOut(OutModel):
     included_tag_ids: list[int] = Field(default_factory=list)
     excluded_tag_ids: list[int] = Field(default_factory=list)
 
 
-class DashboardKpisOut(BaseModel):
+class DashboardKpisOut(OutModel):
     income: int
     expenses: int
     balance: int
 
 
-class DashboardSparklinesOut(BaseModel):
+class DashboardSparklinesOut(OutModel):
     income: Optional[str] = None
     expenses: Optional[str] = None
     balance: Optional[str] = None
 
 
-class DashboardDeltasOut(BaseModel):
+class DashboardDeltasOut(OutModel):
     income: int
     expenses: int
     balance: int
 
 
-class BreakdownItemOut(BaseModel):
+class BreakdownItemOut(OutModel):
     category_id: Optional[int] = Field(
         None, validation_alias=AliasChoices("category_id", "id")
     )
@@ -405,14 +406,14 @@ class BreakdownItemOut(BaseModel):
     percent: float
 
 
-class DashboardDonutOut(BaseModel):
+class DashboardDonutOut(OutModel):
     has_any_transactions: bool
     mode: Optional[Literal["both", "expense-only", "income-only"]] = None
     expense_breakdown: Optional[list[BreakdownItemOut]] = None
     income_breakdown: Optional[list[BreakdownItemOut]] = None
 
 
-class DashboardDurablePurchaseOut(BaseModel):
+class DashboardDurablePurchaseOut(OutModel):
     id: int
     transaction_id: int
     expected_lifespan_days: int
@@ -434,7 +435,7 @@ class DashboardDurablePurchaseOut(BaseModel):
     category: Optional[CategorySummaryOut] = None
 
 
-class DashboardBudgetPaceOut(BaseModel):
+class DashboardBudgetPaceOut(OutModel):
     velocity_ratio: float
     projected_cents: int
     budget_cents: int
@@ -445,7 +446,7 @@ class DashboardBudgetPaceOut(BaseModel):
     sparkline: str
 
 
-class DashboardCategoryBudgetPulseOut(BaseModel):
+class DashboardCategoryBudgetPulseOut(OutModel):
     scope_category_id: int
     scope_label: str
     amount_cents: int
@@ -454,13 +455,13 @@ class DashboardCategoryBudgetPulseOut(BaseModel):
     velocity_ratio: float
 
 
-class DashboardCategoryBudgetSummaryOut(BaseModel):
+class DashboardCategoryBudgetSummaryOut(OutModel):
     total: int
     needs_attention: int
     priority: DashboardCategoryBudgetPulseOut
 
 
-class DashboardResponseOut(BaseModel):
+class DashboardResponseOut(OutModel):
     period: PeriodOut
     filters: DashboardFiltersOut
     kpis: DashboardKpisOut
@@ -476,20 +477,20 @@ class DashboardResponseOut(BaseModel):
     category_budget_summary: Optional[DashboardCategoryBudgetSummaryOut] = None
 
 
-class InsightsFiltersOut(BaseModel):
+class InsightsFiltersOut(OutModel):
     tag_id: Optional[int] = None
     included_tag_ids: list[int] = Field(default_factory=list)
     excluded_tag_ids: list[int] = Field(default_factory=list)
 
 
-class InsightsCategoryOut(BaseModel):
+class InsightsCategoryOut(OutModel):
     id: int
     name: str
     type: Literal["income", "expense"]
     icon: Optional[str] = None
 
 
-class InsightsMonthlySeriesPointOut(BaseModel):
+class InsightsMonthlySeriesPointOut(OutModel):
     year: int
     month: int
     label: str
@@ -498,7 +499,7 @@ class InsightsMonthlySeriesPointOut(BaseModel):
     net_cents: int
 
 
-class InsightsDeltaItemOut(BaseModel):
+class InsightsDeltaItemOut(OutModel):
     category_id: int
     category_name: str
     current_cents: int
@@ -506,25 +507,25 @@ class InsightsDeltaItemOut(BaseModel):
     delta_cents: int
 
 
-class InsightsDeltasOut(BaseModel):
+class InsightsDeltasOut(OutModel):
     increases: list[InsightsDeltaItemOut]
     decreases: list[InsightsDeltaItemOut]
 
 
-class InsightsTopTagOut(BaseModel):
+class InsightsTopTagOut(OutModel):
     id: int
     name: str
     amount_cents: int
 
 
-class InsightsTrendPointOut(BaseModel):
+class InsightsTrendPointOut(OutModel):
     year: int
     month: int
     label: str
     amount_cents: int
 
 
-class InsightsBudgetEffectiveOut(BaseModel):
+class InsightsBudgetEffectiveOut(OutModel):
     scope_category_id: Optional[int] = None
     scope_label: str
     amount_cents: int
@@ -532,12 +533,12 @@ class InsightsBudgetEffectiveOut(BaseModel):
     source_id: int
 
 
-class InsightsBudgetProgressOut(BaseModel):
+class InsightsBudgetProgressOut(OutModel):
     spent_cents: int
     remaining_cents: int
 
 
-class InsightsResponseOut(BaseModel):
+class InsightsResponseOut(OutModel):
     period: PeriodOut
     filters: InsightsFiltersOut
     tags: list[FilterTagOut]
@@ -561,37 +562,37 @@ class InsightsResponseOut(BaseModel):
     month_count: int
 
 
-class InsightsMonthGridRowOut(BaseModel):
+class InsightsMonthGridRowOut(OutModel):
     id: Optional[int] = None
     name: str
     icon: Optional[str] = None
     values_cents: list[int]
 
 
-class InsightsMonthGridResponseOut(BaseModel):
+class InsightsMonthGridResponseOut(OutModel):
     months: list[str]
     current_month: str
     rows: list[InsightsMonthGridRowOut]
 
 
-class InsightsRecurringSplitRowOut(BaseModel):
+class InsightsRecurringSplitRowOut(OutModel):
     month: str
     recurring_cents: int
     other_cents: int
 
 
-class InsightsRecurringSplitResponseOut(BaseModel):
+class InsightsRecurringSplitResponseOut(OutModel):
     months: list[str]
     current_month: str
     rows: list[InsightsRecurringSplitRowOut]
 
 
-class InsightsDayAmountOut(BaseModel):
+class InsightsDayAmountOut(OutModel):
     date: date
     amount_cents: int
 
 
-class InsightsDayCalendarResponseOut(BaseModel):
+class InsightsDayCalendarResponseOut(OutModel):
     start: date
     end: date
     days: list[InsightsDayAmountOut]
@@ -599,13 +600,13 @@ class InsightsDayCalendarResponseOut(BaseModel):
     weekend_share: float
 
 
-class InsightsBudgetHistoryCellOut(BaseModel):
+class InsightsBudgetHistoryCellOut(OutModel):
     month: str
     budget_cents: Optional[int] = None
     spent_cents: int
 
 
-class InsightsBudgetHistoryRowOut(BaseModel):
+class InsightsBudgetHistoryRowOut(OutModel):
     category_id: Optional[int] = None
     name: str
     icon: Optional[str] = None
@@ -613,22 +614,22 @@ class InsightsBudgetHistoryRowOut(BaseModel):
     cells: list[InsightsBudgetHistoryCellOut]
 
 
-class InsightsBudgetHistoryResponseOut(BaseModel):
+class InsightsBudgetHistoryResponseOut(OutModel):
     months: list[str]
     current_month: str
     rows: list[InsightsBudgetHistoryRowOut]
 
 
-class BalanceHistoryPointOut(BaseModel):
+class BalanceHistoryPointOut(OutModel):
     month: str
     balance_cents: int
 
 
-class BalanceHistoryResponseOut(BaseModel):
+class BalanceHistoryResponseOut(OutModel):
     months: list[BalanceHistoryPointOut]
 
 
-class InsightsFlowNodeOut(BaseModel):
+class InsightsFlowNodeOut(OutModel):
     id: str
     label: str
     type: Literal["income", "expense", "savings", "deficit"]
@@ -636,24 +637,24 @@ class InsightsFlowNodeOut(BaseModel):
     category_id: Optional[int] = None
 
 
-class InsightsFlowLinkOut(BaseModel):
+class InsightsFlowLinkOut(OutModel):
     from_: str = Field(alias="from")
     to: str
     amount_cents: int
 
 
-class InsightsFlowResponseOut(BaseModel):
+class InsightsFlowResponseOut(OutModel):
     period: PeriodOut
     filters: InsightsFiltersOut
     nodes: list[InsightsFlowNodeOut]
     links: list[InsightsFlowLinkOut]
 
 
-class DurablePurchasesResponseOut(BaseModel):
+class DurablePurchasesResponseOut(OutModel):
     items: list[DashboardDurablePurchaseOut]
 
 
-class BankStatementPreviewRowOut(BaseModel):
+class BankStatementPreviewRowOut(OutModel):
     booking_date: date
     value_date: Optional[date] = None
     amount_cents: int
@@ -665,7 +666,7 @@ class BankStatementPreviewRowOut(BaseModel):
     duplicate: bool
 
 
-class BankStatementPreviewResponseOut(BaseModel):
+class BankStatementPreviewResponseOut(OutModel):
     account_label: str
     rows: list[BankStatementPreviewRowOut]
     errors: list[str]
@@ -673,12 +674,12 @@ class BankStatementPreviewResponseOut(BaseModel):
     duplicate_count: int
 
 
-class BankStatementImportResponseOut(BaseModel):
+class BankStatementImportResponseOut(OutModel):
     imported_count: int
     duplicate_count: int
 
 
-class BankReconciliationSummaryOut(BaseModel):
+class BankReconciliationSummaryOut(OutModel):
     row_count: int
     unresolved_count: int
     suggested_count: int
@@ -688,7 +689,7 @@ class BankReconciliationSummaryOut(BaseModel):
     only_in_expenses_count: int
 
 
-class BankReconciliationTransactionOut(BaseModel):
+class BankReconciliationTransactionOut(OutModel):
     id: int
     date: date
     type: Literal["income", "expense"]
@@ -702,7 +703,7 @@ class BankReconciliationTransactionOut(BaseModel):
     date_delta_days: int
 
 
-class BankStatementRowOut(BaseModel):
+class BankStatementRowOut(OutModel):
     id: int
     account_label: str
     booking_date: date
@@ -723,7 +724,7 @@ class BankStatementRowOut(BaseModel):
     suggested_transaction: Optional[BankReconciliationTransactionOut] = None
 
 
-class BankReconciliationResponseOut(BaseModel):
+class BankReconciliationResponseOut(OutModel):
     summary: BankReconciliationSummaryOut
     rows: list[BankStatementRowOut]
     only_in_expenses: list[BankReconciliationTransactionOut]
@@ -735,20 +736,20 @@ class BankRowActionResponseOut(StatusOut):
     previous_amount_cents: Optional[int] = None
 
 
-class BankRowsPageOut(BaseModel):
+class BankRowsPageOut(OutModel):
     items: list[BankStatementRowOut]
     total: int
     page: int
     limit: int
 
 
-class BankAccountOut(BaseModel):
+class BankAccountOut(OutModel):
     label: str
     row_count: int
     last_import_at: Optional[datetime] = None
 
 
-class BankAccountsResponseOut(BaseModel):
+class BankAccountsResponseOut(OutModel):
     accounts: list[BankAccountOut]
 
 
@@ -791,22 +792,22 @@ class BankIgnoreOpenIn(BaseModel):
     account: Optional[str] = None
 
 
-class BankIgnoreOpenOut(BaseModel):
+class BankIgnoreOpenOut(OutModel):
     # The rows ignored by this request, so an Undo can reopen them.
     row_ids: list[int]
 
 
-class BankAcceptedMatchOut(BaseModel):
+class BankAcceptedMatchOut(OutModel):
     row_id: int
     transaction_id: int
 
 
-class BankAcceptSuggestionsOut(BaseModel):
+class BankAcceptSuggestionsOut(OutModel):
     # The rows matched by this request; rows without exactly one candidate are skipped.
     matches: list[BankAcceptedMatchOut]
 
 
-class BankRowCandidatesOut(BaseModel):
+class BankRowCandidatesOut(OutModel):
     items: list[BankReconciliationTransactionOut]
 
 
@@ -840,7 +841,7 @@ class BankTransactionCreateIn(BaseModel):
         return self
 
 
-class AdminInfoOut(BaseModel):
+class AdminInfoOut(OutModel):
     app_version: str
     environment: str
     db_path: str
@@ -853,7 +854,7 @@ class AdminInfoOut(BaseModel):
     users_count: int
 
 
-class AdminSystemHealthOut(BaseModel):
+class AdminSystemHealthOut(OutModel):
     cpu_temp_celsius: Optional[float] = None
     cpu_load_percent: float
     ram_used_bytes: int
@@ -867,7 +868,7 @@ class AdminSystemHealthOut(BaseModel):
     status_reason: Optional[str] = None
 
 
-class AdminLogsResponseOut(BaseModel):
+class AdminLogsResponseOut(OutModel):
     entries: list[dict[str, Any]]
     next_cursor: Optional[str] = None
 
@@ -881,7 +882,7 @@ class AdminPurgeDeletedOut(StatusOut):
     attachments_count: int
 
 
-class AdminPurgeDeletedPreviewOut(BaseModel):
+class AdminPurgeDeletedPreviewOut(OutModel):
     count: int
 
 
@@ -895,11 +896,11 @@ class AdminRecurringCatchUpOut(StatusOut):
     updated: bool
 
 
-class MobileSessionsResponseOut(BaseModel):
+class MobileSessionsResponseOut(OutModel):
     sessions: list[MobileSessionOut]
 
 
-class AdminElevationOut(BaseModel):
+class AdminElevationOut(OutModel):
     elevated: bool
     elevated_until: Optional[datetime] = None
 
@@ -938,7 +939,7 @@ class BudgetTemplateApplyFromIn(BaseModel):
     starts_on: date = Field(..., ge=MIN_LEDGER_DATE, le=MAX_LEDGER_DATE)
 
 
-class BudgetCategoryOut(BaseModel):
+class BudgetCategoryOut(OutModel):
     id: int
     name: str
     type: str
@@ -946,7 +947,7 @@ class BudgetCategoryOut(BaseModel):
     archived_at: Optional[datetime] = None
 
 
-class BudgetScopeOut(BaseModel):
+class BudgetScopeOut(OutModel):
     scope_category_id: Optional[int] = None
     scope_label: str
     amount_cents: int
@@ -954,7 +955,7 @@ class BudgetScopeOut(BaseModel):
     source_id: int
 
 
-class BudgetProgressOut(BaseModel):
+class BudgetProgressOut(OutModel):
     scope_category_id: Optional[int] = None
     spent_cents: int
     remaining_cents: int
@@ -965,7 +966,7 @@ class BudgetProgressOut(BaseModel):
     days_remaining: int
 
 
-class BudgetTemplateRowOut(BaseModel):
+class BudgetTemplateRowOut(OutModel):
     id: int
     frequency: str
     category: Optional[CategorySummaryOut] = None
@@ -974,12 +975,12 @@ class BudgetTemplateRowOut(BaseModel):
     ends_on: Optional[date] = None
 
 
-class BudgetYearSpentOut(BaseModel):
+class BudgetYearSpentOut(OutModel):
     scope_category_id: Optional[int] = None
     spent_cents: int
 
 
-class BudgetsResponseOut(BaseModel):
+class BudgetsResponseOut(OutModel):
     view: str
     year: int
     month: int
@@ -995,7 +996,7 @@ class BudgetsResponseOut(BaseModel):
     default_year_template_start: date
 
 
-class BudgetOverrideOut(BaseModel):
+class BudgetOverrideOut(OutModel):
     id: int
     year: int
     month: int
@@ -1003,7 +1004,7 @@ class BudgetOverrideOut(BaseModel):
     amount_cents: int
 
 
-class BudgetTemplateMutationOut(BaseModel):
+class BudgetTemplateMutationOut(OutModel):
     id: int
     frequency: str
     category_id: Optional[int] = None
@@ -1012,25 +1013,25 @@ class BudgetTemplateMutationOut(BaseModel):
     ends_on: Optional[date] = None
 
 
-class BudgetBurndownTransactionOut(BaseModel):
+class BudgetBurndownTransactionOut(OutModel):
     id: int
     title: str
     amount_cents: int
 
 
-class BudgetBurndownTopDayOut(BaseModel):
+class BudgetBurndownTopDayOut(OutModel):
     day: int
     date: Optional[dt.date] = None
     total_cents: int
     transactions: list[BudgetBurndownTransactionOut]
 
 
-class BudgetBurndownPointOut(BaseModel):
+class BudgetBurndownPointOut(OutModel):
     day: int
     cumulative_cents: int
 
 
-class BudgetBurndownResponseOut(BaseModel):
+class BudgetBurndownResponseOut(OutModel):
     budget_amount_cents: int
     days_in_month: int
     daily_series: list[BudgetBurndownPointOut]
@@ -1211,7 +1212,7 @@ class ForecastScenarioIn(BaseModel):
     )
 
 
-class ForecastRecurringRuleOut(BaseModel):
+class ForecastRecurringRuleOut(OutModel):
     rule_id: Optional[int] = None
     name: str
     type: Literal["income", "expense"]
@@ -1221,27 +1222,27 @@ class ForecastRecurringRuleOut(BaseModel):
     category_name: Optional[str] = None
 
 
-class ForecastVariableEstimateOut(BaseModel):
+class ForecastVariableEstimateOut(OutModel):
     category_id: int
     name: str
     icon: Optional[str] = None
     amount_cents: int
 
 
-class ForecastOneTimeEventOut(BaseModel):
+class ForecastOneTimeEventOut(OutModel):
     name: str
     type: Literal["income", "expense"]
     amount_cents: int
 
 
-class ForecastBreakdownOut(BaseModel):
+class ForecastBreakdownOut(OutModel):
     recurring_rules: list[ForecastRecurringRuleOut]
     variable_estimates: list[ForecastVariableEstimateOut]
     variable_income_estimates: list[ForecastVariableEstimateOut]
     one_time_events: list[ForecastOneTimeEventOut]
 
 
-class ForecastMonthOut(BaseModel):
+class ForecastMonthOut(OutModel):
     month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
     projected_income_cents: int
     projected_expenses_cents: int
@@ -1254,7 +1255,7 @@ class ForecastMonthOut(BaseModel):
     breakdown: ForecastBreakdownOut
 
 
-class ForecastSummaryOut(BaseModel):
+class ForecastSummaryOut(OutModel):
     projected_balance_cents: int
     projected_balance_p10_cents: Optional[int] = None
     projected_balance_p90_cents: Optional[int] = None
@@ -1263,14 +1264,14 @@ class ForecastSummaryOut(BaseModel):
     risk_months_until_negative: Optional[int] = None
 
 
-class ForecastModelOut(BaseModel):
+class ForecastModelOut(OutModel):
     method: Literal["recurring_only", "recent_average", "seasonal_average"]
     history_months: int
     seasonality_applied: bool
     prediction_interval_available: bool
 
 
-class ForecastProjectionOut(BaseModel):
+class ForecastProjectionOut(OutModel):
     mode: Literal["recurring", "full"]
     start_balance_cents: int
     current_month_net_cents: int
@@ -1283,12 +1284,12 @@ class ForecastResponseOut(ForecastProjectionOut):
     horizon: Literal[3, 6, 12]
 
 
-class ForecastScenarioMonthlyDeltaOut(BaseModel):
+class ForecastScenarioMonthlyDeltaOut(OutModel):
     month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
     delta_end_balance_cents: int
 
 
-class ForecastScenarioModificationImpactOut(BaseModel):
+class ForecastScenarioModificationImpactOut(OutModel):
     index: int
     label: str
     final_delta_cents: int
@@ -1296,7 +1297,7 @@ class ForecastScenarioModificationImpactOut(BaseModel):
     monthly_delta: list[ForecastScenarioMonthlyDeltaOut]
 
 
-class ForecastScenarioImpactOut(BaseModel):
+class ForecastScenarioImpactOut(OutModel):
     final_delta_cents: int
     average_monthly_delta_cents: int
     monthly_delta: list[ForecastScenarioMonthlyDeltaOut]
@@ -1356,7 +1357,7 @@ class IngestTransactionIn(BaseModel):
         return data
 
 
-class IngestTransactionOut(BaseModel):
+class IngestTransactionOut(OutModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
@@ -1414,26 +1415,26 @@ class RecurringRuleUpdateIn(RecurringRuleIn):
         return (name or "").strip() or None
 
 
-class RecurringRuleCategoryOut(BaseModel):
+class RecurringRuleCategoryOut(OutModel):
     id: int
     name: str
     type: Optional[str] = None
     icon: Optional[str] = None
 
 
-class RecurringBreakdownOut(BaseModel):
+class RecurringBreakdownOut(OutModel):
     name: str
     amount_cents: int
     percent: float
 
 
-class RecurringRuleCountsOut(BaseModel):
+class RecurringRuleCountsOut(OutModel):
     income: int
     expense: int
     total: int
 
 
-class RecurringStatsOut(BaseModel):
+class RecurringStatsOut(OutModel):
     total_monthly_income: int
     total_monthly_expenses: int
     net_monthly: int
@@ -1443,7 +1444,7 @@ class RecurringStatsOut(BaseModel):
     rule_counts: RecurringRuleCountsOut
 
 
-class RecurringRuleOut(BaseModel):
+class RecurringRuleOut(OutModel):
     id: int
     name: Optional[str] = None
     type: str
@@ -1464,7 +1465,7 @@ class RecurringRuleOut(BaseModel):
     ended: bool
 
 
-class RecurringResponseOut(BaseModel):
+class RecurringResponseOut(OutModel):
     rules: list[RecurringRuleOut]
     stats: RecurringStatsOut
     categories: list[RecurringRuleCategoryOut]
@@ -1474,7 +1475,7 @@ class RecurringToggleIn(BaseModel):
     auto_post: bool
 
 
-class RecurringOccurrenceOut(BaseModel):
+class RecurringOccurrenceOut(OutModel):
     id: int
     occurrence_date: Optional[dt.date] = None
     amount_cents: int
@@ -1483,7 +1484,7 @@ class RecurringOccurrenceOut(BaseModel):
     created_at: Optional[datetime] = None
 
 
-class RecurringOccurrencesResponseOut(BaseModel):
+class RecurringOccurrencesResponseOut(OutModel):
     rule: RecurringRuleOut
     occurrences: list[RecurringOccurrenceOut]
 
@@ -1499,7 +1500,7 @@ class CSVRow(BaseModel):
     description: Optional[str] = None
 
 
-class CSVPreviewRowOut(BaseModel):
+class CSVPreviewRowOut(OutModel):
     date: date
     type: str
     is_reimbursement: bool
@@ -1510,12 +1511,12 @@ class CSVPreviewRowOut(BaseModel):
     category_id: Optional[int] = None
 
 
-class CSVPreviewResponseOut(BaseModel):
+class CSVPreviewResponseOut(OutModel):
     rows: list[CSVPreviewRowOut]
     errors: list[str]
 
 
-class CSVCommitResponseOut(BaseModel):
+class CSVCommitResponseOut(OutModel):
     imported_count: int
 
 
@@ -1533,14 +1534,14 @@ class BalanceAnchorIn(BaseModel):
         return self
 
 
-class BalanceAnchorOut(BaseModel):
+class BalanceAnchorOut(OutModel):
     id: int
     as_of_at: datetime
     balance_cents: int
     note: Optional[str] = None
 
 
-class IngestTokenMetadataOut(BaseModel):
+class IngestTokenMetadataOut(OutModel):
     token_hint: str
     created_at: datetime
     updated_at: datetime
@@ -1560,7 +1561,7 @@ class AutoCategorizationSettingsOut(AutoCategorizationSettingsIn):
     min_history: int = MIN_HISTORY
 
 
-class SettingsResponseOut(BaseModel):
+class SettingsResponseOut(OutModel):
     current_balance: int
     balance_anchors: list[BalanceAnchorOut]
     ingest_token: Optional[IngestTokenMetadataOut] = None
@@ -1569,7 +1570,7 @@ class SettingsResponseOut(BaseModel):
     )
 
 
-class IngestTokenCreateResponseOut(BaseModel):
+class IngestTokenCreateResponseOut(OutModel):
     token: str
     ingest_token: IngestTokenMetadataOut
 
@@ -1598,18 +1599,18 @@ class RuleIn(BaseModel):
         return self
 
 
-class RuleTagOut(BaseModel):
+class RuleTagOut(OutModel):
     id: int
     name: str
     is_hidden_from_budget: bool
 
 
-class RuleBudgetExcludeTagOut(BaseModel):
+class RuleBudgetExcludeTagOut(OutModel):
     id: int
     name: str
 
 
-class RuleOut(BaseModel):
+class RuleOut(OutModel):
     id: int
     name: str
     enabled: bool
@@ -1626,7 +1627,7 @@ class RuleOut(BaseModel):
     budget_exclude_tag: Optional[RuleBudgetExcludeTagOut] = None
 
 
-class RulesResponseOut(BaseModel):
+class RulesResponseOut(OutModel):
     rules: list[RuleOut]
     categories: list[CategorySummaryOut]
     tags: list[RuleTagOut]
@@ -1636,7 +1637,7 @@ class RuleToggleIn(BaseModel):
     enabled: bool
 
 
-class RulePreviewSampleOut(BaseModel):
+class RulePreviewSampleOut(OutModel):
     id: int
     title: Optional[str] = None
     amount_cents: int
@@ -1646,7 +1647,7 @@ class RulePreviewSampleOut(BaseModel):
     add_tags: list[str] = Field(default_factory=list)
 
 
-class RulePreviewOut(BaseModel):
+class RulePreviewOut(OutModel):
     matches_count: int
     sample: list[RulePreviewSampleOut]
 
@@ -1656,13 +1657,13 @@ class ReimbursementAllocationIn(BaseModel):
     amount_cents: int = Field(..., gt=0)
 
 
-class ReimbursementTransactionCategoryOut(BaseModel):
+class ReimbursementTransactionCategoryOut(OutModel):
     id: int
     name: str
     type: str
 
 
-class ReimbursementTransactionSummaryOut(BaseModel):
+class ReimbursementTransactionSummaryOut(OutModel):
     id: int
     date: date
     title: Optional[str] = None
@@ -1670,19 +1671,19 @@ class ReimbursementTransactionSummaryOut(BaseModel):
     category: Optional[ReimbursementTransactionCategoryOut] = None
 
 
-class ReimbursementAllocationOut(BaseModel):
+class ReimbursementAllocationOut(OutModel):
     allocation_id: int
     amount_cents: int
     expense_transaction: ReimbursementTransactionSummaryOut
 
 
-class ReimbursementAllocationInOut(BaseModel):
+class ReimbursementAllocationInOut(OutModel):
     allocation_id: int
     amount_cents: int
     reimbursement_transaction: ReimbursementTransactionSummaryOut
 
 
-class TransactionReimbursementsResponseOut(BaseModel):
+class TransactionReimbursementsResponseOut(OutModel):
     mode: str
     is_reimbursement: Optional[bool] = None
     allocated_total_cents: Optional[int] = None
@@ -1693,7 +1694,7 @@ class TransactionReimbursementsResponseOut(BaseModel):
     allocations_in: Optional[list[ReimbursementAllocationInOut]] = None
 
 
-class ReimbursementExpenseSummaryOut(BaseModel):
+class ReimbursementExpenseSummaryOut(OutModel):
     id: int
     date: date
     amount_cents: int
@@ -1701,7 +1702,7 @@ class ReimbursementExpenseSummaryOut(BaseModel):
     category: Optional[ReimbursementTransactionCategoryOut] = None
 
 
-class ReimbursementExpenseSearchItemOut(BaseModel):
+class ReimbursementExpenseSearchItemOut(OutModel):
     expense: ReimbursementExpenseSummaryOut
     reimbursed_total_cents: int
     remaining_unreimbursed_cents: int
@@ -1709,23 +1710,23 @@ class ReimbursementExpenseSearchItemOut(BaseModel):
     suggested_amount_cents: int
 
 
-class ReimbursementExpenseSearchResponseOut(BaseModel):
+class ReimbursementExpenseSearchResponseOut(OutModel):
     results: list[ReimbursementExpenseSearchItemOut]
 
 
-class OpenReimbursementItemOut(BaseModel):
+class OpenReimbursementItemOut(OutModel):
     reimbursement: ReimbursementExpenseSummaryOut
     remaining_to_allocate_cents: int
     allocated_to_this_cents: int
     suggested_amount_cents: int
 
 
-class OpenReimbursementsResponseOut(BaseModel):
+class OpenReimbursementsResponseOut(OutModel):
     remaining_unreimbursed_cents: int
     results: list[OpenReimbursementItemOut]
 
 
-class AllocationIDOut(BaseModel):
+class AllocationIDOut(OutModel):
     allocation_id: int
 
 
@@ -1749,7 +1750,7 @@ class LegacySqliteCommitIn(BaseModel):
     mapping_targets: list[LegacySqliteMappingTarget]
 
 
-class LegacySqliteMappingRowOut(BaseModel):
+class LegacySqliteMappingRowOut(OutModel):
     idx: int
     legacy_type: str
     legacy_category: str
@@ -1758,7 +1759,7 @@ class LegacySqliteMappingRowOut(BaseModel):
     suggested_category_name: Optional[str] = None
 
 
-class LegacySqliteRecurringRowOut(BaseModel):
+class LegacySqliteRecurringRowOut(OutModel):
     description: str
     legacy_type: str
     legacy_category: str
@@ -1770,7 +1771,7 @@ class LegacySqliteRecurringRowOut(BaseModel):
     computed_next_occurrence: Optional[date] = None
 
 
-class LegacySqlitePreviewOut(BaseModel):
+class LegacySqlitePreviewOut(OutModel):
     transactions_count: int
     recurring_count: int
     min_transaction_date: Optional[date] = None
@@ -1781,20 +1782,20 @@ class LegacySqlitePreviewOut(BaseModel):
     recurring_rows: list[LegacySqliteRecurringRowOut]
 
 
-class LegacySqliteCategoryOut(BaseModel):
+class LegacySqliteCategoryOut(OutModel):
     id: int
     name: str
     type: str
     icon: Optional[str] = None
 
 
-class LegacySqlitePreviewResponseOut(BaseModel):
+class LegacySqlitePreviewResponseOut(OutModel):
     token: str
     preview: LegacySqlitePreviewOut
     categories: list[LegacySqliteCategoryOut]
 
 
-class LegacySqliteCommitOut(BaseModel):
+class LegacySqliteCommitOut(OutModel):
     result: dict[str, int]
 
 
@@ -1868,7 +1869,7 @@ class BulkEditRequestIn(BaseModel):
     operation: BulkOperationIn
 
 
-class BulkChangesOut(BaseModel):
+class BulkChangesOut(OutModel):
     category_changed: int
     tags_added: int
     tags_removed: int
@@ -1877,7 +1878,7 @@ class BulkChangesOut(BaseModel):
     restored: int
 
 
-class BulkEditResponseOut(BaseModel):
+class BulkEditResponseOut(OutModel):
     resolved_count: int
     eligible_count: int
     skipped_count: int
@@ -1885,12 +1886,12 @@ class BulkEditResponseOut(BaseModel):
     changes: BulkChangesOut
 
 
-class UncategorizedDefinitionOut(BaseModel):
+class UncategorizedDefinitionOut(OutModel):
     category_name: str
     matched_category_ids: list[int]
 
 
-class CategorySuggestionOut(BaseModel):
+class CategorySuggestionOut(OutModel):
     category_id: int
     confidence: float
 
@@ -1908,14 +1909,14 @@ class CategorySuggestionDismissIn(BaseModel):
     category_id: int
 
 
-class DigestHeadlineOut(BaseModel):
+class DigestHeadlineOut(OutModel):
     total_spent_cents: int
     vs_last_week_cents: int
     vs_four_week_avg_cents: int
     transaction_count: int
 
 
-class DigestCategoryOut(BaseModel):
+class DigestCategoryOut(OutModel):
     category_id: int
     name: str
     icon: Optional[str] = None
@@ -1925,7 +1926,7 @@ class DigestCategoryOut(BaseModel):
     is_above_trailing_50: bool
 
 
-class DigestBudgetPulseOut(BaseModel):
+class DigestBudgetPulseOut(OutModel):
     scope_category_id: Optional[int] = None
     scope_label: str
     amount_cents: int
@@ -1936,13 +1937,13 @@ class DigestBudgetPulseOut(BaseModel):
     pace_state: Literal["under", "on", "over"]
 
 
-class DigestCategoryRefOut(BaseModel):
+class DigestCategoryRefOut(OutModel):
     id: int
     name: str
     icon: Optional[str] = None
 
 
-class DigestUnusualTransactionOut(BaseModel):
+class DigestUnusualTransactionOut(OutModel):
     id: int
     date: date
     title: str
@@ -1951,7 +1952,7 @@ class DigestUnusualTransactionOut(BaseModel):
     category: Optional[DigestCategoryRefOut] = None
 
 
-class DigestRecurringPostingOut(BaseModel):
+class DigestRecurringPostingOut(OutModel):
     transaction_id: int
     rule_id: Optional[int] = None
     rule_name: str
@@ -1961,7 +1962,7 @@ class DigestRecurringPostingOut(BaseModel):
     category: Optional[DigestCategoryRefOut] = None
 
 
-class DigestResponseOut(BaseModel):
+class DigestResponseOut(OutModel):
     week_start: date
     week_end: date
     headline: DigestHeadlineOut
@@ -1976,7 +1977,7 @@ class CategoryMergeIn(BaseModel):
     target_category_id: int
 
 
-class CategoryMergeResponseOut(BaseModel):
+class CategoryMergeResponseOut(OutModel):
     counts: dict[str, int]
 
 
@@ -1985,11 +1986,11 @@ class TagMergeIn(BaseModel):
     target_tag_id: int
 
 
-class TagMergeResponseOut(BaseModel):
+class TagMergeResponseOut(OutModel):
     counts: dict[str, int]
 
 
-class ReceiptItemOut(BaseModel):
+class ReceiptItemOut(OutModel):
     id: int
     label: str
     product: str
@@ -2013,7 +2014,7 @@ class ReceiptItemProductIn(BaseModel):
         return self
 
 
-class ReceiptAttachmentOut(BaseModel):
+class ReceiptAttachmentOut(OutModel):
     id: int
     transaction_id: int
     original_filename: str
@@ -2028,5 +2029,5 @@ class ReceiptAttachmentOut(BaseModel):
     items: list[ReceiptItemOut] = Field(default_factory=list)
 
 
-class ReceiptAttachmentsResponseOut(BaseModel):
+class ReceiptAttachmentsResponseOut(OutModel):
     attachments: list[ReceiptAttachmentOut]
