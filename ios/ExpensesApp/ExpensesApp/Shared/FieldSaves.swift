@@ -43,16 +43,19 @@ final class FieldSaves<Field: CaseIterable & Hashable, Body> {
         return dropped
     }
 
-    /// Shows `change` at once and saves it after the saves before it. `stored` reads the
-    /// record when the save runs; `commit` returns why the save failed, or nil, and can
-    /// update the sent body to the record as the server saved it.
+    /// Shows `change` at once and saves it after the saves before it; without `change`, saves
+    /// the value already entered for `field`. `stored` reads the record when the save runs;
+    /// `commit` returns why the save failed, or nil, and can update the sent body to the
+    /// record as the server saved it.
     func save(
         _ field: Field,
         stored: @escaping @MainActor () -> Body?,
         commit: @escaping @MainActor (inout Body) async -> String?,
-        _ change: @escaping (inout Body) -> Void
+        _ change: ((inout Body) -> Void)?
     ) {
-        enter(field, change)
+        if let change {
+            enter(field, change)
+        }
         errors[field] = nil
         base = stored() ?? base
         let previous = queue

@@ -103,6 +103,8 @@ struct TransactionDetailView: View {
         }
         .refreshable {
             await reload()
+            // The date can change once the server's zone is known.
+            _ = await model.loadServerTimeZone()
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -495,7 +497,7 @@ struct TransactionDetailView: View {
 
     // MARK: Saving
 
-    private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
+    private func save(_ field: Field, _ change: ((inout TransactionMutationRequest) -> Void)?) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
             if let saved = await model.updateTransaction(id: transactionID, body: body) {
                 // A save after another transaction opened builds on this one, so it sends
@@ -505,13 +507,14 @@ struct TransactionDetailView: View {
             }
             // Another device saved first: the refused values are dropped, so no later save
             // sends them again, and the fields show the other version, apart from values
-            // entered since and the field being typed in.
+            // entered since and a field being typed in whose value was not refused.
             if let error = model.lastError, error.statusCode == 409 {
-                if saves.discardSending(error.message).contains(.date) {
+                let dropped = saves.discardSending(error.message)
+                if dropped.contains(.date) {
                     dateSave?.cancel()
                 }
                 if let transaction {
-                    fillDrafts(transaction, keeping: focus)
+                    fillDrafts(transaction, keeping: focus.flatMap { dropped.contains($0) ? nil : $0 })
                 }
             }
             return model.lastError?.message ?? "Unable to save the change."
@@ -527,8 +530,10 @@ struct TransactionDetailView: View {
                 dateSave?.cancel()
                 dateSave = Task {
                     try? await Task.sleep(for: .milliseconds(800))
+                    // Saves the value entered above, so a refused save that carried it
+                    // meanwhile drops it.
                     if !Task.isCancelled {
-                        save(.date) { $0.occurredAt = date }
+                        save(.date, nil)
                     }
                 }
             }
