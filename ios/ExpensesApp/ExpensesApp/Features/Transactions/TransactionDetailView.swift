@@ -265,9 +265,11 @@ struct TransactionDetailView: View {
             .pickerStyle(.menu)
             .fieldError(saves.errors[.type])
 
-            // The stored time shows as the server stored it, wherever the device is.
+            // The stored time shows as the server stored it, wherever the device is. Until
+            // its zone is known, a time picked here could save on another day.
             DatePicker("Date", selection: dateSelection(shown))
                 .environment(\.timeZone, model.serverTimeZone ?? .current)
+                .disabled(model.serverTimeZone == nil)
                 .fieldError(saves.errors[.date])
 
             Button {
@@ -495,19 +497,22 @@ struct TransactionDetailView: View {
 
     private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
-            var body = body
-            // A save after another transaction opened builds on the last save, whose
-            // version only the model kept for the transaction it shows.
-            if transaction == nil {
-                body.expectedUpdatedAt = nil
-            }
-            if await model.updateTransaction(id: transactionID, body: body) {
+            if let saved = await model.updateTransaction(id: transactionID, body: body) {
+                // A save after another transaction opened builds on this one, so it sends
+                // the version the server saved.
+                body.expectedUpdatedAt = saved.updatedAt
                 return nil
             }
-            // Another device saved first: the fields show its version, apart from values
-            // entered here and the field being typed in.
-            if model.lastError?.statusCode == 409, let transaction {
-                fillDrafts(transaction, keeping: focus)
+            // Another device saved first: the refused values are dropped, so no later save
+            // sends them again, and the fields show the other version, apart from values
+            // entered since and the field being typed in.
+            if let error = model.lastError, error.statusCode == 409 {
+                if saves.discardSending(error.message).contains(.date) {
+                    dateSave?.cancel()
+                }
+                if let transaction {
+                    fillDrafts(transaction, keeping: focus)
+                }
             }
             return model.lastError?.message ?? "Unable to save the change."
         }, change)

@@ -139,6 +139,8 @@ private struct SnapshotSheet: View {
                             EntryChip(AppFormatters.dateTime(asOf, in: timeZone), systemImage: "calendar", isSet: true)
                         }
                         .buttonStyle(.plain)
+                        // A stored time picked before the server's zone is known could save on another day.
+                        .disabled(anchor != nil && model.serverTimeZone == nil)
                         .popover(isPresented: $choosingDate) {
                             DatePicker("As of", selection: $asOf)
                                 .environment(\.timeZone, timeZone)
@@ -193,6 +195,8 @@ private struct SnapshotSheet: View {
         .task {
             if anchor == nil {
                 balanceFocused = true
+            } else {
+                _ = await model.loadServerTimeZone()
             }
         }
     }

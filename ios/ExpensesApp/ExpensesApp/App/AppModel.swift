@@ -1789,21 +1789,24 @@ final class AppModel {
         return createdID
     }
 
-    func updateTransaction(id: Int, body: TransactionMutationRequest) async -> Bool {
+    /// The server's answer to the save, or nil when the save or the refresh after it failed.
+    func updateTransaction(id: Int, body: TransactionMutationRequest) async -> TransactionSavedResponse? {
         guard let token else {
-            return false
+            return nil
         }
         var body = body
         if body.changesTime, body.timeZone == nil {
             guard let timeZone = await loadServerTimeZone() else {
                 lastError = APIErrorInfo(message: "Couldn't read the server's time zone, so the date can't change yet. Check the connection and try again.")
-                return false
+                return nil
             }
             body.timeZone = timeZone
         }
-        return await runRequestReturningSuccess {
+        var response: TransactionSavedResponse?
+        let refreshed = await runRequestReturningSuccess {
             do {
                 let saved = try await apiClient.updateTransaction(id: id, body: body, token: token)
+                response = saved
                 // The next save sends this version, even when the refresh below fails.
                 if let updatedAt = saved.updatedAt, selectedTransaction?.id == id {
                     selectedTransaction?.updatedAt = updatedAt
@@ -1817,6 +1820,7 @@ final class AppModel {
             try await refreshTransactionDetail(id: id, token: token)
             try await ledger
         }
+        return refreshed ? response : nil
     }
 
     /// Tracks the transaction as a durable purchase, or stops tracking it when `body` is nil.
