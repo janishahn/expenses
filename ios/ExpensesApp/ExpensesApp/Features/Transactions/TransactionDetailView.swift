@@ -206,6 +206,8 @@ struct TransactionDetailView: View {
         }
         .task {
             await reload()
+            // A changed date is written in the server's zone, so the picker shows it.
+            _ = await model.loadServerTimeZone()
             if model.tags == nil {
                 await model.loadOrganizeData()
             }
@@ -265,7 +267,7 @@ struct TransactionDetailView: View {
 
             // The stored time shows as the server stored it, wherever the device is.
             DatePicker("Date", selection: dateSelection(shown))
-                .environment(\.timeZone, model.serverTimeZone)
+                .environment(\.timeZone, model.serverTimeZone ?? .current)
                 .fieldError(saves.errors[.date])
 
             Button {
@@ -493,7 +495,20 @@ struct TransactionDetailView: View {
 
     private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
-            await model.updateTransaction(id: transactionID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+            var body = body
+            // A save after the screen closed builds on the last save, whose version is gone.
+            if transaction == nil {
+                body.expectedUpdatedAt = nil
+            }
+            if await model.updateTransaction(id: transactionID, body: body) {
+                return nil
+            }
+            // Another device saved first: the fields show its version, apart from values
+            // entered here and the field being typed in.
+            if model.lastError?.statusCode == 409, let transaction {
+                fillDrafts(transaction, keeping: focus)
+            }
+            return model.lastError?.message ?? "Unable to save the change."
         }, change)
     }
 
@@ -591,12 +606,18 @@ struct TransactionDetailView: View {
         fillDrafts(transaction)
     }
 
-    private func fillDrafts(_ transaction: TransactionDetail) {
+    private func fillDrafts(_ transaction: TransactionDetail, keeping typed: Field? = nil) {
         // A value still to save stays in its field.
         let shown = shown(transaction)
-        titleDraft = shown.title
-        amountDraft = AppFormatters.amountInput(shown.amountCents)
-        notesDraft = shown.description ?? ""
+        if typed != .title {
+            titleDraft = shown.title
+        }
+        if typed != .amount {
+            amountDraft = AppFormatters.amountInput(shown.amountCents)
+        }
+        if typed != .notes {
+            notesDraft = shown.description ?? ""
+        }
     }
 }
 

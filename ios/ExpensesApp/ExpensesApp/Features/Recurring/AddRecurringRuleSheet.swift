@@ -25,6 +25,7 @@ struct AddRecurringRuleSheet: View {
     @State private var choosingEnd = false
     @State private var upcoming: Result<RecurringPreviewResponse, APIErrorInfo>?
     @State private var amountError: String?
+    @State private var nameError: String?
     @State private var formError: String?
     @State private var saving = false
     @FocusState private var amountFocused: Bool
@@ -43,6 +44,7 @@ struct AddRecurringRuleSheet: View {
 
                     TextField("Name", text: $name)
                         .font(.title3)
+                        .fieldError(nameError)
 
                     ChipFlow {
                         categoryChip
@@ -229,8 +231,10 @@ struct AddRecurringRuleSheet: View {
     private func submit() async {
         let cents = AppFormatters.parseAmountCents(amount)
         amountError = cents == nil ? "Enter a valid amount." : nil
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        nameError = trimmed.isEmpty ? "Enter a name." : nil
         formError = categoryID == nil ? "Choose a category." : nil
-        guard let cents, let categoryID else {
+        guard let cents, nameError == nil, let categoryID else {
             return
         }
         if let end, AppFormatters.isoDay(end) < AppFormatters.isoDay(start) {
@@ -240,9 +244,8 @@ struct AddRecurringRuleSheet: View {
 
         saving = true
         defer { saving = false }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = RecurringRuleRequest(
-            name: trimmed.isEmpty ? nil : trimmed,
+            name: trimmed,
             type: type,
             currencyCode: currencyCode,
             amountCents: cents,

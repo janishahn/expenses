@@ -545,7 +545,12 @@ struct RecurringRuleView: View {
 
     private func save(_ field: Field, _ change: @escaping (inout RecurringRuleRequest) -> Void) {
         saves.save(field, stored: { rule.map { RecurringRuleRequest($0) } }, commit: { body in
-            await model.saveRecurringRule(id: ruleID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
+            // The server saves a rule only with a name, which one saved before names were required lacks.
+            if body.name?.isEmpty ?? true {
+                saves.errors[.name] = "Enter a name."
+                return "Name the rule to save this change."
+            }
+            return await model.saveRecurringRule(id: ruleID, body: body) ? nil : model.lastError?.message ?? "Unable to save the change."
         }, change)
     }
 
@@ -570,9 +575,15 @@ struct RecurringRuleView: View {
         }
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         nameDraft = name
-        let value = name.isEmpty ? nil : name
-        if value != shown(rule).name || saves.errors[.name] != nil {
-            save(.name) { $0.name = value }
+        guard !name.isEmpty else {
+            // A rule saved before names were required stays unnamed until one is entered.
+            if shown(rule).name != nil {
+                saves.errors[.name] = "Enter a name."
+            }
+            return
+        }
+        if name != shown(rule).name || saves.errors[.name] != nil {
+            save(.name) { $0.name = name }
         }
     }
 

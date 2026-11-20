@@ -206,7 +206,7 @@ private struct PeriodPopover: View {
                 if !yearly {
                     Picker("Month", selection: Binding(get: { value.month }, set: { value = CalendarMonth(year: value.year, month: $0) })) {
                         ForEach(1...12, id: \.self) { month in
-                            Text(Calendar.current.standaloneMonthSymbols[month - 1]).tag(month)
+                            Text(Calendar.gregorianDays.standaloneMonthSymbols[month - 1]).tag(month)
                         }
                     }
                     .pickerStyle(.wheel)

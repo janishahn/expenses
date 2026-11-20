@@ -42,7 +42,7 @@ struct BalanceSnapshotsView: View {
                             } label: {
                                 TrailingRow {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(AppFormatters.dateTime(anchor.asOfAt, in: model.serverTimeZone))
+                                        Text(AppFormatters.dateTime(anchor.asOfAt, in: model.serverTimeZone ?? .current))
                                         if let note = anchor.note, !note.isEmpty {
                                             Text(note)
                                                 .font(.subheadline)
@@ -200,7 +200,7 @@ private struct SnapshotSheet: View {
     // A stored time shows and saves in the server's zone, so it keeps its value; a new
     // snapshot takes the device's clock time, as a new transaction does.
     private var timeZone: TimeZone {
-        anchor == nil ? .current : model.serverTimeZone
+        anchor == nil ? .current : model.serverTimeZone ?? .current
     }
 
     // A new snapshot's date is a default, so it alone is no input to lose.
@@ -225,9 +225,14 @@ private struct SnapshotSheet: View {
         }
         saving = true
         defer { saving = false }
+        let saveTimeZone: TimeZone? = if anchor == nil { .current } else { await model.loadServerTimeZone() }
+        guard let saveTimeZone else {
+            formError = "Couldn't read the server's time zone, so the snapshot can't be saved yet. Check the connection and try again."
+            return
+        }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = BalanceAnchorRequest(
-            asOfAt: AppFormatters.isoDateTime(asOf, in: timeZone),
+            asOfAt: AppFormatters.isoDateTime(asOf, in: saveTimeZone),
             balanceCents: cents,
             note: trimmedNote.isEmpty ? nil : trimmedNote
         )

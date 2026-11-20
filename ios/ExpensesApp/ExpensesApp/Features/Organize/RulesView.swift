@@ -148,6 +148,8 @@ struct AmountRangePopover: View {
             error = "Invalid min amount."
         } else if max == .invalid {
             error = "Invalid max amount."
+        } else if let low = min.cents, let high = max.cents, low > high {
+            error = "The min amount must not be above the max amount."
         } else {
             onDone(min.cents, max.cents)
             dismiss()
