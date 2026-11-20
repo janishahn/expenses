@@ -461,13 +461,13 @@ _ROLES = {
     "reimbursement": ("income", True),
     "income": ("income", False),
 }
-_SIDES = range(3)
+_SIDES = range(4)
 # A few round amounts make full and overlapping allocations likely.
 _cents = st.sampled_from([6_000, 10_000])
-# Sides 0 and 1 start as expenses and side 2 as the reimbursement paying them back.
-_ORIGINAL_ROLES = ["expense", "expense", "reimbursement"]
+# Sides 0 and 1 start as expenses and sides 2 and 3 as reimbursements paying them back.
+_ORIGINAL_ROLES = ["expense", "expense", "reimbursement", "reimbursement"]
 _allocation = st.tuples(
-    st.just("allocate"), st.just(2), st.sampled_from([0, 1]), _cents
+    st.just("allocate"), st.sampled_from([2, 3]), st.sampled_from([0, 1]), _cents
 )
 _change = st.one_of(
     _allocation,
@@ -647,7 +647,7 @@ def _june_spending(session, ids):
 
 # Restoring an expense after its reimbursement paid another one.
 @example(
-    amounts=[10_000, 10_000, 6_000],
+    amounts=[10_000, 10_000, 6_000, 6_000],
     steps=[
         ("allocate", 2, 0, 6_000),
         ("delete", 0),
@@ -657,7 +657,7 @@ def _june_spending(session, ids):
 )
 # Restoring a reimbursement after its expense was lowered.
 @example(
-    amounts=[10_000, 10_000, 8_000],
+    amounts=[10_000, 10_000, 8_000, 6_000],
     steps=[
         ("allocate", 2, 0, 8_000),
         ("delete", 2),
@@ -667,7 +667,7 @@ def _june_spending(session, ids):
 )
 # Switching an expense back after its reimbursement paid another one.
 @example(
-    amounts=[10_000, 10_000, 10_000],
+    amounts=[10_000, 10_000, 10_000, 6_000],
     steps=[
         ("allocate", 2, 0, 10_000),
         ("delete", 2),
@@ -677,12 +677,22 @@ def _june_spending(session, ids):
         ("role", 0, "expense"),
     ],
 )
+# Restoring a reimbursement after another one paid the same expense.
+@example(
+    amounts=[10_000, 10_000, 6_000, 6_000],
+    steps=[
+        ("allocate", 2, 0, 6_000),
+        ("delete", 2),
+        ("allocate", 3, 0, 6_000),
+        ("restore", 2, "one"),
+    ],
+)
 @settings(
     max_examples=100,
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-@given(amounts=st.lists(_cents, min_size=3, max_size=3), steps=_steps())
+@given(amounts=st.lists(_cents, min_size=4, max_size=4), steps=_steps())
 def test_allocations_never_exceed_either_side(
     api_client, csrf_headers, db_session, amounts, steps
 ) -> None:
@@ -726,6 +736,7 @@ def test_allocations_never_exceed_either_side(
         before = stored_allocations()
         removed = None
         roles_before = list(roles)
+        locked = step[0] == "role" and _type_locked(db_session, ids[step[1]])
         match step:
             case ("allocate", r, e, amount):
                 response = api_client.post(
@@ -819,7 +830,7 @@ def test_allocations_never_exceed_either_side(
 
         # A refusal must have a reason: the step would push a side past its
         # amount, change the type of a side with counted allocations, or edit
-        # a side in Trash.
+        # a side in Trash. Changing such a side's type is always refused.
         index = step[1]
         refused = response.status_code != 200
         db_session.expire_all()
@@ -832,9 +843,14 @@ def test_allocations_never_exceed_either_side(
                 assert _overruns(
                     db_session, ids, changed=(ids[index], roles[index], amount)
                 ), (step, response.text)
-            case ("role", _, role) if refused and not in_trash:
-                kinds = (_ROLES[roles[index]][0], _ROLES[role][0])
-                locked = _type_locked(db_session, ids[index])
-                assert (kinds[0] != kinds[1] and locked) or _overruns(
-                    db_session, ids, changed=(ids[index], role, amounts[index])
+            case ("role", _, role) if not in_trash:
+                kinds = (_ROLES[roles_before[index]][0], _ROLES[role][0])
+                switches_locked_type = kinds[0] != kinds[1] and locked
+                assert refused or not switches_locked_type, step
+                assert (
+                    not refused
+                    or switches_locked_type
+                    or _overruns(
+                        db_session, ids, changed=(ids[index], role, amounts[index])
+                    )
                 ), (step, response.text)
