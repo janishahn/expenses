@@ -496,7 +496,8 @@ struct TransactionDetailView: View {
     private func save(_ field: Field, _ change: @escaping (inout TransactionMutationRequest) -> Void) {
         saves.save(field, stored: { transaction.map { TransactionMutationRequest($0, serverTimeZone: model.serverTimeZone) } }, commit: { body in
             var body = body
-            // A save after the screen closed builds on the last save, whose version is gone.
+            // A save after another transaction opened builds on the last save, whose
+            // version only the model kept for the transaction it shows.
             if transaction == nil {
                 body.expectedUpdatedAt = nil
             }

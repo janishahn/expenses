@@ -974,6 +974,8 @@ struct RecurringRule: Codable, Equatable, Identifiable {
     let autoPost: Bool
     let skipWeekends: Bool
     let monthDayPolicy: MonthDayPolicy
+    // Past its end date, so the server's totals leave it out; older servers don't send it.
+    let ended: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -992,6 +994,7 @@ struct RecurringRule: Codable, Equatable, Identifiable {
         case autoPost = "auto_post"
         case skipWeekends = "skip_weekends"
         case monthDayPolicy = "month_day_policy"
+        case ended
     }
 }
 
@@ -1031,6 +1034,24 @@ struct RecurringRuleRequest: Codable, Equatable {
         case autoPost = "auto_post"
         case skipWeekends = "skip_weekends"
         case monthDayPolicy = "month_day_policy"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        // A rule stored without a name saves with null, as it is stored.
+        try container.encode(name, forKey: .name)
+        try container.encode(type, forKey: .type)
+        try container.encode(currencyCode, forKey: .currencyCode)
+        try container.encode(amountCents, forKey: .amountCents)
+        try container.encode(categoryID, forKey: .categoryID)
+        try container.encode(anchorDate, forKey: .anchorDate)
+        try container.encode(intervalUnit, forKey: .intervalUnit)
+        try container.encode(intervalCount, forKey: .intervalCount)
+        try container.encode(nextOccurrence, forKey: .nextOccurrence)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+        try container.encode(autoPost, forKey: .autoPost)
+        try container.encode(skipWeekends, forKey: .skipWeekends)
+        try container.encode(monthDayPolicy, forKey: .monthDayPolicy)
     }
 }
 
@@ -1330,7 +1351,8 @@ struct TransactionDetail: Codable, Equatable, Identifiable {
     let attachments: [ReceiptAttachment]
     let bankRow: TransactionBankRow?
     // The server's text, sent back so a save can't overwrite a newer edit; older servers leave it out.
-    let updatedAt: String?
+    // A save sets it to the version the server returned.
+    var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -2045,6 +2067,18 @@ struct BulkEditResponse: Codable, Equatable {
 
 struct IDResponse: Codable, Equatable {
     let id: Int
+}
+
+/// The answer to a transaction save.
+struct TransactionSavedResponse: Codable, Equatable {
+    let id: Int
+    // The saved version, as the server's text; older servers leave it out.
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case updatedAt = "updated_at"
+    }
 }
 
 struct DashboardResponse: Codable, Equatable {

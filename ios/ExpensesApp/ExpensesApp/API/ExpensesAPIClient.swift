@@ -1047,7 +1047,7 @@ struct ExpensesAPIClient {
         try await request(path: "/api/transactions", method: "POST", bearerToken: token, body: body)
     }
 
-    func updateTransaction(id: Int, body: TransactionMutationRequest, token: String) async throws -> IDResponse {
+    func updateTransaction(id: Int, body: TransactionMutationRequest, token: String) async throws -> TransactionSavedResponse {
         try await request(path: "/api/transactions/\(id)", method: "PUT", bearerToken: token, body: body)
     }
 

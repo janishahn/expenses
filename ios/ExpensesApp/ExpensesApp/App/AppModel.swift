@@ -1803,7 +1803,11 @@ final class AppModel {
         }
         return await runRequestReturningSuccess {
             do {
-                _ = try await apiClient.updateTransaction(id: id, body: body, token: token)
+                let saved = try await apiClient.updateTransaction(id: id, body: body, token: token)
+                // The next save sends this version, even when the refresh below fails.
+                if let updatedAt = saved.updatedAt, selectedTransaction?.id == id {
+                    selectedTransaction?.updatedAt = updatedAt
+                }
             } catch let error as APIErrorInfo where error.statusCode == 409 {
                 // Saved elsewhere since it loaded: show that version with the server's message.
                 try? await refreshTransactionDetail(id: id, token: token)
