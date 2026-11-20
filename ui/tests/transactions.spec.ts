@@ -225,7 +225,8 @@ test.describe("Transactions Page", () => {
   test("keeps one band per booking date when a row's time falls on another day", async ({ page, request }) => {
     const token = await getCsrfToken(request)
     const expenseId = await ensureCategory(request, token, "expense", "E2E Bands")
-    const marker = `splitbandx${Date.now()}x`
+    // Letters only: fuzzy search would join two markers that share a timestamp's digits.
+    const marker = `daybands${Math.random().toString(36).slice(2).replace(/[0-9]/g, "")}`
     const day = new Date()
     const localToday = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`
     const add = (title: string, date: string, occurredAt: string, cents: number) =>
