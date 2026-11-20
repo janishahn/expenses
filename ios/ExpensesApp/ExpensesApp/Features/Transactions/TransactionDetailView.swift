@@ -108,7 +108,7 @@ struct TransactionDetailView: View {
         }
         .refreshable {
             // Pulling down gives up the text a conflict kept.
-            for field in [Field.title, .amount, .notes] where saves.errors[field] == Self.keptAfterConflict {
+            for field in [Field.title, .amount, .notes] where refused[field] != nil || saves.errors[field] == Self.keptAfterConflict {
                 saves.errors[field] = nil
             }
             refused = [:]
@@ -531,7 +531,6 @@ struct TransactionDetailView: View {
                 // A save after another transaction opened builds on this one, so it sends
                 // the version the server saved.
                 body.expectedUpdatedAt = saved.updatedAt
-                refused[field] = nil
                 return nil
             }
             // Another device saved first: the refused values are dropped, so no later save
@@ -611,6 +610,7 @@ struct TransactionDetailView: View {
             return
         }
         titleDraft = title
+        refused[.title] = nil
         if title != shown(transaction).title || saves.errors[.title] != nil {
             save(.title) { $0.title = title }
         }
@@ -625,6 +625,9 @@ struct TransactionDetailView: View {
             return
         }
         editingAmount = false
+        // The drafts take the form a save sends, which tells typed text from untouched text.
+        amountDraft = AppFormatters.amountInput(cents)
+        refused[.amount] = nil
         if cents != shown(transaction).amountCents || saves.errors[.amount] != nil {
             save(.amount) { $0.amountCents = cents }
         }
@@ -636,6 +639,8 @@ struct TransactionDetailView: View {
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = notes.isEmpty ? nil : notes
+        notesDraft = notes
+        refused[.notes] = nil
         if description != shown(transaction).description || saves.errors[.notes] != nil {
             save(.notes) { $0.description = description }
         }
