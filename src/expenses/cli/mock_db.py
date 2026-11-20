@@ -727,7 +727,11 @@ def _seed(session: Session) -> None:  # noqa: C901
             y += 46
         draw.line((44, y + 16, 596, y + 16), fill=(158, 169, 181), width=2)
         draw.text((44, y + 48), "Total", fill=(28, 37, 46))
-        draw.text((470, y + 48), f"EUR {txn.amount_cents / 100:.2f}", fill=(28, 37, 46))
+        draw.text(
+            (470, y + 48),
+            f"EUR {txn.amount_cents // 100}.{txn.amount_cents % 100:02d}",
+            fill=(28, 37, 46),
+        )
         draw.text(
             (44, 790),
             "Generated sample image for local development.",

@@ -19,6 +19,7 @@ def _run_tests(include_e2e: bool) -> int:
         ("ruff", ["ruff", "check", "."], root_dir),
         ("ty", ["ty", "check", "--baseline", "ty-baseline.json"], root_dir),
         ("import layers", ["lint-imports"], root_dir),
+        ("domain rules", ["ast-grep", "scan"], root_dir),
         ("pytest", [sys.executable, "-m", "pytest", "-n", "auto"], root_dir),
         ("frontend lint", ["npm", "run", "lint"], root_dir / "ui"),
         ("frontend build", ["npm", "run", "build"], root_dir / "ui"),

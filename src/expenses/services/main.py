@@ -1601,6 +1601,7 @@ class DurablePurchaseService:
             last_day = row.ended_on if ended else current_day
             days_owned = max(0, (last_day - row.acquired_on).days)
             active_days = min(days_owned, lifespan_days)
+            # ast-grep-ignore: cents-true-division - a rate per day keeps its fraction
             cost_per_day_cents = net_cents / lifespan_days
             amortized_cents = (
                 net_cents if ended else int(round(cost_per_day_cents * active_days))
@@ -1624,6 +1625,7 @@ class DurablePurchaseService:
                     "ended": ended,
                     "days_owned": days_owned,
                     "cost_per_day_cents": cost_per_day_cents,
+                    # ast-grep-ignore: cents-true-division - a rate per day keeps its fraction
                     "actual_cost_per_day_cents": net_cents / max(1, days_owned),
                     "amortized_cents": amortized_cents,
                     "remaining_cents": remaining_cents,
@@ -7094,9 +7096,9 @@ class RecurringRuleService:
         if interval_unit == IntervalUnit.week:
             return int(amount_cents * 4.35 / interval_count)
         if interval_unit == IntervalUnit.month:
-            return int(amount_cents / interval_count)
+            return amount_cents // interval_count
         if interval_unit == IntervalUnit.year:
-            return int(amount_cents / (12 * interval_count))
+            return amount_cents // (12 * interval_count)
         return amount_cents
 
     @staticmethod
@@ -9119,6 +9121,7 @@ class DigestService:
                     "amount_cents": budget.amount_cents,
                     "spent_cents": spent_cents,
                     "used_percent": (
+                        # ast-grep-ignore: cents-true-division - a percentage
                         (spent_cents / budget.amount_cents) * 100
                         if budget.amount_cents > 0
                         else (100.0 if zero_budget_spent else 0.0)

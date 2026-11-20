@@ -42,6 +42,7 @@ mock-db = "expenses.cli.mock_db:main"
 
 [dependency-groups]
 dev = [
+    "ast-grep-cli>=0.51.3",
     "httpx>=0.28.1",
     "hypothesis>=6.140",
     "import-linter>=2.17",
