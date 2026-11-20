@@ -806,16 +806,21 @@ def test_allocations_never_exceed_either_side(
             ), (step, i)
 
         match step:
-            case ("allocate", r, e, amount) if response.status_code != 200:
-                # A refused allocation has a side in Trash or in the wrong
-                # role, or would push a side past its amount.
+            case ("allocate", r, e, amount):
+                # Only live sides in their roles take an allocation, and it is
+                # refused only when it would push a side past its amount.
                 db_session.expire_all()
-                assert (
-                    db_session.get(Transaction, ids[r]).deleted_at is not None
-                    or db_session.get(Transaction, ids[e]).deleted_at is not None
-                    or (roles[r], roles[e]) != ("reimbursement", "expense")
-                    or _overruns(db_session, ids, added=(ids[r], ids[e], amount))
-                ), (step, response.text)
+                eligible = (
+                    db_session.get(Transaction, ids[r]).deleted_at is None
+                    and db_session.get(Transaction, ids[e]).deleted_at is None
+                    and (roles[r], roles[e]) == ("reimbursement", "expense")
+                )
+                if response.status_code == 200:
+                    assert eligible, step
+                else:
+                    assert not eligible or _overruns(
+                        db_session, ids, added=(ids[r], ids[e], amount)
+                    ), (step, response.text)
         expected = _expected_rows(
             step,
             response,

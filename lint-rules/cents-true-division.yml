@@ -8,7 +8,9 @@ note: >-
   Use `//` and `%` for whole cents. For a ratio, such as a share or a rate per
   day, add `# ast-grep-ignore: cents-true-division` and say why.
 rule:
-  pattern: $LEFT / $RIGHT
+  any:
+    - pattern: $LEFT / $RIGHT
+    - pattern: $LEFT /= $RIGHT
 constraints:
   LEFT:
     any:
