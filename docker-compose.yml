@@ -39,6 +39,7 @@ volumes:
 # Behind `tailscale serve`, requests come from this network's gateway. To trust
 # their forwarded headers, pin the subnet and set
 # EXPENSES_FORWARDED_ALLOW_IPS=172.30.0.1 in .env (see README, Serving & Access).
+# Then publish the port on loopback only: "127.0.0.1:${EXPENSES_HTTP_PORT:-8000}:8000".
 # networks:
 #   default:
 #     ipam:

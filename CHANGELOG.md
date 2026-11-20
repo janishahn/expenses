@@ -8,11 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Saving a transaction that was changed in another tab or on another device since it was opened is refused with a message, and the current version loads with your entry kept, instead of the older copy overwriting the newer edit. Transactions in the API add `updated_at`; `PUT /api/transactions/{id}` takes an optional `expected_updated_at`, answers 409 when it is outdated, and returns the new `updated_at`.
-- Budget spend and pace refer to the same day. A past weekly digest counts what was spent by the end of that week, a dashboard period that ends mid-month counts spend up to its end, and an expense dated later in the month counts from its date.
-- The dashboard's "vs previous" compares a whole calendar month with the whole previous month, February with January, instead of with the same number of days before it. Other ranges keep the window of equal length.
+- Saving a transaction that was changed in another tab or on another device since it was opened is refused with a message and the current version loads, instead of the older copy overwriting the newer edit. The web keeps your entry in the field; iOS shows the current value, and the refused edit is not sent again. Renaming, merging, or deleting a tag counts as a change to its transactions. Transactions in the API add `updated_at`; `PUT /api/transactions/{id}` takes an optional `expected_updated_at`, answers 409 when it is outdated, and returns the new `updated_at`.
+- Budget spend and pace refer to the same day. A past weekly digest counts what was spent by the end of that week, a dashboard period that ends mid-month counts spend up to its end, and an expense dated later in the month counts from its date, also in the Insights budget history and in yearly budget spend.
+- The dashboard's "vs previous" compares whole calendar months with the same number of whole months before them, February with January and January to March with October to December, instead of with the same number of days. Other ranges keep the window of equal length.
 - Recurring rules need a name, and an interval is at most 1000. Rules stored without a name keep posting, under their category's name, and can still be edited. Changing a rule's start moves its next posting onto the new schedule, and switching a rule to automatic posting no longer posts the occurrences missed while it was manual.
-- Ended recurring rules no longer count in the recurring totals, the Audit mix and rule count, the overdue count, or the PDF's upcoming payments. Rules in `GET /api/recurring` add `ended`.
+- Ended recurring rules no longer count in the recurring totals, the Audit mix, rule count, and cost list, the overdue count, or the PDF's upcoming payments. Rules in `GET /api/recurring` add `ended`.
 - Uncategorized cannot be renamed, archived, or merged into another category, and no other category can take its name; the app finds it by name. If you renamed it earlier, merge the renamed category into Uncategorized.
 - Merging two categories that both have a budget for the same months is refused and names the budgets to end first; before, one budget was dropped. Merging a tag that is excluded from budgets into one that is not, or the reverse, is refused until both have the same setting.
 - Typing the name of an archived tag on a transaction is refused with a hint to restore it, instead of attaching the archived tag again.
@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Web: bulk actions in Uncategorized and Transactions change only the selected rows that are still listed.
 - Web: balance snapshots and What-If amounts reject "1.234" instead of reading it as 1,23 €, and a snapshot accepts a negative balance as the app shows it, "− 120,50 €". What-If shows and changes dollar rules in dollars.
 - Web: copying the ingest token reports when copying failed and selects the token. An overspent budget no longer shows a negative daily allowance.
-- iOS: editing a transaction's title, category, or notes no longer moves its date or time, also when the app started without reaching the server. A changed date is saved in the server's time zone.
+- iOS: editing a transaction's title, category, or notes no longer moves its date or time, also when the app started without reaching the server. A changed date is saved in the server's time zone, and the date can be changed once that zone is known.
 - iOS: a device set to a Buddhist, Japanese, Hebrew, or Islamic calendar no longer sends wrong dates or months.
 - iOS: adding a rule, category, tag, template, balance snapshot, or receipt no longer reports a failure, which invited a duplicate, when only the refresh afterwards failed.
 - iOS: an overspent budget no longer shows a negative daily allowance.
