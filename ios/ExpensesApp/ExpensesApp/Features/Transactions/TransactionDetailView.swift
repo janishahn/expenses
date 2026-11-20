@@ -21,8 +21,9 @@ struct TransactionDetailView: View {
     @State private var amountDraft = ""
     @State private var notesDraft = ""
     @State private var editingAmount = false
-    // Text a conflict kept in its field. It saves again only after the field is entered.
-    @State private var refused: Set<Field> = []
+    // Text a conflict kept in its field. It saves again only after the field is entered
+    // or the text changes.
+    @State private var refused: [Field: String] = [:]
     // The server's zone could not be read, so the date cannot change.
     @State private var zoneUnavailable = false
     @FocusState private var focus: Field?
@@ -107,10 +108,10 @@ struct TransactionDetailView: View {
         }
         .refreshable {
             // Pulling down gives up the text a conflict kept.
-            for field in refused {
+            for field in [Field.title, .amount, .notes] where saves.errors[field] == Self.keptAfterConflict {
                 saves.errors[field] = nil
             }
-            refused = []
+            refused = [:]
             // The date can change once the server's zone is known.
             async let zone = model.loadServerTimeZone()
             await reload()
@@ -200,7 +201,7 @@ struct TransactionDetailView: View {
         .sensoryFeedback(.success, trigger: copied)
         .onChange(of: focus) { previous, current in
             if let current {
-                refused.remove(current)
+                refused[current] = nil
             }
             switch previous {
             case .title:
@@ -244,7 +245,7 @@ struct TransactionDetailView: View {
                         .focused($focus, equals: .amount)
                         .onAppear {
                             // A refused amount waits to be entered again.
-                            if !refused.contains(.amount) {
+                            if refused[.amount] == nil {
                                 focus = .amount
                             }
                         }
@@ -530,6 +531,7 @@ struct TransactionDetailView: View {
                 // A save after another transaction opened builds on this one, so it sends
                 // the version the server saved.
                 body.expectedUpdatedAt = saved.updatedAt
+                refused[field] = nil
                 return nil
             }
             // Another device saved first: the refused values are dropped, so no later save
@@ -543,10 +545,14 @@ struct TransactionDetailView: View {
                 let kept = dropped.intersection([.title, .amount, .notes])
                 for field in kept {
                     saves.errors[field] = Self.keptAfterConflict
+                    refused[field] = draft(field)
                 }
-                refused.formUnion(kept)
                 if let transaction {
-                    fillDrafts(transaction, keeping: refused.union(focus.map { [$0] } ?? []))
+                    // A field in focus keeps its text only if it was typed in. Untouched,
+                    // it would save the version this screen had over the other one.
+                    let sent = [Field.title: body.title, .amount: AppFormatters.amountInput(body.amountCents), .notes: body.description ?? ""]
+                    let typing = focus.flatMap { draft($0) != sent[$0] ? [$0] : nil } ?? []
+                    fillDrafts(transaction, keeping: Set(refused.keys).union(typing))
                 }
                 if kept.contains(field) {
                     return Self.keptAfterConflict
@@ -581,8 +587,22 @@ struct TransactionDetailView: View {
         }
     }
 
+    private func draft(_ field: Field) -> String? {
+        switch field {
+        case .title: titleDraft
+        case .amount: amountDraft
+        case .notes: notesDraft
+        default: nil
+        }
+    }
+
+    /// Refused text is not sent again as it stands.
+    private func waits(_ field: Field) -> Bool {
+        refused[field].map { $0 == draft(field) } ?? false
+    }
+
     private func commitTitle() {
-        guard let transaction, !refused.contains(.title) else {
+        guard let transaction, !waits(.title) else {
             return
         }
         let title = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -597,7 +617,7 @@ struct TransactionDetailView: View {
     }
 
     private func commitAmount() {
-        guard let transaction, !refused.contains(.amount) else {
+        guard let transaction, !waits(.amount) else {
             return
         }
         guard let cents = AppFormatters.parseAmountCents(amountDraft), cents > 0 else {
@@ -611,7 +631,7 @@ struct TransactionDetailView: View {
     }
 
     private func commitNotes() {
-        guard let transaction, !refused.contains(.notes) else {
+        guard let transaction, !waits(.notes) else {
             return
         }
         let notes = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -642,14 +662,14 @@ struct TransactionDetailView: View {
         loadFailed = false
         // A transaction opened again shows its last copy while it loads.
         if let transaction {
-            fillDrafts(transaction, keeping: refused)
+            fillDrafts(transaction, keeping: Set(refused.keys))
         }
         await model.loadTransactionDetail(id: transactionID)
         guard let transaction else {
             loadFailed = true
             return
         }
-        fillDrafts(transaction, keeping: refused)
+        fillDrafts(transaction, keeping: Set(refused.keys))
     }
 
     private func fillDrafts(_ transaction: TransactionDetail, keeping typed: Set<Field>) {
