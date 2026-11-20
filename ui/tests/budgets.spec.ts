@@ -470,6 +470,8 @@ test.describe("Budgets Page", () => {
     const peek = page.getByRole("complementary", { name: categoryName })
     await expect(peek).toContainText(/500,00\s?€\s*of 400,00\s?€/)
     await expect(peek.getByText("Projected", { exact: true })).toBeVisible()
+    // Over budget, there is no daily allowance left.
+    await expect(peek.getByText("Allowance")).toHaveCount(0)
     await expect(peek.getByRole("heading", { name: "Pace" })).toBeVisible()
     await expect(peek.getByRole("heading", { name: "Top spending days" })).toBeVisible()
     await expect(peek.getByRole("list", { name: "Top spending days" })).toContainText(title)

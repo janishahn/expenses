@@ -883,7 +883,7 @@ function BudgetsPage() {
               <Amount cents={progress.projected_total_cents} tone={progress.projected_total_cents > row.amount_cents * OVER_PACE ? "over" : undefined} />
             </Property>
           ) : null}
-          {progress && progress.days_remaining > 0 ? (
+          {progress && progress.remaining_cents > 0 && progress.days_remaining > 0 ? (
             <Property label="Allowance">
               <span>
                 <Amount cents={progress.daily_remaining_cents} /> per day

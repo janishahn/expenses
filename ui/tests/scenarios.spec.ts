@@ -22,6 +22,7 @@ async function createRule(
   type: "income" | "expense",
   name: string,
   amountCents: number,
+  currency: "EUR" | "USD" = "EUR",
 ): Promise<void> {
   const token = await getCsrfToken(request)
   const categoryId = await ensureCategory(request, token, type, `E2E Scn ${type}`)
@@ -31,7 +32,7 @@ async function createRule(
     data: {
       name,
       type,
-      currency_code: "EUR",
+      currency_code: currency,
       amount_cents: amountCents,
       category_id: categoryId,
       anchor_date: start,
@@ -191,6 +192,35 @@ test.describe("Scenarios Page", () => {
     await expect(
       page.getByRole("list", { name: "Impact by adjustment" }),
     ).toContainText(ruleName)
+  })
+
+  test("shows and changes a dollar rule in dollars", async ({ page, request }) => {
+    const ruleName = `E2E Scenario Hosting ${Date.now()}`
+    await createRule(request, "expense", ruleName, 5_000, "USD")
+
+    await page.goto("/scenarios")
+    const form = await openAdjustmentForm(page, "Change a recurring rule")
+    await expect(form.getByLabel("Rule").locator("option", { hasText: ruleName })).toHaveText(
+      new RegExp(`${ruleName} \\(50,00\\s?\\$\\)`),
+    )
+    await selectRule(form, ruleName)
+    const amount = form.getByLabel("New amount")
+    await expect(amount.locator("xpath=following-sibling::span")).toHaveText("$")
+    await amount.fill("60")
+    await submit(form)
+    await expect(adjustments(page).getByRole("listitem")).toContainText(
+      new RegExp(`${ruleName} 60\\s?\\$ from`),
+    )
+  })
+
+  test("rejects an amount with a thousands dot", async ({ page }) => {
+    await page.goto("/scenarios")
+    const form = await openAdjustmentForm(page, "One-time event")
+    await form.getByLabel("Name").fill("Dotted amount")
+    await form.getByLabel("Amount").fill("1.234")
+    await submit(form)
+    await expect(form).toContainText("Enter a valid name, month, and amount.")
+    await expect(adjustments(page).getByRole("listitem")).toHaveCount(0)
   })
 
   test("adds a category estimate adjustment", async ({ page, request }) => {

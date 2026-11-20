@@ -14,6 +14,7 @@ type StoredRule = {
   category_id: number
   interval_unit: string
   interval_count: number
+  next_occurrence: string
   end_date: string | null
   auto_post: boolean
   skip_weekends: boolean
@@ -232,7 +233,7 @@ test.describe("Recurring page", () => {
     await expect(weekends).toHaveAttribute("aria-pressed", "true")
   })
 
-  test("validates the amount before adding a rule", async ({ page }) => {
+  test("validates the amount and name before adding a rule", async ({ page }) => {
     await page.goto("/recurring")
     await addRule(page).click()
     const dialog = page.getByRole("dialog", { name: "Add rule" })
@@ -240,6 +241,12 @@ test.describe("Recurring page", () => {
     await dialog.getByRole("textbox", { name: "Amount" }).fill("abc")
     await dialog.getByRole("button", { name: "Add rule" }).click()
     await expect(dialog.getByRole("alert")).toHaveText("Enter a valid amount.")
+    await expect(dialog).toBeVisible()
+
+    await dialog.getByRole("textbox", { name: "Amount" }).fill("12")
+    await dialog.getByRole("textbox", { name: "Name" }).fill("   ")
+    await dialog.getByRole("button", { name: "Add rule" }).click()
+    await expect(dialog.getByRole("alert")).toHaveText("Enter a name.")
     await expect(dialog).toBeVisible()
 
     await dialog.getByRole("button", { name: "Cancel" }).click()
@@ -282,6 +289,41 @@ test.describe("Recurring page", () => {
     await peek.getByRole("textbox", { name: "Name" }).press("Escape")
     await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
     expect((await fetchRule(request, id)).name).toBe(renamed)
+
+    await peek.getByRole("button", { name: "Edit Name" }).click()
+    await peek.getByRole("textbox", { name: "Name" }).fill("")
+    await peek.getByRole("textbox", { name: "Name" }).press("Enter")
+    await expect(peek.getByText("Enter a name.")).toBeVisible()
+    await peek.getByRole("textbox", { name: "Name" }).press("Escape")
+    await expect(peek.getByRole("button", { name: "Edit Name" })).toContainText(renamed)
+    expect((await fetchRule(request, id)).name).toBe(renamed)
+  })
+
+  test("moves the next occurrence onto the new schedule when the start changes", async ({
+    page,
+    request,
+  }) => {
+    const { token, categoryId } = await seedExpenseCategory(request, "Start")
+    // A weekly rule from Thursday 1 Jan 2026 whose next posting is a Thursday at least four days ahead.
+    const next = new Date(Date.now() + 4 * 86_400_000)
+    while (next.getUTCDay() !== 4) next.setUTCDate(next.getUTCDate() + 1)
+    const { id, name } = await seedRule(request, token, categoryId, {
+      anchor_date: "2026-01-01",
+      next_occurrence: next.toISOString().slice(0, 10),
+      interval_unit: "week",
+    })
+    await page.goto(`/recurring?peek=${id}`)
+    const peek = page.getByRole("complementary", { name })
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Thursday" })).toBeVisible()
+
+    await peek.getByRole("button", { name: "Starts 1 Jan 2026" }).click()
+    await page.getByRole("textbox", { name: "Starts" }).fill("2025-12-29")
+    await page.getByRole("button", { name: "Save" }).click()
+    await expect(peek.getByRole("button", { name: "Repeats Every week on Monday" })).toBeVisible()
+
+    // The coming posting moves to the nearest Monday instead of staying on Thursday.
+    const monday = new Date(next.getTime() - 3 * 86_400_000).toISOString().slice(0, 10)
+    await expect.poll(async () => (await fetchRule(request, id)).next_occurrence).toBe(monday)
   })
 
   test("changes type, category, schedule, end date and currency from the peek properties", async ({

@@ -44,6 +44,7 @@ import {
   MONTH_DAY_POLICIES,
   fullDate,
   needsMonthDayPolicy,
+  nextOccurrenceFromStart,
   repeatsText,
   ruleLabel,
   rulePayload,
@@ -293,10 +294,11 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
     setError(null)
     const cents = parseAmountCents(amount)
     if (cents === null) return setError("Enter a valid amount.")
+    if (!name.trim()) return setError("Enter a name.")
     if (!start) return setError("Select a start date.")
     if (categoryId === null) return setError("Select a category.")
     create.mutate({
-      name: name.trim() || null,
+      name: name.trim(),
       type,
       currency_code: currency,
       amount_cents: cents,
@@ -502,7 +504,13 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
         placeholder={rule.category?.name ?? "Untitled"}
         error={errors.name}
         onCancel={() => setError("name", null)}
-        onSave={(next) => save("name", { name: next.trim() || null })}
+        onSave={(next) => {
+          if (!next.trim()) {
+            setError("name", "Enter a name.")
+            return false
+          }
+          return save("name", { name: next.trim() })
+        }}
       />
       <InlineText
         variant="amount"
@@ -582,7 +590,9 @@ function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: 
             label="Starts"
             value={rule.anchor_date}
             submitLabel="Save"
-            onSave={(next) => void save("starts", { anchor_date: next })}
+            onSave={(next) =>
+              void save("starts", { anchor_date: next, next_occurrence: nextOccurrenceFromStart(rule, next, todayIso(new Date())) })
+            }
             trigger={<PropertyButton>{fullDate(rule.anchor_date)}</PropertyButton>}
           />
         </Property>
