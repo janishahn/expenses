@@ -1,10 +1,11 @@
+import contextlib
+import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional
 
-import sqlite3
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,7 @@ from expenses.db.models import (
     TransactionType,
 )
 from expenses.recurrence.engine import calculate_next_date
-from expenses.services import rebuild_monthly_rollups, get_current_user_id
+from expenses.services import get_current_user_id, rebuild_monthly_rollups
 
 
 @dataclass(frozen=True)
@@ -59,10 +60,8 @@ def _connect_readonly(path: Path) -> sqlite3.Connection:
     uri = f"file:{path.resolve()}?mode=ro"
     con = sqlite3.connect(uri, uri=True)
     con.row_factory = sqlite3.Row
-    try:
+    with contextlib.suppress(sqlite3.OperationalError):
         con.execute("PRAGMA query_only=ON;")
-    except sqlite3.OperationalError:
-        pass
     return con
 
 
@@ -218,7 +217,7 @@ class LegacySQLiteImportService:
             for r in mapping_rows:
                 key = (r.legacy_type.value, r.legacy_category.lower())
                 case_collisions.setdefault(key, set()).add(r.legacy_category)
-            for (t, lower_name), variants in case_collisions.items():
+            for (t, _lower_name), variants in case_collisions.items():
                 if len(variants) > 1:
                     warnings.append(
                         f"Category casing differs for type={t}: {', '.join(sorted(variants))}"

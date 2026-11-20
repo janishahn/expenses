@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from expenses.core.config import get_settings
 
 
-@pytest.fixture()
+@pytest.fixture
 def api_client(anonymous_api_client: TestClient) -> TestClient:
     return anonymous_api_client
 

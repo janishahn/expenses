@@ -5,8 +5,9 @@ Revises: 202603011110
 Create Date: 2026-03-01 11:20:00
 """
 
-from alembic import op
 from sqlalchemy import text
+
+from alembic import op
 
 revision = "202603011120"
 down_revision = "202603011110"

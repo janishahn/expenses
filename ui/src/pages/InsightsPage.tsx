@@ -128,6 +128,7 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0)
 }
 
+// oxlint-disable-next-line complexity
 function InsightsPage() {
   const navigate = useNavigate()
   const isDesktop = useIsDesktop()
@@ -201,8 +202,9 @@ function InsightsPage() {
     )
   }
   // Chart marks open the ledger scoped to their slice, with Insights as the way back.
-  const openLedger = (range: { start: string; end: string }, scope?: { key: "category" | "tags"; id: number }) =>
+  const openLedger = (range: { start: string; end: string }, scope?: { key: "category" | "tags"; id: number }) => {
     navigate(ledgerUrl(range, scope))
+  }
   const amountTick = (cents: number) => formatAmount(cents, "balance", false)
 
   // Strip and the income and expenses chart follow the period and Filter.

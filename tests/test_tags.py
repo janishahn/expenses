@@ -3,8 +3,8 @@ from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from expenses.db.session import Base
 from expenses.db.models import TransactionType
+from expenses.db.session import Base
 from expenses.schemas import CategoryIn, TransactionIn
 from expenses.services import CategoryService, TagService, TransactionService
 

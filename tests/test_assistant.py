@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import expenses.app as app_main
-from expenses.ai import assistant
+from expenses.ai import assistant, assistant_tools
 from expenses.ai.assistant import (
     ITEMS,
     AssistantConflictError,
@@ -29,7 +29,6 @@ from expenses.ai.assistant import (
     AssistantService,
     stream_turn,
 )
-from expenses.ai import assistant_tools
 from expenses.ai.assistant_actions import (
     ActionConflict,
     BudgetRequest,
@@ -92,7 +91,7 @@ from expenses.services import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 
@@ -1155,7 +1154,7 @@ async def test_assistant_requests_keep_their_prefix_across_approvals() -> None:
     # Each request repeats the one before it, so the provider keeps its cache and
     # the model's earlier reasoning.
     assert len(requests) == 4
-    for earlier, later in zip(requests, requests[1:]):
+    for earlier, later in zip(requests, requests[1:], strict=False):
         assert later[: len(earlier)] == earlier
     # The approval added a recent change, so the next question repeats only that
     # part of the reference; an unchanged reference is not sent again.

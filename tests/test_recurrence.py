@@ -4,7 +4,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from expenses.db.session import Base
 from expenses.db.models import (
     Category,
     CurrencyCode,
@@ -14,6 +13,7 @@ from expenses.db.models import (
     Transaction,
     TransactionType,
 )
+from expenses.db.session import Base
 from expenses.recurrence.engine import RecurringEngine, calculate_next_date
 
 
@@ -105,8 +105,8 @@ def test_recurring_engine_idempotent_posts():
 
 
 def test_recurring_engine_posts_usd_rule_with_historical_rate(monkeypatch):
-    from decimal import Decimal
     from datetime import datetime, timezone
+    from decimal import Decimal
 
     from expenses.infra.fx_rates import FxQuote
 

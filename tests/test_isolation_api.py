@@ -1,3 +1,4 @@
+import contextlib
 from datetime import date, datetime
 
 from fastapi.testclient import TestClient
@@ -124,10 +125,8 @@ def _seed_legacy_user_one_data(client: TestClient) -> tuple[int, int, int]:
             int(legacy_anchor.id),
         )
     finally:
-        try:
+        with contextlib.suppress(StopIteration):
             next(db_gen)
-        except StopIteration:
-            pass
 
 
 def test_bootstrap_user_claims_legacy_user_one_data_after_setup(

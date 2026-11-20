@@ -24,28 +24,6 @@ async function signOutFromSettings(page: Page): Promise<void> {
 }
 
 test.describe.serial("Admin navigation and elevation guards", () => {
-  test("hides admin navigation for ordinary users and blocks admin deep-links", async ({
-    page,
-    request,
-  }) => {
-    await ensureOrdinaryUser(request)
-
-    await page.goto("/admin")
-    await expect(page).toHaveURL(/\/login\?redirect=/)
-
-    await loginWith(page, ORDINARY_USER)
-    await expect(page).toHaveURL(/\/(\?|$)/)
-    await expect(page.locator("main h1")).toHaveText("Dashboard")
-
-    await expectAppMenu(page, ["Settings", "Sign out"])
-
-    for (const path of ["/admin", "/admin/logs", "/admin/import"]) {
-      await page.goto(path)
-      await expect(page).toHaveURL("/")
-      await expect(page.locator("main h1")).toHaveText("Dashboard")
-    }
-  })
-
   test("requires elevation for admin deep links and returns to the requested page", async ({
     page,
     request,
@@ -83,18 +61,7 @@ test.describe.serial("Admin navigation and elevation guards", () => {
     await expect(page.locator("main h1")).toHaveText("Health")
   })
 
-  test("cancelling elevation returns to Settings", async ({ page, request }) => {
-    await ensureBootstrap(request)
-    await loginWith(page, ADMIN_USER)
-
-    await page.goto("/admin/logs")
-    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=%2Fadmin%2Flogs/)
-    await page.getByRole("link", { name: "Cancel" }).click()
-    await expect(page).toHaveURL("/settings")
-    await expect(page.locator("main h1")).toHaveText("Account")
-  })
-
-  test("same-browser user switching resets data scope and first mutation succeeds", async ({
+  test("same-browser user switching relocks admin, resets data scope, and first mutation succeeds", async ({
     page,
     request,
   }) => {
@@ -115,7 +82,16 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     await ensureOrdinaryUser(request)
 
+    // Signed out, an admin deep link asks for sign-in; after it, admin still needs elevation.
+    await page.goto("/admin")
+    await expect(page).toHaveURL(/\/login\?redirect=/)
     await loginWith(page, ADMIN_USER)
+    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
+    await page.getByLabel("Password").fill(ADMIN_USER.password)
+    await page.getByRole("button", { name: "Unlock" }).click()
+    await expect(page).toHaveURL("/admin")
+    await expect(page.locator("main h1")).toHaveText("Health")
+
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(bootstrapOnlyTitle)}`)
     await expect(page.getByRole("listitem", { name: bootstrapOnlyTitle })).toBeVisible()
 
@@ -123,6 +99,11 @@ test.describe.serial("Admin navigation and elevation guards", () => {
 
     await loginWith(page, ORDINARY_USER)
     await expectAppMenu(page, ["Settings", "Sign out"])
+    for (const path of ["/admin", "/admin/logs", "/admin/import"]) {
+      await page.goto(path)
+      await expect(page).toHaveURL("/")
+      await expect(page.locator("main h1")).toHaveText("Dashboard")
+    }
 
     await page.goto(`/transactions?period=all&q=${encodeURIComponent(bootstrapOnlyTitle)}`)
     await expect(page.getByRole("listitem", { name: bootstrapOnlyTitle })).toHaveCount(0)
@@ -143,32 +124,5 @@ test.describe.serial("Admin navigation and elevation guards", () => {
     await expect(
       page.getByRole("list", { name: "Categories" }).getByRole("listitem", { name: memberCategoryName, exact: true })
     ).toBeVisible()
-  })
-
-  test("switching from elevated admin to ordinary user relocks admin surfaces", async ({
-    page,
-    request,
-  }) => {
-    await ensureOrdinaryUser(request)
-
-    await loginWith(page, ADMIN_USER)
-    await page.goto("/admin")
-    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-
-    await page.getByLabel("Password").fill(ADMIN_USER.password)
-    await page.getByRole("button", { name: "Unlock" }).click()
-    await expect(page).toHaveURL("/admin")
-    await expect(page.locator("main h1")).toHaveText("Health")
-
-    await signOutFromSettings(page)
-
-    await loginWith(page, ORDINARY_USER)
-    await expectAppMenu(page, ["Settings", "Sign out"])
-
-    for (const path of ["/admin", "/admin/import"]) {
-      await page.goto(path)
-      await expect(page).toHaveURL("/")
-      await expect(page.locator("main h1")).toHaveText("Dashboard")
-    }
   })
 })

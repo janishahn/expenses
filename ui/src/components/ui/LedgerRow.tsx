@@ -91,6 +91,7 @@ export function List({
   }
   return (
     <div ref={scrollRef} className={clsx(s.list, (!scroll || flat) && s.listStatic, flat && s.listFlat, hasSelection && s.hasSel)}>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- The list hands focus to its first row. */}
       <div ref={listRef} role="list" aria-label={label} onFocus={onFocus}>
         {children}
       </div>

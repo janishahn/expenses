@@ -18,17 +18,16 @@ from expenses.infra.fx_rates import FxRateService
 from expenses.services.rollups import recompute_monthly_rollup_for_date
 
 
+def local_now() -> datetime:
+    return datetime.now(ZoneInfo(get_settings().timezone))
+
+
 def local_today() -> date:
-    settings = get_settings()
-    tz = ZoneInfo(settings.timezone)
-    return datetime.now(tz).date()
+    return local_now().date()
 
 
 def days_in_month(year: int, month: int) -> int:
-    if month == 12:
-        next_month = date(year + 1, 1, 1)
-    else:
-        next_month = date(year, month + 1, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     return (next_month - date(year, month, 1)).days
 
 
@@ -51,10 +50,7 @@ def _add_months(
             month = total_months % 12 + 1
             dim = days_in_month(year, month)
 
-    if desired_day > dim:
-        day = dim
-    else:
-        day = desired_day
+    day = dim if desired_day > dim else desired_day
     return date(year, month, day)
 
 

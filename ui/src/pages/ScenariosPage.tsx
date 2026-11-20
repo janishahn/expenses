@@ -297,6 +297,7 @@ function AdjustmentForm({
   )
 }
 
+// oxlint-disable-next-line complexity
 function ScenariosPage() {
   const isDesktop = useIsDesktop()
   const [searchParams, setSearchParams] = useSearchParams()

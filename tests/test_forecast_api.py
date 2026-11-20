@@ -302,7 +302,10 @@ def test_forecast_scenario_applies_modifications(
     assert all("monthly_delta" in row for row in data["impact"]["by_modification"])
     assert data["impact"]["final_delta_cents"] > 0
     for baseline_month, scenario_month, delta in zip(
-        data["baseline"]["months"], data["months"], data["impact"]["monthly_delta"]
+        data["baseline"]["months"],
+        data["months"],
+        data["impact"]["monthly_delta"],
+        strict=True,
     ):
         assert (
             scenario_month["end_balance_p10_cents"]
@@ -783,7 +786,7 @@ def test_forecast_estimates_variable_spending_from_capped_recent_average(
     fixed_today = date(2026, 7, 15)
     monkeypatch.setattr("expenses.services.main.local_today", lambda: fixed_today)
     shopping_id = _create_category(api_client, csrf_headers, "Shopping", "expense")
-    for offset, amount in zip(range(6, 0, -1), amounts):
+    for offset, amount in zip(range(6, 0, -1), amounts, strict=True):
         month = _add_months(fixed_today.replace(day=1), -offset)
         _create_transaction(
             api_client,

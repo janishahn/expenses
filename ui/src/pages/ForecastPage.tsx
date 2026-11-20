@@ -95,6 +95,7 @@ function monthAt(months: ForecastMonth[], count: number): string {
   return count === 0 ? "This month" : MONTH_YEAR.format(monthDate(months[count - 1].month))
 }
 
+// oxlint-disable-next-line complexity
 function ForecastPage() {
   // Re-renders the info label when privacy mode changes.
   usePrivacy()

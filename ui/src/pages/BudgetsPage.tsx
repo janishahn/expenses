@@ -244,10 +244,10 @@ function PaceChart({
           rows={[
             { key: "even", label: "Even pace", value: <Amount cents={lines.even[index]} decimals={false} />, color: "var(--ink-3)", mark: "dash" },
             ...(lines.actual[index] !== null
-              ? [{ key: "actual", label: "Actual", value: <Amount cents={lines.actual[index] as number} decimals={false} />, color: "var(--ink)", mark: "line" as const }]
+              ? [{ key: "actual", label: "Actual", value: <Amount cents={lines.actual[index]} decimals={false} />, color: "var(--ink)", mark: "line" as const }]
               : []),
             ...(lines.previous[index] != null
-              ? [{ key: "previous", label: "Previous month", value: <Amount cents={lines.previous[index] as number} decimals={false} />, color: "var(--ink-3)", mark: "line" as const }]
+              ? [{ key: "previous", label: "Previous month", value: <Amount cents={lines.previous[index]} decimals={false} />, color: "var(--ink-3)", mark: "line" as const }]
               : []),
           ]}
         />
@@ -300,9 +300,9 @@ function OverallPace({
               cells: [
                 String(day),
                 <Amount cents={lines.even[index]} />,
-                lines.actual[index] === null ? "–" : <Amount cents={lines.actual[index] as number} />,
+                lines.actual[index] === null ? "–" : <Amount cents={lines.actual[index]} />,
                 ...(lines.previous.length
-                  ? [lines.previous[index] === null ? "–" : <Amount cents={lines.previous[index] as number} />]
+                  ? [lines.previous[index] === null ? "–" : <Amount cents={lines.previous[index]} />]
                   : []),
               ],
             }))}
@@ -608,6 +608,7 @@ function LeftOrOver({ remaining }: { remaining: number }) {
   )
 }
 
+// oxlint-disable-next-line complexity
 function BudgetsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
@@ -761,6 +762,7 @@ function BudgetsPage() {
     )
   }
 
+  // oxlint-disable-next-line complexity
   const peek = (() => {
     if (!peekTarget) return null
     const { kind, row } = peekTarget

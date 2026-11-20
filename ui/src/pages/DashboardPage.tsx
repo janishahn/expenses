@@ -136,6 +136,7 @@ function localIsoDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
+// oxlint-disable-next-line complexity
 function DashboardPage() {
   const navigate = useNavigate()
   const hidden = usePrivacy()
@@ -370,6 +371,7 @@ function DashboardPage() {
     total: <Amount cents={month.total_cents} />,
     segments: month.segments
       .filter((segment) => segment.amount_cents > 0)
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- bandLegend has every category in bandData.
       .map((segment) => ({ key: String(segment.category_id), value: segment.amount_cents, color: bandColor.get(String(segment.category_id))! })),
   }))
 
@@ -478,8 +480,8 @@ function DashboardPage() {
             key: String(index),
             cells: [
               label,
-              actualValues[index] === null ? "–" : <Amount cents={actualValues[index] as number} />,
-              index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index] as number} /> : "–",
+              actualValues[index] === null ? "–" : <Amount cents={actualValues[index]} />,
+              index > todayIndex && likelyValues[index] !== null ? <Amount cents={likelyValues[index]} /> : "–",
               index > todayIndex && rangeAvailable ? (
                 <>
                   <Amount cents={rangeLo[index] as number} /> to <Amount cents={rangeHi[index] as number} />
@@ -557,7 +559,7 @@ function DashboardPage() {
       table={
         <ChartTable
           label="Spending by category and month"
-          columns={["Month", ...bandLegend.map((entry) => String(entry.label)), "Total"]}
+          columns={["Month", ...bandOrder.map(([, entry]) => entry.label), "Total"]}
           rows={bandData.map((month) => ({
             key: month.month,
             cells: [

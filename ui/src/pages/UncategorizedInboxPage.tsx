@@ -82,6 +82,7 @@ function countLabel(count: number): string {
   return `${count} transaction${count === 1 ? "" : "s"}`
 }
 
+// oxlint-disable-next-line complexity
 function UncategorizedInboxPage() {
   const queryClient = useQueryClient()
   const location = useLocation()

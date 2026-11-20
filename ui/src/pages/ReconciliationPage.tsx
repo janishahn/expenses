@@ -312,6 +312,7 @@ function ResolvedRowPeek({
 
 // Bank statement rows checked one by one against tracked transactions. It never compares totals:
 // a statement covers one account, while the app may track several.
+// oxlint-disable-next-line complexity
 function ReconciliationPage() {
   const queryClient = useQueryClient()
   const isDesktop = useIsDesktop()
@@ -557,7 +558,7 @@ function ReconciliationPage() {
   const ignore = async (row: BankStatementRow, reason: string | null) =>
     act({
       row,
-      run: () => post(`${row.id}/ignore`, { reason }).then(() => undefined),
+      run: () => post(`${row.id}/ignore`, { reason }).then(() => {}),
       message: reason ? `Ignored · ${reason}.` : "Ignored.",
       undo: () => reopen(row.id, { resolution: "ignored" }),
     })
@@ -594,7 +595,7 @@ function ReconciliationPage() {
       // The shown outcome is passed too, so a row changed elsewhere since is left as it is.
       run: () =>
         reopen(row.id, resolution ? { resolution, transactionId: transaction?.id } : undefined, trashCreatedTransaction).then(
-          () => undefined
+          () => {}
         ),
       message: trashCreatedTransaction ? "Moved back to review · transaction moved to Trash." : "Moved back to review.",
       undo:

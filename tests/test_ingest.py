@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from expenses.db.session import Base
 from expenses.db.models import Category, RuleMatchType, TransactionType
+from expenses.db.session import Base
 from expenses.schemas import CategoryIn, IngestTransactionIn, RuleIn
 from expenses.services import (
     CategoryService,

@@ -11,7 +11,7 @@ from expenses.core.config import get_settings
 from expenses.db.session import Base, _enable_sqlite_pragmas
 
 
-@pytest.fixture()
+@pytest.fixture
 def anonymous_api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     data_dir = tmp_path / "expenses_data"
     receipts_dir = data_dir / "receipts"
@@ -50,7 +50,7 @@ def anonymous_api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         get_settings.cache_clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def api_client(anonymous_api_client: TestClient) -> TestClient:
     setup_response = anonymous_api_client.post(
         "/api/auth/setup",
@@ -60,7 +60,7 @@ def api_client(anonymous_api_client: TestClient) -> TestClient:
     return anonymous_api_client
 
 
-@pytest.fixture()
+@pytest.fixture
 def csrf_headers(api_client: TestClient) -> dict[str, str]:
     response = api_client.get("/api/csrf")
     assert response.status_code == 200
@@ -68,7 +68,7 @@ def csrf_headers(api_client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
-@pytest.fixture()
+@pytest.fixture
 def db_session(api_client: TestClient):
     generator = app_main.app.dependency_overrides[app_main.get_db]()
     session = next(generator)

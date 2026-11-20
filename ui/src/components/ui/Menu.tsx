@@ -158,6 +158,7 @@ export function MenuLink({ to, icon, children }: { to: string; icon?: Icon; chil
 
 export function MenuSeparator() {
   const { sheet } = useContext(MenuModeContext)
+  // oxlint-disable-next-line jsx-a11y/control-has-associated-label -- A separator has no label.
   return sheet ? <div role="separator" className={s.msep} /> : <DropdownMenu.Separator className={s.msep} />
 }
 

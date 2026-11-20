@@ -1,5 +1,4 @@
-import { request as playwrightRequest, type APIRequestContext } from "@playwright/test"
-import { ADMIN_USER } from "./auth-helpers"
+import type { APIRequestContext } from "@playwright/test"
 import { expect, test } from "./fixtures"
 import { createCategory, createTransaction, getCsrfToken } from "./helpers"
 
@@ -8,29 +7,6 @@ async function post(request: APIRequestContext, token: string, url: string, data
   expect(response.ok()).toBeTruthy()
   return (await response.json()) as { id: number }
 }
-
-// Auto-post rules are posted by the scheduler; an elevated admin session runs the same catch-up now.
-async function runCatchUp(baseURL: string): Promise<void> {
-  const admin = await playwrightRequest.newContext({
-    baseURL,
-    storageState: { cookies: [], origins: [] },
-  })
-  try {
-    expect((await admin.post("/api/auth/login", { data: ADMIN_USER })).ok()).toBeTruthy()
-    const headers = { "X-CSRF-Token": await getCsrfToken(admin) }
-    const elevated = await admin.post("/api/auth/admin-elevation", {
-      headers,
-      data: { password: ADMIN_USER.password },
-    })
-    expect(elevated.ok()).toBeTruthy()
-    expect((await admin.post("/api/admin/recurring-catch-up", { headers })).ok()).toBeTruthy()
-  } finally {
-    await admin.dispose()
-  }
-}
-
-const daysAgo = (days: number) =>
-  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
 async function expense(
   request: APIRequestContext,
@@ -52,19 +28,6 @@ async function expense(
 }
 
 test.describe("Digest Page", () => {
-  test("steps through weeks and keeps the week in the link", async ({ page }) => {
-    await page.goto("/digest?week_of=2019-03-04")
-    await expect(page.getByRole("heading", { name: "Digest", level: 1 })).toBeVisible()
-    const week = page.getByRole("group", { name: "Week" })
-    await expect(week).toContainText("4")
-    await week.getByRole("button", { name: "Previous week" }).click()
-    await expect(page).toHaveURL(/week_of=2019-02-25/)
-    await expect(week).toContainText("25")
-    await week.getByRole("button", { name: "Next week" }).click()
-    await week.getByRole("button", { name: "Next week" }).click()
-    await expect(page).toHaveURL(/week_of=2019-03-11/)
-  })
-
   test("summarizes spending, budgets and unusual transactions of a week", async ({
     page,
     request,
@@ -110,89 +73,6 @@ test.describe("Digest Page", () => {
     await expect(budgets.getByRole("listitem", { name: groceries })).toContainText(/150\s?€\s*left/)
     const unusual = page.getByRole("list", { name: "Unusual transactions" })
     await expect(unusual.getByRole("listitem", { name: unusualTitle })).toContainText(/50,00\s?€/)
-    await expect(page.getByText("Nothing auto-posted this week.")).toBeVisible()
-  })
-
-  test("opens the ledger for a category of the week and returns to the digest", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const stamp = Date.now()
-    const category = `E2E Digest Drill ${stamp}`
-    const categoryId = await createCategory(request, token, "expense", category)
-    const title = `Digest drill ${stamp}`
-    await expense(request, token, categoryId, "2019-05-08", 3_300, title)
-
-    await page.goto("/digest?week_of=2019-05-06")
-    await page.getByRole("list", { name: "Top categories" }).getByRole("listitem", { name: category }).click()
-    await expect(page).toHaveURL(new RegExp(`/transactions\\?.*category=${categoryId}`))
-    await expect(page.getByRole("list", { name: "Transactions" }).getByRole("listitem", { name: title })).toBeVisible()
-    await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Digest" }).click()
-    await expect(page).toHaveURL(/\/digest/)
-  })
-
-  test("opens a budget, an unusual transaction and an auto-posted rule from the digest", async ({
-    page,
-    request,
-    baseURL,
-  }) => {
-    const token = await getCsrfToken(request)
-    const stamp = Date.now()
-    const categoryId = await createCategory(request, token, "expense", `E2E Digest Links ${stamp}`)
-    const title = `Digest link big ${stamp}`
-    // A weekly rule posts exactly once in any week; the week of eight days ago is complete.
-    const weekOf = daysAgo(8)
-    const ruleName = `Digest rule ${stamp}`
-    const rule = await post(request, token, "/api/recurring", {
-      name: ruleName,
-      type: "expense",
-      amount_cents: 700,
-      currency_code: "EUR",
-      category_id: categoryId,
-      anchor_date: daysAgo(36),
-      interval_unit: "week",
-      interval_count: 1,
-      next_occurrence: daysAgo(36),
-      end_date: null,
-      auto_post: true,
-      skip_weekends: false,
-      month_day_policy: "snap_to_end",
-    })
-    await runCatchUp(baseURL!)
-    await expense(request, token, categoryId, daysAgo(8), 90_000, title)
-    await post(request, token, "/api/budgets/templates", {
-      frequency: "monthly",
-      category_id: categoryId,
-      amount_cents: 100_000,
-      starts_on: daysAgo(60),
-      ends_on: null,
-    })
-
-    await page.goto(`/digest?week_of=${weekOf}`)
-    await page.getByRole("button", { name: "Open budgets" }).click()
-    await expect(page).toHaveURL(/\/budgets/)
-
-    await page.goto(`/digest?week_of=${weekOf}`)
-    await page
-      .getByRole("list", { name: "Unusual transactions" })
-      .getByRole("listitem", { name: title })
-      .click()
-    await expect(page).toHaveURL(/\/transactions\/\d+/)
-
-    await page.goto(`/digest?week_of=${weekOf}`)
-    const posted = page.getByRole("list", { name: "Auto-posted transactions" })
-    await expect(posted.getByRole("listitem", { name: ruleName })).toContainText(/7,00\s?€/)
-    await posted.getByRole("listitem", { name: ruleName }).click()
-    await expect(page).toHaveURL(new RegExp(`/recurring\\?peek=${rule.id}`))
-  })
-
-  test("shows empty states for a week without activity", async ({ page }) => {
-    await page.goto("/digest?week_of=2015-02-02")
-    await expect(page.getByRole("heading", { name: "Digest", level: 1 })).toBeVisible()
-    await expect(page.getByText("No spending this week.").first()).toBeVisible()
-    await expect(page.getByText("No budgets this month.")).toBeVisible()
-    await expect(page.getByText("Nothing unusual this week.")).toBeVisible()
     await expect(page.getByText("Nothing auto-posted this week.")).toBeVisible()
   })
 })

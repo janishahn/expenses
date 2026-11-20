@@ -6,6 +6,8 @@ from expenses.cli.test import full_tests
 
 FAST_CHECKS = {
     ("ruff", "check", "."),
+    ("ty", "check", "--baseline", "ty-baseline.json"),
+    ("lint-imports",),
     (sys.executable, "-m", "pytest", "-n", "auto"),
     ("npm", "run", "lint"),
     ("npm", "run", "build"),

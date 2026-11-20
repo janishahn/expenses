@@ -6,8 +6,9 @@ Create Date: 2024-11-11 00:00:00.000000
 
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "add_kind_to_transactions"

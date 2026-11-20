@@ -2,11 +2,10 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Iterator
 
+from rapidfuzz import fuzz
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-
-from rapidfuzz import fuzz
 
 from expenses.core.config import get_settings
 

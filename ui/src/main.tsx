@@ -34,7 +34,10 @@ if (visualViewport) {
   syncViewport()
 }
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root")
+if (!root) throw new Error("index.html has no #root element.")
+
+createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <IconContext.Provider value={{ weight: "regular" }}>

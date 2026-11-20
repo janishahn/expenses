@@ -44,7 +44,7 @@ def _auth_settings_env(monkeypatch: pytest.MonkeyPatch):
         get_settings.cache_clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def db_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

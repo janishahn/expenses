@@ -71,7 +71,7 @@ function PickerIconGlyph({ iconKey }: { iconKey: string }) {
       return
     }
     let isActive = true
-    loadCsrIcon(displayIconKey).then(
+    void loadCsrIcon(displayIconKey).then(
       (icon) => {
         if (isActive) {
           setDynamicIcon({ iconKey: displayIconKey, iconComponent: icon ?? null })

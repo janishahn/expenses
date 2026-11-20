@@ -11,9 +11,9 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, event, update
 from sqlalchemy.orm import sessionmaker
 
+from expenses.ai.service import retry_receipt_readings
 from expenses.core.config import get_settings
 from expenses.core.periods import Period, month_end, month_start
-from expenses.ai.service import retry_receipt_readings
 from expenses.db.models import (
     LLMJob,
     ReceiptAttachment,

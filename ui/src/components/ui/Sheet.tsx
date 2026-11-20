@@ -96,6 +96,7 @@ export function FileRow({ icon: IconComponent, name, meta, action }: { icon: Ico
 // Preformatted text such as a captured request body or a log payload; it scrolls inside its own box.
 export function CodeBlock({ label, children }: { label: string; children: string }) {
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- A scrollable region takes focus so the keyboard can scroll it.
     <pre className={s.code} aria-label={label} tabIndex={0}>
       {children}
     </pre>

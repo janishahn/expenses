@@ -4,13 +4,14 @@ import random
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from statistics import median
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from rapidfuzz.distance import Levenshtein
 from sqlalchemy import (
     and_,
     case,
@@ -26,11 +27,9 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
-from rapidfuzz.distance import Levenshtein
-
 from expenses.core.app_logging import get_logger, log_event
 from expenses.core.config import get_settings
-from expenses.services.auto_categorization import apply_prediction
+from expenses.core.periods import Period, add_months, month_end, month_start
 from expenses.core.safe_regex import (
     RegexRejected,
     safe_regex_search,
@@ -48,28 +47,22 @@ from expenses.db.models import (
     MonthDayPolicy,
     MonthlyRollup,
     ReceiptAttachment,
-    ReimbursementAllocation,
     RecurringRule,
+    ReimbursementAllocation,
     Rule,
     RuleMatchType,
     Tag,
-    TransactionTemplate,
-    TransactionClassificationEvent,
-    transaction_tags,
     Transaction,
+    TransactionClassificationEvent,
+    TransactionTemplate,
     TransactionType,
+    transaction_tags,
 )
 from expenses.infra.fx_rates import FxQuote, FxRateService
-from expenses.core.periods import Period, add_months, month_end, month_start
 from expenses.recurrence.engine import (
     RecurringEngine,
     calculate_next_date,
     local_today,
-)
-from expenses.services.csv_utils import export_transactions, parse_csv
-from expenses.services.rollups import (
-    recompute_monthly_rollup,
-    recompute_monthly_rollup_for_date,
 )
 from expenses.schemas import (
     BalanceAnchorIn,
@@ -92,6 +85,12 @@ from expenses.schemas import (
     TemplateReorderIn,
     TransactionIn,
     TransactionTemplateIn,
+)
+from expenses.services.auto_categorization import apply_prediction
+from expenses.services.csv_utils import export_transactions, parse_csv
+from expenses.services.rollups import (
+    recompute_monthly_rollup,
+    recompute_monthly_rollup_for_date,
 )
 
 logger = get_logger("expenses.services")
@@ -439,14 +438,14 @@ class TagService:
         ).all()
         source_txn_id_values = [int(row.transaction_id) for row in source_txn_ids]
 
-        existing_target_txn_ids = set(
+        existing_target_txn_ids = {
             int(row.transaction_id)
             for row in self.session.execute(
                 select(transaction_tags.c.transaction_id).where(
                     transaction_tags.c.tag_id == target.id
                 )
             )
-        )
+        }
 
         inserted_links = 0
         for txn_id in source_txn_id_values:
@@ -2750,13 +2749,17 @@ class ReimbursementService:
 
 
 class ReceiptAttachmentService:
-    ALLOWED_MIME_TYPES = {
+    ALLOWED_MIME_TYPES: ClassVar[set[str]] = {
         "application/pdf",
         "image/jpeg",
         "image/png",
         "image/webp",
     }
-    THUMBNAILABLE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    THUMBNAILABLE_MIME_TYPES: ClassVar[set[str]] = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
     THUMBNAIL_MAX_EDGE = 1024
     MAX_ATTACHMENTS_PER_TRANSACTION = 5
 
@@ -2992,17 +2995,19 @@ class IngestService:
             and "longitude" not in data.model_fields_set
         ):
             location_status = "not_provided"
-        elif latitude is None or longitude is None:
+        elif (
+            latitude is None
+            or longitude is None
+            or latitude < -90
+            or latitude > 90
+            or longitude < -180
+            or longitude > 180
+        ):
             location_status = "ignored_partial"
         else:
-            if latitude < -90 or latitude > 90:
-                location_status = "ignored_partial"
-            elif longitude < -180 or longitude > 180:
-                location_status = "ignored_partial"
-            else:
-                stored_latitude = latitude.quantize(Decimal("0.000001"))
-                stored_longitude = longitude.quantize(Decimal("0.000001"))
-                location_status = "stored"
+            stored_latitude = latitude.quantize(Decimal("0.000001"))
+            stored_longitude = longitude.quantize(Decimal("0.000001"))
+            location_status = "stored"
         category_resolution = "uncategorized"
         fuzzy_distance: int | None = None
 
@@ -3780,10 +3785,8 @@ class MetricsService:
         for index, month in enumerate(months):
             bucket_start = month
             bucket_end = month_end(month.year, month.month)
-            if bucket_start < period.start:
-                bucket_start = period.start
-            if bucket_end > period.end:
-                bucket_end = period.end
+            bucket_start = max(bucket_start, period.start)
+            bucket_end = min(bucket_end, period.end)
 
             full_month = bucket_start == month and bucket_end == month_end(
                 month.year, month.month
@@ -5642,7 +5645,7 @@ class ForecastService:
         months = months if months is not None else history.months
         history_months = len(months)
         if not months:
-            neutral_factors = {month: 1.0 for month in range(1, 13)}
+            neutral_factors = dict.fromkeys(range(1, 13), 1.0)
             return ForecastService.VariableModel(
                 {}, {}, neutral_factors, neutral_factors.copy(), 0, 0, False
             )
@@ -5659,7 +5662,7 @@ class ForecastService:
         seasonality_applied = history_months >= 24
 
         def seasonal_offsets(totals: dict[date, int]) -> dict[int, float]:
-            offsets = {month: 0.0 for month in range(1, 13)}
+            offsets = dict.fromkeys(range(1, 13), 0.0)
             if not seasonality_applied:
                 return offsets
             overall_median = float(median(totals.get(month, 0) for month in months))
@@ -5689,7 +5692,7 @@ class ForecastService:
                     value for index, value in enumerate(values) if index != largest
                 )
             average = sum(
-                value * weight for value, weight in zip(values, weights)
+                value * weight for value, weight in zip(values, weights, strict=True)
             ) / sum(weights)
             return max(0, int(round(average)))
 
@@ -5699,7 +5702,7 @@ class ForecastService:
             category_totals = {
                 category_id: sum(
                     values.get(month, 0) * weight
-                    for month, weight in zip(recent_months, weights)
+                    for month, weight in zip(recent_months, weights, strict=True)
                 )
                 for category_id, values in category_months.items()
             }
@@ -5724,7 +5727,7 @@ class ForecastService:
 
         def seasonal_factors(offsets: dict[int, float], base: int) -> dict[int, float]:
             if base <= 0:
-                return {month: 1.0 for month in range(1, 13)}
+                return dict.fromkeys(range(1, 13), 1.0)
             return {
                 month: max(0.0, base + offsets[month]) / base for month in range(1, 13)
             }
@@ -5856,7 +5859,7 @@ class ForecastService:
             minimum = min(minimum, balance)
         return minimum
 
-    def _project(
+    def _project(  # noqa: C901
         self,
         *,
         today: date,
@@ -6164,7 +6167,7 @@ class ForecastService:
                     simulated_by_month[index].append(
                         int(month["end_balance_cents"]) + cumulative_residual
                     )
-            for month, simulated in zip(months, simulated_by_month):
+            for month, simulated in zip(months, simulated_by_month, strict=True):
                 central = int(month["end_balance_cents"])
                 month["end_balance_p10_cents"] = min(
                     central, self._percentile(simulated, 0.10)
@@ -6586,7 +6589,9 @@ class ForecastService:
                 "delta_end_balance_cents": int(scenario_row["end_balance_cents"])
                 - int(baseline_row["end_balance_cents"]),
             }
-            for baseline_row, scenario_row in zip(baseline_months, scenario_months)
+            for baseline_row, scenario_row in zip(
+                baseline_months, scenario_months, strict=True
+            )
         ]
 
         final_delta = int(
@@ -6685,7 +6690,7 @@ class ForecastService:
                             - int(baseline_row["end_balance_cents"]),
                         }
                         for baseline_row, single_row in zip(
-                            baseline_months, single_months
+                            baseline_months, single_months, strict=True
                         )
                     ]
                     cached_deltas[key] = (
@@ -6899,8 +6904,7 @@ class RecurringRuleService:
             setattr(rule, attr_name, value)
         # The anchor is the schedule's first occurrence, so a later start must not
         # leave an earlier next occurrence for catch-up to post.
-        if rule.anchor_date > rule.next_occurrence:
-            rule.next_occurrence = rule.anchor_date
+        rule.next_occurrence = max(rule.next_occurrence, rule.anchor_date)
         self.session.commit()
         self.session.refresh(rule)
         log_event(
@@ -7041,7 +7045,7 @@ class ReportService:
         self.txn_service = TransactionService(session, self.user_id)
         self.rule_service = RecurringRuleService(session, self.user_id)
 
-    def gather_data(self, options: ReportOptions) -> dict[str, object]:
+    def gather_data(self, options: ReportOptions) -> dict[str, object]:  # noqa: C901
         period = Period("report", options.start, options.end)
         data: dict[str, object] = {
             "period": period,

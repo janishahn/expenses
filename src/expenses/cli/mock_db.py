@@ -19,7 +19,6 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -45,9 +44,9 @@ def db_is_empty(db_path: Path) -> bool:
 
 
 def _run_migrations(root_dir: Path) -> None:
-    from alembic import command as alembic_command
     from alembic.config import Config
 
+    from alembic import command as alembic_command
     from expenses.core.config import get_settings
 
     cfg = Config(str(root_dir / "alembic.ini"))
@@ -58,7 +57,7 @@ def _run_migrations(root_dir: Path) -> None:
 # ── seeding ───────────────────────────────────────────────────────────────────
 
 
-def _seed(session: Session) -> None:
+def _seed(session: Session) -> None:  # noqa: C901
     from expenses.auth.security import hash_password
     from expenses.db.models import (
         BankStatementRow,
@@ -89,16 +88,17 @@ def _seed(session: Session) -> None:
         BudgetService,
         CategoryService,
         DurablePurchaseService,
+        ReceiptAttachmentService,
         RecurringRuleService,
         ReimbursementService,
-        ReceiptAttachmentService,
         RuleService,
         TagService,
-        TransactionTemplateService,
         TransactionService,
+        TransactionTemplateService,
+        local_today,
     )
 
-    today = date.today()
+    today = local_today()
 
     session.add(
         User(

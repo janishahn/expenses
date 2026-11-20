@@ -16,9 +16,9 @@ from expenses.ai.usage_report import (
     usage_report,
 )
 from expenses.api.routes import (
-    get_db,
     _require_csrf,
     _require_elevated_admin_context,
+    get_db,
 )
 from expenses.core.config import get_settings
 

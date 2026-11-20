@@ -4,9 +4,9 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 import expenses.app as app_main
 from expenses.core.config import get_settings

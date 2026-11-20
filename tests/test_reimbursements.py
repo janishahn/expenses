@@ -1,13 +1,12 @@
 from datetime import date, datetime
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-import pytest
-
-from expenses.db.session import Base
-from expenses.db.models import Category, TransactionType
 from expenses.core.periods import Period
+from expenses.db.models import Category, TransactionType
+from expenses.db.session import Base
 from expenses.schemas import TransactionIn
 from expenses.services import (
     BudgetService,

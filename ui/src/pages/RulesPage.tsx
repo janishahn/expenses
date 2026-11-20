@@ -400,6 +400,7 @@ function BudgetsMenu({
   )
 }
 
+// oxlint-disable-next-line complexity
 function AddRuleDialog({ data, onClose }: { data: RulesResponse; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [appliesTo, setAppliesTo] = useState<AppliesTo>("any")

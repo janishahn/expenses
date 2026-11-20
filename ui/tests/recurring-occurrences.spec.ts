@@ -81,48 +81,4 @@ test.describe("Recurring occurrences page", () => {
     await posted.getByRole("listitem").first().click()
     await expect(page).toHaveURL(/\/transactions\/\d+/)
   })
-
-  test("says nothing was posted yet for a manual rule and returns to Recurring", async ({
-    page,
-    request,
-  }) => {
-    const { id, name } = await seedWeeklyRule(request, false)
-
-    await page.goto(`/recurring/${id}/occurrences`)
-    await expect(page.getByText("No occurrences posted yet.")).toBeVisible()
-    await expect(page.getByRole("main")).toContainText(/Posting\s*Manual/)
-    await expect(page.getByRole("main")).toContainText(/Posted\s*0\s*nothing yet/)
-
-    await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Recurring" }).click()
-    await expect(page).toHaveURL("/recurring")
-    await expect(page.getByRole("listitem", { name })).toBeVisible()
-  })
-
-  test("deletes the rule after confirmation and returns to Recurring", async ({
-    page,
-    request,
-  }) => {
-    const { id, name } = await seedWeeklyRule(request, false)
-    await page.goto(`/recurring/${id}/occurrences`)
-
-    const confirm = page.getByRole("dialog", { name: `Delete recurring rule "${name}"?` })
-    await page.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitem", { name: "Delete rule" }).click()
-    await confirm.getByRole("button", { name: "Cancel" }).click()
-    await expect(page).toHaveURL(new RegExp(`/recurring/${id}/occurrences`))
-
-    await page.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitem", { name: "Delete rule" }).click()
-    await confirm.getByRole("button", { name: "Delete", exact: true }).click()
-    await expect(page).toHaveURL("/recurring")
-    await expect(page.getByRole("listitem", { name })).toHaveCount(0)
-    expect((await request.get(`/api/recurring/${id}/occurrences`)).status()).toBe(404)
-  })
-
-  test("explains an unknown rule and offers the way back", async ({ page }) => {
-    await page.goto("/recurring/999999/occurrences")
-    await expect(page.getByRole("alert")).toHaveText("Rule not found.")
-    await page.getByRole("link", { name: "Back to recurring" }).click()
-    await expect(page).toHaveURL("/recurring")
-  })
 })

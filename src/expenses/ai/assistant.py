@@ -341,7 +341,9 @@ class AssistantEventStream(
         thinking.state = "done"
 
     async def handle_thinking_end(
-        self, part: ThinkingPart, followed_by_thinking: bool = False
+        self,
+        part: ThinkingPart,  # noqa: ARG002 - UIEventStream passes the part.
+        followed_by_thinking: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
         if followed_by_thinking or self._thinking is None:
             return
@@ -436,7 +438,7 @@ class AssistantEventStream(
 
 
 def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRequests]:
-    agent = Agent(
+    return Agent(
         model.model,
         model_settings=model.settings,
         deps_type=AssistantReader,
@@ -450,7 +452,6 @@ def _agent(model: AssistantModel) -> Agent[AssistantReader, str | DeferredToolRe
         ],
         instructions=INSTRUCTIONS,
     )
-    return agent
 
 
 def _failure_message(error: Exception) -> str:
@@ -956,7 +957,7 @@ async def _run_turn(
         if failure is not None:
             end["message"] = failure
         await put(end)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - logs the crash and ends the stream
         session.rollback()
         log_event(
             logger,

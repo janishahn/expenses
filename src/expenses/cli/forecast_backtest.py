@@ -58,7 +58,11 @@ def main() -> int:
         )
     widths = [max(len(row[column]) for row in rows) for column in range(5)]
     for row in rows:
-        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)))
+        print(
+            "  ".join(
+                cell.ljust(width) for cell, width in zip(row, widths, strict=True)
+            )
+        )
     return 0
 
 

@@ -1,8 +1,8 @@
 import hashlib
 import json
-from io import BytesIO
 from datetime import date, datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -26,8 +26,8 @@ from expenses.db.models import (
     MonthDayPolicy,
     ReceiptAttachment,
     ReceiptItem,
-    ReimbursementAllocation,
     RecurringRule,
+    ReimbursementAllocation,
     Rule,
     RuleMatchType,
     Tag,

@@ -122,38 +122,6 @@ export async function createTransaction(
   return body.id
 }
 
-async function createIngestToken(
-  request: APIRequestContext
-): Promise<string> {
-  const csrfToken = await getCsrfToken(request)
-  const response = await request.post("/api/settings/ingest-token", {
-    headers: { "X-CSRF-Token": csrfToken },
-  })
-  const body = (await response.json()) as { token: string }
-  return body.token
-}
-
-export async function createIngestTransaction(
-  request: APIRequestContext,
-  payload: {
-    amount_cents: number
-    title: string
-    date?: string
-    category?: string
-    latitude?: number
-    longitude?: number
-  },
-  ingestToken?: string
-): Promise<number> {
-  const token = ingestToken || (await createIngestToken(request))
-  const response = await request.post("/api/ingest", {
-    headers: { Authorization: `Bearer ${token}` },
-    data: payload,
-  })
-  const body = (await response.json()) as { id: number }
-  return body.id
-}
-
 export async function uploadAttachment(
   request: APIRequestContext,
   csrfToken: string,
@@ -181,21 +149,6 @@ export async function uploadAttachment(
   return body.id
 }
 
-const onePixelPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pfdvK0AAAAASUVORK5CYII=",
-  "base64"
-)
-
-export async function stubOsmTiles(page: Page): Promise<void> {
-  await page.route("https://tile.openstreetmap.org/**", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "image/png",
-      body: onePixelPng,
-    })
-  )
-}
-
 export async function createUncategorizedExpense(
   request: APIRequestContext,
   csrfToken: string,
@@ -215,70 +168,6 @@ export async function createUncategorizedExpense(
   })
   expect(response.ok()).toBeTruthy()
   return ((await response.json()) as { id: number }).id
-}
-
-// Signs the page in as a fresh account with a trained local category model:
-// 90 categorized "Corner bakery" / "City metro" expenses, then the setting
-// enabled. Create uncategorized rows before calling so they are suggested
-// rather than categorized on creation. The account is isolated, so the enabled
-// setting cannot leak into other tests.
-export async function loginWithTrainedSuggestions(
-  page: Page,
-  uncategorizedTitles: string[]
-): Promise<{
-  request: APIRequestContext
-  csrfToken: string
-  bakeryId: number
-  uncategorizedIds: number[]
-}> {
-  await page.goto("/settings")
-  const { request, csrfToken } = await loginAsIsolatedUser(page)
-  const headers = { "X-CSRF-Token": csrfToken }
-  const ids: number[] = []
-  for (const name of ["Bakery", "Transit"]) {
-    const response = await request.post("/api/categories", {
-      headers,
-      data: { name, type: "expense", order: 0 },
-    })
-    expect(response.ok()).toBeTruthy()
-    ids.push(((await response.json()) as { id: number }).id)
-  }
-  for (let index = 0; index < 90; index++) {
-    const response = await request.post("/api/transactions", {
-      headers,
-      data: {
-        date: "2026-01-01",
-        occurred_at: "2026-01-01T12:00:00",
-        type: "expense",
-        amount_cents: 500,
-        category_id: ids[index % 2],
-        title: index % 2 === 0 ? "Corner bakery" : "City metro",
-        tags: [],
-      },
-    })
-    expect(response.ok()).toBeTruthy()
-  }
-  const uncategorizedIds: number[] = []
-  for (const title of uncategorizedTitles) {
-    uncategorizedIds.push(await createUncategorizedExpense(request, csrfToken, title))
-  }
-  const enabled = await request.put("/api/settings/auto-categorization", {
-    headers,
-    data: { enabled: true, threshold: 0.8 },
-  })
-  expect(enabled.ok()).toBeTruthy()
-  await expect
-    .poll(
-      async () =>
-        (
-          (await (await request.get("/api/settings/auto-categorization")).json()) as {
-            training_status: string
-          }
-        ).training_status,
-      { timeout: 30_000 }
-    )
-    .toBe("ready")
-  return { request, csrfToken, bakeryId: ids[0], uncategorizedIds }
 }
 
 // Two months of Insights data for a fresh user: last month 2.000 € Salary income and a 500 €

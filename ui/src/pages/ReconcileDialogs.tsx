@@ -306,6 +306,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 
 // Choose an account, drop a Commerzbank CSV, check the preview, then import the new rows.
 // A file with an invalid row imports nothing.
+// oxlint-disable-next-line complexity
 export function ImportStatementDialog({
   accounts,
   onClose,
@@ -449,45 +450,43 @@ export function ImportStatementDialog({
           )}
         </>
       ) : (
-        <>
-          <FieldGrid narrow>
-            <Field label="Account">
-              <Select
-                value={choice}
-                disabled={pending}
+        <FieldGrid narrow>
+          <Field label="Account">
+            <Select
+              value={choice}
+              disabled={pending}
+              onChange={(event) => {
+                setChoice(event.target.value)
+                setNameError(null)
+              }}
+            >
+              {accounts.map((account) => (
+                <option key={account.label} value={account.label}>
+                  {account.label}
+                </option>
+              ))}
+              <option value={NEW_ACCOUNT}>New account…</option>
+            </Select>
+          </Field>
+          {choice === NEW_ACCOUNT ? (
+            <Field label="Name" error={nameError}>
+              <TextField
+                autoFocus
+                maxLength={120}
+                value={newName}
                 onChange={(event) => {
-                  setChoice(event.target.value)
+                  setNewName(event.target.value)
                   setNameError(null)
                 }}
-              >
-                {accounts.map((account) => (
-                  <option key={account.label} value={account.label}>
-                    {account.label}
-                  </option>
-                ))}
-                <option value={NEW_ACCOUNT}>New account…</option>
-              </Select>
+              />
             </Field>
-            {choice === NEW_ACCOUNT ? (
-              <Field label="Name" error={nameError}>
-                <TextField
-                  autoFocus
-                  maxLength={120}
-                  value={newName}
-                  onChange={(event) => {
-                    setNewName(event.target.value)
-                    setNameError(null)
-                  }}
-                />
-              </Field>
-            ) : null}
-            <Field label="File">
-              <FileDrop accept=".csv,text/csv" label="Commerzbank CSV file" disabled={pending} onFile={chooseFile}>
-                {preview.isPending ? "Reading the file…" : "Drop a Commerzbank CSV file or choose one"}
-              </FileDrop>
-            </Field>
-          </FieldGrid>
-        </>
+          ) : null}
+          <Field label="File">
+            <FileDrop accept=".csv,text/csv" label="Commerzbank CSV file" disabled={pending} onFile={chooseFile}>
+              {preview.isPending ? "Reading the file…" : "Drop a Commerzbank CSV file or choose one"}
+            </FileDrop>
+          </Field>
+        </FieldGrid>
       )}
       {failure ? <FieldError>{failure}</FieldError> : null}
     </Dialog>

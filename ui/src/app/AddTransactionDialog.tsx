@@ -73,6 +73,7 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
   )
 }
 
+// oxlint-disable-next-line complexity
 function AddTransactionDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()

@@ -436,6 +436,7 @@ function AddRuleDialog({ data, onClose }: { data: RecurringResponse; onClose: ()
   )
 }
 
+// oxlint-disable-next-line complexity
 function RulePeek({ rule: stored, data, onClose }: { rule: RecurringRule; data: RecurringResponse; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()

@@ -186,8 +186,9 @@ function IngestTokenCard({ token }: { token: IngestTokenMetadata | null }) {
             icon={CopyIcon}
             label="Copy token"
             onClick={() => {
-              copyText(generated)
-              showToast({ message: "Token copied." })
+              void copyText(generated).then((copied) => {
+                showToast({ message: copied ? "Token copied." : "Couldn't copy the token. Select it and copy it." })
+              })
             }}
           />
         </SettingRow>
@@ -330,6 +331,7 @@ function SnapshotDialog({ anchor, onClose }: { anchor: BalanceAnchor | null; onC
           </Field>
         </FieldGrid>
         {mutationError ? <FieldError>{getApiErrorMessage(mutationError, "Unable to save the snapshot.")}</FieldError> : null}
+        {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- A hidden button lets Enter submit the form. */}
         <button type="submit" hidden />
       </form>
     </Dialog>

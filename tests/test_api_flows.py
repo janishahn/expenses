@@ -3,8 +3,8 @@ from datetime import date, datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-import expenses.app as app_main
 import expenses.api.routes as routes_module
+import expenses.app as app_main
 from expenses.core.config import get_settings
 
 

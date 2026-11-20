@@ -87,17 +87,13 @@ def test_mock_db_seed_balance_anchor_predates_all_transactions(
 def test_mock_db_seed_does_not_create_future_transactions(
     tmp_path, monkeypatch
 ) -> None:
-    class FrozenDate(mock_db.date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 5, 18)
-
-    monkeypatch.setattr(mock_db, "date", FrozenDate)
+    today = mock_db.date(2026, 5, 18)
+    monkeypatch.setattr("expenses.services.main.local_today", lambda: today)
 
     with seeded_session(tmp_path, monkeypatch) as session:
         future_transaction = (
             session.query(Transaction)
-            .filter(Transaction.date > FrozenDate.today())
+            .filter(Transaction.date > today)
             .order_by(Transaction.date.asc(), Transaction.id.asc())
             .first()
         )

@@ -6,7 +6,6 @@ from pathlib import Path
 from expenses.api.routes import APP_VERSION
 from expenses.core.config import get_settings
 
-
 DEFAULT_OUTPUT_DIR = Path("ios/ExpensesApp/Fixtures")
 
 

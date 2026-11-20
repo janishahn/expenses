@@ -23,8 +23,8 @@ from expenses.db.models import (
     DurablePurchase,
     ReceiptAttachment,
     ReceiptItem,
-    ReimbursementAllocation,
     RecurringRule,
+    ReimbursementAllocation,
     Rule,
     Tag,
     Transaction,
@@ -32,7 +32,6 @@ from expenses.db.models import (
     TransactionTemplate,
 )
 from expenses.services import ReceiptAttachmentService
-
 
 FORMAT_NAME = "expenses-portable-export"
 FORMAT_VERSION = 1

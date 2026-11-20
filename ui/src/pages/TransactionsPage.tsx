@@ -102,6 +102,7 @@ function countLabel(count: number): string {
   return `${count} transaction${count === 1 ? "" : "s"}`
 }
 
+// oxlint-disable-next-line complexity
 function TransactionsPage() {
   const { openAddTransaction } = useOutletContext<AppShellOutletContext>()
   const queryClient = useQueryClient()

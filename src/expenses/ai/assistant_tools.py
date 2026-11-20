@@ -523,7 +523,11 @@ class AssistantReader:
         return with_amounts(result)
 
 
-def sql_query(ctx: RunContext[AssistantReader], label: str, sql: str) -> dict[str, Any]:
+def sql_query(
+    ctx: RunContext[AssistantReader],
+    label: str,  # noqa: ARG001 - the activity line reads it from the tool call.
+    sql: str,
+) -> dict[str, Any]:
     """Run one read-only SQLite SELECT over the user's data. Returns up to 100 rows;
     `more` means there are others, so aggregate in SQL or page with LIMIT and OFFSET.
     Text past 300 characters is cut and ends in …; read the rest with substr.

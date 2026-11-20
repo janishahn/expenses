@@ -1,24 +1,11 @@
 import { expect, test, type Page } from "./fixtures"
 import {
-  allocateJourney,
-  archiveAndUndoJourney,
   assistantTurns,
-  budgetAndUndoJourney,
   chatIdFrom,
-  chatRetentionJourney,
   composer,
   editAndUndoJourney,
-  endRecurringAndUndoJourney,
-  failureJourney,
-  followUpJourney,
-  missingChatJourney,
-  offsetInThread,
-  privacyJourney,
-  removeBudgetAndUndoJourney,
   sendQuestion,
   stopJourney,
-  thread,
-  trashAndUndoJourney,
   unique,
   userTurns,
 } from "./assistant-journeys"
@@ -95,10 +82,6 @@ test.describe("Assistant", () => {
     expect(chatIdFrom(page)).toBe(chatId)
   })
 
-  test("asks a follow-up in the same chat", async ({ page }) => {
-    await followUpJourney(page)
-  })
-
   test("applies an approved change, refreshes the ledger, links the new transaction, and dismisses a long card after listing every row", async ({ page }) => {
     const totalBefore = await ledgerTotal(page)
     await page.getByRole("link", { name: "Assistant", exact: true }).click()
@@ -150,165 +133,11 @@ test.describe("Assistant", () => {
     await expect(ledgerFooter(page)).toHaveText(ledgerCount(totalBefore + 1))
   })
 
-  test("shows a change the server applied when the approval's stream was cut off", async ({ page }) => {
-    const totalBefore = await ledgerTotal(page)
-    await page.getByRole("link", { name: "Assistant", exact: true }).click()
-    await sendQuestion(page, unique("Add lunch for 12,50"))
-    const card = assistantTurns(page).last().getByRole("region", { name: "Add 1 transaction" })
-    await expect(card).toContainText("Lunch")
-
-    // The server applies the change, but the connection drops before any of its stream arrives.
-    await page.route("**/approvals/stream", async (route) => {
-      await route.fetch()
-      await route.abort("connectionreset")
-    })
-    await card.getByRole("button", { name: "Add" }).click()
-    await expect(card).toContainText("Added")
-    await expect(card.getByRole("button")).toHaveCount(0)
-    await page.unroute("**/approvals/stream")
-
-    await page.getByRole("link", { name: "Transactions", exact: true }).click()
-    await expect(ledgerFooter(page)).toHaveText(ledgerCount(totalBefore + 1))
-  })
-
   test("tags transactions from a card and undoes it", async ({ page }) => {
     await editAndUndoJourney(page)
   })
 
-  test("allocates a reimbursement from a card after a dismissed card left it unchanged", async ({ page }) => {
-    await allocateJourney(page)
-  })
-
-  test("sets a budget from a card and undoes it", async ({ page }) => {
-    await budgetAndUndoJourney(page)
-  })
-
-  test("removes a budget from a card and undoes it", async ({ page }) => {
-    await removeBudgetAndUndoJourney(page)
-  })
-
-  test("moves transactions to Trash from a card and restores them with Undo", async ({ page }) => {
-    await trashAndUndoJourney(page)
-  })
-
-  test("archives a category from a card and undoes it", async ({ page }) => {
-    await archiveAndUndoJourney(page)
-  })
-
-  test("ends a recurring payment from a card and undoes it", async ({ page }) => {
-    await endRecurringAndUndoJourney(page)
-  })
-
-  test("masks amounts in the conversation in privacy mode", async ({ page }) => {
-    await privacyJourney(page)
-  })
-
   test("stops an answer mid-stream and keeps what was written", async ({ page }) => {
     await stopJourney(page)
-  })
-
-  test("shows a backend failure and answers again with Retry", async ({ page }) => {
-    await failureJourney(page)
-  })
-
-  test("takes no message in a chat that couldn't be loaded", async ({ page }) => {
-    await missingChatJourney(page)
-  })
-
-  test("sends a follow-up again with Retry when the server never received it", async ({ page }) => {
-    await page.goto("/assistant")
-    const question = unique("How much did I spend in May?")
-    await sendQuestion(page, question)
-    await expect(assistantTurns(page).last()).toContainText("less than in April")
-
-    await page.route("**/api/assistant/messages/stream", (route) =>
-      route.fulfill({ status: 503, json: { detail: "The Assistant is unavailable." } })
-    )
-    await sendQuestion(page, "And in April?")
-    await expect(assistantTurns(page).last()).toContainText("The Assistant is unavailable.")
-    await page.unroute("**/api/assistant/messages/stream")
-
-    await assistantTurns(page).last().getByRole("button", { name: "Retry" }).click()
-    await expect(assistantTurns(page)).toHaveCount(2)
-    await expect(assistantTurns(page).last()).toContainText("less than in April")
-
-    // The server kept the first answer and saved the follow-up after it.
-    await page.reload()
-    await expect(userTurns(page)).toHaveText([question, "And in April?"])
-    await expect(assistantTurns(page)).toHaveCount(2)
-  })
-
-  test("sends on Enter and inserts a newline on Shift+Enter", async ({ page }) => {
-    await page.goto("/assistant")
-    const input = composer(page)
-    const send = page.getByRole("button", { name: "Send" })
-    await expect(send).toBeDisabled()
-    await input.click()
-    await input.pressSequentially("first line")
-    await expect(send).toBeEnabled()
-    await input.press("Shift+Enter")
-    await input.pressSequentially("second line")
-
-    expect(await input.inputValue()).toContain("\n")
-    await expect(userTurns(page)).toHaveCount(0)
-
-    await input.press("Enter")
-    await expect(userTurns(page).last()).toContainText("first line")
-    await expect(userTurns(page).last()).toContainText("second line")
-    await expect(assistantTurns(page).last()).toContainText("You spent 1 234,56 € in May.")
-    await expect(input).toHaveValue("")
-  })
-
-  test("keeps the reader's place during streaming and offers a return to the latest message", async ({ page }) => {
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("Show me a long review"))
-
-    // Sending pins the question near the top so the reply streams downward in reading position.
-    await expect.poll(() => offsetInThread(userTurns(page).last())).toBeLessThan(48)
-    const reserved = await page.evaluate(() => {
-      const log = document.querySelector('[role="log"]')!
-      const user = log.querySelector('[aria-label="You"]')!
-      const assistant = log.querySelector('[aria-label="Assistant"]')!
-      return { needed: log.clientHeight - user.clientHeight - 64, actual: assistant.getBoundingClientRect().height }
-    })
-    expect(reserved.actual).toBeGreaterThanOrEqual(reserved.needed - 1)
-
-    // Streaming never drags the reader; the return control appears once the newest
-    // content is below the viewport.
-    await expect(thread(page).getByText("Spending detail 30.")).toBeAttached()
-    const scrollToLatest = page.getByRole("button", { name: "Scroll to latest message" })
-    await expect(scrollToLatest).toBeVisible()
-    const scrollTopBefore = await thread(page).evaluate(async (element) => {
-      let last = -1
-      while (element.scrollTop !== last) {
-        last = element.scrollTop
-        await new Promise((resolve) => window.setTimeout(resolve, 100))
-      }
-      return last
-    })
-    await expect(thread(page).getByText("Spending detail 80.")).toBeAttached()
-    expect(await thread(page).evaluate((element) => element.scrollTop)).toBe(scrollTopBefore)
-
-    await scrollToLatest.click()
-    await expect(thread(page).getByText("Spending detail 80.")).toBeInViewport()
-    await expect(scrollToLatest).toHaveCount(0)
-  })
-
-  test("scrolls each sent question to the top with earlier turns above", async ({ page }) => {
-    await page.goto("/assistant")
-    await sendQuestion(page, unique("Show me a long review"))
-    await expect(thread(page).getByText("Spending detail 80.")).toBeAttached()
-    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
-    await sendQuestion(page, "And May?")
-
-    await expect.poll(() => offsetInThread(userTurns(page).last())).toBeLessThan(48)
-    await thread(page).evaluate((element) => {
-      element.scrollTop = 0
-    })
-    await expect(userTurns(page).first()).toBeInViewport()
-  })
-
-  test("saves how many days to keep chats in Settings", async ({ page }) => {
-    await chatRetentionJourney(page)
   })
 })

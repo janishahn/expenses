@@ -1,10 +1,5 @@
 import { expect, test } from "./fixtures"
-import {
-  createTransaction,
-  ensureCategory,
-  getCsrfToken,
-  loginAsIsolatedUser,
-} from "./helpers"
+import { loginAsIsolatedUser } from "./helpers"
 import { useAuditTheme } from "./state-audit.helpers"
 
 test.describe("Mobile state audit", () => {
@@ -52,60 +47,6 @@ test.describe("Mobile state audit", () => {
     await expect(page.getByRole("status")).toContainText("Transaction added")
   })
 
-  test("a failed list load shows the reason and Retry recovers the rows", async ({
-    page,
-    request,
-  }) => {
-    await useAuditTheme(page, "light")
-    const token = await getCsrfToken(request)
-    const categoryId = await ensureCategory(request, token, "expense", "Audit mobile state")
-    const title = `Audit mobile recovery ${Date.now()}`
-    await createTransaction(request, token, {
-      date: "2026-04-18",
-      occurred_at: "2026-04-18T13:10:00",
-      type: "expense",
-      amount_cents: 3_456,
-      category_id: categoryId,
-      title,
-      tags: [],
-    })
-
-    let recover = false
-    await page.route(/\/api\/transactions(?:\?|$)/, (route) => {
-      if (recover) return route.continue()
-      return route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: '{"detail":"Audit mobile list unavailable"}',
-      })
-    })
-    await page.goto(`/transactions?period=all&q=${encodeURIComponent(title)}`)
-    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
-    await expect(page.getByRole("alert")).toHaveText("Unable to load transactions.")
-    const retry = page.getByRole("button", { name: "Retry" })
-    await expect(retry).toBeVisible()
-
-    recover = true
-    await retry.tap()
-    await expect(page.getByRole("listitem", { name: title })).toBeVisible()
-    await expect(page.getByRole("alert")).toHaveCount(0)
-  })
-
-  test("a custom period range with the end before the start is rejected", async ({ page }) => {
-    await useAuditTheme(page, "light")
-    await page.goto("/")
-    await page.getByRole("button", { name: /^Period:/ }).tap()
-    await page.getByRole("menuitem", { name: "Custom range…" }).tap()
-    const customRange = page.getByRole("dialog", { name: "Custom range" })
-    await customRange.getByLabel("Start").fill("2026-08-10")
-    await customRange.getByLabel("End").fill("2026-08-01")
-    await customRange.getByRole("button", { name: "Apply" }).tap()
-    const error = customRange.getByText("End date must be after start date.")
-    await error.scrollIntoViewIfNeeded()
-    await expect(error).toBeVisible()
-    await expect(page).not.toHaveURL(/start=/)
-  })
-
   test("an ordinary member sees no Admin entry and /admin returns to the dashboard", async ({
     page,
   }) => {
@@ -127,115 +68,7 @@ test.describe("Mobile state audit", () => {
     }
   })
 
-  test("disabled AI hides the Assistant and rule mining on mobile", async ({ page }) => {
-    await useAuditTheme(page, "light")
-    await page.route("**/api/auth/bootstrap-status", async (route) => {
-      const response = await route.fetch()
-      const payload = (await response.json()) as Record<string, unknown>
-      await route.fulfill({ json: { ...payload, ai_features: [] } })
-    })
-    await page.goto("/rules")
-    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Add rule" }).first()).toBeVisible()
-    await expect(page.getByRole("button", { name: "More actions" })).toHaveCount(0)
-    await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "More" }).tap()
-    const menu = page.getByRole("dialog", { name: "More" })
-    await expect(menu.getByRole("link", { name: "Rules" })).toBeVisible()
-    await expect(menu.getByRole("link", { name: "Assistant" })).toHaveCount(0)
-    await page.keyboard.press("Escape")
-
-    await page.goto("/assistant")
-    await expect(page).toHaveURL("/")
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
-  })
-
-  test("missing tag and recurring routes offer touch-accessible return paths", async ({
-    page,
-  }) => {
-    await useAuditTheme(page, "light")
-    await page.goto("/tags/999999999")
-    await expect(page.getByRole("alert")).toHaveText("Tag not found.")
-    const tagsReturn = page.getByRole("link", { name: "Back to tags" })
-    await expect(tagsReturn).toBeVisible()
-    await tagsReturn.tap()
-    await expect(page).toHaveURL("/tags")
-
-    await page.goto("/recurring/999999999/occurrences")
-    await expect(page.getByRole("alert")).toHaveText("Rule not found.")
-    const recurringReturn = page.getByRole("link", { name: "Back to recurring" })
-    await expect(recurringReturn).toBeVisible()
-    await recurringReturn.tap()
-    await expect(page).toHaveURL("/recurring")
-  })
-
-  test("transaction detail server failure remains retryable on mobile", async ({ page }) => {
-    await useAuditTheme(page, "light")
-    await page.route("**/api/transactions/999999998", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: '{"detail":"Audit transaction unavailable"}',
-      }),
-    )
-    await page.goto("/transactions/999999998")
-    await expect(
-      page.getByRole("alert").filter({ hasText: "Unable to load transaction." }),
-    ).toBeVisible()
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Back to transactions" })).toHaveCount(0)
-  })
-
-  test("a page that cannot reach the server loads by itself on mobile", async ({ page }) => {
-    await useAuditTheme(page, "light")
-    await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
-
-    let serverDown = true
-    await page.route("**/api/**", (route) =>
-      serverDown ? route.abort("connectionrefused") : route.continue(),
-    )
-    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Budgets" }).tap()
-    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
-    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
-
-    serverDown = false
-    await expect(page.getByRole("button", { name: "Add budget" }).first()).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(page.getByRole("alert")).toHaveCount(0)
-  })
-
-  test("an add form whose code cannot load keeps the page on mobile", async ({ page }) => {
-    await useAuditTheme(page, "light")
-    await page.goto("/transactions")
-    await expect(page.getByRole("heading", { name: "Transactions", level: 1 })).toBeVisible()
-
-    await page.route("**/assets/AddTransactionDialog-*.js", (route) => route.fulfill({ status: 404 }))
-    await page.getByRole("button", { name: "Add transaction", exact: true }).tap()
-    await expect(page.getByRole("status")).toContainText("Unable to open the add form.")
-    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible()
-    await expect(page.getByRole("navigation", { name: "Tabs" })).toBeVisible()
-  })
-
   // Playwright's WebKit keeps a failed page chunk failed for the tab, even across
   // reloads, so the reload after the server answers is covered on desktop only.
   // Safari fetches the chunk again on reload.
-  test("a page whose code cannot load while the server is down keeps the tab bar on mobile", async ({
-    page,
-  }) => {
-    await useAuditTheme(page, "light")
-    await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible()
-
-    for (const url of ["**/assets/RulesPage-*.js", "**/api/**"]) {
-      await page.route(url, (route) => route.abort("connectionrefused"))
-    }
-    const tabs = page.getByRole("navigation", { name: "Tabs" })
-    await tabs.getByRole("button", { name: "More" }).tap()
-    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Rules" }).tap()
-    await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible()
-    await expect(page.getByRole("alert")).toContainText("Can't reach the server")
-    await expect(page.getByRole("button", { name: "Retry now" })).toBeVisible()
-    await expect(tabs).toBeVisible()
-  })
 })

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `uv run fast-tests` also type-checks the backend with ty and checks the backend import layers with import-linter, both new development dependencies. ty fails only on errors that are not in `ty-baseline.json`. Ruff and oxlint add rules for likely bugs, server-clock dates, unhandled promises, keyboard access, import cycles, deep branching, and common leftovers such as commented-out code and stray prints. Oxlint now runs with type information through the new `oxlint-tsgolint` development dependency. `TESTING.md` replaces the browser coverage ledger with a budget of 120 Playwright test definitions, and the suite is cut to that budget. Browser tests now keep one journey per product surface plus checks that only a browser can make; the deleted cases are left to backend tests and the static checks.
+
+### Fixed
+- In Settings, copying a new ingest token showed "Token copied." even when the browser refused the clipboard. It now says when copying failed.
+- Backup and export file names, the report's generated time, and the default 90-day window of AI rule suggestions use the configured timezone instead of the server clock.
+
 ## [0.9.0] - 2026-11-17
 
 ### Added

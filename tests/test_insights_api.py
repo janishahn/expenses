@@ -345,7 +345,7 @@ def test_month_grid_returns_thirteen_months_per_category_income_and_tag(
     assert rows["Food"]["id"] == food
     assert rows["Idle"]["values_cents"] == [0] * 13
     assert "Salary" not in rows
-    assert [row["name"] for row in expense["rows"]][0] == "Food"
+    assert next(row["name"] for row in expense["rows"]) == "Food"
 
     income = api_client.get("/api/insights/month-grid?kind=income").json()
     assert {row["name"]: row["values_cents"][-1] for row in income["rows"]} == {

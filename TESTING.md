@@ -1,6 +1,6 @@
 # Testing
 
-This document is the authoritative testing policy and browser-coverage inventory for Expenses. Product planning or redesign working documents do not define test coverage.
+This document is the authoritative testing policy for Expenses. Product planning or redesign working documents do not define test coverage.
 
 ## Commands
 
@@ -9,7 +9,7 @@ uv run fast-tests
 uv run full-tests
 ```
 
-`fast-tests` is the gate for feature work, shared code or configuration changes, and code changes prepared for a pull request. Docs-only and isolated low-risk local changes may use focused checks. The gate runs Ruff, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
+`fast-tests` is the gate for feature work, shared code or configuration changes, and code changes prepared for a pull request. Docs-only and isolated low-risk local changes may use focused checks. The gate runs Ruff, the ty type checker, the import layer check, the backend test suite, frontend lint, and the TypeScript/Vite production build concurrently, with the backend tests distributed across CPU cores by pytest-xdist.
 
 When web behavior or layout changes, pair the gate with focused Playwright specs for each materially distinct affected layout. Do not escalate to the complete matrix because a diff is large or a page was redesigned. After checks pass, repeat or broaden them only for relevant changes, failures, or unresolved concerns.
 
@@ -39,15 +39,36 @@ Visual baselines exist for macOS (`darwin`) and Linux. Regenerate the macOS file
 
 ## Policy
 
-- Every new or changed web user-facing story has at least one real full-stack browser happy path on every materially distinct supported layout: desktop Chromium and mobile WebKit.
-- Permission, destructive-action, recovery, empty, failure, and feature-disabled states are browser-tested when their interaction is part of the story. Domain permutations and backend-only edge cases remain in focused API or unit tests.
-- Desktop and mobile files stay explicit. Mobile behavior belongs in `*.mobile.spec.ts`; tests use the controls actually visible in that layout.
-- Primary happy paths cross the browser, FastAPI API, service, and temporary database. Request interception is reserved for deterministic failure injection, external resources, and paid or nondeterministic providers.
+Expenses keeps a small test suite. A check that a static tool can make belongs in that tool, and a test protects behavior that the tools cannot see.
+
+### Static checks
+
+- ty type-checks `src`. `ty-baseline.json` lists the errors that existed when the checker was added, and new code adds none. Fix an error that the gate reports on a line you changed. After you fix a listed error, or when an edit only moves one, run `uv run ty check --baseline ty-baseline.json --update-baseline` and commit the smaller baseline. ty is pinned to an exact version because its releases before 1.0 can change results; update the pin and the baseline together.
+- Ruff adds rules for likely bugs, async code, string-built SQL, server-clock dates where `local_today()` or `local_now()` belongs, commented-out code, blanket suppressions, swallowed exceptions, stray prints, and unused arguments. A function may branch at most 25 ways; the few older functions above that carry `# noqa: C901` until they are split.
+- `lint-imports` keeps the backend layers `cli`, `app`, `api`, `services`, `db`, and `core` in that order: a module never imports from a layer above it.
+- Oxlint, TypeScript strict mode, and the local design rules check the web app. Oxlint runs with type information, so it also flags unhandled promises and switches that miss a case. It also checks keyboard access, import cycles, and branching; the same limit of 25 applies, and older components above it carry a disable comment.
+- Do not write a test that only repeats what these checks enforce, such as response shapes, argument wiring, or that a removed feature stays removed. Write a test for a removed feature only when the application keeps a live route or code path that blocks it.
+
+### What a test protects
+
+Add or keep a test only when it protects one of these:
+
+- Money: amounts, totals, allocation, reimbursements, budgets, forecasts, and currency conversion.
+- Access: authentication, admin elevation, and isolation between users.
+- Stored data: migrations, imports, exports, backups, and reconciliation.
+- Assistant changes: the Assistant changes data only through a card that the user approves.
+- A regression: a bug that reached `main` gets one test that fails without the fix.
+
+Prefer one test that checks a rule across many inputs to many tests that each check one example. Extend a suitable existing test or spec; add a file only when no existing file fits.
+
+### Browser tests
+
+- The Playwright suite has a budget of 120 test definitions. A change that would take the suite past the budget removes or merges at least as many tests as it adds.
+- Each product surface has one desktop journey that crosses the browser, FastAPI API, service, and temporary database. Request interception is reserved for deterministic failure injection, external resources, and paid or nondeterministic providers.
+- A mobile spec covers only interactions that differ on mobile, such as sheets, the tab bar, and Select mode. Mobile behavior belongs in `*.mobile.spec.ts`, and tests use the controls actually visible in that layout.
 - Canonical authenticated routes are scanned for automatically detectable structural WCAG A/AA violations and browser runtime errors. Mobile routes additionally assert that the document does not overflow horizontally. Axe color-contrast checks are excluded because translucent and chart surfaces require design-token and screenshot review instead of computed-background inference.
 - Stable high-risk page and dialog archetypes have reviewed screenshot baselines. Update snapshots only for intentional UI changes and inspect the image diff before accepting it.
-- The three compatibility projects run only the critical create-and-read ledger journey. Broad feature behavior stays in the primary desktop/mobile projects to keep the cross-browser cost bounded.
-- New or changed web user stories update the coverage ledger and affected browser tests in the same change. Extend suitable existing specs; add a file only when repository conventions require it or no existing file fits.
-- Do not add a test that only makes sure that a removed feature is not in the application. Write such a test only when the application keeps a live route or code path that blocks the removed feature.
+- The three compatibility projects run only the critical create-and-read ledger journey.
 - Each browser test must check the behavior that its title tells, and the check must occur in a standard run. Code that only writes optional audit artifacts is not coverage.
 - Synchronize browser tests on an observable UI state or a request or response. Lint flags `waitForTimeout` in browser tests and helpers. Use the Playwright clock when testing elapsed time.
 - An audit spec must not do a journey again when a feature spec owns that journey. An audit spec adds only checks that apply across features, for example theme, overflow, or accessibility.
@@ -58,50 +79,13 @@ Visual baselines exist for macOS (`darwin`) and Linux. Regenerate the macOS file
 |---|---|---|
 | `auth-bootstrap-chromium` | Chromium desktop | Fresh setup, login, logout, signup, and route guards |
 | `auth-bootstrap-mobile-webkit` | WebKit with iPhone 15 emulation | Fresh setup, login, logout, signup, and route guards on the mobile layout |
-| `desktop-chromium` | Chromium, 1280×800 | Complete desktop behavior, accessibility, and visual contracts |
-| `mobile-webkit` | WebKit with iPhone 15 emulation | Complete mobile behavior, accessibility, overflow, and visual contracts |
+| `desktop-chromium` | Chromium, 1280×800 | Desktop journeys, accessibility, and visual contracts |
+| `mobile-webkit` | WebKit with iPhone 15 emulation | Mobile-specific interactions, accessibility, overflow, and visual contracts |
 | `critical-desktop-firefox` | Firefox, 1280×800 | Critical authenticated navigation and transaction creation |
 | `critical-desktop-webkit` | WebKit, 1280×800 | Critical authenticated navigation and transaction creation |
 | `critical-mobile-chromium` | Chromium with Pixel 7 emulation | Critical mobile transaction creation and detail navigation |
 
 Playwright mobile projects emulate viewport, user agent, touch, and browser-engine behavior; they do not run physical iOS Safari. Real-device or iOS Simulator Safari remains a supplemental manual check when a browser-engine issue requires it.
-
-## Coverage ledger
-
-`Desktop` and `Mobile` identify the owning Playwright specifications. `Surface contract` means the canonical route is also covered by structural accessibility, runtime-error, and mobile overflow assertions.
-
-| Product story or surface | Desktop | Mobile | Surface contract |
-|---|---|---|---|
-| First-run setup, login, logout, signup, protected deep links | `auth.spec.ts`, `settings.spec.ts` | `auth.mobile.spec.ts` | Real setup submission in both layouts |
-| Authenticated shell with the sidebar and app-name menu, the mobile tab bar and More sheet, focus trapping and focus return for dialogs, sheets, and menus, 44px mobile touch targets for navigation and header actions, period propagation, and unknown routes | `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `navigation.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Panel header bar with page actions inside it at constrained desktop widths and on mobile, and the period control and Filter on one row beneath the title | `page-scope-header.spec.ts` | `page-scope-header.mobile.spec.ts` | Covered routes |
-| Dashboard metrics, quick periods, tag-only secondary-filter panel with archived/hidden visibility and scoped drill-downs, charts, privacy, category focus, quick add, scheduled-tag defaults and removal, durable purchases with ended ones on request, and recent-transactions touch targets | `dashboard.spec.ts`, `tag-filters.spec.ts`, `visual.spec.ts` | `dashboard.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `summaries.mobile.spec.ts`, `visual.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Critical create-and-read ledger journey | `core-journey.critical.spec.ts` | `core-journey.critical.mobile.spec.ts` | Cross-browser projects |
-| Transactions ledger with day bands named Today and Yesterday and their nets, header actions, hiding amounts from ⋯, printing every row with the server's totals, period, filter pills and the mobile Filter sheet, multi-tag scopes including stale hidden selections, in-place search with focus return, desktop row selection and mobile Select mode with confirmed bulk edits, peek and full view with inline edits and failed-save recovery, Markdown notes, the add dialog with templates, deletion with Undo, receipts and the viewer, receipt items read from an uploaded image with the coverage line, renaming with its scope, a photo that is not a receipt, and Read again, location map, durable tracking from ⋯ with an end date, reimbursement allocation from the expense and its row at the net after reimbursements | `transactions.spec.ts`, `tag-filters.spec.ts`, `transactions-detail.spec.ts`, `transactions-deletion.spec.ts`, `transactions-attachments.spec.ts`, `navigation.desktop.spec.ts`, `focus-management.spec.ts` | `transactions.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Uncategorized: category pill with Undo, suggestion accept and reject from the row and the peek, search, confirmed bulk recategorization | `transactions.spec.ts` | `transactions.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Trash bulk restore and confirmed permanent deletion | `transactions-trash.spec.ts` | `transactions.mobile.spec.ts` | Yes |
-| Route loading placeholder and data-dependent action readiness (only on loads pending past 250ms, never on fast loads) | `route-loading.spec.ts` | `route-loading.mobile.spec.ts` | Transactions skeleton plus Budgets action readiness |
-| Cross-route query and mutation error recovery with Retry, the unreachable-server receipt that reloads the page by itself, a proxy's 502 or 504 counted as unreachable only while the server does not answer, pages and the add form whose code fails to load, readable API detail, entered values kept after a failed save, missing-resource return paths, and custom period range validation | `state-audit.spec.ts`, `transactions-deletion.spec.ts` | `state-audit.mobile.spec.ts` | Desktop and mobile state contracts |
-| Optional Assistant: streamed turns with the activity line, chats kept on the server and reopened from the URL, Recent chats and New chat, follow-ups, Stop with the partial answer kept, a reload mid-answer kept as Interrupted, backend failure and Retry, privacy, scroll position, approval cards that add, tag, allocate, set and remove budgets, move to Trash, archive, and end recurring payments, with Dismiss leaving data unchanged, undo from a card, transaction links that open a peek, page links that open the page, answers that load no images, and how many days chats are kept; disabled AI surfaces | `assistant.spec.ts`, `llm-disabled.desktop.spec.ts` | `assistant.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Real backend; a stub OpenAI-compatible server scripts streamed completions and tool calls from real tool results |
-| Insights page tabs and stable desktop canvas, quick periods, tag-only secondary-filter panel including top-tag scope, chart-local controls, Net view selection/data view, Spread durables, and drill-through | `insights.spec.ts`, `tag-filters.spec.ts` | `insights.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Forecast controls, prediction range, intra-month warnings, drill-down, and What If handoff | `forecast.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| What If adjustments and comparison output | `scenarios.spec.ts` | `planning.mobile.spec.ts` | Yes |
-| Unified monthly and annual budgets with an annual total that does not count an overall budget twice, full-bleed mobile month navigation with an anchored picker, month-only adjustments, existing-plan compatibility, and burndown | `budgets.spec.ts` | `budgets.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Weekly digest navigation, full-bleed mobile period navigation, and decision sections | `digest.spec.ts` | `summaries.mobile.spec.ts` | Yes |
-| Category create, edit, archive, restore, icons, and merge guards | `categories.spec.ts`, `focus-management.spec.ts` | `categories.mobile.spec.ts`, `focus-management.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Tag create, date-range defaults, read-only detail and explicit edit flow, archive, restore, independent filter visibility, delete, merge, and budget exclusion | `tags.spec.ts`, `tag-detail.spec.ts`, `tag-filters.spec.ts` | `organization.mobile.spec.ts`, `tag-filters.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Recurring page tabs, create/edit/delete, audit, evaluation, and occurrence history | `recurring.spec.ts`, `recurring-occurrences.spec.ts` | `recurring.mobile.spec.ts` | Yes |
-| Template create/edit/delete and reorder | `templates.spec.ts`, `focus-management.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Categorization rule create/edit/toggle, preview, and application | `rules.spec.ts` | `organization.mobile.spec.ts` | Yes |
-| Per-user local categorization toggle that saves at once, threshold validation with Escape to revert, failed-save recovery and persistence, first training, new expense prediction, and disable | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Real background training; backend tests cover weekly checks, correction provenance, and manual/rule priority |
-| Reconcile: Commerzbank CSV import with preview and duplicate count, suggested, several and no-match bands, Match all, match search with the bank-amount switch, ignore reasons, ignoring every remaining row, create and match, Undo, the Resolved view with outcome and account filters, and reopen with keep-or-trash for created transactions | `reconciliation.spec.ts` | `reconciliation.mobile.spec.ts` | Yes |
-| PDF report options, include/exclude tag scope, generation, and latest download | `reports.spec.ts` | `summaries.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Yes |
-| Admin AI settings: per-feature switch, backend, model and thinking level, typed model IDs, persistence, and the Assistant leaving the navigation when off | `ai-settings.spec.ts` | `ai-settings.mobile.spec.ts` | Real backend; a stub OpenAI-compatible server lists models |
-| Settings sections with URLs: profile and sign out, ingest token, appearance, balance snapshots, CSV import, and exports | `settings.spec.ts` | `settings-admin.mobile.spec.ts` | Yes |
-| Admin role/elevation, health, backup, logs, maintenance, and AI usage from a model to an Assistant chat's turns | `admin-auth.spec.ts`, `admin.spec.ts`, `focus-management.spec.ts` | `settings-admin.mobile.spec.ts` | Elevation route; usage comes from a real Assistant turn on the stub backend |
-| Legacy SQLite import controls and validation | `admin-import.spec.ts` | `settings-admin.mobile.spec.ts`, `interaction-audit.mobile.spec.ts` | Admin import reached after elevation |
-
-Backend tests remain authoritative for lower-level calculation, isolation, migration, import, export, reconciliation-matching, recurrence, LLM-provider, and security edge cases. Browser coverage proves that the supported user journey remains coherent through the rendered application.
 
 ## Failure artifacts
 

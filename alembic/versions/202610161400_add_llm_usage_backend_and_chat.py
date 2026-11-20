@@ -7,8 +7,9 @@ versions marked failed with stream_cancelled become stopped. The downgrade keeps
 both.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610161400"
 down_revision = "202610161300"

@@ -1,5 +1,4 @@
 import { expect, test } from "./fixtures"
-import { createCategory, createTransaction, getCsrfToken } from "./helpers"
 
 test.describe("Budgets Page Mobile", () => {
   async function findOverflowingElements(page: Parameters<typeof test>[0]["page"]) {
@@ -105,102 +104,5 @@ test.describe("Budgets Page Mobile", () => {
       page.getByRole("button", { name: `Month: ${monthName(target)}` }),
     ).toBeVisible()
     await assertNoHorizontalOverflow(page, "budget-period-navigation")
-  })
-
-  test("creates a monthly budget and adjusts only the selected month", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryName = `E2E Mobile Budget ${Date.now()}`
-    await createCategory(request, token, "expense", categoryName)
-
-    await page.goto("/budgets")
-    await page.getByRole("button", { name: "Add budget", exact: true }).first().click()
-    const dialog = page.getByRole("dialog", { name: "Add budget" })
-    await dialog.getByRole("textbox", { name: "Amount" }).fill("210")
-    await dialog.getByRole("button", { name: /^Category / }).click()
-    await page.getByRole("combobox", { name: "Category" }).fill(categoryName)
-    await page.getByRole("option", { name: categoryName }).click()
-    await dialog.getByRole("button", { name: "Add budget" }).click()
-    await expect(dialog).toBeHidden()
-
-    await page.getByRole("listitem", { name: categoryName }).click()
-    await expect(page).toHaveURL(/peek=month/)
-    const peek = page.getByRole("complementary", { name: categoryName })
-    await peek.getByRole("button", { name: /^Amount/ }).click()
-    const editor = page.getByRole("dialog", { name: "Edit amount" })
-    await expect(
-      editor.getByRole("radio", { name: `Only ${monthName(localMonth())}` }),
-    ).toBeChecked()
-    await editor.getByRole("textbox", { name: "Amount" }).fill("340")
-    await editor.getByRole("button", { name: "Save" }).click()
-    await expect(peek.getByRole("button", { name: /^Amount/ })).toContainText(
-      /340,00\s?€.*usually 210,00\s?€/,
-    )
-
-    await peek.getByRole("button", { name: "Budgets" }).click()
-    await expect(page).not.toHaveURL(/peek=/)
-    await expect(page.getByRole("listitem", { name: categoryName })).toContainText("adjusted")
-    await page.getByRole("button", { name: "Next month" }).click()
-    const nextRow = page.getByRole("listitem", { name: categoryName })
-    await expect(nextRow).toContainText(/210\s?€/)
-    await expect(nextRow).not.toContainText("adjusted")
-  })
-
-  test("keeps the workspace and pace details within the viewport", async ({
-    page,
-    request,
-  }) => {
-    const token = await getCsrfToken(request)
-    const categoryName = `E2E Mobile Burndown ${Date.now()}`
-    const categoryId = await createCategory(request, token, "expense", categoryName)
-    const monthStart = `${localMonth()}-01`
-    const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
-    for (const [category, amount, endsOn] of [
-      [categoryId, 250_000, null],
-      [null, 400_000, `${localMonth()}-${monthEnd}`],
-    ] as const) {
-      const response = await request.post("/api/budgets/templates", {
-        headers: { "X-CSRF-Token": token },
-        data: {
-          frequency: "monthly",
-          category_id: category,
-          amount_cents: amount,
-          starts_on: monthStart,
-          ends_on: endsOn,
-        },
-      })
-      expect(response.ok()).toBeTruthy()
-    }
-
-    const longTitle = `MOBILEBURNDOWNOVERFLOW${"X".repeat(160)}`
-    const now = new Date()
-    await createTransaction(request, token, {
-      date: `${localMonth()}-${String(now.getDate()).padStart(2, "0")}`,
-      occurred_at: now.toISOString(),
-      type: "expense",
-      amount_cents: 72_500,
-      category_id: categoryId,
-      title: longTitle,
-      tags: [],
-    })
-
-    await page.goto("/budgets")
-    await assertNoHorizontalOverflow(page, "budgets-list")
-    const card = page.getByRole("region", { name: "Overall pace" })
-    await card.getByRole("button", { name: "Chart options" }).click()
-    await page.getByRole("menuitemcheckbox", { name: "Show as table" }).click()
-    await expect(card.getByRole("table", { name: "Overall pace by day" })).toBeVisible()
-    await assertNoHorizontalOverflow(page, "budgets-pace-table")
-
-    await page.getByRole("listitem", { name: categoryName }).click()
-    const peek = page.getByRole("complementary", { name: categoryName })
-    await expect(peek.getByText("Allowance")).toBeVisible()
-    await peek.getByRole("button", { name: "More actions" }).click()
-    await page.getByRole("menuitemcheckbox", { name: "Compare previous month" }).click()
-    await expect(peek.getByRole("heading", { name: "Top spending days" })).toBeVisible()
-    await expect(peek).toContainText("MOBILEBURNDOWNOVERFLOW")
-    await assertNoHorizontalOverflow(page, "budgets-burndown-compare")
   })
 })

@@ -88,7 +88,7 @@ export function ChatBubble({ enter = false, children }: { enter?: boolean; child
 // In privacy mode each amount in the text is covered like an Amount, at about its width.
 export function PrivateText({ text }: { text: string }) {
   const privacy = usePrivacy()
-  if (!privacy) return <>{text}</>
+  if (!privacy) return text
   return (
     <>
       {maskedTextParts(text).map((part, index) =>
@@ -235,8 +235,9 @@ const MARKDOWN_COMPONENTS: Components = {
     if (transaction) return <TransactionLink id={transaction[1]}>{props.children}</TransactionLink>
     if (href?.startsWith(PAGE_PREFIX)) {
       const path = PAGE_PATHS.get(href.slice(PAGE_PREFIX.length))
-      return path ? <Link to={path}>{props.children}</Link> : <>{props.children}</>
+      return path ? <Link to={path}>{props.children}</Link> : props.children
     }
+    // oxlint-disable-next-line jsx-a11y/anchor-has-content -- Markdown passes the link text in props.
     return <a href={href} {...props} target="_blank" rel="noreferrer" />
   },
   // Answer headings rank below the page title and section headings.

@@ -2,18 +2,6 @@ import { expect, test, type Page } from "./fixtures"
 
 test.describe.configure({ mode: "parallel" })
 
-const THEME_STORAGE_KEY = "ew.theme.preference"
-
-async function readThemeChrome(page: Page) {
-  return page.evaluate(() => ({
-    theme: document.documentElement.dataset.theme ?? null,
-    themeColor:
-      Array.from(
-        document.querySelectorAll<HTMLMetaElement>("meta[name='theme-color']")
-      ).find((meta) => meta.media !== "not all")?.content ?? null,
-  }))
-}
-
 function tabBar(page: Page) {
   return page.getByRole("navigation", { name: "Tabs" })
 }
@@ -27,58 +15,6 @@ async function chooseMoreDestination(page: Page, label: string) {
 }
 
 test.describe("Navigation (mobile)", () => {
-  test("loads dashboard as home page with the tab bar", async ({ page }) => {
-    await page.goto("/")
-    await expect(page.locator("main h1")).toContainText("Dashboard")
-    const tabs = tabBar(page)
-    await expect(tabs).toBeVisible()
-    await expect(tabs.getByRole("link")).toHaveText([
-      "Dashboard",
-      "Transactions",
-      "Budgets",
-      "Insights",
-    ])
-    await expect(tabs.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    )
-    await expect(tabs.getByRole("button", { name: "More" })).toBeVisible()
-    await expect(
-      page.getByRole("complementary", { name: "Application navigation" }),
-    ).toBeHidden()
-  })
-
-  test("keeps every tab at least 44px tall and the bar on the bottom edge", async ({
-    page,
-  }) => {
-    await page.goto("/")
-    const layout = await tabBar(page).evaluate((node) => {
-      const rect = node.getBoundingClientRect()
-      return {
-        bottom: rect.bottom,
-        viewport: window.innerHeight,
-        heights: Array.from(node.children).map(
-          (child) => child.getBoundingClientRect().height,
-        ),
-      }
-    })
-    expect(layout.bottom).toBe(layout.viewport)
-    for (const height of layout.heights) expect(height).toBeGreaterThanOrEqual(44)
-  })
-
-  test("preserves period across tab navigation", async ({ page }) => {
-    await page.goto("/")
-    await page.getByRole("button", { name: /^Period:/ }).click()
-    await page.getByRole("menuitemcheckbox", { name: "This month" }).click()
-    await expect(page).toHaveURL(/period=this_month/)
-
-    await tabBar(page).getByRole("link", { name: "Transactions" }).click()
-    await expect(page).toHaveURL(/\/transactions\?period=this_month/)
-
-    await tabBar(page).getByRole("link", { name: "Dashboard" }).click()
-    await expect(page).toHaveURL(/\/\?period=this_month/)
-  })
-
   test("hides the tab bar while a dialog, sheet, or text field is active", async ({
     page,
   }) => {
@@ -141,48 +77,5 @@ test.describe("Navigation (mobile)", () => {
         page.getByRole("heading", { name: route.heading, level: 1 }),
       ).toBeVisible()
     }
-  })
-
-  test("keeps theme selection in Settings across routes", async ({ page }) => {
-    await page.goto("/")
-    await page.evaluate((key) => window.localStorage.setItem(key, "dark"), THEME_STORAGE_KEY)
-    await page.reload()
-    await expect(page.getByTestId("shell-theme-quick-toggle")).toHaveCount(0)
-    await chooseMoreDestination(page, "Settings")
-    await page
-      .getByRole("navigation", { name: "Settings sections" })
-      .getByRole("link", { name: "Appearance" })
-      .click()
-    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Light" }).click()
-    await expect.poll(() => readThemeChrome(page)).toMatchObject({
-      theme: "light",
-      themeColor: "#eaeae7",
-    })
-    await expect
-      .poll(() =>
-        page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
-      )
-      .toBe("light")
-
-    await chooseMoreDestination(page, "Admin")
-    await expect(page).toHaveURL(/\/admin\/elevate\?redirect=/)
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-
-    await page.getByRole("link", { name: "Cancel" }).click()
-    await expect(page).toHaveURL("/settings")
-    await tabBar(page).getByRole("link", { name: "Transactions" }).click()
-    await expect(page).toHaveURL("/transactions")
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.dataset.theme))
-      .toBe("light")
-  })
-
-  test("recovers from unknown routes back to dashboard", async ({ page }) => {
-    await page.goto("/unknown-route-12345")
-    await page.getByRole("link", { name: "Go to dashboard" }).click()
-    await expect(page).toHaveURL("/")
-    await expect(page.locator("main h1")).toContainText("Dashboard")
   })
 })

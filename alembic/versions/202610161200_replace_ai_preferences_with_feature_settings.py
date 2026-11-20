@@ -4,8 +4,9 @@ The old preferences pointed at the removed EXPENSES_LLM_* endpoint or at ChatGPT
 sign-in, so they cannot carry over; every feature starts disabled.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610161200"
 down_revision = "202610131100"

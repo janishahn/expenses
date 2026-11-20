@@ -3,8 +3,9 @@
 Turns saved before this revision have no reason; clients show a generic one.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "202610181500"
 down_revision = "202610161400"
